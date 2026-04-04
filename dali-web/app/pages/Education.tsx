@@ -850,7 +850,11 @@ const Education: React.FC = () => {
                 // Use member name hash to pick a starting color per person
                 const nameHash = member.name.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
                 const allTags = [
-                  ...(member.year && member.year !== 'Unknown' ? [`'${member.year.slice(-2)}`] : []),
+                  ...(member.year != null &&
+                  member.year !== '' &&
+                  String(member.year) !== 'Unknown'
+                    ? [`'${String(member.year).slice(-2)}`]
+                    : []),
                   ...majorMinorTags,
                   ...currentRoles,
                 ];

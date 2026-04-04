@@ -15,6 +15,7 @@ interface SessionAccount {
 }
 
 function getSession(): { account: SessionAccount } | null {
+  if (typeof window === 'undefined') return null;
   try {
     const token = sessionStorage.getItem('access_token');
     const raw = sessionStorage.getItem('account');
@@ -37,7 +38,11 @@ const navLinks = [
 export default function Navbar({ className = '' }: NavbarProps) {
   const [showNav, setShowNav] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [session, setSession] = useState<ReturnType<typeof getSession>>(null);
+  // Initialize from sessionStorage on first paint so we don’t flash "Login"
+  // before effects run (Navbar remounts on each route in this app).
+  const [session, setSession] = useState<ReturnType<typeof getSession>>(() =>
+    getSession()
+  );
   const lastScrollY = useRef(0);
   const location = useLocation();
 
@@ -109,9 +114,9 @@ export default function Navbar({ className = '' }: NavbarProps) {
             <Link
               key={link.path}
               to={link.path}
-              className={`transition tracking-wider ${
+              className={`transition-colors tracking-wider font-medium ${
                 isActive(link.path)
-                  ? 'text-accent-coral dark:text-accent-coral font-semibold'
+                  ? 'text-accent-coral dark:text-accent-coral'
                   : 'text-nav-primary dark:text-white hover:text-accent-coral'
               }`}
               onClick={() => window.scrollTo(0, 0)}
@@ -123,14 +128,15 @@ export default function Navbar({ className = '' }: NavbarProps) {
           {session ? (
             <Link
               to="/account"
-              className="flex items-center gap-2 pl-1 pr-3 py-1 rounded-full bg-[#E8F4FA] dark:bg-[#0d2133] hover:opacity-80 transition"
+              className="flex items-center gap-2 pl-1 pr-3 py-1 rounded-full bg-[#E8F4FA] dark:bg-[#0d2133] hover:opacity-80 transition-opacity min-h-9"
               onClick={() => window.scrollTo(0, 0)}
             >
               {session.account.picture ? (
                 <img
                   src={session.account.picture}
                   alt={displayName ?? ''}
-                  className="w-7 h-7 rounded-full object-cover"
+                  className="w-7 h-7 rounded-full object-cover bg-muted shrink-0"
+                  decoding="async"
                 />
               ) : (
                 <div className="w-7 h-7 rounded-full bg-accent-coral flex items-center justify-center text-white text-xs font-bold">
@@ -144,7 +150,7 @@ export default function Navbar({ className = '' }: NavbarProps) {
           ) : (
             <Link
               to="/login"
-              className="px-4 py-1.5 rounded-full bg-accent-coral text-white font-semibold tracking-wider hover:bg-opacity-90 transition"
+              className="inline-flex items-center justify-center min-h-9 min-w-[7.5rem] px-4 py-1.5 rounded-full bg-accent-coral text-white font-semibold tracking-wider hover:bg-opacity-90 transition-opacity"
               onClick={() => window.scrollTo(0, 0)}
             >
               Login
@@ -176,9 +182,9 @@ export default function Navbar({ className = '' }: NavbarProps) {
               <Link
                 key={link.path}
                 to={link.path}
-                className={`transition tracking-wider ${
+                className={`transition-colors tracking-wider font-medium ${
                   isActive(link.path)
-                    ? 'text-accent-coral dark:text-accent-coral font-semibold'
+                    ? 'text-accent-coral dark:text-accent-coral'
                     : 'text-nav-primary dark:text-white hover:text-accent-coral'
                 }`}
                 onClick={() => { setMobileMenuOpen(false); window.scrollTo(0, 0); }}
