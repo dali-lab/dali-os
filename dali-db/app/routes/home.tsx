@@ -1,0 +1,13 @@
+import type { Route } from "./+types/home";
+import { Welcome } from "../welcome/welcome";
+
+export function meta({}: Route.MetaArgs) {
+  return [
+    { title: "dali-db" },
+    { name: "description", content: "DALI OS — DB app" },
+  ];
+}
+
+export default function Home() {
+  return <Welcome />;
+}
