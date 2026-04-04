@@ -17,6 +17,10 @@ function yearsSinceApril2013(date = new Date()) {
   return years;
 }
 
+/** Not checked into git (see .gitignore); set VITE_TECHNIGALA_VIDEO_URL for deploy/CDN. */
+const TECHNIGALA_VIDEO_SRC =
+  import.meta.env.VITE_TECHNIGALA_VIDEO_URL ?? '/assets/about/technigala.m4v';
+
 const About: React.FC = () => {
   const years = yearsSinceApril2013();
   const location = useLocation();
@@ -273,7 +277,7 @@ const About: React.FC = () => {
                 onTimeUpdate={handleTimeUpdate}
                 onClick={togglePlayPause}
               >
-                <source src="/assets/about/technigala.m4v" type="video/mp4" />
+                <source src={TECHNIGALA_VIDEO_SRC} type="video/mp4" />
                 Your browser does not support the video tag.
               </video>
 

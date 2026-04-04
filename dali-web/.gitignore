@@ -2,6 +2,9 @@
 .env
 /node_modules/
 
+# Large video sources — GitHub rejects blobs >100MB; host on Cloudinary/CDN or keep locally
+public/assets/**/*.m4v
+
 # React Router
 /.react-router/
 /build/
