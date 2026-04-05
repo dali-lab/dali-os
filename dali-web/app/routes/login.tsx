@@ -201,7 +201,7 @@ export default function Login() {
                 transition={{ duration: 0.4, ease: 'easeOut' }}
               >
                 <button
-                  onClick={() => { setAccountType(null); setError(null); }}
+                  onClick={() => setAccountType(null)}
                   className="flex items-center gap-1 text-sm text-gray-500 hover:text-accent-coral transition mb-8 font-medium"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

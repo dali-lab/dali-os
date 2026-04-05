@@ -38,15 +38,13 @@ const navLinks = [
 export default function Navbar({ className = '' }: NavbarProps) {
   const [showNav, setShowNav] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  // Initialize from sessionStorage on first paint so we don’t flash "Login"
-  // before effects run (Navbar remounts on each route in this app).
-  const [session, setSession] = useState<ReturnType<typeof getSession>>(() =>
-    getSession()
-  );
+  // Must start as null: SSR has no sessionStorage; syncing in useEffect matches
+  // server HTML and avoids hydration mismatch (client-only getSession differs).
+  const [session, setSession] = useState<ReturnType<typeof getSession>>(null);
   const lastScrollY = useRef(0);
   const location = useLocation();
 
-  // Read session on mount and on every route change (catches post-login redirect)
+  // After mount + on navigation: read session (client-only)
   useEffect(() => {
     setSession(getSession());
   }, [location.pathname]);
