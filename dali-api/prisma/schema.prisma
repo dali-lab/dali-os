@@ -1,0 +1,32 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+
+  // unique identifier
+  id            String   @id @default(cuid())
+
+  // metadata
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // all nullable, but at least one of these must be non-null
+  netId         String?  @unique  // Dartmouth SSO
+  daliEmail     String?  @unique  // DALI Google
+  dartmouthEmail String?  @unique  // Dartmouth Google OAuth
+
+  // profile
+  firstName     String
+  lastName      String
+
+  @@map("users")
+}
