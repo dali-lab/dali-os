@@ -28,11 +28,17 @@ model User {
   firstName     String
   lastName      String
 
-  daliMember                   DALIMember?
+  daliMember                    DALIMember?
   applicationCycleStatusUpdates ApplicationCycleStatusUpdate[]
+  applicationFormVersions       ApplicationFormVersion[]
+  challengeVersions             ChallengeVersion[]
+  applications                  Application[]
+  applicationStatusUpdates      ApplicationStatusUpdate[]
 
 }
 
+// A DALI lab member. userId is optional because a member may be known (e.g. via daliEmail)
+// before they have created a User account.
 model DALIMember {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
@@ -51,13 +57,87 @@ model ApplicationCycle {
 
   term      String
 
-  statusUpdates ApplicationCycleStatusUpdate[]
+  statusUpdates        ApplicationCycleStatusUpdate[]
+  applications         Application[]
+  domains              DomainApplicationCycle[]
+  challengeVersions    ChallengeVersionApplicationCycle[]
+}
+
+enum ApplicationStatus {
+  Draft
+  Submitted
+  Withdrawn
+}
+
+model ApplicationStatusUpdate {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  newStatus     ApplicationStatus
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id])
+  userId        String
+  user          User        @relation(fields: [userId], references: [id])
+}
+
+model Application {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // answers: map of question UUID key -> answer value (JSON). Saved incrementally
+  // as the applicant fills out the form; finalized on submission.
+  answers   Json
+
+  userId                   String
+  user                     User                   @relation(fields: [userId], references: [id])
+  applicationCycleId       String
+  applicationCycle         ApplicationCycle       @relation(fields: [applicationCycleId], references: [id])
+  // Pinned at application creation time so that form updates do not affect in-progress drafts.
+  applicationFormVersionId String
+  applicationFormVersion   ApplicationFormVersion @relation(fields: [applicationFormVersionId], references: [id])
+
+  statusUpdates            ApplicationStatusUpdate[]
+  domainApplications       DomainApplication[]
+}
+
+model DomainApplication {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // answers: same shape as Application.answers, keyed by question UUID from the challenge version.
+  answers   Json
+
+  applicationId      String
+  application        Application      @relation(fields: [applicationId], references: [id])
+  challengeVersionId String
+  challengeVersion   ChallengeVersion @relation(fields: [challengeVersionId], references: [id])
 }
 
 model ApplicationForm {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  versions  ApplicationFormVersion[]
+}
+
+// Immutable snapshot of an application form. Never update rows in this table —
+// create a new version instead.
+// questions: array of question definitions, each with a stable UUID `key`, `type`,
+// `required`, and type-specific `data`. The `key` is used to associate answers.
+model ApplicationFormVersion {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  questions         Json
+  applicationFormId String
+  applicationForm   ApplicationForm @relation(fields: [applicationFormId], references: [id])
+  createdById       String
+  createdBy         User            @relation(fields: [createdById], references: [id])
+
+  applications      Application[]
 }
 
 model Challenge {
@@ -66,6 +146,8 @@ model Challenge {
   updatedAt DateTime @updatedAt
 
   name      String
+
+  versions  ChallengeVersion[]
 }
 
 model Domain {
@@ -74,6 +156,28 @@ model Domain {
   updatedAt DateTime @updatedAt
 
   name      String
+
+  challengeVersions    ChallengeVersion[]
+  applicationCycles    DomainApplicationCycle[]
+}
+
+// Immutable snapshot of a domain challenge. Never update rows in this table —
+// create a new version instead.
+// questions: same shape as ApplicationFormVersion.questions.
+model ChallengeVersion {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  questions    Json
+  challengeId  String
+  challenge    Challenge @relation(fields: [challengeId], references: [id])
+  domainId     String
+  domain       Domain    @relation(fields: [domainId], references: [id])
+  createdById  String
+  createdBy    User      @relation(fields: [createdById], references: [id])
+
+  domainApplications   DomainApplication[]
+  applicationCycles    ChallengeVersionApplicationCycle[]
 }
 
 enum ApplicationCycleStatus {
@@ -88,11 +192,30 @@ model ApplicationCycleStatusUpdate {
   createdAt DateTime @default(now())
 
   newStatus          ApplicationCycleStatus
-  timestamp          DateTime
   applicationCycleId String
   applicationCycle   ApplicationCycle       @relation(fields: [applicationCycleId], references: [id])
   userId             String
   user               User                   @relation(fields: [userId], references: [id])
+}
+
+// Indicates that a domain is hiring during a given application cycle
+model DomainApplicationCycle {
+  domainId           String
+  domain             Domain           @relation(fields: [domainId], references: [id])
+  applicationCycleId String
+  applicationCycle   ApplicationCycle @relation(fields: [applicationCycleId], references: [id])
+
+  @@id([domainId, applicationCycleId])
+}
+
+// Indicates that a specific version of a challenge is in use for an application cycle
+model ChallengeVersionApplicationCycle {
+  challengeVersionId String
+  challengeVersion   ChallengeVersion @relation(fields: [challengeVersionId], references: [id])
+  applicationCycleId String
+  applicationCycle   ApplicationCycle @relation(fields: [applicationCycleId], references: [id])
+
+  @@id([challengeVersionId, applicationCycleId])
 }
 
 
