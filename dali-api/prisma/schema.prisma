@@ -55,7 +55,10 @@ model ApplicationCycle {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  term      String
+  // Human-readable label (e.g. "Fall 2026"). No enforced format — cycles may
+  // be non-standard (e.g. only one domain hiring). Dates are tracked via
+  // ApplicationCycleStatusUpdate rather than stored directly here.
+  name      String
 
   statusUpdates        ApplicationCycleStatusUpdate[]
   applications         Application[]
@@ -63,6 +66,9 @@ model ApplicationCycle {
   challengeVersions    ChallengeVersionApplicationCycle[]
 }
 
+// Applicant-initiated status changes only. DALI-initiated outcomes (interview,
+// offer, rejection) are tracked in a separate decisions table to record who
+// made the decision and whether it has been communicated to the applicant.
 enum ApplicationStatus {
   Draft
   Submitted
@@ -87,6 +93,8 @@ model Application {
 
   // answers: map of question UUID key -> answer value (JSON). Saved incrementally
   // as the applicant fills out the form; finalized on submission.
+  // v1 supports text-based answers only. File upload questions will be handled
+  // in a future version via a separate attachments table.
   answers   Json
 
   userId                   String
@@ -101,6 +109,8 @@ model Application {
   domainApplications       DomainApplication[]
 }
 
+// Domain is not stored directly — it is derivable via challengeVersion.domain.
+// Every DomainApplication is tied to a specific ChallengeVersion, which belongs to a Domain.
 model DomainApplication {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
@@ -180,6 +190,11 @@ model ChallengeVersion {
   applicationCycles    ChallengeVersionApplicationCycle[]
 }
 
+// Lifecycle of an application cycle from the DALI side:
+//   Draft             — hiring leads are writing questions; not yet visible to applicants
+//   Open              — accepting submissions from applicants
+//   UnderReview       — submission deadline has passed; decisions pending
+//   DecisionsReleased — all applicants have been notified of outcomes
 enum ApplicationCycleStatus {
   Draft
   Open
