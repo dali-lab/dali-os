@@ -10,5 +10,12 @@ export default defineConfig({
   server: {
     port: 3001,
     host: "0.0.0.0",
+    cors: {
+      origin: [
+        "http://localhost:5173",
+        process.env.FRONTEND_URL ?? "",
+      ].filter(Boolean),
+      credentials: true,
+    },
   },
 });
