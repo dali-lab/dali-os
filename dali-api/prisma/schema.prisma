@@ -11,22 +11,21 @@ datasource db {
 }
 
 model User {
-
   // unique identifier
-  id            String   @id @default(cuid())
+  id String @id @default(cuid())
 
   // metadata
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // all nullable, but at least one of these must be non-null
-  netId         String?  @unique  // Dartmouth SSO
-  daliEmail     String?  @unique  // DALI Google
-  dartmouthEmail String?  @unique  // Dartmouth Google OAuth
+  netId          String? @unique // Dartmouth SSO
+  daliEmail      String? @unique // DALI Google
+  dartmouthEmail String? @unique // Dartmouth Google OAuth
 
   // profile
-  firstName     String
-  lastName      String
+  firstName String
+  lastName  String
 
   daliMember                    DALIMember?
   applicationCycleStatusUpdates ApplicationCycleStatusUpdate[]
@@ -34,7 +33,6 @@ model User {
   challengeVersions             ChallengeVersion[]
   applications                  Application[]
   applicationStatusUpdates      ApplicationStatusUpdate[]
-
 }
 
 // A DALI lab member. userId is optional because a member may be known (e.g. via daliEmail)
@@ -44,10 +42,10 @@ model DALIMember {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  userId    String?  @unique
-  user      User?    @relation(fields: [userId], references: [id])
+  userId String? @unique
+  user   User?   @relation(fields: [userId], references: [id])
 
-  daliEmail String?  @unique
+  daliEmail String? @unique
 }
 
 model ApplicationCycle {
@@ -58,12 +56,12 @@ model ApplicationCycle {
   // Human-readable label (e.g. "Fall 2026"). No enforced format — cycles may
   // be non-standard (e.g. only one domain hiring). Dates are tracked via
   // ApplicationCycleStatusUpdate rather than stored directly here.
-  name      String
+  name String
 
-  statusUpdates        ApplicationCycleStatusUpdate[]
-  applications         Application[]
-  domains              DomainApplicationCycle[]
-  challengeVersions    ChallengeVersionApplicationCycle[]
+  statusUpdates     ApplicationCycleStatusUpdate[]
+  applications      Application[]
+  domains           DomainApplicationCycle[]
+  challengeVersions ChallengeVersionApplicationCycle[]
 }
 
 // Applicant-initiated status changes only. DALI-initiated outcomes (interview,
@@ -81,9 +79,9 @@ model ApplicationStatusUpdate {
 
   newStatus     ApplicationStatus
   applicationId String
-  application   Application @relation(fields: [applicationId], references: [id])
+  application   Application       @relation(fields: [applicationId], references: [id])
   userId        String
-  user          User        @relation(fields: [userId], references: [id])
+  user          User              @relation(fields: [userId], references: [id])
 }
 
 model Application {
@@ -95,7 +93,7 @@ model Application {
   // as the applicant fills out the form; finalized on submission.
   // v1 supports text-based answers only. File upload questions will be handled
   // in a future version via a separate attachments table.
-  answers   Json
+  answers Json
 
   userId                   String
   user                     User                   @relation(fields: [userId], references: [id])
@@ -105,8 +103,8 @@ model Application {
   applicationFormVersionId String
   applicationFormVersion   ApplicationFormVersion @relation(fields: [applicationFormVersionId], references: [id])
 
-  statusUpdates            ApplicationStatusUpdate[]
-  domainApplications       DomainApplication[]
+  statusUpdates      ApplicationStatusUpdate[]
+  domainApplications DomainApplication[]
 }
 
 // Domain is not stored directly — it is derivable via challengeVersion.domain.
@@ -117,7 +115,7 @@ model DomainApplication {
   updatedAt DateTime @updatedAt
 
   // answers: same shape as Application.answers, keyed by question UUID from the challenge version.
-  answers   Json
+  answers Json
 
   applicationId      String
   application        Application      @relation(fields: [applicationId], references: [id])
@@ -130,7 +128,7 @@ model ApplicationForm {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  versions  ApplicationFormVersion[]
+  versions ApplicationFormVersion[]
 }
 
 // Immutable snapshot of an application form. Never update rows in this table —
@@ -147,7 +145,7 @@ model ApplicationFormVersion {
   createdById       String
   createdBy         User            @relation(fields: [createdById], references: [id])
 
-  applications      Application[]
+  applications Application[]
 }
 
 model Challenge {
@@ -155,9 +153,9 @@ model Challenge {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  name      String
+  name String
 
-  versions  ChallengeVersion[]
+  versions ChallengeVersion[]
 }
 
 model Domain {
@@ -165,10 +163,10 @@ model Domain {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  name      String
+  name String
 
-  challengeVersions    ChallengeVersion[]
-  applicationCycles    DomainApplicationCycle[]
+  challengeVersions ChallengeVersion[]
+  applicationCycles DomainApplicationCycle[]
 }
 
 // Immutable snapshot of a domain challenge. Never update rows in this table —
@@ -178,16 +176,16 @@ model ChallengeVersion {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
 
-  questions    Json
-  challengeId  String
-  challenge    Challenge @relation(fields: [challengeId], references: [id])
-  domainId     String
-  domain       Domain    @relation(fields: [domainId], references: [id])
-  createdById  String
-  createdBy    User      @relation(fields: [createdById], references: [id])
+  questions   Json
+  challengeId String
+  challenge   Challenge @relation(fields: [challengeId], references: [id])
+  domainId    String
+  domain      Domain    @relation(fields: [domainId], references: [id])
+  createdById String
+  createdBy   User      @relation(fields: [createdById], references: [id])
 
-  domainApplications   DomainApplication[]
-  applicationCycles    ChallengeVersionApplicationCycle[]
+  domainApplications DomainApplication[]
+  applicationCycles  ChallengeVersionApplicationCycle[]
 }
 
 // Lifecycle of an application cycle from the DALI side:
@@ -232,5 +230,3 @@ model ChallengeVersionApplicationCycle {
 
   @@id([challengeVersionId, applicationCycleId])
 }
-
-
