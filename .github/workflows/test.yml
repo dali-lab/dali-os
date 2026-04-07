@@ -1,6 +1,7 @@
 name: Test dali-api
 
 on:
+  push:
   pull_request:
 
 jobs:
