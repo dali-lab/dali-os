@@ -1,22 +1,7 @@
 import type { EntryContext } from "react-router";
 import { ServerRouter } from "react-router";
 import { renderToString } from "react-dom/server";
-
-const ALLOWED_ORIGINS = [
-  "http://localhost:5173",
-  process.env.FRONTEND_URL,
-].filter(Boolean) as string[];
-
-function corsHeaders(request: Request): Record<string, string> {
-  const origin = request.headers.get("Origin") ?? "";
-  if (!ALLOWED_ORIGINS.includes(origin)) return {};
-  return {
-    "Access-Control-Allow-Origin": origin,
-    "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    "Access-Control-Allow-Credentials": "true",
-  };
-}
+import { corsHeaders } from "~/lib/cors";
 
 export default async function handleRequest(
   request: Request,

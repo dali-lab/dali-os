@@ -2,8 +2,12 @@ import type { Route } from "./+types/oauth.revoke";
 import { revokeToken } from "~/lib/oauth";
 
 import { clearTokenCookies, parseRefreshToken } from "~/lib/cookies";
+import { withCors, handlePreflight } from "~/lib/cors";
 
 export async function action({ request }: Route.ActionArgs) {
+  const preflight = handlePreflight(request);
+  if (preflight) return preflight;
+
   // read refresh token from cookie first, fall back to body
   let token: string | undefined = parseRefreshToken(request) ?? undefined;
 
@@ -25,5 +29,5 @@ export async function action({ request }: Route.ActionArgs) {
 
   const res = Response.json({});
   clearTokenCookies(res.headers);
-  return res;
+  return withCors(request, res);
 }

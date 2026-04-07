@@ -8,6 +8,7 @@ import {
 
 import { setTokenCookies, parseRefreshToken } from "~/lib/cookies";
 import type { UserInfo } from "~/lib/oauth";
+import { withCors, handlePreflight } from "~/lib/cors";
 
 async function parseBody(request: Request): Promise<Record<string, string>> {
   const contentType = request.headers.get("Content-Type") ?? "";
@@ -20,6 +21,9 @@ async function parseBody(request: Request): Promise<Record<string, string>> {
 }
 
 export async function action({ request }: Route.ActionArgs) {
+  const preflight = handlePreflight(request);
+  if (preflight) return preflight;
+
   const body = await parseBody(request);
   const grantType = body.grant_type;
 
@@ -43,7 +47,7 @@ export async function action({ request }: Route.ActionArgs) {
         provider === "cas" ? "dartmouth" : (accountType ?? "member");
       const tokens = await issueTokens(userId, authType);
 
-      return tokenResponse(tokens);
+      return withCors(request, tokenResponse(tokens));
     }
 
     if (grantType === "refresh_token") {
@@ -54,7 +58,7 @@ export async function action({ request }: Route.ActionArgs) {
       }
 
       const tokens = await refreshTokens(refreshToken);
-      return tokenResponse(tokens);
+      return withCors(request, tokenResponse(tokens));
     }
 
     throw new OAuthError(
@@ -63,7 +67,7 @@ export async function action({ request }: Route.ActionArgs) {
     );
   } catch (err) {
     if (err instanceof OAuthError) {
-      return Response.json(err.toJSON(), { status: 400 });
+      return withCors(request, Response.json(err.toJSON(), { status: 400 }));
     }
     throw err;
   }
