@@ -1,6 +1,7 @@
 import type { EntryContext } from "react-router";
 import { ServerRouter } from "react-router";
-import { renderToString } from "react-dom/server";
+import { renderToPipeableStream } from "react-dom/server";
+import { PassThrough } from "node:stream";
 
 export default async function handleRequest(
   request: Request,
@@ -8,14 +9,31 @@ export default async function handleRequest(
   responseHeaders: Headers,
   entryContext: EntryContext,
 ) {
-  const html = renderToString(
-    <ServerRouter context={entryContext} url={request.url} />,
-  );
+  return new Promise<Response>((resolve, reject) => {
+    const { pipe } = renderToPipeableStream(
+      <ServerRouter context={entryContext} url={request.url} />,
+      {
+        onShellReady() {
+          const body = new PassThrough();
+          const chunks: Buffer[] = [];
 
-  responseHeaders.set("Content-Type", "text/html");
+          body.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+          body.on("end", () => {
+            const html = `<!DOCTYPE html>${Buffer.concat(chunks).toString("utf-8")}`;
+            responseHeaders.set("Content-Type", "text/html");
+            resolve(
+              new Response(html, {
+                status: responseStatusCode,
+                headers: responseHeaders,
+              })
+            );
+          });
+          body.on("error", reject);
 
-  return new Response(`<!DOCTYPE html>${html}`, {
-    status: responseStatusCode,
-    headers: responseHeaders,
+          pipe(body);
+        },
+        onShellError: reject,
+      }
+    );
   });
 }
