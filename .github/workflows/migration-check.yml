@@ -25,7 +25,7 @@ jobs:
           cd dali-api
           npx prisma migrate diff \
             --from-migrations ./prisma/migrations \
-            --to-schema-datamodel ./prisma/schema.prisma \
+            --to-schema ./prisma/schema.prisma \
             --exit-code
         env:
           DATABASE_URL: "postgresql://dummy:dummy@localhost:5432/dummy"
