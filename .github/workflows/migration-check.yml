@@ -46,4 +46,4 @@ jobs:
           SHADOW_DATABASE_URL: "postgresql://prisma:prisma@localhost:5432/prisma_shadow"
 
       - name: Check migration safety
-        run: npx @flvmnt/pgfence analyze --ci --max-risk medium "dali-api/prisma/migrations/**/*.sql"
+        run: npx @flvmnt/pgfence analyze --ci --max-risk medium dali-api/prisma/migrations/**/*.sql
