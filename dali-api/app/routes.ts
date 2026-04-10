@@ -23,4 +23,15 @@ export default [
   route("admin/challenges/:id", "routes/admin.challenges.$id.tsx"),
   route("admin/rubrics", "routes/admin.rubrics.tsx"),
   route("admin/rubrics/:id", "routes/admin.rubrics.$id.tsx"),
+
+  // OAuth endpoints
+  route("oauth/authorize", "routes/oauth.authorize.ts"),
+  route("oauth/callback/google", "routes/oauth.callback.google.ts"),
+  route("oauth/callback/cas", "routes/oauth.callback.cas.ts"),
+  route("oauth/token", "routes/oauth.token.ts"),
+  route("oauth/revoke", "routes/oauth.revoke.ts"),
+
+  // Authenticated API endpoints
+  route("auth/link-member", "routes/auth.link-member.ts"),
+  route("users/:id", "routes/users.$id.ts"),
 ] satisfies RouteConfig;

@@ -1,15 +1,13 @@
 import { useEffect, useState, useRef } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router';
 import { motion } from 'framer-motion';
 import Navbar from '@/components/Navbar';
+import { getUser, fetchWithAuth } from '@/lib/auth';
+import type { UserInfo } from '@/lib/auth';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface SessionAccount {
-  id: string;
-  email: string;
-  firstName?: string;
-  lastName?: string;
+interface SessionAccount extends UserInfo {
   name?: string;
   picture?: string;
   isMember?: boolean;
@@ -99,16 +97,10 @@ const STATUS_LABELS: Record<AppStatus, string> = {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function getSession(): { account: SessionAccount; type: string; token: string } | null {
-  try {
-    const token = sessionStorage.getItem('access_token');
-    const type = sessionStorage.getItem('account_type');
-    const raw = sessionStorage.getItem('account');
-    if (!token || !type || !raw) return null;
-    return { account: JSON.parse(raw), type, token };
-  } catch {
-    return null;
-  }
+function getSession(): { account: SessionAccount; type: string } | null {
+  const user = getUser();
+  if (!user) return null;
+  return { account: user as SessionAccount, type: user.type };
 }
 
 // ─── Question renderer ────────────────────────────────────────────────────────
@@ -208,13 +200,11 @@ function QuestionField({
 function ApplicationForm({
   draft,
   formQuestions,
-  token,
   onSaved,
   onSubmitted,
 }: {
   draft: Application;
   formQuestions: FormQuestions;
-  token: string;
   onSaved: (app: Application) => void;
   onSubmitted: (app: Application) => void;
 }) {
@@ -254,9 +244,9 @@ function ApplicationForm({
   async function doSave(overrides?: Partial<{ roles: string[]; portfolioUrl: string; resumeUrl: string; answers: Record<string, string | string[]> }>) {
     setSaving(true);
     try {
-      const res = await fetch(`${DALI_DB_URL}/applications/${draft.id}`, {
+      const res = await fetchWithAuth(`${DALI_DB_URL}/applications/${draft.id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           rolesApplied: overrides?.roles ?? roles,
           portfolioUrl: (overrides?.portfolioUrl ?? portfolioUrl) || null,
@@ -283,9 +273,8 @@ function ApplicationForm({
     setSubmitting(true);
     try {
       await doSave();
-      const res = await fetch(`${DALI_DB_URL}/applications/${draft.id}/submit`, {
+      const res = await fetchWithAuth(`${DALI_DB_URL}/applications/${draft.id}/submit`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error ?? 'Submission failed.'); return; }
@@ -448,9 +437,7 @@ export default function Account() {
     });
 
     if (s.type === 'dartmouth' || s.type === 'member') {
-      fetch(`${DALI_DB_URL}/users/${s.account.id}`, {
-        headers: { Authorization: `Bearer ${s.token}` },
-      })
+      fetchWithAuth(`${DALI_DB_URL}/users/${s.account.id}`)
         .then(r => r.json())
         .then(data => {
           const apps: Application[] = data.applications ?? [];
@@ -468,8 +455,6 @@ export default function Account() {
   }, []);
 
   const handleLinkMember = async () => {
-    const token = sessionStorage.getItem('access_token');
-    if (!token) return;
     if (!linkEmail.endsWith('@dartmouth.edu')) {
       setLinkError('Please enter your @dartmouth.edu email.');
       return;
@@ -477,19 +462,15 @@ export default function Account() {
     setLinking(true);
     setLinkError(null);
     try {
-      const res = await fetch(`${DALI_DB_URL}/auth/link-member`, {
+      const res = await fetchWithAuth(`${DALI_DB_URL}/auth/link-member`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dartmouthEmail: linkEmail }),
       });
       const data = await res.json();
       if (!res.ok) { setLinkError(data.error ?? 'Linking failed. Please try again.'); return; }
-      const rawAccount = sessionStorage.getItem('account');
-      if (rawAccount) {
-        const updated = { ...JSON.parse(rawAccount), dartmouthLinked: true };
-        sessionStorage.setItem('account', JSON.stringify(updated));
-        setSession(getSession());
-      }
+      // Re-read user from cookie (will be refreshed on next token cycle)
+      setSession(getSession());
     } catch {
       setLinkError('Network error. Please try again.');
     } finally {
@@ -497,20 +478,18 @@ export default function Account() {
     }
   };
 
-  const handleLogout = () => {
-    sessionStorage.removeItem('access_token');
-    sessionStorage.removeItem('account_type');
-    sessionStorage.removeItem('account');
-    fetch(`${DALI_DB_URL}/auth/logout`, { method: 'POST', credentials: 'include' }).catch(() => {});
+  const handleLogout = async () => {
+    const { logout } = await import('@/lib/auth');
+    await logout();
     navigate('/');
   };
 
   async function handleStartApplication() {
     const s = getSession();
     if (!s || !appOpenStatus?.termId) return;
-    const res = await fetch(`${DALI_DB_URL}/applications`, {
+    const res = await fetchWithAuth(`${DALI_DB_URL}/applications`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.token}` },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId: s.account.id, termId: appOpenStatus.termId }),
     });
     const data = await res.json();
@@ -524,7 +503,7 @@ export default function Account() {
 
   if (!session) return null;
 
-  const { account, type, token } = session;
+  const { account, type } = session;
   const displayName = account.firstName
     ? `${account.firstName} ${account.lastName ?? ''}`.trim()
     : account.name ?? account.email;
@@ -649,7 +628,6 @@ export default function Account() {
                         <ApplicationForm
                           draft={draft}
                           formQuestions={formQuestions}
-                          token={token}
                           onSaved={updated => setApplications(prev => prev.map(a => a.id === updated.id ? updated : a))}
                           onSubmitted={updated => {
                             setApplications(prev => prev.map(a => a.id === updated.id ? updated : a));

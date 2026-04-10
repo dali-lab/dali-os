@@ -3,7 +3,7 @@
 
 generator client {
   provider = "prisma-client"
-  output   = "../generated/prisma"
+  output   = "../app/generated/prisma"
 }
 
 datasource db {
@@ -33,6 +33,8 @@ model User {
   challengeVersions             ChallengeVersion[]
   applications                  Application[]
   applicationStatusUpdates      ApplicationStatusUpdate[]
+  oauthSessions                 OAuthSession[]
+  refreshTokens                 RefreshToken[]
 }
 
 // A DALI lab member. userId is optional because a member may be known (e.g. via daliEmail)
@@ -229,4 +231,43 @@ model ChallengeVersionApplicationCycle {
   applicationCycle   ApplicationCycle @relation(fields: [applicationCycleId], references: [id])
 
   @@id([challengeVersionId, applicationCycleId])
+}
+
+model OAuthSession {
+  id String @id @default(cuid())
+
+  // pkce fields
+  codeChallenge       String
+  codeChallengeMethod String @default("S256")
+
+  // oAuth params preserved across IDP redirect
+  redirectUri String
+  state       String
+  provider    String // "google" | "cas"
+  accountType String? // "member" | "partner" (Google only)
+
+  // set after IDP authenticates user
+  userId            String?
+  authorizationCode String? @unique
+  exchanged         Boolean @default(false)
+
+  // for chained Google → CAS account linking
+  linkUserId String?
+
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique // sha-256 token hash
+  userId    String
+  family    String // rotation detection
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
