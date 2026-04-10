@@ -1,6 +1,9 @@
 app = "dali-api-prod"
 primary_region = "iad"
 
+[deploy]
+  release_command = "npx prisma migrate deploy"
+
 [build]
 
 [http_service]

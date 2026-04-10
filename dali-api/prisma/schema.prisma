@@ -48,6 +48,8 @@ model DALIMember {
   user   User?   @relation(fields: [userId], references: [id])
 
   daliEmail String? @unique
+
+  domainLeadAssignments DomainLeadAssignment[]
 }
 
 model ApplicationCycle {
@@ -59,6 +61,10 @@ model ApplicationCycle {
   // be non-standard (e.g. only one domain hiring). Dates are tracked via
   // ApplicationCycleStatusUpdate rather than stored directly here.
   name String
+
+  // The form version applicants will fill out for this cycle
+  formVersionId String?
+  formVersion   ApplicationFormVersion? @relation(fields: [formVersionId], references: [id])
 
   statusUpdates     ApplicationCycleStatusUpdate[]
   applications      Application[]
@@ -147,7 +153,8 @@ model ApplicationFormVersion {
   createdById       String
   createdBy         User            @relation(fields: [createdById], references: [id])
 
-  applications Application[]
+  applications    Application[]
+  applicationCycles ApplicationCycle[]
 }
 
 model Challenge {
@@ -167,8 +174,9 @@ model Domain {
 
   name String
 
-  challengeVersions ChallengeVersion[]
-  applicationCycles DomainApplicationCycle[]
+  challengeVersions     ChallengeVersion[]
+  applicationCycles     DomainApplicationCycle[]
+  domainLeadAssignments DomainLeadAssignment[]
 }
 
 // Immutable snapshot of a domain challenge. Never update rows in this table —
@@ -191,14 +199,14 @@ model ChallengeVersion {
 }
 
 // Lifecycle of an application cycle from the DALI side:
-//   Draft             — hiring leads are writing questions; not yet visible to applicants
-//   Open              — accepting submissions from applicants
-//   UnderReview       — submission deadline has passed; decisions pending
-//   DecisionsReleased — all applicants have been notified of outcomes
+//   Draft             — cycle being set up by hiring lead and domain leads
+//   Open              — applications open for submission
+//   Closed            — submissions closed; hiring team reviewing
+//   DecisionsReleased — decisions communicated to applicants
 enum ApplicationCycleStatus {
   Draft
   Open
-  UnderReview
+  Closed
   DecisionsReleased
 }
 
@@ -219,6 +227,9 @@ model DomainApplicationCycle {
   domain             Domain           @relation(fields: [domainId], references: [id])
   applicationCycleId String
   applicationCycle   ApplicationCycle @relation(fields: [applicationCycleId], references: [id])
+
+  // True once the domain lead has explicitly confirmed their challenge config is ready
+  isReady Boolean @default(false)
 
   @@id([domainId, applicationCycleId])
 }
@@ -270,4 +281,15 @@ model RefreshToken {
   createdAt DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Which domains a DALIMember leads (permanent assignment, not cycle-scoped)
+model DomainLeadAssignment {
+  id        String     @id @default(cuid())
+  createdAt DateTime   @default(now())
+
+  memberId  String
+  member    DALIMember @relation(fields: [memberId], references: [id])
+  domainId  String
+  domain    Domain     @relation(fields: [domainId], references: [id])
 }
