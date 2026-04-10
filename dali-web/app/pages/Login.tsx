@@ -101,7 +101,7 @@ export default function Login() {
       (async () => {
         try {
           await exchangeCodeForTokens(code);
-          navigate("/account", { replace: true });
+          navigate("/portal", { replace: true });
         } catch (err: any) {
           setError(err.message);
         }
