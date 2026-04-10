@@ -412,7 +412,7 @@ export const mockApplications: Application[] = [
   },
   // Mentor review apps (for mentor/domain lead views)
   {
-    id: 'app-mentor-review-1',
+    id: '1',
     userId: 'user-4',
     applicationCycleId: 'cycle-interview-invited',
     applicationFormVersionId: 'form-v1',
@@ -453,7 +453,7 @@ export const mockApplications: Application[] = [
     updatedAt: '2026-03-10T10:00:00Z',
   },
   {
-    id: 'app-mentor-review-2',
+    id: '2',
     userId: 'user-5',
     applicationCycleId: 'cycle-interview-invited',
     applicationFormVersionId: 'form-v1',
