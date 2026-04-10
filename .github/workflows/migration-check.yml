@@ -2,8 +2,6 @@ name: Migration Safety Check
 
 on:
   pull_request:
-    paths:
-      - 'dali-api/prisma/**'
 
 jobs:
   migration-check:
