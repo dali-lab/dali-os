@@ -1,6 +1,8 @@
-import { PrismaClient } from "../app/generated/prisma/index.js";
+import { PrismaClient } from "../app/generated/prisma/client.js";
+import { PrismaPg } from "@prisma/adapter-pg";
 
-const prisma = new PrismaClient();
+const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
+const prisma = new PrismaClient({ adapter });
 
 async function main() {
   // ── Admin user (creates forms, challenges, and cycle) ──────────────────────
@@ -125,7 +127,34 @@ async function main() {
     },
   ];
 
-  const [designCv, engCv, pmCv] = await Promise.all([
+  const engQuestionsV2 = [
+    {
+      key: "eq2-00000000-0000-0000-0000-000000000001",
+      type: "text",
+      required: true,
+      data: { label: "Walk us through a system you designed from scratch. What tradeoffs did you make?" },
+    },
+    {
+      key: "eq2-00000000-0000-0000-0000-000000000002",
+      type: "text",
+      required: true,
+      data: { label: "Link to a project you built. What's one thing you'd do differently today?" },
+    },
+    {
+      key: "eq2-00000000-0000-0000-0000-000000000003",
+      type: "text",
+      required: true,
+      data: { label: "Describe a bug that took you a long time to track down. How did you find it?" },
+    },
+    {
+      key: "eq2-00000000-0000-0000-0000-000000000004",
+      type: "text",
+      required: false,
+      data: { label: "What's a technology or tool you've been exploring lately?" },
+    },
+  ];
+
+  const [designCv, engCv, engCv2, pmCv] = await Promise.all([
     prisma.challengeVersion.upsert({
       where: { id: "cv-design" },
       update: {},
@@ -143,6 +172,17 @@ async function main() {
       create: {
         id: "cv-eng",
         questions: engQuestions,
+        challengeId: engChallenge.id,
+        domainId: engDomain.id,
+        createdById: admin.id,
+      },
+    }),
+    prisma.challengeVersion.upsert({
+      where: { id: "cv-eng-v2" },
+      update: {},
+      create: {
+        id: "cv-eng-v2",
+        questions: engQuestionsV2,
         challengeId: engChallenge.id,
         domainId: engDomain.id,
         createdById: admin.id,
@@ -227,6 +267,7 @@ async function main() {
         create: [
           { newStatus: "Draft", userId: admin.id },
           { newStatus: "Open", userId: admin.id },
+          { newStatus: "Closed", userId: admin.id },
         ],
       },
     },
@@ -379,13 +420,41 @@ async function main() {
     },
   });
 
+  // ── Domain lead user ──────────────────────────────────────────────────────
+  const engLead = await prisma.user.upsert({
+    where: { netId: "f007el1" },
+    update: {},
+    create: {
+      netId: "f007el1",
+      daliEmail: "eng.lead@dali.dartmouth.edu",
+      firstName: "Engineering",
+      lastName: "Lead",
+      daliMember: { create: { daliEmail: "eng.lead@dali.dartmouth.edu" } },
+    },
+  });
+
+  const engLeadMember = await prisma.dALIMember.findUniqueOrThrow({
+    where: { daliEmail: "eng.lead@dali.dartmouth.edu" },
+  });
+
+  await prisma.domainLeadAssignment.upsert({
+    where: { id: "dla-eng-lead" },
+    update: {},
+    create: {
+      id: "dla-eng-lead",
+      memberId: engLeadMember.id,
+      domainId: engDomain.id,
+    },
+  });
+
   console.log("Seed complete:");
   console.log(`  Admin: ${admin.firstName} ${admin.lastName}`);
   console.log(`  Domains: ${[designDomain, engDomain, pmDomain].map((d) => d.name).join(", ")}`);
-  console.log(`  Cycle: ${cycle.name}`);
+  console.log(`  Cycle: ${cycle.name} (Closed)`);
   console.log(
     `  Applications: ${aliceApp.id} (submitted), ${bobApp.id} (submitted), ${carolApp.id} (draft)`
   );
+  console.log(`  Domain lead: ${engLead.firstName} ${engLead.lastName} → Engineering`);
 }
 
 main()
