@@ -1,6 +1,9 @@
 app = "dali-api-dev"
 primary_region = "iad"
 
+[deploy]
+  release_command = "npx prisma db push --force-reset && npx prisma db seed"
+
 [build]
 
 [http_service]

@@ -462,15 +462,8 @@ async function main() {
 
   console.log("Seed complete:");
   console.log(`  Admin: ${admin.firstName} ${admin.lastName}`);
-<<<<<<< feature/hiring-cycle-dashboard
   console.log(`  Domains: ${[designDomain, engDomain, pmDomain].map((d) => d.name).join(", ")}`);
   console.log(`  Cycle: ${cycle.name} (Closed)`);
-=======
-  console.log(
-    `  Domains: ${[designDomain, engDomain, pmDomain].map((d) => d.name).join(", ")}`,
-  );
-  console.log(`  Cycle: ${cycle.name}`);
->>>>>>> dev
   console.log(
     `  Applications: ${aliceApp.id} (submitted), ${bobApp.id} (submitted), ${carolApp.id} (draft)`,
   );
