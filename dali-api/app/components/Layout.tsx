@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Link, useLocation } from 'react-router'
+import { Link, useLocation, useNavigate } from 'react-router'
 import {
   LayoutDashboard,
   FileText,
@@ -14,8 +14,16 @@ interface LayoutProps {
   viewMode: ViewMode
   setViewMode: (val: ViewMode) => void
 }
+const viewRoutes: Record<ViewMode, string> = {
+  applicant: '/',
+  mentor: '/mentor',
+  domainLead: '/domain-lead',
+  admin: '/admin',
+}
+
 export function Layout({ children, viewMode, setViewMode }: LayoutProps) {
   const location = useLocation()
+  const navigate = useNavigate()
   const user = viewMode === 'applicant' ? currentUser : adminUser
   const [showViewMenu, setShowViewMenu] = useState(false)
   const viewLabels: Record<ViewMode, string> = {
@@ -27,7 +35,7 @@ export function Layout({ children, viewMode, setViewMode }: LayoutProps) {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* Top Navigation */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-10 overflow-visible">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">
             <div className="flex items-center">
@@ -110,10 +118,10 @@ export function Layout({ children, viewMode, setViewMode }: LayoutProps) {
                 {showViewMenu && (
                   <>
                     <div
-                      className="fixed inset-0 z-10"
+                      className="fixed inset-0 z-20"
                       onClick={() => setShowViewMenu(false)}
                     ></div>
-                    <div className="absolute right-0 z-20 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 focus:outline-none">
+                    <div className="absolute right-0 z-30 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 focus:outline-none">
                       <div className="py-1" role="menu">
                         {(Object.keys(viewLabels) as ViewMode[]).map((mode) => (
                           <button
@@ -121,6 +129,7 @@ export function Layout({ children, viewMode, setViewMode }: LayoutProps) {
                             onClick={() => {
                               setViewMode(mode)
                               setShowViewMenu(false)
+                              navigate(viewRoutes[mode])
                             }}
                             className={`${viewMode === mode ? 'bg-gray-100 text-gray-900' : 'text-gray-700'} block w-full text-left px-4 py-2 text-sm hover:bg-gray-50`}
                             role="menuitem"
