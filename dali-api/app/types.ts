@@ -102,9 +102,12 @@ export interface ApplicationFormVersion {
   questions: Question[]
 }
 
+export type ChallengeType = 'General' | 'UI/UX' | 'Fullstack' | 'Data' | 'AR/VR' | 'PM' | 'Engines'
+
 export interface ApplicationForm {
   id: string
   name: string
+  type: ChallengeType
   createdAt: string
   versions: ApplicationFormVersion[]
 }

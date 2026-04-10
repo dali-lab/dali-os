@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Outlet, useLocation } from 'react-router'
 import { Layout } from '~/components/Layout'
+import { FormsProvider } from '~/context/FormsContext'
 import type { ViewMode } from '~/types'
 
 function viewModeFromPath(pathname: string): ViewMode {
@@ -15,8 +16,10 @@ export default function AppLayoutRoute() {
   const [viewMode, setViewMode] = useState<ViewMode>(() => viewModeFromPath(location.pathname))
 
   return (
-    <Layout viewMode={viewMode} setViewMode={setViewMode}>
-      <Outlet />
-    </Layout>
+    <FormsProvider>
+      <Layout viewMode={viewMode} setViewMode={setViewMode}>
+        <Outlet />
+      </Layout>
+    </FormsProvider>
   )
 }
