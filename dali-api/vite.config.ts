@@ -7,6 +7,9 @@ export default defineConfig({
   resolve: {
     tsconfigPaths: true,
   },
+  ssr: {
+    external: ["@prisma/client", "@prisma/adapter-pg"],
+  },
   server: {
     port: 3001,
     host: "0.0.0.0",

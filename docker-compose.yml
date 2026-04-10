@@ -14,7 +14,7 @@ services:
     build:
       context: ./dali-api
       target: deps
-    command: sh -c "npx prisma generate && npx prisma migrate deploy && npm run dev & npx prisma studio --port 5555 --browser none & wait"
+    command: sh -c "npx prisma generate && npx prisma db push --force-reset && npx prisma db seed && npm run dev & npx prisma studio --port 5555 --browser none & wait"
     working_dir: /app
     ports:
       - "3001:3001"
