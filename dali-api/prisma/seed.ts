@@ -1,6 +1,8 @@
-import { PrismaClient } from "../app/generated/prisma/index.js";
+import { PrismaClient } from "../app/generated/prisma/client.js";
+import { PrismaPg } from "@prisma/adapter-pg";
 
-const prisma = new PrismaClient();
+const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
+const prisma = new PrismaClient({ adapter });
 
 async function main() {
   // ── Admin user (creates forms, challenges, and cycle) ──────────────────────
@@ -60,13 +62,17 @@ async function main() {
       key: "dq-00000000-0000-0000-0000-000000000001",
       type: "text",
       required: true,
-      data: { label: "Walk us through your design process for a recent project." },
+      data: {
+        label: "Walk us through your design process for a recent project.",
+      },
     },
     {
       key: "dq-00000000-0000-0000-0000-000000000002",
       type: "text",
       required: true,
-      data: { label: "Share a link to your portfolio or a sample of your work." },
+      data: {
+        label: "Share a link to your portfolio or a sample of your work.",
+      },
     },
     {
       key: "dq-00000000-0000-0000-0000-000000000003",
@@ -84,14 +90,18 @@ async function main() {
       key: "eq-00000000-0000-0000-0000-000000000001",
       type: "text",
       required: true,
-      data: { label: "Describe a technical challenge you solved and how you approached it." },
+      data: {
+        label:
+          "Describe a technical challenge you solved and how you approached it.",
+      },
     },
     {
       key: "eq-00000000-0000-0000-0000-000000000002",
       type: "text",
       required: true,
       data: {
-        label: "Link to a GitHub repo or code sample you're proud of. What would you change now?",
+        label:
+          "Link to a GitHub repo or code sample you're proud of. What would you change now?",
       },
     },
     {
@@ -120,7 +130,8 @@ async function main() {
       type: "text",
       required: true,
       data: {
-        label: "Describe a time you had to make a decision with limited information. What happened?",
+        label:
+          "Describe a time you had to make a decision with limited information. What happened?",
       },
     },
   ];
@@ -276,7 +287,8 @@ async function main() {
       answers: {
         "fq-00000000-0000-0000-0000-000000000001":
           "DALI's focus on real-world impact and cross-functional teams is exactly the environment I want to grow in.",
-        "fq-00000000-0000-0000-0000-000000000002": "Sophomore, Computer Science",
+        "fq-00000000-0000-0000-0000-000000000002":
+          "Sophomore, Computer Science",
         "fq-00000000-0000-0000-0000-000000000003": "I'm also a TA for CS 10.",
       },
       userId: alice.id,
@@ -315,7 +327,8 @@ async function main() {
       answers: {
         "fq-00000000-0000-0000-0000-000000000001":
           "I've admired DALI projects on campus for two years and want to contribute to products that reach real users.",
-        "fq-00000000-0000-0000-0000-000000000002": "Junior, Studio Art + Government",
+        "fq-00000000-0000-0000-0000-000000000002":
+          "Junior, Studio Art + Government",
       },
       userId: bob.id,
       applicationCycleId: cycle.id,
@@ -333,7 +346,8 @@ async function main() {
             answers: {
               "dq-00000000-0000-0000-0000-000000000001":
                 "I start with stakeholder interviews, then low-fi sketches before moving to Figma.",
-              "dq-00000000-0000-0000-0000-000000000002": "figma.com/file/bob-portfolio",
+              "dq-00000000-0000-0000-0000-000000000002":
+                "figma.com/file/bob-portfolio",
               "dq-00000000-0000-0000-0000-000000000003":
                 "User testing revealed our icon set was culturally ambiguous for international students, so we switched to labelled buttons.",
             },
@@ -359,7 +373,8 @@ async function main() {
     create: {
       id: "app-carol",
       answers: {
-        "fq-00000000-0000-0000-0000-000000000001": "I want to work on products with real impact.",
+        "fq-00000000-0000-0000-0000-000000000001":
+          "I want to work on products with real impact.",
         "fq-00000000-0000-0000-0000-000000000002": "Senior, Computer Science",
       },
       userId: carol.id,
@@ -381,10 +396,12 @@ async function main() {
 
   console.log("Seed complete:");
   console.log(`  Admin: ${admin.firstName} ${admin.lastName}`);
-  console.log(`  Domains: ${[designDomain, engDomain, pmDomain].map((d) => d.name).join(", ")}`);
+  console.log(
+    `  Domains: ${[designDomain, engDomain, pmDomain].map((d) => d.name).join(", ")}`,
+  );
   console.log(`  Cycle: ${cycle.name}`);
   console.log(
-    `  Applications: ${aliceApp.id} (submitted), ${bobApp.id} (submitted), ${carolApp.id} (draft)`
+    `  Applications: ${aliceApp.id} (submitted), ${bobApp.id} (submitted), ${carolApp.id} (draft)`,
   );
 }
 

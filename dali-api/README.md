@@ -34,6 +34,14 @@ npm run dev
 
 Your application will be available at `http://localhost:5173`.
 
+### Seeding the Database
+
+With Docker Compose running, seed the database with sample data:
+
+```bash
+docker compose exec api npx tsx prisma/seed.ts
+```
+
 ## Building for Production
 
 Create a production build:
