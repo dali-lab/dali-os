@@ -61,15 +61,8 @@ export function Layout({ children, viewMode, setViewMode }: LayoutProps) {
                       Cycles
                     </Link>
                     <Link
-                      to="/admin/forms"
-                      className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${location.pathname.startsWith('/admin/forms') ? 'border-blue-500 text-gray-900' : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'}`}
-                    >
-                      <FileText className="w-4 h-4 mr-2" />
-                      Forms
-                    </Link>
-                    <Link
-                      to="/admin/challenges"
-                      className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${location.pathname.startsWith('/admin/challenges') ? 'border-blue-500 text-gray-900' : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'}`}
+                      to="/challenges"
+                      className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${location.pathname.startsWith('/challenges') ? 'border-blue-500 text-gray-900' : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'}`}
                     >
                       <Trophy className="w-4 h-4 mr-2" />
                       Challenges
@@ -93,13 +86,22 @@ export function Layout({ children, viewMode, setViewMode }: LayoutProps) {
                   </Link>
                 )}
                 {viewMode === 'domainLead' && (
-                  <Link
-                    to="/domain-lead"
-                    className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${location.pathname.startsWith('/domain-lead') ? 'border-blue-500 text-gray-900' : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'}`}
-                  >
-                    <LayoutDashboard className="w-4 h-4 mr-2" />
-                    Dashboard
-                  </Link>
+                  <>
+                    <Link
+                      to="/domain-lead"
+                      className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${location.pathname.startsWith('/domain-lead') ? 'border-blue-500 text-gray-900' : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'}`}
+                    >
+                      <LayoutDashboard className="w-4 h-4 mr-2" />
+                      Dashboard
+                    </Link>
+                    <Link
+                      to="/challenges"
+                      className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${location.pathname.startsWith('/challenges') ? 'border-blue-500 text-gray-900' : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'}`}
+                    >
+                      <Trophy className="w-4 h-4 mr-2" />
+                      Challenges
+                    </Link>
+                  </>
                 )}
               </nav>
             </div>

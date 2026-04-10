@@ -102,8 +102,9 @@ export const applicationCycles: ApplicationCycle[] = [
 
 export const applicationForms: ApplicationForm[] = [
   {
-    id: 'form-1',
+    id: '1',
     name: 'General Application',
+    type: 'General' as const,
     createdAt: '2025-01-01T10:00:00Z',
     versions: [
       {
@@ -179,8 +180,9 @@ export const applicationForms: ApplicationForm[] = [
     ],
   },
   {
-    id: 'form-2',
+    id: '2',
     name: 'Short Application',
+    type: 'General' as const,
     createdAt: '2026-03-01T10:00:00Z',
     versions: [
       {
