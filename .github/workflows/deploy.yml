@@ -1,4 +1,4 @@
-name: Deploy to Fly.io
+name: Fly Deploy
 
 on:
   push:
@@ -8,41 +8,21 @@ on:
 
 jobs:
   deploy-api:
-    name: Deploy dali-api
+    name: Deploy API (${{ github.ref_name }})
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: dali-api
     steps:
       - uses: actions/checkout@v4
       - uses: superfly/flyctl-actions/setup-flyctl@master
-      - name: Deploy to dev
-        if: github.ref == 'refs/heads/dev'
-        run: flyctl deploy --config fly.dev.toml --app dali-api-dev --remote-only
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-      - name: Deploy to prod
-        if: github.ref == 'refs/heads/prod'
-        run: flyctl deploy --config fly.prod.toml --app dali-api-prod --remote-only
+      - run: flyctl deploy --config ./dali-api/fly.${{ github.ref_name }}.toml ./dali-api -a dali-api-${{ github.ref_name }}
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
   deploy-web:
-    name: Deploy dali-web
+    name: Deploy Web (${{ github.ref_name }})
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: dali-web
     steps:
       - uses: actions/checkout@v4
       - uses: superfly/flyctl-actions/setup-flyctl@master
-      - name: Deploy to dev
-        if: github.ref == 'refs/heads/dev'
-        run: flyctl deploy --config fly.dev.toml --app dali-web-dev --remote-only
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-      - name: Deploy to prod
-        if: github.ref == 'refs/heads/prod'
-        run: flyctl deploy --config fly.prod.toml --app dali-web-prod --remote-only
+      - run: flyctl deploy --config ./dali-web/fly.${{ github.ref_name }}.toml ./dali-web -a dali-web-${{ github.ref_name }}
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

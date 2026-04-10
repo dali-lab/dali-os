@@ -1,0 +1,51 @@
+name: Sync lockfiles
+
+on:
+  push:
+    paths:
+      - "dali-api/package.json"
+      - "dali-web/package.json"
+  pull_request:
+    paths:
+      - "dali-api/package.json"
+      - "dali-web/package.json"
+
+jobs:
+  sync-lockfiles:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Regenerate lockfiles if out of sync
+        run: |
+          changed=false
+
+          for dir in dali-api dali-web; do
+            cd "$dir"
+            npm install --package-lock-only
+            cd ..
+
+            if ! git diff --quiet "$dir/package-lock.json"; then
+              echo "$dir/package-lock.json is out of sync — regenerated"
+              changed=true
+            fi
+          done
+
+          echo "changed=$changed" >> "$GITHUB_ENV"
+
+      - name: Commit updated lockfiles
+        if: env.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add dali-api/package-lock.json dali-web/package-lock.json
+          git commit -m "chore: regenerate lockfiles"
+          git push
