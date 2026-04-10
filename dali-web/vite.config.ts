@@ -19,4 +19,7 @@ export default defineConfig({
     dedupe: ["react", "react-dom"],
     tsconfigPaths: true,
   },
+  server: {
+    host: "0.0.0.0",
+  },
 });
