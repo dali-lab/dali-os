@@ -19,5 +19,6 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/build ./build
-EXPOSE 3000
+ENV PORT=8080
+EXPOSE 8080
 CMD ["npm", "run", "start"]
