@@ -1,29 +1,22 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router';
+import { getUser } from '@/lib/auth';
+import type { UserInfo } from '@/lib/auth';
 
 interface NavbarProps {
   className?: string;
 }
 
-interface SessionAccount {
-  id: string;
-  email: string;
-  firstName?: string;
-  lastName?: string;
+interface SessionAccount extends UserInfo {
   name?: string;
   picture?: string;
 }
 
 function getSession(): { account: SessionAccount } | null {
   if (typeof window === 'undefined') return null;
-  try {
-    const token = sessionStorage.getItem('access_token');
-    const raw = sessionStorage.getItem('account');
-    if (!token || !raw) return null;
-    return { account: JSON.parse(raw) };
-  } catch {
-    return null;
-  }
+  const user = getUser();
+  if (!user) return null;
+  return { account: user as SessionAccount };
 }
 
 const navLinks = [

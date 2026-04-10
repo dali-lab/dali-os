@@ -9,7 +9,7 @@ export default [
   route("education/calendar", "routes/education.calendar.tsx"),
   route("apply", "routes/apply.tsx"),
   route("partners", "routes/partners.tsx"),
-  route("login", "routes/login.tsx"),
-  route("account", "routes/account.tsx"),
+  route("login", "pages/Login.tsx"),
+  route("account", "pages/Account.tsx"),
   route("*", "routes/$.tsx"),
 ] satisfies RouteConfig;
