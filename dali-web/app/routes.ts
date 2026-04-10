@@ -11,5 +11,6 @@ export default [
   route("partners", "routes/partners.tsx"),
   route("login", "pages/Login.tsx"),
   route("account", "pages/Account.tsx"),
+  route("portal", "pages/ApplicantPortal.tsx"),
   route("*", "routes/$.tsx"),
 ] satisfies RouteConfig;
