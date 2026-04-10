@@ -1,4 +1,3 @@
-import { useState } from "react";
 import {
   isRouteErrorResponse,
   Links,
@@ -9,8 +8,6 @@ import {
 } from "react-router";
 
 import type { Route } from "./+types/root";
-import { Layout as AppLayout } from "~/components/Layout";
-import type { ViewMode } from "~/types";
 import "./app.css";
 
 export const links: Route.LinksFunction = () => [
@@ -45,12 +42,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
-  const [viewMode, setViewMode] = useState<ViewMode>('domainLead')
-  return (
-    <AppLayout viewMode={viewMode} setViewMode={setViewMode}>
-      <Outlet />
-    </AppLayout>
-  )
+  return <Outlet />
 }
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
