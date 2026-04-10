@@ -9,6 +9,22 @@ jobs:
   migration-check:
     name: Check migrations
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: prisma
+          POSTGRES_PASSWORD: prisma
+          POSTGRES_DB: prisma_shadow
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
     steps:
       - uses: actions/checkout@v4
 
@@ -26,9 +42,10 @@ jobs:
           npx prisma migrate diff \
             --from-migrations ./prisma/migrations \
             --to-schema ./prisma/schema.prisma \
+            --shadow-database-url postgresql://prisma:prisma@localhost:5432/prisma_shadow \
             --exit-code
         env:
-          DATABASE_URL: "postgresql://dummy:dummy@localhost:5432/dummy"
+          DATABASE_URL: "postgresql://prisma:prisma@localhost:5432/prisma_shadow"
 
       - name: Check migration safety
         run: npx @flvmnt/pgfence analyze --ci --max-risk medium "dali-api/prisma/migrations/**/*.sql"
