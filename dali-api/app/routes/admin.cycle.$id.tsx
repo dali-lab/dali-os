@@ -3,7 +3,7 @@ import { Form, useLoaderData } from "react-router";
 import { redirect } from "react-router";
 import type { Route } from "./+types/admin.cycle.$id";
 import { prisma } from "~/lib/db";
-import { CheckCircle, Circle, ChevronRight } from "lucide-react";
+import { CheckCircle, Circle, ChevronRight, Plus, X } from "lucide-react";
 
 const STATUS_SEQUENCE = [
   "Draft",
@@ -75,7 +75,9 @@ export async function loader({ params }: Route.LoaderArgs) {
     orderBy: { createdAt: "desc" },
   });
 
-  return { cycle, formVersionOptions };
+  const allDomains = await prisma.domain.findMany({ orderBy: { name: "asc" } });
+
+  return { cycle, formVersionOptions, allDomains };
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -87,6 +89,22 @@ export async function action({ request, params }: Route.ActionArgs) {
     await prisma.applicationCycle.update({
       where: { id: params.id },
       data: { formVersionId },
+    });
+    return redirect(`/admin/cycle/${params.id}`);
+  }
+
+  if (intent === "remove-domain") {
+    const domainId = formData.get("domainId") as string;
+    await prisma.domainApplicationCycle.delete({
+      where: { domainId_applicationCycleId: { domainId, applicationCycleId: params.id } },
+    });
+    return redirect(`/admin/cycle/${params.id}`);
+  }
+
+  if (intent === "add-domain") {
+    const domainId = formData.get("domainId") as string;
+    await prisma.domainApplicationCycle.create({
+      data: { domainId, applicationCycleId: params.id },
     });
     return redirect(`/admin/cycle/${params.id}`);
   }
@@ -132,6 +150,7 @@ export default function AdminCycleDetails() {
   const data = useLoaderData<typeof loader>() as any;
   const cycle = data?.cycle;
   const formVersionOptions = data?.formVersionOptions ?? [];
+  const allDomains = data?.allDomains ?? [];
 
   if (!cycle) {
     return <div className="text-gray-500 py-8 text-center">Cycle not found or access denied.</div>;
@@ -226,7 +245,7 @@ export default function AdminCycleDetails() {
 
       {/* Status-conditional content */}
       {currentStatus === "Draft" && (
-        <DraftView cycle={cycle} formVersionOptions={formVersionOptions} />
+        <DraftView cycle={cycle} formVersionOptions={formVersionOptions} allDomains={allDomains} />
       )}
       {currentStatus === "Open" && (
         <OpenView cycle={cycle} submittedApps={submittedApps} />
@@ -238,8 +257,10 @@ export default function AdminCycleDetails() {
   );
 }
 
-function DraftView({ cycle, formVersionOptions }: { cycle: any; formVersionOptions: any[] }) {
+function DraftView({ cycle, formVersionOptions, allDomains }: { cycle: any; formVersionOptions: any[]; allDomains: any[] }) {
   const domains: any[] = cycle.domains ?? [];
+  const cycledomainIds = new Set(domains.map((d: any) => d.domain.id));
+  const availableDomains = allDomains.filter((d: any) => !cycledomainIds.has(d.id));
   const readyCount = domains.filter((d: any) => d.isReady === true).length;
   const totalCount = domains.length;
   const allReady = readyCount === totalCount && totalCount > 0;
@@ -283,8 +304,8 @@ function DraftView({ cycle, formVersionOptions }: { cycle: any; formVersionOptio
         </div>
 
         {/* Domain cards */}
-        {domains.length === 0 ? (
-          <p className="text-gray-500 text-sm">No domains added yet.</p>
+        {domains.length === 0 && availableDomains.length === 0 ? (
+          <p className="text-gray-500 text-sm">No domains available.</p>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {domains.map((domainEntry: any) => {
@@ -309,17 +330,26 @@ function DraftView({ cycle, formVersionOptions }: { cycle: any; formVersionOptio
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-semibold text-gray-900 text-sm">{domain.name}</span>
-                    <span
-                      className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                        isReady
-                          ? "bg-green-100 text-green-700"
-                          : isConfigured
-                          ? "bg-yellow-100 text-yellow-700"
-                          : "bg-gray-200 text-gray-600"
-                      }`}
-                    >
-                      {isReady ? "Ready" : isConfigured ? "Configured" : "Pending"}
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                          isReady
+                            ? "bg-green-100 text-green-700"
+                            : isConfigured
+                            ? "bg-yellow-100 text-yellow-700"
+                            : "bg-gray-200 text-gray-600"
+                        }`}
+                      >
+                        {isReady ? "Ready" : isConfigured ? "Configured" : "Pending"}
+                      </span>
+                      <Form method="post">
+                        <input type="hidden" name="intent" value="remove-domain" />
+                        <input type="hidden" name="domainId" value={domain.id} />
+                        <button type="submit" className="text-gray-400 hover:text-red-500 transition-colors" title="Remove domain">
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </Form>
+                    </div>
                   </div>
                   {leadName && (
                     <p className="text-xs text-gray-500">Lead: {leadName}</p>
@@ -334,6 +364,19 @@ function DraftView({ cycle, formVersionOptions }: { cycle: any; formVersionOptio
                 </div>
               );
             })}
+            {availableDomains.length > 0 && (
+              <Form method="post" className="rounded-lg border-2 border-dashed border-gray-300 p-4 flex flex-col gap-2 justify-center">
+                <input type="hidden" name="intent" value="add-domain" />
+                <select name="domainId" className="text-sm border border-gray-300 rounded px-2 py-1 text-gray-700">
+                  {availableDomains.map((d: any) => (
+                    <option key={d.id} value={d.id}>{d.name}</option>
+                  ))}
+                </select>
+                <button type="submit" className="text-sm font-medium text-blue-600 hover:text-blue-800 flex items-center gap-1">
+                  <Plus className="w-4 h-4" /> Add Domain
+                </button>
+              </Form>
+            )}
           </div>
         )}
 
