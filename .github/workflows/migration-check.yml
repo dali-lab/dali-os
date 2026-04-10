@@ -27,6 +27,8 @@ jobs:
             --from-migrations ./prisma/migrations \
             --to-schema-datamodel ./prisma/schema.prisma \
             --exit-code
+        env:
+          DATABASE_URL: "postgresql://dummy:dummy@localhost:5432/dummy"
 
       - name: Check migration safety
         run: npx @flvmnt/pgfence analyze --ci --max-risk medium "dali-api/prisma/migrations/**/*.sql"
