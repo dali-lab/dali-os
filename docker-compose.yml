@@ -22,11 +22,12 @@ services:
     volumes:
       - ./dali-api:/app
       - api_node_modules:/app/node_modules
+    # Compose only reads repo-root .env for ${VAR} substitution; this loads dali-api/.env into the container.
+    env_file:
+      - ./dali-api/.env
     environment:
       DATABASE_URL: postgresql://dali:dali@db:5432/dali
       JWT_SECRET: dev-jwt-secret-change-me-in-production!!
-      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
-      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
       CAS_BASE_URL: https://login.dartmouth.edu/cas
       FRONTEND_URL: http://localhost:5173
       API_BASE_URL: http://localhost:3001
