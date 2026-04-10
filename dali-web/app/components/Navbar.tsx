@@ -118,7 +118,7 @@ export default function Navbar({ className = '' }: NavbarProps) {
 
           {session ? (
             <Link
-              to="/account"
+              to="/portal"
               className="flex items-center gap-2 pl-1 pr-3 py-1 rounded-full bg-[#E8F4FA] dark:bg-[#0d2133] hover:opacity-80 transition-opacity min-h-9"
               onClick={() => window.scrollTo(0, 0)}
             >
@@ -186,7 +186,7 @@ export default function Navbar({ className = '' }: NavbarProps) {
 
             {session ? (
               <Link
-                to="/account"
+                to="/portal"
                 className="flex items-center gap-3 pt-4 border-t border-gray-100 dark:border-gray-700"
                 onClick={() => { setMobileMenuOpen(false); window.scrollTo(0, 0); }}
               >
