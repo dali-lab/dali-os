@@ -1,8 +1,3 @@
-SET lock_timeout = '2s';
-SET statement_timeout = '5min';
-SET idle_in_transaction_session_timeout = '30s';
-SET application_name = 'migrate:20260410204112_init';
-
 -- CreateEnum
 CREATE TYPE "ApplicationStatus" AS ENUM ('Draft', 'Submitted', 'Withdrawn');
 
