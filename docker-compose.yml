@@ -9,6 +9,11 @@ services:
       POSTGRES_DB: dali
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dali -d dali"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
 
   api:
     build:
@@ -32,7 +37,8 @@ services:
       FRONTEND_URL: http://localhost:5173
       API_BASE_URL: http://localhost:3001
     depends_on:
-      - db
+      db:
+        condition: service_healthy
 
   web:
     build:
