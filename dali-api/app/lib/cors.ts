@@ -28,3 +28,9 @@ export function handlePreflight(request: Request): Response | null {
     headers: corsHeaders(request),
   });
 }
+
+export function preflightLoader({ request }: { request: Request }) {
+  const preflight = handlePreflight(request);
+  if (preflight) return preflight;
+  return withCors(request, new Response("Method not allowed", { status: 405 }));
+}
