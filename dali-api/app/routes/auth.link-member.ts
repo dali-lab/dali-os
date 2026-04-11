@@ -1,7 +1,9 @@
 import type { Route } from "./+types/auth.link-member";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { withCors, handlePreflight } from "~/lib/cors";
+import { withCors, handlePreflight, preflightLoader } from "~/lib/cors";
+
+export const loader = preflightLoader;
 
 
 export async function action({ request }: Route.ActionArgs) {
