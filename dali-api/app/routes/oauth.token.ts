@@ -8,7 +8,9 @@ import {
 
 import { setTokenCookies, parseRefreshToken } from "~/lib/cookies";
 import type { UserInfo } from "~/lib/oauth";
-import { withCors, handlePreflight } from "~/lib/cors";
+import { withCors, handlePreflight, preflightLoader } from "~/lib/cors";
+
+export const loader = preflightLoader;
 
 async function parseBody(request: Request): Promise<Record<string, string>> {
   const contentType = request.headers.get("Content-Type") ?? "";

@@ -2,7 +2,9 @@ import type { Route } from "./+types/oauth.revoke";
 import { revokeToken } from "~/lib/oauth";
 
 import { clearTokenCookies, parseRefreshToken } from "~/lib/cookies";
-import { withCors, handlePreflight } from "~/lib/cors";
+import { withCors, handlePreflight, preflightLoader } from "~/lib/cors";
+
+export const loader = preflightLoader;
 
 export async function action({ request }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
