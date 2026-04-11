@@ -37,10 +37,10 @@ async function startOAuthFlow(provider: "google" | "cas", accountType?: string) 
   window.location.href = `${DALI_DB_URL}/oauth/authorize?${params}`;
 }
 
-async function exchangeCodeForTokens(code: string): Promise<void> {
-  const codeVerifier = sessionStorage.getItem("pkce_code_verifier");
-  if (!codeVerifier) throw new Error("Missing PKCE code_verifier");
-
+async function exchangeCodeForTokens(
+  code: string,
+  codeVerifier: string,
+): Promise<void> {
   const res = await fetch(`${DALI_DB_URL}/oauth/token`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -53,10 +53,6 @@ async function exchangeCodeForTokens(code: string): Promise<void> {
       client_id: "dali-web",
     }),
   });
-
-  // Clean up PKCE state
-  sessionStorage.removeItem("pkce_code_verifier");
-  sessionStorage.removeItem("oauth_state");
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -90,23 +86,37 @@ export default function Login() {
       return;
     }
 
-    if (code && state) {
-      // Verify state (CSRF protection)
-      const savedState = sessionStorage.getItem("oauth_state");
-      if (state !== savedState) {
-        setError("Invalid state parameter — possible CSRF attack");
-        return;
-      }
+    if (!code || !state) return;
 
-      (async () => {
-        try {
-          await exchangeCodeForTokens(code);
-          navigate("/portal", { replace: true });
-        } catch (err: any) {
-          setError(err.message);
-        }
-      })();
+    // Read PKCE state. Note: we must consume it *before* the async exchange
+    // starts, so that a second synchronous run of this effect (React strict
+    // mode double-invoke, or a refresh of /login?code=...&state=... after a
+    // successful exchange) finds an empty sessionStorage and bails cleanly
+    // instead of racing or reporting a bogus CSRF error.
+    const savedState = sessionStorage.getItem("oauth_state");
+    const codeVerifier = sessionStorage.getItem("pkce_code_verifier");
+    if (!savedState || !codeVerifier) {
+      // Already consumed by a prior run. Not an error.
+      return;
     }
+
+    // Consume atomically before any async work.
+    sessionStorage.removeItem("oauth_state");
+    sessionStorage.removeItem("pkce_code_verifier");
+
+    if (state !== savedState) {
+      setError("Invalid state parameter — possible CSRF attack");
+      return;
+    }
+
+    (async () => {
+      try {
+        await exchangeCodeForTokens(code, codeVerifier);
+        navigate("/portal", { replace: true });
+      } catch (err: any) {
+        setError(err.message);
+      }
+    })();
   }, [searchParams, navigate]);
 
   const handleLogin = (provider: "google" | "cas", accountType?: string) => {
