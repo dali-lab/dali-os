@@ -45,5 +45,14 @@ jobs:
           DATABASE_URL: "postgresql://prisma:prisma@localhost:5432/prisma_shadow"
           SHADOW_DATABASE_URL: "postgresql://prisma:prisma@localhost:5432/prisma_shadow"
 
+      - name: Check for deleted migration files
+        run: |
+          DELETED=$(git diff --name-only --diff-filter=D origin/${{ github.base_ref }}...HEAD -- 'dali-api/prisma/migrations/')
+          if [ -n "$DELETED" ]; then
+            echo "Error: migration files must never be deleted:"
+            echo "$DELETED"
+            exit 1
+          fi
+
       - name: Check migration safety
         run: npx @flvmnt/pgfence analyze --ci --max-risk high --no-lock-timeout --no-statement-timeout dali-api/prisma/migrations/**/*.sql
