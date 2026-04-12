@@ -10,7 +10,9 @@
     "test:watch": "vitest",
     "typecheck": "react-router typegen && tsc",
     "db:reset": "PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION=yes prisma migrate reset --force && prisma db seed",
-    "db:reset:local": "PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION=yes DATABASE_URL=postgresql://dali:dali@localhost:5432/dali prisma migrate reset --force && DATABASE_URL=postgresql://dali:dali@localhost:5432/dali prisma db seed"
+    "db:reset:local": "PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION=yes DATABASE_URL=postgresql://dali:dali@localhost:5432/dali prisma migrate reset --force && DATABASE_URL=postgresql://dali:dali@localhost:5432/dali prisma db seed",
+    "db:fetch:members": "tsx prisma/fetch-members.ts",
+    "db:seed:members": "tsx prisma/seed-members.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.6.0",
