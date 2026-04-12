@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Form, Link, redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/admin";
 import { prisma } from "~/lib/db";
+import { requireAuth } from "~/lib/auth";
 import { ChevronRight, Plus, X } from "lucide-react";
 
 const STATUS_LABELS: Record<string, string> = {
@@ -36,9 +37,10 @@ export async function action({ request }: Route.ActionArgs) {
   const name = (formData.get("name") as string)?.trim();
   if (!name) return { error: "Name is required" };
 
-  // TODO: replace with session user once login flow is built
-  const adminUser = await prisma.user.findFirstOrThrow({
-    where: { daliEmail: "admin@dali.dartmouth.edu" },
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
+  const adminUser = await prisma.user.findUniqueOrThrow({
+    where: { id: auth.user.sub },
   });
 
   const cycle = await prisma.applicationCycle.create({
