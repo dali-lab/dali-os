@@ -33,6 +33,7 @@ model User {
   challengeVersions             ChallengeVersion[]
   applications                  Application[]
   applicationStatusUpdates      ApplicationStatusUpdate[]
+  mentorReviews                 MentorReview[]                @relation("MentorReviews")
   oauthSessions                 OAuthSession[]
   refreshTokens                 RefreshToken[]
 }
@@ -113,6 +114,7 @@ model Application {
 
   statusUpdates      ApplicationStatusUpdate[]
   domainApplications DomainApplication[]
+  mentorReviews      MentorReview[]
 }
 
 // Domain is not stored directly — it is derivable via challengeVersion.domain.
@@ -177,6 +179,28 @@ model Domain {
   challengeVersions     ChallengeVersion[]
   applicationCycles     DomainApplicationCycle[]
   domainLeadAssignments DomainLeadAssignment[]
+}
+
+// A mentor's written review of an application.
+model MentorReview {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // JSON map of rubric criterion key → integer score
+  scores                Json    @default("{}")
+  feedback              String  @default("")
+  rejectionRationale    String  @default("")
+  overallRecommendation String?
+  // JSON array of annotation objects {id, fieldKey, start, end, comment, color}
+  annotations           Json    @default("[]")
+
+  mentorId      String
+  mentor        User        @relation("MentorReviews", fields: [mentorId], references: [id])
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id])
+
+  @@unique([mentorId, applicationId])
 }
 
 // Immutable snapshot of a domain challenge. Never update rows in this table —

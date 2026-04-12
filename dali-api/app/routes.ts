@@ -4,8 +4,6 @@ export default [
   // UI routes wrapped in the app layout (navbar + view toggle)
   layout("routes/layout.tsx", [
     index("routes/home.tsx"),
-    route("apply/:cycleId", "routes/apply.$cycleId.tsx"),
-    route("applications/:appId", "routes/applications.$appId.tsx"),
     route("mentor", "routes/mentor.tsx"),
     route("mentor/application/:id", "routes/mentor.application.$id.tsx"),
     route("domain-lead", "routes/domain-lead.tsx"),

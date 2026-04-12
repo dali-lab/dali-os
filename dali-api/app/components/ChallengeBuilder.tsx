@@ -145,7 +145,7 @@ export function FormBuilderTab({
                   },
                 })
               }
-              className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2"
+              className="block w-full rounded-md border border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
               placeholder="e.g. What is your major?"
             />
           </div>
@@ -162,7 +162,7 @@ export function FormBuilderTab({
                   type: e.target.value as any,
                 })
               }
-              className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2 bg-white"
+              className="block w-full rounded-md border border-gray-300 bg-white text-gray-900 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
             >
               <option value="text">Short Text</option>
               <option value="textarea">Long Text</option>
@@ -203,7 +203,7 @@ export function FormBuilderTab({
                   },
                 })
               }
-              className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2"
+              className="block w-full rounded-md border border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
               placeholder="e.g. Keep it under 200 words."
             />
           </div>
@@ -217,7 +217,7 @@ export function FormBuilderTab({
                 rows={4}
                 value={optionsText}
                 onChange={(e) => setOptionsText(e.target.value)}
-                className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2"
+                className="block w-full rounded-md border border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
                 placeholder="Option 1&#10;Option 2&#10;Option 3"
               />
             </div>

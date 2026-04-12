@@ -270,7 +270,7 @@ function DraftView({ cycle, formVersionOptions, allDomains }: { cycle: any; form
     <div className="space-y-4">
       {/* Form selector */}
       <div className="bg-white border border-gray-200 rounded-lg p-6 space-y-4">
-        <h2 className="text-lg font-semibold text-gray-900">Application Form</h2>
+        <h2 className="text-lg font-semibold text-gray-900">General Application</h2>
         <FormSelector
           cycleId={cycle.id}
           options={formVersionOptions}
