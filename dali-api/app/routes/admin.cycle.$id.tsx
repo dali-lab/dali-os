@@ -171,7 +171,7 @@ export default function AdminCycleDetails() {
   }
 
   // Submitted applications only
-  const submittedApps = cycle.applications.filter((app) => {
+  const submittedApps = cycle.applications.filter((app: any) => {
     const latest = app.statusUpdates[0]?.newStatus;
     return latest === "Submitted";
   });
@@ -508,7 +508,7 @@ function ApplicationsTable({ apps }: { apps: any[] }) {
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
-          {apps.map((app) => {
+          {apps.map((app: any) => {
             const domains = app.domainApplications.map((da: any) => da.challengeVersion.domain.name);
             return (
               <tr key={app.id} className="hover:bg-gray-50">

@@ -15,7 +15,7 @@ function viewModeFromPath(pathname: string): ViewMode {
   if (pathname.startsWith('/mentor')) return 'mentor'
   if (pathname.startsWith('/domain-lead')) return 'domainLead'
   if (pathname.startsWith('/admin')) return 'admin'
-  return 'applicant'
+  return 'mentor'
 }
 
 export default function AppLayoutRoute() {
