@@ -47,7 +47,11 @@ model DALIMember {
   userId String? @unique
   user   User?   @relation(fields: [userId], references: [id])
 
-  daliEmail String? @unique
+  firstName      String?
+  lastName       String?
+  daliEmail      String? @unique
+  dartmouthEmail String? @unique
+  did            String? @unique // Dartmouth D-number e.g. "F00709M"
 
   domainLeadAssignments DomainLeadAssignment[]
 }
