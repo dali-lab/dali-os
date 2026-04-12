@@ -7,12 +7,12 @@ import {
   Trophy,
   ClipboardList,
 } from 'lucide-react'
-import { currentUser, adminUser } from '~/mockData'
 import type { ViewMode } from '~/types'
 interface LayoutProps {
   children: React.ReactNode
   viewMode: ViewMode
   setViewMode: (val: ViewMode) => void
+  user: { firstName: string; lastName: string; email: string }
 }
 const viewRoutes: Record<ViewMode, string> = {
   applicant: '/',
@@ -21,10 +21,9 @@ const viewRoutes: Record<ViewMode, string> = {
   admin: '/admin',
 }
 
-export function Layout({ children, viewMode, setViewMode }: LayoutProps) {
+export function Layout({ children, viewMode, setViewMode, user }: LayoutProps) {
   const location = useLocation()
   const navigate = useNavigate()
-  const user = viewMode === 'applicant' ? currentUser : adminUser
   const [showViewMenu, setShowViewMenu] = useState(false)
   const viewLabels: Record<ViewMode, string> = {
     applicant: 'Applicant View',
@@ -151,7 +150,7 @@ export function Layout({ children, viewMode, setViewMode }: LayoutProps) {
                     {user.firstName} {user.lastName}
                   </div>
                   <div className="text-xs text-gray-500">
-                    {user.daliEmail || user.dartmouthEmail}
+                    {user.email}
                   </div>
                 </div>
                 <div className="w-9 h-9 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold">
