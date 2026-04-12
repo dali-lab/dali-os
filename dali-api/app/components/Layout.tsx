@@ -2,33 +2,38 @@ import React, { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import {
   LayoutDashboard,
-  FileText,
   ChevronDown,
   Trophy,
   ClipboardList,
 } from 'lucide-react'
-import { currentUser, adminUser } from '~/mockData'
 import type { ViewMode } from '~/types'
+
 interface LayoutProps {
   children: React.ReactNode
   viewMode: ViewMode
   setViewMode: (val: ViewMode) => void
+  user: { email: string }
 }
+
 const viewRoutes: Record<ViewMode, string> = {
   mentor: '/mentor',
   domainLead: '/domain-lead',
   admin: '/',
 }
 
-export function Layout({ children, viewMode, setViewMode }: LayoutProps) {
+export function Layout({ children, viewMode, setViewMode, user }: LayoutProps) {
   const location = useLocation()
   const navigate = useNavigate()
   const [showViewMenu, setShowViewMenu] = useState(false)
+
   const viewLabels: Record<ViewMode, string> = {
     mentor: 'Mentor',
     domainLead: 'Domain Lead',
     admin: 'Admin',
   }
+
+  const initials = user.email.slice(0, 2).toUpperCase()
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* Top Navigation */}
@@ -38,13 +43,9 @@ export function Layout({ children, viewMode, setViewMode }: LayoutProps) {
             <div className="flex items-center">
               <div className="flex-shrink-0 flex items-center gap-2">
                 <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-                  <span className="text-white font-bold text-xl leading-none">
-                    D
-                  </span>
+                  <span className="text-white font-bold text-xl leading-none">D</span>
                 </div>
-                <span className="font-bold text-xl text-gray-900 tracking-tight">
-                  DALI Hiring
-                </span>
+                <span className="font-bold text-xl text-gray-900 tracking-tight">DALI Hiring</span>
               </div>
 
               <nav className="ml-10 flex space-x-8">
@@ -104,7 +105,7 @@ export function Layout({ children, viewMode, setViewMode }: LayoutProps) {
             </div>
 
             <div className="flex items-center gap-4">
-              {/* View Toggle for Demo Purposes */}
+              {/* View Toggle */}
               <div className="relative">
                 <button
                   onClick={() => setShowViewMenu(!showViewMenu)}
@@ -116,20 +117,13 @@ export function Layout({ children, viewMode, setViewMode }: LayoutProps) {
 
                 {showViewMenu && (
                   <>
-                    <div
-                      className="fixed inset-0 z-20"
-                      onClick={() => setShowViewMenu(false)}
-                    ></div>
-                    <div className="absolute right-0 z-30 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 focus:outline-none">
+                    <div className="fixed inset-0 z-20" onClick={() => setShowViewMenu(false)} />
+                    <div className="absolute right-0 z-30 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5">
                       <div className="py-1" role="menu">
                         {(Object.keys(viewLabels) as ViewMode[]).map((mode) => (
                           <button
                             key={mode}
-                            onClick={() => {
-                              setViewMode(mode)
-                              setShowViewMenu(false)
-                              navigate(viewRoutes[mode])
-                            }}
+                            onClick={() => { setViewMode(mode); setShowViewMenu(false); navigate(viewRoutes[mode]) }}
                             className={`${viewMode === mode ? 'bg-gray-100 text-gray-900' : 'text-gray-700'} block w-full text-left px-4 py-2 text-sm hover:bg-gray-50`}
                             role="menuitem"
                           >
@@ -144,16 +138,10 @@ export function Layout({ children, viewMode, setViewMode }: LayoutProps) {
 
               <div className="flex items-center gap-3 border-l border-gray-200 pl-4">
                 <div className="text-right hidden sm:block">
-                  <div className="text-sm font-medium text-gray-900">
-                    {adminUser.firstName} {adminUser.lastName}
-                  </div>
-                  <div className="text-xs text-gray-500">
-                    {adminUser.daliEmail || adminUser.dartmouthEmail}
-                  </div>
+                  <div className="text-xs text-gray-500">{user.email}</div>
                 </div>
-                <div className="w-9 h-9 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold">
-                  {adminUser.firstName[0]}
-                  {adminUser.lastName[0]}
+                <div className="w-9 h-9 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-sm">
+                  {initials}
                 </div>
               </div>
             </div>

@@ -32,6 +32,7 @@ export async function loader({}: Route.LoaderArgs) {
           domainApplications: {
             include: { challengeVersion: { include: { domain: true } } },
           },
+          mentorReviews: true,
         },
       },
     },
@@ -60,14 +61,12 @@ type CycleApp = LoaderData['allCycleApps'][number]
 export default function MentorDashboard() {
   const { mentor, activeCycle, cycleStatus, allCycleApps } = useLoaderData<typeof loader>()
 
-  const currentStage: CycleStage =
-    cycleStatus === 'Open'
+  const currentStage =
+    (cycleStatus === 'Open'
       ? 'readingApplications'
       : cycleStatus === 'Closed'
         ? 'writtenDelibs'
-        : 'challengeSetup'
-
-  const writtenDelibsBuckets = { advance: [] as string[], cut: [] as string[] }
+        : 'challengeSetup') as CycleStage
 
   const blindedMap = new Map<string, string>()
   allCycleApps.forEach((app: CycleApp, index: number) => {
@@ -76,13 +75,18 @@ export default function MentorDashboard() {
 
   const [inProgressIds, setInProgressIds] = useState<string[]>([])
 
-  // Until MentorReview is in the generated client, track "finished" via inProgressIds only
-  // (will be replaced with DB check once schema is pushed)
-  const pendingApps = allCycleApps.filter(
-    (a: CycleApp) => !inProgressIds.includes(a.id),
+  const finishedIds = new Set(
+    allCycleApps
+      .filter((a: CycleApp) => a.mentorReviews.some((r) => r.mentorId === mentor.id))
+      .map((a: CycleApp) => a.id),
   )
+
+  const finishedApps = allCycleApps.filter((a: CycleApp) => finishedIds.has(a.id))
   const inProgressApps = allCycleApps.filter(
-    (a: CycleApp) => inProgressIds.includes(a.id),
+    (a: CycleApp) => inProgressIds.includes(a.id) && !finishedIds.has(a.id),
+  )
+  const pendingApps = allCycleApps.filter(
+    (a: CycleApp) => !inProgressIds.includes(a.id) && !finishedIds.has(a.id),
   )
 
   const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri']
@@ -161,7 +165,7 @@ export default function MentorDashboard() {
                 Applications ({allCycleApps.length})
               </h2>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {/* Pending */}
               <div className="bg-gray-50 rounded-xl border border-gray-200 p-4 flex flex-col gap-3 min-h-[400px]">
                 <div className="flex items-center justify-between border-b border-gray-200 pb-2 mb-2">
@@ -208,6 +212,31 @@ export default function MentorDashboard() {
                 {inProgressApps.length === 0 && (
                   <div className="py-8 text-center border-2 border-dashed border-blue-200 rounded-lg bg-white/50">
                     <p className="text-sm text-blue-400 italic">None in progress</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Finished */}
+              <div className="bg-green-50/50 rounded-xl border border-green-100 p-4 flex flex-col gap-3 min-h-[400px]">
+                <div className="flex items-center justify-between border-b border-green-200 pb-2 mb-2">
+                  <h3 className="font-bold text-green-800">Finished</h3>
+                  <span className="bg-white px-2.5 py-0.5 rounded-full text-xs font-bold border border-green-200 shadow-sm text-green-700">{finishedApps.length}</span>
+                </div>
+                {finishedApps.map((app: CycleApp) => (
+                  <div key={app.id} className="bg-white p-4 rounded-lg border border-green-200 shadow-sm">
+                    <h4 className="font-bold text-gray-900 mb-1">{app.user.firstName} {app.user.lastName}</h4>
+                    <p className="text-xs text-gray-500 mb-4">{app.domainApplications.length} Domain(s)</p>
+                    <Link
+                      to={`/mentor/application/${app.id}`}
+                      className="block w-full text-center px-3 py-2 bg-green-600 text-white hover:bg-green-700 rounded-md text-sm font-medium transition-colors"
+                    >
+                      View Review
+                    </Link>
+                  </div>
+                ))}
+                {finishedApps.length === 0 && (
+                  <div className="py-8 text-center border-2 border-dashed border-green-200 rounded-lg bg-white/50">
+                    <p className="text-sm text-green-400 italic">None finished yet</p>
                   </div>
                 )}
               </div>

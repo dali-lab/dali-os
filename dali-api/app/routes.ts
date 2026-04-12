@@ -16,6 +16,10 @@ export default [
     route("admin/rubrics/:id", "routes/admin.rubrics.$id.tsx"),
   ]),
 
+  // Login (no layout)
+  route("login", "routes/login.tsx"),
+  route("auth/callback/google", "routes/auth.callback.google.ts"),
+
   // OAuth endpoints (no layout)
   route("oauth/authorize", "routes/oauth.authorize.ts"),
   route("oauth/callback/google", "routes/oauth.callback.google.ts"),

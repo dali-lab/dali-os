@@ -49,7 +49,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
     // MentorReview uses upsert since schema now has @@unique([mentorId, applicationId])
     // Note: requires `prisma db push` to have been run after schema change
-    await (prisma as any).mentorReview.upsert({
+    await prisma.mentorReview.upsert({
       where: { mentorId_applicationId: { mentorId, applicationId: params.id } },
       update: { scores, feedback, rejectionRationale, overallRecommendation, annotations },
       create: { mentorId, applicationId: params.id, scores, feedback, rejectionRationale, overallRecommendation, annotations },

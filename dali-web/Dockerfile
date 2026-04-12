@@ -12,6 +12,15 @@ FROM node:22-alpine AS build
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+
+# Public config inlined by Vite at build time (ends up in the client bundle).
+ARG VITE_DALI_DB_URL
+ARG VITE_FRONTEND_URL
+ARG VITE_GOOGLE_CLIENT_ID
+ENV VITE_DALI_DB_URL=$VITE_DALI_DB_URL
+ENV VITE_FRONTEND_URL=$VITE_FRONTEND_URL
+ENV VITE_GOOGLE_CLIENT_ID=$VITE_GOOGLE_CLIENT_ID
+
 RUN npm run build
 
 FROM node:22-alpine
