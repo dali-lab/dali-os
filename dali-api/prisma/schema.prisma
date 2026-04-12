@@ -27,6 +27,12 @@ model User {
   firstName String
   lastName  String
 
+  // Google API tokens (for calendar integration etc.) — populated when user
+  // signs in via Google with appropriate scopes
+  googleAccessToken       String?
+  googleRefreshToken      String?
+  googleTokenExpiresAt    DateTime?
+
   daliMember                    DALIMember?
   applicationCycleStatusUpdates ApplicationCycleStatusUpdate[]
   applicationFormVersions       ApplicationFormVersion[]
@@ -54,6 +60,7 @@ model DALIMember {
   did            String? @unique // Dartmouth D-number e.g. "F00709M"
 
   domainLeadAssignments DomainLeadAssignment[]
+  cycleReviewers CycleReviewer[]
 }
 
 model ApplicationCycle {
@@ -74,6 +81,10 @@ model ApplicationCycle {
   applications      Application[]
   domains           DomainApplicationCycle[]
   challengeVersions ChallengeVersionApplicationCycle[]
+
+  interviewConfig InterviewConfig?
+  cycleReviewers  CycleReviewer[]
+  interviews      Interview[]
 }
 
 // Applicant-initiated status changes only. DALI-initiated outcomes (interview,
@@ -117,6 +128,7 @@ model Application {
 
   statusUpdates      ApplicationStatusUpdate[]
   domainApplications DomainApplication[]
+  interviews         Interview[]
 }
 
 // Domain is not stored directly — it is derivable via challengeVersion.domain.
@@ -181,6 +193,7 @@ model Domain {
   challengeVersions     ChallengeVersion[]
   applicationCycles     DomainApplicationCycle[]
   domainLeadAssignments DomainLeadAssignment[]
+  cycleReviewers        CycleReviewer[]
 }
 
 // Immutable snapshot of a domain challenge. Never update rows in this table —
@@ -247,6 +260,115 @@ model ChallengeVersionApplicationCycle {
 
   @@id([challengeVersionId, applicationCycleId])
 }
+
+// ─── Interview Scheduling ────────────────────────────────────────────────────
+
+model InterviewConfig {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  applicationCycleId String           @unique
+  applicationCycle   ApplicationCycle @relation(fields: [applicationCycleId], references: [id])
+
+  slotDurationMinutes Int @default(30)
+  bufferMinutes       Int @default(15)
+  dayStartHour        Int @default(9)  // 9 AM
+  dayEndHour          Int @default(18) // 6 PM
+
+  interviewStartDate DateTime
+  interviewEndDate   DateTime
+
+  timezone String @default("America/New_York")
+}
+
+model CycleReviewer {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  daliMemberId       String
+  daliMember         DALIMember       @relation(fields: [daliMemberId], references: [id])
+  applicationCycleId String
+  applicationCycle   ApplicationCycle @relation(fields: [applicationCycleId], references: [id])
+  domainId           String
+  domain             Domain           @relation(fields: [domainId], references: [id])
+
+  isLead Boolean @default(false)
+
+  availabilityBlocks   ReviewerAvailability[]
+  interviewAssignments InterviewAssignment[]
+
+  @@unique([daliMemberId, applicationCycleId])
+}
+
+model ReviewerAvailability {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  cycleReviewerId String
+  cycleReviewer   CycleReviewer @relation(fields: [cycleReviewerId], references: [id], onDelete: Cascade)
+
+  startTime DateTime
+  endTime   DateTime
+
+  @@index([cycleReviewerId, startTime, endTime])
+}
+
+enum InterviewStatus {
+  Scheduled
+  Completed
+  CancelledByApplicant
+  CancelledByAdmin
+  NeedsReassignment
+}
+
+model Interview {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  applicationId      String
+  application        Application      @relation(fields: [applicationId], references: [id])
+  applicationCycleId String
+  applicationCycle   ApplicationCycle @relation(fields: [applicationCycleId], references: [id])
+
+  startTime DateTime
+  endTime   DateTime
+  status    InterviewStatus @default(Scheduled)
+
+  assignments InterviewAssignment[]
+
+  @@index([applicationCycleId, startTime])
+  @@index([applicationId])
+}
+
+enum AssignmentRole {
+  InDomain
+  CrossDomain
+}
+
+enum AssignmentStatus {
+  Active
+  Declined
+  Replaced
+}
+
+model InterviewAssignment {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  interviewId     String
+  interview       Interview        @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  cycleReviewerId String
+  cycleReviewer   CycleReviewer    @relation(fields: [cycleReviewerId], references: [id])
+  role            AssignmentRole
+  status          AssignmentStatus @default(Active)
+
+  @@index([cycleReviewerId, status])
+}
+
+// ─── OAuth & Sessions ────────────────────────────────────────────────────────
 
 model OAuthSession {
   id String @id @default(cuid())

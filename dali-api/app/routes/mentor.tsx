@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router'
 import {
   ChevronRight,
@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import { adminUser, applicationCycles, mockApplications } from '~/mockData'
 import type { CycleStage } from '~/types'
+import CalendarGrid from '~/components/CalendarGrid'
 
 export function loader() {
   return {}
@@ -22,7 +23,7 @@ export function loader() {
 export default function MentorDashboard() {
   const applications = mockApplications
   const saveInterviewNotes = (_appId: string, _notes: string) => {}
-  const currentStage = 'readingApplications' as CycleStage
+  const currentStage = 'collectingAvailability' as CycleStage
   const readingDueDate: string | null = '2026-04-20T23:59:00Z'
   const availabilityDueDate: string | null = null
   const writtenDelibsBuckets = { advance: [] as string[], cut: [] as string[] }
@@ -33,10 +34,8 @@ export default function MentorDashboard() {
   }
   // For this mock, adminUser (user-2) is the logged-in mentor
   const mentorId = adminUser.id
-  const activeCycle =
-    applicationCycles.find((c) => c.status === 'UnderReview') ||
-    applicationCycles.find((c) => c.status === 'Open') ||
-    applicationCycles[0]
+  // Use the seeded DB cycle ID so the API endpoints find real data
+  const activeCycle = { id: 'cycle-fall-2026', name: 'Fall 2026' } as typeof applicationCycles[number]
   const assignedApps = applications.filter(
     (a) =>
       a.assignedMentorId === mentorId &&
@@ -82,32 +81,124 @@ export default function MentorDashboard() {
   const finishedApps = assignedApps.filter((a) =>
     a.mentorReviews?.some((r) => r.mentorId === mentorId),
   )
-  // Interview Availability State
-  const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri']
-  const hours = Array.from(
-    {
-      length: 10,
-    },
-    (_, i) => i + 9,
-  ) // 9 AM to 6 PM
-  const [availableSlots, setAvailableSlots] = useState<Set<string>>(new Set())
-  const [availabilitySaved, setAvailabilitySaved] = useState(false)
-  const handleSaveAvailability = () => {
-    setAvailabilitySaved(true)
-    setTimeout(() => setAvailabilitySaved(false), 2000)
-  }
-  const toggleSlot = (day: string, hour: number) => {
-    const key = `${day}-${hour}`
-    setAvailableSlots((prev) => {
-      const newSet = new Set(prev)
-      if (newSet.has(key)) {
-        newSet.delete(key)
-      } else {
-        newSet.add(key)
+  // Interview Availability State (API-connected)
+  const [savedAvailability, setSavedAvailability] = useState<{ startTime: string; endTime: string }[]>([])
+  const [interviewBlocks, setInterviewBlocks] = useState<{ startTime: string; endTime: string }[]>([])
+  const [availabilitySaving, setAvailabilitySaving] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [pendingPrefill, setPendingPrefill] = useState<{ startTime: string; endTime: string }[] | null>(null)
+  const [importError, setImportError] = useState<string | null>(null)
+  const [interviewConfig, setInterviewConfig] = useState<{
+    dayStartHour: number; dayEndHour: number;
+    interviewStartDate: string; interviewEndDate: string;
+  } | null>(null)
+
+  useEffect(() => {
+    if (currentStage !== 'collectingAvailability') return
+    // Fetch interview config for the cycle
+    fetch(`/api/cycles/${activeCycle.id}/interview-config`, { credentials: 'include' })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data) setInterviewConfig(data) })
+      .catch(() => {})
+    // Fetch saved availability
+    fetch(`/api/cycles/${activeCycle.id}/my-availability`, { credentials: 'include' })
+      .then(r => r.ok ? r.json() : [])
+      .then(blocks => setSavedAvailability(blocks))
+      .catch(() => {})
+    // Fetch booked interviews for overlay
+    fetch(`/api/cycles/${activeCycle.id}/my-interviews`, { credentials: 'include' })
+      .then(r => r.ok ? r.json() : [])
+      .then((assignments: any[]) => {
+        setInterviewBlocks(
+          assignments.map(a => ({
+            startTime: a.interview.startTime,
+            endTime: a.interview.endTime,
+          }))
+        )
+      })
+      .catch(() => {})
+  }, [currentStage, activeCycle.id])
+
+  const handleSaveAvailability = useCallback(
+    async (blocks: { startTime: string; endTime: string }[]) => {
+      setAvailabilitySaving(true)
+      try {
+        const res = await fetch(`/api/cycles/${activeCycle.id}/my-availability`, {
+          method: 'PUT',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ blocks }),
+        })
+        if (res.ok) {
+          const updated = await res.json()
+          setSavedAvailability(updated)
+          setPendingPrefill(null)
+        }
+      } finally {
+        setAvailabilitySaving(false)
       }
-      return newSet
-    })
-  }
+    },
+    [activeCycle.id],
+  )
+
+  // Import availability from Google Calendar:
+  // fetches busy events for the cycle's date range, then computes the inverse
+  // (working hours minus busy times) as the user's "available" blocks.
+  const handleImportFromGoogle = useCallback(async () => {
+    if (!interviewConfig) return
+    setImporting(true)
+    setImportError(null)
+    try {
+      const start = new Date(interviewConfig.interviewStartDate)
+      const end = new Date(interviewConfig.interviewEndDate)
+      const params = new URLSearchParams({ start: start.toISOString(), end: end.toISOString() })
+      const res = await fetch(`/api/google-calendar/busy?${params}`, { credentials: 'include' })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        setImportError(err.error ?? 'Failed to fetch Google Calendar. Please make sure you signed in with Google.')
+        return
+      }
+      const busyEvents: { start: string; end: string }[] = await res.json()
+
+      // Compute available blocks: enumerate every 15-min block within working
+      // hours on weekdays in the range, skip any that overlap a busy event.
+      const BLOCK_MS = 15 * 60 * 1000
+      const available: { startTime: string; endTime: string }[] = []
+      const cursor = new Date(start)
+      cursor.setHours(0, 0, 0, 0)
+      while (cursor <= end) {
+        const day = cursor.getDay()
+        if (day !== 0 && day !== 6) {
+          for (let h = interviewConfig.dayStartHour; h < interviewConfig.dayEndHour; h++) {
+            for (let m = 0; m < 60; m += 15) {
+              const blockStart = new Date(cursor)
+              blockStart.setHours(h, m, 0, 0)
+              const blockEnd = new Date(blockStart.getTime() + BLOCK_MS)
+              if (blockStart < start || blockEnd > end) continue
+              const overlaps = busyEvents.some(b => {
+                const bs = new Date(b.start)
+                const be = new Date(b.end)
+                return bs < blockEnd && be > blockStart
+              })
+              if (!overlaps) {
+                available.push({
+                  startTime: blockStart.toISOString(),
+                  endTime: blockEnd.toISOString(),
+                })
+              }
+            }
+          }
+        }
+        cursor.setDate(cursor.getDate() + 1)
+      }
+
+      setPendingPrefill(available)
+    } catch (err: any) {
+      setImportError(err.message ?? 'Import failed')
+    } finally {
+      setImporting(false)
+    }
+  }, [interviewConfig])
   const stageInfo = {
     challengeSetup: {
       title: 'Challenge Setup',
@@ -499,88 +590,48 @@ export default function MentorDashboard() {
         )}
 
         {currentStage === 'collectingAvailability' && (
-          <section className="max-w-4xl mx-auto">
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8">
-              <div className="text-center mb-8">
-                <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <CalendarDays className="w-6 h-6" />
-                </div>
-                <h2 className="text-xl font-bold text-gray-900">
-                  Your Interview Availability
-                </h2>
-                <p className="text-gray-500 mt-2">
-                  Click or drag to select the times you are available to conduct
-                  interviews.
+          <section className="max-w-5xl mx-auto">
+            <div className="text-center mb-6">
+              <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                <CalendarDays className="w-6 h-6" />
+              </div>
+              <h2 className="text-xl font-bold text-gray-900">
+                Your Interview Availability
+              </h2>
+              <p className="text-gray-500 mt-2">
+                Click or drag to select the times you are available to conduct
+                interviews. 15-minute blocks.
+              </p>
+            </div>
+
+            {interviewConfig ? (
+              <>
+                {importError && (
+                  <div className="mb-3 p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
+                    {importError}
+                  </div>
+                )}
+                <CalendarGrid
+                  rangeStart={new Date(interviewConfig.interviewStartDate)}
+                  rangeEnd={new Date(interviewConfig.interviewEndDate)}
+                  dayStartHour={interviewConfig.dayStartHour}
+                  dayEndHour={interviewConfig.dayEndHour}
+                  savedBlocks={savedAvailability}
+                  interviewBlocks={interviewBlocks}
+                  onSave={handleSaveAvailability}
+                  saving={availabilitySaving}
+                  onImportFromGoogle={handleImportFromGoogle}
+                  importing={importing}
+                  pendingPrefill={pendingPrefill}
+                />
+              </>
+            ) : (
+              <div className="bg-white rounded-xl border border-gray-200 p-8 text-center shadow-sm">
+                <p className="text-gray-500">
+                  Interview dates have not been configured yet. Please check back later or contact your Domain Lead.
                 </p>
               </div>
-
-              <div className="border border-gray-200 rounded-xl overflow-hidden bg-gray-50">
-                <div className="grid grid-cols-6 border-b border-gray-200 bg-white">
-                  <div className="p-3 text-center border-r border-gray-200 text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Time
-                  </div>
-                  {days.map((day) => (
-                    <div
-                      key={day}
-                      className="p-3 text-center border-r border-gray-200 last:border-r-0 text-sm font-bold text-gray-900"
-                    >
-                      {day}
-                    </div>
-                  ))}
-                </div>
-
-                <div className="divide-y divide-gray-200">
-                  {hours.map((hour) => (
-                    <div key={hour} className="grid grid-cols-6">
-                      <div className="p-3 text-center border-r border-gray-200 bg-white text-xs font-medium text-gray-500">
-                        {hour > 12
-                          ? `${hour - 12} PM`
-                          : hour === 12
-                            ? '12 PM'
-                            : `${hour} AM`}
-                      </div>
-                      {days.map((day) => {
-                        const isSelected = availableSlots.has(`${day}-${hour}`)
-                        return (
-                          <button
-                            key={`${day}-${hour}`}
-                            onClick={() => toggleSlot(day, hour)}
-                            className={`p-4 border-r border-gray-200 last:border-r-0 transition-colors ${isSelected ? 'bg-green-400 hover:bg-green-500' : 'bg-white hover:bg-green-50'}`}
-                          />
-                        )
-                      })}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="mt-6 flex justify-between items-center">
-                <div className="flex items-center gap-4 text-sm text-gray-600">
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 bg-white border border-gray-300 rounded"></div>{' '}
-                    Unavailable
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 bg-green-400 rounded"></div>{' '}
-                    Available
-                  </div>
-                </div>
-                <button
-                  onClick={handleSaveAvailability}
-                  disabled={availableSlots.size === 0}
-                  className={`px-6 py-2.5 font-medium rounded-lg transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed ${availabilitySaved ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}
-                >
-                  {availabilitySaved ? (
-                    <span className="inline-flex items-center gap-1.5">
-                      <CheckCircle className="w-4 h-4" />
-                      Saved!
-                    </span>
-                  ) : (
-                    'Save Availability'
-                  )}
-                </button>
-              </div>
-            </div>
+            )}
           </section>
         )}
 

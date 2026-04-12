@@ -101,7 +101,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     client_id: process.env.GOOGLE_CLIENT_ID!,
     redirect_uri: `${apiBase}/oauth/callback/google`,
     response_type: "code",
-    scope: "openid email profile",
+    scope: "openid email profile https://www.googleapis.com/auth/calendar.readonly",
     state: session.id,
     access_type: "offline",
     prompt: "select_account",

@@ -16,6 +16,7 @@ export default [
     route("challenges/:id", "routes/admin.challenges.$id.tsx"),
     route("admin/rubrics", "routes/admin.rubrics.tsx"),
     route("admin/rubrics/:id", "routes/admin.rubrics.$id.tsx"),
+    route("test/applicant-interview", "routes/test.applicant-interview.tsx"),
   ]),
 
   // Login (no layout)
@@ -32,4 +33,19 @@ export default [
   // Authenticated API endpoints (no layout)
   route("auth/link-member", "routes/auth.link-member.ts"),
   route("users/:id", "routes/users.$id.ts"),
+
+  // Interview scheduling API
+  route("api/cycles/:cycleId/interview-config", "routes/api.cycles.$cycleId.interview-config.ts"),
+  route("api/cycles/:cycleId/reviewers", "routes/api.cycles.$cycleId.reviewers.ts"),
+  route("api/cycles/:cycleId/reviewers/:reviewerId", "routes/api.cycles.$cycleId.reviewers.$reviewerId.ts"),
+  route("api/cycles/:cycleId/my-availability", "routes/api.cycles.$cycleId.my-availability.ts"),
+  route("api/cycles/:cycleId/my-interviews", "routes/api.cycles.$cycleId.my-interviews.ts"),
+  route("api/cycles/:cycleId/my-interviews/:interviewId/decline", "routes/api.cycles.$cycleId.my-interviews.$interviewId.decline.ts"),
+  route("api/cycles/:cycleId/available-slots", "routes/api.cycles.$cycleId.available-slots.ts"),
+  route("api/cycles/:cycleId/book-interview", "routes/api.cycles.$cycleId.book-interview.ts"),
+  route("api/cycles/:cycleId/interviews", "routes/api.cycles.$cycleId.interviews.ts"),
+  route("api/my-interview", "routes/api.my-interview.ts"),
+  route("api/my-interview/cancel", "routes/api.my-interview.cancel.ts"),
+  route("api/my-interview/reschedule", "routes/api.my-interview.reschedule.ts"),
+  route("api/google-calendar/busy", "routes/api.google-calendar.busy.ts"),
 ] satisfies RouteConfig;
