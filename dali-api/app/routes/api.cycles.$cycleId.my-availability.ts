@@ -1,28 +1,24 @@
 import type { Route } from "./+types/api.cycles.$cycleId.my-availability";
 import { prisma } from "~/lib/db";
+import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 
-// Dev fallback: if the logged-in user isn't a DALIMember, use the first
-// CycleReviewer for the cycle. Remove once real reviewer auth is wired up.
 async function findCycleReviewer(userId: string, cycleId: string) {
   const member = await prisma.dALIMember.findFirst({ where: { userId } });
-  if (member) {
-    const reviewer = await prisma.cycleReviewer.findUnique({
-      where: { daliMemberId_applicationCycleId: { daliMemberId: member.id, applicationCycleId: cycleId } },
-    });
-    if (reviewer) return reviewer;
-  }
-  return prisma.cycleReviewer.findFirst({ where: { applicationCycleId: cycleId } });
+  if (!member) return null;
+  return prisma.cycleReviewer.findFirst({
+    where: { daliMemberId: member.id, applicationCycleId: cycleId },
+  });
 }
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const preflight = handlePreflight(request);
   if (preflight) return preflight;
 
-  // Dev: use first reviewer for the cycle when no auth
-  const reviewer = await prisma.cycleReviewer.findFirst({
-    where: { applicationCycleId: params.cycleId },
-  });
+  const auth = await requireAuth(request);
+  if (!auth.ok) return withCors(request, auth.response);
+
+  const reviewer = await findCycleReviewer(auth.user.sub, params.cycleId!);
   if (!reviewer) {
     return withCors(request, Response.json([]));
   }
@@ -43,12 +39,12 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
 
-  // Dev: use first reviewer for the cycle when no auth
-  const reviewer = await prisma.cycleReviewer.findFirst({
-    where: { applicationCycleId: params.cycleId },
-  });
+  const auth = await requireAuth(request);
+  if (!auth.ok) return withCors(request, auth.response);
+
+  const reviewer = await findCycleReviewer(auth.user.sub, params.cycleId!);
   if (!reviewer) {
-    return withCors(request, Response.json({ error: "No reviewer found for this cycle" }, { status: 404 }));
+    return withCors(request, Response.json({ error: "Not a reviewer for this cycle" }, { status: 404 }));
   }
 
   const body = await request.json();

@@ -36,6 +36,13 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "daliMemberId and domainId required" }, { status: 400 }));
   }
 
+  // Ensure domain is linked to cycle
+  await prisma.domainApplicationCycle.upsert({
+    where: { domainId_applicationCycleId: { domainId, applicationCycleId: params.cycleId! } },
+    update: {},
+    create: { domainId, applicationCycleId: params.cycleId! },
+  });
+
   const reviewer = await prisma.cycleReviewer.create({
     data: {
       daliMemberId,

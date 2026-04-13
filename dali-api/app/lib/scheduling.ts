@@ -285,7 +285,7 @@ export async function reassignReviewer(
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function isReviewerFree(
+export function isReviewerFree(
   reviewer: ReviewerFreeCheck,
   slotStart: Date,
   slotEnd: Date,
@@ -303,7 +303,7 @@ function isReviewerFree(
   return !conflict;
 }
 
-function generateCandidateSlots(
+export function generateCandidateSlots(
   startDate: Date,
   endDate: Date,
   dayStartHour: number,

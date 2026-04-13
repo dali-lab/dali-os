@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Link } from 'react-router'
+import { Link, useLoaderData } from 'react-router'
 import {
   ChevronRight,
   Clock,
@@ -12,75 +12,93 @@ import {
   ListOrdered,
   PlayCircle,
 } from 'lucide-react'
-import { adminUser, applicationCycles, mockApplications } from '~/mockData'
 import type { CycleStage } from '~/types'
 import CalendarGrid from '~/components/CalendarGrid'
+import { prisma } from '~/lib/db'
+import { requireAuth } from '~/lib/auth'
+import type { Route } from './+types/mentor'
 
-export function loader() {
-  return {}
+// Map DB cycle status → mentor-facing stage
+function cycleStatusToStage(status: string): CycleStage {
+  switch (status) {
+    case 'Draft': return 'challengeSetup'
+    case 'Open': return 'collectingAvailability'
+    case 'Closed': return 'interviews'
+    case 'DecisionsReleased': return 'finalDelibs'
+    default: return 'challengeSetup'
+  }
+}
+
+export async function loader({ request }: Route.LoaderArgs) {
+  const auth = await requireAuth(request)
+  if (!auth.ok) return { activeCycle: null, currentStage: 'challengeSetup' as CycleStage }
+
+  // Find the cycle this mentor is actually assigned to as a reviewer
+  const member = await prisma.dALIMember.findFirst({ where: { userId: auth.user.sub } })
+  if (!member) return { activeCycle: null, currentStage: 'challengeSetup' as CycleStage }
+
+  const reviewer = await prisma.cycleReviewer.findFirst({
+    where: { daliMemberId: member.id },
+    include: {
+      applicationCycle: { include: { statusUpdates: { orderBy: { createdAt: 'desc' }, take: 1 } } },
+    },
+    orderBy: { applicationCycle: { createdAt: 'desc' } },
+  })
+
+  if (!reviewer) return { activeCycle: null, currentStage: 'challengeSetup' as CycleStage }
+
+  const cycle = reviewer.applicationCycle
+  const status = cycle.statusUpdates[0]?.newStatus ?? 'Draft'
+
+  return {
+    activeCycle: { id: cycle.id, name: cycle.name },
+    currentStage: cycleStatusToStage(status),
+  }
 }
 
 export default function MentorDashboard() {
-  const applications = mockApplications
-  const saveInterviewNotes = (_appId: string, _notes: string) => {}
-  const currentStage = 'collectingAvailability' as CycleStage
-  const readingDueDate: string | null = '2026-04-20T23:59:00Z'
+  const { activeCycle, currentStage } = useLoaderData<typeof loader>() as {
+    activeCycle: { id: string; name: string } | null
+    currentStage: CycleStage
+  }
+
+  if (!activeCycle) {
+    return (
+      <div className="space-y-8">
+        <h1 className="text-2xl font-bold text-gray-900">Mentor Dashboard</h1>
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8 text-center">
+          <p className="text-gray-500">No active hiring cycle found.</p>
+        </div>
+      </div>
+    )
+  }
+
+  const readingDueDate: string | null = null
   const availabilityDueDate: string | null = null
-  const writtenDelibsBuckets = { advance: [] as string[], cut: [] as string[] }
-  const finalDelibsBuckets = {
-    reject: [] as string[],
-    waitlist: [] as string[],
-    accept: [] as string[],
-  }
-  // For this mock, adminUser (user-2) is the logged-in mentor
-  const mentorId = adminUser.id
-  // Use the seeded DB cycle ID so the API endpoints find real data
-  const activeCycle = { id: 'cycle-fall-2026', name: 'Fall 2026' } as typeof applicationCycles[number]
-  const assignedApps = applications.filter(
-    (a) =>
-      a.assignedMentorId === mentorId &&
-      a.applicationCycleId === activeCycle.id,
-  )
-  const allCycleApps = applications.filter(
-    (a) => a.applicationCycleId === activeCycle.id && a.status !== 'Draft',
-  )
-  // Build a stable blinded mapping for all cycle apps
+
+  // Stub variables for stages not yet wired to real data
+  const mentorId = ''
+  const assignedApps: any[] = []
+  const allCycleApps: any[] = []
   const blindedMap = new Map<string, string>()
-  allCycleApps.forEach((app, index) => {
-    blindedMap.set(app.id, String.fromCharCode(65 + index))
-  })
-  const scheduledInterviews = assignedApps.filter(
-    (a) =>
-      a.status === 'InterviewScheduled' && a.interview?.status === 'Scheduled',
-  )
-  const [interviewNotes, setInterviewNotes] = useState<Record<string, string>>(
-    scheduledInterviews.reduce(
-      (acc, app) => ({
-        ...acc,
-        [app.id]: app.interview?.notes || '',
-      }),
-      {},
-    ),
-  )
-  const handleSaveNotes = (appId: string) => {
-    saveInterviewNotes(appId, interviewNotes[appId] || '')
-    alert('Notes saved successfully!')
-  }
-  // Reading Applications State
+  const [scheduledInterviews, setScheduledInterviews] = useState<any[]>([])
+  const [interviewNotes, setInterviewNotes] = useState<Record<string, string>>({})
+  const handleSaveNotes = useCallback(async (interviewId: string) => {
+    if (!activeCycle) return
+    const notes = interviewNotes[interviewId]
+    if (notes === undefined) return
+    await fetch(`/api/cycles/${activeCycle.id}/my-interviews/${interviewId}/notes`, {
+      method: 'PUT', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notes }),
+    })
+  }, [activeCycle, interviewNotes])
   const [inProgressIds, setInProgressIds] = useState<string[]>([])
-  const pendingApps = assignedApps.filter(
-    (a) =>
-      !a.mentorReviews?.some((r) => r.mentorId === mentorId) &&
-      !inProgressIds.includes(a.id),
-  )
-  const inProgressApps = assignedApps.filter(
-    (a) =>
-      !a.mentorReviews?.some((r) => r.mentorId === mentorId) &&
-      inProgressIds.includes(a.id),
-  )
-  const finishedApps = assignedApps.filter((a) =>
-    a.mentorReviews?.some((r) => r.mentorId === mentorId),
-  )
+  const pendingApps: any[] = []
+  const inProgressApps: any[] = []
+  const finishedApps: any[] = []
+  const writtenDelibsBuckets = { advance: [] as string[], cut: [] as string[] }
+  const finalDelibsBuckets = { reject: [] as string[], waitlist: [] as string[], accept: [] as string[] }
   // Interview Availability State (API-connected)
   const [savedAvailability, setSavedAvailability] = useState<{ startTime: string; endTime: string }[]>([])
   const [interviewBlocks, setInterviewBlocks] = useState<{ startTime: string; endTime: string }[]>([])
@@ -118,6 +136,23 @@ export default function MentorDashboard() {
       })
       .catch(() => {})
   }, [currentStage, activeCycle.id])
+
+  // Fetch scheduled interviews when in interviews stage
+  useEffect(() => {
+    if (currentStage !== 'interviews' || !activeCycle) return
+    fetch(`/api/cycles/${activeCycle.id}/my-interviews`, { credentials: 'include' })
+      .then(r => r.ok ? r.json() : [])
+      .then((assignments: any[]) => {
+        setScheduledInterviews(assignments)
+        // Pre-populate notes from existing data
+        const notesMap: Record<string, string> = {}
+        for (const a of assignments) {
+          if (a.notes) notesMap[a.interview.id] = a.notes
+        }
+        setInterviewNotes(notesMap)
+      })
+      .catch(() => {})
+  }, [currentStage, activeCycle])
 
   const handleSaveAvailability = useCallback(
     async (blocks: { startTime: string; endTime: string }[]) => {
@@ -650,26 +685,33 @@ export default function MentorDashboard() {
               </div>
             ) : (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {scheduledInterviews.map((app) => {
-                  const slot = app.interview?.availableSlots.find(
-                    (s) => s.id === app.interview?.scheduledSlotId,
-                  )
-                  if (!slot) return null
-                  const startDate = new Date(slot.startTime)
-                  const endDate = new Date(slot.endTime)
+                {scheduledInterviews.map((assignment: any) => {
+                  const interview = assignment.interview
+                  if (!interview) return null
+                  const startDate = new Date(interview.startTime)
+                  const endDate = new Date(interview.endTime)
+                  const applicant = interview.application?.user
+                  const domains = interview.application?.domainApplications
+                    ?.map((da: any) => da.challengeVersion?.domain?.name)
+                    .filter(Boolean)
+                    .join(', ')
+
                   return (
                     <div
-                      key={app.id}
+                      key={assignment.id}
                       className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col"
                     >
                       <div className="p-6 border-b border-gray-200 bg-gray-50 flex justify-between items-start">
                         <div>
                           <h3 className="text-lg font-bold text-gray-900 mb-1">
-                            Applicant {app.userId.replace('user-', '#')}
+                            {applicant ? `${applicant.firstName} ${applicant.lastName}` : 'Applicant'}
                           </h3>
+                          {domains && (
+                            <p className="text-xs text-gray-500">{domains}</p>
+                          )}
                           <Link
-                            to={`/mentor/application/${app.id}`}
-                            className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center"
+                            to={`/mentor/application/${interview.applicationId}`}
+                            className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center mt-1"
                           >
                             View Application{' '}
                             <ChevronRight className="w-3 h-3 ml-0.5" />
@@ -702,11 +744,11 @@ export default function MentorDashboard() {
                         </label>
                         <textarea
                           rows={5}
-                          value={interviewNotes[app.id] || ''}
+                          value={interviewNotes[interview.id] || ''}
                           onChange={(e) =>
                             setInterviewNotes({
                               ...interviewNotes,
-                              [app.id]: e.target.value,
+                              [interview.id]: e.target.value,
                             })
                           }
                           placeholder="Jot down notes during or after the interview..."
@@ -714,7 +756,7 @@ export default function MentorDashboard() {
                         />
                         <div className="mt-4 flex justify-end">
                           <button
-                            onClick={() => handleSaveNotes(app.id)}
+                            onClick={() => handleSaveNotes(interview.id)}
                             className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                           >
                             <Save className="w-4 h-4 mr-2" />

@@ -364,6 +364,7 @@ model InterviewAssignment {
   cycleReviewer   CycleReviewer    @relation(fields: [cycleReviewerId], references: [id])
   role            AssignmentRole
   status          AssignmentStatus @default(Active)
+  notes           String?
 
   @@index([cycleReviewerId, status])
 }

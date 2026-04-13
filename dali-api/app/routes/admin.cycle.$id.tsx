@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'react-router'
-import { Settings, Users, Calendar, AlertTriangle, Trash2, Plus, CheckCircle } from 'lucide-react'
+import { Settings, Users, Calendar, AlertTriangle, Trash2, Plus, CheckCircle, ArrowRight } from 'lucide-react'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -76,9 +76,42 @@ export default function AdminCycleDetails() {
   const [newMemberId, setNewMemberId] = useState('')
   const [newDomainId, setNewDomainId] = useState('')
   const [newIsLead, setNewIsLead] = useState(false)
+  const [allMembers, setAllMembers] = useState<{ id: string; user?: { firstName: string; lastName: string } | null }[]>([])
+  const [allDomains, setAllDomains] = useState<{ id: string; name: string }[]>([])
 
   // ── Interviews state ──
   const [interviews, setInterviews] = useState<InterviewRow[]>([])
+
+  // ── Cycle status ──
+  const [cycleStatus, setCycleStatus] = useState<string>('Draft')
+  const [statusUpdating, setStatusUpdating] = useState(false)
+
+  const STATUS_FLOW = ['Draft', 'Open', 'Closed', 'DecisionsReleased'] as const
+  const STATUS_LABELS: Record<string, string> = {
+    Draft: 'Draft', Open: 'Open', Closed: 'Closed', DecisionsReleased: 'Decisions Released',
+  }
+  const STATUS_COLORS: Record<string, string> = {
+    Draft: 'bg-gray-100 text-gray-700', Open: 'bg-green-100 text-green-700',
+    Closed: 'bg-yellow-100 text-yellow-700', DecisionsReleased: 'bg-blue-100 text-blue-700',
+  }
+
+  async function advanceStatus() {
+    if (!cycleId) return
+    const idx = STATUS_FLOW.indexOf(cycleStatus as any)
+    if (idx < 0 || idx >= STATUS_FLOW.length - 1) return
+    const next = STATUS_FLOW[idx + 1]
+    setStatusUpdating(true)
+    try {
+      const res = await fetch(`/api/cycles/${cycleId}/status`, {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newStatus: next }),
+      })
+      if (res.ok) setCycleStatus(next)
+    } finally {
+      setStatusUpdating(false)
+    }
+  }
 
   // ── Active tab ──
   const [tab, setTab] = useState<'config' | 'reviewers' | 'dashboard'>('config')
@@ -86,6 +119,11 @@ export default function AdminCycleDetails() {
   // ── Load data ──
   useEffect(() => {
     if (!cycleId) return
+
+    fetch(`/api/cycles/${cycleId}/status`, { credentials: 'include' })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data) setCycleStatus(data.currentStatus) })
+      .catch(() => {})
 
     fetch(`/api/cycles/${cycleId}/interview-config`, { credentials: 'include' })
       .then(r => r.ok ? r.json() : null)
@@ -103,6 +141,16 @@ export default function AdminCycleDetails() {
     fetch(`/api/cycles/${cycleId}/reviewers`, { credentials: 'include' })
       .then(r => r.ok ? r.json() : [])
       .then(setReviewers)
+      .catch(() => {})
+
+    fetch('/api/members', { credentials: 'include' })
+      .then(r => r.ok ? r.json() : [])
+      .then(setAllMembers)
+      .catch(() => {})
+
+    fetch('/api/domains', { credentials: 'include' })
+      .then(r => r.ok ? r.json() : [])
+      .then(setAllDomains)
       .catch(() => {})
 
     fetch(`/api/cycles/${cycleId}/interviews`, { credentials: 'include' })
@@ -167,6 +215,26 @@ export default function AdminCycleDetails() {
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Cycle Management</h1>
         <p className="text-gray-500 mt-1">Configure interviews for cycle <span className="font-mono text-xs bg-gray-100 px-1.5 py-0.5 rounded">{cycleId}</span></p>
+      </div>
+
+      {/* Cycle Status */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-medium text-gray-500">Status:</span>
+          <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-bold ${STATUS_COLORS[cycleStatus]}`}>
+            {STATUS_LABELS[cycleStatus] ?? cycleStatus}
+          </span>
+        </div>
+        {STATUS_FLOW.indexOf(cycleStatus as any) < STATUS_FLOW.length - 1 && (
+          <button
+            onClick={advanceStatus}
+            disabled={statusUpdating}
+            className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition disabled:opacity-50"
+          >
+            {statusUpdating ? 'Updating...' : `Advance to ${STATUS_LABELS[STATUS_FLOW[STATUS_FLOW.indexOf(cycleStatus as any) + 1]]}`}
+            <ArrowRight className="w-4 h-4" />
+          </button>
+        )}
       </div>
 
       {/* Tabs */}
@@ -274,6 +342,9 @@ export default function AdminCycleDetails() {
       {/* ── Reviewer Roster Tab ── */}
       {tab === 'reviewers' && (
         <div className="space-y-4">
+          {/* Domain Leads section */}
+          <DomainLeadsSection domains={allDomains} members={allMembers} />
+
           {/* Add reviewer form */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
             <h3 className="text-sm font-bold text-gray-700 mb-4 flex items-center gap-2">
@@ -281,24 +352,32 @@ export default function AdminCycleDetails() {
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">DALI Member ID</label>
-                <input
-                  type="text"
+                <label className="block text-xs font-medium text-gray-500 mb-1">DALI Member</label>
+                <select
                   value={newMemberId}
                   onChange={e => setNewMemberId(e.target.value)}
-                  placeholder="cuid..."
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                />
+                >
+                  <option value="">Select member...</option>
+                  {allMembers.map(m => (
+                    <option key={m.id} value={m.id}>
+                      {m.user ? `${m.user.firstName} ${m.user.lastName}` : m.id}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Domain ID</label>
-                <input
-                  type="text"
+                <label className="block text-xs font-medium text-gray-500 mb-1">Domain</label>
+                <select
                   value={newDomainId}
                   onChange={e => setNewDomainId(e.target.value)}
-                  placeholder="cuid..."
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                />
+                >
+                  <option value="">Select domain...</option>
+                  {allDomains.map(d => (
+                    <option key={d.id} value={d.id}>{d.name}</option>
+                  ))}
+                </select>
               </div>
               <label className="flex items-center gap-2 cursor-pointer">
                 <input type="checkbox" checked={newIsLead} onChange={e => setNewIsLead(e.target.checked)} className="rounded" />
@@ -427,6 +506,102 @@ export default function AdminCycleDetails() {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+function DomainLeadsSection({ domains, members }: {
+  domains: { id: string; name: string; domainLeadAssignments?: any[] }[];
+  members: { id: string; user?: { firstName: string; lastName: string } | null }[];
+}) {
+  const [leadsByDomain, setLeadsByDomain] = useState<Record<string, any[]>>(() => {
+    const map: Record<string, any[]> = {}
+    for (const d of domains) {
+      map[d.id] = d.domainLeadAssignments ?? []
+    }
+    return map
+  })
+  const [addingFor, setAddingFor] = useState<string | null>(null)
+  const [selectedMember, setSelectedMember] = useState('')
+
+  // Re-sync when domains prop changes
+  useEffect(() => {
+    const map: Record<string, any[]> = {}
+    for (const d of domains) {
+      map[d.id] = d.domainLeadAssignments ?? []
+    }
+    setLeadsByDomain(map)
+  }, [domains])
+
+  async function addLead(domainId: string) {
+    if (!selectedMember) return
+    const res = await fetch(`/api/domains/${domainId}/leads`, {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ memberId: selectedMember }),
+    })
+    if (res.ok) {
+      const assignment = await res.json()
+      setLeadsByDomain(prev => ({ ...prev, [domainId]: [...(prev[domainId] ?? []), assignment] }))
+      setSelectedMember('')
+      setAddingFor(null)
+    }
+  }
+
+  async function removeLead(domainId: string, assignmentId: string) {
+    const res = await fetch(`/api/domains/${domainId}/leads`, {
+      method: 'DELETE', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assignmentId }),
+    })
+    if (res.ok) {
+      setLeadsByDomain(prev => ({ ...prev, [domainId]: (prev[domainId] ?? []).filter((a: any) => a.id !== assignmentId) }))
+    }
+  }
+
+  if (domains.length === 0) return null
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+      <h3 className="text-sm font-bold text-gray-700 mb-4">Domain Leads</h3>
+      <div className="space-y-3">
+        {domains.map(d => {
+          const leads = leadsByDomain[d.id] ?? []
+          return (
+            <div key={d.id} className="flex items-center gap-3 py-2 border-b border-gray-100 last:border-0">
+              <span className="text-sm font-medium text-gray-900 w-32">{d.name}</span>
+              <div className="flex-1 flex flex-wrap items-center gap-2">
+                {leads.map((a: any) => (
+                  <span key={a.id} className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 text-xs font-medium rounded-full">
+                    {a.member?.user ? `${a.member.user.firstName} ${a.member.user.lastName}` : a.memberId}
+                    <button onClick={() => removeLead(d.id, a.id)} className="text-blue-400 hover:text-red-500 ml-0.5">&times;</button>
+                  </span>
+                ))}
+                {addingFor === d.id ? (
+                  <div className="flex items-center gap-1">
+                    <select
+                      value={selectedMember}
+                      onChange={e => setSelectedMember(e.target.value)}
+                      className="rounded border border-gray-300 px-2 py-1 text-xs"
+                    >
+                      <option value="">Select...</option>
+                      {members.map(m => (
+                        <option key={m.id} value={m.id}>
+                          {m.user ? `${m.user.firstName} ${m.user.lastName}` : m.id}
+                        </option>
+                      ))}
+                    </select>
+                    <button onClick={() => addLead(d.id)} disabled={!selectedMember} className="px-2 py-1 text-xs font-medium bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">Add</button>
+                    <button onClick={() => { setAddingFor(null); setSelectedMember('') }} className="px-2 py-1 text-xs text-gray-500 hover:text-gray-700">Cancel</button>
+                  </div>
+                ) : (
+                  <button onClick={() => setAddingFor(d.id)} className="text-xs text-blue-600 hover:text-blue-800 font-medium">+ Add lead</button>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
