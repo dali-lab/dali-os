@@ -22,10 +22,9 @@ export async function loader({ params }: Route.LoaderArgs) {
     prisma.domain.findMany({ orderBy: { name: "asc" } }),
   ]);
 
-  // Load rubrics that match any domain used in this challenge's versions.
-  const domainIds = [...new Set(challenge.versions.map((v) => v.domainId))];
+  // Load all domain rubrics (for rubric attachment dropdown across all versions)
   const rubrics = await prisma.rubric.findMany({
-    where: { domainId: { in: domainIds } },
+    where: { domainId: { not: null } },
     include: {
       domain: true,
       versions: { orderBy: { versionNumber: "desc" }, take: 1 },
