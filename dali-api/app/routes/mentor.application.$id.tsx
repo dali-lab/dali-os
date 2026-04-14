@@ -41,19 +41,20 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
+  const auth = await requireAuth(request)
+  if (!auth.ok) return redirect('/login')
+
   const formData = await request.formData()
   const intent = formData.get('intent') as string
 
   if (intent === 'save-review') {
-    const mentorId = formData.get('mentorId') as string
+    const mentorId = auth.user.sub
     const scores = JSON.parse(formData.get('scores') as string)
     const feedback = (formData.get('feedback') as string) ?? ''
     const rejectionRationale = (formData.get('rejectionRationale') as string) ?? ''
     const overallRecommendation = (formData.get('overallRecommendation') as string) || null
     const annotations = JSON.parse((formData.get('annotations') as string) ?? '[]')
 
-    // MentorReview uses upsert since schema now has @@unique([mentorId, applicationId])
-    // Note: requires `prisma db push` to have been run after schema change
     await prisma.mentorReview.upsert({
       where: { mentorId_applicationId: { mentorId, applicationId: params.id } },
       update: { scores, feedback, rejectionRationale, overallRecommendation, annotations },
