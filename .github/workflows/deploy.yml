@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: superfly/flyctl-actions/setup-flyctl@master
-      - run: cd dali-api && flyctl deploy --config fly.${{ github.ref_name }}.toml -a dali-api-${{ github.ref_name }}
+      - run: flyctl deploy --config ./dali-api/fly.${{ github.ref_name }}.toml ./dali-api -a dali-api-${{ github.ref_name }}
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
@@ -23,10 +23,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: superfly/flyctl-actions/setup-flyctl@master
-      - run: |
-          cd dali-web && flyctl deploy \
-            --config fly.${{ github.ref_name }}.toml \
-            -a dali-web-${{ github.ref_name }} \
-            --build-arg VITE_GOOGLE_CLIENT_ID=${{ secrets.VITE_GOOGLE_CLIENT_ID }}
+      - run: flyctl deploy --config ./dali-web/fly.${{ github.ref_name }}.toml ./dali-web -a dali-web-${{ github.ref_name }}
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
