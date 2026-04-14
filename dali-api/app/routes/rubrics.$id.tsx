@@ -32,6 +32,9 @@ export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request)
   if (!auth.ok) return redirect('/login')
 
+  const user = await prisma.user.findUnique({ where: { id: auth.user.sub } })
+  if (!user) return redirect('/login')
+
   const formData = await request.formData()
   const intent = formData.get('intent') as string
 
@@ -51,7 +54,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         rubricId: params.id,
         versionNumber,
         criteria,
-        createdById: auth.user.sub,
+        createdById: user.id,
         applicationFormVersionId: applicationFormVersionId || undefined,
       },
     })
