@@ -7,8 +7,29 @@ on:
       - prod
 
 jobs:
+  reset-neon-dev:
+    name: Reset Neon dev branch from prod
+    runs-on: ubuntu-latest
+    if: github.ref_name == 'dev'
+    steps:
+      - name: Restore development branch from production
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          PROJECT_ID: falling-morning-15858013
+        run: |
+          BRANCHES=$(curl -sf "https://console.neon.tech/api/v2/projects/$PROJECT_ID/branches" \
+            -H "Authorization: Bearer $NEON_API_KEY")
+          DEV_ID=$(echo "$BRANCHES" | jq -r '.branches[] | select(.name=="development") | .id')
+          PROD_ID=$(echo "$BRANCHES" | jq -r '.branches[] | select(.name=="production") | .id')
+          curl -sf -X POST "https://console.neon.tech/api/v2/projects/$PROJECT_ID/branches/$DEV_ID/restore" \
+            -H "Authorization: Bearer $NEON_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"source_branch_id\": \"$PROD_ID\"}"
+
   deploy-api:
     name: Deploy API (${{ github.ref_name }})
+    needs: [reset-neon-dev]
+    if: always() && (needs.reset-neon-dev.result == 'success' || needs.reset-neon-dev.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
