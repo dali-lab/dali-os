@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
 import Navbar from '@/components/Navbar';
-import { getUser } from '@/lib/auth';
+import { getUser, fetchWithAuth } from '@/lib/auth';
 import type { UserInfo } from '@/lib/auth';
+
+const API_BASE = import.meta.env.VITE_DALI_DB_URL ?? "http://localhost:3001";
 
 // ─── Applicant stage ─────────────────────────────────────────────────────────
 //
@@ -25,9 +27,20 @@ type ApplicantStage =
   | 'Accepted'
   | 'Waitlisted';
 
-const CURRENT_STAGE: ApplicantStage = 'PostInterviewPending';
-
 const CYCLE_NAME = 'Fall 2026';
+
+// Transform API slot to UI TimeSlot
+function apiSlotToTimeSlot(slot: { startTime: string; endTime: string }, index: number): TimeSlot {
+  const start = new Date(slot.startTime);
+  const end = new Date(slot.endTime);
+  return {
+    id: `slot-${index}`,
+    date: start.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }),
+    time: `${start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} - ${end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`,
+    isoStart: slot.startTime,
+    isoEnd: slot.endTime,
+  };
+}
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -125,18 +138,7 @@ const ROLE_QUESTIONS: Record<string, Question[]> = {
   ],
 };
 
-// ─── Mock interview slots ────────────────────────────────────────────────────
-
-const INTERVIEW_SLOTS: TimeSlot[] = [
-  { id: 's1', date: 'Monday, April 20', time: '10:00 AM - 10:30 AM', isoStart: '20260420T140000Z', isoEnd: '20260420T143000Z' },
-  { id: 's2', date: 'Monday, April 20', time: '2:00 PM - 2:30 PM', isoStart: '20260420T180000Z', isoEnd: '20260420T183000Z' },
-  { id: 's3', date: 'Tuesday, April 21', time: '11:00 AM - 11:30 AM', isoStart: '20260421T150000Z', isoEnd: '20260421T153000Z' },
-  { id: 's4', date: 'Tuesday, April 21', time: '3:00 PM - 3:30 PM', isoStart: '20260421T190000Z', isoEnd: '20260421T193000Z' },
-  { id: 's5', date: 'Wednesday, April 22', time: '9:00 AM - 9:30 AM', isoStart: '20260422T130000Z', isoEnd: '20260422T133000Z' },
-  { id: 's6', date: 'Wednesday, April 22', time: '1:00 PM - 1:30 PM', isoStart: '20260422T170000Z', isoEnd: '20260422T173000Z' },
-  { id: 's7', date: 'Thursday, April 23', time: '10:00 AM - 10:30 AM', isoStart: '20260423T140000Z', isoEnd: '20260423T143000Z' },
-  { id: 's8', date: 'Thursday, April 23', time: '4:00 PM - 4:30 PM', isoStart: '20260423T200000Z', isoEnd: '20260423T203000Z' },
-];
+// Interview slots are now fetched from the API — see InvitedToInterviewView
 
 // ─── Mock onboarding checklist ───────────────────────────────────────────────
 
@@ -584,14 +586,49 @@ function PendingView() {
 
 // ─── Stage: InvitedToInterview ───────────────────────────────────────────────
 
-function InvitedToInterviewView() {
+function InvitedToInterviewView({ appData, onBooked }: {
+  appData: { id: string; cycleId: string; domainIds: string[] } | null;
+  onBooked: (interview: { id: string; startTime: string; endTime: string; status: string }) => void;
+}) {
+  const [slots, setSlots] = useState<TimeSlot[]>([]);
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
   const [confirmed, setConfirmed] = useState(false);
+  const [booking, setBooking] = useState(false);
   const [declining, setDeclining] = useState(false);
   const [declined, setDeclined] = useState(false);
 
-  const grouped = groupSlotsByDate(INTERVIEW_SLOTS);
-  const slot = INTERVIEW_SLOTS.find(s => s.id === selectedSlot);
+  useEffect(() => {
+    if (!appData) return;
+    const params = appData.domainIds.map(d => `domainId=${d}`).join('&');
+    fetchWithAuth(`${API_BASE}/api/cycles/${appData.cycleId}/available-slots?${params}`)
+      .then(r => r.ok ? r.json() : [])
+      .then((apiSlots: { startTime: string; endTime: string }[]) => {
+        setSlots(apiSlots.map(apiSlotToTimeSlot));
+      })
+      .catch(() => {});
+  }, [appData]);
+
+  const grouped = groupSlotsByDate(slots);
+  const slot = slots.find(s => s.id === selectedSlot);
+
+  async function handleConfirm() {
+    if (!slot || !appData) return;
+    setBooking(true);
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/api/cycles/${appData.cycleId}/book-interview`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slotStart: slot.isoStart, slotEnd: slot.isoEnd, applicationId: appData.id }),
+      });
+      if (res.ok) {
+        const interview = await res.json();
+        setConfirmed(true);
+        onBooked({ id: interview.id, startTime: interview.startTime, endTime: interview.endTime, status: interview.status });
+      }
+    } finally {
+      setBooking(false);
+    }
+  }
 
   if (declined) {
     return (
@@ -655,8 +692,8 @@ function InvitedToInterviewView() {
       {/* Actions */}
       <div className="flex items-center gap-3">
         <button
-          onClick={() => setConfirmed(true)}
-          disabled={!selectedSlot}
+          onClick={handleConfirm}
+          disabled={!selectedSlot || booking}
           className="px-6 py-2.5 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition disabled:opacity-50"
         >
           Confirm Time
@@ -679,20 +716,42 @@ function InvitedToInterviewView() {
 
 // ─── Stage: InterviewScheduled ───────────────────────────────────────────────
 
-function InterviewScheduledView() {
-  // For the hardcoded view, pick the first slot
-  const slot = INTERVIEW_SLOTS[0];
-  return <InterviewConfirmation slot={slot} />;
+function InterviewScheduledView({ interview, appData, onCancelled, onRescheduled }: {
+  interview: { id: string; startTime: string; endTime: string; status: string };
+  appData: { id: string; cycleId: string; domainIds: string[] } | null;
+  onCancelled: () => void;
+  onRescheduled: (interview: { id: string; startTime: string; endTime: string; status: string }) => void;
+}) {
+  const slot = apiSlotToTimeSlot(interview, 0);
+  return <InterviewConfirmation slot={slot} appData={appData} onCancelled={onCancelled} onRescheduled={onRescheduled} />;
 }
 
 /** Shared confirmation UI used by both InvitedToInterview (after confirm) and InterviewScheduled stage */
-function InterviewConfirmation({ slot }: { slot: TimeSlot }) {
+function InterviewConfirmation({ slot, appData, onCancelled, onRescheduled }: {
+  slot: TimeSlot;
+  appData?: { id: string; cycleId: string; domainIds: string[] } | null;
+  onCancelled?: () => void;
+  onRescheduled?: (interview: { id: string; startTime: string; endTime: string; status: string }) => void;
+}) {
   const [rescheduling, setRescheduling] = useState(false);
+  const [rescheduleSlots, setRescheduleSlots] = useState<TimeSlot[]>([]);
   const [declining, setDeclining] = useState(false);
   const [declined, setDeclined] = useState(false);
   const [currentSlot, setCurrentSlot] = useState(slot);
 
-  const grouped = groupSlotsByDate(INTERVIEW_SLOTS.filter(s => s.id !== currentSlot.id));
+  // Fetch available slots when rescheduling
+  useEffect(() => {
+    if (!rescheduling || !appData) return;
+    const params = appData.domainIds.map((d: string) => `domainId=${d}`).join('&');
+    fetchWithAuth(`${API_BASE}/api/cycles/${appData.cycleId}/available-slots?${params}`)
+      .then(r => r.ok ? r.json() : [])
+      .then((apiSlots: { startTime: string; endTime: string }[]) => {
+        setRescheduleSlots(apiSlots.map(apiSlotToTimeSlot).filter((s: TimeSlot) => s.isoStart !== currentSlot.isoStart));
+      })
+      .catch(() => {});
+  }, [rescheduling, appData, currentSlot.isoStart]);
+
+  const grouped = groupSlotsByDate(rescheduleSlots);
 
   if (declined) {
     return (
@@ -725,7 +784,19 @@ function InterviewConfirmation({ slot }: { slot: TimeSlot }) {
                 {slots.map(s => (
                   <button
                     key={s.id}
-                    onClick={() => { setCurrentSlot(s); setRescheduling(false); }}
+                    onClick={async () => {
+                      const res = await fetchWithAuth(`${API_BASE}/api/my-interview/reschedule`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ newStart: s.isoStart, newEnd: s.isoEnd }),
+                      });
+                      if (res.ok) {
+                        const interview = await res.json();
+                        setCurrentSlot(s);
+                        setRescheduling(false);
+                        onRescheduled?.({ id: interview.id, startTime: interview.startTime, endTime: interview.endTime, status: interview.status });
+                      }
+                    }}
                     className="px-4 py-3 rounded-xl text-sm font-medium border-2 border-gray-200 dark:border-gray-700 text-nav-primary dark:text-white hover:border-accent-coral/50 transition-all text-left"
                   >
                     {s.time}
@@ -789,7 +860,10 @@ function InterviewConfirmation({ slot }: { slot: TimeSlot }) {
         {declining ? (
           <div className="flex items-center gap-2">
             <span className="text-sm text-gray-500 dark:text-gray-400">Cancel interview?</span>
-            <button onClick={() => setDeclined(true)} className="text-sm font-semibold text-red-500 hover:underline">Yes</button>
+            <button onClick={async () => {
+              const res = await fetchWithAuth(`${API_BASE}/api/my-interview/cancel`, { method: 'POST' });
+              if (res.ok) { setDeclined(true); onCancelled?.(); }
+            }} className="text-sm font-semibold text-red-500 hover:underline">Yes</button>
             <button onClick={() => setDeclining(false)} className="text-sm font-semibold text-gray-500 hover:underline">No</button>
           </div>
         ) : (
@@ -992,13 +1066,67 @@ function StageIndicator({ stage }: { stage: ApplicantStage }) {
 export default function ApplicantPortal() {
   const [session, setSession] = useState<ReturnType<typeof getSession>>(null);
   const [loading, setLoading] = useState(true);
+  const [currentStage, setCurrentStage] = useState<ApplicantStage>('Pending');
+  const [appData, setAppData] = useState<{ id: string; cycleId: string; domainIds: string[] } | null>(null);
+  const [interviewData, setInterviewData] = useState<{ id: string; startTime: string; endTime: string; status: string } | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
     const s = getSession();
     if (!s) { navigate('/login'); return; }
     setSession(s);
-    setLoading(false);
+
+    // Fetch application data to determine stage
+    fetchWithAuth(`${API_BASE}/api/my-application`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data) { setLoading(false); return; }
+
+        if (data.application) {
+          setAppData({ id: data.application.id, cycleId: data.application.applicationCycleId, domainIds: data.application.domainIds });
+        }
+        if (data.interview) {
+          setInterviewData(data.interview);
+        }
+
+        // Derive stage
+        const app = data.application;
+        const interview = data.interview;
+        const cycleStatus = data.cycleStatus;
+
+        if (!app) {
+          setCurrentStage('ApplicationOpen');
+        } else if (app.status === 'Draft') {
+          setCurrentStage('ApplicationOpen');
+        } else if (app.status === 'Submitted' && cycleStatus === 'Open') {
+          setCurrentStage('Pending');
+        } else if (app.status === 'Submitted' && !interview && (cycleStatus === 'Closed' || cycleStatus === 'DecisionsReleased')) {
+          setCurrentStage('InvitedToInterview');
+        } else if (interview && interview.status === 'Scheduled') {
+          setCurrentStage('InterviewScheduled');
+        } else if (app.status === 'Withdrawn') {
+          setCurrentStage('Rejected');
+        } else {
+          setCurrentStage('PostInterviewPending');
+        }
+
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const handleBooked = useCallback((interview: { id: string; startTime: string; endTime: string; status: string }) => {
+    setInterviewData(interview);
+    setCurrentStage('InterviewScheduled');
+  }, []);
+
+  const handleCancelled = useCallback(() => {
+    setInterviewData(null);
+    setCurrentStage('InvitedToInterview');
+  }, []);
+
+  const handleRescheduled = useCallback((interview: { id: string; startTime: string; endTime: string; status: string }) => {
+    setInterviewData(interview);
   }, []);
 
   if (loading || !session) return null;
@@ -1035,24 +1163,24 @@ export default function ApplicantPortal() {
               <p className="text-sm text-gray-500 dark:text-gray-400">{CYCLE_NAME} Application Portal</p>
             </div>
             <div className="ml-auto hidden sm:block">
-              <StageIndicator stage={CURRENT_STAGE} />
+              <StageIndicator stage={currentStage} />
             </div>
           </motion.div>
           <div className="sm:hidden max-w-3xl mx-auto mt-4">
-            <StageIndicator stage={CURRENT_STAGE} />
+            <StageIndicator stage={currentStage} />
           </div>
         </div>
 
         {/* Content */}
         <div className="px-6 md:px-16 lg:px-24 py-10">
-          {CURRENT_STAGE === 'ApplicationOpen' && <ApplicationOpenView />}
-          {CURRENT_STAGE === 'Pending' && <PendingView />}
-          {CURRENT_STAGE === 'Rejected' && <RejectedView round="first" />}
-          {CURRENT_STAGE === 'InvitedToInterview' && <InvitedToInterviewView />}
-          {CURRENT_STAGE === 'InterviewScheduled' && <InterviewScheduledView />}
-          {CURRENT_STAGE === 'PostInterviewPending' && <PostInterviewPendingView />}
-          {CURRENT_STAGE === 'Accepted' && <AcceptedView />}
-          {CURRENT_STAGE === 'Waitlisted' && <WaitlistedView />}
+          {currentStage === 'ApplicationOpen' && <ApplicationOpenView />}
+          {currentStage === 'Pending' && <PendingView />}
+          {currentStage === 'Rejected' && <RejectedView round="first" />}
+          {currentStage === 'InvitedToInterview' && <InvitedToInterviewView appData={appData} onBooked={handleBooked} />}
+          {currentStage === 'InterviewScheduled' && interviewData && <InterviewScheduledView interview={interviewData} appData={appData} onCancelled={handleCancelled} onRescheduled={handleRescheduled} />}
+          {currentStage === 'PostInterviewPending' && <PostInterviewPendingView />}
+          {currentStage === 'Accepted' && <AcceptedView />}
+          {currentStage === 'Waitlisted' && <WaitlistedView />}
         </div>
       </div>
     </div>

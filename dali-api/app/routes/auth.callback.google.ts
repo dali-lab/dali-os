@@ -85,6 +85,13 @@ export async function loader({ request }: Route.LoaderArgs) {
     },
   });
 
+  // Ensure a DALIMember record exists for this DALI user
+  await prisma.dALIMember.upsert({
+    where: { userId: user.id },
+    update: {},
+    create: { userId: user.id, daliEmail: googleUser.email },
+  });
+
   // Issue tokens and set cookies
   const tokens = await issueTokens(user.id, "member");
   const headers = new Headers();
