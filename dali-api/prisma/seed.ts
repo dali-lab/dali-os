@@ -343,6 +343,12 @@ async function main() {
   });
 
   // ── Application cycle: Fall 2026 ───────────────────────────────────────────
+  // Status updates use explicit, ascending createdAt values so latest-status
+  // queries (`orderBy: { createdAt: "desc" }`) are deterministic. Without
+  // explicit timestamps prisma stamps every row in the same nested create with
+  // the same instant and ties resolve nondeterministically.
+  const seedNow = Date.now();
+  const ts = (offsetMs: number) => new Date(seedNow + offsetMs);
   const cycle = await prisma.applicationCycle.upsert({
     where: { id: "cycle-fall-2026" },
     update: {},
@@ -365,9 +371,9 @@ async function main() {
       },
       statusUpdates: {
         create: [
-          { newStatus: "Draft", userId: admin.id },
-          { newStatus: "Open", userId: admin.id },
-          { newStatus: "Closed", userId: admin.id },
+          { newStatus: "Draft", userId: admin.id, createdAt: ts(-3000) },
+          { newStatus: "Open", userId: admin.id, createdAt: ts(-2000) },
+          { newStatus: "Closed", userId: admin.id, createdAt: ts(-1000) },
         ],
       },
     },
@@ -426,8 +432,8 @@ async function main() {
       applicationFormVersionId: formVersion.id,
       statusUpdates: {
         create: [
-          { newStatus: "Draft", userId: alice.id },
-          { newStatus: "Submitted", userId: alice.id },
+          { newStatus: "Draft", userId: alice.id, createdAt: ts(-2000) },
+          { newStatus: "Submitted", userId: alice.id, createdAt: ts(-1000) },
         ],
       },
       domainApplications: {
@@ -465,8 +471,8 @@ async function main() {
       applicationFormVersionId: formVersion.id,
       statusUpdates: {
         create: [
-          { newStatus: "Draft", userId: bob.id },
-          { newStatus: "Submitted", userId: bob.id },
+          { newStatus: "Draft", userId: bob.id, createdAt: ts(-2000) },
+          { newStatus: "Submitted", userId: bob.id, createdAt: ts(-1000) },
         ],
       },
       domainApplications: {
@@ -548,8 +554,8 @@ async function main() {
       },
       statusUpdates: {
         create: [
-          { newStatus: "Draft", userId: admin.id },
-          { newStatus: "Open", userId: admin.id },
+          { newStatus: "Draft", userId: admin.id, createdAt: ts(-2000) },
+          { newStatus: "Open", userId: admin.id, createdAt: ts(-1000) },
         ],
       },
     },
@@ -585,8 +591,8 @@ async function main() {
       applicationFormVersionId: formVersion.id,
       statusUpdates: {
         create: [
-          { newStatus: "Draft", userId: dana.id },
-          { newStatus: "Submitted", userId: dana.id },
+          { newStatus: "Draft", userId: dana.id, createdAt: ts(-2000) },
+          { newStatus: "Submitted", userId: dana.id, createdAt: ts(-1000) },
         ],
       },
       domainApplications: {
@@ -636,6 +642,103 @@ async function main() {
     },
   });
 
+  // ── Interview scheduling seed ──────────────────────────────────────────────
+
+  const today = new Date();
+  const interviewStart = new Date(today);
+  interviewStart.setDate(today.getDate() + 1);
+  interviewStart.setHours(0, 0, 0, 0);
+  const interviewEnd = new Date(today);
+  interviewEnd.setDate(today.getDate() + 14);
+  interviewEnd.setHours(23, 59, 59, 999);
+
+  await prisma.interviewConfig.upsert({
+    where: { applicationCycleId: cycle.id },
+    update: {
+      slotDurationMinutes: 30,
+      bufferMinutes: 15,
+      dayStartHour: 9,
+      dayEndHour: 18,
+      interviewStartDate: interviewStart,
+      interviewEndDate: interviewEnd,
+      timezone: "America/New_York",
+    },
+    create: {
+      applicationCycleId: cycle.id,
+      slotDurationMinutes: 30,
+      bufferMinutes: 15,
+      dayStartHour: 9,
+      dayEndHour: 18,
+      interviewStartDate: interviewStart,
+      interviewEndDate: interviewEnd,
+      timezone: "America/New_York",
+    },
+  });
+
+  const reviewerData = [
+    { netId: "rev001", email: "reviewer1@dali.dartmouth.edu", first: "Riley", last: "Engineer", domainId: engDomain.id },
+    { netId: "rev002", email: "reviewer2@dali.dartmouth.edu", first: "Dana", last: "Designer", domainId: designDomain.id },
+    { netId: "rev003", email: "reviewer3@dali.dartmouth.edu", first: "Pat", last: "Product", domainId: pmDomain.id },
+  ];
+
+  for (const r of reviewerData) {
+    const user = await prisma.user.upsert({
+      where: { netId: r.netId },
+      update: {},
+      create: {
+        netId: r.netId,
+        daliEmail: r.email,
+        firstName: r.first,
+        lastName: r.last,
+        daliMember: { create: { daliEmail: r.email } },
+      },
+      include: { daliMember: true },
+    });
+
+    if (!user.daliMember) continue;
+
+    await prisma.cycleReviewer.upsert({
+      where: { daliMemberId_applicationCycleId: { daliMemberId: user.daliMember.id, applicationCycleId: cycle.id } },
+      update: {},
+      create: {
+        daliMemberId: user.daliMember.id,
+        applicationCycleId: cycle.id,
+        domainId: r.domainId,
+        isLead: false,
+      },
+    });
+  }
+
+  // ── Reviewer availability ────────────────────────────────────────────────
+  const allReviewers = await prisma.cycleReviewer.findMany({
+    where: { applicationCycleId: cycle.id },
+  });
+
+  const availabilityWindows: { startTime: Date; endTime: Date }[] = [];
+  const cursor = new Date(interviewStart);
+  while (cursor <= interviewEnd) {
+    const dow = cursor.getUTCDay();
+    if (dow !== 0 && dow !== 6) {
+      const start = new Date(cursor);
+      start.setUTCHours(14, 0, 0, 0);
+      const end = new Date(cursor);
+      end.setUTCHours(16, 0, 0, 0);
+      availabilityWindows.push({ startTime: start, endTime: end });
+    }
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+
+  for (const reviewer of allReviewers) {
+    await prisma.reviewerAvailability.deleteMany({
+      where: { cycleReviewerId: reviewer.id },
+    });
+    for (const w of availabilityWindows) {
+      await prisma.reviewerAvailability.create({
+        data: { cycleReviewerId: reviewer.id, startTime: w.startTime, endTime: w.endTime },
+      });
+    }
+  }
+
   console.log(`  Rubrics: ${generalRubric.name}, ${engRubric.name}, ${pmRubric.name}`);
   console.log("Seed complete:");
   console.log(`  Admin: ${admin.firstName} ${admin.lastName}`);
@@ -647,6 +750,9 @@ async function main() {
   );
   console.log(`  Application: app-dana (submitted, Winter 2028)`);
   console.log(`  Domain lead: ${engLead.firstName} ${engLead.lastName} → Engineering`);
+  console.log(
+    `  Interview config + 3 reviewers (each with ${availabilityWindows.length} availability blocks) seeded for cycle ${cycle.id}`,
+  );
 }
 
 main()
