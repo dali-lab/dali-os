@@ -710,11 +710,6 @@ async function main() {
   }
 
   // ── Reviewer availability ────────────────────────────────────────────────
-  // Give every reviewer the same window — 14:00–16:00 UTC (10 AM–12 PM EDT,
-  // inside the seeded 9–6 working hours) — on each weekday in the interview
-  // window. With every reviewer free, computeAvailableSlots returns slots for
-  // any submitted application's domain (each app's in-domain reviewer is free
-  // and so is at least one cross-domain reviewer).
   const allReviewers = await prisma.cycleReviewer.findMany({
     where: { applicationCycleId: cycle.id },
   });
@@ -734,7 +729,6 @@ async function main() {
   }
 
   for (const reviewer of allReviewers) {
-    // Wipe any pre-existing blocks on re-seed so we don't accumulate duplicates
     await prisma.reviewerAvailability.deleteMany({
       where: { cycleReviewerId: reviewer.id },
     });
