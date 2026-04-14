@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Link, redirect, useLoaderData, useSubmit } from 'react-router'
 import { ArrowLeft, Save, HelpCircle, X } from 'lucide-react'
 import { prisma } from '~/lib/db'
@@ -117,23 +117,44 @@ export default function MentorApplicationReview() {
   const [isSaving, setIsSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [showRubric, setShowRubric] = useState(false)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const isFirstRender = useRef(true)
 
-  const handleSave = () => {
-    setIsSaving(true)
+  const submitReview = (data: {
+    scores: Record<string, number>
+    feedback: string
+    rejectionRationale: string
+    overallRecommendation: string | null
+    annotations: object[]
+  }) => {
     const formData = new FormData()
     formData.set('intent', 'save-review')
     formData.set('mentorId', mentor.id)
-    formData.set('scores', JSON.stringify(scores))
-    formData.set('feedback', feedback)
-    formData.set('rejectionRationale', rejectionRationale)
-    formData.set('overallRecommendation', overallRecommendation ?? '')
-    formData.set('annotations', JSON.stringify(annotations))
+    formData.set('scores', JSON.stringify(data.scores))
+    formData.set('feedback', data.feedback)
+    formData.set('rejectionRationale', data.rejectionRationale)
+    formData.set('overallRecommendation', data.overallRecommendation ?? '')
+    formData.set('annotations', JSON.stringify(data.annotations))
     submit(formData, { method: 'post' })
-    setTimeout(() => {
-      setIsSaving(false)
-      setSaved(true)
-      setTimeout(() => setSaved(false), 2500)
-    }, 400)
+  }
+
+  // Auto-save on any change (debounced 1s)
+  useEffect(() => {
+    if (isFirstRender.current) { isFirstRender.current = false; return }
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => {
+      setIsSaving(true)
+      submitReview({ scores, feedback, rejectionRationale, overallRecommendation, annotations })
+      setTimeout(() => { setIsSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2000) }, 400)
+    }, 1000)
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
+  }, [scores, feedback, rejectionRationale, overallRecommendation, annotations])
+
+  const handleSave = () => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    setIsSaving(true)
+    submitReview({ scores, feedback, rejectionRationale, overallRecommendation, annotations })
+    setTimeout(() => { setIsSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2000) }, 400)
   }
 
   // Build question label lookup from form + challenge versions
@@ -270,7 +291,7 @@ export default function MentorApplicationReview() {
               <div className="pt-4">
                 <button
                   onClick={handleSave}
-                  disabled={isSaving || !overallRecommendation}
+                  disabled={isSaving}
                   className={`w-full flex justify-center items-center px-4 py-3 border border-transparent text-sm font-medium rounded-lg text-white shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${saved ? 'bg-green-600' : 'bg-blue-600 hover:bg-blue-700'}`}
                 >
                   {isSaving ? 'Saving...' : saved ? 'Saved!' : <><Save className="w-4 h-4 mr-2" />Save Review</>}
