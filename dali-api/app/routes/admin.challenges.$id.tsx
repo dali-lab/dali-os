@@ -40,6 +40,9 @@ export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
 
+  const user = await prisma.user.findUnique({ where: { id: auth.user.sub } });
+  if (!user) return new Response(JSON.stringify({ error: "User not found" }), { status: 401 });
+
   const formData = await request.formData();
   const intent = formData.get("intent") as string;
 
@@ -56,7 +59,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         challengeId: params.id,
         domainId,
         questions,
-        createdById: auth.user.sub,
+        createdById: user.id,
       },
     });
 

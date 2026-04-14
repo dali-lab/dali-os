@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react'
-import { useParams } from 'react-router'
-import { Settings, Users, Calendar, AlertTriangle, Trash2, Plus, CheckCircle, ArrowRight } from 'lucide-react'
+import { Form, Link, useParams, redirect } from 'react-router'
+import type { Route } from "./+types/admin.cycle.$id";
+import { prisma } from "~/lib/db";
+import { requireAuth } from "~/lib/auth";
+import { Settings, Users, Calendar, AlertTriangle, Trash2, Plus, CheckCircle, ArrowRight, Circle, ChevronRight, X } from 'lucide-react'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -40,6 +43,133 @@ interface InterviewRow {
       domain: { name: string }
     }
   }[]
+}
+
+// ─── Status helpers ───────────────────────────────────────────────────────────
+
+const STATUS_SEQUENCE = [
+  "Draft",
+  "Open",
+  "Closed",
+  "DecisionsReleased",
+] as const;
+
+type CycleStatus = (typeof STATUS_SEQUENCE)[number];
+
+function nextStatus(current: CycleStatus): CycleStatus | null {
+  const idx = STATUS_SEQUENCE.indexOf(current);
+  return idx < STATUS_SEQUENCE.length - 1 ? STATUS_SEQUENCE[idx + 1] : null;
+}
+
+// ─── Loader ──────────────────────────────────────────────────────────────────
+
+export async function loader({ params }: Route.LoaderArgs) {
+  const cycle = await prisma.applicationCycle.findUniqueOrThrow({
+    where: { id: params.id },
+    include: {
+      domains: {
+        include: {
+          domain: {
+            include: {
+              domainLeadAssignments: {
+                include: { member: { include: { user: true } } },
+              },
+            },
+          },
+        },
+      },
+      statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
+      challengeVersions: { include: { challengeVersion: { include: { domain: true, challenge: true } } } },
+      formVersion: true,
+      applications: {
+        include: {
+          user: true,
+          statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
+          domainApplications: {
+            include: { challengeVersion: { include: { domain: true } } },
+          },
+        },
+      },
+    },
+  });
+
+  const formVersionOptions = await prisma.applicationFormVersion.findMany({
+    include: { applicationForm: true },
+    orderBy: { createdAt: "desc" },
+  });
+
+  const allDomains = await prisma.domain.findMany({ orderBy: { name: "asc" } });
+
+  return { cycle, formVersionOptions, allDomains };
+}
+
+// ─── Action ──────────────────────────────────────────────────────────────────
+
+export async function action({ request, params }: Route.ActionArgs) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
+
+  const user = await prisma.user.findUnique({ where: { id: auth.user.sub } });
+  if (!user) return new Response(JSON.stringify({ error: "User not found" }), { status: 401 });
+
+  const formData = await request.formData();
+  const intent = formData.get("intent");
+
+  if (intent === "select-form") {
+    const formVersionId = formData.get("formVersionId") as string;
+    await prisma.applicationCycle.update({
+      where: { id: params.id },
+      data: { formVersionId },
+    });
+    return redirect(`/admin/cycle/${params.id}`);
+  }
+
+  if (intent === "remove-domain") {
+    const domainId = formData.get("domainId") as string;
+    await prisma.domainApplicationCycle.delete({
+      where: { domainId_applicationCycleId: { domainId, applicationCycleId: params.id } },
+    });
+    return redirect(`/admin/cycle/${params.id}`);
+  }
+
+  if (intent === "add-domain") {
+    const domainId = formData.get("domainId") as string;
+    await prisma.domainApplicationCycle.create({
+      data: { domainId, applicationCycleId: params.id },
+    });
+    return redirect(`/admin/cycle/${params.id}`);
+  }
+
+  if (intent === "advance-status") {
+    const cycle = await prisma.applicationCycle.findUniqueOrThrow({
+      where: { id: params.id },
+      include: {
+        statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
+        domains: true,
+        challengeVersions: { include: { challengeVersion: true } },
+      },
+    });
+
+    const currentStatus = cycle.statusUpdates[0]?.newStatus ?? "Draft";
+    const next = nextStatus(currentStatus as CycleStatus);
+    if (!next) return null;
+
+    if (currentStatus === "Draft") {
+      const formReady = !!cycle.formVersionId;
+      const allDomainsReady = cycle.domains.every((d) => d.isReady === true);
+      if (!formReady || !allDomainsReady) return null;
+    }
+
+    await prisma.applicationCycleStatusUpdate.create({
+      data: {
+        newStatus: next,
+        applicationCycleId: params.id,
+        userId: user.id,
+      },
+    });
+  }
+
+  return redirect(`/admin/cycle/${params.id}`);
 }
 
 const DURATION_OPTIONS = [15, 20, 25, 30, 45, 60]
@@ -509,6 +639,71 @@ export default function AdminCycleDetails() {
     </div>
   )
 }
+
+// ─── FormSelector (from dev) ─────────────────────────────────────────────────
+
+function FormSelector({ cycleId, options, selectedId }: {
+  cycleId: string;
+  options: any[];
+  selectedId: string | null;
+}) {
+  const [previewId, setPreviewId] = useState<string>(selectedId ?? "");
+  const previewVersion = options.find((fv: any) => fv.id === previewId);
+  const questions: any[] = previewVersion?.questions ?? [];
+
+  return (
+    <div className="space-y-3">
+      <Form method="post" className="flex items-end gap-3">
+        <input type="hidden" name="intent" value="select-form" />
+        <input type="hidden" name="cycleId" value={cycleId} />
+        <div className="flex-1">
+          <select
+            name="formVersionId"
+            value={previewId}
+            onChange={(e) => setPreviewId(e.target.value)}
+            className="w-full px-3 py-2 text-sm text-gray-900 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="" disabled>Select a form…</option>
+            {options.map((fv: any) => (
+              <option key={fv.id} value={fv.id}>
+                {new Date(fv.createdAt).toLocaleDateString()} — {fv.questions.length} question{fv.questions.length !== 1 ? "s" : ""}
+              </option>
+            ))}
+          </select>
+        </div>
+        <button
+          type="submit"
+          disabled={!previewId}
+          className="px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          Save
+        </button>
+        {previewVersion && (
+          <Link
+            to={`/admin/forms/${previewVersion.applicationFormId}`}
+            className="px-3 py-2 text-sm font-medium text-blue-600 border border-blue-300 rounded-md hover:bg-blue-50 whitespace-nowrap"
+          >
+            Manage Form
+          </Link>
+        )}
+      </Form>
+
+      {questions.length > 0 && (
+        <div className="border border-gray-200 rounded-md divide-y divide-gray-100">
+          {questions.map((q: any, i: number) => (
+            <div key={q.key} className="px-4 py-3">
+              <span className="text-xs font-medium text-gray-400 uppercase tracking-wide mr-2">Q{i + 1}</span>
+              <span className="text-sm text-gray-700">{q.data.label}</span>
+              {q.required && <span className="ml-2 text-xs text-red-500">required</span>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── DomainLeadsSection ──────────────────────────────────────────────────────
 
 function DomainLeadsSection({ domains, members }: {
   domains: { id: string; name: string; domainLeadAssignments?: any[] }[];
