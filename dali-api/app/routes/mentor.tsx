@@ -16,15 +16,15 @@ import type { CycleStage } from '~/types'
 import CalendarGrid from '~/components/CalendarGrid'
 import { prisma } from '~/lib/db'
 import { requireAuth } from '~/lib/auth'
+import { getActiveCycle } from '~/lib/cycles'
 import type { Route } from './+types/mentor'
 
-// Map DB cycle status → mentor-facing stage
+// Map DB cycle status → mentor-facing stage. Only Open/Closed are reachable
+// here because getActiveCycle() filters out Draft and DecisionsReleased.
 function cycleStatusToStage(status: string): CycleStage {
   switch (status) {
-    case 'Draft': return 'challengeSetup'
     case 'Open': return 'collectingAvailability'
     case 'Closed': return 'interviews'
-    case 'DecisionsReleased': return 'finalDelibs'
     default: return 'challengeSetup'
   }
 }
@@ -40,16 +40,26 @@ export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request)
   if (!auth.ok) return empty
 
-  // Find the cycle this mentor is actually assigned to as a reviewer
+  // Anchor on the single currently-active cycle (Open or Closed). If none is
+  // active, the mentor sees the empty state — even if they have stale reviewer
+  // assignments on past cycles.
+  const active = await getActiveCycle()
+  if (!active) return { ...empty, mentorUserId: auth.user.sub }
+
+  // The mentor must be assigned as a reviewer on THAT specific cycle.
   const member = await prisma.dALIMember.findFirst({ where: { userId: auth.user.sub } })
   if (!member) return { ...empty, mentorUserId: auth.user.sub }
 
-  const reviewer = await prisma.cycleReviewer.findFirst({
-    where: { daliMemberId: member.id },
+  const reviewer = await prisma.cycleReviewer.findUnique({
+    where: {
+      daliMemberId_applicationCycleId: {
+        daliMemberId: member.id,
+        applicationCycleId: active.id,
+      },
+    },
     include: {
       applicationCycle: {
         include: {
-          statusUpdates: { orderBy: { createdAt: 'desc' }, take: 1 },
           applications: {
             include: {
               user: true,
@@ -63,13 +73,11 @@ export async function loader({ request }: Route.LoaderArgs) {
         },
       },
     },
-    orderBy: { applicationCycle: { createdAt: 'desc' } },
   })
 
   if (!reviewer) return { ...empty, mentorUserId: auth.user.sub }
 
   const cycle = reviewer.applicationCycle
-  const status = cycle.statusUpdates[0]?.newStatus ?? 'Draft'
 
   // Only submitted (non-draft) applications are visible to mentors.
   const allCycleApps = cycle.applications.filter((a) => {
@@ -79,7 +87,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   return {
     activeCycle: { id: cycle.id, name: cycle.name },
-    currentStage: cycleStatusToStage(status),
+    currentStage: cycleStatusToStage(active.currentStatus),
     mentorUserId: auth.user.sub,
     allCycleApps,
   }

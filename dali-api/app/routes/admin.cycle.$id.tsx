@@ -215,6 +215,7 @@ export default function AdminCycleDetails() {
   // ── Cycle status ──
   const [cycleStatus, setCycleStatus] = useState<string>('Draft')
   const [statusUpdating, setStatusUpdating] = useState(false)
+  const [statusError, setStatusError] = useState<string | null>(null)
 
   const STATUS_FLOW = ['Draft', 'Open', 'Closed', 'DecisionsReleased'] as const
   const STATUS_LABELS: Record<string, string> = {
@@ -231,13 +232,24 @@ export default function AdminCycleDetails() {
     if (idx < 0 || idx >= STATUS_FLOW.length - 1) return
     const next = STATUS_FLOW[idx + 1]
     setStatusUpdating(true)
+    setStatusError(null)
     try {
       const res = await fetch(`/api/cycles/${cycleId}/status`, {
         method: 'POST', credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ newStatus: next }),
       })
-      if (res.ok) setCycleStatus(next)
+      if (res.ok) {
+        setCycleStatus(next)
+      } else {
+        const body = await res.json().catch(() => ({}))
+        setStatusError(
+          body.error ??
+            `Couldn't advance to ${STATUS_LABELS[next] ?? next} (HTTP ${res.status}).`,
+        )
+      }
+    } catch (e: any) {
+      setStatusError(e?.message ?? 'Network error advancing status.')
     } finally {
       setStatusUpdating(false)
     }
@@ -366,6 +378,25 @@ export default function AdminCycleDetails() {
           </button>
         )}
       </div>
+
+      {statusError && (
+        <div
+          role="alert"
+          className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3"
+        >
+          <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-sm font-bold text-red-900">Couldn't advance cycle status</p>
+            <p className="text-sm text-red-800 mt-0.5">{statusError}</p>
+          </div>
+          <button
+            onClick={() => setStatusError(null)}
+            className="text-red-600 hover:text-red-800 text-xs font-medium"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
