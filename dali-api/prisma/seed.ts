@@ -251,7 +251,104 @@ async function main() {
     },
   });
 
+  // ── Rubrics ────────────────────────────────────────────────────────────────
+
+  // General rubric (attached to the main form version)
+  const generalRubric = await prisma.rubric.upsert({
+    where: { id: "rubric-general" },
+    update: {},
+    create: { id: "rubric-general", name: "General Application Rubric", domainId: null },
+  });
+
+  const generalRubricVersion = await prisma.rubricVersion.upsert({
+    where: { id: "rv-general-v1" },
+    update: {},
+    create: {
+      id: "rv-general-v1",
+      rubricId: generalRubric.id,
+      versionNumber: 1,
+      createdById: admin.id,
+      applicationFormVersionId: "fv-main-v1",
+      criteria: [
+        { key: "rc-motivation", label: "Motivation & Fit", description: "Does the applicant articulate why they want to join DALI and what they'll contribute?", maxScore: 5 },
+        { key: "rc-communication", label: "Communication", description: "Are responses clear, specific, and well-structured?", maxScore: 5 },
+        { key: "rc-self-awareness", label: "Self-Awareness", description: "Does the applicant demonstrate honest reflection about their strengths and growth areas?", maxScore: 5 },
+      ],
+    },
+  });
+
+  // Engineering rubric
+  const engRubric = await prisma.rubric.upsert({
+    where: { id: "rubric-eng" },
+    update: {},
+    create: { id: "rubric-eng", name: "Engineering Rubric", domainId: engDomain.id },
+  });
+
+  const engRubricVersion = await prisma.rubricVersion.upsert({
+    where: { id: "rv-eng-v1" },
+    update: {},
+    create: {
+      id: "rv-eng-v1",
+      rubricId: engRubric.id,
+      versionNumber: 1,
+      createdById: admin.id,
+      criteria: [
+        { key: "rc-technical-depth", label: "Technical Depth", description: "Does the applicant demonstrate solid understanding of the concepts behind their work?", maxScore: 5 },
+        { key: "rc-problem-solving", label: "Problem Solving", description: "Is their approach to challenges systematic and thoughtful?", maxScore: 5 },
+        { key: "rc-code-quality", label: "Code Quality & Craft", description: "Do their examples show attention to maintainability, correctness, and design?", maxScore: 5 },
+        { key: "rc-curiosity", label: "Curiosity & Growth", description: "Is there evidence of self-directed learning and intellectual curiosity?", maxScore: 5 },
+      ],
+    },
+  });
+
+  // Attach engineering rubric to both eng challenge versions
+  await Promise.all([
+    prisma.challengeVersion.update({
+      where: { id: "cv-eng" },
+      data: { rubricVersionId: engRubricVersion.id },
+    }),
+    prisma.challengeVersion.update({
+      where: { id: "cv-eng-v2" },
+      data: { rubricVersionId: engRubricVersion.id },
+    }),
+  ]);
+
+  // Product rubric
+  const pmRubric = await prisma.rubric.upsert({
+    where: { id: "rubric-pm" },
+    update: {},
+    create: { id: "rubric-pm", name: "Product Rubric", domainId: pmDomain.id },
+  });
+
+  const pmRubricVersion = await prisma.rubricVersion.upsert({
+    where: { id: "rv-pm-v1" },
+    update: {},
+    create: {
+      id: "rv-pm-v1",
+      rubricId: pmRubric.id,
+      versionNumber: 1,
+      createdById: admin.id,
+      criteria: [
+        { key: "rc-product-thinking", label: "Product Thinking", description: "Does the applicant show structured thinking about user needs, tradeoffs, and impact?", maxScore: 5 },
+        { key: "rc-decision-making", label: "Decision Making", description: "Can they make and justify decisions under uncertainty?", maxScore: 5 },
+        { key: "rc-user-empathy", label: "User Empathy", description: "Do their answers center on real user problems rather than features?", maxScore: 5 },
+      ],
+    },
+  });
+
+  // Attach product rubric to pm challenge version
+  await prisma.challengeVersion.update({
+    where: { id: "cv-pm" },
+    data: { rubricVersionId: pmRubricVersion.id },
+  });
+
   // ── Application cycle: Fall 2026 ───────────────────────────────────────────
+  // Status updates use explicit, ascending createdAt values so latest-status
+  // queries (`orderBy: { createdAt: "desc" }`) are deterministic. Without
+  // explicit timestamps prisma stamps every row in the same nested create with
+  // the same instant and ties resolve nondeterministically.
+  const seedNow = Date.now();
+  const ts = (offsetMs: number) => new Date(seedNow + offsetMs);
   const cycle = await prisma.applicationCycle.upsert({
     where: { id: "cycle-fall-2026" },
     update: {},
@@ -274,9 +371,9 @@ async function main() {
       },
       statusUpdates: {
         create: [
-          { newStatus: "Draft", userId: admin.id },
-          { newStatus: "Open", userId: admin.id },
-          { newStatus: "Closed", userId: admin.id },
+          { newStatus: "Draft", userId: admin.id, createdAt: ts(-3000) },
+          { newStatus: "Open", userId: admin.id, createdAt: ts(-2000) },
+          { newStatus: "Closed", userId: admin.id, createdAt: ts(-1000) },
         ],
       },
     },
@@ -335,8 +432,8 @@ async function main() {
       applicationFormVersionId: formVersion.id,
       statusUpdates: {
         create: [
-          { newStatus: "Draft", userId: alice.id },
-          { newStatus: "Submitted", userId: alice.id },
+          { newStatus: "Draft", userId: alice.id, createdAt: ts(-2000) },
+          { newStatus: "Submitted", userId: alice.id, createdAt: ts(-1000) },
         ],
       },
       domainApplications: {
@@ -374,8 +471,8 @@ async function main() {
       applicationFormVersionId: formVersion.id,
       statusUpdates: {
         create: [
-          { newStatus: "Draft", userId: bob.id },
-          { newStatus: "Submitted", userId: bob.id },
+          { newStatus: "Draft", userId: bob.id, createdAt: ts(-2000) },
+          { newStatus: "Submitted", userId: bob.id, createdAt: ts(-1000) },
         ],
       },
       domainApplications: {
@@ -457,8 +554,8 @@ async function main() {
       },
       statusUpdates: {
         create: [
-          { newStatus: "Draft", userId: admin.id },
-          { newStatus: "Open", userId: admin.id },
+          { newStatus: "Draft", userId: admin.id, createdAt: ts(-2000) },
+          { newStatus: "Open", userId: admin.id, createdAt: ts(-1000) },
         ],
       },
     },
@@ -494,8 +591,8 @@ async function main() {
       applicationFormVersionId: formVersion.id,
       statusUpdates: {
         create: [
-          { newStatus: "Draft", userId: dana.id },
-          { newStatus: "Submitted", userId: dana.id },
+          { newStatus: "Draft", userId: dana.id, createdAt: ts(-2000) },
+          { newStatus: "Submitted", userId: dana.id, createdAt: ts(-1000) },
         ],
       },
       domainApplications: {
@@ -545,6 +642,110 @@ async function main() {
     },
   });
 
+  // ── Interview scheduling seed ──────────────────────────────────────────────
+
+  const today = new Date();
+  const interviewStart = new Date(today);
+  interviewStart.setDate(today.getDate() + 1);
+  interviewStart.setHours(0, 0, 0, 0);
+  const interviewEnd = new Date(today);
+  interviewEnd.setDate(today.getDate() + 14);
+  interviewEnd.setHours(23, 59, 59, 999);
+
+  await prisma.interviewConfig.upsert({
+    where: { applicationCycleId: cycle.id },
+    update: {
+      slotDurationMinutes: 30,
+      bufferMinutes: 15,
+      dayStartHour: 9,
+      dayEndHour: 18,
+      interviewStartDate: interviewStart,
+      interviewEndDate: interviewEnd,
+      timezone: "America/New_York",
+    },
+    create: {
+      applicationCycleId: cycle.id,
+      slotDurationMinutes: 30,
+      bufferMinutes: 15,
+      dayStartHour: 9,
+      dayEndHour: 18,
+      interviewStartDate: interviewStart,
+      interviewEndDate: interviewEnd,
+      timezone: "America/New_York",
+    },
+  });
+
+  const reviewerData = [
+    { netId: "rev001", email: "reviewer1@dali.dartmouth.edu", first: "Riley", last: "Engineer", domainId: engDomain.id },
+    { netId: "rev002", email: "reviewer2@dali.dartmouth.edu", first: "Dana", last: "Designer", domainId: designDomain.id },
+    { netId: "rev003", email: "reviewer3@dali.dartmouth.edu", first: "Pat", last: "Product", domainId: pmDomain.id },
+  ];
+
+  for (const r of reviewerData) {
+    const user = await prisma.user.upsert({
+      where: { netId: r.netId },
+      update: {},
+      create: {
+        netId: r.netId,
+        daliEmail: r.email,
+        firstName: r.first,
+        lastName: r.last,
+        daliMember: { create: { daliEmail: r.email } },
+      },
+      include: { daliMember: true },
+    });
+
+    if (!user.daliMember) continue;
+
+    await prisma.cycleReviewer.upsert({
+      where: { daliMemberId_applicationCycleId: { daliMemberId: user.daliMember.id, applicationCycleId: cycle.id } },
+      update: {},
+      create: {
+        daliMemberId: user.daliMember.id,
+        applicationCycleId: cycle.id,
+        domainId: r.domainId,
+        isLead: false,
+      },
+    });
+  }
+
+  // ── Reviewer availability ────────────────────────────────────────────────
+  // Give every reviewer the same window — 14:00–16:00 UTC (10 AM–12 PM EDT,
+  // inside the seeded 9–6 working hours) — on each weekday in the interview
+  // window. With every reviewer free, computeAvailableSlots returns slots for
+  // any submitted application's domain (each app's in-domain reviewer is free
+  // and so is at least one cross-domain reviewer).
+  const allReviewers = await prisma.cycleReviewer.findMany({
+    where: { applicationCycleId: cycle.id },
+  });
+
+  const availabilityWindows: { startTime: Date; endTime: Date }[] = [];
+  const cursor = new Date(interviewStart);
+  while (cursor <= interviewEnd) {
+    const dow = cursor.getUTCDay();
+    if (dow !== 0 && dow !== 6) {
+      const start = new Date(cursor);
+      start.setUTCHours(14, 0, 0, 0);
+      const end = new Date(cursor);
+      end.setUTCHours(16, 0, 0, 0);
+      availabilityWindows.push({ startTime: start, endTime: end });
+    }
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+
+  for (const reviewer of allReviewers) {
+    // Wipe any pre-existing blocks on re-seed so we don't accumulate duplicates
+    await prisma.reviewerAvailability.deleteMany({
+      where: { cycleReviewerId: reviewer.id },
+    });
+    for (const w of availabilityWindows) {
+      await prisma.reviewerAvailability.create({
+        data: { cycleReviewerId: reviewer.id, startTime: w.startTime, endTime: w.endTime },
+      });
+    }
+  }
+
+  console.log(`  Rubrics: ${generalRubric.name}, ${engRubric.name}, ${pmRubric.name}`);
   console.log("Seed complete:");
   console.log(`  Admin: ${admin.firstName} ${admin.lastName}`);
   console.log(`  Domains: ${[designDomain, engDomain, pmDomain].map((d) => d.name).join(", ")}`);
@@ -555,6 +756,9 @@ async function main() {
   );
   console.log(`  Application: app-dana (submitted, Winter 2028)`);
   console.log(`  Domain lead: ${engLead.firstName} ${engLead.lastName} → Engineering`);
+  console.log(
+    `  Interview config + 3 reviewers (each with ${availabilityWindows.length} availability blocks) seeded for cycle ${cycle.id}`,
+  );
 }
 
 main()

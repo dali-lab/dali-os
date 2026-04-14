@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Form, Link, useLoaderData } from "react-router";
 import { redirect } from "react-router";
 import type { Route } from "./+types/domain-lead";
 import { prisma } from "~/lib/db";
-import { CheckCircle } from "lucide-react";
+import { requireAuth } from "~/lib/auth";
+import { CheckCircle, AlertTriangle, Plus, Trash2 } from "lucide-react";
 
 const STATUS_LABELS: Record<string, string> = {
   Draft: "Draft",
@@ -26,10 +27,12 @@ const STATUS_MESSAGES: Record<string, string> = {
   DecisionsReleased: "Decisions have been released to applicants.",
 };
 
-export async function loader({}: Route.LoaderArgs) {
-  // TODO: replace with session user once login flow is built
+export async function loader({ request }: Route.LoaderArgs) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return { domainData: [] };
+
   const member = await prisma.dALIMember.findFirst({
-    where: { daliEmail: "eng.lead@dali.dartmouth.edu" },
+    where: { userId: auth.user.sub },
   });
 
   if (!member) {
@@ -94,7 +97,47 @@ export async function loader({}: Route.LoaderArgs) {
         return latestStatus === "Submitted" && app.domainApplications.length > 0;
       });
 
-      return { assignment, cycle, apps, challengeVersionOptions, selectedChallengeVersionId, isChallengeReady };
+      // Interviews for this domain in this cycle
+      const currentStatus = cycle?.statusUpdates[0]?.newStatus ?? "Draft";
+      const interviews = (currentStatus === "Closed" || currentStatus === "DecisionsReleased") && cycle
+        ? await prisma.interview.findMany({
+            where: {
+              applicationCycleId: cycle.id,
+              application: {
+                domainApplications: {
+                  some: { challengeVersion: { domainId: assignment.domainId } },
+                },
+              },
+            },
+            include: {
+              application: {
+                include: {
+                  user: { select: { firstName: true, lastName: true } },
+                  domainApplications: { include: { challengeVersion: { include: { domain: true } } } },
+                },
+              },
+              assignments: {
+                where: { status: "Active" },
+                include: {
+                  cycleReviewer: {
+                    include: { daliMember: { include: { user: { select: { firstName: true, lastName: true } } } }, domain: true },
+                  },
+                },
+              },
+            },
+            orderBy: { startTime: "asc" },
+          })
+        : [];
+
+      // Reviewers for this domain in this cycle
+      const reviewers = cycle
+        ? await prisma.cycleReviewer.findMany({
+            where: { applicationCycleId: cycle.id, domainId: assignment.domainId },
+            include: { daliMember: { include: { user: true } }, domain: true },
+          })
+        : [];
+
+      return { assignment, cycle, apps, challengeVersionOptions, selectedChallengeVersionId, isChallengeReady, interviews, reviewers };
     })
   );
 
@@ -134,18 +177,20 @@ export async function action({ request }: Route.ActionArgs) {
   if (intent === "mark-ready") {
     const cycleId = formData.get("cycleId") as string;
     const domainId = formData.get("domainId") as string;
-    await prisma.domainApplicationCycle.update({
+    await prisma.domainApplicationCycle.upsert({
       where: { domainId_applicationCycleId: { domainId, applicationCycleId: cycleId } },
-      data: { isReady: true },
+      update: { isReady: true },
+      create: { domainId, applicationCycleId: cycleId, isReady: true },
     });
   }
 
   if (intent === "unmark-ready") {
     const cycleId = formData.get("cycleId") as string;
     const domainId = formData.get("domainId") as string;
-    await prisma.domainApplicationCycle.update({
+    await prisma.domainApplicationCycle.upsert({
       where: { domainId_applicationCycleId: { domainId, applicationCycleId: cycleId } },
-      data: { isReady: false },
+      update: { isReady: false },
+      create: { domainId, applicationCycleId: cycleId, isReady: false },
     });
   }
 
@@ -169,7 +214,7 @@ export default function DomainLeadDashboard() {
     <div className="space-y-8">
       <h1 className="text-2xl font-bold text-gray-900">Domain Lead Dashboard</h1>
 
-      {domainData.map(({ assignment, cycle, apps, challengeVersionOptions, selectedChallengeVersionId, isChallengeReady }: any) => {
+      {domainData.map(({ assignment, cycle, apps, challengeVersionOptions, selectedChallengeVersionId, isChallengeReady, interviews, reviewers: cycleReviewers }: any) => {
         const currentStatus = cycle?.statusUpdates[0]?.newStatus ?? null;
 
         return (
@@ -249,6 +294,75 @@ export default function DomainLeadDashboard() {
                     {apps.length === 0 && (
                       <div className="bg-white border border-gray-200 rounded-lg p-6 text-center text-gray-500 text-sm">
                         No submitted applications yet.
+                      </div>
+                    )}
+
+                    {/* Reviewer Roster */}
+                    {cycle && (
+                      <ReviewerSection cycleId={cycle.id} domainId={assignment.domainId} initialReviewers={cycleReviewers} />
+                    )}
+
+                    {/* Interview Dashboard */}
+                    {interviews.length > 0 && (
+                      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
+                          <h3 className="font-semibold text-gray-900">Scheduled Interviews ({interviews.length})</h3>
+                          {interviews.some((i: any) => i.status === 'NeedsReassignment') && (
+                            <span className="flex items-center gap-1 text-xs font-bold text-red-700 bg-red-100 px-2 py-1 rounded-full">
+                              <AlertTriangle className="w-3 h-3" />
+                              Needs attention
+                            </span>
+                          )}
+                        </div>
+                        <table className="w-full text-sm">
+                          <thead className="bg-gray-50 text-xs font-medium text-gray-500 uppercase tracking-wide">
+                            <tr>
+                              <th className="px-6 py-3 text-left">Applicant</th>
+                              <th className="px-6 py-3 text-left">Time</th>
+                              <th className="px-6 py-3 text-left">Status</th>
+                              <th className="px-6 py-3 text-left">Reviewers</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {interviews.map((interview: any) => {
+                              const isAlert = interview.status === 'NeedsReassignment';
+                              const start = new Date(interview.startTime);
+                              const end = new Date(interview.endTime);
+                              return (
+                                <tr key={interview.id} className={isAlert ? 'bg-red-50' : 'hover:bg-gray-50'}>
+                                  <td className="px-6 py-4 font-medium text-gray-900">
+                                    {interview.application.user.firstName} {interview.application.user.lastName}
+                                  </td>
+                                  <td className="px-6 py-4 text-gray-600">
+                                    {start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}{' '}
+                                    {start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} –{' '}
+                                    {end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+                                  </td>
+                                  <td className="px-6 py-4">
+                                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${
+                                      isAlert ? 'bg-red-100 text-red-700' :
+                                      interview.status === 'Scheduled' ? 'bg-green-100 text-green-700' :
+                                      'bg-gray-100 text-gray-600'
+                                    }`}>
+                                      {isAlert && <AlertTriangle className="w-3 h-3 mr-1" />}
+                                      {interview.status}
+                                    </span>
+                                  </td>
+                                  <td className="px-6 py-4 text-gray-600 text-xs">
+                                    {interview.assignments
+                                      .map((a: any) => {
+                                        const name = a.cycleReviewer.daliMember.user
+                                          ? `${a.cycleReviewer.daliMember.user.firstName} ${a.cycleReviewer.daliMember.user.lastName}`
+                                          : '?';
+                                        return `${name} (${a.role === 'InDomain' ? a.cycleReviewer.domain.name : 'Cross'})`;
+                                      })
+                                      .join(', ') || '—'}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
                       </div>
                     )}
                   </>
@@ -429,6 +543,98 @@ function ChallengeSelector({ cycleId, domainId, options, selectedId }: {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function ReviewerSection({ cycleId, domainId, initialReviewers }: {
+  cycleId: string;
+  domainId: string;
+  initialReviewers: any[];
+}) {
+  const [reviewers, setReviewers] = useState(initialReviewers);
+  const [members, setMembers] = useState<any[]>([]);
+  const [selectedMemberId, setSelectedMemberId] = useState('');
+
+  useEffect(() => {
+    fetch('/api/members', { credentials: 'include' })
+      .then(r => r.ok ? r.json() : [])
+      .then(setMembers)
+      .catch(() => {});
+  }, []);
+
+  async function addReviewer() {
+    if (!selectedMemberId) return;
+    const res = await fetch(`/api/cycles/${cycleId}/reviewers`, {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ daliMemberId: selectedMemberId, domainId, isLead: false }),
+    });
+    if (res.ok) {
+      const reviewer = await res.json();
+      setReviewers(prev => [...prev, reviewer]);
+      setSelectedMemberId('');
+    }
+  }
+
+  async function removeReviewer(reviewerId: string) {
+    const res = await fetch(`/api/cycles/${cycleId}/reviewers/${reviewerId}`, {
+      method: 'DELETE', credentials: 'include',
+    });
+    if (res.ok) setReviewers(prev => prev.filter(r => r.id !== reviewerId));
+  }
+
+  // Filter out members already assigned as reviewers for this domain
+  const existingMemberIds = new Set(reviewers.map((r: any) => r.daliMemberId));
+  const availableMembers = members.filter(m => !existingMemberIds.has(m.id));
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+      <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
+        <h3 className="font-semibold text-gray-900">Reviewers for this Domain ({reviewers.length})</h3>
+      </div>
+      <div className="p-4 space-y-3">
+        <div className="flex gap-2 items-end">
+          <div className="flex-1">
+            <label className="block text-xs font-medium text-gray-500 mb-1">Add Reviewer</label>
+            <select
+              value={selectedMemberId}
+              onChange={e => setSelectedMemberId(e.target.value)}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            >
+              <option value="">Select member...</option>
+              {availableMembers.map((m: any) => (
+                <option key={m.id} value={m.id}>
+                  {m.user ? `${m.user.firstName} ${m.user.lastName}` : m.id}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button
+            onClick={addReviewer}
+            disabled={!selectedMemberId}
+            className="flex items-center gap-1 px-3 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition disabled:opacity-50"
+          >
+            <Plus className="w-4 h-4" /> Add
+          </button>
+        </div>
+        {reviewers.length > 0 ? (
+          <div className="divide-y divide-gray-100">
+            {reviewers.map((r: any) => (
+              <div key={r.id} className="flex items-center justify-between py-2">
+                <span className="text-sm font-medium text-gray-900">
+                  {r.daliMember?.user ? `${r.daliMember.user.firstName} ${r.daliMember.user.lastName}` : r.daliMemberId}
+                </span>
+                <button onClick={() => removeReviewer(r.id)} className="text-red-500 hover:text-red-700">
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-gray-400 text-center py-3">No reviewers assigned yet.</p>
+        )}
+      </div>
     </div>
   );
 }

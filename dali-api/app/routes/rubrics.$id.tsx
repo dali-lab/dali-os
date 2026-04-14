@@ -8,24 +8,18 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request)
   if (!auth.ok) return redirect('/login')
 
-  const [rubric, formVersions] = await Promise.all([
-    prisma.rubric.findUniqueOrThrow({
-      where: { id: params.id },
-      include: {
-        domain: true,
-        versions: {
-          include: {
-            createdBy: true,
-            applicationFormVersion: true,
-          },
-          orderBy: { versionNumber: 'asc' },
-        },
+  const rubric = await prisma.rubric.findUniqueOrThrow({
+    where: { id: params.id },
+    include: {
+      domain: true,
+      versions: {
+        include: { createdBy: true },
+        orderBy: { versionNumber: 'asc' },
       },
-    }),
-    prisma.applicationFormVersion.findMany({ orderBy: { createdAt: 'desc' }, take: 20 }),
-  ])
+    },
+  })
 
-  return { rubric, formVersions }
+  return { rubric }
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -40,7 +34,6 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   if (intent === 'create-version') {
     const criteriaJson = formData.get('criteria') as string
-    const applicationFormVersionId = (formData.get('applicationFormVersionId') as string) || null
     const criteria = JSON.parse(criteriaJson || '[]')
 
     const lastVersion = await prisma.rubricVersion.findFirst({
@@ -55,7 +48,6 @@ export async function action({ request, params }: Route.ActionArgs) {
         versionNumber,
         criteria,
         createdById: user.id,
-        applicationFormVersionId: applicationFormVersionId || undefined,
       },
     })
 

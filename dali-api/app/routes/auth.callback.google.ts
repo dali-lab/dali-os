@@ -85,6 +85,25 @@ export async function loader({ request }: Route.LoaderArgs) {
     },
   });
 
+  // Ensure a DALIMember record exists for this DALI user.
+  // Seeded members have a row keyed by daliEmail but no userId yet — attach
+  // the userId to that row rather than trying to create a duplicate.
+  const existingMember = await prisma.dALIMember.findFirst({
+    where: { OR: [{ userId: user.id }, { daliEmail: googleUser.email }] },
+  });
+  if (existingMember) {
+    if (!existingMember.userId) {
+      await prisma.dALIMember.update({
+        where: { id: existingMember.id },
+        data: { userId: user.id },
+      });
+    }
+  } else {
+    await prisma.dALIMember.create({
+      data: { userId: user.id, daliEmail: googleUser.email },
+    });
+  }
+
   // Issue tokens and set cookies
   const tokens = await issueTokens(user.id, "member");
   const headers = new Headers();
