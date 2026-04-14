@@ -1,5 +1,5 @@
 import { redirect } from 'react-router'
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Link, useLoaderData, useSubmit, Form } from 'react-router'
 import { ArrowLeft, ListOrdered, FileText, Clock, UserIcon, Plus } from 'lucide-react'
 import { prisma } from '~/lib/db'
@@ -103,6 +103,16 @@ export default function ApplicationFormDetail() {
     form.versions.length ? form.versions[form.versions.length - 1].id : null
   )
   const [isCreatingVersion, setIsCreatingVersion] = useState(false)
+
+  const prevVersionCount = useRef(form.versions.length)
+  useEffect(() => {
+    if (form.versions.length > prevVersionCount.current) {
+      const newest = form.versions[form.versions.length - 1]
+      setSelectedVersionId(newest.id)
+      setIsCreatingVersion(false)
+    }
+    prevVersionCount.current = form.versions.length
+  }, [form.versions.length])
 
   const selectedVersion = form.versions.find((v) => v.id === selectedVersionId)
   const nextVersionNumber = form.versions.length + 1
