@@ -636,6 +636,73 @@ async function main() {
     },
   });
 
+  // ── Interview scheduling seed ──────────────────────────────────────────────
+
+  const today = new Date();
+  const interviewStart = new Date(today);
+  interviewStart.setDate(today.getDate() + 1);
+  interviewStart.setHours(0, 0, 0, 0);
+  const interviewEnd = new Date(today);
+  interviewEnd.setDate(today.getDate() + 14);
+  interviewEnd.setHours(23, 59, 59, 999);
+
+  await prisma.interviewConfig.upsert({
+    where: { applicationCycleId: cycle.id },
+    update: {
+      slotDurationMinutes: 30,
+      bufferMinutes: 15,
+      dayStartHour: 9,
+      dayEndHour: 18,
+      interviewStartDate: interviewStart,
+      interviewEndDate: interviewEnd,
+      timezone: "America/New_York",
+    },
+    create: {
+      applicationCycleId: cycle.id,
+      slotDurationMinutes: 30,
+      bufferMinutes: 15,
+      dayStartHour: 9,
+      dayEndHour: 18,
+      interviewStartDate: interviewStart,
+      interviewEndDate: interviewEnd,
+      timezone: "America/New_York",
+    },
+  });
+
+  const reviewerData = [
+    { netId: "rev001", email: "reviewer1@dali.dartmouth.edu", first: "Riley", last: "Engineer", domainId: engDomain.id },
+    { netId: "rev002", email: "reviewer2@dali.dartmouth.edu", first: "Dana", last: "Designer", domainId: designDomain.id },
+    { netId: "rev003", email: "reviewer3@dali.dartmouth.edu", first: "Pat", last: "Product", domainId: pmDomain.id },
+  ];
+
+  for (const r of reviewerData) {
+    const user = await prisma.user.upsert({
+      where: { netId: r.netId },
+      update: {},
+      create: {
+        netId: r.netId,
+        daliEmail: r.email,
+        firstName: r.first,
+        lastName: r.last,
+        daliMember: { create: { daliEmail: r.email } },
+      },
+      include: { daliMember: true },
+    });
+
+    if (!user.daliMember) continue;
+
+    await prisma.cycleReviewer.upsert({
+      where: { daliMemberId_applicationCycleId: { daliMemberId: user.daliMember.id, applicationCycleId: cycle.id } },
+      update: {},
+      create: {
+        daliMemberId: user.daliMember.id,
+        applicationCycleId: cycle.id,
+        domainId: r.domainId,
+        isLead: false,
+      },
+    });
+  }
+
   console.log(`  Rubrics: ${generalRubric.name}, ${engRubric.name}, ${pmRubric.name}`);
   console.log("Seed complete:");
   console.log(`  Admin: ${admin.firstName} ${admin.lastName}`);
@@ -647,6 +714,7 @@ async function main() {
   );
   console.log(`  Application: app-dana (submitted, Winter 2028)`);
   console.log(`  Domain lead: ${engLead.firstName} ${engLead.lastName} → Engineering`);
+  console.log(`  Interview config + 3 reviewers seeded for cycle ${cycle.id}`);
 }
 
 main()

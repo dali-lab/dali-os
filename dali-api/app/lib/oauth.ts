@@ -314,5 +314,8 @@ export async function exchangeGoogleCode(code: string, callbackUrl: string) {
     email: payload.email as string,
     firstName: (payload.given_name ?? "") as string,
     lastName: (payload.family_name ?? "") as string,
+    accessToken: data.access_token as string | undefined,
+    refreshToken: data.refresh_token as string | undefined,
+    expiresIn: data.expires_in as number | undefined,
   };
 }

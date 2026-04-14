@@ -5,6 +5,7 @@ import {
   ChevronDown,
   Trophy,
   ClipboardList,
+  LogOut,
 } from 'lucide-react'
 import type { ViewMode } from '~/types'
 
@@ -150,6 +151,13 @@ export function Layout({ children, viewMode, setViewMode, user }: LayoutProps) {
                 <div className="w-9 h-9 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-sm">
                   {initials}
                 </div>
+                <a
+                  href="/logout"
+                  className="p-1.5 text-gray-400 hover:text-gray-600 transition"
+                  title="Log out"
+                >
+                  <LogOut className="w-4 h-4" />
+                </a>
               </div>
             </div>
           </div>
