@@ -22,9 +22,8 @@ export async function loader({ params }: Route.LoaderArgs) {
     prisma.domain.findMany({ orderBy: { name: "asc" } }),
   ]);
 
-  // Load all domain rubrics (for rubric attachment dropdown across all versions)
+  // Load all rubrics (domain-specific and general) for the rubric attachment dropdown
   const rubrics = await prisma.rubric.findMany({
-    where: { domainId: { not: null } },
     include: {
       domain: true,
       versions: { orderBy: { versionNumber: "desc" }, take: 1 },
