@@ -19,6 +19,7 @@ export default [
   // Login (no layout)
   route("login", "routes/login.tsx"),
   route("dev-login", "routes/dev-login.ts"),
+  route("dev-login-as", "routes/dev-login-as.ts"),
   route("logout", "routes/logout.ts"),
   route("auth/callback/google", "routes/auth.callback.google.ts"),
 

@@ -10,29 +10,36 @@ export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return withCors(request, auth.response);
 
-  // Find the latest cycle
-  const cycle = await prisma.applicationCycle.findFirst({
+  // Prefer the user's most recent application — its cycle is the one they care
+  // about. Falling back to the latest cycle (when no application exists) lets
+  // applicants who haven't yet applied see the open cycle so they can start.
+  const application = await prisma.application.findFirst({
+    where: { userId: auth.user.sub },
+    include: {
+      statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
+      domainApplications: {
+        include: { challengeVersion: { select: { domainId: true } } },
+      },
+      applicationCycle: {
+        include: { statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 } },
+      },
+    },
     orderBy: { createdAt: "desc" },
-    include: { statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 } },
   });
+
+  let cycle = application?.applicationCycle ?? null;
+  if (!cycle) {
+    cycle = await prisma.applicationCycle.findFirst({
+      orderBy: { createdAt: "desc" },
+      include: { statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 } },
+    });
+  }
 
   if (!cycle) {
     return withCors(request, Response.json({ application: null, interview: null, cycleStatus: null }));
   }
 
   const cycleStatus = cycle.statusUpdates[0]?.newStatus ?? "Draft";
-
-  // Find the user's application for this cycle
-  const application = await prisma.application.findFirst({
-    where: { userId: auth.user.sub, applicationCycleId: cycle.id },
-    include: {
-      statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
-      domainApplications: {
-        include: { challengeVersion: { select: { domainId: true } } },
-      },
-    },
-    orderBy: { createdAt: "desc" },
-  });
 
   if (!application) {
     return withCors(request, Response.json({
