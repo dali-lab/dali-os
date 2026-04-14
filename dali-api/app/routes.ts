@@ -12,8 +12,8 @@ export default [
     route("admin/cycle/:id", "routes/admin.cycle.$id.tsx"),
     route("challenges", "routes/admin.challenges.tsx"),
     route("challenges/:id", "routes/admin.challenges.$id.tsx"),
-    route("admin/rubrics", "routes/admin.rubrics.tsx"),
-    route("admin/rubrics/:id", "routes/admin.rubrics.$id.tsx"),
+    route("rubrics", "routes/rubrics.tsx"),
+    route("rubrics/:id", "routes/rubrics.$id.tsx"),
   ]),
 
   // Login (no layout)

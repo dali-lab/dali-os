@@ -66,7 +66,7 @@ export function Layout({ children, viewMode, setViewMode, user }: LayoutProps) {
                       Challenges
                     </Link>
                     <Link
-                      to="/admin/rubrics"
+                      to="/rubrics"
                       className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${location.pathname.startsWith('/admin/rubrics') ? 'border-blue-500 text-gray-900' : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'}`}
                     >
                       <ClipboardList className="w-4 h-4 mr-2" />
@@ -98,6 +98,13 @@ export function Layout({ children, viewMode, setViewMode, user }: LayoutProps) {
                     >
                       <Trophy className="w-4 h-4 mr-2" />
                       Challenges
+                    </Link>
+                    <Link
+                      to="/rubrics"
+                      className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${location.pathname.startsWith('/rubrics') ? 'border-blue-500 text-gray-900' : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'}`}
+                    >
+                      <ClipboardList className="w-4 h-4 mr-2" />
+                      Rubrics
                     </Link>
                   </>
                 )}

@@ -247,11 +247,12 @@ export interface ApplicationViewerProps {
     }>
   }
   questionLabels: Record<string, string>
+  initialAnnotations?: object[]
   onAnnotationsChange?: (annotations: object[]) => void
 }
 
-export function ApplicationViewer({ application, questionLabels, onAnnotationsChange }: ApplicationViewerProps) {
-  const [annotations, setAnnotations] = useState<Annotation[]>([])
+export function ApplicationViewer({ application, questionLabels, initialAnnotations, onAnnotationsChange }: ApplicationViewerProps) {
+  const [annotations, setAnnotations] = useState<Annotation[]>((initialAnnotations as Annotation[]) ?? [])
 
   const addAnnotation = (ann: Omit<Annotation, 'id'>) => {
     setAnnotations((prev) => {
@@ -285,7 +286,6 @@ export function ApplicationViewer({ application, questionLabels, onAnnotationsCh
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-900">General Information</h2>
-          <span className="text-xs text-gray-400">Select text to annotate</span>
         </div>
         <div className="p-6 space-y-6">
           {Object.entries(application.answers as Record<string, unknown>).map(([key, value]) => (
@@ -307,7 +307,6 @@ export function ApplicationViewer({ application, questionLabels, onAnnotationsCh
           <div key={dapp.id} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
             <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
               <h2 className="text-lg font-semibold text-gray-900">{domainName} Challenge</h2>
-              <span className="text-xs text-gray-400">Select text to annotate</span>
             </div>
             <div className="p-6 space-y-6">
               {Object.entries(dapp.answers as Record<string, unknown>).map(([key, value]) => {

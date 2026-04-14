@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Link, useLoaderData, useNavigate, useSubmit } from 'react-router'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { Link, useLoaderData, useSubmit } from 'react-router'
 import { ArrowLeft, Save, HelpCircle, X } from 'lucide-react'
 import { prisma } from '~/lib/db'
 import type { Route } from './+types/mentor.application.$id'
@@ -29,10 +29,14 @@ export async function loader({ params }: Route.LoaderArgs) {
 
   // TODO: replace with session user
   const mentor = await prisma.user.findFirstOrThrow({
-    where: { daliEmail: 'admin@dali.dartmouth.edu' },
+    where: { daliEmail: 'sophie.park@dali.dartmouth.edu' },
   })
 
-  return { application, mentor }
+  const existingReview = await prisma.mentorReview.findUnique({
+    where: { mentorId_applicationId: { mentorId: mentor.id, applicationId: params.id } },
+  })
+
+  return { application, mentor, existingReview }
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -59,25 +63,28 @@ export async function action({ request, params }: Route.ActionArgs) {
   return null
 }
 
-type LoaderData = Awaited<ReturnType<typeof loader>>
-type DomainApp = LoaderData['application']['domainApplications'][number]
-
 const RECOMMENDATIONS = ['Strong Hire', 'Hire', 'Lean Hire', 'Lean No Hire', 'No Hire'] as const
 
 export default function MentorApplicationReview() {
-  const { application, mentor } = useLoaderData<typeof loader>()
-  const navigate = useNavigate()
+  const { application, mentor, existingReview } = useLoaderData<typeof loader>()
   const submit = useSubmit()
 
   const cycle = application.applicationCycle
   const formQuestions = (cycle.formVersion?.questions as unknown as Question[]) ?? []
 
-  const [scores, setScores] = useState<Record<string, number>>({})
-  const [feedback, setFeedback] = useState('')
-  const [rejectionRationale, setRejectionRationale] = useState('')
-  const [overallRecommendation, setOverallRecommendation] = useState<string | null>(null)
-  const [annotations, setAnnotations] = useState<object[]>([])
+  const [scores, setScores] = useState<Record<string, number>>(
+    (existingReview?.scores as Record<string, number>) ?? {}
+  )
+  const [feedback, setFeedback] = useState(existingReview?.feedback ?? '')
+  const [rejectionRationale, setRejectionRationale] = useState(existingReview?.rejectionRationale ?? '')
+  const [overallRecommendation, setOverallRecommendation] = useState<string | null>(
+    existingReview?.overallRecommendation ?? null
+  )
+  const [annotations, setAnnotations] = useState<object[]>(
+    (existingReview?.annotations as object[]) ?? []
+  )
   const [isSaving, setIsSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
   const [showRubric, setShowRubric] = useState(false)
 
   const handleSave = () => {
@@ -93,8 +100,9 @@ export default function MentorApplicationReview() {
     submit(formData, { method: 'post' })
     setTimeout(() => {
       setIsSaving(false)
-      navigate('/mentor')
-    }, 500)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2500)
+    }, 400)
   }
 
   // Build question label lookup from form + challenge versions
@@ -131,6 +139,7 @@ export default function MentorApplicationReview() {
           <ApplicationViewer
             application={application}
             questionLabels={questionLabels}
+            initialAnnotations={annotations}
             onAnnotationsChange={setAnnotations}
           />
         </div>
@@ -174,7 +183,7 @@ export default function MentorApplicationReview() {
                 <textarea
                   rows={4} value={feedback}
                   onChange={(e) => setFeedback(e.target.value)}
-                  className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2"
+                  className="block w-full rounded-md border-black shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2 text-gray-900 bg-white"
                   placeholder="Strengths, weaknesses, areas to probe in interview..."
                 />
               </div>
@@ -187,7 +196,7 @@ export default function MentorApplicationReview() {
                 <textarea
                   rows={3} value={rejectionRationale}
                   onChange={(e) => setRejectionRationale(e.target.value)}
-                  className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2"
+                  className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2 text-gray-900 bg-white"
                   placeholder="If we reject this candidate, what feedback should we provide?"
                 />
               </div>
@@ -215,9 +224,9 @@ export default function MentorApplicationReview() {
                 <button
                   onClick={handleSave}
                   disabled={isSaving || !overallRecommendation}
-                  className="w-full flex justify-center items-center px-4 py-3 border border-transparent text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  className={`w-full flex justify-center items-center px-4 py-3 border border-transparent text-sm font-medium rounded-lg text-white shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${saved ? 'bg-green-600' : 'bg-blue-600 hover:bg-blue-700'}`}
                 >
-                  {isSaving ? 'Saving...' : <><Save className="w-4 h-4 mr-2" />Save Review</>}
+                  {isSaving ? 'Saving...' : saved ? 'Saved!' : <><Save className="w-4 h-4 mr-2" />Save Review</>}
                 </button>
               </div>
             </div>

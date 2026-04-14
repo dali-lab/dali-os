@@ -36,6 +36,7 @@ model User {
   mentorReviews                 MentorReview[]                @relation("MentorReviews")
   oauthSessions                 OAuthSession[]
   refreshTokens                 RefreshToken[]
+  rubricVersions                RubricVersion[]
 }
 
 // A DALI lab member. userId is optional because a member may be known (e.g. via daliEmail)
@@ -159,8 +160,9 @@ model ApplicationFormVersion {
   createdById       String
   createdBy         User            @relation(fields: [createdById], references: [id])
 
-  applications    Application[]
+  applications      Application[]
   applicationCycles ApplicationCycle[]
+  rubricVersions    RubricVersion[]
 }
 
 model Challenge {
@@ -183,6 +185,7 @@ model Domain {
   challengeVersions     ChallengeVersion[]
   applicationCycles     DomainApplicationCycle[]
   domainLeadAssignments DomainLeadAssignment[]
+  rubrics               Rubric[]
 }
 
 // A mentor's written review of an application.
@@ -221,6 +224,10 @@ model ChallengeVersion {
   domain      Domain    @relation(fields: [domainId], references: [id])
   createdById String
   createdBy   User      @relation(fields: [createdById], references: [id])
+
+  // The rubric version used to score this challenge version
+  rubricVersionId String?
+  rubricVersion   RubricVersion? @relation("ChallengeVersionRubric", fields: [rubricVersionId], references: [id])
 
   domainApplications DomainApplication[]
   applicationCycles  ChallengeVersionApplicationCycle[]
@@ -270,6 +277,45 @@ model ChallengeVersionApplicationCycle {
   applicationCycle   ApplicationCycle @relation(fields: [applicationCycleId], references: [id])
 
   @@id([challengeVersionId, applicationCycleId])
+}
+
+model Rubric {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  name     String
+  domainId String?
+  domain   Domain? @relation(fields: [domainId], references: [id])
+
+  versions RubricVersion[]
+}
+
+// Immutable snapshot of a rubric. Never update rows in this table —
+// create a new version instead.
+// criteria: array of { key, label, description?, maxScore }
+//
+// A version is scoped to one of two targets (mutually exclusive):
+//   - applicationFormVersionId: rubric for reviewing the general application
+//   - challengeVersionId: rubric for reviewing a specific domain challenge
+// Exactly one should be set.
+model RubricVersion {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  versionNumber Int
+  criteria      Json
+  rubricId      String
+  rubric        Rubric @relation(fields: [rubricId], references: [id])
+  createdById   String
+  createdBy     User   @relation(fields: [createdById], references: [id])
+
+  // Target: general application form review
+  applicationFormVersionId String?
+  applicationFormVersion   ApplicationFormVersion? @relation(fields: [applicationFormVersionId], references: [id])
+
+  // Back-ref: challenge versions that use this rubric version
+  challengeVersions ChallengeVersion[] @relation("ChallengeVersionRubric")
 }
 
 model OAuthSession {

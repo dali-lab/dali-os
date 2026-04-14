@@ -18,7 +18,7 @@ import type { CycleStage } from '~/types'
 export async function loader({}: Route.LoaderArgs) {
   // TODO: replace with session user once login flow is built
   const mentor = await prisma.user.findFirstOrThrow({
-    where: { daliEmail: 'admin@dali.dartmouth.edu' },
+    where: { daliEmail: 'sophie.park@dali.dartmouth.edu' },
   })
 
   // Find the most active cycle
@@ -73,20 +73,19 @@ export default function MentorDashboard() {
     blindedMap.set(app.id, String.fromCharCode(65 + index))
   })
 
-  const [inProgressIds, setInProgressIds] = useState<string[]>([])
-
-  const finishedIds = new Set(
-    allCycleApps
-      .filter((a: CycleApp) => a.mentorReviews.some((r) => r.mentorId === mentor.id))
-      .map((a: CycleApp) => a.id),
+  const finishedApps = allCycleApps.filter((a: CycleApp) =>
+    a.mentorReviews.some((r) => r.mentorId === mentor.id && r.overallRecommendation !== null)
   )
+  const finishedIds = new Set(finishedApps.map((a: CycleApp) => a.id))
 
-  const finishedApps = allCycleApps.filter((a: CycleApp) => finishedIds.has(a.id))
-  const inProgressApps = allCycleApps.filter(
-    (a: CycleApp) => inProgressIds.includes(a.id) && !finishedIds.has(a.id),
+  const inProgressApps = allCycleApps.filter((a: CycleApp) =>
+    !finishedIds.has(a.id) &&
+    a.mentorReviews.some((r) => r.mentorId === mentor.id)
   )
+  const inProgressIds = new Set(inProgressApps.map((a: CycleApp) => a.id))
+
   const pendingApps = allCycleApps.filter(
-    (a: CycleApp) => !inProgressIds.includes(a.id) && !finishedIds.has(a.id),
+    (a: CycleApp) => !finishedIds.has(a.id) && !inProgressIds.has(a.id),
   )
 
   const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri']
@@ -176,12 +175,12 @@ export default function MentorDashboard() {
                   <div key={app.id} className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
                     <h4 className="font-bold text-gray-900 mb-1">{app.user.firstName} {app.user.lastName}</h4>
                     <p className="text-xs text-gray-500 mb-4">{app.domainApplications.length} Domain(s)</p>
-                    <button
-                      onClick={() => setInProgressIds((prev) => [...prev, app.id])}
+                    <Link
+                      to={`/mentor/application/${app.id}`}
                       className="w-full flex items-center justify-center px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-md text-xs font-medium transition-colors"
                     >
                       <PlayCircle className="w-3.5 h-3.5 mr-1.5" /> Start
-                    </button>
+                    </Link>
                   </div>
                 ))}
                 {pendingApps.length === 0 && (

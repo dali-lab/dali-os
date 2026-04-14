@@ -9,14 +9,30 @@ export async function loader({ params }: Route.LoaderArgs) {
       where: { id: params.id },
       include: {
         versions: {
-          include: { domain: true, createdBy: true },
+          include: {
+            domain: true,
+            createdBy: true,
+            rubricVersion: { include: { rubric: true } },
+          },
           orderBy: { createdAt: "asc" },
         },
       },
     }),
     prisma.domain.findMany({ orderBy: { name: "asc" } }),
   ]);
-  return { challenge, domains };
+
+  // Load rubrics that match any domain used in this challenge's versions.
+  const domainIds = [...new Set(challenge.versions.map((v) => v.domainId))];
+  const rubrics = await prisma.rubric.findMany({
+    where: { domainId: { in: domainIds } },
+    include: {
+      domain: true,
+      versions: { orderBy: { versionNumber: "desc" }, take: 1 },
+    },
+    orderBy: { name: "asc" },
+  });
+
+  return { challenge, domains, rubrics };
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -46,6 +62,16 @@ export async function action({ request, params }: Route.ActionArgs) {
     });
 
     return redirect(`/challenges/${params.id}`);
+  }
+
+  if (intent === "attach-rubric") {
+    const challengeVersionId = formData.get("challengeVersionId") as string;
+    const rubricVersionId = (formData.get("rubricVersionId") as string) || null;
+    await prisma.challengeVersion.update({
+      where: { id: challengeVersionId },
+      data: { rubricVersionId: rubricVersionId || null },
+    });
+    return null;
   }
 
   return null;
