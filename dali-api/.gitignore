@@ -5,3 +5,9 @@
 # React Router
 /.react-router/
 /build/
+
+# prisma generated client
+generated/
+
+# prisma data snapshots (may contain PII)
+prisma/data/

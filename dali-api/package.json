@@ -6,24 +6,45 @@
     "build": "react-router build",
     "dev": "react-router dev",
     "start": "react-router-serve ./build/server/index.js",
-    "typecheck": "react-router typegen && tsc"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "react-router typegen && tsc",
+    "db:reset": "PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION=yes prisma migrate reset --force && prisma db seed",
+    "db:reset:local": "PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION=yes DATABASE_URL=postgresql://dali:dali@localhost:5432/dali prisma migrate reset --force && DATABASE_URL=postgresql://dali:dali@localhost:5432/dali prisma db seed",
+    "db:fetch:members": "tsx --env-file .env prisma/fetch-members.ts",
+    "db:seed:members": "tsx prisma/seed-members.ts"
   },
   "dependencies": {
+    "@prisma/adapter-pg": "^7.6.0",
+    "@neondatabase/serverless": "^1.0.2",
+    "@prisma/adapter-neon": "^7.7.0",
+    "@prisma/client": "^7.7.0",
     "@react-router/node": "7.14.0",
     "@react-router/serve": "7.14.0",
+    "google-auth-library": "^10.6.2",
     "isbot": "^5.1.36",
+    "jose": "^6.2.2",
+    "lucide-react": "^0.544.0",
+    "pg": "^8.20.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-router": "7.14.0"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
   },
   "devDependencies": {
     "@react-router/dev": "7.14.0",
     "@tailwindcss/vite": "^4.2.2",
     "@types/node": "^22",
+    "@types/pg": "^8.20.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "prisma": "^7.7.0",
     "tailwindcss": "^4.2.2",
     "typescript": "^5.9.3",
-    "vite": "^8.0.3"
+    "vite": "^8.0.5",
+    "tsx": "^4.19.4",
+    "vitest": "^4.1.3"
   }
 }

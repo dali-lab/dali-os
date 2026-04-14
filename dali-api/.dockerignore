@@ -1,4 +1,7 @@
 .react-router
 build
 node_modules
+app/generated
+generated
 README.md
+.env
