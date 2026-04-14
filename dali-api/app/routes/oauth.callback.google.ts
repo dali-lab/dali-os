@@ -70,17 +70,27 @@ export async function loader({ request }: Route.LoaderArgs) {
     });
   }
 
-  // upsert user
+  // upsert user (and persist Google tokens for Calendar API access)
+  const tokenExpiresAt = googleUser.expiresIn
+    ? new Date(Date.now() + googleUser.expiresIn * 1000)
+    : null;
+
   const user = await prisma.user.upsert({
     where: { daliEmail: googleUser.email },
     update: {
       firstName: googleUser.firstName,
       lastName: googleUser.lastName,
+      ...(googleUser.accessToken ? { googleAccessToken: googleUser.accessToken } : {}),
+      ...(googleUser.refreshToken ? { googleRefreshToken: googleUser.refreshToken } : {}),
+      ...(tokenExpiresAt ? { googleTokenExpiresAt: tokenExpiresAt } : {}),
     },
     create: {
       daliEmail: googleUser.email,
       firstName: googleUser.firstName,
       lastName: googleUser.lastName,
+      googleAccessToken: googleUser.accessToken,
+      googleRefreshToken: googleUser.refreshToken,
+      googleTokenExpiresAt: tokenExpiresAt,
     },
   });
 

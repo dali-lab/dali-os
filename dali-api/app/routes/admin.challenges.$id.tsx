@@ -22,10 +22,9 @@ export async function loader({ params }: Route.LoaderArgs) {
     prisma.domain.findMany({ orderBy: { name: "asc" } }),
   ]);
 
-  // Load rubrics that match any domain used in this challenge's versions.
-  const domainIds = [...new Set(challenge.versions.map((v) => v.domainId))];
+  // Load all domain rubrics (for rubric attachment dropdown across all versions)
   const rubrics = await prisma.rubric.findMany({
-    where: { domainId: { in: domainIds } },
+    where: { domainId: { not: null } },
     include: {
       domain: true,
       versions: { orderBy: { versionNumber: "desc" }, take: 1 },
@@ -39,6 +38,9 @@ export async function loader({ params }: Route.LoaderArgs) {
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
+
+  const user = await prisma.user.findUnique({ where: { id: auth.user.sub } });
+  if (!user) return new Response(JSON.stringify({ error: "User not found" }), { status: 401 });
 
   const formData = await request.formData();
   const intent = formData.get("intent") as string;
@@ -56,7 +58,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         challengeId: params.id,
         domainId,
         questions,
-        createdById: auth.user.sub,
+        createdById: user.id,
       },
     });
 
