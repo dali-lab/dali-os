@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Form, useLoaderData } from "react-router";
+import { Form, Link, useLoaderData } from "react-router";
 import { redirect } from "react-router";
 import type { Route } from "./+types/admin.cycle.$id";
 import { prisma } from "~/lib/db";
@@ -85,6 +85,9 @@ export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
 
+  const user = await prisma.user.findUnique({ where: { id: auth.user.sub } });
+  if (!user) return new Response(JSON.stringify({ error: "User not found" }), { status: 401 });
+
   const formData = await request.formData();
   const intent = formData.get("intent");
 
@@ -138,7 +141,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       data: {
         newStatus: next,
         applicationCycleId: params.id,
-        userId: auth.user.sub,
+        userId: user.id,
       },
     });
   }
@@ -437,6 +440,14 @@ function FormSelector({ cycleId, options, selectedId }: {
         >
           Save
         </button>
+        {previewVersion && (
+          <Link
+            to={`/admin/forms/${previewVersion.applicationFormId}`}
+            className="px-3 py-2 text-sm font-medium text-blue-600 border border-blue-300 rounded-md hover:bg-blue-50 whitespace-nowrap"
+          >
+            Manage Form
+          </Link>
+        )}
       </Form>
 
       {questions.length > 0 && (
