@@ -171,7 +171,7 @@ export default function AdminCycleDetails() {
   }
 
   // Submitted applications only
-  const submittedApps = cycle.applications.filter((app) => {
+  const submittedApps = cycle.applications.filter((app: any) => {
     const latest = app.statusUpdates[0]?.newStatus;
     return latest === "Submitted";
   });
@@ -270,7 +270,7 @@ function DraftView({ cycle, formVersionOptions, allDomains }: { cycle: any; form
     <div className="space-y-4">
       {/* Form selector */}
       <div className="bg-white border border-gray-200 rounded-lg p-6 space-y-4">
-        <h2 className="text-lg font-semibold text-gray-900">Application Form</h2>
+        <h2 className="text-lg font-semibold text-gray-900">General Application</h2>
         <FormSelector
           cycleId={cycle.id}
           options={formVersionOptions}
@@ -508,7 +508,7 @@ function ApplicationsTable({ apps }: { apps: any[] }) {
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
-          {apps.map((app) => {
+          {apps.map((app: any) => {
             const domains = app.domainApplications.map((da: any) => da.challengeVersion.domain.name);
             return (
               <tr key={app.id} className="hover:bg-gray-50">
