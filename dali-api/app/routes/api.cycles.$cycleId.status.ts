@@ -1,5 +1,6 @@
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
+import { findOtherActiveCycleId } from "~/lib/cycles";
 import type { Route } from "./+types/api.cycles.$cycleId.status";
 
 const STATUS_ORDER = ["Draft", "Open", "Closed", "DecisionsReleased"] as const;
@@ -24,6 +25,24 @@ export async function action({ request, params }: Route.ActionArgs) {
   const { newStatus } = await request.json();
   if (!STATUS_ORDER.includes(newStatus)) {
     return Response.json({ error: "Invalid status" }, { status: 400 });
+  }
+
+  // Single-active-cycle invariant: only one cycle can be Open or Closed at a
+  // time. Block any transition that would activate this cycle while another
+  // is already active. Transitioning Open → Closed within the same cycle is
+  // fine — both are "active" and only one cycle is involved.
+  if (newStatus === "Open" || newStatus === "Closed") {
+    const otherActiveId = await findOtherActiveCycleId(params.cycleId!);
+    if (otherActiveId) {
+      return Response.json(
+        {
+          error:
+            "Another cycle is already active. Only one cycle can be Open or Closed at a time. Move the existing active cycle to DecisionsReleased first.",
+          activeCycleId: otherActiveId,
+        },
+        { status: 409 },
+      );
+    }
   }
 
   await prisma.applicationCycleStatusUpdate.create({

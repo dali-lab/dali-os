@@ -552,10 +552,12 @@ async function main() {
           { challengeVersionId: pmCv.id },
         ],
       },
+      // Winter 2028 stays in Draft so it doesn't violate the single-active-
+      // cycle invariant (Fall 2026 is Closed = active). An admin would advance
+      // this one to Open after Fall 2026 reaches DecisionsReleased.
       statusUpdates: {
         create: [
-          { newStatus: "Draft", userId: admin.id, createdAt: ts(-2000) },
-          { newStatus: "Open", userId: admin.id, createdAt: ts(-1000) },
+          { newStatus: "Draft", userId: admin.id, createdAt: ts(-1000) },
         ],
       },
     },
@@ -710,11 +712,6 @@ async function main() {
   }
 
   // ── Reviewer availability ────────────────────────────────────────────────
-  // Give every reviewer the same window — 14:00–16:00 UTC (10 AM–12 PM EDT,
-  // inside the seeded 9–6 working hours) — on each weekday in the interview
-  // window. With every reviewer free, computeAvailableSlots returns slots for
-  // any submitted application's domain (each app's in-domain reviewer is free
-  // and so is at least one cross-domain reviewer).
   const allReviewers = await prisma.cycleReviewer.findMany({
     where: { applicationCycleId: cycle.id },
   });
@@ -734,7 +731,6 @@ async function main() {
   }
 
   for (const reviewer of allReviewers) {
-    // Wipe any pre-existing blocks on re-seed so we don't accumulate duplicates
     await prisma.reviewerAvailability.deleteMany({
       where: { cycleReviewerId: reviewer.id },
     });
@@ -749,8 +745,8 @@ async function main() {
   console.log("Seed complete:");
   console.log(`  Admin: ${admin.firstName} ${admin.lastName}`);
   console.log(`  Domains: ${[designDomain, engDomain, pmDomain].map((d) => d.name).join(", ")}`);
-  console.log(`  Cycle: ${cycle.name} (Closed)`);
-  console.log(`  Cycle: ${cycle2028.name} (Open)`);
+  console.log(`  Cycle: ${cycle.name} (Closed) ← active`);
+  console.log(`  Cycle: ${cycle2028.name} (Draft)`);
   console.log(
     `  Applications: ${aliceApp.id} (submitted), ${bobApp.id} (submitted), ${carolApp.id} (draft)`,
   );
