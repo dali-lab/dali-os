@@ -1,7 +1,7 @@
 import React, { useState, createContext, useContext } from 'react'
-import { Application } from '../types'
+import type { Application } from '../types'
 import { mockApplications } from '../mockData'
-import { MentorReview } from '../types'
+import type { MentorReview } from '../types'
 interface ApplicationsContextType {
   applications: Application[]
   getApplicationForCycle: (

@@ -30,7 +30,7 @@ export type CycleStage =
   | 'interviews'
   | 'finalDelibs'
 
-export type ViewMode = 'applicant' | 'mentor' | 'domainLead' | 'admin'
+export type ViewMode = 'mentor' | 'domainLead' | 'admin'
 
 export interface User {
   id: string
