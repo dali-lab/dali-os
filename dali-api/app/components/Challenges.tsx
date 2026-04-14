@@ -1,10 +1,10 @@
 import React, { useState } from 'react'
 import { Link, Form, useLoaderData } from 'react-router'
-import { Plus, FileText, ChevronRight, X, Trash2, ListOrdered } from 'lucide-react'
+import { Plus, FileText, ChevronRight, X, Trash2 } from 'lucide-react'
 import type { loader } from '~/routes/admin.challenges'
 
 export default function Challenges() {
-  const { domains: rawDomains, challenges, generalForm, generalRubrics } = useLoaderData<typeof loader>()
+  const { domains: rawDomains, challenges } = useLoaderData<typeof loader>()
 
   // General always first, then the rest alphabetically
   const domains = [
@@ -65,46 +65,7 @@ export default function Challenges() {
           </button>
         </div>
 
-        {/* General application form rubric attachment — only on General tab */}
-        {activeDomain?.name === 'General' && generalForm && (
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
-              <h2 className="text-base font-semibold text-gray-900">General Application Form</h2>
-              <p className="text-sm text-gray-500 mt-0.5">Attach a rubric for reviewing general application responses.</p>
-            </div>
-            <div className="px-6 py-4 flex items-center gap-4">
-              <ListOrdered className="w-4 h-4 text-gray-400 flex-shrink-0" />
-              <span className="text-sm font-medium text-gray-700 w-24 flex-shrink-0">Rubric</span>
-              <Form method="post" className="flex items-center gap-2 flex-1">
-                <input type="hidden" name="intent" value="attach-form-rubric" />
-                <input type="hidden" name="formVersionId" value={generalForm.id} />
-                <select
-                  name="rubricVersionId"
-                  defaultValue={generalForm.rubricVersions?.[0]?.id ?? ''}
-                  className="flex-1 px-3 py-1.5 text-sm text-gray-900 border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">No rubric attached</option>
-                  {generalRubrics.map((r) => {
-                    const latest = r.versions[0]
-                    return latest ? (
-                      <option key={latest.id} value={latest.id}>
-                        {r.name} — v{latest.versionNumber}
-                      </option>
-                    ) : null
-                  })}
-                </select>
-                <button
-                  type="submit"
-                  className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
-                >
-                  Save
-                </button>
-              </Form>
-            </div>
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filtered.map((challenge) => {
             const domainVersionCount = challenge.versions.filter(
               (v) => v.domainId === activeDomainId
