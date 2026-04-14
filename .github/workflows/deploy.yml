@@ -34,7 +34,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: superfly/flyctl-actions/setup-flyctl@master
-      - run: flyctl deploy --config ./dali-api/fly.${{ github.ref_name }}.toml ./dali-api -a dali-api-${{ github.ref_name }}
+      - run: cd ./dali-api && flyctl deploy --config fly.${{ github.ref_name }}.toml -a dali-api-${{ github.ref_name }}
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
