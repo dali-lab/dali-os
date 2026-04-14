@@ -251,6 +251,97 @@ async function main() {
     },
   });
 
+  // ── Rubrics ────────────────────────────────────────────────────────────────
+
+  // General rubric (attached to the main form version)
+  const generalRubric = await prisma.rubric.upsert({
+    where: { id: "rubric-general" },
+    update: {},
+    create: { id: "rubric-general", name: "General Application Rubric", domainId: null },
+  });
+
+  const generalRubricVersion = await prisma.rubricVersion.upsert({
+    where: { id: "rv-general-v1" },
+    update: {},
+    create: {
+      id: "rv-general-v1",
+      rubricId: generalRubric.id,
+      versionNumber: 1,
+      createdById: admin.id,
+      applicationFormVersionId: "fv-main-v1",
+      criteria: [
+        { key: "rc-motivation", label: "Motivation & Fit", description: "Does the applicant articulate why they want to join DALI and what they'll contribute?", maxScore: 5 },
+        { key: "rc-communication", label: "Communication", description: "Are responses clear, specific, and well-structured?", maxScore: 5 },
+        { key: "rc-self-awareness", label: "Self-Awareness", description: "Does the applicant demonstrate honest reflection about their strengths and growth areas?", maxScore: 5 },
+      ],
+    },
+  });
+
+  // Engineering rubric
+  const engRubric = await prisma.rubric.upsert({
+    where: { id: "rubric-eng" },
+    update: {},
+    create: { id: "rubric-eng", name: "Engineering Rubric", domainId: engDomain.id },
+  });
+
+  const engRubricVersion = await prisma.rubricVersion.upsert({
+    where: { id: "rv-eng-v1" },
+    update: {},
+    create: {
+      id: "rv-eng-v1",
+      rubricId: engRubric.id,
+      versionNumber: 1,
+      createdById: admin.id,
+      criteria: [
+        { key: "rc-technical-depth", label: "Technical Depth", description: "Does the applicant demonstrate solid understanding of the concepts behind their work?", maxScore: 5 },
+        { key: "rc-problem-solving", label: "Problem Solving", description: "Is their approach to challenges systematic and thoughtful?", maxScore: 5 },
+        { key: "rc-code-quality", label: "Code Quality & Craft", description: "Do their examples show attention to maintainability, correctness, and design?", maxScore: 5 },
+        { key: "rc-curiosity", label: "Curiosity & Growth", description: "Is there evidence of self-directed learning and intellectual curiosity?", maxScore: 5 },
+      ],
+    },
+  });
+
+  // Attach engineering rubric to both eng challenge versions
+  await Promise.all([
+    prisma.challengeVersion.update({
+      where: { id: "cv-eng" },
+      data: { rubricVersionId: engRubricVersion.id },
+    }),
+    prisma.challengeVersion.update({
+      where: { id: "cv-eng-v2" },
+      data: { rubricVersionId: engRubricVersion.id },
+    }),
+  ]);
+
+  // Product rubric
+  const pmRubric = await prisma.rubric.upsert({
+    where: { id: "rubric-pm" },
+    update: {},
+    create: { id: "rubric-pm", name: "Product Rubric", domainId: pmDomain.id },
+  });
+
+  const pmRubricVersion = await prisma.rubricVersion.upsert({
+    where: { id: "rv-pm-v1" },
+    update: {},
+    create: {
+      id: "rv-pm-v1",
+      rubricId: pmRubric.id,
+      versionNumber: 1,
+      createdById: admin.id,
+      criteria: [
+        { key: "rc-product-thinking", label: "Product Thinking", description: "Does the applicant show structured thinking about user needs, tradeoffs, and impact?", maxScore: 5 },
+        { key: "rc-decision-making", label: "Decision Making", description: "Can they make and justify decisions under uncertainty?", maxScore: 5 },
+        { key: "rc-user-empathy", label: "User Empathy", description: "Do their answers center on real user problems rather than features?", maxScore: 5 },
+      ],
+    },
+  });
+
+  // Attach product rubric to pm challenge version
+  await prisma.challengeVersion.update({
+    where: { id: "cv-pm" },
+    data: { rubricVersionId: pmRubricVersion.id },
+  });
+
   // ── Application cycle: Fall 2026 ───────────────────────────────────────────
   const cycle = await prisma.applicationCycle.upsert({
     where: { id: "cycle-fall-2026" },
@@ -612,6 +703,7 @@ async function main() {
     });
   }
 
+  console.log(`  Rubrics: ${generalRubric.name}, ${engRubric.name}, ${pmRubric.name}`);
   console.log("Seed complete:");
   console.log(`  Admin: ${admin.firstName} ${admin.lastName}`);
   console.log(`  Domains: ${[designDomain, engDomain, pmDomain].map((d) => d.name).join(", ")}`);

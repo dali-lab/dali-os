@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Link, useLoaderData, useSubmit, useSearchParams, useNavigation, Form } from 'react-router'
 import { ArrowLeft, Plus, FileText, Clock, UserIcon, ListOrdered } from 'lucide-react'
 import { FormBuilderTab } from '~/components/ChallengeBuilder'
@@ -26,17 +26,27 @@ export function ChallengeDetail() {
     ...rawDomains.filter((d) => d.name !== 'General'),
   ]
 
-  const defaultDomainId = searchParams.get('domainId') ?? domains[0]?.id ?? ''
+  const lastVersion = challenge.versions.length ? challenge.versions[challenge.versions.length - 1] : null
+  const defaultDomainId = searchParams.get('domainId') ?? lastVersion?.domainId ?? domains.find((d) => d.name !== 'General')?.id ?? domains[0]?.id ?? ''
 
-  const [selectedVersionId, setSelectedVersionId] = useState<string | null>(
-    challenge.versions.length ? challenge.versions[challenge.versions.length - 1].id : null
-  )
+  const [selectedVersionId, setSelectedVersionId] = useState<string | null>(lastVersion?.id ?? null)
   const [isCreatingVersion, setIsCreatingVersion] = useState(false)
-  const [selectedDomainId] = useState<string>(defaultDomainId)
+  const [selectedDomainId, setSelectedDomainId] = useState<string>(defaultDomainId)
 
   const selectedVersion = challenge.versions.find((v) => v.id === selectedVersionId)
 
   const nextVersionNumber = challenge.versions.length + 1
+
+  // When loader data updates after a create-version submit, exit create mode and select the new version
+  const prevVersionCount = useRef(challenge.versions.length)
+  useEffect(() => {
+    if (challenge.versions.length > prevVersionCount.current) {
+      const newest = challenge.versions[challenge.versions.length - 1]
+      setSelectedVersionId(newest.id)
+      setIsCreatingVersion(false)
+    }
+    prevVersionCount.current = challenge.versions.length
+  }, [challenge.versions.length])
 
   const handleSaveNewVersion = (questions: Question[]) => {
     const formData = new FormData()
@@ -64,7 +74,10 @@ export function ChallengeDetail() {
           </div>
           {!isCreatingVersion && (
             <button
-              onClick={() => setIsCreatingVersion(true)}
+              onClick={() => {
+                if (selectedVersion) setSelectedDomainId(selectedVersion.domainId)
+                setIsCreatingVersion(true)
+              }}
               className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 shadow-sm"
             >
               <Plus className="w-4 h-4 mr-2" />
@@ -161,7 +174,10 @@ export function ChallengeDetail() {
                   </p>
                 </div>
                 <button
-                  onClick={() => setIsCreatingVersion(true)}
+                  onClick={() => {
+                    setSelectedDomainId(selectedVersion.domainId)
+                    setIsCreatingVersion(true)
+                  }}
                   className="text-sm text-blue-600 hover:text-blue-700 font-medium"
                 >
                   Duplicate to New Version

@@ -21,7 +21,7 @@ function formatDateTime(iso: string | Date) {
 }
 
 export function RubricDetail() {
-  const { rubric, formVersions } = useLoaderData<typeof loader>()
+  const { rubric } = useLoaderData<typeof loader>()
 
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(
     rubric.versions.length ? rubric.versions[rubric.versions.length - 1].id : null,
@@ -33,7 +33,6 @@ export function RubricDetail() {
   const [newLabel, setNewLabel] = useState('')
   const [newDescription, setNewDescription] = useState('')
   const [newMaxScore, setNewMaxScore] = useState(5)
-  const [selectedFormVersionId, setSelectedFormVersionId] = useState(formVersions[0]?.id ?? '')
 
   const selectedVersion = rubric.versions.find((v) => v.id === selectedVersionId)
 
@@ -123,7 +122,6 @@ export function RubricDetail() {
                 .slice()
                 .reverse()
                 .map((version) => {
-                  const label = version.applicationFormVersion ? 'General Form' : 'No target'
                   return (
                     <button
                       key={version.id}
@@ -148,7 +146,6 @@ export function RubricDetail() {
                           Version {version.versionNumber}
                         </span>
                       </div>
-                      <span className="text-xs text-gray-500 block truncate">{label}</span>
                       <div className="flex items-center text-xs text-gray-500 mt-2 gap-1">
                         <Clock className="w-3 h-3" />
                         {formatDateTime(version.createdAt)}
@@ -176,23 +173,6 @@ export function RubricDetail() {
               <div className="p-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
                 <div className="flex items-center gap-4 flex-wrap">
                   <h2 className="font-bold text-gray-900">Drafting Version {nextVersionNumber}</h2>
-                  <div className="flex items-center gap-2">
-                    <label className="text-sm font-medium text-gray-700">Form version:</label>
-                    <select
-                      value={selectedFormVersionId}
-                      onChange={(e) => setSelectedFormVersionId(e.target.value)}
-                      className="border border-gray-300 rounded-md p-1.5 text-sm text-gray-900 bg-white focus:ring-blue-500 focus:border-blue-500"
-                    >
-                      {formVersions.length === 0 && (
-                        <option value="">No form versions available</option>
-                      )}
-                      {formVersions.map((fv) => (
-                        <option key={fv.id} value={fv.id}>
-                          Form version {new Date(fv.createdAt).toLocaleDateString()}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
                 </div>
                 <div className="flex gap-2">
                   <button
@@ -204,7 +184,6 @@ export function RubricDetail() {
                   <Form method="post">
                     <input type="hidden" name="intent" value="create-version" />
                     <input type="hidden" name="criteria" value={JSON.stringify(criteria)} />
-                    <input type="hidden" name="applicationFormVersionId" value={selectedFormVersionId} />
                     <button
                       type="submit"
                       className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md"
@@ -304,11 +283,6 @@ export function RubricDetail() {
                     <h2 className="text-xl font-bold text-gray-900">
                       Version {selectedVersion.versionNumber}
                     </h2>
-                    {selectedVersion.applicationFormVersion ? (
-                      <span className="text-xs font-medium px-2 py-1 bg-gray-100 text-gray-700 rounded-full">
-                        General Form
-                      </span>
-                    ) : null}
                   </div>
                   <div className="flex items-center gap-4 text-sm text-gray-500">
                     <span className="flex items-center gap-1">
