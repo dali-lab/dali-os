@@ -1,0 +1,60 @@
+name: Migration Safety Check
+
+on:
+  pull_request:
+
+jobs:
+  migration-check:
+    name: Check migrations
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: prisma
+          POSTGRES_PASSWORD: prisma
+          POSTGRES_DB: prisma_shadow
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: dali-api
+
+      - name: Check for unmigrated schema changes
+        run: |
+          cd dali-api
+          npx prisma migrate diff \
+            --from-migrations ./prisma/migrations \
+            --to-schema ./prisma/schema.prisma \
+            --exit-code
+        env:
+          DATABASE_URL: "postgresql://prisma:prisma@localhost:5432/prisma_shadow"
+          SHADOW_DATABASE_URL: "postgresql://prisma:prisma@localhost:5432/prisma_shadow"
+
+      - name: Check for deleted migration files
+        run: |
+          DELETED=$(git diff --name-only --diff-filter=D origin/${{ github.base_ref }}...HEAD -- 'dali-api/prisma/migrations/')
+          if [ -n "$DELETED" ]; then
+            echo "Error: migration files must never be deleted:"
+            echo "$DELETED"
+            exit 1
+          fi
+
+      - name: Check migration safety
+        run: npx @flvmnt/pgfence analyze --ci --max-risk high --no-lock-timeout --no-statement-timeout dali-api/prisma/migrations/**/*.sql

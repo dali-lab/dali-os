@@ -1,0 +1,369 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  // unique identifier
+  id String @id @default(cuid())
+
+  // metadata
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // all nullable, but at least one of these must be non-null
+  netId          String? @unique // Dartmouth SSO
+  daliEmail      String? @unique // DALI Google
+  dartmouthEmail String? @unique // Dartmouth Google OAuth
+
+  // profile
+  firstName String
+  lastName  String
+
+  daliMember                    DALIMember?
+  applicationCycleStatusUpdates ApplicationCycleStatusUpdate[]
+  applicationFormVersions       ApplicationFormVersion[]
+  challengeVersions             ChallengeVersion[]
+  applications                  Application[]
+  applicationStatusUpdates      ApplicationStatusUpdate[]
+  mentorReviews                 MentorReview[]                @relation("MentorReviews")
+  oauthSessions                 OAuthSession[]
+  refreshTokens                 RefreshToken[]
+  rubricVersions                RubricVersion[]
+}
+
+// A DALI lab member. userId is optional because a member may be known (e.g. via daliEmail)
+// before they have created a User account.
+model DALIMember {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId String? @unique
+  user   User?   @relation(fields: [userId], references: [id])
+
+  firstName      String?
+  lastName       String?
+  daliEmail      String? @unique
+  dartmouthEmail String? @unique
+  did            String? @unique // Dartmouth D-number e.g. "F00709M"
+
+  domainLeadAssignments DomainLeadAssignment[]
+}
+
+model ApplicationCycle {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Human-readable label (e.g. "Fall 2026"). No enforced format — cycles may
+  // be non-standard (e.g. only one domain hiring). Dates are tracked via
+  // ApplicationCycleStatusUpdate rather than stored directly here.
+  name String
+
+  // The form version applicants will fill out for this cycle
+  formVersionId String?
+  formVersion   ApplicationFormVersion? @relation(fields: [formVersionId], references: [id])
+
+  statusUpdates     ApplicationCycleStatusUpdate[]
+  applications      Application[]
+  domains           DomainApplicationCycle[]
+  challengeVersions ChallengeVersionApplicationCycle[]
+}
+
+// Applicant-initiated status changes only. DALI-initiated outcomes (interview,
+// offer, rejection) are tracked in a separate decisions table to record who
+// made the decision and whether it has been communicated to the applicant.
+enum ApplicationStatus {
+  Draft
+  Submitted
+  Withdrawn
+}
+
+model ApplicationStatusUpdate {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  newStatus     ApplicationStatus
+  applicationId String
+  application   Application       @relation(fields: [applicationId], references: [id])
+  userId        String
+  user          User              @relation(fields: [userId], references: [id])
+}
+
+model Application {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // answers: map of question UUID key -> answer value (JSON). Saved incrementally
+  // as the applicant fills out the form; finalized on submission.
+  // v1 supports text-based answers only. File upload questions will be handled
+  // in a future version via a separate attachments table.
+  answers Json
+
+  userId                   String
+  user                     User                   @relation(fields: [userId], references: [id])
+  applicationCycleId       String
+  applicationCycle         ApplicationCycle       @relation(fields: [applicationCycleId], references: [id])
+  // Pinned at application creation time so that form updates do not affect in-progress drafts.
+  applicationFormVersionId String
+  applicationFormVersion   ApplicationFormVersion @relation(fields: [applicationFormVersionId], references: [id])
+
+  statusUpdates      ApplicationStatusUpdate[]
+  domainApplications DomainApplication[]
+  mentorReviews      MentorReview[]
+}
+
+// Domain is not stored directly — it is derivable via challengeVersion.domain.
+// Every DomainApplication is tied to a specific ChallengeVersion, which belongs to a Domain.
+model DomainApplication {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // answers: same shape as Application.answers, keyed by question UUID from the challenge version.
+  answers Json
+
+  applicationId      String
+  application        Application      @relation(fields: [applicationId], references: [id])
+  challengeVersionId String
+  challengeVersion   ChallengeVersion @relation(fields: [challengeVersionId], references: [id])
+}
+
+model ApplicationForm {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  versions ApplicationFormVersion[]
+}
+
+// Immutable snapshot of an application form. Never update rows in this table —
+// create a new version instead.
+// questions: array of question definitions, each with a stable UUID `key`, `type`,
+// `required`, and type-specific `data`. The `key` is used to associate answers.
+model ApplicationFormVersion {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  questions         Json
+  applicationFormId String
+  applicationForm   ApplicationForm @relation(fields: [applicationFormId], references: [id])
+  createdById       String
+  createdBy         User            @relation(fields: [createdById], references: [id])
+
+  applications      Application[]
+  applicationCycles ApplicationCycle[]
+  rubricVersions    RubricVersion[]
+}
+
+model Challenge {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  name String
+
+  versions ChallengeVersion[]
+}
+
+model Domain {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  name String
+
+  challengeVersions     ChallengeVersion[]
+  applicationCycles     DomainApplicationCycle[]
+  domainLeadAssignments DomainLeadAssignment[]
+  rubrics               Rubric[]
+}
+
+// A mentor's written review of an application.
+model MentorReview {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // JSON map of rubric criterion key → integer score
+  scores                Json    @default("{}")
+  feedback              String  @default("")
+  rejectionRationale    String  @default("")
+  overallRecommendation String?
+  // JSON array of annotation objects {id, fieldKey, start, end, comment, color}
+  annotations           Json    @default("[]")
+
+  mentorId      String
+  mentor        User        @relation("MentorReviews", fields: [mentorId], references: [id])
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id])
+
+  @@unique([mentorId, applicationId])
+}
+
+// Immutable snapshot of a domain challenge. Never update rows in this table —
+// create a new version instead.
+// questions: same shape as ApplicationFormVersion.questions.
+model ChallengeVersion {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  questions   Json
+  challengeId String
+  challenge   Challenge @relation(fields: [challengeId], references: [id])
+  domainId    String
+  domain      Domain    @relation(fields: [domainId], references: [id])
+  createdById String
+  createdBy   User      @relation(fields: [createdById], references: [id])
+
+  // The rubric version used to score this challenge version
+  rubricVersionId String?
+  rubricVersion   RubricVersion? @relation("ChallengeVersionRubric", fields: [rubricVersionId], references: [id])
+
+  domainApplications DomainApplication[]
+  applicationCycles  ChallengeVersionApplicationCycle[]
+}
+
+// Lifecycle of an application cycle from the DALI side:
+//   Draft             — cycle being set up by hiring lead and domain leads
+//   Open              — applications open for submission
+//   Closed            — submissions closed; hiring team reviewing
+//   DecisionsReleased — decisions communicated to applicants
+enum ApplicationCycleStatus {
+  Draft
+  Open
+  Closed
+  DecisionsReleased
+}
+
+model ApplicationCycleStatusUpdate {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  newStatus          ApplicationCycleStatus
+  applicationCycleId String
+  applicationCycle   ApplicationCycle       @relation(fields: [applicationCycleId], references: [id])
+  userId             String
+  user               User                   @relation(fields: [userId], references: [id])
+}
+
+// Indicates that a domain is hiring during a given application cycle
+model DomainApplicationCycle {
+  domainId           String
+  domain             Domain           @relation(fields: [domainId], references: [id])
+  applicationCycleId String
+  applicationCycle   ApplicationCycle @relation(fields: [applicationCycleId], references: [id])
+
+  // True once the domain lead has explicitly confirmed their challenge config is ready
+  isReady Boolean @default(false)
+
+  @@id([domainId, applicationCycleId])
+}
+
+// Indicates that a specific version of a challenge is in use for an application cycle
+model ChallengeVersionApplicationCycle {
+  challengeVersionId String
+  challengeVersion   ChallengeVersion @relation(fields: [challengeVersionId], references: [id])
+  applicationCycleId String
+  applicationCycle   ApplicationCycle @relation(fields: [applicationCycleId], references: [id])
+
+  @@id([challengeVersionId, applicationCycleId])
+}
+
+model Rubric {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  name     String
+  domainId String?
+  domain   Domain? @relation(fields: [domainId], references: [id])
+
+  versions RubricVersion[]
+}
+
+// Immutable snapshot of a rubric. Never update rows in this table —
+// create a new version instead.
+// criteria: array of { key, label, description?, maxScore }
+//
+// A version is scoped to one of two targets (mutually exclusive):
+//   - applicationFormVersionId: rubric for reviewing the general application
+//   - challengeVersionId: rubric for reviewing a specific domain challenge
+// Exactly one should be set.
+model RubricVersion {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  versionNumber Int
+  criteria      Json
+  rubricId      String
+  rubric        Rubric @relation(fields: [rubricId], references: [id])
+  createdById   String
+  createdBy     User   @relation(fields: [createdById], references: [id])
+
+  // Target: general application form review
+  applicationFormVersionId String?
+  applicationFormVersion   ApplicationFormVersion? @relation(fields: [applicationFormVersionId], references: [id])
+
+  // Back-ref: challenge versions that use this rubric version
+  challengeVersions ChallengeVersion[] @relation("ChallengeVersionRubric")
+}
+
+model OAuthSession {
+  id String @id @default(cuid())
+
+  // pkce fields
+  codeChallenge       String
+  codeChallengeMethod String @default("S256")
+
+  // oAuth params preserved across IDP redirect
+  redirectUri String
+  state       String
+  provider    String // "google" | "cas"
+  accountType String? // "member" | "partner" (Google only)
+
+  // set after IDP authenticates user
+  userId            String?
+  authorizationCode String? @unique
+  exchanged         Boolean @default(false)
+
+  // for chained Google → CAS account linking
+  linkUserId String?
+
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique // sha-256 token hash
+  userId    String
+  family    String // rotation detection
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Which domains a DALIMember leads (permanent assignment, not cycle-scoped)
+model DomainLeadAssignment {
+  id        String     @id @default(cuid())
+  createdAt DateTime   @default(now())
+
+  memberId  String
+  member    DALIMember @relation(fields: [memberId], references: [id])
+  domainId  String
+  domain    Domain     @relation(fields: [domainId], references: [id])
+}

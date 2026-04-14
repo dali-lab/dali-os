@@ -1,0 +1,63 @@
+services:
+  db:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: dali
+      POSTGRES_PASSWORD: dali
+      POSTGRES_DB: dali
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dali -d dali"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ./dali-api
+      target: deps
+    command: sh -c "npx prisma generate && npx prisma db push --force-reset && npx prisma db seed && npm run db:seed:members && npm run dev & npx prisma studio --port 5555 --browser none & wait"
+    working_dir: /app
+    ports:
+      - "3001:3001"
+      - "5555:5555"
+    volumes:
+      - ./dali-api:/app
+      - api_node_modules:/app/node_modules
+    # Compose only reads repo-root .env for ${VAR} substitution; this loads dali-api/.env into the container.
+    env_file:
+      - ./dali-api/.env
+    environment:
+      DATABASE_URL: postgresql://dali:dali@db:5432/dali
+      JWT_SECRET: dev-jwt-secret-change-me-in-production!!
+      CAS_BASE_URL: https://login.dartmouth.edu/cas
+      FRONTEND_URL: http://localhost:5173
+      API_BASE_URL: http://localhost:3001
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./dali-web
+      target: deps
+    command: npm run dev
+    working_dir: /app
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./dali-web:/app
+      - web_node_modules:/app/node_modules
+    environment:
+      VITE_DALI_DB_URL: http://localhost:3001
+      VITE_FRONTEND_URL: http://localhost:5173
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
+  api_node_modules:
+  web_node_modules:
