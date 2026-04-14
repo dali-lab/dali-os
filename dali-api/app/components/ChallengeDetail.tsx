@@ -197,7 +197,7 @@ export function ChallengeDetail() {
                   >
                     <option value="">No rubric attached</option>
                     {rubrics
-                      .filter((r) => r.domainId === selectedVersion.domainId)
+                      .filter((r) => r.domainId === selectedVersion.domainId || (selectedVersion.domain.name === 'General' && r.domainId === null))
                       .map((r) => {
                         const latestVersion = r.versions[0]
                         return latestVersion ? (
