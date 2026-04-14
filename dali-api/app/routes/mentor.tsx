@@ -30,37 +30,66 @@ function cycleStatusToStage(status: string): CycleStage {
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
+  const empty = {
+    activeCycle: null as { id: string; name: string } | null,
+    currentStage: 'challengeSetup' as CycleStage,
+    mentorUserId: null as string | null,
+    allCycleApps: [] as any[],
+  }
+
   const auth = await requireAuth(request)
-  if (!auth.ok) return { activeCycle: null, currentStage: 'challengeSetup' as CycleStage }
+  if (!auth.ok) return empty
 
   // Find the cycle this mentor is actually assigned to as a reviewer
   const member = await prisma.dALIMember.findFirst({ where: { userId: auth.user.sub } })
-  if (!member) return { activeCycle: null, currentStage: 'challengeSetup' as CycleStage }
+  if (!member) return { ...empty, mentorUserId: auth.user.sub }
 
   const reviewer = await prisma.cycleReviewer.findFirst({
     where: { daliMemberId: member.id },
     include: {
-      applicationCycle: { include: { statusUpdates: { orderBy: { createdAt: 'desc' }, take: 1 } } },
+      applicationCycle: {
+        include: {
+          statusUpdates: { orderBy: { createdAt: 'desc' }, take: 1 },
+          applications: {
+            include: {
+              user: true,
+              statusUpdates: { orderBy: { createdAt: 'desc' }, take: 1 },
+              domainApplications: {
+                include: { challengeVersion: { include: { domain: true } } },
+              },
+              mentorReviews: true,
+            },
+          },
+        },
+      },
     },
     orderBy: { applicationCycle: { createdAt: 'desc' } },
   })
 
-  if (!reviewer) return { activeCycle: null, currentStage: 'challengeSetup' as CycleStage }
+  if (!reviewer) return { ...empty, mentorUserId: auth.user.sub }
 
   const cycle = reviewer.applicationCycle
   const status = cycle.statusUpdates[0]?.newStatus ?? 'Draft'
 
+  // Only submitted (non-draft) applications are visible to mentors.
+  const allCycleApps = cycle.applications.filter((a) => {
+    const latest = a.statusUpdates[0]?.newStatus
+    return latest && latest !== 'Draft'
+  })
+
   return {
     activeCycle: { id: cycle.id, name: cycle.name },
     currentStage: cycleStatusToStage(status),
+    mentorUserId: auth.user.sub,
+    allCycleApps,
   }
 }
 
+type LoaderData = Awaited<ReturnType<typeof loader>>
+type CycleApp = LoaderData['allCycleApps'][number]
+
 export default function MentorDashboard() {
-  const { activeCycle, currentStage } = useLoaderData<typeof loader>() as {
-    activeCycle: { id: string; name: string } | null
-    currentStage: CycleStage
-  }
+  const { activeCycle, currentStage, mentorUserId, allCycleApps } = useLoaderData<typeof loader>()
 
   if (!activeCycle) {
     return (
@@ -76,11 +105,30 @@ export default function MentorDashboard() {
   const readingDueDate: string | null = null
   const availabilityDueDate: string | null = null
 
-  // Stub variables for stages not yet wired to real data
-  const mentorId = ''
-  const assignedApps: any[] = []
-  const allCycleApps: any[] = []
+  // Reading-stage buckets derived from mentorReviews:
+  //   finished   = has a review with overallRecommendation set
+  //   inProgress = has a review row but no overallRecommendation yet
+  //   pending    = no review row at all
+  const finishedApps = allCycleApps.filter((a: CycleApp) =>
+    a.mentorReviews.some((r: any) => r.mentorId === mentorUserId && r.overallRecommendation !== null),
+  )
+  const finishedIdSet = new Set(finishedApps.map((a: CycleApp) => a.id))
+  const inProgressApps = allCycleApps.filter(
+    (a: CycleApp) =>
+      !finishedIdSet.has(a.id) &&
+      a.mentorReviews.some((r: any) => r.mentorId === mentorUserId),
+  )
+  const inProgressIdSet = new Set(inProgressApps.map((a: CycleApp) => a.id))
+  const pendingApps = allCycleApps.filter(
+    (a: CycleApp) => !finishedIdSet.has(a.id) && !inProgressIdSet.has(a.id),
+  )
+
+  // Blinded applicant labels (A, B, C, …) for the deliberation view.
   const blindedMap = new Map<string, string>()
+  allCycleApps.forEach((app: CycleApp, index: number) => {
+    blindedMap.set(app.id, String.fromCharCode(65 + index))
+  })
+
   const [scheduledInterviews, setScheduledInterviews] = useState<any[]>([])
   const [interviewNotes, setInterviewNotes] = useState<Record<string, string>>({})
   const handleSaveNotes = useCallback(async (interviewId: string) => {
@@ -93,10 +141,7 @@ export default function MentorDashboard() {
       body: JSON.stringify({ notes }),
     })
   }, [activeCycle, interviewNotes])
-  const [inProgressIds, setInProgressIds] = useState<string[]>([])
-  const pendingApps: any[] = []
-  const inProgressApps: any[] = []
-  const finishedApps: any[] = []
+  // Deliberation buckets are not yet wired to persistent state — separate feature.
   const writtenDelibsBuckets = { advance: [] as string[], cut: [] as string[] }
   const finalDelibsBuckets = { reject: [] as string[], waitlist: [] as string[], accept: [] as string[] }
   // Interview Availability State (API-connected)
@@ -345,7 +390,7 @@ export default function MentorDashboard() {
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-lg font-semibold text-gray-900 flex items-center">
                 <FileText className="w-5 h-5 mr-2 text-blue-600" />
-                Assigned Applications ({assignedApps.length})
+                Applications ({allCycleApps.length})
               </h2>
             </div>
 
@@ -358,27 +403,23 @@ export default function MentorDashboard() {
                     {pendingApps.length}
                   </span>
                 </div>
-                {pendingApps.map((app) => (
+                {pendingApps.map((app: CycleApp) => (
                   <div
                     key={app.id}
                     className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow"
                   >
                     <h4 className="font-bold text-gray-900 mb-1">
-                      Applicant {app.userId.replace('user-', '#')}
+                      {app.user.firstName} {app.user.lastName}
                     </h4>
                     <p className="text-xs text-gray-500 mb-4">
                       {app.domainApplications.length} Domain(s)
                     </p>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() =>
-                          setInProgressIds([...inProgressIds, app.id])
-                        }
-                        className="flex-1 flex items-center justify-center px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-md text-xs font-medium transition-colors"
-                      >
-                        <PlayCircle className="w-3.5 h-3.5 mr-1.5" /> Start
-                      </button>
-                    </div>
+                    <Link
+                      to={`/mentor/application/${app.id}`}
+                      className="flex items-center justify-center px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-md text-xs font-medium transition-colors"
+                    >
+                      <PlayCircle className="w-3.5 h-3.5 mr-1.5" /> Start
+                    </Link>
                   </div>
                 ))}
                 {pendingApps.length === 0 && (
@@ -398,13 +439,13 @@ export default function MentorDashboard() {
                     {inProgressApps.length}
                   </span>
                 </div>
-                {inProgressApps.map((app) => (
+                {inProgressApps.map((app: CycleApp) => (
                   <div
                     key={app.id}
                     className="bg-white p-4 rounded-lg border border-blue-200 shadow-sm hover:shadow-md transition-shadow ring-1 ring-blue-100"
                   >
                     <h4 className="font-bold text-gray-900 mb-1">
-                      Applicant {app.userId.replace('user-', '#')}
+                      {app.user.firstName} {app.user.lastName}
                     </h4>
                     <p className="text-xs text-gray-500 mb-4">
                       {app.domainApplications.length} Domain(s)
@@ -434,9 +475,9 @@ export default function MentorDashboard() {
                     {finishedApps.length}
                   </span>
                 </div>
-                {finishedApps.map((app) => {
-                  const review = app.mentorReviews?.find(
-                    (r) => r.mentorId === mentorId,
+                {finishedApps.map((app: CycleApp) => {
+                  const review = app.mentorReviews.find(
+                    (r: any) => r.mentorId === mentorUserId,
                   )
                   return (
                     <div
@@ -445,7 +486,7 @@ export default function MentorDashboard() {
                     >
                       <div className="flex justify-between items-start mb-1">
                         <h4 className="font-bold text-gray-900">
-                          Applicant {app.userId.replace('user-', '#')}
+                          {app.user.firstName} {app.user.lastName}
                         </h4>
                         <CheckCircle className="w-4 h-4 text-green-500" />
                       </div>
@@ -520,7 +561,7 @@ export default function MentorDashboard() {
                             "
                           </p>
                           <div className="flex flex-wrap gap-1 mt-2">
-                            {app.mentorReviews?.map((r, i) => (
+                            {app.mentorReviews?.map((r: any, i: number) => (
                               <span
                                 key={i}
                                 className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-medium border border-gray-200 bg-gray-50 text-gray-600"
@@ -808,7 +849,7 @@ export default function MentorDashboard() {
 
                     <div className="space-y-3">
                       {appIds.map((appId, i) => {
-                        const app = applications.find((a) => a.id === appId)
+                        const app = allCycleApps.find((a: CycleApp) => a.id === appId)
                         return (
                           <Link
                             key={appId}
@@ -822,14 +863,15 @@ export default function MentorDashboard() {
                               <div className="flex-1">
                                 <div className="flex justify-between items-start">
                                   <span className="font-bold text-gray-900 block group-hover:text-blue-700">
-                                    Applicant{' '}
-                                    {app?.userId.replace('user-', '#')}
+                                    Applicant {blindedMap.get(appId)}
                                   </span>
                                   <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-blue-500" />
                                 </div>
-                                <span className="text-xs text-gray-500 line-clamp-2 mt-1">
-                                  {app?.interview?.notes || 'No notes'}
-                                </span>
+                                {app && (
+                                  <span className="text-xs text-gray-500 line-clamp-1 mt-1">
+                                    {app.user.firstName} {app.user.lastName}
+                                  </span>
+                                )}
                               </div>
                             </div>
                           </Link>
