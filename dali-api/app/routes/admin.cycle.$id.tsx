@@ -3,6 +3,7 @@ import { Form, useLoaderData } from "react-router";
 import { redirect } from "react-router";
 import type { Route } from "./+types/admin.cycle.$id";
 import { prisma } from "~/lib/db";
+import { requireAuth } from "~/lib/auth";
 import { CheckCircle, Circle, ChevronRight, Plus, X } from "lucide-react";
 
 const STATUS_SEQUENCE = [
@@ -81,6 +82,9 @@ export async function loader({ params }: Route.LoaderArgs) {
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
+
   const formData = await request.formData();
   const intent = formData.get("intent");
 
@@ -110,10 +114,6 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   if (intent === "advance-status") {
-    // TODO: replace with session user once login flow is built
-    const adminUser = await prisma.user.findFirstOrThrow({
-      where: { daliEmail: "admin@dali.dartmouth.edu" },
-    });
 
     const cycle = await prisma.applicationCycle.findUniqueOrThrow({
       where: { id: params.id },
@@ -138,7 +138,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       data: {
         newStatus: next,
         applicationCycleId: params.id,
-        userId: adminUser.id,
+        userId: auth.user.sub,
       },
     });
   }

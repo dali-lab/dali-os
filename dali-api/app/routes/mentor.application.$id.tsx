@@ -1,58 +1,60 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Link, useLoaderData, useSubmit } from 'react-router'
+import { Link, redirect, useLoaderData, useSubmit } from 'react-router'
 import { ArrowLeft, Save, HelpCircle, X } from 'lucide-react'
 import { prisma } from '~/lib/db'
+import { requireAuth } from '~/lib/auth'
 import type { Route } from './+types/mentor.application.$id'
 import { ApplicationViewer } from '~/components/ApplicationViewer'
 import type { Question } from '~/types'
 
-export async function loader({ params }: Route.LoaderArgs) {
-  const application = await prisma.application.findUniqueOrThrow({
-    where: { id: params.id },
-    include: {
-      user: true,
-      applicationCycle: {
-        include: {
-          statusUpdates: { orderBy: { createdAt: 'desc' }, take: 1 },
-          formVersion: true,
+export async function loader({ request, params }: Route.LoaderArgs) {
+  const auth = await requireAuth(request)
+  if (!auth.ok) return redirect('/login')
+
+  const [application, mentor, existingReview] = await Promise.all([
+    prisma.application.findUniqueOrThrow({
+      where: { id: params.id },
+      include: {
+        user: true,
+        applicationCycle: {
+          include: {
+            statusUpdates: { orderBy: { createdAt: 'desc' }, take: 1 },
+            formVersion: true,
+          },
         },
-      },
-      domainApplications: {
-        include: {
-          challengeVersion: {
-            include: { domain: true, challenge: true },
+        domainApplications: {
+          include: {
+            challengeVersion: {
+              include: { domain: true, challenge: true },
+            },
           },
         },
       },
-    },
-  })
-
-  // TODO: replace with session user
-  const mentor = await prisma.user.findFirstOrThrow({
-    where: { daliEmail: 'sophie.park@dali.dartmouth.edu' },
-  })
-
-  const existingReview = await prisma.mentorReview.findUnique({
-    where: { mentorId_applicationId: { mentorId: mentor.id, applicationId: params.id } },
-  })
+    }),
+    prisma.user.findUniqueOrThrow({ where: { id: auth.user.sub } }),
+    prisma.mentorReview.findUnique({
+      where: { mentorId_applicationId: { mentorId: auth.user.sub, applicationId: params.id } },
+    }),
+  ])
 
   return { application, mentor, existingReview }
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
+  const auth = await requireAuth(request)
+  if (!auth.ok) return redirect('/login')
+
   const formData = await request.formData()
   const intent = formData.get('intent') as string
 
   if (intent === 'save-review') {
-    const mentorId = formData.get('mentorId') as string
+    const mentorId = auth.user.sub
     const scores = JSON.parse(formData.get('scores') as string)
     const feedback = (formData.get('feedback') as string) ?? ''
     const rejectionRationale = (formData.get('rejectionRationale') as string) ?? ''
     const overallRecommendation = (formData.get('overallRecommendation') as string) || null
     const annotations = JSON.parse((formData.get('annotations') as string) ?? '[]')
 
-    // MentorReview uses upsert since schema now has @@unique([mentorId, applicationId])
-    // Note: requires `prisma db push` to have been run after schema change
     await prisma.mentorReview.upsert({
       where: { mentorId_applicationId: { mentorId, applicationId: params.id } },
       update: { scores, feedback, rejectionRationale, overallRecommendation, annotations },
