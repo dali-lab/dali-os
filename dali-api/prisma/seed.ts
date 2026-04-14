@@ -343,6 +343,12 @@ async function main() {
   });
 
   // ── Application cycle: Fall 2026 ───────────────────────────────────────────
+  // Status updates use explicit, ascending createdAt values so latest-status
+  // queries (`orderBy: { createdAt: "desc" }`) are deterministic. Without
+  // explicit timestamps prisma stamps every row in the same nested create with
+  // the same instant and ties resolve nondeterministically.
+  const seedNow = Date.now();
+  const ts = (offsetMs: number) => new Date(seedNow + offsetMs);
   const cycle = await prisma.applicationCycle.upsert({
     where: { id: "cycle-fall-2026" },
     update: {},
@@ -365,9 +371,9 @@ async function main() {
       },
       statusUpdates: {
         create: [
-          { newStatus: "Draft", userId: admin.id },
-          { newStatus: "Open", userId: admin.id },
-          { newStatus: "Closed", userId: admin.id },
+          { newStatus: "Draft", userId: admin.id, createdAt: ts(-3000) },
+          { newStatus: "Open", userId: admin.id, createdAt: ts(-2000) },
+          { newStatus: "Closed", userId: admin.id, createdAt: ts(-1000) },
         ],
       },
     },
@@ -426,8 +432,8 @@ async function main() {
       applicationFormVersionId: formVersion.id,
       statusUpdates: {
         create: [
-          { newStatus: "Draft", userId: alice.id },
-          { newStatus: "Submitted", userId: alice.id },
+          { newStatus: "Draft", userId: alice.id, createdAt: ts(-2000) },
+          { newStatus: "Submitted", userId: alice.id, createdAt: ts(-1000) },
         ],
       },
       domainApplications: {
@@ -465,8 +471,8 @@ async function main() {
       applicationFormVersionId: formVersion.id,
       statusUpdates: {
         create: [
-          { newStatus: "Draft", userId: bob.id },
-          { newStatus: "Submitted", userId: bob.id },
+          { newStatus: "Draft", userId: bob.id, createdAt: ts(-2000) },
+          { newStatus: "Submitted", userId: bob.id, createdAt: ts(-1000) },
         ],
       },
       domainApplications: {
@@ -548,8 +554,8 @@ async function main() {
       },
       statusUpdates: {
         create: [
-          { newStatus: "Draft", userId: admin.id },
-          { newStatus: "Open", userId: admin.id },
+          { newStatus: "Draft", userId: admin.id, createdAt: ts(-2000) },
+          { newStatus: "Open", userId: admin.id, createdAt: ts(-1000) },
         ],
       },
     },
@@ -585,8 +591,8 @@ async function main() {
       applicationFormVersionId: formVersion.id,
       statusUpdates: {
         create: [
-          { newStatus: "Draft", userId: dana.id },
-          { newStatus: "Submitted", userId: dana.id },
+          { newStatus: "Draft", userId: dana.id, createdAt: ts(-2000) },
+          { newStatus: "Submitted", userId: dana.id, createdAt: ts(-1000) },
         ],
       },
       domainApplications: {
@@ -703,6 +709,42 @@ async function main() {
     });
   }
 
+  // ── Reviewer availability ────────────────────────────────────────────────
+  // Give every reviewer the same window — 14:00–16:00 UTC (10 AM–12 PM EDT,
+  // inside the seeded 9–6 working hours) — on each weekday in the interview
+  // window. With every reviewer free, computeAvailableSlots returns slots for
+  // any submitted application's domain (each app's in-domain reviewer is free
+  // and so is at least one cross-domain reviewer).
+  const allReviewers = await prisma.cycleReviewer.findMany({
+    where: { applicationCycleId: cycle.id },
+  });
+
+  const availabilityWindows: { startTime: Date; endTime: Date }[] = [];
+  const cursor = new Date(interviewStart);
+  while (cursor <= interviewEnd) {
+    const dow = cursor.getUTCDay();
+    if (dow !== 0 && dow !== 6) {
+      const start = new Date(cursor);
+      start.setUTCHours(14, 0, 0, 0);
+      const end = new Date(cursor);
+      end.setUTCHours(16, 0, 0, 0);
+      availabilityWindows.push({ startTime: start, endTime: end });
+    }
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+
+  for (const reviewer of allReviewers) {
+    // Wipe any pre-existing blocks on re-seed so we don't accumulate duplicates
+    await prisma.reviewerAvailability.deleteMany({
+      where: { cycleReviewerId: reviewer.id },
+    });
+    for (const w of availabilityWindows) {
+      await prisma.reviewerAvailability.create({
+        data: { cycleReviewerId: reviewer.id, startTime: w.startTime, endTime: w.endTime },
+      });
+    }
+  }
+
   console.log(`  Rubrics: ${generalRubric.name}, ${engRubric.name}, ${pmRubric.name}`);
   console.log("Seed complete:");
   console.log(`  Admin: ${admin.firstName} ${admin.lastName}`);
@@ -714,7 +756,9 @@ async function main() {
   );
   console.log(`  Application: app-dana (submitted, Winter 2028)`);
   console.log(`  Domain lead: ${engLead.firstName} ${engLead.lastName} → Engineering`);
-  console.log(`  Interview config + 3 reviewers seeded for cycle ${cycle.id}`);
+  console.log(
+    `  Interview config + 3 reviewers (each with ${availabilityWindows.length} availability blocks) seeded for cycle ${cycle.id}`,
+  );
 }
 
 main()
