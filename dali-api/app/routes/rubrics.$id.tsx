@@ -40,10 +40,6 @@ export async function action({ request, params }: Route.ActionArgs) {
     const applicationFormVersionId = (formData.get('applicationFormVersionId') as string) || null
     const criteria = JSON.parse(criteriaJson || '[]')
 
-    const adminUser = await prisma.user.findFirstOrThrow({
-      where: { daliEmail: 'admin@dali.dartmouth.edu' },
-    })
-
     const lastVersion = await prisma.rubricVersion.findFirst({
       where: { rubricId: params.id },
       orderBy: { versionNumber: 'desc' },
@@ -55,7 +51,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         rubricId: params.id,
         versionNumber,
         criteria,
-        createdById: adminUser.id,
+        createdById: auth.user.sub,
         applicationFormVersionId: applicationFormVersionId || undefined,
       },
     })

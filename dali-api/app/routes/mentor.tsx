@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useLoaderData } from 'react-router'
+import { Link, redirect, useLoaderData } from 'react-router'
 import {
   ChevronRight,
   Clock,
@@ -12,13 +12,16 @@ import {
   PlayCircle,
 } from 'lucide-react'
 import { prisma } from '~/lib/db'
+import { requireAuth } from '~/lib/auth'
 import type { Route } from './+types/mentor'
 import type { CycleStage } from '~/types'
 
-export async function loader({}: Route.LoaderArgs) {
-  // TODO: replace with session user once login flow is built
-  const mentor = await prisma.user.findFirstOrThrow({
-    where: { daliEmail: 'sophie.park@dali.dartmouth.edu' },
+export async function loader({ request }: Route.LoaderArgs) {
+  const auth = await requireAuth(request)
+  if (!auth.ok) return redirect('/login')
+
+  const mentor = await prisma.user.findUniqueOrThrow({
+    where: { id: auth.user.sub },
   })
 
   // Find the most active cycle
@@ -74,13 +77,13 @@ export default function MentorDashboard() {
   })
 
   const finishedApps = allCycleApps.filter((a: CycleApp) =>
-    a.mentorReviews.some((r) => r.mentorId === mentor.id && r.overallRecommendation !== null)
+    a.mentorReviews.some((r: { mentorId: string; overallRecommendation: string | null }) => r.mentorId === mentor.id && r.overallRecommendation !== null)
   )
   const finishedIds = new Set(finishedApps.map((a: CycleApp) => a.id))
 
   const inProgressApps = allCycleApps.filter((a: CycleApp) =>
     !finishedIds.has(a.id) &&
-    a.mentorReviews.some((r) => r.mentorId === mentor.id)
+    a.mentorReviews.some((r: { mentorId: string }) => r.mentorId === mentor.id)
   )
   const inProgressIds = new Set(inProgressApps.map((a: CycleApp) => a.id))
 
