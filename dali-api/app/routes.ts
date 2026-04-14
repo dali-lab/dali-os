@@ -4,8 +4,6 @@ export default [
   // UI routes wrapped in the app layout (navbar + view toggle)
   layout("routes/layout.tsx", [
     index("routes/home.tsx"),
-    route("apply/:cycleId", "routes/apply.$cycleId.tsx"),
-    route("applications/:appId", "routes/applications.$appId.tsx"),
     route("mentor", "routes/mentor.tsx"),
     route("mentor/application/:id", "routes/mentor.application.$id.tsx"),
     route("domain-lead", "routes/domain-lead.tsx"),
@@ -14,8 +12,8 @@ export default [
     route("admin/cycle/:id", "routes/admin.cycle.$id.tsx"),
     route("challenges", "routes/admin.challenges.tsx"),
     route("challenges/:id", "routes/admin.challenges.$id.tsx"),
-    route("admin/rubrics", "routes/admin.rubrics.tsx"),
-    route("admin/rubrics/:id", "routes/admin.rubrics.$id.tsx"),
+    route("rubrics", "routes/rubrics.tsx"),
+    route("rubrics/:id", "routes/rubrics.$id.tsx"),
   ]),
 
   // Login (no layout)

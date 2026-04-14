@@ -1,1 +1,3 @@
-export { default } from '~/components/Form'
+export default function AdminForms() {
+  return null
+}

@@ -79,7 +79,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     accountType: accountType ?? undefined,
   });
 
-  const apiBase = process.env.API_BASE_URL ?? "http://localhost:3001";
+  const apiBase = process.env.API_BASE_URL ?? "http://localhost:5173";
 
   // Dartmouth CAS authentication flow
   // redirect to CAS login with service URL pointing to callback endpoint

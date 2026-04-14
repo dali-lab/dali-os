@@ -433,6 +433,91 @@ async function main() {
     },
   });
 
+  // ── Application cycle: Winter 2028 (Open) ─────────────────────────────────
+  const cycle2028 = await prisma.applicationCycle.upsert({
+    where: { id: "cycle-winter-2028" },
+    update: {},
+    create: {
+      id: "cycle-winter-2028",
+      name: "Winter 2028",
+      formVersionId: formVersion.id,
+      domains: {
+        create: [
+          { domainId: designDomain.id },
+          { domainId: engDomain.id },
+          { domainId: pmDomain.id },
+        ],
+      },
+      challengeVersions: {
+        create: [
+          { challengeVersionId: designCv.id },
+          { challengeVersionId: engCv2.id },
+          { challengeVersionId: pmCv.id },
+        ],
+      },
+      statusUpdates: {
+        create: [
+          { newStatus: "Draft", userId: admin.id },
+          { newStatus: "Open", userId: admin.id },
+        ],
+      },
+    },
+  });
+
+  // Dana: submitted Engineering application in Winter 2028
+  const dana = await prisma.user.upsert({
+    where: { netId: "f007da4" },
+    update: {},
+    create: {
+      netId: "f007da4",
+      dartmouthEmail: "dana.l.kim.28@dartmouth.edu",
+      firstName: "Dana",
+      lastName: "Kim",
+    },
+  });
+
+  await prisma.application.upsert({
+    where: { id: "app-dana" },
+    update: {},
+    create: {
+      id: "app-dana",
+      answers: {
+        "fq-00000000-0000-0000-0000-000000000001":
+          "I want to build things that matter. DALI's track record of shipping real products is why I'm applying.",
+        "fq-00000000-0000-0000-0000-000000000002":
+          "Freshman, Computer Science",
+        "fq-00000000-0000-0000-0000-000000000003":
+          "I competed in ICPC regionals this fall and placed in the top 10.",
+      },
+      userId: dana.id,
+      applicationCycleId: cycle2028.id,
+      applicationFormVersionId: formVersion.id,
+      statusUpdates: {
+        create: [
+          { newStatus: "Draft", userId: dana.id },
+          { newStatus: "Submitted", userId: dana.id },
+        ],
+      },
+      domainApplications: {
+        create: [
+          {
+            challengeVersionId: engCv2.id,
+            answers: {
+              "eq2-00000000-0000-0000-0000-000000000001":
+                "I built a real-time collaborative code editor using CRDTs. The main tradeoff was consistency vs. latency — I chose eventual consistency to keep the UI snappy.",
+              "eq2-00000000-0000-0000-0000-000000000002":
+                "github.com/dana/collab-editor — I'd use operational transforms instead of raw CRDTs if I did it again; the merge logic got gnarly.",
+              "eq2-00000000-0000-0000-0000-000000000003":
+                "A race condition in my websocket handler that only appeared under high load. Found it by adding structured logging and replaying prod traffic locally.",
+              "eq2-00000000-0000-0000-0000-000000000004":
+                "WebAssembly — I want to understand how browser-native performance boundaries actually work.",
+            },
+          },
+        ],
+      },
+    },
+  });
+
   // ── Domain lead user ──────────────────────────────────────────────────────
   const engLead = await prisma.user.upsert({
     where: { netId: "f007el1" },
@@ -531,9 +616,11 @@ async function main() {
   console.log(`  Admin: ${admin.firstName} ${admin.lastName}`);
   console.log(`  Domains: ${[designDomain, engDomain, pmDomain].map((d) => d.name).join(", ")}`);
   console.log(`  Cycle: ${cycle.name} (Closed)`);
+  console.log(`  Cycle: ${cycle2028.name} (Open)`);
   console.log(
     `  Applications: ${aliceApp.id} (submitted), ${bobApp.id} (submitted), ${carolApp.id} (draft)`,
   );
+  console.log(`  Application: app-dana (submitted, Winter 2028)`);
   console.log(`  Domain lead: ${engLead.firstName} ${engLead.lastName} → Engineering`);
   console.log(`  Interview config + 3 reviewers seeded for cycle ${cycle.id}`);
 }
