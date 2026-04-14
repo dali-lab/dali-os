@@ -5,7 +5,7 @@ import { prisma } from '~/lib/db'
 import { requireAuth } from '~/lib/auth'
 import type { Route } from './+types/mentor.application.$id'
 import { ApplicationViewer } from '~/components/ApplicationViewer'
-import type { Question } from '~/types'
+import type { Question, RubricCriterion } from '~/types'
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request)
@@ -19,13 +19,24 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         applicationCycle: {
           include: {
             statusUpdates: { orderBy: { createdAt: 'desc' }, take: 1 },
-            formVersion: true,
+            formVersion: {
+              include: {
+                rubricVersions: {
+                  include: { rubric: true },
+                  take: 1,
+                },
+              },
+            },
           },
         },
         domainApplications: {
           include: {
             challengeVersion: {
-              include: { domain: true, challenge: true },
+              include: {
+                domain: true,
+                challenge: true,
+                rubricVersion: { include: { rubric: true } },
+              },
             },
           },
         },
@@ -73,6 +84,24 @@ export default function MentorApplicationReview() {
 
   const cycle = application.applicationCycle
   const formQuestions = (cycle.formVersion?.questions as unknown as Question[]) ?? []
+
+  // Collect all rubric criteria: general form rubric + per-domain-application rubrics
+  const allCriteria: { sectionLabel: string; criteria: RubricCriterion[] }[] = []
+  const formRubricVersion = cycle.formVersion?.rubricVersions?.[0]
+  if (formRubricVersion) {
+    const criteria = formRubricVersion.criteria as unknown as RubricCriterion[]
+    if (criteria.length > 0) allCriteria.push({ sectionLabel: 'General Application', criteria })
+  }
+  for (const da of application.domainApplications) {
+    const rv = da.challengeVersion.rubricVersion
+    if (rv) {
+      const criteria = rv.criteria as unknown as RubricCriterion[]
+      if (criteria.length > 0) {
+        allCriteria.push({ sectionLabel: da.challengeVersion.domain.name, criteria })
+      }
+    }
+  }
+  const flatCriteria = allCriteria.flatMap((s) => s.criteria)
 
   const [scores, setScores] = useState<Record<string, number>>(
     (existingReview?.scores as Record<string, number>) ?? {}
@@ -154,28 +183,44 @@ export default function MentorApplicationReview() {
             </div>
             <div className="p-6 space-y-6">
 
-              {/* Scoring — simple criteria for now, no rubric model yet */}
+              {/* Scoring */}
               <div>
                 <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-4">Scoring</h3>
-                <div className="space-y-4">
-                  {['Communication', 'Culture Fit', 'Technical Skills', 'Design Sense'].map((criterion) => (
-                    <div key={criterion}>
-                      <div className="flex justify-between items-center mb-1">
-                        <label className="text-sm font-medium text-gray-900">{criterion}</label>
-                        <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded">
-                          {scores[criterion] ?? 0} / 5
-                        </span>
+                {flatCriteria.length === 0 ? (
+                  <p className="text-sm text-gray-400 italic">No rubric attached to this application.</p>
+                ) : (
+                  <div className="space-y-6">
+                    {allCriteria.map((section) => (
+                      <div key={section.sectionLabel}>
+                        {allCriteria.length > 1 && (
+                          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">{section.sectionLabel}</p>
+                        )}
+                        <div className="space-y-4">
+                          {section.criteria.map((criterion) => (
+                            <div key={criterion.key}>
+                              <div className="flex justify-between items-center mb-1">
+                                <label className="text-sm font-medium text-gray-900">{criterion.label}</label>
+                                <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                                  {scores[criterion.key] ?? 0} / {criterion.maxScore}
+                                </span>
+                              </div>
+                              {criterion.description && (
+                                <p className="text-xs text-gray-500 mb-1">{criterion.description}</p>
+                              )}
+                              <input
+                                type="range" min="0" max={criterion.maxScore}
+                                value={scores[criterion.key] ?? 0}
+                                onChange={(e) => setScores((prev) => ({ ...prev, [criterion.key]: parseInt(e.target.value) }))}
+                                className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                              />
+                              <div className="flex justify-between text-xs text-gray-400 mt-1"><span>0</span><span>{criterion.maxScore}</span></div>
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                      <input
-                        type="range" min="0" max="5"
-                        value={scores[criterion] ?? 0}
-                        onChange={(e) => setScores((prev) => ({ ...prev, [criterion]: parseInt(e.target.value) }))}
-                        className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
-                      />
-                      <div className="flex justify-between text-xs text-gray-400 mt-1"><span>0</span><span>5</span></div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Feedback */}
@@ -253,12 +298,15 @@ export default function MentorApplicationReview() {
             <h3 className="font-bold text-white flex items-center"><HelpCircle className="w-4 h-4 mr-2" />Scoring Guide</h3>
           </div>
           <ul className="divide-y divide-gray-100 max-h-[50vh] overflow-y-auto">
-            {['Communication', 'Culture Fit', 'Technical Skills', 'Design Sense'].map((c) => (
-              <li key={c} className="p-4 hover:bg-gray-50">
+            {flatCriteria.length === 0 ? (
+              <li className="p-4 text-sm text-gray-400 italic">No rubric attached.</li>
+            ) : flatCriteria.map((c) => (
+              <li key={c.key} className="p-4 hover:bg-gray-50">
                 <div className="flex justify-between items-start mb-1">
-                  <h4 className="font-bold text-gray-900">{c}</h4>
-                  <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded">Max: 5</span>
+                  <h4 className="font-bold text-gray-900">{c.label}</h4>
+                  <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded">Max: {c.maxScore}</span>
                 </div>
+                {c.description && <p className="text-xs text-gray-500">{c.description}</p>}
               </li>
             ))}
           </ul>
