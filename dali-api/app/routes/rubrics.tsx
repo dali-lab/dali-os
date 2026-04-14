@@ -36,7 +36,7 @@ export async function action({ request }: Route.ActionArgs) {
     const domainId = (formData.get('domainId') as string) || null
     if (!name) return { error: 'Name is required' }
     const rubric = await prisma.rubric.create({
-      data: { name, domainId: domainId || undefined },
+      data: { name, domainId },
     })
     return redirect(`/rubrics/${rubric.id}`)
   }

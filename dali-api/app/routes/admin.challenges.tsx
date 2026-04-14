@@ -30,9 +30,9 @@ export async function loader({}: Route.LoaderArgs) {
         rubricVersions: { include: { rubric: true }, take: 1 },
       },
     }),
-    // General rubrics (no domain, or explicitly the General domain)
+    // General rubrics: domainId must be null
     prisma.rubric.findMany({
-      where: { OR: [{ domainId: null }, { domain: { name: "General" } }] },
+      where: { domainId: null },
       include: {
         versions: { orderBy: { versionNumber: "desc" }, take: 1 },
       },
