@@ -1,6 +1,7 @@
 import { redirect } from "react-router";
 import type { Route } from "./+types/admin.challenges.$id";
 import { prisma } from "~/lib/db";
+import { requireAuth } from "~/lib/auth";
 import { ChallengeDetail } from "~/components/ChallengeDetail";
 
 export async function loader({ params }: Route.LoaderArgs) {
@@ -36,6 +37,9 @@ export async function loader({ params }: Route.LoaderArgs) {
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
+
   const formData = await request.formData();
   const intent = formData.get("intent") as string;
 
@@ -47,17 +51,12 @@ export async function action({ request, params }: Route.ActionArgs) {
 
     const questions = JSON.parse(questionsJson || "[]");
 
-    // TODO: replace with session user once login flow is built
-    const adminUser = await prisma.user.findFirstOrThrow({
-      where: { daliEmail: "admin@dali.dartmouth.edu" },
-    });
-
     await prisma.challengeVersion.create({
       data: {
         challengeId: params.id,
         domainId,
         questions,
-        createdById: adminUser.id,
+        createdById: auth.user.sub,
       },
     });
 
