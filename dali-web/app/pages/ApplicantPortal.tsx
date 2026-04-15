@@ -388,7 +388,7 @@ function ApplicationOpenView() {
     setTimeout(() => setSaving(false), 500);
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     setError(null);
     if (selectedRoles.length === 0) {
       setError('Please select at least one role.');
@@ -397,6 +397,21 @@ function ApplicationOpenView() {
     const missing = allQuestions.filter(q => q.required && !answers[q.id]?.trim());
     if (missing.length > 0) {
       setError(`Please answer all required questions (${missing.length} remaining).`);
+      return;
+    }
+    try {
+      const res = await fetchWithAuth(`${API_BASE}/api/my-application`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ answers: { ...answers, roles: selectedRoles.join(',') } }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error ?? 'Failed to submit application. Please try again.');
+        return;
+      }
+    } catch {
+      setError('Failed to submit application. Please try again.');
       return;
     }
     setSubmitted(true);

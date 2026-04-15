@@ -57,4 +57,15 @@ export default [
   route("api/my-interview/cancel", "routes/api.my-interview.cancel.ts"),
   route("api/my-interview/reschedule", "routes/api.my-interview.reschedule.ts"),
   route("api/google-calendar/busy", "routes/api.google-calendar.busy.ts"),
+
+  // S3 file upload
+  route("api/upload/presign", "routes/api.upload.presign.ts"),
+  route("api/upload/url", "routes/api.upload.url.ts"),
+
+  // Gmail OAuth one-time authorization
+  route("admin/authorize-gmail", "routes/admin.authorize-gmail.ts"),
+  route("admin/authorize-gmail/callback", "routes/admin.authorize-gmail.callback.ts"),
+
+  // Email sending API
+  route("api/email/send", "routes/api.email.send.ts"),
 ] satisfies RouteConfig;
