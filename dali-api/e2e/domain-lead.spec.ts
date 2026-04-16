@@ -40,9 +40,8 @@ test.describe('domain lead workflow', () => {
 
   test('can navigate to application detail', async ({ page }) => {
     await page.goto('/domain-lead');
-    // Click the review link in Alice Johnson's row
-    const aliceRow = page.locator('tr', { hasText: 'Alice Johnson' }).first();
-    await aliceRow.getByRole('link').click();
+    // Click the first application detail link on the page
+    await page.locator('a[href*="/domain-lead/application/"]').first().click();
     await expect(page).toHaveURL(/\/domain-lead\/application\/.+/);
     await expect(page.getByText('General Application')).toBeVisible();
   });
