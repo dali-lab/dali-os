@@ -6,6 +6,26 @@ export default defineConfig({
   plugins: [tailwindcss(), reactRouter()],
   resolve: {
     tsconfigPaths: true,
+    // Ensure a single copy of yjs (and related collab libs) is loaded.
+    // Duplicate yjs instances silently break sync because each instance
+    // has its own internal Y.Doc class identity — updates from one can't
+    // be applied to the other.
+    dedupe: [
+      "yjs",
+      "y-prosemirror",
+      "y-protocols",
+      "@hocuspocus/provider",
+      "@tiptap/core",
+      "@tiptap/pm",
+      "@tiptap/react",
+    ],
+  },
+  optimizeDeps: {
+    include: [
+      "yjs",
+      "y-prosemirror",
+      "@hocuspocus/provider",
+    ],
   },
   ssr: {
     external: ["@prisma/client", "@prisma/adapter-pg"],
