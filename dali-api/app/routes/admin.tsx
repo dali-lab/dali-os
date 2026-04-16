@@ -3,23 +3,28 @@ import { Form, Link, redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/admin";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
+import { isHiringLead } from "~/lib/roles";
 import { ChevronRight, Plus, X } from "lucide-react";
 
 const STATUS_LABELS: Record<string, string> = {
   Draft: "Draft",
   Open: "Open",
-  Closed: "Closed",
-  DecisionsReleased: "Decisions Released",
+  UnderReview: "Under Review",
+  Completed: "Completed",
 };
 
 const STATUS_COLORS: Record<string, string> = {
   Draft: "bg-gray-100 text-gray-700",
   Open: "bg-green-100 text-green-700",
-  Closed: "bg-yellow-100 text-yellow-700",
-  DecisionsReleased: "bg-blue-100 text-blue-700",
+  UnderReview: "bg-yellow-100 text-yellow-700",
+  Completed: "bg-blue-100 text-blue-700",
 };
 
-export async function loader({}: Route.LoaderArgs) {
+export async function loader({ request }: Route.LoaderArgs) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return redirect("/login");
+  if (!(await isHiringLead(auth.user.sub))) return redirect("/");
+
   const cycles = await prisma.applicationCycle.findMany({
     include: {
       statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
@@ -39,6 +44,7 @@ export async function action({ request }: Route.ActionArgs) {
 
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
+  if (!(await isHiringLead(auth.user.sub))) return redirect("/");
   const adminUser = await prisma.user.findUniqueOrThrow({
     where: { id: auth.user.sub },
   });
@@ -52,7 +58,7 @@ export async function action({ request }: Route.ActionArgs) {
     },
   });
 
-  return redirect(`/admin/cycle/${cycle.id}`);
+  return redirect(`/hiring-lead-admin/cycle/${cycle.id}`);
 }
 
 export default function AdminDashboard() {
@@ -132,7 +138,7 @@ export default function AdminDashboard() {
             return (
               <Link
                 key={cycle.id}
-                to={`/admin/cycle/${cycle.id}`}
+                to={`/hiring-lead-admin/cycle/${cycle.id}`}
                 className="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-6 py-4 hover:bg-gray-50 transition-colors"
               >
                 <div className="space-y-1">

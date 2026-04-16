@@ -109,7 +109,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const headers = new Headers();
   headers.append("Set-Cookie", clearStateCookie);
   setTokenCookies(headers, tokens.access_token, tokens.refresh_token);
-  headers.set("Location", "/admin");
+  headers.set("Location", "/reviewer");
 
   return new Response(null, { status: 302, headers });
 }

@@ -16,8 +16,8 @@ export async function action({ request }: Route.ActionArgs) {
 
   const interview = await prisma.interview.findFirst({
     where: {
-      application: { userId: auth.user.sub },
-      status: { in: ["Scheduled", "NeedsReassignment"] },
+      domainApplication: { application: { userId: auth.user.sub } },
+      status: "Scheduled",
     },
   });
 

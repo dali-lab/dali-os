@@ -4,17 +4,21 @@ export default [
   // UI routes wrapped in the app layout (navbar + view toggle)
   layout("routes/layout.tsx", [
     index("routes/home.tsx"),
-    route("mentor", "routes/mentor.tsx"),
-    route("mentor/application/:id", "routes/mentor.application.$id.tsx"),
+    route("reviewer", "routes/mentor.tsx"),
+    route("reviewer/application/:id", "routes/mentor.application.$id.tsx"),
     route("domain-lead", "routes/domain-lead.tsx"),
     route("domain-lead/application/:id", "routes/domain-lead.application.$id.tsx"),
-    route("admin", "routes/admin.tsx"),
-    route("admin/cycle/:id", "routes/admin.cycle.$id.tsx"),
+    route("domain-lead/delibs/:id", "routes/domain-lead.delibs.$id.tsx"),
+    route("hiring-lead-admin", "routes/admin.tsx"),
+    route("hiring-lead-admin/cycle/:id", "routes/admin.cycle.$id.tsx"),
     route("challenges", "routes/admin.challenges.tsx"),
     route("challenges/:id", "routes/admin.challenges.$id.tsx"),
-    route("admin/forms/:id", "routes/admin.forms.$id.tsx"),
     route("rubrics", "routes/rubrics.tsx"),
     route("rubrics/:id", "routes/rubrics.$id.tsx"),
+    route("admin-console", "routes/admin-console.tsx"),
+    route("interviewer", "routes/interviewer.tsx"),
+    route("interviewer/interview/:interviewId", "routes/interviewer.interview.$interviewId.tsx"),
+    route("schedule-interview", "routes/applicant.schedule-interview.tsx"),
   ]),
 
   // Login (no layout)
@@ -39,6 +43,7 @@ export default [
   route("api/domains", "routes/api.domains.ts"),
   route("api/domains/:domainId/leads", "routes/api.domains.$domainId.leads.ts"),
   route("api/members", "routes/api.members.ts"),
+  route("api/members/:memberId/roles", "routes/api.members.$memberId.roles.ts"),
 
   // Interview scheduling API
   route("api/cycles/:cycleId/status", "routes/api.cycles.$cycleId.status.ts"),
@@ -57,4 +62,37 @@ export default [
   route("api/my-interview/cancel", "routes/api.my-interview.cancel.ts"),
   route("api/my-interview/reschedule", "routes/api.my-interview.reschedule.ts"),
   route("api/google-calendar/busy", "routes/api.google-calendar.busy.ts"),
+
+  // Domain application management
+  route("api/domain-applications/:id/decisions", "routes/api.domain-applications.$id.decisions.ts"),
+  route("api/domain-applications/:id/reviews", "routes/api.domain-applications.$id.reviews.ts"),
+
+  // Review CRUD + submit/unsubmit
+  route("api/reviews/:id", "routes/api.reviews.$id.ts"),
+  route("api/reviews/:id/submit", "routes/api.reviews.$id.submit.ts"),
+  route("api/reviews/:id/unsubmit", "routes/api.reviews.$id.unsubmit.ts"),
+
+  // Decision finalize/release
+  route("api/decisions/:id/finalize", "routes/api.decisions.$id.finalize.ts"),
+  route("api/decisions/:id/release", "routes/api.decisions.$id.release.ts"),
+
+  // Interview completion & reassignment
+  route("api/interviews/:id/complete", "routes/api.interviews.$id.complete.ts"),
+  route("api/interviews/:id/reassign", "routes/api.interviews.$id.reassign.ts"),
+
+  // Auto-assign reviewers
+  route("api/cycles/:cycleId/domains/:domainId/auto-assign", "routes/api.cycles.$cycleId.domains.$domainId.auto-assign.ts"),
+
+  // Applicant interview scheduling
+  route("api/domain-applications/:id/schedule-interview", "routes/api.domain-applications.$id.schedule-interview.ts"),
+
+  // Delibs
+  route("api/cycles/:cycleId/delibs", "routes/api.cycles.$cycleId.delibs.ts"),
+  route("api/delibs/:id", "routes/api.delibs.$id.ts"),
+
+  // Cycle interviewers
+  route("api/cycles/:cycleId/interviewers", "routes/api.cycles.$cycleId.interviewers.ts"),
+
+  // Interview assignment notes
+  route("api/interview-assignments/:id/notes", "routes/api.interview-assignments.$id.notes.ts"),
 ] satisfies RouteConfig;
