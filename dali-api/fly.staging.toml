@@ -1,11 +1,10 @@
-app = "dali-api-dev"
+app = "dali-api-staging"
 primary_region = "iad"
 
 [deploy]
-  release_command = "npx prisma migrate deploy && npx prisma db seed"
+  release_command = "npx prisma migrate deploy"
 
-[build.args]
-  OMIT_DEV = "false"
+[build]
 
 [http_service]
   internal_port = 3000

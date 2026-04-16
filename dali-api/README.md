@@ -52,39 +52,17 @@ npm run build
 
 ## Deployment
 
-### Docker Deployment
+The API deploys to [Fly.io](https://fly.io) via GitHub Actions (`.github/workflows/deploy.yml`). There are three environments, each with a different database strategy:
 
-To build and run using Docker:
+| Environment | Branch | Fly App | Neon Branch | DB Strategy |
+|---|---|---|---|---|
+| **Dev** | `dev` | `dali-api-dev` | `development` | Full wipe + migrate + seed |
+| **Staging** | `staging` | `dali-api-staging` | `staging` | Restore from prod + migrate |
+| **Prod** | `prod` | `dali-api-prod` | `production` | Migrate only |
 
-```bash
-docker build -t my-app .
-
-# Run the container
-docker run -p 3000:3000 my-app
-```
-
-The containerized application can be deployed to any platform that supports Docker, including:
-
-- AWS ECS
-- Google Cloud Run
-- Azure Container Apps
-- Digital Ocean App Platform
-- Fly.io
-- Railway
-
-### DIY Deployment
-
-If you're familiar with deploying Node applications, the built-in app server is production-ready.
-
-Make sure to deploy the output of `npm run build`
-
-```
-├── package.json
-├── package-lock.json (or pnpm-lock.yaml, or bun.lockb)
-├── build/
-│   ├── client/    # Static assets
-│   └── server/    # Server-side code
-```
+- **Dev**: The database is wiped on every deploy. All Prisma migrations run from scratch on an empty database, then seed data is applied. This ensures migrations are always valid from a clean slate. Dev dependencies (like `tsx`) are included in the Docker image so the seed script can run.
+- **Staging**: The database is restored from the production Neon branch before deploying. New migrations are applied on top of real prod data. This catches data-incompatible migrations before they reach prod.
+- **Prod**: Only new Prisma migrations are applied. No database prep or seeding.
 
 ## Styling
 
