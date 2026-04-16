@@ -55,7 +55,7 @@ jobs:
       - name: Generate Prisma client
         run: npx prisma generate
       - name: Run migrations and seed
-        run: npx prisma migrate reset --force
+        run: npx prisma migrate reset --force && npx prisma db seed
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
       - name: Run e2e tests
