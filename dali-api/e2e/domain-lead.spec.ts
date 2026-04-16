@@ -39,7 +39,7 @@ test.describe('domain lead workflow', () => {
   });
 
   test('application detail page shows challenge responses', async ({ page }) => {
-    await page.goto('/domain-lead/application/app-alice');
+    await page.goto('/domain-lead/application/da-alice-eng');
     await expect(page.getByText('Alice Johnson')).toBeVisible();
     await expect(page.getByText('General Application')).toBeVisible();
     await expect(page.getByText('Engineering Challenge')).toBeVisible();
