@@ -2,6 +2,7 @@ name: Test dali-api
 
 on:
   push:
+    branches: [dev, prod]
   pull_request:
 
 jobs:
@@ -28,7 +29,6 @@ jobs:
     env:
       DATABASE_URL: postgresql://dali:dali@localhost:5432/dali
       JWT_SECRET: test-secret-for-ci-at-least-32-chars
-      NODE_ENV: test
       CAS_BASE_URL: https://login.dartmouth.edu/cas
       FRONTEND_URL: http://localhost:5173
       API_BASE_URL: http://localhost:3001
