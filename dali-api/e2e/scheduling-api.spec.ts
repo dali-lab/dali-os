@@ -264,24 +264,33 @@ test.describe('scheduling API: domain filtering edge cases', () => {
     await page.request.post('/api/my-interview/cancel');
   });
 
-  test('rejected applicant can still book — no invitation check', async ({ page, loginAs }) => {
+  test('non-invited applicant cannot book an interview', async ({ page, loginAs }) => {
+    await loginAs({ netId: 'f007ha8' }); // Harper - Design, pending review, NOT invited
+
+    const slotsRes = await page.request.get(
+      `/api/cycles/${CYCLE}/available-slots?domainId=domain-design`,
+    );
+    const slots = await slotsRes.json();
+
+    const bookRes = await page.request.post(
+      `/api/domain-applications/da-harper-design/schedule-interview`,
+      { data: { startTime: slots[0].startTime } },
+    );
+    expect(bookRes.status()).toBe(403);
+  });
+
+  test('rejected applicant cannot book an interview', async ({ page, loginAs }) => {
     await loginAs({ netId: 'f007gr7' }); // Grace - Engineering, REJECTED
 
     const slotsRes = await page.request.get(
       `/api/cycles/${CYCLE}/available-slots?domainId=domain-eng`,
     );
     const slots = await slotsRes.json();
-    expect(slots.length).toBeGreaterThan(0);
 
-    // Server does NOT check decision status before allowing booking
     const bookRes = await page.request.post(
       `/api/domain-applications/da-grace-eng/schedule-interview`,
       { data: { startTime: slots[0].startTime } },
     );
-    // Documents current behavior: rejected applicants CAN book interviews
-    expect(bookRes.status()).toBe(201);
-
-    // Clean up
-    await page.request.post('/api/my-interview/cancel');
+    expect(bookRes.status()).toBe(403);
   });
 });
