@@ -11,3 +11,7 @@ generated/
 
 # prisma data snapshots (may contain PII)
 prisma/data/
+
+# Playwright
+/e2e/test-results/
+/playwright-report/
