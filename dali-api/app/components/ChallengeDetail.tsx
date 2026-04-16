@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Link, useLoaderData, useSubmit, useSearchParams, useNavigation, Form } from 'react-router'
-import { ArrowLeft, Plus, FileText, Clock, UserIcon, ListOrdered } from 'lucide-react'
+import { ArrowLeft, Plus, FileText, Clock, UserIcon } from 'lucide-react'
 import { FormBuilderTab } from '~/components/ChallengeBuilder'
 import type { Question } from '~/types'
 import type { loader } from '~/routes/admin.challenges.$id'
@@ -15,7 +15,7 @@ function formatDateTime(iso: string | Date) {
 }
 
 export function ChallengeDetail() {
-  const { challenge, domains: rawDomains, rubrics } = useLoaderData<typeof loader>()
+  const { challenge, domains: rawDomains } = useLoaderData<typeof loader>()
   const submit = useSubmit()
   const navigation = useNavigation()
   const [searchParams] = useSearchParams()
@@ -183,38 +183,7 @@ export function ChallengeDetail() {
                   Duplicate to New Version
                 </button>
               </div>
-              {/* Rubric attachment */}
-              <div className="px-6 py-4 border-b border-gray-200 flex items-center gap-4">
-                <ListOrdered className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                <span className="text-sm font-medium text-gray-700 w-24 flex-shrink-0">Rubric</span>
-                <Form method="post" className="flex items-center gap-2 flex-1">
-                  <input type="hidden" name="intent" value="attach-rubric" />
-                  <input type="hidden" name="challengeVersionId" value={selectedVersion.id} />
-                  <select
-                    name="rubricVersionId"
-                    defaultValue={selectedVersion.rubricVersion?.id ?? ''}
-                    className="flex-1 px-3 py-1.5 text-sm text-gray-900 border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">No rubric attached</option>
-                    {rubrics
-                      .filter((r) => r.domainId === selectedVersion.domainId || (selectedVersion.domain.name === 'General' && r.domainId === null))
-                      .map((r) => {
-                        const latestVersion = r.versions[0]
-                        return latestVersion ? (
-                          <option key={latestVersion.id} value={latestVersion.id}>
-                            {r.name} — v{latestVersion.versionNumber}
-                          </option>
-                        ) : null
-                      })}
-                  </select>
-                  <button
-                    type="submit"
-                    className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
-                  >
-                    Save
-                  </button>
-                </Form>
-              </div>
+              {/* Rubrics are now assigned at the domain+cycle level, not per challenge version */}
 
               <div className="p-6 space-y-4">
                 {(selectedVersion.questions as unknown as Question[]).map((q, index) => (

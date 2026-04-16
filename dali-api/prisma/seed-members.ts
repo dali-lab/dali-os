@@ -12,6 +12,7 @@ interface Member {
   daliEmail: string | null;
   dartmouthEmail: string | null;
   did: string | null;
+  roles?: string[];
 }
 
 async function main() {
@@ -20,12 +21,12 @@ async function main() {
   );
 
   let seeded = 0;
-  for (const { firstName, lastName, daliEmail, dartmouthEmail, did } of members) {
+  for (const { firstName, lastName, daliEmail, dartmouthEmail, did, roles } of members) {
     if (!daliEmail) continue;
     await prisma.dALIMember.upsert({
       where: { daliEmail },
-      update: { firstName, lastName, dartmouthEmail, did },
-      create: { firstName, lastName, daliEmail, dartmouthEmail, did },
+      update: { firstName, lastName, dartmouthEmail, did, ...(roles ? { roles: roles as any } : {}) },
+      create: { firstName, lastName, daliEmail, dartmouthEmail, did, roles: (roles ?? []) as any },
     });
     seeded++;
   }

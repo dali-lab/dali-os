@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
 import { Link, redirect, useLoaderData, useSubmit } from 'react-router'
-import { ArrowLeft, Save, HelpCircle, X } from 'lucide-react'
+import { ArrowLeft, HelpCircle, X, Check } from 'lucide-react'
 import { prisma } from '~/lib/db'
 import { requireAuth } from '~/lib/auth'
 import type { Route } from './+types/mentor.application.$id'
 import { ApplicationViewer } from '~/components/ApplicationViewer'
+import { SaveStatusIndicator } from '~/components/SaveStatusIndicator'
 import type { Question, RubricCriterion } from '~/types'
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -16,15 +17,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       where: { id: params.id },
       include: {
         user: true,
+        generalChallengeVersion: true,
         applicationCycle: {
           include: {
             statusUpdates: { orderBy: { createdAt: 'desc' }, take: 1 },
-            formVersion: {
+            generalRubricVersion: { include: { rubric: true } },
+            domains: {
               include: {
-                rubricVersions: {
-                  include: { rubric: true },
-                  take: 1,
-                },
+                rubricVersion: { include: { rubric: true } },
+                domain: true,
               },
             },
           },
@@ -35,7 +36,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
               include: {
                 domain: true,
                 challenge: true,
-                rubricVersion: { include: { rubric: true } },
               },
             },
           },
@@ -43,8 +43,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       },
     }),
     prisma.user.findUniqueOrThrow({ where: { id: auth.user.sub } }),
-    prisma.mentorReview.findUnique({
-      where: { mentorId_applicationId: { mentorId: auth.user.sub, applicationId: params.id } },
+    prisma.applicationReview.findFirst({
+      where: {
+        domainApplication: { applicationId: params.id },
+        cycleReviewer: { daliMember: { userId: auth.user.sub } },
+      },
     }),
   ])
 
@@ -59,18 +62,25 @@ export async function action({ request, params }: Route.ActionArgs) {
   const intent = formData.get('intent') as string
 
   if (intent === 'save-review') {
-    const mentorId = auth.user.sub
     const scores = JSON.parse(formData.get('scores') as string)
     const feedback = (formData.get('feedback') as string) ?? ''
     const rejectionRationale = (formData.get('rejectionRationale') as string) ?? ''
     const overallRecommendation = (formData.get('overallRecommendation') as string) || null
     const annotations = JSON.parse((formData.get('annotations') as string) ?? '[]')
 
-    await prisma.mentorReview.upsert({
-      where: { mentorId_applicationId: { mentorId, applicationId: params.id } },
-      update: { scores, feedback, rejectionRationale, overallRecommendation, annotations },
-      create: { mentorId, applicationId: params.id, scores, feedback, rejectionRationale, overallRecommendation, annotations },
+    const existing = await prisma.applicationReview.findFirst({
+      where: {
+        domainApplication: { applicationId: params.id },
+        cycleReviewer: { daliMember: { userId: auth.user.sub } },
+      },
     })
+
+    if (existing) {
+      await prisma.applicationReview.update({
+        where: { id: existing.id },
+        data: { scores, feedback, rejectionRationale, overallRecommendation, annotations },
+      })
+    }
   }
 
   return null
@@ -83,17 +93,19 @@ export default function MentorApplicationReview() {
   const submit = useSubmit()
 
   const cycle = application.applicationCycle
-  const formQuestions = (cycle.formVersion?.questions as unknown as Question[]) ?? []
+  const generalCv = application.generalChallengeVersion
+  const formQuestions = (generalCv?.questions as unknown as Question[]) ?? []
 
   // Collect all rubric criteria: general form rubric + per-domain-application rubrics
   const allCriteria: { sectionLabel: string; criteria: RubricCriterion[] }[] = []
-  const formRubricVersion = cycle.formVersion?.rubricVersions?.[0]
-  if (formRubricVersion) {
-    const criteria = formRubricVersion.criteria as unknown as RubricCriterion[]
+  const generalRubricVersion = cycle.generalRubricVersion
+  if (generalRubricVersion) {
+    const criteria = generalRubricVersion.criteria as unknown as RubricCriterion[]
     if (criteria.length > 0) allCriteria.push({ sectionLabel: 'General Application', criteria })
   }
   for (const da of application.domainApplications) {
-    const rv = da.challengeVersion.rubricVersion
+    const domainCycle = cycle.domains?.find((dc: any) => dc.domainId === da.challengeVersion.domainId)
+    const rv = domainCycle?.rubricVersion
     if (rv) {
       const criteria = rv.criteria as unknown as RubricCriterion[]
       if (criteria.length > 0) {
@@ -115,7 +127,9 @@ export default function MentorApplicationReview() {
     (existingReview?.annotations as object[]) ?? []
   )
   const [isSaving, setIsSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
+  const [lastSaved, setLastSaved] = useState<Date | null>(
+    existingReview?.updatedAt ? new Date(existingReview.updatedAt) : null,
+  )
   const [showRubric, setShowRubric] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isFirstRender = useRef(true)
@@ -138,23 +152,36 @@ export default function MentorApplicationReview() {
     submit(formData, { method: 'post' })
   }
 
-  // Auto-save on any change (debounced 1s)
+  const isSubmitted = !!existingReview?.submittedAt
+
+  // Auto-save on any change: flip to "Saving…" immediately on edit, fire the
+  // actual request after a 1s debounce, then flip to "Saved at …" once the
+  // request flushes. Skipped while the review is already submitted.
   useEffect(() => {
     if (isFirstRender.current) { isFirstRender.current = false; return }
+    if (isSubmitted) return
+    setIsSaving(true)
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
-      setIsSaving(true)
       submitReview({ scores, feedback, rejectionRationale, overallRecommendation, annotations })
-      setTimeout(() => { setIsSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2000) }, 400)
+      setTimeout(() => {
+        setIsSaving(false)
+        setLastSaved(new Date())
+      }, 400)
     }, 1000)
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
   }, [scores, feedback, rejectionRationale, overallRecommendation, annotations])
 
-  const handleSave = () => {
-    if (debounceRef.current) clearTimeout(debounceRef.current)
-    setIsSaving(true)
+  // Flush any pending debounce synchronously — used before "Submit Review" so
+  // the latest content is persisted before the server-side submit lock engages.
+  const flushSave = () => {
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current)
+      debounceRef.current = null
+    }
     submitReview({ scores, feedback, rejectionRationale, overallRecommendation, annotations })
-    setTimeout(() => { setIsSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2000) }, 400)
+    setIsSaving(false)
+    setLastSaved(new Date())
   }
 
   // Build question label lookup from form + challenge versions
@@ -172,7 +199,7 @@ export default function MentorApplicationReview() {
   return (
     <div className="space-y-6 pb-12 relative">
       <div>
-        <Link to="/mentor" className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700 mb-4">
+        <Link to="/reviewer" className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700 mb-4">
           <ArrowLeft className="w-4 h-4 mr-1" /> Back to Dashboard
         </Link>
         <div className="flex justify-between items-end">
@@ -199,8 +226,11 @@ export default function MentorApplicationReview() {
         {/* Right: Review Form */}
         <div className="space-y-6">
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm sticky top-24">
-            <div className="px-6 py-4 border-b border-gray-200 bg-blue-50">
+            <div className="px-6 py-4 border-b border-gray-200 bg-blue-50 flex items-center justify-between">
               <h2 className="text-lg font-bold text-blue-900">Your Review</h2>
+              {!isSubmitted && (
+                <SaveStatusIndicator saving={isSaving} lastSaved={lastSaved} />
+              )}
             </div>
             <div className="p-6 space-y-6">
 
@@ -287,15 +317,44 @@ export default function MentorApplicationReview() {
                 </div>
               </div>
 
-              {/* Save */}
-              <div className="pt-4">
-                <button
-                  onClick={handleSave}
-                  disabled={isSaving}
-                  className={`w-full flex justify-center items-center px-4 py-3 border border-transparent text-sm font-medium rounded-lg text-white shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${saved ? 'bg-green-600' : 'bg-blue-600 hover:bg-blue-700'}`}
-                >
-                  {isSaving ? 'Saving...' : saved ? 'Saved!' : <><Save className="w-4 h-4 mr-2" />Save Review</>}
-                </button>
+              {/* Submit */}
+              <div className="pt-4 space-y-2">
+                {!existingReview?.submittedAt ? (
+                  <>
+                    {existingReview && (
+                      <button
+                        onClick={async () => {
+                          flushSave()
+                          const res = await fetch(`/api/reviews/${existingReview.id}/submit`, {
+                            method: 'POST', credentials: 'include',
+                          })
+                          if (res.ok) window.location.reload()
+                        }}
+                        className="w-full flex justify-center items-center px-4 py-3 text-sm font-medium rounded-lg text-white bg-green-600 hover:bg-green-700 shadow-sm"
+                      >
+                        Submit Review
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-center gap-2 py-3 bg-green-50 border border-green-200 rounded-lg">
+                      <Check className="w-4 h-4 text-green-600" />
+                      <span className="text-sm font-medium text-green-800">Review Submitted</span>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        const res = await fetch(`/api/reviews/${existingReview.id}/unsubmit`, {
+                          method: 'POST', credentials: 'include',
+                        })
+                        if (res.ok) window.location.reload()
+                      }}
+                      className="w-full flex justify-center items-center px-4 py-2 text-sm font-medium rounded-lg text-gray-700 bg-white border border-gray-300 hover:bg-gray-50"
+                    >
+                      Unsubmit & Edit
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           </div>

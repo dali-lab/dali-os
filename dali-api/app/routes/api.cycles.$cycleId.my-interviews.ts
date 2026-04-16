@@ -10,31 +10,45 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return withCors(request, auth.response);
 
-  // Find the reviewer record for the authenticated user in this cycle
   const member = await prisma.dALIMember.findFirst({ where: { userId: auth.user.sub } });
   if (!member) return withCors(request, Response.json([]));
 
-  const reviewer = await prisma.cycleReviewer.findFirst({
+  const interviewer = await prisma.cycleInterviewer.findFirst({
     where: { daliMemberId: member.id, applicationCycleId: params.cycleId },
   });
-  if (!reviewer) return withCors(request, Response.json([]));
+  if (!interviewer) return withCors(request, Response.json([]));
 
   const assignments = await prisma.interviewAssignment.findMany({
-    where: { cycleReviewerId: reviewer.id, status: "Active" },
+    where: { cycleInterviewerId: interviewer.id, status: "Active" },
     include: {
       interview: {
         include: {
-          application: {
+          domainApplication: {
             include: {
-              user: { select: { firstName: true, lastName: true } },
-              domainApplications: { include: { challengeVersion: { include: { domain: true } } } },
+              application: {
+                include: {
+                  user: { select: { firstName: true, lastName: true } },
+                },
+              },
+              challengeVersion: { include: { domain: true } },
             },
           },
           assignments: {
             where: { status: "Active" },
-            include: { cycleReviewer: { include: { daliMember: { include: { user: true } }, domain: true } } },
+            include: {
+              cycleInterviewer: {
+                include: {
+                  daliMember: true,
+                  domain: true,
+                },
+              },
+            },
           },
         },
+      },
+      noteVersions: {
+        orderBy: { createdAt: "desc" },
+        take: 1,
       },
     },
     orderBy: { interview: { startTime: "asc" } },

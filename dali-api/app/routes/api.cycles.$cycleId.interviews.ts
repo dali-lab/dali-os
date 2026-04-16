@@ -13,17 +13,21 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const interviews = await prisma.interview.findMany({
     where: { applicationCycleId: params.cycleId },
     include: {
-      application: {
+      domainApplication: {
         include: {
-          user: { select: { id: true, firstName: true, lastName: true } },
-          domainApplications: { include: { challengeVersion: { include: { domain: true } } } },
+          application: {
+            include: {
+              user: { select: { id: true, firstName: true, lastName: true } },
+            },
+          },
+          challengeVersion: { include: { domain: true } },
         },
       },
       assignments: {
         include: {
-          cycleReviewer: {
+          cycleInterviewer: {
             include: {
-              daliMember: { include: { user: { select: { id: true, firstName: true, lastName: true } } } },
+              daliMember: true,
               domain: true,
             },
           },

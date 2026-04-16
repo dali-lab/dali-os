@@ -13,8 +13,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Find the most recent active interview for this user
   const interview = await prisma.interview.findFirst({
     where: {
-      application: { userId: auth.user.sub },
-      status: { in: ["Scheduled", "NeedsReassignment"] },
+      domainApplication: { application: { userId: auth.user.sub } },
+      status: "Scheduled",
     },
     include: {
       assignments: {
