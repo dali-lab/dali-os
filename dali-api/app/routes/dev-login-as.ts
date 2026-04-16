@@ -6,11 +6,11 @@
 
 import type { Route } from "./+types/dev-login-as";
 import { signAccessToken } from "~/lib/auth";
+import { isDevLoginEnabled } from "~/lib/dev-login";
 import { prisma } from "~/lib/db";
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const env = process.env.NODE_ENV;
-  if (env !== "development" && env !== "test") {
+  if (!isDevLoginEnabled()) {
     return new Response("Not found", { status: 404 });
   }
 
