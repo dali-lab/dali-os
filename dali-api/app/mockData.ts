@@ -2,7 +2,6 @@ import type {
   User,
   ApplicationCycle,
   Domain,
-  ApplicationForm,
   Challenge,
   Application,
   Rubric,
@@ -51,7 +50,7 @@ export const applicationCycles: ApplicationCycle[] = [
   {
     id: 'cycle-2',
     name: 'Spring 2026 Hiring',
-    status: 'DecisionsReleased',
+    status: 'Completed',
     createdAt: '2025-11-01T10:00:00Z',
     activeFormVersionId: 'form-v1',
     activeChallengeVersionIds: {
@@ -87,7 +86,7 @@ export const applicationCycles: ApplicationCycle[] = [
   {
     id: 'cycle-offer-accepted',
     name: 'Winter 2025 Hiring',
-    status: 'DecisionsReleased',
+    status: 'Completed',
     createdAt: '2024-09-01T10:00:00Z',
     activeFormVersionId: 'form-v1',
     activeChallengeVersionIds: {
@@ -100,114 +99,6 @@ export const applicationCycles: ApplicationCycle[] = [
   },
 ]
 
-export const applicationForms: ApplicationForm[] = [
-  {
-    id: '1',
-    name: 'General Application',
-    type: 'General' as const,
-    createdAt: '2025-01-01T10:00:00Z',
-    versions: [
-      {
-        id: 'form-v1',
-        versionNumber: 1,
-        createdAt: '2025-01-15T14:30:00Z',
-        createdById: 'user-2',
-        questions: [
-          {
-            key: 'q-major',
-            type: 'text',
-            required: true,
-            data: { label: 'What is your major?' },
-          },
-          {
-            key: 'q-grad-year',
-            type: 'select',
-            required: true,
-            data: {
-              label: 'Graduation Year',
-              options: ['2026', '2027', '2028', '2029'],
-            },
-          },
-          {
-            key: 'q-why-dali',
-            type: 'textarea',
-            required: true,
-            data: {
-              label: 'Why do you want to join DALI?',
-              description: 'Keep it under 200 words.',
-            },
-          },
-        ],
-      },
-      {
-        id: 'form-v2',
-        versionNumber: 2,
-        createdAt: '2026-01-10T09:15:00Z',
-        createdById: 'user-2',
-        questions: [
-          {
-            key: 'q-major',
-            type: 'text',
-            required: true,
-            data: { label: 'What is your major?' },
-          },
-          {
-            key: 'q-grad-year',
-            type: 'select',
-            required: true,
-            data: {
-              label: 'Graduation Year',
-              options: ['2026', '2027', '2028', '2029'],
-            },
-          },
-          {
-            key: 'q-why-dali',
-            type: 'textarea',
-            required: true,
-            data: {
-              label: 'Why do you want to join DALI?',
-              description: 'Keep it under 200 words.',
-            },
-          },
-          {
-            key: 'q-fun-fact',
-            type: 'text',
-            required: false,
-            data: { label: 'Tell us a fun fact about yourself.' },
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: '2',
-    name: 'Short Application',
-    type: 'General' as const,
-    createdAt: '2026-03-01T10:00:00Z',
-    versions: [
-      {
-        id: 'form-short-v1',
-        versionNumber: 1,
-        createdAt: '2026-03-05T16:45:00Z',
-        createdById: 'user-2',
-        questions: [
-          {
-            key: 'q-name',
-            type: 'text',
-            required: true,
-            data: { label: 'Full Name' },
-          },
-          {
-            key: 'q-portfolio',
-            type: 'text',
-            required: true,
-            data: { label: 'Portfolio Link' },
-          },
-        ],
-      },
-    ],
-  },
-]
 
 export const rubrics: Rubric[] = [
   {
@@ -357,12 +248,11 @@ export const challenges: Challenge[] = [
 ]
 
 export const mockApplications: Application[] = [
-  // User-1: Draft application in open cycle (continue/edit until deadline)
   {
     id: 'app-1',
     userId: 'user-1',
     applicationCycleId: 'cycle-1',
-    applicationFormVersionId: 'form-v1',
+    generalChallengeVersionId: 'cv-general-v1',
     status: 'Draft',
     answers: {
       'q-major': 'Computer Science',
@@ -383,14 +273,12 @@ export const mockApplications: Application[] = [
     createdAt: '2026-04-05T14:30:00Z',
     updatedAt: '2026-04-06T09:15:00Z',
   },
-  // User-3: Submitted app (for mentor/domain lead views)
   {
     id: 'app-2',
     userId: 'user-3',
     applicationCycleId: 'cycle-1',
-    applicationFormVersionId: 'form-v1',
+    generalChallengeVersionId: 'cv-general-v1',
     status: 'Submitted',
-    assignedMentorId: 'user-2',
     answers: {
       'q-major': 'Cognitive Science',
       'q-grad-year': '2027',
@@ -410,14 +298,12 @@ export const mockApplications: Application[] = [
     createdAt: '2026-04-02T11:00:00Z',
     updatedAt: '2026-04-04T16:20:00Z',
   },
-  // Mentor review apps (for mentor/domain lead views)
   {
     id: '1',
     userId: 'user-4',
     applicationCycleId: 'cycle-interview-invited',
-    applicationFormVersionId: 'form-v1',
+    generalChallengeVersionId: 'cv-general-v1',
     status: 'Submitted',
-    assignedMentorId: 'user-2',
     answers: {
       'q-major': 'Engineering Sciences',
       'q-grad-year': '2027',
@@ -436,19 +322,6 @@ export const mockApplications: Application[] = [
         },
       },
     ],
-    mentorReviews: [
-      {
-        id: 'rev-m1',
-        applicationId: 'app-mentor-review-1',
-        mentorId: 'user-2',
-        scores: { technical: 4, design: 3, communication: 5, culture: 4 },
-        feedback:
-          'Strong communicator with solid technical skills. Portfolio shows real-world impact.',
-        overallRecommendation: 'Hire',
-        createdAt: '2026-03-10T10:00:00Z',
-        updatedAt: '2026-03-10T10:00:00Z',
-      },
-    ],
     createdAt: '2026-02-10T14:30:00Z',
     updatedAt: '2026-03-10T10:00:00Z',
   },
@@ -456,9 +329,8 @@ export const mockApplications: Application[] = [
     id: '2',
     userId: 'user-5',
     applicationCycleId: 'cycle-interview-invited',
-    applicationFormVersionId: 'form-v1',
+    generalChallengeVersionId: 'cv-general-v1',
     status: 'Submitted',
-    assignedMentorId: 'user-2',
     answers: {
       'q-major': 'Mathematics',
       'q-grad-year': '2028',
@@ -484,7 +356,7 @@ export const mockApplications: Application[] = [
     id: 'app-mentor-review-3',
     userId: 'user-6',
     applicationCycleId: 'cycle-interview-invited',
-    applicationFormVersionId: 'form-v1',
+    generalChallengeVersionId: 'cv-general-v1',
     status: 'Submitted',
     answers: {
       'q-major': 'Digital Arts',
@@ -504,19 +376,6 @@ export const mockApplications: Application[] = [
         },
       },
     ],
-    mentorReviews: [
-      {
-        id: 'rev-m3',
-        applicationId: 'app-mentor-review-3',
-        mentorId: 'user-7',
-        scores: { technical: 2, design: 5, communication: 4, culture: 5 },
-        feedback:
-          'Exceptional design eye. Technical skills are developing but the creative vision is outstanding.',
-        overallRecommendation: 'Lean Hire',
-        createdAt: '2026-03-08T14:00:00Z',
-        updatedAt: '2026-03-08T14:00:00Z',
-      },
-    ],
     createdAt: '2026-02-08T11:00:00Z',
     updatedAt: '2026-03-08T14:00:00Z',
   },
@@ -524,9 +383,8 @@ export const mockApplications: Application[] = [
     id: 'app-cycle-inv-scheduled',
     userId: 'user-8',
     applicationCycleId: 'cycle-interview-invited',
-    applicationFormVersionId: 'form-v1',
-    status: 'InterviewScheduled',
-    assignedMentorId: 'user-2',
+    generalChallengeVersionId: 'cv-general-v1',
+    status: 'Submitted',
     answers: {
       'q-major': 'Computer Science',
       'q-grad-year': '2027',
@@ -545,39 +403,6 @@ export const mockApplications: Application[] = [
         },
       },
     ],
-    interview: {
-      id: 'int-inv-sched',
-      applicationId: 'app-cycle-inv-scheduled',
-      status: 'Scheduled',
-      scheduledSlotId: 'slot-inv-1',
-      location: 'DALI Lab (Sudikoff 123)',
-      notes: 'Very promising candidate — strong React Native experience.',
-      availableSlots: [
-        {
-          id: 'slot-inv-1',
-          startTime: '2026-04-14T14:00:00Z',
-          endTime: '2026-04-14T14:30:00Z',
-        },
-        {
-          id: 'slot-inv-2',
-          startTime: '2026-04-14T15:00:00Z',
-          endTime: '2026-04-14T15:30:00Z',
-        },
-      ],
-    },
-    mentorReviews: [
-      {
-        id: 'rev-m4',
-        applicationId: 'app-cycle-inv-scheduled',
-        mentorId: 'user-2',
-        scores: { technical: 5, design: 3, communication: 4, culture: 5 },
-        feedback:
-          'Excellent technical depth. Real production experience with users. Strong culture fit.',
-        overallRecommendation: 'Strong Hire',
-        createdAt: '2026-03-05T10:00:00Z',
-        updatedAt: '2026-03-05T10:00:00Z',
-      },
-    ],
     createdAt: '2026-02-06T10:00:00Z',
     updatedAt: '2026-03-15T09:00:00Z',
   },
@@ -585,9 +410,8 @@ export const mockApplications: Application[] = [
     id: 'app-cycle-inv-completed-1',
     userId: 'user-9',
     applicationCycleId: 'cycle-interview-invited',
-    applicationFormVersionId: 'form-v1',
-    status: 'InterviewCompleted',
-    assignedMentorId: 'user-2',
+    generalChallengeVersionId: 'cv-general-v1',
+    status: 'Submitted',
     answers: {
       'q-major': 'Economics',
       'q-grad-year': '2027',
@@ -606,34 +430,6 @@ export const mockApplications: Application[] = [
         },
       },
     ],
-    interview: {
-      id: 'int-inv-comp-1',
-      applicationId: 'app-cycle-inv-completed-1',
-      status: 'Completed',
-      scheduledSlotId: 'slot-comp-1',
-      notes:
-        'Great product thinking. Needs more technical depth but strong leadership.',
-      availableSlots: [
-        {
-          id: 'slot-comp-1',
-          startTime: '2026-03-20T10:00:00Z',
-          endTime: '2026-03-20T10:30:00Z',
-        },
-      ],
-    },
-    mentorReviews: [
-      {
-        id: 'rev-m5',
-        applicationId: 'app-cycle-inv-completed-1',
-        mentorId: 'user-2',
-        scores: { technical: 3, design: 3, communication: 5, culture: 5 },
-        feedback:
-          'Outstanding communicator and leader. Technical skills are adequate for PM track.',
-        overallRecommendation: 'Hire',
-        createdAt: '2026-03-12T10:00:00Z',
-        updatedAt: '2026-03-12T10:00:00Z',
-      },
-    ],
     createdAt: '2026-02-07T14:00:00Z',
     updatedAt: '2026-03-22T09:00:00Z',
   },
@@ -641,8 +437,8 @@ export const mockApplications: Application[] = [
     id: 'app-cycle-inv-completed-2',
     userId: 'user-10',
     applicationCycleId: 'cycle-interview-invited',
-    applicationFormVersionId: 'form-v1',
-    status: 'InterviewCompleted',
+    generalChallengeVersionId: 'cv-general-v1',
+    status: 'Submitted',
     answers: {
       'q-major': 'Neuroscience',
       'q-grad-year': '2028',
@@ -661,44 +457,15 @@ export const mockApplications: Application[] = [
         },
       },
     ],
-    interview: {
-      id: 'int-inv-comp-2',
-      applicationId: 'app-cycle-inv-completed-2',
-      status: 'Completed',
-      scheduledSlotId: 'slot-comp-2',
-      notes:
-        'Unique perspective from neuroscience. Design portfolio is impressive for a sophomore.',
-      availableSlots: [
-        {
-          id: 'slot-comp-2',
-          startTime: '2026-03-21T14:00:00Z',
-          endTime: '2026-03-21T14:30:00Z',
-        },
-      ],
-    },
-    mentorReviews: [
-      {
-        id: 'rev-m6',
-        applicationId: 'app-cycle-inv-completed-2',
-        mentorId: 'user-7',
-        scores: { technical: 3, design: 4, communication: 4, culture: 4 },
-        feedback:
-          'Interesting cross-disciplinary background. Design work shows strong user empathy.',
-        overallRecommendation: 'Lean Hire',
-        createdAt: '2026-03-14T10:00:00Z',
-        updatedAt: '2026-03-14T10:00:00Z',
-      },
-    ],
     createdAt: '2026-02-09T16:00:00Z',
     updatedAt: '2026-03-22T11:00:00Z',
   },
-  // User-1: Rejected application (past)
   {
-    id: 'app-rejected',
+    id: 'app-withdrawn',
     userId: 'user-1',
     applicationCycleId: 'cycle-2',
-    applicationFormVersionId: 'form-v1',
-    status: 'Rejected',
+    generalChallengeVersionId: 'cv-general-v1',
+    status: 'Withdrawn',
     answers: {
       'q-major': 'Computer Science',
       'q-grad-year': '2026',
@@ -706,8 +473,8 @@ export const mockApplications: Application[] = [
     },
     domainApplications: [
       {
-        id: 'dapp-rejected',
-        applicationId: 'app-rejected',
+        id: 'dapp-withdrawn',
+        applicationId: 'app-withdrawn',
         challengeVersionId: 'chal-dev-v1',
         answers: {
           'q-dev-exp': 'Some basic HTML.',
@@ -718,13 +485,12 @@ export const mockApplications: Application[] = [
     createdAt: '2025-11-05T14:30:00Z',
     updatedAt: '2025-11-20T09:15:00Z',
   },
-  // User-1: Interview invited (needs to schedule)
   {
     id: 'app-interview-invited',
     userId: 'user-1',
     applicationCycleId: 'cycle-interview-invited',
-    applicationFormVersionId: 'form-v1',
-    status: 'InterviewInvited',
+    generalChallengeVersionId: 'cv-general-v1',
+    status: 'Submitted',
     answers: {
       'q-major': 'Computer Science',
       'q-grad-year': '2026',
@@ -741,44 +507,15 @@ export const mockApplications: Application[] = [
         },
       },
     ],
-    interview: {
-      id: 'int-1',
-      applicationId: 'app-interview-invited',
-      status: 'Pending',
-      availableSlots: [
-        {
-          id: 'slot-1',
-          startTime: '2026-04-10T14:00:00Z',
-          endTime: '2026-04-10T14:30:00Z',
-        },
-        {
-          id: 'slot-2',
-          startTime: '2026-04-10T14:30:00Z',
-          endTime: '2026-04-10T15:00:00Z',
-        },
-        {
-          id: 'slot-3',
-          startTime: '2026-04-11T10:00:00Z',
-          endTime: '2026-04-11T10:30:00Z',
-        },
-        {
-          id: 'slot-4',
-          startTime: '2026-04-11T10:30:00Z',
-          endTime: '2026-04-11T11:00:00Z',
-        },
-      ],
-    },
     createdAt: '2026-02-05T14:30:00Z',
     updatedAt: '2026-03-01T09:15:00Z',
   },
-  // User-1: Offer accepted (past)
   {
     id: 'app-offer-accepted',
     userId: 'user-1',
     applicationCycleId: 'cycle-offer-accepted',
-    applicationFormVersionId: 'form-v1',
-    status: 'OfferAccepted',
-    offerResponse: 'Accepted',
+    generalChallengeVersionId: 'cv-general-v1',
+    status: 'Submitted',
     answers: {
       'q-major': 'Computer Science',
       'q-grad-year': '2026',
@@ -795,19 +532,6 @@ export const mockApplications: Application[] = [
         },
       },
     ],
-    interview: {
-      id: 'int-5',
-      applicationId: 'app-offer-accepted',
-      status: 'Completed',
-      scheduledSlotId: 'slot-1',
-      availableSlots: [
-        {
-          id: 'slot-1',
-          startTime: '2024-10-10T14:00:00Z',
-          endTime: '2024-10-10T14:30:00Z',
-        },
-      ],
-    },
     createdAt: '2024-09-05T14:30:00Z',
     updatedAt: '2024-10-20T09:15:00Z',
   },

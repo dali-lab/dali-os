@@ -1,10 +1,10 @@
 import { prisma } from "~/lib/db";
 
-// A cycle is "active" when its latest status is Open or Closed — those are the
-// stages where applicants are submitting and reviewers are reading/interviewing.
-// Draft and DecisionsReleased are not active. By convention we enforce at most
-// one active cycle at a time (see api.cycles.$cycleId.status.ts).
-export const ACTIVE_STATUSES = ["Open", "Closed"] as const;
+// A cycle is "active" when its latest status is Open or UnderReview — those are
+// the stages where applicants are submitting and reviewers are reading/interviewing.
+// Draft and Completed are not active. By convention we enforce at most one active
+// cycle at a time (see api.cycles.$cycleId.status.ts).
+export const ACTIVE_STATUSES = ["Open", "UnderReview"] as const;
 export type ActiveStatus = (typeof ACTIVE_STATUSES)[number];
 
 /**

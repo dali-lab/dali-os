@@ -19,7 +19,7 @@ export async function loader({ params }: Route.LoaderArgs) {
     where: { id: params.id },
     include: {
       user: true,
-      applicationFormVersion: true,
+      generalChallengeVersion: true,
       domainApplications: {
         include: {
           challengeVersion: { include: { domain: true } },
@@ -57,7 +57,7 @@ export default function DomainLeadApplicationView() {
     return <div className="text-gray-500 py-8 text-center">Application not found or access denied.</div>;
   }
 
-  const formVersion = application.applicationFormVersion;
+  const formVersion = application.generalChallengeVersion;
   const questions: any[] = formVersion?.questions ?? [];
 
   return (

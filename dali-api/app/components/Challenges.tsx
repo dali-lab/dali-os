@@ -4,25 +4,20 @@ import { Plus, FileText, ChevronRight, X, Trash2 } from 'lucide-react'
 import type { loader } from '~/routes/admin.challenges'
 
 export default function Challenges() {
-  const { domains: rawDomains, challenges } = useLoaderData<typeof loader>()
+  const { domains, challenges } = useLoaderData<typeof loader>() as any
 
-  // General always first, then the rest alphabetically
-  const domains = [
-    ...rawDomains.filter((d) => d.name === 'General'),
-    ...rawDomains.filter((d) => d.name !== 'General'),
-  ]
-
-  const [activeDomainId, setActiveDomainId] = useState<string>(domains[0]?.id ?? '')
+  // "General" is a synthetic tab for domainId: null, listed first
+  const GENERAL_TAB_ID = '__general__'
+  const [activeTab, setActiveTab] = useState<string>(GENERAL_TAB_ID)
   const [showModal, setShowModal] = useState(false)
   const [newChallengeName, setNewChallengeName] = useState('')
 
-  // Challenges that have at least one version in the active domain,
-  // or challenges with no versions (shown in "All" / first tab)
-  const filtered = challenges.filter((c) =>
-    c.versions.some((v) => v.domainId === activeDomainId)
+  const isGeneral = activeTab === GENERAL_TAB_ID
+  const filtered = challenges.filter((c: any) =>
+    c.versions.some((v: any) => isGeneral ? v.domainId === null : v.domainId === activeTab)
   )
 
-  const activeDomain = domains.find((d) => d.id === activeDomainId)
+  const activeDomainName = isGeneral ? 'General' : (domains.find((d: any) => d.id === activeTab)?.name ?? '')
 
   return (
     <div className="flex gap-8">
@@ -30,12 +25,24 @@ export default function Challenges() {
       <nav className="w-48 flex-shrink-0">
         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Domain</p>
         <ul className="space-y-1">
-          {domains.map((domain) => (
+          <li>
+            <button
+              onClick={() => setActiveTab(GENERAL_TAB_ID)}
+              className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                isGeneral
+                  ? 'bg-blue-50 text-blue-700'
+                  : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+              }`}
+            >
+              General
+            </button>
+          </li>
+          {(domains as any[]).map((domain: any) => (
             <li key={domain.id}>
               <button
-                onClick={() => setActiveDomainId(domain.id)}
+                onClick={() => setActiveTab(domain.id)}
                 className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  activeDomainId === domain.id
+                  activeTab === domain.id
                     ? 'bg-blue-50 text-blue-700'
                     : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
                 }`}
@@ -51,9 +58,11 @@ export default function Challenges() {
       <div className="flex-1 space-y-8">
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">{activeDomain?.name ?? ''} Challenges</h1>
+            <h1 className="text-2xl font-bold text-gray-900">{activeDomainName} Challenges</h1>
             <p className="mt-1 text-gray-500">
-              Manage domain challenges and their versions independently of hiring cycles.
+              {isGeneral
+                ? 'Manage the general application form and its versions.'
+                : 'Manage domain challenges and their versions independently of hiring cycles.'}
             </p>
           </div>
           <button
@@ -65,10 +74,10 @@ export default function Challenges() {
           </button>
         </div>
 
-<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filtered.map((challenge) => {
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filtered.map((challenge: any) => {
             const domainVersionCount = challenge.versions.filter(
-              (v) => v.domainId === activeDomainId
+              (v: any) => isGeneral ? v.domainId === null : v.domainId === activeTab
             ).length
             return (
               <Link
@@ -149,7 +158,7 @@ export default function Challenges() {
               className="space-y-4"
             >
               <input type="hidden" name="intent" value="create" />
-              <input type="hidden" name="domainId" value={activeDomainId} />
+              {!isGeneral && <input type="hidden" name="domainId" value={activeTab} />}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Challenge Name <span className="text-red-500">*</span>
