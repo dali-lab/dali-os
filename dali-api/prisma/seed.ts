@@ -5,17 +5,6 @@ const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
 const prisma = new PrismaClient({ adapter });
 
 async function main() {
-  // ── Partial unique index ──────────────────────────────────────────────────
-  // Prisma can't model partial unique indexes in schema.prisma, so we
-  // create it idempotently at seed time. This index enforces "at most one
-  // Scheduled Interview per DomainApplication" at the DB level while
-  // allowing historical Cancelled/Completed rows to accumulate.
-  await prisma.$executeRawUnsafe(`
-    CREATE UNIQUE INDEX IF NOT EXISTS "Interview_activeDomainApplication_key"
-      ON "Interview"("domainApplicationId")
-      WHERE "status" = 'Scheduled'
-  `);
-
   // ── Admin user (creates forms, challenges, and cycle) ──────────────────────
   const admin = await prisma.user.upsert({
     where: { daliEmail: "admin@dali.dartmouth.edu" },
