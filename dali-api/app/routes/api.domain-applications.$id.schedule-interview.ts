@@ -36,6 +36,14 @@ export async function action({ request, params }: Route.ActionArgs) {
     return Response.json({ error: "Not your application" }, { status: 403 });
   }
 
+  const latestDecision = await prisma.decision.findFirst({
+    where: { domainApplicationId: da.id, stage: "Released" },
+    orderBy: { createdAt: "desc" },
+  });
+  if (!latestDecision || latestDecision.type !== "InvitedToInterview") {
+    return Response.json({ error: "Not invited to interview" }, { status: 403 });
+  }
+
   if (da.interviews.length > 0) {
     return Response.json({ error: "Interview already scheduled" }, { status: 409 });
   }
