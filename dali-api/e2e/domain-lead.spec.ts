@@ -38,11 +38,10 @@ test.describe('domain lead workflow', () => {
     await expect(page.getByText('Final Delibs').first()).toBeVisible();
   });
 
-  test('can navigate to application detail', async ({ page }) => {
-    await page.goto('/domain-lead');
-    // Click the first application detail link on the page
-    await page.locator('a[href*="/domain-lead/application/"]').first().click();
-    await expect(page).toHaveURL(/\/domain-lead\/application\/.+/);
+  test('application detail page shows challenge responses', async ({ page }) => {
+    await page.goto('/domain-lead/application/app-alice');
+    await expect(page.getByText('Alice Johnson')).toBeVisible();
     await expect(page.getByText('General Application')).toBeVisible();
+    await expect(page.getByText('Engineering Challenge')).toBeVisible();
   });
 });
