@@ -4,17 +4,18 @@ vi.mock("~/lib/db");
 
 import { prisma } from "~/lib/db";
 import {
-  isReviewerFree,
+  isInterviewerFree,
   generateCandidateSlots,
   computeAvailableSlots,
-  assignReviewers,
-  reassignReviewer,
+  assignInterviewers,
+  reassignInterviewer,
 } from "~/lib/scheduling";
 
 const mockPrisma = prisma as unknown as {
   interviewConfig: { findUnique: ReturnType<typeof vi.fn> };
-  cycleReviewer: { findMany: ReturnType<typeof vi.fn> };
+  cycleInterviewer: { findMany: ReturnType<typeof vi.fn> };
   interviewAssignment: {
+    findMany: ReturnType<typeof vi.fn>;
     findUnique: ReturnType<typeof vi.fn>;
     create: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
@@ -23,59 +24,74 @@ const mockPrisma = prisma as unknown as {
     create: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
   };
-  application: { findUnique: ReturnType<typeof vi.fn> };
   $transaction: ReturnType<typeof vi.fn>;
 };
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Ensure nested model accessors exist on the auto-mock
+  if (!mockPrisma.interviewConfig) (mockPrisma as any).interviewConfig = { findUnique: vi.fn() };
+  if (!mockPrisma.cycleInterviewer) (mockPrisma as any).cycleInterviewer = { findMany: vi.fn() };
+  if (!mockPrisma.interviewAssignment)
+    (mockPrisma as any).interviewAssignment = {
+      findMany: vi.fn(),
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+    };
+  if (!mockPrisma.interview) (mockPrisma as any).interview = { create: vi.fn(), update: vi.fn() };
+  if (!mockPrisma.$transaction) (mockPrisma as any).$transaction = vi.fn();
 });
 
-// ─── isReviewerFree ─────────────────────────────────────────────────────────
+// ─── isInterviewerFree ─────────────────────────────────────────────────────────
 
-describe("isReviewerFree", () => {
+describe("isInterviewerFree", () => {
   const slotStart = new Date("2026-04-15T14:00:00Z");
   const slotEnd = new Date("2026-04-15T14:30:00Z");
 
   it("returns true when availability covers slot and no conflicts", () => {
     const reviewer = {
-      cycleReviewerId: "r1",
+      cycleInterviewerId: "r1",
+      daliMemberId: "m1",
       domainId: "d1",
       availability: [
         { startTime: new Date("2026-04-15T13:00:00Z"), endTime: new Date("2026-04-15T17:00:00Z") },
       ],
       bookedIntervals: [],
     };
-    expect(isReviewerFree(reviewer, slotStart, slotEnd)).toBe(true);
+    expect(isInterviewerFree(reviewer, slotStart, slotEnd)).toBe(true);
   });
 
   it("returns false when no availability block covers the slot", () => {
     const reviewer = {
-      cycleReviewerId: "r1",
+      cycleInterviewerId: "r1",
+      daliMemberId: "m1",
       domainId: "d1",
       availability: [
         { startTime: new Date("2026-04-15T15:00:00Z"), endTime: new Date("2026-04-15T17:00:00Z") },
       ],
       bookedIntervals: [],
     };
-    expect(isReviewerFree(reviewer, slotStart, slotEnd)).toBe(false);
+    expect(isInterviewerFree(reviewer, slotStart, slotEnd)).toBe(false);
   });
 
   it("returns false when availability only partially covers the slot", () => {
     const reviewer = {
-      cycleReviewerId: "r1",
+      cycleInterviewerId: "r1",
+      daliMemberId: "m1",
       domainId: "d1",
       availability: [
         { startTime: new Date("2026-04-15T14:00:00Z"), endTime: new Date("2026-04-15T14:20:00Z") },
       ],
       bookedIntervals: [],
     };
-    expect(isReviewerFree(reviewer, slotStart, slotEnd)).toBe(false);
+    expect(isInterviewerFree(reviewer, slotStart, slotEnd)).toBe(false);
   });
 
   it("returns false when a booked interval overlaps the slot", () => {
     const reviewer = {
-      cycleReviewerId: "r1",
+      cycleInterviewerId: "r1",
+      daliMemberId: "m1",
       domainId: "d1",
       availability: [
         { startTime: new Date("2026-04-15T13:00:00Z"), endTime: new Date("2026-04-15T17:00:00Z") },
@@ -84,12 +100,13 @@ describe("isReviewerFree", () => {
         { start: new Date("2026-04-15T14:15:00Z"), end: new Date("2026-04-15T15:00:00Z") },
       ],
     };
-    expect(isReviewerFree(reviewer, slotStart, slotEnd)).toBe(false);
+    expect(isInterviewerFree(reviewer, slotStart, slotEnd)).toBe(false);
   });
 
   it("returns true when booked interval ends exactly at slot start (no overlap)", () => {
     const reviewer = {
-      cycleReviewerId: "r1",
+      cycleInterviewerId: "r1",
+      daliMemberId: "m1",
       domainId: "d1",
       availability: [
         { startTime: new Date("2026-04-15T13:00:00Z"), endTime: new Date("2026-04-15T17:00:00Z") },
@@ -98,12 +115,13 @@ describe("isReviewerFree", () => {
         { start: new Date("2026-04-15T13:00:00Z"), end: new Date("2026-04-15T14:00:00Z") },
       ],
     };
-    expect(isReviewerFree(reviewer, slotStart, slotEnd)).toBe(true);
+    expect(isInterviewerFree(reviewer, slotStart, slotEnd)).toBe(true);
   });
 
   it("returns true when booked interval starts exactly at slot end (no overlap)", () => {
     const reviewer = {
-      cycleReviewerId: "r1",
+      cycleInterviewerId: "r1",
+      daliMemberId: "m1",
       domainId: "d1",
       availability: [
         { startTime: new Date("2026-04-15T13:00:00Z"), endTime: new Date("2026-04-15T17:00:00Z") },
@@ -112,17 +130,18 @@ describe("isReviewerFree", () => {
         { start: new Date("2026-04-15T14:30:00Z"), end: new Date("2026-04-15T15:30:00Z") },
       ],
     };
-    expect(isReviewerFree(reviewer, slotStart, slotEnd)).toBe(true);
+    expect(isInterviewerFree(reviewer, slotStart, slotEnd)).toBe(true);
   });
 
   it("returns false with empty availability", () => {
     const reviewer = {
-      cycleReviewerId: "r1",
+      cycleInterviewerId: "r1",
+      daliMemberId: "m1",
       domainId: "d1",
       availability: [],
       bookedIntervals: [],
     };
-    expect(isReviewerFree(reviewer, slotStart, slotEnd)).toBe(false);
+    expect(isInterviewerFree(reviewer, slotStart, slotEnd)).toBe(false);
   });
 });
 
@@ -238,9 +257,10 @@ describe("computeAvailableSlots", () => {
     });
 
     // One in-domain reviewer, one cross-domain reviewer, both available all day
-    mockPrisma.cycleReviewer.findMany.mockResolvedValue([
+    mockPrisma.cycleInterviewer.findMany.mockResolvedValue([
       {
         id: "r1",
+        daliMemberId: "m1",
         domainId: "domain1",
         availabilityBlocks: [
           { startTime: new Date("2026-04-13T00:00:00Z"), endTime: new Date("2026-04-13T23:59:59Z") },
@@ -249,6 +269,7 @@ describe("computeAvailableSlots", () => {
       },
       {
         id: "r2",
+        daliMemberId: "m2",
         domainId: "domain-other",
         availabilityBlocks: [
           { startTime: new Date("2026-04-13T00:00:00Z"), endTime: new Date("2026-04-13T23:59:59Z") },
@@ -279,9 +300,10 @@ describe("computeAvailableSlots", () => {
     });
 
     // Only in-domain reviewers, no cross-domain
-    mockPrisma.cycleReviewer.findMany.mockResolvedValue([
+    mockPrisma.cycleInterviewer.findMany.mockResolvedValue([
       {
         id: "r1",
+        daliMemberId: "m1",
         domainId: "domain1",
         availabilityBlocks: [
           { startTime: new Date("2026-04-13T00:00:00Z"), endTime: new Date("2026-04-13T23:59:59Z") },
@@ -293,11 +315,76 @@ describe("computeAvailableSlots", () => {
     const slots = await computeAvailableSlots("cycle1", ["domain1"]);
     expect(slots).toEqual([]);
   });
+
+  it("treats a cross-row conflict as a member-level conflict (Mira double-book)", async () => {
+    mockPrisma.interviewConfig.findUnique.mockResolvedValue({
+      slotDurationMinutes: 30,
+      bufferMinutes: 0,
+      dayStartHour: 9,
+      dayEndHour: 10,
+      interviewStartDate: new Date("2026-04-13T04:00:00Z"),
+      interviewEndDate: new Date("2026-04-14T03:59:59Z"),
+      timezone: "America/New_York",
+    });
+
+    // Mira has two rows (Eng + Design). Her Eng row holds a 9:00 interview.
+    // Her Design row has no assignments, but member-level aggregation should
+    // treat her as busy at 9:00 for cross-domain purposes too. With a
+    // single-domain cross-domain peer absent, there should be no available
+    // slot at 9:00 — only at 9:30 (after the conflict clears).
+    mockPrisma.cycleInterviewer.findMany.mockResolvedValue([
+      {
+        id: "r-mira-eng",
+        daliMemberId: "mira",
+        domainId: "domain1",
+        availabilityBlocks: [
+          { startTime: new Date("2026-04-13T00:00:00Z"), endTime: new Date("2026-04-13T23:59:59Z") },
+        ],
+        interviewAssignments: [
+          {
+            interview: {
+              startTime: new Date("2026-04-13T13:00:00Z"), // 9:00 EDT
+              endTime: new Date("2026-04-13T13:30:00Z"),
+            },
+          },
+        ],
+      },
+      {
+        id: "r-mira-design",
+        daliMemberId: "mira", // same member
+        domainId: "domain-other",
+        availabilityBlocks: [
+          { startTime: new Date("2026-04-13T00:00:00Z"), endTime: new Date("2026-04-13T23:59:59Z") },
+        ],
+        interviewAssignments: [], // empty at the row level
+      },
+      {
+        id: "r-bob",
+        daliMemberId: "bob",
+        domainId: "domain1",
+        availabilityBlocks: [
+          { startTime: new Date("2026-04-13T00:00:00Z"), endTime: new Date("2026-04-13T23:59:59Z") },
+        ],
+        interviewAssignments: [],
+      },
+    ]);
+
+    // Need an in-domain interviewer for domain1 (Bob or Mira-eng) AND a
+    // cross-domain interviewer for domain-other (only Mira-design). At 9:00
+    // Mira is busy under her Eng row, and member-level aggregation should
+    // propagate that to her Design row — no slot.
+    const slots = await computeAvailableSlots("cycle1", ["domain1"]);
+    const at9 = slots.find((s) => s.startTime === new Date("2026-04-13T13:00:00Z").toISOString());
+    expect(at9).toBeUndefined();
+    // 9:30 should still work — Mira is free by then.
+    const at930 = slots.find((s) => s.startTime === new Date("2026-04-13T13:30:00Z").toISOString());
+    expect(at930).toBeDefined();
+  });
 });
 
-// ─── assignReviewers ────────────────────────────────────────────────────────
+// ─── assignInterviewers ────────────────────────────────────────────────────────
 
-describe("assignReviewers", () => {
+describe("assignInterviewers", () => {
   it("picks the least-scheduled reviewers and creates an interview", async () => {
     const createdInterview = {
       id: "int1",
@@ -307,57 +394,64 @@ describe("assignReviewers", () => {
       endTime: new Date("2026-04-13T14:30:00Z"),
       status: "Scheduled",
       assignments: [
-        { cycleReviewerId: "r1", role: "InDomain", status: "Active" },
-        { cycleReviewerId: "r2", role: "CrossDomain", status: "Active" },
+        { cycleInterviewerId: "r1", role: "InDomain", status: "Active" },
+        { cycleInterviewerId: "r2", role: "CrossDomain", status: "Active" },
       ],
     };
 
     mockPrisma.$transaction.mockImplementation(async (fn: any) => {
+      const fullInterviewers = [
+        {
+          id: "r1",
+          daliMemberId: "m1",
+          domainId: "domain1",
+          availabilityBlocks: [
+            { startTime: new Date("2026-04-13T13:00:00Z"), endTime: new Date("2026-04-13T17:00:00Z") },
+          ],
+          interviewAssignments: [
+            { interview: { startTime: new Date("2026-04-12T10:00:00Z"), endTime: new Date("2026-04-12T10:30:00Z") } },
+          ],
+        },
+        {
+          id: "r1-busy",
+          daliMemberId: "m-busy",
+          domainId: "domain1",
+          availabilityBlocks: [
+            { startTime: new Date("2026-04-13T13:00:00Z"), endTime: new Date("2026-04-13T17:00:00Z") },
+          ],
+          interviewAssignments: [
+            { interview: { startTime: new Date("2026-04-12T10:00:00Z"), endTime: new Date("2026-04-12T10:30:00Z") } },
+            { interview: { startTime: new Date("2026-04-12T11:00:00Z"), endTime: new Date("2026-04-12T11:30:00Z") } },
+            { interview: { startTime: new Date("2026-04-12T12:00:00Z"), endTime: new Date("2026-04-12T12:30:00Z") } },
+          ],
+        },
+        {
+          id: "r2",
+          daliMemberId: "m2",
+          domainId: "domain-other",
+          availabilityBlocks: [
+            { startTime: new Date("2026-04-13T13:00:00Z"), endTime: new Date("2026-04-13T17:00:00Z") },
+          ],
+          interviewAssignments: [],
+        },
+      ];
+      const findManyMock = vi.fn()
+        .mockResolvedValueOnce(fullInterviewers.map((i) => ({ id: i.id })))
+        .mockResolvedValueOnce(fullInterviewers);
       const tx = {
         interviewConfig: {
           findUnique: vi.fn().mockResolvedValue({ bufferMinutes: 15 }),
         },
-        cycleReviewer: {
-          findMany: vi.fn().mockResolvedValue([
-            {
-              id: "r1",
-              domainId: "domain1",
-              availabilityBlocks: [
-                { startTime: new Date("2026-04-13T13:00:00Z"), endTime: new Date("2026-04-13T17:00:00Z") },
-              ],
-              interviewAssignments: [{ interview: { startTime: new Date("2026-04-12T10:00:00Z"), endTime: new Date("2026-04-12T10:30:00Z") } }],
-            },
-            {
-              id: "r1-busy",
-              domainId: "domain1",
-              availabilityBlocks: [
-                { startTime: new Date("2026-04-13T13:00:00Z"), endTime: new Date("2026-04-13T17:00:00Z") },
-              ],
-              // more active interviews -> should not be picked
-              interviewAssignments: [
-                { interview: { startTime: new Date("2026-04-12T10:00:00Z"), endTime: new Date("2026-04-12T10:30:00Z") } },
-                { interview: { startTime: new Date("2026-04-12T11:00:00Z"), endTime: new Date("2026-04-12T11:30:00Z") } },
-                { interview: { startTime: new Date("2026-04-12T12:00:00Z"), endTime: new Date("2026-04-12T12:30:00Z") } },
-              ],
-            },
-            {
-              id: "r2",
-              domainId: "domain-other",
-              availabilityBlocks: [
-                { startTime: new Date("2026-04-13T13:00:00Z"), endTime: new Date("2026-04-13T17:00:00Z") },
-              ],
-              interviewAssignments: [],
-            },
-          ]),
-        },
+        cycleInterviewer: { findMany: findManyMock },
         interview: {
           create: vi.fn().mockResolvedValue(createdInterview),
         },
+        $executeRaw: vi.fn().mockResolvedValue(0),
       };
       return fn(tx);
     });
 
-    const result = await assignReviewers(
+    const result = await assignInterviewers(
       "cycle1", "app1", ["domain1"],
       new Date("2026-04-13T14:00:00Z"),
       new Date("2026-04-13T14:30:00Z"),
@@ -376,43 +470,171 @@ describe("assignReviewers", () => {
     });
 
     await expect(
-      assignReviewers("cycle1", "app1", ["domain1"], new Date(), new Date()),
+      assignInterviewers("cycle1", "app1", ["domain1"], new Date(), new Date()),
     ).rejects.toThrow("No interview config for this cycle");
   });
 
   it("throws when no in-domain reviewer is available", async () => {
+    const onlyCrossDomain = [
+      {
+        id: "r2",
+        daliMemberId: "m2",
+        domainId: "domain-other",
+        availabilityBlocks: [
+          { startTime: new Date("2026-04-13T13:00:00Z"), endTime: new Date("2026-04-13T17:00:00Z") },
+        ],
+        interviewAssignments: [],
+      },
+    ];
     mockPrisma.$transaction.mockImplementation(async (fn: any) => {
       const tx = {
         interviewConfig: { findUnique: vi.fn().mockResolvedValue({ bufferMinutes: 15 }) },
-        cycleReviewer: {
-          findMany: vi.fn().mockResolvedValue([
-            {
-              id: "r2",
-              domainId: "domain-other",
-              availabilityBlocks: [
-                { startTime: new Date("2026-04-13T13:00:00Z"), endTime: new Date("2026-04-13T17:00:00Z") },
-              ],
-              interviewAssignments: [],
-            },
-          ]),
+        cycleInterviewer: {
+          findMany: vi.fn()
+            .mockResolvedValueOnce(onlyCrossDomain.map((i) => ({ id: i.id })))
+            .mockResolvedValueOnce(onlyCrossDomain),
         },
+        $executeRaw: vi.fn().mockResolvedValue(0),
       };
       return fn(tx);
     });
 
     await expect(
-      assignReviewers(
+      assignInterviewers(
         "cycle1", "app1", ["domain1"],
         new Date("2026-04-13T14:00:00Z"),
         new Date("2026-04-13T14:30:00Z"),
       ),
-    ).rejects.toThrow("No in-domain reviewer available");
+    ).rejects.toThrow("No in-domain interviewer available");
+  });
+
+  it("does not place the same human in both in-domain and cross-domain seats", async () => {
+    // Mira is the only in-domain candidate (domain1) and also appears under a
+    // Design row (domain-other). Without Fix A, the scheduler would pick
+    // Mira-eng as in-domain AND Mira-design as cross-domain. Fix A rejects
+    // this by excluding Mira's daliMemberId from the cross-domain pool —
+    // and since she's the only cross-domain option, the booking must fail.
+    const twoMiraRows = [
+      {
+        id: "r-mira-eng",
+        daliMemberId: "mira",
+        domainId: "domain1",
+        availabilityBlocks: [
+          { startTime: new Date("2026-04-13T13:00:00Z"), endTime: new Date("2026-04-13T17:00:00Z") },
+        ],
+        interviewAssignments: [],
+      },
+      {
+        id: "r-mira-design",
+        daliMemberId: "mira",
+        domainId: "domain-other",
+        availabilityBlocks: [
+          { startTime: new Date("2026-04-13T13:00:00Z"), endTime: new Date("2026-04-13T17:00:00Z") },
+        ],
+        interviewAssignments: [],
+      },
+    ];
+    mockPrisma.$transaction.mockImplementation(async (fn: any) => {
+      const tx = {
+        interviewConfig: { findUnique: vi.fn().mockResolvedValue({ bufferMinutes: 15 }) },
+        cycleInterviewer: {
+          findMany: vi
+            .fn()
+            .mockResolvedValueOnce(twoMiraRows.map((i) => ({ id: i.id })))
+            .mockResolvedValueOnce(twoMiraRows),
+        },
+        $executeRaw: vi.fn().mockResolvedValue(0),
+      };
+      return fn(tx);
+    });
+
+    await expect(
+      assignInterviewers(
+        "cycle1",
+        "app1",
+        ["domain1"],
+        new Date("2026-04-13T14:00:00Z"),
+        new Date("2026-04-13T14:30:00Z"),
+      ),
+    ).rejects.toThrow("No cross-domain interviewer available");
+  });
+
+  it("load-balances per human, not per row, when a member spans two domains", async () => {
+    // Mira has two rows. Her Eng row already holds 3 past interviews. Bob has
+    // one. For a new Eng applicant, per-row counting would tie-break Mira-eng
+    // (count=3) against Bob-eng (count=1) and pick Bob. Per-human counting
+    // sees Mira total = 3 and Bob total = 1 — same outcome, but member-level
+    // counting ensures we don't get fooled by split totals.
+    const capturedCreate = vi.fn().mockImplementation((args) => ({
+      id: "int1",
+      ...args.data,
+      assignments: args.data.assignments.create.map((a: any, idx: number) => ({ id: `a${idx}`, ...a })),
+    }));
+    const interviewers = [
+      {
+        id: "r-mira-eng",
+        daliMemberId: "mira",
+        domainId: "domain1",
+        availabilityBlocks: [
+          { startTime: new Date("2026-04-13T13:00:00Z"), endTime: new Date("2026-04-13T17:00:00Z") },
+        ],
+        interviewAssignments: [
+          { interview: { startTime: new Date("2026-04-10T10:00:00Z"), endTime: new Date("2026-04-10T10:30:00Z") } },
+          { interview: { startTime: new Date("2026-04-10T11:00:00Z"), endTime: new Date("2026-04-10T11:30:00Z") } },
+          { interview: { startTime: new Date("2026-04-10T12:00:00Z"), endTime: new Date("2026-04-10T12:30:00Z") } },
+        ],
+      },
+      {
+        id: "r-bob",
+        daliMemberId: "bob",
+        domainId: "domain1",
+        availabilityBlocks: [
+          { startTime: new Date("2026-04-13T13:00:00Z"), endTime: new Date("2026-04-13T17:00:00Z") },
+        ],
+        interviewAssignments: [
+          { interview: { startTime: new Date("2026-04-10T10:00:00Z"), endTime: new Date("2026-04-10T10:30:00Z") } },
+        ],
+      },
+      {
+        id: "r-cross",
+        daliMemberId: "pat",
+        domainId: "domain-other",
+        availabilityBlocks: [
+          { startTime: new Date("2026-04-13T13:00:00Z"), endTime: new Date("2026-04-13T17:00:00Z") },
+        ],
+        interviewAssignments: [],
+      },
+    ];
+    mockPrisma.$transaction.mockImplementation(async (fn: any) => {
+      const tx = {
+        interviewConfig: { findUnique: vi.fn().mockResolvedValue({ bufferMinutes: 15 }) },
+        cycleInterviewer: {
+          findMany: vi.fn()
+            .mockResolvedValueOnce(interviewers.map((i) => ({ id: i.id })))
+            .mockResolvedValueOnce(interviewers),
+        },
+        interview: { create: capturedCreate },
+        $executeRaw: vi.fn().mockResolvedValue(0),
+      };
+      return fn(tx);
+    });
+
+    await assignInterviewers(
+      "cycle1", "app1", ["domain1"],
+      new Date("2026-04-13T14:00:00Z"),
+      new Date("2026-04-13T14:30:00Z"),
+    );
+
+    // Pick should be Bob (count=1), not Mira (count=3)
+    const createArgs = capturedCreate.mock.calls[0][0];
+    const inDomain = createArgs.data.assignments.create.find((a: any) => a.role === "InDomain");
+    expect(inDomain.cycleInterviewerId).toBe("r-bob");
   });
 });
 
-// ─── reassignReviewer ───────────────────────────────────────────────────────
+// ─── reassignInterviewer ───────────────────────────────────────────────────────
 
-describe("reassignReviewer", () => {
+describe("reassignInterviewer", () => {
   it("replaces a declined reviewer with the next best candidate", async () => {
     mockPrisma.$transaction.mockImplementation(async (fn: any) => {
       const tx = {
@@ -420,36 +642,36 @@ describe("reassignReviewer", () => {
           findUnique: vi.fn().mockResolvedValue({
             id: "a1",
             role: "InDomain",
-            cycleReviewer: { id: "r1", domainId: "domain1" },
+            cycleInterviewer: { id: "r1", daliMemberId: "m1", domainId: "domain1" },
             interview: {
               id: "int1",
-              applicationId: "app1",
               applicationCycleId: "cycle1",
               startTime: new Date("2026-04-13T14:00:00Z"),
               endTime: new Date("2026-04-13T14:30:00Z"),
+              domainApplication: {
+                challengeVersion: { domainId: "domain1" },
+              },
               assignments: [
-                { cycleReviewerId: "r1" },
-                { cycleReviewerId: "r3" },
+                { cycleInterviewerId: "r1" },
+                { cycleInterviewerId: "r3" },
               ],
             },
           }),
+          findMany: vi.fn().mockResolvedValue([
+            { cycleInterviewer: { daliMemberId: "m1" } },
+            { cycleInterviewer: { daliMemberId: "m3" } },
+          ]),
           update: vi.fn().mockResolvedValue({}),
-          create: vi.fn().mockResolvedValue({ cycleReviewerId: "r2" }),
+          create: vi.fn().mockResolvedValue({ cycleInterviewerId: "r2" }),
         },
         interviewConfig: {
           findUnique: vi.fn().mockResolvedValue({ bufferMinutes: 15 }),
         },
-        application: {
-          findUnique: vi.fn().mockResolvedValue({
-            domainApplications: [
-              { challengeVersion: { domainId: "domain1" } },
-            ],
-          }),
-        },
-        cycleReviewer: {
+        cycleInterviewer: {
           findMany: vi.fn().mockResolvedValue([
             {
               id: "r2",
+              daliMemberId: "m2",
               domainId: "domain1",
               availabilityBlocks: [
                 { startTime: new Date("2026-04-13T13:00:00Z"), endTime: new Date("2026-04-13T17:00:00Z") },
@@ -465,55 +687,105 @@ describe("reassignReviewer", () => {
       return fn(tx);
     });
 
-    const result = await reassignReviewer("int1", "a1");
+    const result = await reassignInterviewer("int1", "a1");
     expect(result.reassigned).toBe(true);
-    expect(result.newReviewerId).toBe("r2");
+    expect(result.newInterviewerId).toBe("r2");
   });
 
-  it("marks interview as NeedsReassignment when no replacement found", async () => {
-    const mockInterviewUpdate = vi.fn().mockResolvedValue({});
+  it("does not pick a different row for the same human as replacement", async () => {
+    // Mira declines under her Design row. She also has an Eng row. The
+    // reassigner filters by member id, so her Eng row must be rejected as a
+    // replacement even though it's technically a different CycleInterviewer.
+    // With no other candidates, the reassignment throws and the transaction
+    // rolls back — the declining assignment remains Active.
+    mockPrisma.$transaction.mockImplementation(async (fn: any) => {
+      const tx = {
+        interviewAssignment: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: "a1",
+            role: "CrossDomain",
+            cycleInterviewer: { id: "r-mira-design", daliMemberId: "mira", domainId: "domain-other" },
+            interview: {
+              id: "int1",
+              applicationCycleId: "cycle1",
+              startTime: new Date("2026-04-13T14:00:00Z"),
+              endTime: new Date("2026-04-13T14:30:00Z"),
+              domainApplication: {
+                challengeVersion: { domainId: "domain1" },
+              },
+            },
+          }),
+          findMany: vi.fn().mockResolvedValue([
+            { cycleInterviewer: { daliMemberId: "mira" } },
+          ]),
+          update: vi.fn().mockResolvedValue({}),
+          create: vi.fn().mockResolvedValue({}),
+        },
+        interviewConfig: {
+          findUnique: vi.fn().mockResolvedValue({ bufferMinutes: 15 }),
+        },
+        cycleInterviewer: {
+          findMany: vi.fn().mockResolvedValue([
+            // Mira's Eng row — same human, excluded by existingMemberIds.
+            {
+              id: "r-mira-eng",
+              daliMemberId: "mira",
+              domainId: "domain1",
+              availabilityBlocks: [
+                { startTime: new Date("2026-04-13T13:00:00Z"), endTime: new Date("2026-04-13T17:00:00Z") },
+              ],
+              interviewAssignments: [],
+            },
+          ]),
+        },
+        interview: { update: vi.fn() },
+      };
+      return fn(tx);
+    });
 
+    await expect(reassignInterviewer("int1", "a1")).rejects.toThrow(
+      "No replacement interviewer available",
+    );
+  });
+
+  it("throws 'No replacement interviewer available' when no replacement found", async () => {
     mockPrisma.$transaction.mockImplementation(async (fn: any) => {
       const tx = {
         interviewAssignment: {
           findUnique: vi.fn().mockResolvedValue({
             id: "a1",
             role: "InDomain",
-            cycleReviewer: { id: "r1", domainId: "domain1" },
+            cycleInterviewer: { id: "r1", daliMemberId: "m1", domainId: "domain1" },
             interview: {
               id: "int1",
-              applicationId: "app1",
               applicationCycleId: "cycle1",
               startTime: new Date("2026-04-13T14:00:00Z"),
               endTime: new Date("2026-04-13T14:30:00Z"),
-              assignments: [{ cycleReviewerId: "r1" }],
+              domainApplication: {
+                challengeVersion: { domainId: "domain1" },
+              },
             },
           }),
+          findMany: vi.fn().mockResolvedValue([
+            { cycleInterviewer: { daliMemberId: "m1" } },
+          ]),
           update: vi.fn().mockResolvedValue({}),
+          create: vi.fn().mockResolvedValue({}),
         },
         interviewConfig: {
           findUnique: vi.fn().mockResolvedValue({ bufferMinutes: 15 }),
         },
-        application: {
-          findUnique: vi.fn().mockResolvedValue({
-            domainApplications: [
-              { challengeVersion: { domainId: "domain1" } },
-            ],
-          }),
-        },
-        cycleReviewer: {
+        cycleInterviewer: {
           findMany: vi.fn().mockResolvedValue([]), // no candidates
         },
-        interview: {
-          update: mockInterviewUpdate,
-        },
+        interview: { update: vi.fn() },
       };
       return fn(tx);
     });
 
-    const result = await reassignReviewer("int1", "a1");
-    expect(result.reassigned).toBe(false);
-    expect(result.newReviewerId).toBeNull();
+    await expect(reassignInterviewer("int1", "a1")).rejects.toThrow(
+      "No replacement interviewer available",
+    );
   });
 
   it("throws when assignment not found", async () => {
@@ -526,6 +798,6 @@ describe("reassignReviewer", () => {
       return fn(tx);
     });
 
-    await expect(reassignReviewer("int1", "missing")).rejects.toThrow("Assignment not found");
+    await expect(reassignInterviewer("int1", "missing")).rejects.toThrow("Assignment not found");
   });
 });

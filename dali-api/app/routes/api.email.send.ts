@@ -106,6 +106,12 @@ export async function action({ request }: { request: Request }) {
         break
       }
 
+      case 'custom': {
+        const { to, subject, html } = body as { to: string; subject: string; html: string }
+        await sendEmail({ refreshToken, to, subject, html })
+        break
+      }
+
       default:
         return Response.json({ error: `Unknown email type: ${type}` }, { status: 400 })
     }

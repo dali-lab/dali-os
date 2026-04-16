@@ -35,11 +35,9 @@ model User {
 
   daliMember                    DALIMember?
   applicationCycleStatusUpdates ApplicationCycleStatusUpdate[]
-  applicationFormVersions       ApplicationFormVersion[]
   challengeVersions             ChallengeVersion[]
   applications                  Application[]
   applicationStatusUpdates      ApplicationStatusUpdate[]
-  mentorReviews                 MentorReview[]                @relation("MentorReviews")
   oauthSessions                 OAuthSession[]
   refreshTokens                 RefreshToken[]
   rubricVersions                RubricVersion[]
@@ -61,8 +59,14 @@ model DALIMember {
   dartmouthEmail String? @unique
   did            String? @unique // Dartmouth D-number e.g. "F00709M"
 
+  roles MemberRole[] @default([])
+
   domainLeadAssignments DomainLeadAssignment[]
-  cycleReviewers CycleReviewer[]
+  cycleReviewers        CycleReviewer[]
+  cycleInterviewers     CycleInterviewer[]
+  decisions             Decision[]
+  applicationReviews    ApplicationReview[]    @relation("SubmittedBy")
+  delibSessions         DelibsSession[]
 }
 
 model ApplicationCycle {
@@ -75,18 +79,24 @@ model ApplicationCycle {
   // ApplicationCycleStatusUpdate rather than stored directly here.
   name String
 
-  // The form version applicants will fill out for this cycle
-  formVersionId String?
-  formVersion   ApplicationFormVersion? @relation(fields: [formVersionId], references: [id])
+  // Application due date; triggers auto-transition to UnderReview when passed.
+  closeDate DateTime?
+
+  // Rubric for the general application form (reviewers score this alongside
+  // the per-domain rubric set on DomainApplicationCycle).
+  generalRubricVersionId String?
+  generalRubricVersion   RubricVersion? @relation("CycleGeneralRubric", fields: [generalRubricVersionId], references: [id])
 
   statusUpdates     ApplicationCycleStatusUpdate[]
   applications      Application[]
   domains           DomainApplicationCycle[]
   challengeVersions ChallengeVersionApplicationCycle[]
 
-  interviewConfig InterviewConfig?
-  cycleReviewers  CycleReviewer[]
-  interviews      Interview[]
+  interviewConfig   InterviewConfig?
+  cycleReviewers    CycleReviewer[]
+  cycleInterviewers CycleInterviewer[]
+  interviews        Interview[]
+  delibsSessions    DelibsSession[]
 }
 
 // Applicant-initiated status changes only. DALI-initiated outcomes (interview,
@@ -116,8 +126,6 @@ model Application {
 
   // answers: map of question UUID key -> answer value (JSON). Saved incrementally
   // as the applicant fills out the form; finalized on submission.
-  // v1 supports text-based answers only. File upload questions will be handled
-  // in a future version via a separate attachments table.
   answers Json
 
   userId                   String
@@ -125,13 +133,11 @@ model Application {
   applicationCycleId       String
   applicationCycle         ApplicationCycle       @relation(fields: [applicationCycleId], references: [id])
   // Pinned at application creation time so that form updates do not affect in-progress drafts.
-  applicationFormVersionId String
-  applicationFormVersion   ApplicationFormVersion @relation(fields: [applicationFormVersionId], references: [id])
+  generalChallengeVersionId String
+  generalChallengeVersion   ChallengeVersion @relation("ApplicationGeneralChallenge", fields: [generalChallengeVersionId], references: [id])
 
   statusUpdates      ApplicationStatusUpdate[]
   domainApplications DomainApplication[]
-  interviews         Interview[]
-  mentorReviews      MentorReview[]
 }
 
 // Domain is not stored directly — it is derivable via challengeVersion.domain.
@@ -148,33 +154,10 @@ model DomainApplication {
   application        Application      @relation(fields: [applicationId], references: [id])
   challengeVersionId String
   challengeVersion   ChallengeVersion @relation(fields: [challengeVersionId], references: [id])
-}
 
-model ApplicationForm {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  versions ApplicationFormVersion[]
-}
-
-// Immutable snapshot of an application form. Never update rows in this table —
-// create a new version instead.
-// questions: array of question definitions, each with a stable UUID `key`, `type`,
-// `required`, and type-specific `data`. The `key` is used to associate answers.
-model ApplicationFormVersion {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-
-  questions         Json
-  applicationFormId String
-  applicationForm   ApplicationForm @relation(fields: [applicationFormId], references: [id])
-  createdById       String
-  createdBy         User            @relation(fields: [createdById], references: [id])
-
-  applications      Application[]
-  applicationCycles ApplicationCycle[]
-  rubricVersions    RubricVersion[]
+  interviews Interview[]
+  reviews    ApplicationReview[]
+  decisions  Decision[]
 }
 
 model Challenge {
@@ -198,34 +181,13 @@ model Domain {
   applicationCycles     DomainApplicationCycle[]
   domainLeadAssignments DomainLeadAssignment[]
   cycleReviewers        CycleReviewer[]
+  cycleInterviewers     CycleInterviewer[]
   rubrics               Rubric[]
+  delibsSessions        DelibsSession[]
 }
 
-// A mentor's written review of an application.
-model MentorReview {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // JSON map of rubric criterion key → integer score
-  scores                Json    @default("{}")
-  feedback              String  @default("")
-  rejectionRationale    String  @default("")
-  overallRecommendation String?
-  // JSON array of annotation objects {id, fieldKey, start, end, comment, color}
-  annotations           Json    @default("[]")
-
-  mentorId      String
-  mentor        User        @relation("MentorReviews", fields: [mentorId], references: [id])
-  applicationId String
-  application   Application @relation(fields: [applicationId], references: [id])
-
-  @@unique([mentorId, applicationId])
-}
-
-// Immutable snapshot of a domain challenge. Never update rows in this table —
-// create a new version instead.
-// questions: same shape as ApplicationFormVersion.questions.
+// Immutable snapshot of a challenge. Never update rows in this table —
+// create a new version instead. domainId: null = general application form.
 model ChallengeVersion {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
@@ -233,29 +195,26 @@ model ChallengeVersion {
   questions   Json
   challengeId String
   challenge   Challenge @relation(fields: [challengeId], references: [id])
-  domainId    String
-  domain      Domain    @relation(fields: [domainId], references: [id])
+  domainId    String?
+  domain      Domain?   @relation(fields: [domainId], references: [id])
   createdById String
   createdBy   User      @relation(fields: [createdById], references: [id])
 
-  // The rubric version used to score this challenge version
-  rubricVersionId String?
-  rubricVersion   RubricVersion? @relation("ChallengeVersionRubric", fields: [rubricVersionId], references: [id])
-
-  domainApplications DomainApplication[]
-  applicationCycles  ChallengeVersionApplicationCycle[]
+  domainApplications    DomainApplication[]
+  applicationCycles     ChallengeVersionApplicationCycle[]
+  applicationsAsGeneral Application[] @relation("ApplicationGeneralChallenge")
 }
 
 // Lifecycle of an application cycle from the DALI side:
-//   Draft             — cycle being set up by hiring lead and domain leads
-//   Open              — applications open for submission
-//   Closed            — submissions closed; hiring team reviewing
-//   DecisionsReleased — decisions communicated to applicants
+//   Draft       — cycle being set up by hiring lead and domain leads
+//   Open        — applications open for submission
+//   UnderReview — submissions closed; hiring team reviewing
+//   Completed   — decisions communicated to applicants
 enum ApplicationCycleStatus {
   Draft
   Open
-  Closed
-  DecisionsReleased
+  UnderReview
+  Completed
 }
 
 model ApplicationCycleStatusUpdate {
@@ -265,8 +224,8 @@ model ApplicationCycleStatusUpdate {
   newStatus          ApplicationCycleStatus
   applicationCycleId String
   applicationCycle   ApplicationCycle       @relation(fields: [applicationCycleId], references: [id])
-  userId             String
-  user               User                   @relation(fields: [userId], references: [id])
+  userId             String? // null = system-generated (e.g. auto-close at closeDate)
+  user               User?                  @relation(fields: [userId], references: [id])
 }
 
 // Indicates that a domain is hiring during a given application cycle
@@ -278,6 +237,12 @@ model DomainApplicationCycle {
 
   // True once the domain lead has explicitly confirmed their challenge config is ready
   isReady Boolean @default(false)
+
+  // Rubric assigned for this domain in this cycle (shared across all challenge versions for the domain)
+  rubricVersionId     String?
+  rubricVersion       RubricVersion? @relation(fields: [rubricVersionId], references: [id])
+  // Target number of reviewers assigned to each application in this domain
+  reviewersPerApplication Int @default(2)
 
   @@id([domainId, applicationCycleId])
 }
@@ -313,6 +278,8 @@ model InterviewConfig {
   timezone String @default("America/New_York")
 }
 
+// A DALI member assigned as a written reviewer for a domain in a cycle.
+// Purely for ApplicationReview — separate from CycleInterviewer.
 model CycleReviewer {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
@@ -325,25 +292,42 @@ model CycleReviewer {
   domainId           String
   domain             Domain           @relation(fields: [domainId], references: [id])
 
-  isLead Boolean @default(false)
+  reviews ApplicationReview[]
 
-  availabilityBlocks   ReviewerAvailability[]
-  interviewAssignments InterviewAssignment[]
-
-  @@unique([daliMemberId, applicationCycleId])
+  @@unique([daliMemberId, applicationCycleId, domainId])
 }
 
-model ReviewerAvailability {
+// A DALI member assigned to conduct interviews for a domain in a cycle.
+// Separate from CycleReviewer — interviewers and reviewers are managed independently.
+model CycleInterviewer {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  daliMemberId       String
+  daliMember         DALIMember       @relation(fields: [daliMemberId], references: [id])
+  applicationCycleId String
+  applicationCycle   ApplicationCycle @relation(fields: [applicationCycleId], references: [id])
+  domainId           String
+  domain             Domain           @relation(fields: [domainId], references: [id])
+
+  availabilityBlocks   InterviewerAvailability[]
+  interviewAssignments InterviewAssignment[]
+
+  @@unique([daliMemberId, applicationCycleId, domainId])
+}
+
+model InterviewerAvailability {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
 
-  cycleReviewerId String
-  cycleReviewer   CycleReviewer @relation(fields: [cycleReviewerId], references: [id], onDelete: Cascade)
+  cycleInterviewerId String
+  cycleInterviewer   CycleInterviewer @relation(fields: [cycleInterviewerId], references: [id], onDelete: Cascade)
 
   startTime DateTime
   endTime   DateTime
 
-  @@index([cycleReviewerId, startTime, endTime])
+  @@index([cycleInterviewerId, startTime, endTime])
 }
 
 enum InterviewStatus {
@@ -351,7 +335,6 @@ enum InterviewStatus {
   Completed
   CancelledByApplicant
   CancelledByAdmin
-  NeedsReassignment
 }
 
 model Interview {
@@ -359,19 +342,29 @@ model Interview {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  applicationId      String
-  application        Application      @relation(fields: [applicationId], references: [id])
-  applicationCycleId String
-  applicationCycle   ApplicationCycle @relation(fields: [applicationCycleId], references: [id])
+  // No @unique: a DomainApplication can accumulate historical Interview rows
+  // (Cancelled/Completed) alongside at most one active row. The partial
+  // unique index "Interview_activeDomainApplication_key" (added in raw SQL
+  // in the migration) enforces "at most one Scheduled per DA" at the DB
+  // level. See SCHEDULING.md §Data model.
+  domainApplicationId String
+  domainApplication   DomainApplication @relation(fields: [domainApplicationId], references: [id])
+  applicationCycleId  String
+  applicationCycle    ApplicationCycle  @relation(fields: [applicationCycleId], references: [id])
 
   startTime DateTime
   endTime   DateTime
   status    InterviewStatus @default(Scheduled)
 
+  // Joint outcome — set by either interviewer when marking complete.
+  // recommendation values: 'Strong Hire' | 'Hire' | 'Lean Hire' | 'Lean No Hire' | 'No Hire'
+  recommendation      String?
+  recommendationNotes String?
+
   assignments InterviewAssignment[]
 
   @@index([applicationCycleId, startTime])
-  @@index([applicationId])
+  @@index([domainApplicationId, status])
 }
 
 enum AssignmentRole {
@@ -385,19 +378,145 @@ enum AssignmentStatus {
   Replaced
 }
 
+enum MemberRole {
+  Admin
+  HiringLead
+}
+
 model InterviewAssignment {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
 
-  interviewId     String
-  interview       Interview        @relation(fields: [interviewId], references: [id], onDelete: Cascade)
-  cycleReviewerId String
-  cycleReviewer   CycleReviewer    @relation(fields: [cycleReviewerId], references: [id])
-  role            AssignmentRole
-  status          AssignmentStatus @default(Active)
-  notes           String?
+  interviewId        String
+  interview          Interview        @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  cycleInterviewerId String
+  cycleInterviewer   CycleInterviewer @relation(fields: [cycleInterviewerId], references: [id])
+  role               AssignmentRole
+  status             AssignmentStatus @default(Active)
 
-  @@index([cycleReviewerId, status])
+  noteVersions InterviewNoteVersion[]
+
+  @@index([cycleInterviewerId, status])
+}
+
+// Append-only versioned notes for an interview assignment.
+// Current notes = latest record by createdAt. Never updated — only appended.
+model InterviewNoteVersion {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  interviewAssignmentId String
+  interviewAssignment   InterviewAssignment @relation(fields: [interviewAssignmentId], references: [id], onDelete: Cascade)
+
+  content String
+
+  @@index([interviewAssignmentId, createdAt])
+}
+
+// ─── Decisions ───────────────────────────────────────────────────────────────
+
+enum DecisionType {
+  Rejected
+  InvitedToInterview
+  Accepted
+  Waitlisted
+}
+
+enum DecisionStage {
+  Draft    // visible only to domain lead / hiring lead
+  Final    // locked, ready to release (domain lead marks final)
+  Released // visible to applicant; triggers notification hook (hiring lead releases)
+}
+
+// Append-only, immutable decision records. Never updated — only created.
+// Current decision = latest record by createdAt.
+// To change a Draft: create a new record (supersedes old by timestamp).
+// To finalize: create new record with stage=Final.
+// To release: create new record with stage=Released.
+model Decision {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  domainApplicationId String
+  domainApplication   DomainApplication @relation(fields: [domainApplicationId], references: [id])
+
+  type  DecisionType
+  stage DecisionStage
+
+  madeById String
+  madeBy   DALIMember @relation(fields: [madeById], references: [id])
+
+  notes        String?
+  waitlistRank Int?    // set when type == Waitlisted; current rank = latest record's value
+
+  @@index([domainApplicationId, createdAt])
+}
+
+// ─── Application Reviews ─────────────────────────────────────────────────────
+
+// Replaces MentorReview. Scoped to DomainApplication, authored by a CycleReviewer.
+model ApplicationReview {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  domainApplicationId String
+  domainApplication   DomainApplication @relation(fields: [domainApplicationId], references: [id])
+
+  cycleReviewerId String
+  cycleReviewer   CycleReviewer @relation(fields: [cycleReviewerId], references: [id])
+
+  scores                Json    @default("{}")  // { [criterionKey]: number }
+  feedback              String  @default("")
+  rejectionRationale    String  @default("")
+  overallRecommendation String? // 'Strong Hire' | 'Hire' | 'Lean Hire' | 'Lean No Hire' | 'No Hire'
+  annotations           Json    @default("[]")  // [{id, fieldKey, start, end, comment, color}]
+
+  submittedAt   DateTime?  // null = in progress; non-null = read-only while set
+  submittedById String?    // records who authored the final review (set on submit, cleared on unsubmit)
+  submittedBy   DALIMember? @relation("SubmittedBy", fields: [submittedById], references: [id])
+
+  @@unique([cycleReviewerId, domainApplicationId])
+}
+
+// ─── Delibs ──────────────────────────────────────────────────────────────────
+
+enum DelibsType {
+  Initial // deliberating on applications with completed reviews, no decision yet
+  Final   // deliberating after interviews; produces Accept/Waitlist/Reject decisions
+}
+
+enum DelibsStatus {
+  Active
+  Closed
+}
+
+// Persisted deliberation session — one per type per domain+cycle (reopened, not recreated).
+// columnOrder is the source of truth for kanban ordering during an active session.
+// Draft Decisions are only created when the session is closed.
+model DelibsSession {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  domainId           String
+  domain             Domain           @relation(fields: [domainId], references: [id])
+  applicationCycleId String
+  applicationCycle   ApplicationCycle @relation(fields: [applicationCycleId], references: [id])
+
+  type   DelibsType
+  status DelibsStatus @default(Active)
+
+  // Ordered list of domainApplicationIds per column.
+  // Column names vary by type:
+  //   Initial: { "No Decision": [...], "Interview": [...], "Reject": [...] }
+  //   Final:   { "Accept": [...], "Waitlist": [...], "Reject": [...] }
+  columnOrder Json @default("{}")
+
+  openedById String
+  openedBy   DALIMember @relation(fields: [openedById], references: [id])
+
+  @@unique([domainId, applicationCycleId, type])
 }
 
 // ─── Rubrics ─────────────────────────────────────────────────────────────────
@@ -417,11 +536,6 @@ model Rubric {
 // Immutable snapshot of a rubric. Never update rows in this table —
 // create a new version instead.
 // criteria: array of { key, label, description?, maxScore }
-//
-// A version is scoped to one of two targets (mutually exclusive):
-//   - applicationFormVersionId: rubric for reviewing the general application
-//   - challengeVersionId: rubric for reviewing a specific domain challenge
-// Exactly one should be set.
 model RubricVersion {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
@@ -433,12 +547,10 @@ model RubricVersion {
   createdById   String
   createdBy     User   @relation(fields: [createdById], references: [id])
 
-  // Target: general application form review
-  applicationFormVersionId String?
-  applicationFormVersion   ApplicationFormVersion? @relation(fields: [applicationFormVersionId], references: [id])
-
-  // Back-ref: challenge versions that use this rubric version
-  challengeVersions ChallengeVersion[] @relation("ChallengeVersionRubric")
+  // Back-ref: domain+cycle pairs that use this rubric version
+  domainApplicationCycles DomainApplicationCycle[]
+  // Back-ref: cycles using this as the general form rubric
+  cyclesAsGeneralRubric ApplicationCycle[] @relation("CycleGeneralRubric")
 }
 
 // ─── OAuth & Sessions ────────────────────────────────────────────────────────
@@ -480,6 +592,19 @@ model RefreshToken {
   createdAt DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Email template overrides stored by hiring leads. templateKey matches the
+// hardcoded default keys (e.g. "application_received"). subject/body use
+// {{firstName}} interpolation. One row per key — upserted on save.
+model EmailTemplate {
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  templateKey String   @unique
+  subject     String
+  body        String
 }
 
 // Which domains a DALIMember leads (permanent assignment, not cycle-scoped)

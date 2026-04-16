@@ -2,9 +2,13 @@ import { redirect } from "react-router";
 import type { Route } from "./+types/admin.challenges.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
+import { isHiringLead } from "~/lib/roles";
 import { ChallengeDetail } from "~/components/ChallengeDetail";
 
-export async function loader({ params }: Route.LoaderArgs) {
+export async function loader({ request, params }: Route.LoaderArgs) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return redirect("/login");
+  if (!(await isHiringLead(auth.user.sub))) return redirect("/");
   const [challenge, domains] = await Promise.all([
     prisma.challenge.findUniqueOrThrow({
       where: { id: params.id },
@@ -13,7 +17,6 @@ export async function loader({ params }: Route.LoaderArgs) {
           include: {
             domain: true,
             createdBy: true,
-            rubricVersion: { include: { rubric: true } },
           },
           orderBy: { createdAt: "asc" },
         },
@@ -22,21 +25,13 @@ export async function loader({ params }: Route.LoaderArgs) {
     prisma.domain.findMany({ orderBy: { name: "asc" } }),
   ]);
 
-  // Load all rubrics (domain-specific and general) for the rubric attachment dropdown
-  const rubrics = await prisma.rubric.findMany({
-    include: {
-      domain: true,
-      versions: { orderBy: { versionNumber: "desc" }, take: 1 },
-    },
-    orderBy: { name: "asc" },
-  });
-
-  return { challenge, domains, rubrics };
+  return { challenge, domains };
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
+  if (!(await isHiringLead(auth.user.sub))) return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
 
   const user = await prisma.user.findUnique({ where: { id: auth.user.sub } });
   if (!user) return new Response(JSON.stringify({ error: "User not found" }), { status: 401 });
@@ -45,10 +40,8 @@ export async function action({ request, params }: Route.ActionArgs) {
   const intent = formData.get("intent") as string;
 
   if (intent === "create-version") {
-    const domainId = formData.get("domainId") as string;
+    const domainId = (formData.get("domainId") as string) || null;
     const questionsJson = formData.get("questions") as string;
-
-    if (!domainId) return { error: "Domain is required" };
 
     const questions = JSON.parse(questionsJson || "[]");
 
@@ -62,16 +55,6 @@ export async function action({ request, params }: Route.ActionArgs) {
     });
 
     return redirect(`/challenges/${params.id}`);
-  }
-
-  if (intent === "attach-rubric") {
-    const challengeVersionId = formData.get("challengeVersionId") as string;
-    const rubricVersionId = (formData.get("rubricVersionId") as string) || null;
-    await prisma.challengeVersion.update({
-      where: { id: challengeVersionId },
-      data: { rubricVersionId: rubricVersionId || null },
-    });
-    return null;
   }
 
   return null;

@@ -2,7 +2,7 @@ import type { Route } from "./+types/api.my-interview.reschedule";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { assignReviewers } from "~/lib/scheduling";
+import { assignInterviewers } from "~/lib/scheduling";
 
 export async function action({ request }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
@@ -22,48 +22,60 @@ export async function action({ request }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "newStart and newEnd required" }, { status: 400 }));
   }
 
-  // Find current interview
-  const current = await prisma.interview.findFirst({
-    where: {
-      application: { userId: auth.user.sub },
-      status: { in: ["Scheduled", "NeedsReassignment"] },
-    },
-    include: {
-      application: {
-        include: { domainApplications: { include: { challengeVersion: true } } },
-      },
-    },
-  });
-
-  if (!current) {
-    return withCors(request, Response.json({ error: "No active interview found" }, { status: 404 }));
-  }
-
-  const applicantDomainIds = current.application.domainApplications.map(
-    (da) => da.challengeVersion.domainId,
-  );
-
-  // Cancel old interview, book new one
-  await prisma.interview.update({
-    where: { id: current.id },
-    data: { status: "CancelledByApplicant" },
-  });
-
+  // Cancel old + book new atomically inside a single serializable transaction.
+  // If assignInterviewers throws (no free interviewers at the new slot), the
+  // whole transaction rolls back and the old interview stays Scheduled.
   try {
-    const newInterview = await assignReviewers(
-      current.applicationCycleId,
-      current.applicationId,
-      applicantDomainIds,
-      new Date(newStart),
-      new Date(newEnd),
+    const newInterview = await prisma.$transaction(
+      async (tx) => {
+        const current = await tx.interview.findFirst({
+          where: {
+            domainApplication: { application: { userId: auth.user.sub } },
+            status: "Scheduled",
+          },
+          include: {
+            domainApplication: {
+              include: {
+                application: {
+                  include: { domainApplications: { include: { challengeVersion: true } } },
+                },
+              },
+            },
+          },
+        });
+
+        if (!current) {
+          throw new Error("__NO_ACTIVE_INTERVIEW__");
+        }
+
+        // DomainApplications always attach to a domain-scoped challenge
+        // version; filter out any (theoretically impossible) null domainIds.
+        const applicantDomainIds = current.domainApplication.application.domainApplications
+          .map((da) => da.challengeVersion.domainId)
+          .filter((id): id is string => id !== null);
+
+        await tx.interview.update({
+          where: { id: current.id },
+          data: { status: "CancelledByApplicant" },
+        });
+
+        return assignInterviewers(
+          current.applicationCycleId,
+          current.domainApplicationId,
+          applicantDomainIds,
+          new Date(newStart),
+          new Date(newEnd),
+          tx,
+        );
+      },
+      { isolationLevel: "Serializable" },
     );
+
     return withCors(request, Response.json(newInterview, { status: 201 }));
   } catch (err: any) {
-    // Rollback: restore old interview if new booking fails
-    await prisma.interview.update({
-      where: { id: current.id },
-      data: { status: "Scheduled" },
-    });
-    return withCors(request, Response.json({ error: err.message }, { status: 409 }));
+    if (err?.message === "__NO_ACTIVE_INTERVIEW__") {
+      return withCors(request, Response.json({ error: "No active interview found" }, { status: 404 }));
+    }
+    return withCors(request, Response.json({ error: err?.message ?? "Failed to reschedule" }, { status: 409 }));
   }
 }

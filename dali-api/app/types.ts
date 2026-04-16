@@ -2,35 +2,44 @@ export type ApplicationStatus =
   | 'Draft'
   | 'Submitted'
   | 'Withdrawn'
-  | 'Rejected'
-  | 'InterviewInvited'
-  | 'InterviewScheduled'
-  | 'InterviewCompleted'
-  | 'PostInterviewRejected'
-  | 'Offered'
-  | 'OfferAccepted'
-  | 'OfferDeclined'
-  | 'OfferDeferred'
-  | 'InterviewDeclined'
-  | 'FeedbackRequested'
 
 export type ApplicationCycleStatus =
   | 'Draft'
   | 'Open'
   | 'UnderReview'
-  | 'DecisionsReleased'
+  | 'Completed'
 
-export type CycleStage =
-  | 'challengeSetup'
-  | 'challengesReady'
-  | 'applicationsOpen'
-  | 'readingApplications'
-  | 'writtenDelibs'
-  | 'collectingAvailability'
-  | 'interviews'
-  | 'finalDelibs'
+// Inferred per-DomainApplication status — never stored, always derived.
+export type DomainApplicationStatus =
+  | 'ApplicationOpen'       // cycle is Open and application not yet submitted
+  | 'Pending'               // submitted, no Released decision yet
+  | 'Rejected'              // latest Released decision is Rejected
+  | 'InvitedToInterview'    // Released InvitedToInterview, no interview scheduled
+  | 'InterviewScheduled'    // interview exists with status Scheduled
+  | 'PostInterviewPending'  // interview Completed, still on InvitedToInterview decision
+  | 'Accepted'              // latest Released decision is Accepted
+  | 'Waitlisted'            // latest Released decision is Waitlisted
 
-export type ViewMode = 'mentor' | 'domainLead' | 'admin'
+export type DecisionType =
+  | 'Rejected'
+  | 'InvitedToInterview'
+  | 'Accepted'
+  | 'Waitlisted'
+
+export type DecisionStage =
+  | 'Draft'
+  | 'Final'
+  | 'Released'
+
+export type DelibsType = 'Initial' | 'Final'
+export type DelibsStatus = 'Active' | 'Closed'
+
+export type OverallRecommendation =
+  | 'Strong Hire'
+  | 'Hire'
+  | 'Lean Hire'
+  | 'Lean No Hire'
+  | 'No Hire'
 
 export interface User {
   id: string
@@ -72,7 +81,7 @@ export interface RubricVersion {
   createdAt: string
   createdById: string
   criteria: RubricCriterion[]
-  domainId?: string // Optional: if absent, it's a general rubric
+  domainId?: string
 }
 
 export interface Rubric {
@@ -94,27 +103,11 @@ export interface Question {
   }
 }
 
-export interface ApplicationFormVersion {
-  id: string
-  versionNumber: number
-  createdAt: string
-  createdById: string
-  questions: Question[]
-}
-
 export type ChallengeType = 'General' | 'UI/UX' | 'Fullstack' | 'Data' | 'AR/VR' | 'PM' | 'Engines'
-
-export interface ApplicationForm {
-  id: string
-  name: string
-  type: ChallengeType
-  createdAt: string
-  versions: ApplicationFormVersion[]
-}
 
 export interface ChallengeVersion {
   id: string
-  domainId: string
+  domainId: string | null
   versionNumber: number
   createdAt: string
   createdById: string
@@ -136,52 +129,88 @@ export interface DomainApplication {
 }
 
 export interface InterviewSlot {
-  id: string
   startTime: string
   endTime: string
 }
 
 export interface Interview {
   id: string
-  applicationId: string
-  availableSlots: InterviewSlot[]
-  scheduledSlotId?: string
-  status: 'Pending' | 'Scheduled' | 'Completed' | 'Cancelled' | 'Declined'
-  location?: string
-  notes?: string
+  domainApplicationId: string
+  applicationCycleId: string
+  startTime: string
+  endTime: string
+  status: 'Scheduled' | 'Completed' | 'CancelledByApplicant' | 'CancelledByAdmin'
+  recommendation?: OverallRecommendation
+  recommendationNotes?: string
 }
 
-export interface MentorReview {
+export interface ApplicationReview {
   id: string
-  applicationId: string
-  mentorId: string
-  scores: Record<string, number> // e.g., { 'technical': 4, 'design': 3 }
+  domainApplicationId: string
+  cycleReviewerId: string
+  scores: Record<string, number>
   feedback: string
-  rejectionRationale?: string
-  overallRecommendation:
-    | 'Strong Hire'
-    | 'Hire'
-    | 'Lean Hire'
-    | 'Lean No Hire'
-    | 'No Hire'
-    | null
+  rejectionRationale: string
+  overallRecommendation: OverallRecommendation | null
+  annotations: Array<{ id: string; fieldKey: string; start: number; end: number; comment: string; color: string }>
+  submittedAt: string | null
+  submittedById: string | null
   createdAt: string
   updatedAt: string
+}
+
+export interface Decision {
+  id: string
+  domainApplicationId: string
+  type: DecisionType
+  stage: DecisionStage
+  madeById: string
+  notes?: string
+  waitlistRank?: number
+  createdAt: string
+}
+
+export interface DelibsSession {
+  id: string
+  domainId: string
+  applicationCycleId: string
+  type: DelibsType
+  status: DelibsStatus
+  columnOrder: Record<string, string[]>
+  openedById: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CycleReviewer {
+  id: string
+  daliMemberId: string
+  applicationCycleId: string
+  domainId: string
+}
+
+export interface CycleInterviewer {
+  id: string
+  daliMemberId: string
+  applicationCycleId: string
+  domainId: string
+}
+
+export interface InterviewNoteVersion {
+  id: string
+  interviewAssignmentId: string
+  content: string
+  createdAt: string
 }
 
 export interface Application {
   id: string
   userId: string
   applicationCycleId: string
-  applicationFormVersionId: string
+  generalChallengeVersionId: string
   status: ApplicationStatus
   answers: Record<string, string>
   domainApplications: DomainApplication[]
-  interview?: Interview
-  feedbackRequested?: boolean
-  offerResponse?: 'Accepted' | 'Declined' | 'Deferred'
-  assignedMentorId?: string
-  mentorReviews?: MentorReview[]
   createdAt: string
   updatedAt: string
 }

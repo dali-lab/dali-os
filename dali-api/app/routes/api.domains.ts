@@ -1,6 +1,7 @@
 import type { Route } from "./+types/api.domains";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
+import { isHiringLead } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -25,6 +26,7 @@ export async function action({ request }: Route.ActionArgs) {
 
   const auth = await requireAuth(request);
   if (!auth.ok) return withCors(request, auth.response);
+  if (!(await isHiringLead(auth.user.sub))) return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
 
   if (request.method !== "POST") {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));

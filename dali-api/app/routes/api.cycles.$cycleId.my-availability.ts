@@ -3,11 +3,15 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 
-async function findCycleReviewer(userId: string, cycleId: string) {
+// Return every CycleInterviewer row the authenticated member has in this
+// cycle. A member who serves multiple domains has multiple rows; availability
+// is a per-human concept, so writes fan out across every row.
+async function findCycleInterviewers(userId: string, cycleId: string) {
   const member = await prisma.dALIMember.findFirst({ where: { userId } });
-  if (!member) return null;
-  return prisma.cycleReviewer.findFirst({
+  if (!member) return [];
+  return prisma.cycleInterviewer.findMany({
     where: { daliMemberId: member.id, applicationCycleId: cycleId },
+    select: { id: true },
   });
 }
 
@@ -18,13 +22,16 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return withCors(request, auth.response);
 
-  const reviewer = await findCycleReviewer(auth.user.sub, params.cycleId!);
-  if (!reviewer) {
+  const interviewers = await findCycleInterviewers(auth.user.sub, params.cycleId!);
+  if (interviewers.length === 0) {
     return withCors(request, Response.json([]));
   }
 
-  const blocks = await prisma.reviewerAvailability.findMany({
-    where: { cycleReviewerId: reviewer.id },
+  // All of the member's rows should hold the same availability set after a
+  // PUT, so reading from any of them gives the canonical view. Read from
+  // the first row for simplicity.
+  const blocks = await prisma.interviewerAvailability.findMany({
+    where: { cycleInterviewerId: interviewers[0].id },
     orderBy: { startTime: "asc" },
   });
 
@@ -42,30 +49,41 @@ export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return withCors(request, auth.response);
 
-  const reviewer = await findCycleReviewer(auth.user.sub, params.cycleId!);
-  if (!reviewer) {
-    return withCors(request, Response.json({ error: "Not a reviewer for this cycle" }, { status: 404 }));
+  const interviewers = await findCycleInterviewers(auth.user.sub, params.cycleId!);
+  if (interviewers.length === 0) {
+    return withCors(request, Response.json({ error: "Not an interviewer for this cycle" }, { status: 404 }));
   }
 
   const body = await request.json();
   const blocks: { startTime: string; endTime: string }[] = body.blocks ?? [];
+  const parsedBlocks = blocks.map((b) => ({
+    startTime: new Date(b.startTime),
+    endTime: new Date(b.endTime),
+  }));
 
-  // Full replacement: delete all existing blocks, create new ones
-  await prisma.$transaction([
-    prisma.reviewerAvailability.deleteMany({ where: { cycleReviewerId: reviewer.id } }),
-    ...blocks.map((b) =>
-      prisma.reviewerAvailability.create({
-        data: {
-          cycleReviewerId: reviewer.id,
-          startTime: new Date(b.startTime),
-          endTime: new Date(b.endTime),
-        },
-      }),
-    ),
-  ]);
+  // Full replacement applied across EVERY row the member has in this cycle.
+  // Fans the same availability set out to each CycleInterviewer so reads
+  // from the scheduler and from the "Interviewers for this Domain" panel
+  // agree, regardless of which row Prisma returns first.
+  await prisma.$transaction(async (tx) => {
+    for (const interviewer of interviewers) {
+      await tx.interviewerAvailability.deleteMany({
+        where: { cycleInterviewerId: interviewer.id },
+      });
+      if (parsedBlocks.length > 0) {
+        await tx.interviewerAvailability.createMany({
+          data: parsedBlocks.map((b) => ({
+            cycleInterviewerId: interviewer.id,
+            startTime: b.startTime,
+            endTime: b.endTime,
+          })),
+        });
+      }
+    }
+  });
 
-  const updated = await prisma.reviewerAvailability.findMany({
-    where: { cycleReviewerId: reviewer.id },
+  const updated = await prisma.interviewerAvailability.findMany({
+    where: { cycleInterviewerId: interviewers[0].id },
     orderBy: { startTime: "asc" },
   });
 

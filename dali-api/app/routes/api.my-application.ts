@@ -61,8 +61,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Find active interview for this application
   const interview = await prisma.interview.findFirst({
     where: {
-      applicationId: application.id,
-      status: { in: ["Scheduled", "NeedsReassignment"] },
+      domainApplication: { applicationId: application.id },
+      status: "Scheduled",
     },
     orderBy: { createdAt: "desc" },
   });

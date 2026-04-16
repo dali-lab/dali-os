@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
-import { Form, Link, useParams, redirect } from 'react-router'
+import { Form, Link, useParams, useLoaderData, redirect } from 'react-router'
 import type { Route } from "./+types/admin.cycle.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { Settings, Users, Calendar, AlertTriangle, Trash2, Plus, CheckCircle, ArrowRight, Circle, ChevronRight, X } from 'lucide-react'
+import { isHiringLead } from "~/lib/roles";
+import { Settings, Users, Calendar, AlertTriangle, Trash2, Plus, CheckCircle, ArrowRight, Circle, ChevronRight, X, LayoutDashboard } from 'lucide-react'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -22,7 +23,6 @@ interface CycleReviewer {
   id: string
   daliMember: { id: string; user?: { id: string; firstName: string; lastName: string } | null }
   domain: { id: string; name: string }
-  isLead: boolean
 }
 
 interface InterviewRow {
@@ -30,16 +30,16 @@ interface InterviewRow {
   startTime: string
   endTime: string
   status: string
-  application: {
-    user: { firstName: string; lastName: string }
-    domainApplications: { challengeVersion: { domain: { name: string } } }[]
+  domainApplication: {
+    challengeVersion: { domain: { name: string } }
+    application: { user: { firstName: string; lastName: string } }
   }
   assignments: {
     id: string
     role: string
     status: string
-    cycleReviewer: {
-      daliMember: { user: { firstName: string; lastName: string } | null }
+    cycleInterviewer: {
+      daliMember: { firstName: string | null; lastName: string | null; daliEmail: string | null }
       domain: { name: string }
     }
   }[]
@@ -50,8 +50,8 @@ interface InterviewRow {
 const STATUS_SEQUENCE = [
   "Draft",
   "Open",
-  "Closed",
-  "DecisionsReleased",
+  "UnderReview",
+  "Completed",
 ] as const;
 
 type CycleStatus = (typeof STATUS_SEQUENCE)[number];
@@ -63,24 +63,19 @@ function nextStatus(current: CycleStatus): CycleStatus | null {
 
 // ─── Loader ──────────────────────────────────────────────────────────────────
 
-export async function loader({ params }: Route.LoaderArgs) {
+export async function loader({ request, params }: Route.LoaderArgs) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return redirect("/login");
+  if (!(await isHiringLead(auth.user.sub))) return redirect("/");
+
   const cycle = await prisma.applicationCycle.findUniqueOrThrow({
     where: { id: params.id },
     include: {
       domains: {
-        include: {
-          domain: {
-            include: {
-              domainLeadAssignments: {
-                include: { member: { include: { user: true } } },
-              },
-            },
-          },
-        },
+        include: { domain: true },
       },
       statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
       challengeVersions: { include: { challengeVersion: { include: { domain: true, challenge: true } } } },
-      formVersion: true,
       applications: {
         include: {
           user: true,
@@ -93,14 +88,42 @@ export async function loader({ params }: Route.LoaderArgs) {
     },
   });
 
-  const formVersionOptions = await prisma.applicationFormVersion.findMany({
-    include: { applicationForm: true },
+  const allDomains = await prisma.domain.findMany({ orderBy: { name: "asc" } });
+
+  const rubricVersionOptions = await prisma.rubricVersion.findMany({
+    include: { rubric: { select: { name: true } } },
     orderBy: { createdAt: "desc" },
   });
 
-  const allDomains = await prisma.domain.findMany({ orderBy: { name: "asc" } });
+  const cycleApplicationReviewCount = await prisma.applicationReview.count({
+    where: {
+      domainApplication: {
+        application: { applicationCycleId: params.id },
+      },
+    },
+  });
 
-  return { cycle, formVersionOptions, allDomains };
+  // Final decisions ready for release (HiringLead decisions panel)
+  const finalDecisions = await prisma.decision.findMany({
+    where: {
+      stage: "Final",
+      domainApplication: {
+        application: { applicationCycleId: params.id },
+      },
+    },
+    include: {
+      domainApplication: {
+        include: {
+          application: { include: { user: { select: { firstName: true, lastName: true } } } },
+          challengeVersion: { include: { domain: { select: { name: true } } } },
+        },
+      },
+      madeBy: { select: { firstName: true, lastName: true } },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  return { cycle, allDomains, finalDecisions, rubricVersionOptions, cycleApplicationReviewCount };
 }
 
 // ─── Action ──────────────────────────────────────────────────────────────────
@@ -108,6 +131,7 @@ export async function loader({ params }: Route.LoaderArgs) {
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
+  if (!(await isHiringLead(auth.user.sub))) return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
 
   const user = await prisma.user.findUnique({ where: { id: auth.user.sub } });
   if (!user) return new Response(JSON.stringify({ error: "User not found" }), { status: 401 });
@@ -115,29 +139,53 @@ export async function action({ request, params }: Route.ActionArgs) {
   const formData = await request.formData();
   const intent = formData.get("intent");
 
-  if (intent === "select-form") {
-    const formVersionId = formData.get("formVersionId") as string;
+  if (intent === "set-close-date") {
+    const closeDate = formData.get("closeDate") as string;
     await prisma.applicationCycle.update({
       where: { id: params.id },
-      data: { formVersionId },
+      data: { closeDate: closeDate ? new Date(closeDate) : null },
     });
-    return redirect(`/admin/cycle/${params.id}`);
+    return redirect(`/hiring-lead-admin/cycle/${params.id}`);
   }
 
-  if (intent === "remove-domain") {
-    const domainId = formData.get("domainId") as string;
-    await prisma.domainApplicationCycle.delete({
-      where: { domainId_applicationCycleId: { domainId, applicationCycleId: params.id } },
+  if (intent === "set-general-rubric") {
+    const rubricVersionId = (formData.get("rubricVersionId") as string) || null;
+    const hasAssignedReviews = await prisma.applicationReview.count({
+      where: {
+        domainApplication: {
+          application: { applicationCycleId: params.id },
+        },
+      },
     });
-    return redirect(`/admin/cycle/${params.id}`);
+    if (hasAssignedReviews > 0) {
+      return redirect(`/hiring-lead-admin/cycle/${params.id}`);
+    }
+    await prisma.applicationCycle.update({
+      where: { id: params.id },
+      data: { generalRubricVersionId: rubricVersionId },
+    });
+    return redirect(`/hiring-lead-admin/cycle/${params.id}`);
   }
 
-  if (intent === "add-domain") {
-    const domainId = formData.get("domainId") as string;
-    await prisma.domainApplicationCycle.create({
-      data: { domainId, applicationCycleId: params.id },
+  if (intent === "remove-domain" || intent === "add-domain") {
+    const latestUpdate = await prisma.applicationCycleStatusUpdate.findFirst({
+      where: { applicationCycleId: params.id },
+      orderBy: { createdAt: "desc" },
     });
-    return redirect(`/admin/cycle/${params.id}`);
+    if ((latestUpdate?.newStatus ?? "Draft") !== "Draft") {
+      return new Response(JSON.stringify({ error: "Domains can only be modified in Draft" }), { status: 409, headers: { "Content-Type": "application/json" } });
+    }
+    const domainId = formData.get("domainId") as string;
+    if (intent === "remove-domain") {
+      await prisma.domainApplicationCycle.delete({
+        where: { domainId_applicationCycleId: { domainId, applicationCycleId: params.id } },
+      });
+    } else {
+      await prisma.domainApplicationCycle.create({
+        data: { domainId, applicationCycleId: params.id },
+      });
+    }
+    return redirect(`/hiring-lead-admin/cycle/${params.id}`);
   }
 
   if (intent === "advance-status") {
@@ -155,9 +203,12 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (!next) return null;
 
     if (currentStatus === "Draft") {
-      const formReady = !!cycle.formVersionId;
-      const allDomainsReady = cycle.domains.every((d) => d.isReady === true);
-      if (!formReady || !allDomainsReady) return null;
+      const hasCloseDate = !!cycle.closeDate;
+      const coveredDomainIds = new Set(
+        cycle.challengeVersions.map((cv) => cv.challengeVersion.domainId)
+      );
+      const allDomainsCovered = cycle.domains.length > 0 && cycle.domains.every((d) => coveredDomainIds.has(d.domainId));
+      if (!hasCloseDate || !allDomainsCovered) return null;
     }
 
     await prisma.applicationCycleStatusUpdate.create({
@@ -169,7 +220,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     });
   }
 
-  return redirect(`/admin/cycle/${params.id}`);
+  return redirect(`/hiring-lead-admin/cycle/${params.id}`);
 }
 
 const DURATION_OPTIONS = [15, 20, 25, 30, 45, 60]
@@ -187,6 +238,8 @@ function formatHour(h: number) {
 
 export default function AdminCycleDetails() {
   const { id: cycleId } = useParams()
+  const loaderData = useLoaderData<typeof loader>() as any
+  const cycle = loaderData?.cycle
 
   // ── Interview Config state ──
   const [config, setConfig] = useState<InterviewConfig>({
@@ -205,9 +258,13 @@ export default function AdminCycleDetails() {
   const [reviewers, setReviewers] = useState<CycleReviewer[]>([])
   const [newMemberId, setNewMemberId] = useState('')
   const [newDomainId, setNewDomainId] = useState('')
-  const [newIsLead, setNewIsLead] = useState(false)
-  const [allMembers, setAllMembers] = useState<{ id: string; user?: { firstName: string; lastName: string } | null }[]>([])
+  const [allMembers, setAllMembers] = useState<{ id: string; daliEmail: string; firstName?: string | null; lastName?: string | null }[]>([])
   const [allDomains, setAllDomains] = useState<{ id: string; name: string }[]>([])
+
+  // ── Interviewers state ──
+  const [interviewers, setInterviewers] = useState<any[]>([])
+  const [newInterviewerMemberId, setNewInterviewerMemberId] = useState('')
+  const [newInterviewerDomainId, setNewInterviewerDomainId] = useState('')
 
   // ── Interviews state ──
   const [interviews, setInterviews] = useState<InterviewRow[]>([])
@@ -216,17 +273,18 @@ export default function AdminCycleDetails() {
   const [cycleStatus, setCycleStatus] = useState<string>('Draft')
   const [statusUpdating, setStatusUpdating] = useState(false)
   const [statusError, setStatusError] = useState<string | null>(null)
+  const [showCompleteConfirm, setShowCompleteConfirm] = useState(false)
 
-  const STATUS_FLOW = ['Draft', 'Open', 'Closed', 'DecisionsReleased'] as const
+  const STATUS_FLOW = ['Draft', 'Open', 'UnderReview', 'Completed'] as const
   const STATUS_LABELS: Record<string, string> = {
-    Draft: 'Draft', Open: 'Open', Closed: 'Closed', DecisionsReleased: 'Decisions Released',
+    Draft: 'Draft', Open: 'Open', UnderReview: 'Under Review', Completed: 'Completed',
   }
   const STATUS_COLORS: Record<string, string> = {
     Draft: 'bg-gray-100 text-gray-700', Open: 'bg-green-100 text-green-700',
-    Closed: 'bg-yellow-100 text-yellow-700', DecisionsReleased: 'bg-blue-100 text-blue-700',
+    UnderReview: 'bg-yellow-100 text-yellow-700', Completed: 'bg-blue-100 text-blue-700',
   }
 
-  async function advanceStatus() {
+  async function advanceStatus(force = false) {
     if (!cycleId) return
     const idx = STATUS_FLOW.indexOf(cycleStatus as any)
     if (idx < 0 || idx >= STATUS_FLOW.length - 1) return
@@ -237,7 +295,7 @@ export default function AdminCycleDetails() {
       const res = await fetch(`/api/cycles/${cycleId}/status`, {
         method: 'POST', credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ newStatus: next }),
+        body: JSON.stringify({ newStatus: next, force }),
       })
       if (res.ok) {
         setCycleStatus(next)
@@ -256,7 +314,11 @@ export default function AdminCycleDetails() {
   }
 
   // ── Active tab ──
-  const [tab, setTab] = useState<'config' | 'reviewers' | 'dashboard'>('config')
+  const [tab, setTab] = useState<'setup' | 'config' | 'reviewers' | 'dashboard' | 'decisions'>('setup')
+
+  // ── Decisions state ──
+  const [pendingDecisions, setPendingDecisions] = useState<any[]>(loaderData?.finalDecisions ?? [])
+  const [releasing, setReleasing] = useState<string | null>(null)
 
   // ── Load data ──
   useEffect(() => {
@@ -295,6 +357,11 @@ export default function AdminCycleDetails() {
       .then(setAllDomains)
       .catch(() => {})
 
+    fetch(`/api/cycles/${cycleId}/interviewers`, { credentials: 'include' })
+      .then(r => r.ok ? r.json() : [])
+      .then(setInterviewers)
+      .catch(() => {})
+
     fetch(`/api/cycles/${cycleId}/interviews`, { credentials: 'include' })
       .then(r => r.ok ? r.json() : [])
       .then(setInterviews)
@@ -328,14 +395,13 @@ export default function AdminCycleDetails() {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ daliMemberId: newMemberId, domainId: newDomainId, isLead: newIsLead }),
+      body: JSON.stringify({ daliMemberId: newMemberId, domainId: newDomainId }),
     })
     if (res.ok) {
       const reviewer = await res.json()
       setReviewers(prev => [...prev, reviewer])
       setNewMemberId('')
       setNewDomainId('')
-      setNewIsLead(false)
     }
   }
 
@@ -350,7 +416,36 @@ export default function AdminCycleDetails() {
     }
   }
 
-  const needsReassignment = interviews.filter(i => i.status === 'NeedsReassignment')
+  async function addInterviewer() {
+    if (!cycleId || !newInterviewerMemberId || !newInterviewerDomainId) return
+    const res = await fetch(`/api/cycles/${cycleId}/interviewers`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ daliMemberId: newInterviewerMemberId, domainId: newInterviewerDomainId }),
+    })
+    if (res.ok) {
+      const interviewer = await res.json()
+      const member = allMembers.find(m => m.id === newInterviewerMemberId)
+      const domain = allDomains.find(d => d.id === newInterviewerDomainId)
+      setInterviewers(prev => [...prev, { ...interviewer, daliMember: member, domain }])
+      setNewInterviewerMemberId('')
+      setNewInterviewerDomainId('')
+    }
+  }
+
+  async function removeInterviewer(interviewerId: string) {
+    if (!cycleId) return
+    const res = await fetch(`/api/cycles/${cycleId}/interviewers`, {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ interviewerId }),
+    })
+    if (res.ok) {
+      setInterviewers(prev => prev.filter(i => i.id !== interviewerId))
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -367,17 +462,51 @@ export default function AdminCycleDetails() {
             {STATUS_LABELS[cycleStatus] ?? cycleStatus}
           </span>
         </div>
-        {STATUS_FLOW.indexOf(cycleStatus as any) < STATUS_FLOW.length - 1 && (
-          <button
-            onClick={advanceStatus}
-            disabled={statusUpdating}
-            className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition disabled:opacity-50"
-          >
-            {statusUpdating ? 'Updating...' : `Advance to ${STATUS_LABELS[STATUS_FLOW[STATUS_FLOW.indexOf(cycleStatus as any) + 1]]}`}
-            <ArrowRight className="w-4 h-4" />
-          </button>
-        )}
+        {STATUS_FLOW.indexOf(cycleStatus as any) < STATUS_FLOW.length - 1 && (() => {
+          const draftChecklistMet = cycleStatus !== 'Draft' || (() => {
+            const hasCloseDate = !!cycle?.closeDate;
+            const domains = cycle?.domains ?? [];
+            const challengeVersions = cycle?.challengeVersions ?? [];
+            const coveredDomainIds = new Set(challengeVersions.map((cv: any) => cv.challengeVersion?.domainId));
+            return hasCloseDate && domains.length > 0 && domains.every((d: any) => coveredDomainIds.has(d.domainId));
+          })();
+          return (
+            <button
+              onClick={cycleStatus === 'UnderReview' ? () => setShowCompleteConfirm(true) : () => advanceStatus()}
+              disabled={statusUpdating || !draftChecklistMet}
+              className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition disabled:opacity-50"
+            >
+              {statusUpdating ? 'Updating...' : cycleStatus === 'Draft' ? 'Open Applications' : cycleStatus === 'Open' ? 'Close Applications' : 'Mark as Completed'}
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          );
+        })()}
       </div>
+
+      {showCompleteConfirm && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setShowCompleteConfirm(false)}>
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-sm p-6 space-y-4" onClick={e => e.stopPropagation()}>
+            <h2 className="text-lg font-semibold text-gray-900">Complete this cycle?</h2>
+            <p className="text-sm text-gray-600">
+              This will mark the cycle as Completed. Ensure all interviews are finished and all decisions have been released.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowCompleteConfirm(false)}
+                className="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => { setShowCompleteConfirm(false); await advanceStatus(true); }}
+                className="px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {statusError && (
         <div
@@ -398,13 +527,47 @@ export default function AdminCycleDetails() {
         </div>
       )}
 
+      {/* Draft Checklist */}
+      {cycleStatus === 'Draft' && (() => {
+        const hasCloseDate = !!cycle?.closeDate;
+        const domains = cycle?.domains ?? [];
+        const challengeVersions = cycle?.challengeVersions ?? [];
+        const coveredDomainIds = new Set(challengeVersions.map((cv: any) => cv.challengeVersion?.domainId));
+        const allDomainsCovered = domains.length > 0 && domains.every((d: any) => coveredDomainIds.has(d.domainId));
+        const ready = hasCloseDate && allDomainsCovered;
+        return (
+          <div className={`rounded-xl border p-4 space-y-3 ${ready ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200'}`}>
+            <h3 className="text-sm font-bold text-gray-900">Checklist to Open Applications</h3>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-sm">
+                {hasCloseDate
+                  ? <CheckCircle className="w-4 h-4 text-green-600" />
+                  : <Circle className="w-4 h-4 text-gray-400" />}
+                <span className={hasCloseDate ? 'text-green-800' : 'text-gray-600'}>Close date is set</span>
+              </div>
+              <div className="flex items-center gap-2 text-sm">
+                {allDomainsCovered
+                  ? <CheckCircle className="w-4 h-4 text-green-600" />
+                  : <Circle className="w-4 h-4 text-gray-400" />}
+                <span className={allDomainsCovered ? 'text-green-800' : 'text-gray-600'}>
+                  Every domain has a challenge version linked
+                  {domains.length === 0 && ' (no domains added)'}
+                </span>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Tabs */}
       <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
         {([
-          { key: 'config', label: 'Interview Setup', icon: Settings },
-          { key: 'reviewers', label: 'Reviewer Roster', icon: Users },
-          { key: 'dashboard', label: 'Interview Dashboard', icon: Calendar },
-        ] as const).map(t => (
+          { key: 'setup' as const, label: 'Cycle Setup', icon: LayoutDashboard },
+          { key: 'config' as const, label: 'Interview Setup', icon: Settings },
+          { key: 'reviewers' as const, label: 'Reviewer Roster', icon: Users },
+          { key: 'dashboard' as const, label: 'Interview Dashboard', icon: Calendar },
+          { key: 'decisions' as const, label: 'Decisions', icon: CheckCircle },
+        ]).map(t => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
@@ -414,18 +577,167 @@ export default function AdminCycleDetails() {
           >
             <t.icon className="w-4 h-4" />
             {t.label}
-            {t.key === 'dashboard' && needsReassignment.length > 0 && (
-              <span className="ml-1 px-1.5 py-0.5 text-[10px] font-bold bg-red-100 text-red-700 rounded-full">
-                {needsReassignment.length}
-              </span>
-            )}
           </button>
         ))}
       </div>
 
+      {/* ── Cycle Setup Tab ── */}
+      {tab === 'setup' && (
+        <div className="space-y-6">
+          {/* Close Date */}
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+            <h3 className="text-sm font-bold text-gray-700 mb-3">Application Close Date</h3>
+            <Form method="post" className="flex items-end gap-3">
+              <input type="hidden" name="intent" value="set-close-date" />
+              <div className="flex-1">
+                <input
+                  type="date"
+                  name="closeDate"
+                  defaultValue={cycle?.closeDate ? new Date(cycle.closeDate).toISOString().slice(0, 10) : ''}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                />
+              </div>
+              <button
+                type="submit"
+                className="px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition"
+              >
+                Save
+              </button>
+            </Form>
+          </div>
+
+          {/* Domains */}
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 space-y-4">
+            <h3 className="text-sm font-bold text-gray-700">Domains in this Cycle</h3>
+            {(cycle?.domains ?? []).length > 0 ? (
+              <div className="divide-y divide-gray-100">
+                {(cycle?.domains ?? []).map((d: any) => {
+                  const hasChallengeVersion = (cycle?.challengeVersions ?? []).some(
+                    (cv: any) => cv.challengeVersion?.domainId === d.domainId
+                  );
+                  return (
+                    <div key={d.domainId} className="flex items-center justify-between py-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-gray-900">{d.domain?.name ?? d.domainId}</span>
+                        {hasChallengeVersion ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700">
+                            <CheckCircle className="w-3 h-3" /> Challenge linked
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-yellow-100 text-yellow-700">
+                            <AlertTriangle className="w-3 h-3" /> No challenge
+                          </span>
+                        )}
+                      </div>
+                      {cycleStatus === 'Draft' && (
+                        <Form method="post">
+                          <input type="hidden" name="intent" value="remove-domain" />
+                          <input type="hidden" name="domainId" value={d.domainId} />
+                          <button type="submit" className="text-red-500 hover:text-red-700 transition">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </Form>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-400">No domains added yet.</p>
+            )}
+            {cycleStatus === 'Draft' && (
+              <Form method="post" className="flex items-end gap-3 pt-2 border-t border-gray-100">
+                <input type="hidden" name="intent" value="add-domain" />
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Add Domain</label>
+                  <select
+                    name="domainId"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                    defaultValue=""
+                  >
+                    <option value="" disabled>Select domain...</option>
+                    {(loaderData?.allDomains ?? [])
+                      .filter((d: any) => !(cycle?.domains ?? []).some((cd: any) => cd.domainId === d.id))
+                      .map((d: any) => (
+                        <option key={d.id} value={d.id}>{d.name}</option>
+                      ))}
+                  </select>
+                </div>
+                <button
+                  type="submit"
+                  className="flex items-center gap-1 px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition"
+                >
+                  <Plus className="w-4 h-4" /> Add
+                </button>
+              </Form>
+            )}
+          </div>
+
+          {/* General Form — shown from cycle's challengeVersions where domainId is null */}
+          {(() => {
+            const generalCv = (cycle?.challengeVersions ?? []).find(
+              (cv: any) => cv.challengeVersion?.domainId === null
+            );
+            return (
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 space-y-3">
+                <h3 className="text-sm font-bold text-gray-700">General Application Form</h3>
+                {generalCv ? (
+                  <div className="flex items-center gap-2 text-sm text-gray-600">
+                    <CheckCircle className="w-4 h-4 text-green-600" />
+                    <span>{generalCv.challengeVersion?.challenge?.name ?? 'Linked'}</span>
+                    <span className="text-xs text-gray-400">({(generalCv.challengeVersion?.questions as any[])?.length ?? 0} questions)</span>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-400">No general form linked. Add a challenge with no domain on the Challenges page, then link it to this cycle.</p>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* General Form Rubric */}
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 space-y-3">
+            <h3 className="text-sm font-bold text-gray-700">General Application Rubric</h3>
+            <p className="text-xs text-gray-500">Reviewers score every application against this rubric (in addition to the per-domain rubric set by domain leads).</p>
+            {(loaderData?.cycleApplicationReviewCount ?? 0) > 0 ? (
+              <div className="flex items-center gap-2 text-sm text-gray-600">
+                <CheckCircle className="w-4 h-4 text-green-600" />
+                <span>{(loaderData?.rubricVersionOptions ?? []).find((rv: any) => rv.id === cycle?.generalRubricVersionId)?.rubric?.name ?? 'Set'}</span>
+                <span className="text-xs text-gray-400 ml-2">(locked — reviewers have been assigned)</span>
+              </div>
+            ) : (
+            <Form method="post" className="flex items-end gap-3">
+              <input type="hidden" name="intent" value="set-general-rubric" />
+              <div className="flex-1">
+                <select
+                  name="rubricVersionId"
+                  defaultValue={cycle?.generalRubricVersionId ?? ""}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                >
+                  <option value="">No rubric assigned</option>
+                  {(loaderData?.rubricVersionOptions ?? []).map((rv: any) => (
+                    <option key={rv.id} value={rv.id}>
+                      {rv.rubric.name} — v{rv.versionNumber}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button
+                type="submit"
+                className="px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition"
+              >
+                Save
+              </button>
+            </Form>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ── Interview Setup Tab ── */}
       {tab === 'config' && (
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 space-y-6">
+        <div className="space-y-6">
+          {/* Interview Config */}
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-1">Slot Duration</label>
@@ -498,20 +810,18 @@ export default function AdminCycleDetails() {
             {configSaved && <CheckCircle className="w-4 h-4 text-green-500" />}
           </div>
         </div>
+        </div>
       )}
 
       {/* ── Reviewer Roster Tab ── */}
       {tab === 'reviewers' && (
         <div className="space-y-4">
-          {/* Domain Leads section */}
-          <DomainLeadsSection domains={allDomains} members={allMembers} />
-
           {/* Add reviewer form */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
             <h3 className="text-sm font-bold text-gray-700 mb-4 flex items-center gap-2">
               <Plus className="w-4 h-4" /> Add Reviewer
             </h3>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-1">DALI Member</label>
                 <select
@@ -522,7 +832,7 @@ export default function AdminCycleDetails() {
                   <option value="">Select member...</option>
                   {allMembers.map(m => (
                     <option key={m.id} value={m.id}>
-                      {m.user ? `${m.user.firstName} ${m.user.lastName}` : m.id}
+                      {m.firstName && m.lastName ? `${m.firstName} ${m.lastName}` : m.daliEmail}
                     </option>
                   ))}
                 </select>
@@ -540,10 +850,6 @@ export default function AdminCycleDetails() {
                   ))}
                 </select>
               </div>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={newIsLead} onChange={e => setNewIsLead(e.target.checked)} className="rounded" />
-                <span className="text-sm text-gray-700">Domain Lead</span>
-              </label>
               <button
                 onClick={addReviewer}
                 disabled={!newMemberId || !newDomainId}
@@ -561,7 +867,6 @@ export default function AdminCycleDetails() {
                 <tr>
                   <th className="text-left px-4 py-3 font-bold text-gray-700">Reviewer</th>
                   <th className="text-left px-4 py-3 font-bold text-gray-700">Domain</th>
-                  <th className="text-center px-4 py-3 font-bold text-gray-700">Lead</th>
                   <th className="text-right px-4 py-3 font-bold text-gray-700">Actions</th>
                 </tr>
               </thead>
@@ -572,9 +877,6 @@ export default function AdminCycleDetails() {
                       {r.daliMember.user ? `${r.daliMember.user.firstName} ${r.daliMember.user.lastName}` : r.daliMember.id}
                     </td>
                     <td className="px-4 py-3 text-gray-600">{r.domain.name}</td>
-                    <td className="px-4 py-3 text-center">
-                      {r.isLead && <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-700">Lead</span>}
-                    </td>
                     <td className="px-4 py-3 text-right">
                       <button onClick={() => removeReviewer(r.id)} className="text-red-500 hover:text-red-700 transition">
                         <Trash2 className="w-4 h-4" />
@@ -588,21 +890,89 @@ export default function AdminCycleDetails() {
               </tbody>
             </table>
           </div>
+
+          {/* Add interviewer form */}
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+            <h3 className="text-sm font-bold text-gray-700 mb-4 flex items-center gap-2">
+              <Plus className="w-4 h-4" /> Add Interviewer
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">DALI Member</label>
+                <select
+                  value={newInterviewerMemberId}
+                  onChange={e => setNewInterviewerMemberId(e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                >
+                  <option value="">Select member...</option>
+                  {allMembers.map(m => (
+                    <option key={m.id} value={m.id}>
+                      {m.firstName && m.lastName ? `${m.firstName} ${m.lastName}` : m.daliEmail}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Domain</label>
+                <select
+                  value={newInterviewerDomainId}
+                  onChange={e => setNewInterviewerDomainId(e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                >
+                  <option value="">Select domain...</option>
+                  {allDomains.map(d => (
+                    <option key={d.id} value={d.id}>{d.name}</option>
+                  ))}
+                </select>
+              </div>
+              <button
+                onClick={addInterviewer}
+                disabled={!newInterviewerMemberId || !newInterviewerDomainId}
+                className="px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition disabled:opacity-50"
+              >
+                Add
+              </button>
+            </div>
+          </div>
+
+          {/* Interviewer roster table */}
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="text-left px-4 py-3 font-bold text-gray-700">Interviewer</th>
+                  <th className="text-left px-4 py-3 font-bold text-gray-700">Domain</th>
+                  <th className="text-right px-4 py-3 font-bold text-gray-700">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {interviewers.map((i: any) => {
+                  const m = i.daliMember
+                  const name = m?.firstName && m?.lastName ? `${m.firstName} ${m.lastName}` : m?.daliEmail ?? i.daliMemberId
+                  return (
+                    <tr key={i.id} className="hover:bg-gray-50 transition">
+                      <td className="px-4 py-3 font-medium text-gray-900">{name}</td>
+                      <td className="px-4 py-3 text-gray-600">{i.domain?.name ?? ''}</td>
+                      <td className="px-4 py-3 text-right">
+                        <button onClick={() => removeInterviewer(i.id)} className="text-red-500 hover:text-red-700 transition">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
+                {interviewers.length === 0 && (
+                  <tr><td colSpan={3} className="px-4 py-8 text-center text-gray-400">No interviewers assigned yet.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
       {/* ── Interview Dashboard Tab ── */}
       {tab === 'dashboard' && (
         <div className="space-y-4">
-          {needsReassignment.length > 0 && (
-            <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-3">
-              <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0" />
-              <p className="text-sm text-red-800 font-medium">
-                {needsReassignment.length} interview{needsReassignment.length > 1 ? 's' : ''} need{needsReassignment.length === 1 ? 's' : ''} reviewer reassignment.
-              </p>
-            </div>
-          )}
-
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200">
@@ -611,24 +981,23 @@ export default function AdminCycleDetails() {
                   <th className="text-left px-4 py-3 font-bold text-gray-700">Domain</th>
                   <th className="text-left px-4 py-3 font-bold text-gray-700">Time</th>
                   <th className="text-left px-4 py-3 font-bold text-gray-700">Status</th>
-                  <th className="text-left px-4 py-3 font-bold text-gray-700">Reviewers</th>
+                  <th className="text-left px-4 py-3 font-bold text-gray-700">Interviewers</th>
+                  <th className="text-right px-4 py-3 font-bold text-gray-700">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {interviews.map(interview => {
-                  const isAlert = interview.status === 'NeedsReassignment'
-                  const domains = interview.application.domainApplications
-                    .map(da => da.challengeVersion.domain.name)
-                    .join(', ')
+                  const isFuture = new Date(interview.startTime) > new Date()
+                  const domainName = interview.domainApplication.challengeVersion.domain.name
                   const start = new Date(interview.startTime)
                   const end = new Date(interview.endTime)
 
                   return (
-                    <tr key={interview.id} className={isAlert ? 'bg-red-50' : 'hover:bg-gray-50 transition'}>
+                    <tr key={interview.id} className="hover:bg-gray-50 transition">
                       <td className="px-4 py-3 font-medium text-gray-900">
-                        {interview.application.user.firstName} {interview.application.user.lastName}
+                        {interview.domainApplication.application.user.firstName} {interview.domainApplication.application.user.lastName}
                       </td>
-                      <td className="px-4 py-3 text-gray-600">{domains || '—'}</td>
+                      <td className="px-4 py-3 text-gray-600">{domainName || '—'}</td>
                       <td className="px-4 py-3 text-gray-600">
                         {start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}{' '}
                         {start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} –{' '}
@@ -636,31 +1005,137 @@ export default function AdminCycleDetails() {
                       </td>
                       <td className="px-4 py-3">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${
-                          isAlert ? 'bg-red-100 text-red-700' :
                           interview.status === 'Scheduled' ? 'bg-green-100 text-green-700' :
                           interview.status === 'Completed' ? 'bg-blue-100 text-blue-700' :
                           'bg-gray-100 text-gray-600'
                         }`}>
-                          {isAlert && <AlertTriangle className="w-3 h-3 mr-1" />}
                           {interview.status}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-gray-600 text-xs">
                         {interview.assignments
-                          .filter(a => a.status === 'Active')
-                          .map(a => {
-                            const name = a.cycleReviewer.daliMember.user
-                              ? `${a.cycleReviewer.daliMember.user.firstName} ${a.cycleReviewer.daliMember.user.lastName}`
-                              : '?'
-                            return `${name} (${a.role === 'InDomain' ? a.cycleReviewer.domain.name : 'Cross'})`
-                          })
-                          .join(', ') || '—'}
+                          .filter((a: any) => a.status === 'Active')
+                          .map((a: any) => {
+                            const m = a.cycleInterviewer.daliMember
+                            const name = m.firstName && m.lastName
+                              ? `${m.firstName} ${m.lastName}`
+                              : m.daliEmail ?? '?'
+                            const roleLabel = a.role === 'InDomain' ? a.cycleInterviewer.domain.name : 'Cross'
+                            return (
+                              <div key={a.id} className="flex items-center gap-1">
+                                <span>{name} ({roleLabel})</span>
+                                {isFuture && interview.status === 'Scheduled' && (
+                                  <select
+                                    className="ml-1 text-[10px] border border-gray-300 rounded px-1 py-0.5"
+                                    defaultValue=""
+                                    onChange={async (e) => {
+                                      if (!e.target.value) return
+                                      await fetch(`/api/interviews/${interview.id}/reassign`, {
+                                        method: 'POST', credentials: 'include',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ assignmentId: a.id, newCycleInterviewerId: e.target.value }),
+                                      })
+                                      window.location.reload()
+                                    }}
+                                  >
+                                    <option value="">Reassign...</option>
+                                    {interviewers
+                                      .filter((i: any) => a.role === 'InDomain'
+                                        ? i.domain?.name === a.cycleInterviewer.domain.name
+                                        : i.domain?.name !== domainName)
+                                      .filter((i: any) => i.id !== a.cycleInterviewerId)
+                                      .map((i: any) => {
+                                        const im = i.daliMember
+                                        const iName = im?.firstName && im?.lastName ? `${im.firstName} ${im.lastName}` : im?.daliEmail ?? i.id
+                                        return <option key={i.id} value={i.id}>{iName}</option>
+                                      })}
+                                  </select>
+                                )}
+                              </div>
+                            )
+                          })}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        {/* placeholder for future actions */}
                       </td>
                     </tr>
                   )
                 })}
                 {interviews.length === 0 && (
-                  <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400">No interviews scheduled yet.</td></tr>
+                  <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">No interviews scheduled yet.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── Decisions Tab ── */}
+      {tab === 'decisions' && (
+        <div className="space-y-4">
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
+              <h3 className="font-bold text-gray-900">Final Decisions Ready for Release</h3>
+              {pendingDecisions.length > 0 && (
+                <button
+                  onClick={async () => {
+                    for (const d of pendingDecisions) {
+                      await fetch(`/api/decisions/${d.id}/release`, { method: 'POST', credentials: 'include' })
+                    }
+                    setPendingDecisions([])
+                  }}
+                  className="px-3 py-1.5 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition"
+                >
+                  Release All ({pendingDecisions.length})
+                </button>
+              )}
+            </div>
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="text-left px-4 py-3 font-bold text-gray-700">Applicant</th>
+                  <th className="text-left px-4 py-3 font-bold text-gray-700">Domain</th>
+                  <th className="text-left px-4 py-3 font-bold text-gray-700">Decision</th>
+                  <th className="text-left px-4 py-3 font-bold text-gray-700">Made By</th>
+                  <th className="text-right px-4 py-3 font-bold text-gray-700">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {pendingDecisions.map((d: any) => (
+                  <tr key={d.id} className="hover:bg-gray-50 transition">
+                    <td className="px-4 py-3 font-medium text-gray-900">
+                      {d.domainApplication.application.user.firstName} {d.domainApplication.application.user.lastName}
+                    </td>
+                    <td className="px-4 py-3 text-gray-600">{d.domainApplication.challengeVersion.domain.name}</td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${
+                        d.type === 'Accepted' ? 'bg-green-100 text-green-700' :
+                        d.type === 'Rejected' ? 'bg-red-100 text-red-700' :
+                        d.type === 'Waitlisted' ? 'bg-yellow-100 text-yellow-700' :
+                        'bg-blue-100 text-blue-700'
+                      }`}>
+                        {d.type}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-gray-600">{d.madeBy.firstName} {d.madeBy.lastName}</td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        onClick={async () => {
+                          setReleasing(d.id)
+                          await fetch(`/api/decisions/${d.id}/release`, { method: 'POST', credentials: 'include' })
+                          setPendingDecisions(prev => prev.filter(p => p.id !== d.id))
+                          setReleasing(null)
+                        }}
+                        disabled={releasing === d.id}
+                        className="px-3 py-1 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition disabled:opacity-50"
+                      >
+                        {releasing === d.id ? 'Releasing...' : 'Release'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {pendingDecisions.length === 0 && (
+                  <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400">No Final decisions awaiting release.</td></tr>
                 )}
               </tbody>
             </table>
@@ -671,163 +1146,3 @@ export default function AdminCycleDetails() {
   )
 }
 
-// ─── FormSelector (from dev) ─────────────────────────────────────────────────
-
-function FormSelector({ cycleId, options, selectedId }: {
-  cycleId: string;
-  options: any[];
-  selectedId: string | null;
-}) {
-  const [previewId, setPreviewId] = useState<string>(selectedId ?? "");
-  const previewVersion = options.find((fv: any) => fv.id === previewId);
-  const questions: any[] = previewVersion?.questions ?? [];
-
-  return (
-    <div className="space-y-3">
-      <Form method="post" className="flex items-end gap-3">
-        <input type="hidden" name="intent" value="select-form" />
-        <input type="hidden" name="cycleId" value={cycleId} />
-        <div className="flex-1">
-          <select
-            name="formVersionId"
-            value={previewId}
-            onChange={(e) => setPreviewId(e.target.value)}
-            className="w-full px-3 py-2 text-sm text-gray-900 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="" disabled>Select a form…</option>
-            {options.map((fv: any) => (
-              <option key={fv.id} value={fv.id}>
-                {new Date(fv.createdAt).toLocaleDateString()} — {fv.questions.length} question{fv.questions.length !== 1 ? "s" : ""}
-              </option>
-            ))}
-          </select>
-        </div>
-        <button
-          type="submit"
-          disabled={!previewId}
-          className="px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          Save
-        </button>
-        {previewVersion && (
-          <Link
-            to={`/admin/forms/${previewVersion.applicationFormId}`}
-            className="px-3 py-2 text-sm font-medium text-blue-600 border border-blue-300 rounded-md hover:bg-blue-50 whitespace-nowrap"
-          >
-            Manage Form
-          </Link>
-        )}
-      </Form>
-
-      {questions.length > 0 && (
-        <div className="border border-gray-200 rounded-md divide-y divide-gray-100">
-          {questions.map((q: any, i: number) => (
-            <div key={q.key} className="px-4 py-3">
-              <span className="text-xs font-medium text-gray-400 uppercase tracking-wide mr-2">Q{i + 1}</span>
-              <span className="text-sm text-gray-700">{q.data.label}</span>
-              {q.required && <span className="ml-2 text-xs text-red-500">required</span>}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── DomainLeadsSection ──────────────────────────────────────────────────────
-
-function DomainLeadsSection({ domains, members }: {
-  domains: { id: string; name: string; domainLeadAssignments?: any[] }[];
-  members: { id: string; user?: { firstName: string; lastName: string } | null }[];
-}) {
-  const [leadsByDomain, setLeadsByDomain] = useState<Record<string, any[]>>(() => {
-    const map: Record<string, any[]> = {}
-    for (const d of domains) {
-      map[d.id] = d.domainLeadAssignments ?? []
-    }
-    return map
-  })
-  const [addingFor, setAddingFor] = useState<string | null>(null)
-  const [selectedMember, setSelectedMember] = useState('')
-
-  // Re-sync when domains prop changes
-  useEffect(() => {
-    const map: Record<string, any[]> = {}
-    for (const d of domains) {
-      map[d.id] = d.domainLeadAssignments ?? []
-    }
-    setLeadsByDomain(map)
-  }, [domains])
-
-  async function addLead(domainId: string) {
-    if (!selectedMember) return
-    const res = await fetch(`/api/domains/${domainId}/leads`, {
-      method: 'POST', credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ memberId: selectedMember }),
-    })
-    if (res.ok) {
-      const assignment = await res.json()
-      setLeadsByDomain(prev => ({ ...prev, [domainId]: [...(prev[domainId] ?? []), assignment] }))
-      setSelectedMember('')
-      setAddingFor(null)
-    }
-  }
-
-  async function removeLead(domainId: string, assignmentId: string) {
-    const res = await fetch(`/api/domains/${domainId}/leads`, {
-      method: 'DELETE', credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ assignmentId }),
-    })
-    if (res.ok) {
-      setLeadsByDomain(prev => ({ ...prev, [domainId]: (prev[domainId] ?? []).filter((a: any) => a.id !== assignmentId) }))
-    }
-  }
-
-  if (domains.length === 0) return null
-
-  return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-      <h3 className="text-sm font-bold text-gray-700 mb-4">Domain Leads</h3>
-      <div className="space-y-3">
-        {domains.map(d => {
-          const leads = leadsByDomain[d.id] ?? []
-          return (
-            <div key={d.id} className="flex items-center gap-3 py-2 border-b border-gray-100 last:border-0">
-              <span className="text-sm font-medium text-gray-900 w-32">{d.name}</span>
-              <div className="flex-1 flex flex-wrap items-center gap-2">
-                {leads.map((a: any) => (
-                  <span key={a.id} className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 text-xs font-medium rounded-full">
-                    {a.member?.user ? `${a.member.user.firstName} ${a.member.user.lastName}` : a.memberId}
-                    <button onClick={() => removeLead(d.id, a.id)} className="text-blue-400 hover:text-red-500 ml-0.5">&times;</button>
-                  </span>
-                ))}
-                {addingFor === d.id ? (
-                  <div className="flex items-center gap-1">
-                    <select
-                      value={selectedMember}
-                      onChange={e => setSelectedMember(e.target.value)}
-                      className="rounded border border-gray-300 px-2 py-1 text-xs"
-                    >
-                      <option value="">Select...</option>
-                      {members.map(m => (
-                        <option key={m.id} value={m.id}>
-                          {m.user ? `${m.user.firstName} ${m.user.lastName}` : m.id}
-                        </option>
-                      ))}
-                    </select>
-                    <button onClick={() => addLead(d.id)} disabled={!selectedMember} className="px-2 py-1 text-xs font-medium bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">Add</button>
-                    <button onClick={() => { setAddingFor(null); setSelectedMember('') }} className="px-2 py-1 text-xs text-gray-500 hover:text-gray-700">Cancel</button>
-                  </div>
-                ) : (
-                  <button onClick={() => setAddingFor(d.id)} className="text-xs text-blue-600 hover:text-blue-800 font-medium">+ Add lead</button>
-                )}
-              </div>
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}

@@ -7,7 +7,7 @@ const OAUTH_STATE_COOKIE = "__dali_oauth_state";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (auth.ok) return redirect("/admin");
+  if (auth.ok) return redirect("/reviewer");
   return {};
 }
 
