@@ -12,19 +12,27 @@ import {
   ListOrdered,
   PlayCircle,
 } from 'lucide-react'
-import type { CycleStage } from '~/types'
+import { getReviewStatus } from '~/lib/review-status'
+import { getActiveCycle } from '~/lib/cycles'
+type CycleStage =
+  | 'challengeSetup'
+  | 'challengesReady'
+  | 'applicationsOpen'
+  | 'readingApplications'
+  | 'writtenDelibs'
+  | 'collectingAvailability'
+  | 'interviews'
+  | 'finalDelibs'
 import CalendarGrid from '~/components/CalendarGrid'
 import { prisma } from '~/lib/db'
 import { requireAuth } from '~/lib/auth'
-import { getActiveCycle } from '~/lib/cycles'
 import type { Route } from './+types/mentor'
 
-// Map DB cycle status → mentor-facing stage. Only Open/Closed are reachable
-// here because getActiveCycle() filters out Draft and DecisionsReleased.
+// Map DB cycle status → mentor-facing stage.
 function cycleStatusToStage(status: string): CycleStage {
   switch (status) {
-    case 'Open': return 'collectingAvailability'
-    case 'Closed': return 'interviews'
+    case 'Open': return 'applicationsOpen'
+    case 'UnderReview': return 'readingApplications'
     default: return 'challengeSetup'
   }
 }
@@ -34,77 +42,66 @@ export async function loader({ request }: Route.LoaderArgs) {
     activeCycle: null as { id: string; name: string } | null,
     currentStage: 'challengeSetup' as CycleStage,
     mentorUserId: null as string | null,
-    allCycleApps: [] as any[],
+    reviews: [] as any[],
   }
 
   const auth = await requireAuth(request)
   if (!auth.ok) return empty
 
-  // Anchor on the single currently-active cycle (Open or Closed). If none is
-  // active, the mentor sees the empty state — even if they have stale reviewer
-  // assignments on past cycles.
-  const active = await getActiveCycle()
-  if (!active) return { ...empty, mentorUserId: auth.user.sub }
-
-  // The mentor must be assigned as a reviewer on THAT specific cycle.
   const member = await prisma.dALIMember.findFirst({ where: { userId: auth.user.sub } })
   if (!member) return { ...empty, mentorUserId: auth.user.sub }
 
-  const reviewer = await prisma.cycleReviewer.findUnique({
-    where: {
-      daliMemberId_applicationCycleId: {
-        daliMemberId: member.id,
-        applicationCycleId: active.id,
-      },
-    },
+  // Anchor on the single active cycle (invariant: at most one cycle is in
+  // Open/UnderReview at a time). Older code here picked "most recent cycle
+  // that ever had an Open/UnderReview status update", which matched completed
+  // cycles that had historically passed through UnderReview.
+  const active = await getActiveCycle()
+  if (!active) return { ...empty, mentorUserId: auth.user.sub }
+
+  // Fetch all CycleReviewer records for this member in this cycle (may span multiple domains)
+  const myReviewerIds = await prisma.cycleReviewer.findMany({
+    where: { daliMemberId: member.id, applicationCycleId: active.id },
+    select: { id: true },
+  })
+  if (myReviewerIds.length === 0) return { ...empty, mentorUserId: auth.user.sub }
+  const reviewerIds = myReviewerIds.map(r => r.id)
+
+  const activeCycleStatus = active.currentStatus
+
+  // Fetch all ApplicationReview records assigned to this reviewer
+  const myReviews = await prisma.applicationReview.findMany({
+    where: { cycleReviewerId: { in: reviewerIds } },
     include: {
-      applicationCycle: {
+      domainApplication: {
         include: {
-          applications: {
-            include: {
-              user: true,
-              statusUpdates: { orderBy: { createdAt: 'desc' }, take: 1 },
-              domainApplications: {
-                include: { challengeVersion: { include: { domain: true } } },
-              },
-              mentorReviews: true,
-            },
+          application: {
+            include: { user: { select: { firstName: true, lastName: true } } },
           },
+          challengeVersion: { include: { domain: true } },
         },
       },
     },
-  })
-
-  if (!reviewer) return { ...empty, mentorUserId: auth.user.sub }
-
-  const cycle = reviewer.applicationCycle
-
-  // Only submitted (non-draft) applications are visible to mentors.
-  const allCycleApps = cycle.applications.filter((a) => {
-    const latest = a.statusUpdates[0]?.newStatus
-    return latest && latest !== 'Draft'
+    orderBy: { createdAt: 'asc' },
   })
 
   return {
-    activeCycle: { id: cycle.id, name: cycle.name },
-    currentStage: cycleStatusToStage(active.currentStatus),
+    activeCycle: { id: active.id, name: active.name },
+    currentStage: cycleStatusToStage(activeCycleStatus),
     mentorUserId: auth.user.sub,
-    allCycleApps,
+    memberId: member.id,
+    myReviews,
   }
 }
 
-type LoaderData = Awaited<ReturnType<typeof loader>>
-type CycleApp = LoaderData['allCycleApps'][number]
-
 export default function MentorDashboard() {
-  const { activeCycle, currentStage, mentorUserId, allCycleApps } = useLoaderData<typeof loader>()
+  const { activeCycle, currentStage, myReviews } = useLoaderData<typeof loader>() as any
 
   if (!activeCycle) {
     return (
       <div className="space-y-8">
-        <h1 className="text-2xl font-bold text-gray-900">Mentor Dashboard</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Reviewer Dashboard</h1>
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8 text-center">
-          <p className="text-gray-500">No active hiring cycle found.</p>
+          <p className="text-gray-500">You are not assigned as a reviewer for any active cycle.</p>
         </div>
       </div>
     )
@@ -113,28 +110,17 @@ export default function MentorDashboard() {
   const readingDueDate: string | null = null
   const availabilityDueDate: string | null = null
 
-  // Reading-stage buckets derived from mentorReviews:
-  //   finished   = has a review with overallRecommendation set
-  //   inProgress = has a review row but no overallRecommendation yet
-  //   pending    = no review row at all
-  const finishedApps = allCycleApps.filter((a: CycleApp) =>
-    a.mentorReviews.some((r: any) => r.mentorId === mentorUserId && r.overallRecommendation !== null),
-  )
-  const finishedIdSet = new Set(finishedApps.map((a: CycleApp) => a.id))
-  const inProgressApps = allCycleApps.filter(
-    (a: CycleApp) =>
-      !finishedIdSet.has(a.id) &&
-      a.mentorReviews.some((r: any) => r.mentorId === mentorUserId),
-  )
-  const inProgressIdSet = new Set(inProgressApps.map((a: CycleApp) => a.id))
-  const pendingApps = allCycleApps.filter(
-    (a: CycleApp) => !finishedIdSet.has(a.id) && !inProgressIdSet.has(a.id),
-  )
+  // Bucket reviews via the shared status helper so this view and the
+  // domain-lead pills agree on what counts as "in progress" vs "not started".
+  const reviews = (myReviews ?? []) as any[]
+  const submittedReviews = reviews.filter((r: any) => getReviewStatus(r) === 'submitted')
+  const inProgressReviews = reviews.filter((r: any) => getReviewStatus(r) === 'inProgress')
+  const pendingReviews = reviews.filter((r: any) => getReviewStatus(r) === 'notStarted')
 
-  // Blinded applicant labels (A, B, C, …) for the deliberation view.
+  // Blinded applicant labels for the deliberation view
   const blindedMap = new Map<string, string>()
-  allCycleApps.forEach((app: CycleApp, index: number) => {
-    blindedMap.set(app.id, String.fromCharCode(65 + index))
+  reviews.forEach((r: any, index: number) => {
+    blindedMap.set(r.domainApplication?.application?.id ?? r.id, String.fromCharCode(65 + index))
   })
 
   const [scheduledInterviews, setScheduledInterviews] = useState<any[]>([])
@@ -328,11 +314,11 @@ export default function MentorDashboard() {
       desc: 'Follow along as the Domain Lead finalizes decisions.',
       dueDate: null,
     },
-  }
+  } as Record<string, { title: string; desc: string; dueDate: string | null }>
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Mentor Dashboard</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Reviewer Dashboard</h1>
         <p className="mt-1 text-gray-500">
           Manage your hiring responsibilities.
         </p>
@@ -398,7 +384,7 @@ export default function MentorDashboard() {
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-lg font-semibold text-gray-900 flex items-center">
                 <FileText className="w-5 h-5 mr-2 text-blue-600" />
-                Applications ({allCycleApps.length})
+                Your Reviews ({reviews.length})
               </h2>
             </div>
 
@@ -408,33 +394,15 @@ export default function MentorDashboard() {
                 <div className="flex items-center justify-between border-b border-gray-200 pb-2 mb-2">
                   <h3 className="font-bold text-gray-700">Pending</h3>
                   <span className="bg-white px-2.5 py-0.5 rounded-full text-xs font-bold border shadow-sm text-gray-600">
-                    {pendingApps.length}
+                    {pendingReviews.length}
                   </span>
                 </div>
-                {pendingApps.map((app: CycleApp) => (
-                  <div
-                    key={app.id}
-                    className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow"
-                  >
-                    <h4 className="font-bold text-gray-900 mb-1">
-                      {app.user.firstName} {app.user.lastName}
-                    </h4>
-                    <p className="text-xs text-gray-500 mb-4">
-                      {app.domainApplications.length} Domain(s)
-                    </p>
-                    <Link
-                      to={`/mentor/application/${app.id}`}
-                      className="flex items-center justify-center px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-md text-xs font-medium transition-colors"
-                    >
-                      <PlayCircle className="w-3.5 h-3.5 mr-1.5" /> Start
-                    </Link>
-                  </div>
+                {pendingReviews.map((r: any) => (
+                  <ReviewCard key={r.id} review={r} variant="pending" />
                 ))}
-                {pendingApps.length === 0 && (
+                {pendingReviews.length === 0 && (
                   <div className="py-8 text-center border-2 border-dashed border-gray-300 rounded-lg bg-white/50">
-                    <p className="text-sm text-gray-500 italic">
-                      No pending apps
-                    </p>
+                    <p className="text-sm text-gray-500 italic">No pending reviews</p>
                   </div>
                 )}
               </div>
@@ -444,77 +412,33 @@ export default function MentorDashboard() {
                 <div className="flex items-center justify-between border-b border-blue-200 pb-2 mb-2">
                   <h3 className="font-bold text-blue-800">In Progress</h3>
                   <span className="bg-white px-2.5 py-0.5 rounded-full text-xs font-bold border border-blue-200 shadow-sm text-blue-700">
-                    {inProgressApps.length}
+                    {inProgressReviews.length}
                   </span>
                 </div>
-                {inProgressApps.map((app: CycleApp) => (
-                  <div
-                    key={app.id}
-                    className="bg-white p-4 rounded-lg border border-blue-200 shadow-sm hover:shadow-md transition-shadow ring-1 ring-blue-100"
-                  >
-                    <h4 className="font-bold text-gray-900 mb-1">
-                      {app.user.firstName} {app.user.lastName}
-                    </h4>
-                    <p className="text-xs text-gray-500 mb-4">
-                      {app.domainApplications.length} Domain(s)
-                    </p>
-                    <Link
-                      to={`/mentor/application/${app.id}`}
-                      className="block w-full text-center px-3 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-md text-sm font-medium transition-colors"
-                    >
-                      Continue Review
-                    </Link>
-                  </div>
+                {inProgressReviews.map((r: any) => (
+                  <ReviewCard key={r.id} review={r} variant="inProgress" />
                 ))}
-                {inProgressApps.length === 0 && (
+                {inProgressReviews.length === 0 && (
                   <div className="py-8 text-center border-2 border-dashed border-blue-200 rounded-lg bg-white/50">
-                    <p className="text-sm text-blue-400 italic">
-                      None in progress
-                    </p>
+                    <p className="text-sm text-blue-400 italic">None in progress</p>
                   </div>
                 )}
               </div>
 
-              {/* Finished Column */}
+              {/* Submitted Column */}
               <div className="bg-green-50/50 rounded-xl border border-green-100 p-4 flex flex-col gap-3 min-h-[400px]">
                 <div className="flex items-center justify-between border-b border-green-200 pb-2 mb-2">
-                  <h3 className="font-bold text-green-800">Finished</h3>
+                  <h3 className="font-bold text-green-800">Submitted</h3>
                   <span className="bg-white px-2.5 py-0.5 rounded-full text-xs font-bold border border-green-200 shadow-sm text-green-700">
-                    {finishedApps.length}
+                    {submittedReviews.length}
                   </span>
                 </div>
-                {finishedApps.map((app: CycleApp) => {
-                  const review = app.mentorReviews.find(
-                    (r: any) => r.mentorId === mentorUserId,
-                  )
-                  return (
-                    <div
-                      key={app.id}
-                      className="bg-white p-4 rounded-lg border border-green-200 shadow-sm hover:shadow-md transition-shadow"
-                    >
-                      <div className="flex justify-between items-start mb-1">
-                        <h4 className="font-bold text-gray-900">
-                          {app.user.firstName} {app.user.lastName}
-                        </h4>
-                        <CheckCircle className="w-4 h-4 text-green-500" />
-                      </div>
-                      <p className="text-xs font-medium text-gray-600 mb-3 bg-gray-100 inline-block px-2 py-0.5 rounded">
-                        {review?.overallRecommendation}
-                      </p>
-                      <Link
-                        to={`/mentor/application/${app.id}`}
-                        className="block w-full text-center px-3 py-1.5 bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md text-xs font-medium transition-colors"
-                      >
-                        Edit Review
-                      </Link>
-                    </div>
-                  )
-                })}
-                {finishedApps.length === 0 && (
+                {submittedReviews.map((r: any) => (
+                  <ReviewCard key={r.id} review={r} variant="submitted" />
+                ))}
+                {submittedReviews.length === 0 && (
                   <div className="py-8 text-center border-2 border-dashed border-green-200 rounded-lg bg-white/50">
-                    <p className="text-sm text-green-500 italic">
-                      No finished apps
-                    </p>
+                    <p className="text-sm text-green-500 italic">No submitted reviews</p>
                   </div>
                 )}
               </div>
@@ -536,10 +460,10 @@ export default function MentorDashboard() {
 
             {/* Undecided */}
             {(() => {
-              const undecidedApps = allCycleApps.filter(
-                (a) =>
-                  !writtenDelibsBuckets.advance.includes(a.id) &&
-                  !writtenDelibsBuckets.cut.includes(a.id),
+              const undecidedApps = reviews.filter(
+                (r: any) =>
+                  !writtenDelibsBuckets.advance.includes(r.id) &&
+                  !writtenDelibsBuckets.cut.includes(r.id),
               )
               return undecidedApps.length > 0 ? (
                 <div className="bg-gray-50 rounded-xl border border-gray-200 p-5 mb-6">
@@ -547,40 +471,35 @@ export default function MentorDashboard() {
                     Undecided ({undecidedApps.length})
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {undecidedApps.map((app) => (
-                      <Link
-                        key={app.id}
-                        to={`/mentor/application/${app.id}`}
-                        className="block group"
-                      >
-                        <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm group-hover:border-blue-400 group-hover:ring-1 group-hover:ring-blue-400 transition-all">
-                          <div className="flex justify-between items-start">
-                            <h4 className="font-bold text-gray-900 mb-1 group-hover:text-blue-700">
-                              Applicant {blindedMap.get(app.id)}
-                            </h4>
-                            <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-blue-500" />
-                          </div>
-                          <p className="text-xs text-gray-500 mb-2">
-                            {app.domainApplications.length} Domain(s)
-                          </p>
-                          <p className="text-sm text-gray-700 line-clamp-2 italic">
-                            "
-                            {app.answers['q-why-dali'] || 'No answer provided.'}
-                            "
-                          </p>
-                          <div className="flex flex-wrap gap-1 mt-2">
-                            {app.mentorReviews?.map((r: any, i: number) => (
-                              <span
-                                key={i}
-                                className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-medium border border-gray-200 bg-gray-50 text-gray-600"
-                              >
-                                {r.overallRecommendation || 'No Rec'}
+                    {undecidedApps.map((r: any) => {
+                      const appId = r.domainApplication?.applicationId
+                      const user = r.domainApplication?.application?.user
+                      const domain = r.domainApplication?.challengeVersion?.domain
+                      return (
+                        <Link
+                          key={r.id}
+                          to={`/reviewer/application/${appId}`}
+                          className="block group"
+                        >
+                          <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm group-hover:border-blue-400 group-hover:ring-1 group-hover:ring-blue-400 transition-all">
+                            <div className="flex justify-between items-start">
+                              <h4 className="font-bold text-gray-900 mb-1 group-hover:text-blue-700">
+                                Applicant {blindedMap.get(r.domainApplication?.application?.id ?? r.id)}
+                              </h4>
+                              <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-blue-500" />
+                            </div>
+                            <p className="text-xs text-gray-500 mb-2">
+                              {domain?.name ?? 'Unknown Domain'}
+                            </p>
+                            {r.overallRecommendation && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-medium border border-gray-200 bg-gray-50 text-gray-600">
+                                {r.overallRecommendation}
                               </span>
-                            ))}
+                            )}
                           </div>
-                        </div>
-                      </Link>
-                    ))}
+                        </Link>
+                      )
+                    })}
                   </div>
                 </div>
               ) : null
@@ -599,24 +518,20 @@ export default function MentorDashboard() {
                   </span>
                 </div>
                 <div className="space-y-3">
-                  {writtenDelibsBuckets.advance.map((appId) => {
-                    const app = allCycleApps.find((a) => a.id === appId)
-                    if (!app) return null
+                  {writtenDelibsBuckets.advance.map((rId) => {
+                    const r = reviews.find((rv: any) => rv.id === rId)
+                    if (!r) return null
+                    const user = r.domainApplication?.application?.user
                     return (
                       <Link
-                        key={appId}
-                        to={`/mentor/application/${appId}`}
+                        key={rId}
+                        to={`/reviewer/application/${r.domainApplication?.applicationId}`}
                         className="block group"
                       >
                         <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm group-hover:border-blue-400 transition-colors flex justify-between items-center">
-                          <div>
-                            <span className="font-bold text-gray-900 block group-hover:text-blue-700">
-                              Applicant {blindedMap.get(appId)}
-                            </span>
-                            <span className="text-xs text-gray-500 line-clamp-1 mt-1 italic">
-                              "{app.answers['q-why-dali'] || ''}"
-                            </span>
-                          </div>
+                          <span className="font-bold text-gray-900 block group-hover:text-blue-700">
+                            {user?.firstName ?? 'Applicant'} {user?.lastName ?? blindedMap.get(rId)}
+                          </span>
                           <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-blue-500" />
                         </div>
                       </Link>
@@ -639,24 +554,20 @@ export default function MentorDashboard() {
                   </span>
                 </div>
                 <div className="space-y-3">
-                  {writtenDelibsBuckets.cut.map((appId) => {
-                    const app = allCycleApps.find((a) => a.id === appId)
-                    if (!app) return null
+                  {writtenDelibsBuckets.cut.map((rId) => {
+                    const r = reviews.find((rv: any) => rv.id === rId)
+                    if (!r) return null
+                    const user = r.domainApplication?.application?.user
                     return (
                       <Link
-                        key={appId}
-                        to={`/mentor/application/${appId}`}
+                        key={rId}
+                        to={`/reviewer/application/${r.domainApplication?.applicationId}`}
                         className="block group"
                       >
                         <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm group-hover:border-blue-400 transition-colors flex justify-between items-center">
-                          <div>
-                            <span className="font-bold text-gray-900 block group-hover:text-blue-700">
-                              Applicant {blindedMap.get(appId)}
-                            </span>
-                            <span className="text-xs text-gray-500 line-clamp-1 mt-1 italic">
-                              "{app.answers['q-why-dali'] || ''}"
-                            </span>
-                          </div>
+                          <span className="font-bold text-gray-900 block group-hover:text-blue-700">
+                            {user?.firstName ?? 'Applicant'} {user?.lastName ?? blindedMap.get(rId)}
+                          </span>
                           <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-blue-500" />
                         </div>
                       </Link>
@@ -857,11 +768,12 @@ export default function MentorDashboard() {
 
                     <div className="space-y-3">
                       {appIds.map((appId, i) => {
-                        const app = allCycleApps.find((a: CycleApp) => a.id === appId)
+                        const r = reviews.find((rv: any) => rv.id === appId)
+                        const user = r?.domainApplication?.application?.user
                         return (
                           <Link
                             key={appId}
-                            to={`/mentor/application/${appId}`}
+                            to={`/reviewer/application/${r?.domainApplication?.applicationId ?? appId}`}
                             className="block group"
                           >
                             <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm flex items-start gap-3 group-hover:border-blue-400 transition-colors">
@@ -871,15 +783,10 @@ export default function MentorDashboard() {
                               <div className="flex-1">
                                 <div className="flex justify-between items-start">
                                   <span className="font-bold text-gray-900 block group-hover:text-blue-700">
-                                    Applicant {blindedMap.get(appId)}
+                                    {user ? `${user.firstName} ${user.lastName}` : `Applicant ${blindedMap.get(appId)}`}
                                   </span>
                                   <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-blue-500" />
                                 </div>
-                                {app && (
-                                  <span className="text-xs text-gray-500 line-clamp-1 mt-1">
-                                    {app.user.firstName} {app.user.lastName}
-                                  </span>
-                                )}
                               </div>
                             </div>
                           </Link>
@@ -898,6 +805,50 @@ export default function MentorDashboard() {
           </section>
         )}
       </div>
+    </div>
+  )
+}
+
+function ReviewCard({ review, variant }: { review: any; variant: 'pending' | 'inProgress' | 'submitted' }) {
+  const da = review.domainApplication
+  const user = da?.application?.user
+  const domain = da?.challengeVersion?.domain
+  const appId = da?.applicationId ?? da?.application?.id
+
+  const borderClass = variant === 'submitted'
+    ? 'border-green-200'
+    : variant === 'inProgress'
+    ? 'border-blue-200 ring-1 ring-blue-100'
+    : 'border-gray-200'
+
+  return (
+    <div className={`bg-white p-4 rounded-lg border ${borderClass} shadow-sm hover:shadow-md transition-shadow`}>
+      <div className="flex justify-between items-start mb-1">
+        <h4 className="font-bold text-gray-900">
+          {user?.firstName ?? '?'} {user?.lastName ?? ''}
+        </h4>
+        {variant === 'submitted' && <CheckCircle className="w-4 h-4 text-green-500" />}
+      </div>
+      <p className="text-xs text-gray-500 mb-3">{domain?.name ?? 'Unknown Domain'}</p>
+      {variant === 'submitted' && review.overallRecommendation && (
+        <p className="text-xs font-medium text-gray-600 mb-3 bg-gray-100 inline-block px-2 py-0.5 rounded">
+          {review.overallRecommendation}
+        </p>
+      )}
+      {appId && (
+        <Link
+          to={`/reviewer/application/${appId}`}
+          className={`block w-full text-center px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+            variant === 'pending'
+              ? 'bg-blue-50 text-blue-700 hover:bg-blue-100'
+              : variant === 'inProgress'
+              ? 'bg-blue-600 text-white hover:bg-blue-700'
+              : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+          }`}
+        >
+          {variant === 'pending' ? 'Start Review' : variant === 'inProgress' ? 'Continue Review' : 'View Review'}
+        </Link>
+      )}
     </div>
   )
 }

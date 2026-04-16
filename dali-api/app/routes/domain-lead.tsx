@@ -4,27 +4,30 @@ import { redirect } from "react-router";
 import type { Route } from "./+types/domain-lead";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { CheckCircle, AlertTriangle, Plus, Trash2 } from "lucide-react";
+import { CheckCircle, Plus, Trash2, Check, Clock, X, CircleDashed } from "lucide-react";
+import { inferDomainApplicationStatus } from "~/lib/domain-application-status";
+import { getReviewStatus } from "~/lib/review-status";
+import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
 
 const STATUS_LABELS: Record<string, string> = {
   Draft: "Draft",
   Open: "Open",
-  Closed: "Closed",
-  DecisionsReleased: "Decisions Released",
+  UnderReview: "Under Review",
+  Completed: "Completed",
 };
 
 const STATUS_COLORS: Record<string, string> = {
   Draft: "bg-gray-100 text-gray-700",
   Open: "bg-green-100 text-green-700",
-  Closed: "bg-yellow-100 text-yellow-700",
-  DecisionsReleased: "bg-blue-100 text-blue-700",
+  UnderReview: "bg-yellow-100 text-yellow-700",
+  Completed: "bg-blue-100 text-blue-700",
 };
 
 const STATUS_MESSAGES: Record<string, string> = {
   Draft: "This cycle is still being set up.",
   Open: "Applications are open. Applicants can submit until the cycle closes.",
-  Closed: "Submissions are closed. Review applications below.",
-  DecisionsReleased: "Decisions have been released to applicants.",
+  UnderReview: "Submissions are closed. Review applications below.",
+  Completed: "Decisions have been released to applicants.",
 };
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -46,7 +49,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const domainData = await Promise.all(
     assignments.map(async (assignment) => {
-      const cycles = await prisma.applicationCycle.findMany({
+      const allCycles = await prisma.applicationCycle.findMany({
         where: {
           domains: { some: { domainId: assignment.domainId } },
         },
@@ -64,17 +67,36 @@ export async function loader({ request }: Route.LoaderArgs) {
               statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
               domainApplications: {
                 where: { challengeVersion: { domainId: assignment.domainId } },
-                include: { challengeVersion: { include: { domain: true } } },
+                include: {
+                  challengeVersion: { include: { domain: true } },
+                  reviews: {
+                    include: {
+                      cycleReviewer: {
+                        include: { daliMember: { select: { firstName: true, lastName: true, daliEmail: true } } },
+                      },
+                    },
+                  },
+                  decisions: { orderBy: { createdAt: "desc" } },
+                  // Only active interviews (Scheduled). Historical rows
+                  // don't contribute to status inference here.
+                  interviews: { where: { status: "Scheduled" } },
+                },
               },
             },
           },
         },
         orderBy: { createdAt: "desc" },
-        take: 1,
       });
 
-      const cycle = cycles[0] ?? null;
-      if (!cycle) return { assignment, cycle: null, apps: [], challengeVersionOptions: [], selectedChallengeVersionId: null, isChallengeReady: false };
+      // Filter to cycles whose latest status is Draft, Open, or UnderReview
+      const activeCycles = allCycles.filter((c) => {
+        const status = c.statusUpdates[0]?.newStatus;
+        return status && ["Draft", "Open", "UnderReview"].includes(status);
+      });
+
+      if (activeCycles.length === 0) return [{ assignment, cycle: null, apps: [], challengeVersionOptions: [], selectedChallengeVersionId: null, isChallengeReady: false }];
+
+      return Promise.all(activeCycles.map(async (cycle) => {
 
       // Challenge versions available for this domain
       const challengeVersionOptions = await prisma.challengeVersion.findMany({
@@ -97,30 +119,34 @@ export async function loader({ request }: Route.LoaderArgs) {
         return latestStatus === "Submitted" && app.domainApplications.length > 0;
       });
 
-      // Interviews for this domain in this cycle
+      // Interviews for this domain in this cycle. Only Scheduled rows appear
+      // in the dashboard table — cancelled rows are audit-only.
       const currentStatus = cycle?.statusUpdates[0]?.newStatus ?? "Draft";
-      const interviews = (currentStatus === "Closed" || currentStatus === "DecisionsReleased") && cycle
+      const interviews = (currentStatus === "UnderReview" || currentStatus === "Completed") && cycle
         ? await prisma.interview.findMany({
             where: {
               applicationCycleId: cycle.id,
-              application: {
-                domainApplications: {
-                  some: { challengeVersion: { domainId: assignment.domainId } },
-                },
+              status: "Scheduled",
+              domainApplication: {
+                challengeVersion: { domainId: assignment.domainId },
               },
             },
             include: {
-              application: {
+              domainApplication: {
                 include: {
-                  user: { select: { firstName: true, lastName: true } },
-                  domainApplications: { include: { challengeVersion: { include: { domain: true } } } },
+                  application: {
+                    include: {
+                      user: { select: { firstName: true, lastName: true } },
+                    },
+                  },
+                  challengeVersion: { include: { domain: true } },
                 },
               },
               assignments: {
                 where: { status: "Active" },
                 include: {
-                  cycleReviewer: {
-                    include: { daliMember: { include: { user: { select: { firstName: true, lastName: true } } } }, domain: true },
+                  cycleInterviewer: {
+                    include: { daliMember: true, domain: true },
                   },
                 },
               },
@@ -137,21 +163,164 @@ export async function loader({ request }: Route.LoaderArgs) {
           })
         : [];
 
-      return { assignment, cycle, apps, challengeVersionOptions, selectedChallengeVersionId, isChallengeReady, interviews, reviewers };
+      // Delibs sessions for this domain+cycle
+      const delibsSessions = cycle
+        ? await prisma.delibsSession.findMany({
+            where: { domainId: assignment.domainId, applicationCycleId: cycle.id },
+            orderBy: { createdAt: "desc" },
+          })
+        : [];
+
+      // Count qualifying applications for each delibs type
+      const initialDelibsCount = cycle
+        ? await prisma.domainApplication.count({
+            where: {
+              challengeVersion: { domainId: assignment.domainId },
+              application: { applicationCycleId: cycle.id, statusUpdates: { some: { newStatus: "Submitted" } } },
+              reviews: { every: { submittedAt: { not: null } }, some: {} },
+              decisions: { none: { stage: { in: ["Final", "Released"] } } },
+            },
+          })
+        : 0;
+
+      const finalDelibsCount = cycle
+        ? await prisma.domainApplication.count({
+            where: {
+              challengeVersion: { domainId: assignment.domainId },
+              application: { applicationCycleId: cycle.id, statusUpdates: { some: { newStatus: "Submitted" } } },
+              interviews: { some: { status: "Completed" } },
+            },
+          })
+        : 0;
+
+      // Compute inferred status for each domain application
+      const appsWithStatus = apps.map((app: any) => ({
+        ...app,
+        domainApplications: app.domainApplications.map((da: any) => ({
+          ...da,
+          inferredStatus: inferDomainApplicationStatus(
+            { ...da, application: { statusUpdates: app.statusUpdates } },
+            currentStatus as ApplicationCycleStatus,
+          ),
+        })),
+      }));
+
+      // Draft decisions (for finalization after delibs close)
+      const draftDecisions = cycle
+        ? await prisma.decision.findMany({
+            where: {
+              stage: "Draft",
+              domainApplication: {
+                challengeVersion: { domainId: assignment.domainId },
+                application: { applicationCycleId: cycle.id },
+              },
+            },
+            include: {
+              domainApplication: {
+                include: { application: { include: { user: { select: { firstName: true, lastName: true } } } } },
+              },
+            },
+            orderBy: { createdAt: "desc" },
+          })
+        : [];
+
+      // Cycle reviewers for this domain (for the reviewer assignment picker)
+      const cycleReviewersForDomain = cycle
+        ? await prisma.cycleReviewer.findMany({
+            where: { applicationCycleId: cycle.id, domainId: assignment.domainId },
+            include: { daliMember: { select: { id: true, firstName: true, lastName: true, daliEmail: true } } },
+          })
+        : [];
+
+      // Rubric options for this domain
+      const rubricVersionOptions = await prisma.rubricVersion.findMany({
+        where: { rubric: { domainId: assignment.domainId } },
+        include: { rubric: { select: { name: true } } },
+        orderBy: { createdAt: "desc" },
+      });
+      const currentRubricVersionId = cycle?.domains[0]?.rubricVersionId ?? null;
+      const rubricCriteria = (rubricVersionOptions.find((rv) => rv.id === currentRubricVersionId)?.criteria as any[] | null) ?? [];
+
+      // Interviewers for this domain in this cycle (with availability blocks —
+      // the component sums their durations to show total hours offered).
+      const interviewersRaw = cycle
+        ? await prisma.cycleInterviewer.findMany({
+            where: { applicationCycleId: cycle.id, domainId: assignment.domainId },
+            include: {
+              daliMember: { select: { id: true, firstName: true, lastName: true, daliEmail: true } },
+              availabilityBlocks: { select: { startTime: true, endTime: true } },
+            },
+          })
+        : [];
+      const interviewers = interviewersRaw.map((i) => {
+        const totalMs = i.availabilityBlocks.reduce(
+          (sum, b) => sum + (b.endTime.getTime() - b.startTime.getTime()),
+          0,
+        );
+        return {
+          ...i,
+          availabilityHours: totalMs / (1000 * 60 * 60),
+        };
+      });
+      const hasApplicationReviews = cycle
+        ? (await prisma.applicationReview.count({
+            where: {
+              domainApplication: {
+                challengeVersion: { domainId: assignment.domainId },
+                application: { applicationCycleId: cycle.id },
+              },
+            },
+          })) > 0
+        : false;
+
+      return { assignment, cycle, apps: appsWithStatus, challengeVersionOptions, selectedChallengeVersionId, isChallengeReady, interviews, reviewers, delibsSessions, draftDecisions, cycleReviewersForDomain, initialDelibsCount, finalDelibsCount, rubricVersionOptions, currentRubricVersionId, rubricCriteria, interviewers, hasApplicationReviews };
+      }));
     })
   );
 
-  return { domainData };
+  return { domainData: domainData.flat() };
 }
 
 export async function action({ request }: Route.ActionArgs) {
   const formData = await request.formData();
   const intent = formData.get("intent");
 
+  if (intent === "set-rubric") {
+    const cycleId = formData.get("cycleId") as string;
+    const domainId = formData.get("domainId") as string;
+    const rubricVersionId = (formData.get("rubricVersionId") as string) || null;
+
+    const hasAssignedReviews = await prisma.applicationReview.count({
+      where: {
+        domainApplication: {
+          challengeVersion: { domainId },
+          application: { applicationCycleId: cycleId },
+        },
+      },
+    });
+    if (hasAssignedReviews > 0) {
+      return redirect("/domain-lead");
+    }
+
+    await prisma.domainApplicationCycle.update({
+      where: { domainId_applicationCycleId: { domainId, applicationCycleId: cycleId } },
+      data: { rubricVersionId },
+    });
+    return redirect("/domain-lead");
+  }
+
   if (intent === "select-challenge") {
     const cycleId = formData.get("cycleId") as string;
     const newVersionId = formData.get("challengeVersionId") as string;
     const domainId = formData.get("domainId") as string;
+
+    const latestUpdate = await prisma.applicationCycleStatusUpdate.findFirst({
+      where: { applicationCycleId: cycleId },
+      orderBy: { createdAt: "desc" },
+    });
+    if ((latestUpdate?.newStatus ?? "Draft") !== "Draft") {
+      return redirect("/domain-lead");
+    }
 
     // Remove any existing challenge version for this domain in this cycle
     const existing = await prisma.challengeVersionApplicationCycle.findMany({
@@ -174,24 +343,23 @@ export async function action({ request }: Route.ActionArgs) {
     });
   }
 
-  if (intent === "mark-ready") {
+  if (intent === "mark-ready" || intent === "unmark-ready") {
     const cycleId = formData.get("cycleId") as string;
     const domainId = formData.get("domainId") as string;
+    const latestUpdate = await prisma.applicationCycleStatusUpdate.findFirst({
+      where: { applicationCycleId: cycleId },
+      orderBy: { createdAt: "desc" },
+    });
+    if ((latestUpdate?.newStatus ?? "Draft") !== "Draft") {
+      return redirect("/domain-lead");
+    }
+    const isReady = intent === "mark-ready";
     await prisma.domainApplicationCycle.upsert({
       where: { domainId_applicationCycleId: { domainId, applicationCycleId: cycleId } },
-      update: { isReady: true },
-      create: { domainId, applicationCycleId: cycleId, isReady: true },
+      update: { isReady },
+      create: { domainId, applicationCycleId: cycleId, isReady },
     });
-  }
-
-  if (intent === "unmark-ready") {
-    const cycleId = formData.get("cycleId") as string;
-    const domainId = formData.get("domainId") as string;
-    await prisma.domainApplicationCycle.upsert({
-      where: { domainId_applicationCycleId: { domainId, applicationCycleId: cycleId } },
-      update: { isReady: false },
-      create: { domainId, applicationCycleId: cycleId, isReady: false },
-    });
+    return redirect("/domain-lead");
   }
 
   return redirect("/domain-lead");
@@ -214,27 +382,47 @@ export default function DomainLeadDashboard() {
     <div className="space-y-8">
       <h1 className="text-2xl font-bold text-gray-900">Domain Lead Dashboard</h1>
 
-      {domainData.map(({ assignment, cycle, apps, challengeVersionOptions, selectedChallengeVersionId, isChallengeReady, interviews, reviewers: cycleReviewers }: any) => {
+      {domainData.map(({ assignment, cycle, apps, challengeVersionOptions, selectedChallengeVersionId, isChallengeReady, interviews, reviewers: cycleReviewers, delibsSessions, draftDecisions, cycleReviewersForDomain, initialDelibsCount, finalDelibsCount, rubricVersionOptions, currentRubricVersionId, rubricCriteria, interviewers, hasApplicationReviews }: any, idx: number) => {
         const currentStatus = cycle?.statusUpdates[0]?.newStatus ?? null;
 
         return (
-          <section key={assignment.id} className="space-y-4">
-            <div className="flex items-center gap-3">
-              <h2 className="text-xl font-semibold text-gray-800">{assignment.domain.name}</h2>
-              {currentStatus && (
-                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[currentStatus]}`}>
-                  {STATUS_LABELS[currentStatus]}
-                </span>
-              )}
-            </div>
-
+          <section key={`${assignment.id}-${cycle?.id ?? idx}`} className="bg-white border border-gray-200 rounded-xl p-6 space-y-4 shadow-sm">
             {!cycle ? (
-              <div className="bg-white border border-gray-200 rounded-lg p-6 text-gray-500 text-sm">
-                No active cycle for this domain.
-              </div>
+              <>
+                <div className="flex items-center gap-3">
+                  <h2 className="text-xl font-semibold text-gray-800">{assignment.domain.name}</h2>
+                </div>
+                <div className="bg-white border border-gray-200 rounded-lg p-6 text-gray-500 text-sm">
+                  No active cycle for this domain.
+                </div>
+              </>
             ) : (
               <>
-                {currentStatus === "Draft" ? (
+                {/* Consistent header for all phases */}
+                <div className="pb-2 border-b border-gray-200">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <h2 className="text-xl font-semibold text-gray-800">{assignment.domain.name}</h2>
+                      <span className="text-gray-400">·</span>
+                      <span className="text-lg text-gray-600">{cycle.name}</span>
+                      {currentStatus && (
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[currentStatus]}`}>
+                          {STATUS_LABELS[currentStatus]}
+                        </span>
+                      )}
+                    </div>
+                    {currentStatus !== "Draft" && (
+                      <div className="text-sm">
+                        <span className="font-semibold text-gray-900">{apps.length}</span>
+                        <span className="text-gray-500 ml-1">submitted</span>
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-sm text-gray-500 mt-1">{STATUS_MESSAGES[currentStatus]}</p>
+                </div>
+
+                {/* Challenge setup — Draft only */}
+                {currentStatus === "Draft" && (
                   <DraftSection
                     cycle={cycle}
                     domainId={assignment.domainId}
@@ -242,77 +430,56 @@ export default function DomainLeadDashboard() {
                     selectedChallengeVersionId={selectedChallengeVersionId}
                     isChallengeReady={isChallengeReady}
                   />
-                ) : (
-                  <>
-                    <div className="bg-white border border-gray-200 rounded-lg p-6 space-y-4">
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium text-gray-900">{cycle.name}</span>
-                      </div>
-                      <p className="text-sm text-gray-500">{STATUS_MESSAGES[currentStatus]}</p>
-                      <div className="flex gap-6 text-sm">
-                        <div>
-                          <span className="font-semibold text-gray-900">{apps.length}</span>
-                          <span className="text-gray-500 ml-1">submitted</span>
-                        </div>
-                      </div>
-                    </div>
+                )}
 
-                    {apps.length > 0 && (
-                      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-                        <table className="w-full text-sm">
-                          <thead className="bg-gray-50 text-xs font-medium text-gray-500 uppercase tracking-wide">
-                            <tr>
-                              <th className="px-6 py-3 text-left">Applicant</th>
-                              <th className="px-6 py-3 text-left">Submitted</th>
-                              <th className="px-6 py-3 text-right"></th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-100">
-                            {apps.map((app: any) => (
-                              <tr key={app.id} className="hover:bg-gray-50">
-                                <td className="px-6 py-4 font-medium text-gray-900">
-                                  {app.user.firstName} {app.user.lastName}
-                                </td>
-                                <td className="px-6 py-4 text-gray-500">
-                                  {new Date(app.updatedAt).toLocaleDateString()}
-                                </td>
-                                <td className="px-6 py-4 text-right">
-                                  <Link
-                                    to={`/domain-lead/application/${app.id}`}
-                                    className="text-blue-600 hover:text-blue-800 font-medium"
-                                  >
-                                    Review →
-                                  </Link>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
+                {/* Rubric picker — Draft + Open + UnderReview */}
+                {(currentStatus === "Draft" || currentStatus === "Open" || currentStatus === "UnderReview") && (
+                  <RubricPicker
+                    cycleId={cycle.id}
+                    domainId={assignment.domainId}
+                    options={rubricVersionOptions ?? []}
+                    selectedId={currentRubricVersionId}
+                    locked={hasApplicationReviews}
+                  />
+                )}
 
-                    {apps.length === 0 && (
-                      <div className="bg-white border border-gray-200 rounded-lg p-6 text-center text-gray-500 text-sm">
-                        No submitted applications yet.
-                      </div>
-                    )}
+                {/* Reviewer + Interviewer Rosters — Draft + Open + UnderReview */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <ReviewerSection cycleId={cycle.id} domainId={assignment.domainId} initialReviewers={cycleReviewers} />
+                  <InterviewerSection cycleId={cycle.id} domainId={assignment.domainId} initialInterviewers={interviewers ?? []} />
+                </div>
 
-                    {/* Reviewer Roster */}
-                    {cycle && (
-                      <ReviewerSection cycleId={cycle.id} domainId={assignment.domainId} initialReviewers={cycleReviewers} />
-                    )}
+                {/* Applications table — Open + UnderReview */}
+                {currentStatus !== "Draft" && apps.length > 0 && (
+                  <ApplicationsTable
+                    apps={apps}
+                    draftDecisions={draftDecisions ?? []}
+                    cycleReviewersForDomain={cycleReviewersForDomain}
+                    cycleId={cycle.id}
+                    domainId={assignment.domainId}
+                    currentStatus={currentStatus}
+                    canAssignReviewers={!!currentRubricVersionId && !!cycle.generalRubricVersionId}
+                    rubricCriteria={rubricCriteria ?? []}
+                  />
+                )}
+
+                {currentStatus !== "Draft" && apps.length === 0 && (
+                  <div className="bg-white border border-gray-200 rounded-lg p-6 text-center text-gray-500 text-sm">
+                    No submitted applications yet.
+                  </div>
+                )}
+
+                {/* Delibs — UnderReview only */}
+                {currentStatus === "UnderReview" && (
+                  <DelibsSection cycleId={cycle.id} domainId={assignment.domainId} sessions={delibsSessions ?? []} initialCount={initialDelibsCount ?? 0} finalCount={finalDelibsCount ?? 0} />
+                )}
+
 
                     {/* Interview Dashboard */}
                     {interviews.length > 0 && (
                       <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-                        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
+                        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
                           <h3 className="font-semibold text-gray-900">Scheduled Interviews ({interviews.length})</h3>
-                          {interviews.some((i: any) => i.status === 'NeedsReassignment') && (
-                            <span className="flex items-center gap-1 text-xs font-bold text-red-700 bg-red-100 px-2 py-1 rounded-full">
-                              <AlertTriangle className="w-3 h-3" />
-                              Needs attention
-                            </span>
-                          )}
                         </div>
                         <table className="w-full text-sm">
                           <thead className="bg-gray-50 text-xs font-medium text-gray-500 uppercase tracking-wide">
@@ -320,18 +487,32 @@ export default function DomainLeadDashboard() {
                               <th className="px-6 py-3 text-left">Applicant</th>
                               <th className="px-6 py-3 text-left">Time</th>
                               <th className="px-6 py-3 text-left">Status</th>
-                              <th className="px-6 py-3 text-left">Reviewers</th>
+                              <th className="px-6 py-3 text-left">In-Domain</th>
+                              <th className="px-6 py-3 text-left">Cross-Domain</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-100">
                             {interviews.map((interview: any) => {
-                              const isAlert = interview.status === 'NeedsReassignment';
                               const start = new Date(interview.startTime);
                               const end = new Date(interview.endTime);
+                              const formatAssignment = (a: any) => {
+                                const m = a.cycleInterviewer.daliMember;
+                                return m.firstName && m.lastName
+                                  ? `${m.firstName} ${m.lastName}`
+                                  : m.daliEmail ?? '?';
+                              };
+                              const inDomain = interview.assignments
+                                .filter((a: any) => a.role === 'InDomain' && a.status === 'Active')
+                                .map(formatAssignment)
+                                .join(', ') || '—';
+                              const crossDomain = interview.assignments
+                                .filter((a: any) => a.role === 'CrossDomain' && a.status === 'Active')
+                                .map((a: any) => `${formatAssignment(a)} (${a.cycleInterviewer.domain.name})`)
+                                .join(', ') || '—';
                               return (
-                                <tr key={interview.id} className={isAlert ? 'bg-red-50' : 'hover:bg-gray-50'}>
+                                <tr key={interview.id} className="hover:bg-gray-50">
                                   <td className="px-6 py-4 font-medium text-gray-900">
-                                    {interview.application.user.firstName} {interview.application.user.lastName}
+                                    {interview.domainApplication.application.user.firstName} {interview.domainApplication.application.user.lastName}
                                   </td>
                                   <td className="px-6 py-4 text-gray-600">
                                     {start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}{' '}
@@ -339,25 +520,12 @@ export default function DomainLeadDashboard() {
                                     {end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
                                   </td>
                                   <td className="px-6 py-4">
-                                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${
-                                      isAlert ? 'bg-red-100 text-red-700' :
-                                      interview.status === 'Scheduled' ? 'bg-green-100 text-green-700' :
-                                      'bg-gray-100 text-gray-600'
-                                    }`}>
-                                      {isAlert && <AlertTriangle className="w-3 h-3 mr-1" />}
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-green-100 text-green-700">
                                       {interview.status}
                                     </span>
                                   </td>
-                                  <td className="px-6 py-4 text-gray-600 text-xs">
-                                    {interview.assignments
-                                      .map((a: any) => {
-                                        const name = a.cycleReviewer.daliMember.user
-                                          ? `${a.cycleReviewer.daliMember.user.firstName} ${a.cycleReviewer.daliMember.user.lastName}`
-                                          : '?';
-                                        return `${name} (${a.role === 'InDomain' ? a.cycleReviewer.domain.name : 'Cross'})`;
-                                      })
-                                      .join(', ') || '—'}
-                                  </td>
+                                  <td className="px-6 py-4 text-gray-600 text-xs">{inDomain}</td>
+                                  <td className="px-6 py-4 text-gray-600 text-xs">{crossDomain}</td>
                                 </tr>
                               );
                             })}
@@ -365,8 +533,6 @@ export default function DomainLeadDashboard() {
                         </table>
                       </div>
                     )}
-                  </>
-                )}
               </>
             )}
           </section>
@@ -605,7 +771,7 @@ function ReviewerSection({ cycleId, domainId, initialReviewers }: {
               <option value="">Select member...</option>
               {availableMembers.map((m: any) => (
                 <option key={m.id} value={m.id}>
-                  {m.user ? `${m.user.firstName} ${m.user.lastName}` : m.id}
+                  {m.firstName && m.lastName ? `${m.firstName} ${m.lastName}` : m.daliEmail ?? m.id}
                 </option>
               ))}
             </select>
@@ -623,7 +789,7 @@ function ReviewerSection({ cycleId, domainId, initialReviewers }: {
             {reviewers.map((r: any) => (
               <div key={r.id} className="flex items-center justify-between py-2">
                 <span className="text-sm font-medium text-gray-900">
-                  {r.daliMember?.user ? `${r.daliMember.user.firstName} ${r.daliMember.user.lastName}` : r.daliMemberId}
+                  {r.daliMember?.firstName && r.daliMember?.lastName ? `${r.daliMember.firstName} ${r.daliMember.lastName}` : r.daliMember?.daliEmail ?? r.daliMemberId}
                 </span>
                 <button onClick={() => removeReviewer(r.id)} className="text-red-500 hover:text-red-700">
                   <Trash2 className="w-4 h-4" />
@@ -638,3 +804,786 @@ function ReviewerSection({ cycleId, domainId, initialReviewers }: {
     </div>
   );
 }
+
+function RubricPicker({ cycleId, domainId, options, selectedId, locked }: {
+  cycleId: string;
+  domainId: string;
+  options: any[];
+  selectedId: string | null;
+  locked: boolean;
+}) {
+  const selectedLabel = options.find((rv: any) => rv.id === selectedId);
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+      <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
+        <h3 className="font-semibold text-gray-900">Domain Rubric</h3>
+      </div>
+      <div className="p-4">
+        {locked ? (
+          <div className="flex items-center gap-2 text-sm text-gray-600">
+            <CheckCircle className="w-4 h-4 text-green-600" />
+            <span>{selectedLabel ? `${selectedLabel.rubric.name} — v${selectedLabel.versionNumber}` : 'Set'}</span>
+            <span className="text-xs text-gray-400 ml-2">(locked — reviewers have been assigned)</span>
+          </div>
+        ) : (
+          <Form method="post" key={`rubric-${selectedId}`} className="flex items-end gap-3">
+            <input type="hidden" name="intent" value="set-rubric" />
+            <input type="hidden" name="cycleId" value={cycleId} />
+            <input type="hidden" name="domainId" value={domainId} />
+            <div className="flex-1">
+              <label className="block text-xs font-medium text-gray-500 mb-1">Rubric Version</label>
+              <select
+                name="rubricVersionId"
+                defaultValue={selectedId ?? ""}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              >
+                <option value="">No rubric assigned</option>
+                {options.map((rv: any) => (
+                  <option key={rv.id} value={rv.id}>
+                    {rv.rubric.name} — v{rv.versionNumber}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button
+              type="submit"
+              className="px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition"
+            >
+              Save
+            </button>
+          </Form>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function InterviewerSection({ cycleId, domainId, initialInterviewers }: {
+  cycleId: string;
+  domainId: string;
+  initialInterviewers: any[];
+}) {
+  const [interviewers, setInterviewers] = useState(initialInterviewers);
+  const [members, setMembers] = useState<any[]>([]);
+  const [selectedMemberId, setSelectedMemberId] = useState("");
+
+  useEffect(() => {
+    fetch("/api/members", { credentials: "include" })
+      .then(r => r.ok ? r.json() : [])
+      .then(setMembers)
+      .catch(() => {});
+  }, []);
+
+  async function addInterviewer() {
+    if (!selectedMemberId) return;
+    const res = await fetch(`/api/cycles/${cycleId}/interviewers`, {
+      method: "POST", credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ daliMemberId: selectedMemberId, domainId }),
+    });
+    if (res.ok) {
+      const interviewer = await res.json();
+      const member = members.find((m: any) => m.id === selectedMemberId);
+      setInterviewers(prev => [...prev, { ...interviewer, daliMember: member, availabilityHours: 0 }]);
+      setSelectedMemberId("");
+    }
+  }
+
+  async function removeInterviewer(interviewerId: string) {
+    const res = await fetch(`/api/cycles/${cycleId}/interviewers`, {
+      method: "DELETE", credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ interviewerId }),
+    });
+    if (res.ok) setInterviewers(prev => prev.filter(i => i.id !== interviewerId));
+  }
+
+  const existingMemberIds = new Set(interviewers.map((i: any) => i.daliMemberId));
+  const availableMembers = members.filter(m => !existingMemberIds.has(m.id));
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+      <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
+        <h3 className="font-semibold text-gray-900">Interviewers for this Domain ({interviewers.length})</h3>
+      </div>
+      <div className="p-4 space-y-3">
+        <div className="flex gap-2 items-end">
+          <div className="flex-1">
+            <label className="block text-xs font-medium text-gray-500 mb-1">Add Interviewer</label>
+            <select
+              value={selectedMemberId}
+              onChange={e => setSelectedMemberId(e.target.value)}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            >
+              <option value="">Select member...</option>
+              {availableMembers.map((m: any) => (
+                <option key={m.id} value={m.id}>
+                  {m.firstName && m.lastName ? `${m.firstName} ${m.lastName}` : m.daliEmail ?? m.id}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button
+            onClick={addInterviewer}
+            disabled={!selectedMemberId}
+            className="flex items-center gap-1 px-3 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition disabled:opacity-50"
+          >
+            <Plus className="w-4 h-4" /> Add
+          </button>
+        </div>
+        {interviewers.length > 0 ? (
+          <div className="divide-y divide-gray-100">
+            {interviewers.map((i: any) => {
+              const m = i.daliMember;
+              const name = m?.firstName && m?.lastName
+                ? `${m.firstName} ${m.lastName}`
+                : m?.daliEmail ?? i.daliMemberId;
+              const hours = i.availabilityHours ?? 0;
+              const hasAvailability = hours > 0;
+              const hoursLabel =
+                Number.isInteger(hours) ? `${hours}h` : `${hours.toFixed(1)}h`;
+              return (
+                <div key={i.id} className="flex items-center justify-between py-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-sm font-medium text-gray-900 truncate">{name}</span>
+                    {hasAvailability ? (
+                      <span className="flex items-center gap-1 text-xs font-medium text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
+                        <CheckCircle className="w-3 h-3" />
+                        {hoursLabel} available
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1 text-xs font-medium text-gray-500 bg-gray-50 border border-gray-200 px-2 py-0.5 rounded-full">
+                        <Clock className="w-3 h-3" />
+                        No availability
+                      </span>
+                    )}
+                  </div>
+                  <button onClick={() => removeInterviewer(i.id)} className="text-red-500 hover:text-red-700">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-sm text-gray-400 text-center py-3">No interviewers assigned yet.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DelibsSection({ cycleId, domainId, sessions, initialCount, finalCount }: {
+  cycleId: string;
+  domainId: string;
+  sessions: any[];
+  initialCount: number;
+  finalCount: number;
+}) {
+  const [loading, setLoading] = useState<string | null>(null);
+
+  const initialSession = sessions.find((s: any) => s.type === "Initial");
+  const finalSession = sessions.find((s: any) => s.type === "Final");
+
+  async function openDelibs(type: "Initial" | "Final") {
+    setLoading(type);
+    const res = await fetch(`/api/cycles/${cycleId}/delibs`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ domainId, type }),
+    });
+    if (res.ok) {
+      const session = await res.json();
+      window.location.href = `/domain-lead/delibs/${session.id}`;
+    }
+    setLoading(null);
+  }
+
+  function renderButton(type: "Initial" | "Final", session: any) {
+    const count = type === "Initial" ? initialCount : finalCount;
+    const countBadge = ` (${count} applicant${count !== 1 ? "s" : ""})`;
+
+    if (session?.status === "Active") {
+      return (
+        <a
+          href={`/domain-lead/delibs/${session.id}`}
+          className="px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition"
+        >
+          Continue {type} Delibs{countBadge}
+        </a>
+      );
+    }
+    if (session?.status === "Closed") {
+      return (
+        <button
+          onClick={() => openDelibs(type)}
+          disabled={loading === type || count === 0}
+          className="px-4 py-2 text-sm font-medium rounded-lg bg-yellow-600 hover:bg-yellow-700 text-white transition disabled:opacity-50"
+        >
+          {loading === type ? "Reopening..." : `Reopen ${type} Delibs${countBadge}`}
+        </button>
+      );
+    }
+    return (
+      <button
+        onClick={() => openDelibs(type)}
+        disabled={loading === type || count === 0}
+        className="px-4 py-2 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition disabled:opacity-50"
+      >
+        {loading === type ? "Starting..." : `Start ${type} Delibs${countBadge}`}
+      </button>
+    );
+  }
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+      <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
+        <h3 className="font-semibold text-gray-900">Deliberations</h3>
+      </div>
+      <div className="p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-gray-900">Initial Delibs</p>
+            <p className="text-xs text-gray-500">Review applications and decide who advances to interviews</p>
+          </div>
+          {renderButton("Initial", initialSession)}
+        </div>
+        <div className="border-t border-gray-100 pt-3 flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-gray-900">Final Delibs</p>
+            <p className="text-xs text-gray-500">Post-interview decisions: accept, waitlist, or reject</p>
+          </div>
+          {renderButton("Final", finalSession)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const STATUS_BADGE_COLORS: Record<string, string> = {
+  ApplicationOpen: "bg-gray-100 text-gray-700",
+  Pending: "bg-blue-100 text-blue-700",
+  Rejected: "bg-red-100 text-red-700",
+  InvitedToInterview: "bg-purple-100 text-purple-700",
+  InterviewScheduled: "bg-indigo-100 text-indigo-700",
+  PostInterviewPending: "bg-yellow-100 text-yellow-700",
+  Accepted: "bg-green-100 text-green-700",
+  Waitlisted: "bg-orange-100 text-orange-700",
+};
+
+const STATUS_BADGE_LABELS: Record<string, string> = {
+  ApplicationOpen: "Open",
+  Pending: "Pending",
+  Rejected: "Rejected",
+  InvitedToInterview: "Interview Invited",
+  InterviewScheduled: "Interview Scheduled",
+  PostInterviewPending: "Post-Interview",
+  Accepted: "Accepted",
+  Waitlisted: "Waitlisted",
+};
+
+const DECISION_COLORS: Record<string, string> = {
+  Rejected: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
+  InvitedToInterview: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
+  Accepted: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
+  Waitlisted: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400",
+};
+
+const DECISION_LABELS: Record<string, string> = {
+  Rejected: "Reject",
+  InvitedToInterview: "Interview",
+  Accepted: "Accept",
+  Waitlisted: "Waitlist",
+};
+
+function DecisionBadge({ type }: { type: string }) {
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${DECISION_COLORS[type] ?? "bg-gray-100 text-gray-600"}`}>
+      {DECISION_LABELS[type] ?? type}
+    </span>
+  );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${STATUS_BADGE_COLORS[status] ?? "bg-gray-100 text-gray-600"}`}>
+      {STATUS_BADGE_LABELS[status] ?? status}
+    </span>
+  );
+}
+
+function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycleId, domainId, currentStatus, canAssignReviewers, rubricCriteria }: {
+  apps: any[];
+  draftDecisions: any[];
+  cycleReviewersForDomain: any[];
+  cycleId: string;
+  domainId: string;
+  currentStatus: string;
+  canAssignReviewers: boolean;
+  rubricCriteria: any[];
+}) {
+  const isUnderReview = currentStatus === "UnderReview";
+  const [filter, setFilter] = useState<"all" | "finalize">("all");
+
+  const draftDecisionAppIds = new Set(
+    draftDecisions
+      .filter((d: any) => {
+        const da = apps.flatMap((a: any) => a.domainApplications).find((da: any) => da?.id === d.domainApplicationId);
+        if (!da) return false;
+        const hasFinal = (da.decisions ?? []).some((dec: any) => dec.stage === "Final");
+        return !hasFinal;
+      })
+      .map((d: any) => {
+        const da = apps.flatMap((a: any) => a.domainApplications).find((da: any) => da?.id === d.domainApplicationId);
+        return da?.applicationId;
+      })
+      .filter(Boolean),
+  );
+
+  const finalizableApps = apps.filter((app: any) => {
+    const da = app.domainApplications[0];
+    if (!da) return false;
+    const decisions = da.decisions ?? [];
+    const latestDraft = decisions.find((d: any) => d.stage === "Draft");
+    const latestFinal = decisions.find((d: any) => d.stage === "Final");
+    return latestDraft && !latestFinal;
+  });
+
+  const displayedApps = filter === "finalize" ? finalizableApps : apps;
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+      <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
+        <div className="flex items-center gap-1">
+          {isUnderReview ? (
+            <div className="flex items-center gap-1 bg-gray-200 rounded-lg p-0.5">
+              <button
+                onClick={() => setFilter("all")}
+                className={`px-3 py-1 text-xs font-medium rounded-md transition ${
+                  filter === "all" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                All Applicants ({apps.length})
+              </button>
+              <button
+                onClick={() => setFilter("finalize")}
+                className={`px-3 py-1 text-xs font-medium rounded-md transition ${
+                  filter === "finalize" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                Needs Finalization ({finalizableApps.length})
+              </button>
+            </div>
+          ) : (
+            <h3 className="font-semibold text-gray-900">Applications ({apps.length})</h3>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {isUnderReview && filter === "finalize" && finalizableApps.length > 0 && (
+            <button
+              onClick={async () => {
+                for (const app of finalizableApps) {
+                  const da = app.domainApplications[0];
+                  const draft = (da?.decisions ?? []).find((d: any) => d.stage === "Draft");
+                  if (draft) {
+                    await fetch(`/api/decisions/${draft.id}/finalize`, { method: "POST", credentials: "include" });
+                  }
+                }
+                window.location.reload();
+              }}
+              className="px-3 py-1.5 text-xs font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition"
+            >
+              Finalize All ({finalizableApps.length})
+            </button>
+          )}
+          {currentStatus === "UnderReview" && (
+            <button
+              onClick={async () => {
+                await fetch(`/api/cycles/${cycleId}/domains/${domainId}/auto-assign`, {
+                  method: "POST", credentials: "include",
+                });
+                window.location.reload();
+              }}
+              disabled={!canAssignReviewers}
+              title={!canAssignReviewers ? "Set both domain and general rubrics before assigning reviewers" : undefined}
+              className="px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition disabled:opacity-50"
+            >
+              Auto-Assign Reviewers
+            </button>
+          )}
+        </div>
+      </div>
+      <table className="w-full text-sm">
+        <thead className="bg-gray-50 text-xs font-medium text-gray-500 uppercase tracking-wide">
+          <tr>
+            <th className="px-6 py-3 text-left">Applicant</th>
+            <th className="px-6 py-3 text-left">Status</th>
+            <th className="px-6 py-3 text-left">Reviewers</th>
+            <th className="px-6 py-3 text-left">Draft Decision</th>
+            <th className="px-6 py-3 text-left">Final Decision</th>
+            <th className="px-6 py-3 text-right">Actions</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100">
+          {displayedApps.map((app: any) => {
+            const da = app.domainApplications[0];
+            const status = da?.inferredStatus ?? "Pending";
+            const reviews = da?.reviews ?? [];
+            const decisions = da?.decisions ?? [];
+            const latestDraft = decisions.find((d: any) => d.stage === "Draft");
+            const latestFinal = decisions.find((d: any) => d.stage === "Final");
+            return (
+              <tr key={app.id} className="hover:bg-gray-50">
+                <td className="px-6 py-4 font-medium text-gray-900">
+                  {app.user.firstName} {app.user.lastName}
+                </td>
+                <td className="px-6 py-4">
+                  <StatusBadge status={status} />
+                </td>
+                <td className="px-6 py-4">
+                  <ReviewerAssignmentCell
+                    domainApplicationId={da?.id}
+                    reviews={reviews}
+                    cycleReviewers={cycleReviewersForDomain}
+                    editable={isUnderReview && canAssignReviewers}
+                    rubricCriteria={rubricCriteria}
+                  />
+                </td>
+                <td className="px-6 py-4">
+                  {latestDraft ? <DecisionBadge type={latestDraft.type} /> : <span className="text-xs text-muted-foreground">—</span>}
+                </td>
+                <td className="px-6 py-4">
+                  {latestFinal ? <DecisionBadge type={latestFinal.type} /> : <span className="text-xs text-muted-foreground">—</span>}
+                </td>
+                <td className="px-6 py-4 text-right flex items-center justify-end gap-2">
+                  {isUnderReview && latestDraft && !latestFinal && (
+                    <button
+                      onClick={async () => {
+                        await fetch(`/api/decisions/${latestDraft.id}/finalize`, { method: "POST", credentials: "include" });
+                        window.location.reload();
+                      }}
+                      className="px-2 py-1 text-xs font-medium rounded bg-green-600 hover:bg-green-700 text-white transition"
+                    >
+                      Finalize
+                    </button>
+                  )}
+                  <Link
+                    to={`/domain-lead/application/${app.id}`}
+                    className="text-blue-600 hover:text-blue-800 font-medium"
+                  >
+                    Review →
+                  </Link>
+                </td>
+              </tr>
+            );
+          })}
+          {displayedApps.length === 0 && (
+            <tr><td colSpan={6} className="px-6 py-8 text-center text-gray-400 text-sm">
+              {filter === "finalize" ? "No applications need finalization." : "No applications."}
+            </td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, editable = true, rubricCriteria = [] }: {
+  domainApplicationId: string | undefined;
+  reviews: any[];
+  cycleReviewers: any[];
+  editable?: boolean;
+  rubricCriteria?: any[];
+}) {
+  const [localReviews, setLocalReviews] = useState(reviews);
+  const [adding, setAdding] = useState(false);
+  const [selectedReviewerId, setSelectedReviewerId] = useState("");
+  const [openReview, setOpenReview] = useState<any | null>(null);
+  const [removing, setRemoving] = useState<string | null>(null);
+
+  const assignedReviewerIds = new Set(localReviews.map((r: any) => r.cycleReviewerId));
+  const available = cycleReviewers.filter((cr: any) => !assignedReviewerIds.has(cr.id));
+
+  async function addReviewer() {
+    if (!domainApplicationId || !selectedReviewerId) return;
+    try {
+      const res = await fetch(`/api/domain-applications/${domainApplicationId}/reviews`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cycleReviewerId: selectedReviewerId }),
+      });
+      if (res.ok) {
+        const review = await res.json();
+        const reviewer = cycleReviewers.find((cr: any) => cr.id === selectedReviewerId);
+        setLocalReviews(prev => [...prev, { ...review, cycleReviewer: reviewer }]);
+        setSelectedReviewerId("");
+        setAdding(false);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        console.error("Failed to add reviewer:", res.status, err);
+        alert(`Failed to add reviewer: ${err.error ?? res.statusText}`);
+      }
+    } catch (e) {
+      console.error("Failed to add reviewer:", e);
+    }
+  }
+
+  async function removeReview(reviewId: string) {
+    setRemoving(reviewId);
+    try {
+      const res = await fetch(`/api/reviews/${reviewId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (res.ok) {
+        setLocalReviews(prev => prev.filter(r => r.id !== reviewId));
+      } else {
+        const err = await res.json().catch(() => ({}));
+        console.error("Failed to remove review:", res.status, err);
+        alert(`Failed to remove reviewer: ${err.error ?? res.statusText}`);
+      }
+    } catch (e) {
+      console.error("Failed to remove review:", e);
+      alert(`Failed to remove reviewer: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setRemoving(null);
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {localReviews.map((r: any) => {
+        const m = r.cycleReviewer?.daliMember;
+        const name = m?.firstName && m?.lastName
+          ? `${m.firstName} ${m.lastName[0]}.`
+          : m?.daliEmail ?? "?";
+        const status = getReviewStatus(r);
+        const pillClass =
+          status === "submitted"
+            ? "border-green-300 bg-green-50 text-green-800 dark:border-green-700 dark:bg-green-900/30 dark:text-green-300"
+            : status === "inProgress"
+              ? "border-yellow-300 bg-yellow-50 text-yellow-800 dark:border-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300"
+              : "border-gray-300 bg-gray-50 text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400";
+        const icon =
+          status === "submitted" ? (
+            <Check className="w-3 h-3 text-green-600 dark:text-green-400" />
+          ) : status === "inProgress" ? (
+            <Clock className="w-3 h-3 text-yellow-600 dark:text-yellow-400" />
+          ) : (
+            <CircleDashed className="w-3 h-3 text-gray-400" />
+          );
+        return (
+          <span
+            key={r.id}
+            role="button"
+            tabIndex={0}
+            onClick={() => setOpenReview(r)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setOpenReview(r);
+              }
+            }}
+            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs border cursor-pointer hover:brightness-95 transition ${pillClass}`}
+          >
+            {icon}
+            {name}
+            {editable && status !== "submitted" && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  removeReview(r.id);
+                }}
+                disabled={removing === r.id}
+                className="ml-0.5 text-gray-400 hover:text-red-500 transition"
+                title="Remove reviewer"
+              >
+                <Trash2 className="w-3 h-3" />
+              </button>
+            )}
+          </span>
+        );
+      })}
+      {editable && adding ? (
+        <div className="inline-flex items-center gap-1">
+          <select
+            value={selectedReviewerId}
+            onChange={e => setSelectedReviewerId(e.target.value)}
+            className="rounded border border-border bg-card text-card-foreground px-1.5 py-0.5 text-xs"
+          >
+            <option value="">Select...</option>
+            {available.map((cr: any) => {
+              const m = cr.daliMember;
+              const label = m?.firstName && m?.lastName
+                ? `${m.firstName} ${m.lastName}`
+                : m?.daliEmail ?? cr.id;
+              return <option key={cr.id} value={cr.id}>{label}</option>;
+            })}
+          </select>
+          <button
+            onClick={addReviewer}
+            disabled={!selectedReviewerId}
+            className="px-1.5 py-0.5 text-xs font-medium rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+          >
+            Add
+          </button>
+          <button
+            onClick={() => { setAdding(false); setSelectedReviewerId(""); }}
+            className="text-gray-400 hover:text-gray-600"
+          >
+            <Trash2 className="w-3 h-3" />
+          </button>
+        </div>
+      ) : editable ? (
+        <button
+          onClick={() => setAdding(true)}
+          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs border border-dashed border-gray-300 text-gray-400 hover:border-blue-400 hover:text-blue-600 transition"
+          title="Add reviewer"
+        >
+          <Plus className="w-3 h-3" /> Add
+        </button>
+      ) : null}
+      {openReview && (
+        <ReviewModal
+          review={openReview}
+          rubricCriteria={rubricCriteria}
+          onClose={() => setOpenReview(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function ReviewModal({ review, rubricCriteria, onClose }: {
+  review: any;
+  rubricCriteria: any[];
+  onClose: () => void;
+}) {
+  const m = review.cycleReviewer?.daliMember;
+  const reviewerName = m?.firstName && m?.lastName
+    ? `${m.firstName} ${m.lastName}`
+    : m?.daliEmail ?? "Reviewer";
+  const isSubmitted = !!review.submittedAt;
+  const scoreEntries = Object.entries((review.scores as Record<string, number>) ?? {});
+  const criteriaByKey: Record<string, { label: string }> = {};
+  for (const c of rubricCriteria ?? []) {
+    if (c?.key) criteriaByKey[c.key] = { label: c.label ?? c.key };
+  }
+
+  // Close on Escape
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const hasAnyContent =
+    scoreEntries.length > 0 ||
+    (review.feedback && review.feedback.trim() !== "") ||
+    (review.rejectionRationale && review.rejectionRationale.trim() !== "") ||
+    !!review.overallRecommendation;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="relative bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between px-6 py-4 border-b border-gray-200">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">{reviewerName}</h2>
+            <div className="mt-1 flex items-center gap-2 text-xs">
+              {isSubmitted ? (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-medium bg-green-50 text-green-700 border border-green-200">
+                  <Check className="w-3 h-3" />
+                  Submitted
+                  {review.submittedAt && (
+                    <span className="text-green-600">
+                      · {new Date(review.submittedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                    </span>
+                  )}
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-medium bg-yellow-50 text-yellow-700 border border-yellow-200">
+                  <Clock className="w-3 h-3" />
+                  In progress
+                </span>
+              )}
+              {review.overallRecommendation && (
+                <span className="px-2 py-0.5 rounded-full font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                  {review.overallRecommendation}
+                </span>
+              )}
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-700 transition"
+            aria-label="Close"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="px-6 py-5 space-y-5">
+          {!hasAnyContent ? (
+            <p className="text-sm text-gray-500 italic">
+              This reviewer hasn&apos;t started their review yet.
+            </p>
+          ) : (
+            <>
+              {scoreEntries.length > 0 && (
+                <div>
+                  <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
+                    Scores
+                  </h3>
+                  <div className="grid grid-cols-2 gap-2">
+                    {scoreEntries.map(([key, score]) => (
+                      <div
+                        key={key}
+                        className="flex items-center justify-between text-sm bg-gray-50 rounded px-3 py-2"
+                      >
+                        <span className="text-gray-700">
+                          {criteriaByKey[key]?.label ?? key}
+                        </span>
+                        <span className="font-semibold text-gray-900">{score}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {review.feedback && review.feedback.trim() !== "" && (
+                <div>
+                  <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
+                    Feedback
+                  </h3>
+                  <p className="text-sm text-gray-800 whitespace-pre-wrap bg-gray-50 rounded p-3">
+                    {review.feedback}
+                  </p>
+                </div>
+              )}
+              {review.rejectionRationale && review.rejectionRationale.trim() !== "" && (
+                <div>
+                  <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
+                    Rejection rationale
+                  </h3>
+                  <p className="text-sm text-gray-800 whitespace-pre-wrap bg-gray-50 rounded p-3">
+                    {review.rejectionRationale}
+                  </p>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
