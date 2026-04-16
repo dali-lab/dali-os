@@ -16,17 +16,10 @@ jobs:
       - name: Wipe dev database
         if: github.ref_name == 'dev'
         env:
-          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
-          PROJECT_ID: falling-morning-15858013
+          DEV_DATABASE_URL: ${{ secrets.DEV_DATABASE_URL }}
         run: |
-          BRANCHES=$(curl -sf "https://console.neon.tech/api/v2/projects/$PROJECT_ID/branches" \
-            -H "Authorization: Bearer $NEON_API_KEY")
-          DEV_ID=$(echo "$BRANCHES" | jq -r '.branches[] | select(.name=="development") | .id')
-          curl -sf -X POST \
-            "https://console.neon.tech/api/v2/projects/$PROJECT_ID/branches/$DEV_ID/sql" \
-            -H "Authorization: Bearer $NEON_API_KEY" \
-            -H "Content-Type: application/json" \
-            -d '{"query": "DROP SCHEMA public CASCADE; CREATE SCHEMA public;", "database": "neondb"}'
+          psql "$DEV_DATABASE_URL" -v ON_ERROR_STOP=1 \
+            -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
 
       - name: Restore staging database from prod
         if: github.ref_name == 'staging'
