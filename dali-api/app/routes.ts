@@ -102,4 +102,8 @@ export default [
 
   // Interview assignment notes
   route("api/interview-assignments/:id/notes", "routes/api.interview-assignments.$id.notes.ts"),
+
+  // Collaborative editing version history
+  route("api/collab/versions", "routes/api.collab.versions.ts"),
+  route("api/collab/versions/:id", "routes/api.collab.versions.$id.ts"),
 ] satisfies RouteConfig;

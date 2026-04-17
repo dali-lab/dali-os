@@ -24,6 +24,16 @@ export const links: Route.LinksFunction = () => [
 ];
 
 export function Layout({ children }: { children: React.ReactNode }) {
+  // Inject the collab WebSocket URL into the client so CollaborativeEditor can
+  // connect. This value is only computed server-side; on the client we rely on
+  // the DOM already containing the serialized script. `suppressHydrationWarning`
+  // prevents React from complaining about the server/client value difference.
+  const collabUrl =
+    typeof window === "undefined"
+      ? process.env.COLLAB_URL ??
+        `ws://localhost:${process.env.COLLAB_PORT ?? "3002"}`
+      : (window as any).__COLLAB_URL ?? "";
+
   return (
     <html lang="en">
       <head>
@@ -33,6 +43,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <Links />
       </head>
       <body>
+        <script
+          suppressHydrationWarning
+          dangerouslySetInnerHTML={{
+            __html: `window.__COLLAB_URL=${JSON.stringify(collabUrl)};`,
+          }}
+        />
         {children}
         <ScrollRestoration />
         <Scripts />

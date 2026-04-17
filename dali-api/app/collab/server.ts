@@ -1,0 +1,122 @@
+import { Server } from "@hocuspocus/server";
+import { verifyCollabToken } from "./auth";
+import { loadDocument, maybeSnapshot, storeDocument } from "./persistence";
+import { isPresenceRoom } from "./roomName";
+import { authorizeCollabDoc } from "~/lib/collabAuth";
+
+let server: Server | null = null;
+
+// userIds that have edited each doc since the last snapshot was written.
+// Drained in onStoreDocument / onDisconnect so version rows record only the
+// authors who contributed to that snapshot's window.
+const pendingAuthors = new Map<string, Set<string>>();
+
+function recordAuthor(documentName: string, userId: string | undefined) {
+  if (!userId) return;
+  let set = pendingAuthors.get(documentName);
+  if (!set) {
+    set = new Set();
+    pendingAuthors.set(documentName, set);
+  }
+  set.add(userId);
+}
+
+function drainAuthors(documentName: string): string[] {
+  const set = pendingAuthors.get(documentName);
+  if (!set) return [];
+  pendingAuthors.delete(documentName);
+  return Array.from(set);
+}
+
+export function startCollabServer() {
+  if (server) return server;
+
+  const port = parseInt(process.env.COLLAB_PORT ?? "3002", 10);
+
+  server = new Server({
+    port,
+    // Debounce writes — Hocuspocus buffers onChange calls and flushes
+    // to onStoreDocument every `debounce` ms.
+    debounce: 2000,
+
+    async onAuthenticate({
+      token,
+      documentName,
+    }: {
+      token: string;
+      documentName: string;
+    }) {
+      if (!token) throw new Error("No authentication token provided");
+      const user = await verifyCollabToken(token);
+
+      // Presence rooms are accessible to any authenticated user — they carry
+      // no document content, only ephemeral awareness state.
+      if (!isPresenceRoom(documentName)) {
+        const allowed = await authorizeCollabDoc(user.sub, documentName);
+        if (!allowed) {
+          throw new Error(
+            `User ${user.sub} not authorized for document ${documentName}`,
+          );
+        }
+      }
+
+      console.log(
+        `[collab:server] auth ok for user=${user.sub} doc=${documentName}`,
+      );
+      return { user };
+    },
+
+    async onConnect({ documentName }: { documentName: string }) {
+      console.log(`[collab:server] onConnect doc=${documentName}`);
+    },
+
+    async onLoadDocument({ document, documentName }: { document: any; documentName: string }) {
+      console.log(`[collab:server] onLoadDocument doc=${documentName}`);
+      await loadDocument(documentName, document);
+      return document;
+    },
+
+    async onChange({ documentName, context }: { documentName: string; context: any }) {
+      const userId = context?.user?.sub;
+      console.log(`[collab:server] onChange doc=${documentName} by=${userId ?? "?"}`);
+      recordAuthor(documentName, userId);
+    },
+
+    async onStoreDocument({ documentName, document }: { documentName: string; document: any }) {
+      console.log(`[collab:server] onStoreDocument doc=${documentName}`);
+      const stored = await storeDocument(documentName, document);
+      if (!stored) return;
+      const authors = drainAuthors(documentName);
+      try {
+        const wrote = await maybeSnapshot(documentName, stored, authors);
+        if (!wrote) for (const a of authors) recordAuthor(documentName, a);
+      } catch (err) {
+        console.error(`[collab:server] snapshot failed doc=${documentName}`, err);
+        for (const a of authors) recordAuthor(documentName, a);
+      }
+    },
+
+    async onDisconnect({ documentName, document }: { documentName: string; document: any }) {
+      console.log(`[collab:server] onDisconnect doc=${documentName}`);
+      const stored = await storeDocument(documentName, document);
+      if (!stored) return;
+      const authors = drainAuthors(documentName);
+      try {
+        const wrote = await maybeSnapshot(documentName, stored, authors);
+        if (!wrote) for (const a of authors) recordAuthor(documentName, a);
+      } catch (err) {
+        console.error(`[collab:server] snapshot failed doc=${documentName}`, err);
+        for (const a of authors) recordAuthor(documentName, a);
+      }
+    },
+  });
+
+  server.listen();
+  console.log(`[collab] Hocuspocus server listening on port ${port}`);
+
+  return server;
+}
+
+export function getCollabServer() {
+  return server;
+}
