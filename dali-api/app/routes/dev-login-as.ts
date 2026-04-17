@@ -17,7 +17,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   const url = new URL(request.url);
   const netId = url.searchParams.get("netId");
   const daliEmail = url.searchParams.get("daliEmail");
-  const redirect = url.searchParams.get("redirect") ?? "http://localhost:3001/";
+  const defaultRedirect = "http://localhost:3001/";
+  const redirect = url.searchParams.get("redirect") ?? defaultRedirect;
 
   if (!netId && !daliEmail) {
     return new Response("Missing ?netId or ?daliEmail param", { status: 400 });
@@ -49,7 +50,10 @@ export async function loader({ request }: Route.LoaderArgs) {
     type,
   });
 
-  const headers = new Headers({ Location: redirect });
+  const finalRedirect = url.searchParams.get("redirect")
+    ? redirect
+    : type === "member" ? "http://localhost:3001/" : "http://localhost:3001/portal";
+  const headers = new Headers({ Location: finalRedirect });
   // __dali_at: api auth (HttpOnly so JS can't read; server-set overwrites any existing)
   headers.append(
     "Set-Cookie",
