@@ -1269,7 +1269,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                     </button>
                   )}
                   <Link
-                    to={`/domain-lead/application/${app.id}`}
+                    to={`/domain-lead/application/${da?.id}`}
                     className="text-blue-600 hover:text-blue-800 font-medium"
                   >
                     Review →
