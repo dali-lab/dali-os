@@ -23,6 +23,7 @@ services:
     working_dir: /app
     ports:
       - "3001:3001"
+      - "3002:3002"
       - "5555:5555"
     volumes:
       - ./dali-api:/app
@@ -36,6 +37,7 @@ services:
       CAS_BASE_URL: https://login.dartmouth.edu/cas
       FRONTEND_URL: http://localhost:5173
       API_BASE_URL: http://localhost:3001
+      COLLAB_PORT: 3002
     depends_on:
       db:
         condition: service_healthy
@@ -54,6 +56,7 @@ services:
     environment:
       VITE_DALI_DB_URL: http://localhost:3001
       VITE_FRONTEND_URL: http://localhost:5173
+      VITE_COLLAB_URL: ws://localhost:3002
     depends_on:
       - api
 

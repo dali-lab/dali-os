@@ -3,9 +3,13 @@ import { Link, redirect, useLoaderData, useSubmit } from 'react-router'
 import { ArrowLeft, HelpCircle, X, Check } from 'lucide-react'
 import { prisma } from '~/lib/db'
 import { requireAuth } from '~/lib/auth'
+import { parseAccessToken } from '~/lib/cookies'
 import type { Route } from './+types/mentor.application.$id'
 import { ApplicationViewer } from '~/components/ApplicationViewer'
 import { SaveStatusIndicator } from '~/components/SaveStatusIndicator'
+import { CollaborativeEditor } from '~/components/CollaborativeEditor'
+import { PresenceProvider } from '~/components/collab/PresenceProvider'
+import { PresenceBar } from '~/components/collab/PresenceBar'
 import type { Question, RubricCriterion } from '~/types'
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -51,7 +55,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     }),
   ])
 
-  return { application, mentor, existingReview }
+  // Pass JWT for WebSocket auth
+  const collabToken = parseAccessToken(request)
+  const userName = [mentor.firstName, mentor.lastName].filter(Boolean).join(' ') || auth.user.email
+
+  return { application, mentor, existingReview, collabToken, userName }
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -63,8 +71,6 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   if (intent === 'save-review') {
     const scores = JSON.parse(formData.get('scores') as string)
-    const feedback = (formData.get('feedback') as string) ?? ''
-    const rejectionRationale = (formData.get('rejectionRationale') as string) ?? ''
     const overallRecommendation = (formData.get('overallRecommendation') as string) || null
     const annotations = JSON.parse((formData.get('annotations') as string) ?? '[]')
 
@@ -78,7 +84,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (existing) {
       await prisma.applicationReview.update({
         where: { id: existing.id },
-        data: { scores, feedback, rejectionRationale, overallRecommendation, annotations },
+        data: { scores, overallRecommendation, annotations },
       })
     }
   }
@@ -89,7 +95,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 const RECOMMENDATIONS = ['Strong Hire', 'Hire', 'Lean Hire', 'Lean No Hire', 'No Hire'] as const
 
 export default function MentorApplicationReview() {
-  const { application, mentor, existingReview } = useLoaderData<typeof loader>()
+  const { application, mentor, existingReview, collabToken, userName } = useLoaderData<typeof loader>()
   const submit = useSubmit()
 
   const cycle = application.applicationCycle
@@ -118,8 +124,6 @@ export default function MentorApplicationReview() {
   const [scores, setScores] = useState<Record<string, number>>(
     (existingReview?.scores as Record<string, number>) ?? {}
   )
-  const [feedback, setFeedback] = useState(existingReview?.feedback ?? '')
-  const [rejectionRationale, setRejectionRationale] = useState(existingReview?.rejectionRationale ?? '')
   const [overallRecommendation, setOverallRecommendation] = useState<string | null>(
     existingReview?.overallRecommendation ?? null
   )
@@ -136,8 +140,6 @@ export default function MentorApplicationReview() {
 
   const submitReview = (data: {
     scores: Record<string, number>
-    feedback: string
-    rejectionRationale: string
     overallRecommendation: string | null
     annotations: object[]
   }) => {
@@ -145,8 +147,6 @@ export default function MentorApplicationReview() {
     formData.set('intent', 'save-review')
     formData.set('mentorId', mentor.id)
     formData.set('scores', JSON.stringify(data.scores))
-    formData.set('feedback', data.feedback)
-    formData.set('rejectionRationale', data.rejectionRationale)
     formData.set('overallRecommendation', data.overallRecommendation ?? '')
     formData.set('annotations', JSON.stringify(data.annotations))
     submit(formData, { method: 'post' })
@@ -154,32 +154,29 @@ export default function MentorApplicationReview() {
 
   const isSubmitted = !!existingReview?.submittedAt
 
-  // Auto-save on any change: flip to "Saving…" immediately on edit, fire the
-  // actual request after a 1s debounce, then flip to "Saved at …" once the
-  // request flushes. Skipped while the review is already submitted.
+  // Auto-save scores, recommendation, and annotations on change.
+  // Feedback and rejectionRationale are handled by the collab server.
   useEffect(() => {
     if (isFirstRender.current) { isFirstRender.current = false; return }
     if (isSubmitted) return
     setIsSaving(true)
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
-      submitReview({ scores, feedback, rejectionRationale, overallRecommendation, annotations })
+      submitReview({ scores, overallRecommendation, annotations })
       setTimeout(() => {
         setIsSaving(false)
         setLastSaved(new Date())
       }, 400)
     }, 1000)
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
-  }, [scores, feedback, rejectionRationale, overallRecommendation, annotations])
+  }, [scores, overallRecommendation, annotations])
 
-  // Flush any pending debounce synchronously — used before "Submit Review" so
-  // the latest content is persisted before the server-side submit lock engages.
   const flushSave = () => {
     if (debounceRef.current) {
       clearTimeout(debounceRef.current)
       debounceRef.current = null
     }
-    submitReview({ scores, feedback, rejectionRationale, overallRecommendation, annotations })
+    submitReview({ scores, overallRecommendation, annotations })
     setIsSaving(false)
     setLastSaved(new Date())
   }
@@ -197,11 +194,19 @@ export default function MentorApplicationReview() {
   }
 
   return (
+    <PresenceProvider
+      pageId={`review:${existingReview?.id ?? application.id}`}
+      token={collabToken}
+      userName={userName}
+    >
     <div className="space-y-6 pb-12 relative">
       <div>
-        <Link to="/reviewer" className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700 mb-4">
-          <ArrowLeft className="w-4 h-4 mr-1" /> Back to Dashboard
-        </Link>
+        <div className="flex items-center justify-between mb-4">
+          <Link to="/reviewer" className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700">
+            <ArrowLeft className="w-4 h-4 mr-1" /> Back to Dashboard
+          </Link>
+          <PresenceBar />
+        </div>
         <div className="flex justify-between items-end">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">
@@ -274,29 +279,51 @@ export default function MentorApplicationReview() {
                 )}
               </div>
 
-              {/* Feedback */}
+              {/* Feedback — collaborative editor */}
               <div>
                 <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-2">Internal Feedback</h3>
                 <p className="text-xs text-gray-500 mb-2">Notes for other reviewers. Not visible to applicant.</p>
-                <textarea
-                  rows={4} value={feedback}
-                  onChange={(e) => setFeedback(e.target.value)}
-                  className="block w-full rounded-md border-black shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2 text-gray-900 bg-white"
-                  placeholder="Strengths, weaknesses, areas to probe in interview..."
-                />
+                {existingReview && collabToken ? (
+                  <CollaborativeEditor
+                    editorId="feedback"
+                    documentName={`review:${existingReview.id}:feedback`}
+                    token={collabToken}
+                    userName={userName}
+                    disabled={isSubmitted}
+                    placeholder="Strengths, weaknesses, areas to probe in interview..."
+                  />
+                ) : (
+                  <textarea
+                    rows={4}
+                    disabled
+                    className="block w-full rounded-md border-gray-300 shadow-sm sm:text-sm border p-2 text-gray-900 bg-gray-50"
+                    placeholder="Save the review first to enable collaborative editing..."
+                  />
+                )}
               </div>
 
-              {/* Rejection Rationale */}
+              {/* Rejection Rationale — collaborative editor */}
               <div>
                 <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-2">
                   Rejection Rationale <span className="text-xs font-normal text-gray-500 normal-case">(Optional)</span>
                 </h3>
-                <textarea
-                  rows={3} value={rejectionRationale}
-                  onChange={(e) => setRejectionRationale(e.target.value)}
-                  className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2 text-gray-900 bg-white"
-                  placeholder="If we reject this candidate, what feedback should we provide?"
-                />
+                {existingReview && collabToken ? (
+                  <CollaborativeEditor
+                    editorId="rejectionRationale"
+                    documentName={`review:${existingReview.id}:rejectionRationale`}
+                    token={collabToken}
+                    userName={userName}
+                    disabled={isSubmitted}
+                    placeholder="If we reject this candidate, what feedback should we provide?"
+                  />
+                ) : (
+                  <textarea
+                    rows={3}
+                    disabled
+                    className="block w-full rounded-md border-gray-300 shadow-sm sm:text-sm border p-2 text-gray-900 bg-gray-50"
+                    placeholder="Save the review first to enable collaborative editing..."
+                  />
+                )}
               </div>
 
               {/* Overall Recommendation */}
@@ -393,5 +420,6 @@ export default function MentorApplicationReview() {
         </div>
       )}
     </div>
+    </PresenceProvider>
   )
 }

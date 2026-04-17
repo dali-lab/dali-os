@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useCallback } from 'react'
 import { Link, useLoaderData } from 'react-router'
 import { redirect } from 'react-router'
 import {
@@ -14,7 +14,10 @@ import {
 } from 'lucide-react'
 import { prisma } from '~/lib/db'
 import { requireAuth } from '~/lib/auth'
-import { SaveStatusIndicator } from '~/components/SaveStatusIndicator'
+import { parseAccessToken } from '~/lib/cookies'
+import { CollaborativeEditor } from '~/components/CollaborativeEditor'
+import { PresenceProvider } from '~/components/collab/PresenceProvider'
+import { PresenceBar } from '~/components/collab/PresenceBar'
 import type { Route } from './+types/interviewer.interview.$interviewId'
 
 const RECOMMENDATION_OPTIONS = [
@@ -49,9 +52,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           cycleInterviewer: {
             include: { daliMember: true },
           },
-          noteVersions: {
-            orderBy: { createdAt: 'desc' },
-          },
         },
       },
       domainApplication: {
@@ -77,20 +77,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   if (!interview) throw redirect('/interviewer')
 
-  // Identify my assignment vs other assignment
   const myAssignment = interview.assignments.find(
     (a: any) => a.cycleInterviewer.daliMemberId === member.id,
-  )
-  const otherAssignment = interview.assignments.find(
-    (a: any) => a.cycleInterviewer.daliMemberId !== member.id,
   )
 
   if (!myAssignment) throw redirect('/interviewer')
 
-  // Rubric criteria for the applicant's domain — used to label review scores.
-  // `ChallengeVersion.domainId` is nullable at the schema level (general form
-  // has no domain), but a DomainApplication is always attached to a
-  // domain-scoped challenge version, so we null-check defensively.
+  // Rubric criteria for the applicant's domain
   const domainId = interview.domainApplication.challengeVersion.domainId
   let rubricCriteria: any[] = []
   if (domainId) {
@@ -110,16 +103,23 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     }
   }
 
+  // Pass JWT for WebSocket auth
+  const collabToken = parseAccessToken(request)
+
+  // Build user display name for cursors
+  const userName = [member.firstName, member.lastName].filter(Boolean).join(' ') || auth.user.email
+
   return {
     interview,
     myAssignment,
-    otherAssignment: otherAssignment ?? null,
     rubricCriteria,
+    collabToken,
+    userName,
   }
 }
 
 export default function InterviewDetailPage() {
-  const { interview, myAssignment, otherAssignment, rubricCriteria } =
+  const { interview, myAssignment, rubricCriteria, collabToken, userName } =
     useLoaderData<typeof loader>() as any
 
   const applicant = interview.domainApplication?.application?.user
@@ -142,33 +142,9 @@ export default function InterviewDetailPage() {
     if (c?.key) criteriaByKey[c.key] = { label: c.label ?? c.key }
   }
 
-  // Notes state
-  const [notes, setNotes] = useState(
-    myAssignment.noteVersions?.[0]?.content ?? '',
-  )
-  const [savedContent, setSavedContent] = useState<string>(
-    myAssignment.noteVersions?.[0]?.content ?? '',
-  )
-  const [lastSaved, setLastSaved] = useState<Date | null>(
-    myAssignment.noteVersions?.[0]?.createdAt
-      ? new Date(myAssignment.noteVersions[0].createdAt)
-      : null,
-  )
-  const [savingInFlight, setSavingInFlight] = useState(false)
-  const [showHistory, setShowHistory] = useState(false)
-  const [myNoteVersions, setMyNoteVersions] = useState<any[]>(
-    myAssignment.noteVersions ?? [],
-  )
-  // "Saving..." shows whenever there's dirty content OR a fetch is in flight.
-  const isDirty = notes !== savedContent
-  const showSaving = savingInFlight || isDirty
-
-  // Recommendation state
+  // Recommendation state (dropdown + mark-complete are still REST-based)
   const [recommendation, setRecommendation] = useState<string>(
     interview.recommendation ?? '',
-  )
-  const [recommendationNotes, setRecommendationNotes] = useState<string>(
-    interview.recommendationNotes ?? '',
   )
   const [savingRecommendation, setSavingRecommendation] = useState(false)
 
@@ -181,83 +157,7 @@ export default function InterviewDetailPage() {
   // Decline state
   const [declining, setDeclining] = useState(false)
 
-  // Auto-save: throttle to at most 1 save / sec while actively typing, plus
-  // a trailing save 3s after the last keystroke to catch the final state.
-  const notesRef = useRef(notes)
-  notesRef.current = notes
-  const savedContentRef = useRef<string>(
-    myAssignment.noteVersions?.[0]?.content ?? '',
-  )
-  const lastSaveAtRef = useRef<number>(0)
-  const throttleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const trailingTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const saveNotes = useCallback(async () => {
-    const content = notesRef.current
-    // No-op if the server already has this content.
-    if (content === savedContentRef.current) return
-    setSavingInFlight(true)
-    try {
-      const res = await fetch(
-        `/api/interview-assignments/${myAssignment.id}/notes`,
-        {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content }),
-        },
-      )
-      if (res.ok) {
-        const version = await res.json()
-        savedContentRef.current = content
-        lastSaveAtRef.current = Date.now()
-        setSavedContent(content)
-        setLastSaved(new Date())
-        // Prepend the new version to the history list (server orders desc).
-        setMyNoteVersions((prev) => [version, ...prev])
-      }
-    } finally {
-      setSavingInFlight(false)
-    }
-  }, [myAssignment.id])
-
-  useEffect(() => {
-    if (notes === savedContentRef.current) return
-
-    // Throttle leg: if it's been ≥1s since the last save, fire now.
-    // Otherwise schedule the next throttled save at the 1s mark.
-    const now = Date.now()
-    const elapsed = now - lastSaveAtRef.current
-    if (throttleTimer.current) clearTimeout(throttleTimer.current)
-    if (elapsed >= 1000) {
-      void saveNotes()
-    } else {
-      throttleTimer.current = setTimeout(() => {
-        void saveNotes()
-      }, 1000 - elapsed)
-    }
-
-    // Trailing leg: 3s after the last keystroke, make sure the final
-    // content is saved.
-    if (trailingTimer.current) clearTimeout(trailingTimer.current)
-    trailingTimer.current = setTimeout(() => {
-      void saveNotes()
-    }, 3000)
-
-    return () => {
-      if (throttleTimer.current) clearTimeout(throttleTimer.current)
-      if (trailingTimer.current) clearTimeout(trailingTimer.current)
-    }
-  }, [notes, saveNotes])
-
-  const handleRestoreVersion = useCallback((content: string) => {
-    // Just overwrite the textarea — the auto-save effect picks it up and
-    // creates a new version as the server-side "current" note.
-    setNotes(content)
-    setShowHistory(false)
-  }, [])
-
-  // Save recommendation
+  // Save recommendation (dropdown value only — notes are handled by collab)
   const handleSaveRecommendation = useCallback(async () => {
     setSavingRecommendation(true)
     try {
@@ -265,12 +165,12 @@ export default function InterviewDetailPage() {
         method: 'PATCH',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recommendation, recommendationNotes }),
+        body: JSON.stringify({ recommendation }),
       })
     } finally {
       setSavingRecommendation(false)
     }
-  }, [interview.id, recommendation, recommendationNotes])
+  }, [interview.id, recommendation])
 
   // Mark complete
   const handleMarkComplete = useCallback(async () => {
@@ -281,7 +181,7 @@ export default function InterviewDetailPage() {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recommendation, recommendationNotes }),
+        body: JSON.stringify({ recommendation }),
       })
       if (res.ok) {
         setIsCompleted(true)
@@ -289,10 +189,9 @@ export default function InterviewDetailPage() {
     } finally {
       setCompleting(false)
     }
-  }, [interview.id, recommendation, recommendationNotes])
+  }, [interview.id, recommendation])
 
-  // Reopen (un-complete) interview — flips status back to Scheduled so notes
-  // and the recommendation can be edited again.
+  // Reopen interview
   const handleReopen = useCallback(async () => {
     setCompleting(true)
     try {
@@ -308,9 +207,7 @@ export default function InterviewDetailPage() {
     }
   }, [interview.id])
 
-  // Mark unavailable (decline). The backend is atomic: either it swaps a
-  // replacement in (→ success, redirect to dashboard) or it fails with 409
-  // because no replacement is available (→ toast, stay on page).
+  // Mark unavailable (decline)
   const handleDecline = useCallback(async () => {
     if (
       !confirm(
@@ -352,46 +249,24 @@ export default function InterviewDetailPage() {
     }
   }, [interview.id, interview.applicationCycleId])
 
-  // Other interviewer's latest note — poll every 3s so edits by the other
-  // interviewer show up live without a manual refresh.
-  const [otherLatestNote, setOtherLatestNote] = useState<
-    { id: string; content: string; createdAt: string } | null
-  >(otherAssignment?.noteVersions?.[0] ?? null)
-
-  useEffect(() => {
-    if (!otherAssignment?.id) return
-    let cancelled = false
-    const fetchLatest = async () => {
-      try {
-        const res = await fetch(
-          `/api/interview-assignments/${otherAssignment.id}/notes`,
-          { credentials: 'include' },
-        )
-        if (!res.ok || cancelled) return
-        const versions = await res.json()
-        if (cancelled) return
-        setOtherLatestNote(versions?.[0] ?? null)
-      } catch {
-        // swallow — transient network errors shouldn't break the UI
-      }
-    }
-    const interval = setInterval(fetchLatest, 3000)
-    return () => {
-      cancelled = true
-      clearInterval(interval)
-    }
-  }, [otherAssignment?.id])
-
   return (
+    <PresenceProvider
+      pageId={`interview:${interview.id}`}
+      token={collabToken}
+      userName={userName}
+    >
     <div className="space-y-8 max-w-6xl mx-auto">
-      {/* Back button */}
-      <Link
-        to="/interviewer"
-        className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700"
-      >
-        <ArrowLeft className="w-4 h-4 mr-1" />
-        Back to Dashboard
-      </Link>
+      {/* Back button + presence avatars inline */}
+      <div className="flex items-center justify-between">
+        <Link
+          to="/interviewer"
+          className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700"
+        >
+          <ArrowLeft className="w-4 h-4 mr-1" />
+          Back to Dashboard
+        </Link>
+        <PresenceBar />
+      </div>
 
       {/* Header */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
@@ -631,109 +506,28 @@ export default function InterviewDetailPage() {
         )}
       </div>
 
-      {/* Two-column notes layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* My Notes */}
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">My Notes</h2>
-          <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            className="w-full h-48 p-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-y"
-            placeholder="Write your interview notes here..."
+      {/* Joint Interview Notes — collaborative editor */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">
+          Interview Notes
+        </h2>
+        <p className="text-xs text-gray-500 mb-3">
+          Shared notes — both interviewers edit this document in real-time.
+        </p>
+        {collabToken ? (
+          <CollaborativeEditor
+            editorId="notes"
+            documentName={`interview:${interview.id}:notes`}
+            token={collabToken}
+            userName={userName}
             disabled={isCompleted}
+            placeholder="Write your interview notes here..."
           />
-          <div className="mt-2 flex items-center text-xs text-gray-500">
-            <SaveStatusIndicator saving={showSaving} lastSaved={lastSaved} />
+        ) : (
+          <div className="p-4 bg-yellow-50 rounded-lg border border-yellow-200 text-sm text-yellow-800">
+            Session expired — please refresh to enable collaborative editing.
           </div>
-
-          {/* Note history */}
-          {myNoteVersions.length > 1 && (
-            <div className="mt-4 border-t border-gray-100 pt-4">
-              <button
-                onClick={() => setShowHistory(!showHistory)}
-                className="flex items-center text-sm text-gray-600 hover:text-gray-800"
-              >
-                <ChevronDown
-                  className={`w-4 h-4 mr-1 transition-transform ${
-                    showHistory ? 'rotate-180' : ''
-                  }`}
-                />
-                Note History ({myNoteVersions.length} versions)
-              </button>
-              {showHistory && (
-                <div className="mt-3 space-y-3 max-h-64 overflow-y-auto">
-                  {myNoteVersions.map((version: any, idx: number) => {
-                    const isLatest = idx === 0
-                    const matchesCurrent = version.content === notes
-                    return (
-                      <div
-                        key={version.id}
-                        className="p-3 bg-gray-50 rounded-lg border border-gray-100"
-                      >
-                        <div className="flex items-center justify-between mb-1">
-                          <p className="text-xs text-gray-400">
-                            {new Date(version.createdAt).toLocaleString()}
-                            {isLatest && ' (latest)'}
-                          </p>
-                          <button
-                            onClick={() => handleRestoreVersion(version.content)}
-                            disabled={isCompleted || matchesCurrent}
-                            className="text-xs font-medium text-blue-600 hover:text-blue-800 disabled:text-gray-300 disabled:cursor-not-allowed"
-                          >
-                            Restore
-                          </button>
-                        </div>
-                        <p className="text-sm text-gray-700 whitespace-pre-wrap">
-                          {version.content || (
-                            <span className="text-gray-400 italic">(empty)</span>
-                          )}
-                        </p>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Other Interviewer's Notes */}
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">
-            {otherAssignment
-              ? `${
-                  otherAssignment.cycleInterviewer?.daliMember?.firstName ?? ''
-                } ${
-                  otherAssignment.cycleInterviewer?.daliMember?.lastName ?? ''
-                }`.trim() + "'s Notes"
-              : "Other Interviewer's Notes"}
-          </h2>
-          {otherAssignment ? (
-            <>
-              {otherLatestNote ? (
-                <div className="p-3 bg-gray-50 rounded-lg border border-gray-100 min-h-[12rem]">
-                  <p className="text-xs text-gray-400 mb-2">
-                    {new Date(otherLatestNote.createdAt).toLocaleString()}
-                  </p>
-                  <p className="text-sm text-gray-700 whitespace-pre-wrap">
-                    {otherLatestNote.content}
-                  </p>
-                </div>
-              ) : (
-                <div className="p-3 bg-gray-50 rounded-lg border border-gray-100 min-h-[12rem] flex items-center justify-center">
-                  <p className="text-sm text-gray-400">No notes yet.</p>
-                </div>
-              )}
-            </>
-          ) : (
-            <div className="p-3 bg-gray-50 rounded-lg border border-gray-100 min-h-[12rem] flex items-center justify-center">
-              <p className="text-sm text-gray-400">
-                No other interviewer assigned.
-              </p>
-            </div>
-          )}
-        </div>
+        )}
       </div>
 
       {/* Joint Recommendation */}
@@ -763,10 +557,9 @@ export default function InterviewDetailPage() {
               <strong>Recommendation:</strong>{' '}
               {interview.recommendation ?? recommendation}
             </p>
-            {(interview.recommendationNotes ?? recommendationNotes) && (
+            {interview.recommendationNotes && (
               <p className="text-sm text-green-700 mt-1">
-                <strong>Notes:</strong>{' '}
-                {interview.recommendationNotes ?? recommendationNotes}
+                <strong>Notes:</strong> {interview.recommendationNotes}
               </p>
             )}
           </div>
@@ -794,12 +587,19 @@ export default function InterviewDetailPage() {
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Recommendation Notes
               </label>
-              <textarea
-                value={recommendationNotes}
-                onChange={(e) => setRecommendationNotes(e.target.value)}
-                className="w-full h-24 p-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
-                placeholder="Joint notes on the recommendation..."
-              />
+              {collabToken ? (
+                <CollaborativeEditor
+                  editorId="recommendation"
+                  documentName={`interview:${interview.id}:recommendation`}
+                  token={collabToken}
+                  userName={userName}
+                  placeholder="Joint notes on the recommendation..."
+                />
+              ) : (
+                <div className="p-4 bg-yellow-50 rounded-lg border border-yellow-200 text-sm text-yellow-800">
+                  Session expired — please refresh.
+                </div>
+              )}
             </div>
 
             <div className="flex items-center gap-3">
@@ -824,5 +624,6 @@ export default function InterviewDetailPage() {
         )}
       </div>
     </div>
+    </PresenceProvider>
   )
 }
