@@ -5,7 +5,7 @@ test.describe('hiring lead workflow', () => {
     await loginAs({ daliEmail: 'jordan.taylor@dali.dartmouth.edu' });
   });
 
-  test('cycles list shows active cycle and controls', async ({ page }) => {
+  test('cycles list shows all cycles with status badges', async ({ page }) => {
     await page.goto('/hiring-lead-admin');
     await expect(page.getByRole('heading', { name: 'Hiring Cycles' })).toBeVisible();
     await expect(page.getByRole('button', { name: /New Cycle/ })).toBeVisible();
@@ -15,7 +15,7 @@ test.describe('hiring lead workflow', () => {
 
   test('can navigate to cycle detail', async ({ page }) => {
     await page.goto('/hiring-lead-admin');
-    await page.getByText('Fall 2026').first().click();
+    await page.getByRole('link', { name: /Fall 2026/ }).click();
     await expect(page).toHaveURL(/\/hiring-lead-admin\/cycle\/.+/);
   });
 

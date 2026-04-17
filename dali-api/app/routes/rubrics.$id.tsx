@@ -2,13 +2,13 @@ import { redirect } from 'react-router'
 import type { Route } from './+types/rubrics.$id'
 import { prisma } from '~/lib/db'
 import { requireAuth } from '~/lib/auth'
-import { isHiringLead, isDomainLead } from '~/lib/roles'
+import { isHiringLead } from '~/lib/roles'
 import { RubricDetail } from '~/components/RubricDetail'
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request)
   if (!auth.ok) return redirect('/login')
-  if (!(await isHiringLead(auth.user.sub)) && !(await isDomainLead(auth.user.sub))) return redirect('/')
+  if (!(await isHiringLead(auth.user.sub))) return redirect('/')
 
   const rubric = await prisma.rubric.findUniqueOrThrow({
     where: { id: params.id },
@@ -27,7 +27,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request)
   if (!auth.ok) return redirect('/login')
-  if (!(await isHiringLead(auth.user.sub)) && !(await isDomainLead(auth.user.sub))) return redirect('/')
+  if (!(await isHiringLead(auth.user.sub))) return redirect('/')
 
   const user = await prisma.user.findUnique({ where: { id: auth.user.sub } })
   if (!user) return redirect('/login')

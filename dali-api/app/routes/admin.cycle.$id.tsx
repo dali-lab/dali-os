@@ -90,15 +90,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const allDomains = await prisma.domain.findMany({ orderBy: { name: "asc" } });
 
-  // General challenge versions (domainId is null) for the form picker
-  const generalChallengeVersions = await prisma.challengeVersion.findMany({
-    where: { domainId: null },
-    include: { challenge: true },
-    orderBy: { createdAt: "desc" },
-  });
-
   const rubricVersionOptions = await prisma.rubricVersion.findMany({
-    where: { rubric: { domainId: null } },
     include: { rubric: { select: { name: true } } },
     orderBy: { createdAt: "desc" },
   });
@@ -131,7 +123,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     orderBy: { createdAt: "desc" },
   });
 
-  return { cycle, allDomains, finalDecisions, rubricVersionOptions, cycleApplicationReviewCount, generalChallengeVersions };
+  return { cycle, allDomains, finalDecisions, rubricVersionOptions, cycleApplicationReviewCount };
 }
 
 // ─── Action ──────────────────────────────────────────────────────────────────
@@ -171,30 +163,6 @@ export async function action({ request, params }: Route.ActionArgs) {
     await prisma.applicationCycle.update({
       where: { id: params.id },
       data: { generalRubricVersionId: rubricVersionId },
-    });
-    return redirect(`/hiring-lead-admin/cycle/${params.id}`);
-  }
-
-  if (intent === "link-general-form") {
-    const challengeVersionId = formData.get("challengeVersionId") as string;
-    if (!challengeVersionId) {
-      return redirect(`/hiring-lead-admin/cycle/${params.id}`);
-    }
-    // Remove any existing general form link (domainId is null)
-    const existing = await prisma.challengeVersionApplicationCycle.findMany({
-      where: { applicationCycleId: params.id },
-      include: { challengeVersion: true },
-    });
-    for (const e of existing) {
-      if (e.challengeVersion.domainId === null) {
-        await prisma.challengeVersionApplicationCycle.delete({
-          where: { challengeVersionId_applicationCycleId: { challengeVersionId: e.challengeVersionId, applicationCycleId: params.id } },
-        });
-      }
-    }
-    // Link the new one
-    await prisma.challengeVersionApplicationCycle.create({
-      data: { challengeVersionId, applicationCycleId: params.id },
     });
     return redirect(`/hiring-lead-admin/cycle/${params.id}`);
   }
@@ -500,9 +468,7 @@ export default function AdminCycleDetails() {
             const domains = cycle?.domains ?? [];
             const challengeVersions = cycle?.challengeVersions ?? [];
             const coveredDomainIds = new Set(challengeVersions.map((cv: any) => cv.challengeVersion?.domainId));
-            const hasGeneralForm = challengeVersions.some((cv: any) => cv.challengeVersion?.domainId === null);
-            const hasGeneralRubric = !!cycle?.generalRubricVersionId;
-            return hasCloseDate && domains.length > 0 && domains.every((d: any) => coveredDomainIds.has(d.domainId)) && hasGeneralForm && hasGeneralRubric;
+            return hasCloseDate && domains.length > 0 && domains.every((d: any) => coveredDomainIds.has(d.domainId));
           })();
           return (
             <button
@@ -518,12 +484,28 @@ export default function AdminCycleDetails() {
       </div>
 
       {showCompleteConfirm && (
-        <CompleteConfirmModal
-          cycleId={cycleId!}
-          onClose={() => setShowCompleteConfirm(false)}
-          onCompleted={(forced) => { setShowCompleteConfirm(false); setCycleStatus('Completed'); }}
-          onError={(msg) => { setShowCompleteConfirm(false); setStatusError(msg); }}
-        />
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setShowCompleteConfirm(false)}>
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-sm p-6 space-y-4" onClick={e => e.stopPropagation()}>
+            <h2 className="text-lg font-semibold text-gray-900">Complete this cycle?</h2>
+            <p className="text-sm text-gray-600">
+              This will mark the cycle as Completed. Ensure all interviews are finished and all decisions have been released.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowCompleteConfirm(false)}
+                className="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => { setShowCompleteConfirm(false); await advanceStatus(true); }}
+                className="px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {statusError && (
@@ -552,9 +534,7 @@ export default function AdminCycleDetails() {
         const challengeVersions = cycle?.challengeVersions ?? [];
         const coveredDomainIds = new Set(challengeVersions.map((cv: any) => cv.challengeVersion?.domainId));
         const allDomainsCovered = domains.length > 0 && domains.every((d: any) => coveredDomainIds.has(d.domainId));
-        const hasGeneralForm = challengeVersions.some((cv: any) => cv.challengeVersion?.domainId === null);
-        const hasGeneralRubric = !!cycle?.generalRubricVersionId;
-        const ready = hasCloseDate && allDomainsCovered && hasGeneralForm && hasGeneralRubric;
+        const ready = hasCloseDate && allDomainsCovered;
         return (
           <div className={`rounded-xl border p-4 space-y-3 ${ready ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200'}`}>
             <h3 className="text-sm font-bold text-gray-900">Checklist to Open Applications</h3>
@@ -573,18 +553,6 @@ export default function AdminCycleDetails() {
                   Every domain has a challenge version linked
                   {domains.length === 0 && ' (no domains added)'}
                 </span>
-              </div>
-              <div className="flex items-center gap-2 text-sm">
-                {hasGeneralForm
-                  ? <CheckCircle className="w-4 h-4 text-green-600" />
-                  : <Circle className="w-4 h-4 text-gray-400" />}
-                <span className={hasGeneralForm ? 'text-green-800' : 'text-gray-600'}>General application form is linked</span>
-              </div>
-              <div className="flex items-center gap-2 text-sm">
-                {hasGeneralRubric
-                  ? <CheckCircle className="w-4 h-4 text-green-600" />
-                  : <Circle className="w-4 h-4 text-gray-400" />}
-                <span className={hasGeneralRubric ? 'text-green-800' : 'text-gray-600'}>General application rubric is set</span>
               </div>
             </div>
           </div>
@@ -705,26 +673,63 @@ export default function AdminCycleDetails() {
             )}
           </div>
 
-          {/* General Form picker */}
-          <GeneralFormPicker
-            currentCvId={(() => {
-              const generalCv = (cycle?.challengeVersions ?? []).find((cv: any) => cv.challengeVersion?.domainId === null);
-              return generalCv?.challengeVersionId ?? null;
-            })()}
-            currentCvName={(() => {
-              const generalCv = (cycle?.challengeVersions ?? []).find((cv: any) => cv.challengeVersion?.domainId === null);
-              return generalCv ? `${generalCv.challengeVersion?.challenge?.name ?? 'Untitled'} (${(generalCv.challengeVersion?.questions as any[])?.length ?? 0} questions)` : null;
-            })()}
-            options={loaderData?.generalChallengeVersions ?? []}
-            locked={cycleStatus !== 'Draft'}
-          />
+          {/* General Form — shown from cycle's challengeVersions where domainId is null */}
+          {(() => {
+            const generalCv = (cycle?.challengeVersions ?? []).find(
+              (cv: any) => cv.challengeVersion?.domainId === null
+            );
+            return (
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 space-y-3">
+                <h3 className="text-sm font-bold text-gray-700">General Application Form</h3>
+                {generalCv ? (
+                  <div className="flex items-center gap-2 text-sm text-gray-600">
+                    <CheckCircle className="w-4 h-4 text-green-600" />
+                    <span>{generalCv.challengeVersion?.challenge?.name ?? 'Linked'}</span>
+                    <span className="text-xs text-gray-400">({(generalCv.challengeVersion?.questions as any[])?.length ?? 0} questions)</span>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-400">No general form linked. Add a challenge with no domain on the Challenges page, then link it to this cycle.</p>
+                )}
+              </div>
+            );
+          })()}
 
           {/* General Form Rubric */}
-          <GeneralRubricPicker
-            currentRubricVersionId={cycle?.generalRubricVersionId}
-            rubricVersionOptions={loaderData?.rubricVersionOptions ?? []}
-            locked={(loaderData?.cycleApplicationReviewCount ?? 0) > 0}
-          />
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 space-y-3">
+            <h3 className="text-sm font-bold text-gray-700">General Application Rubric</h3>
+            <p className="text-xs text-gray-500">Reviewers score every application against this rubric (in addition to the per-domain rubric set by domain leads).</p>
+            {(loaderData?.cycleApplicationReviewCount ?? 0) > 0 ? (
+              <div className="flex items-center gap-2 text-sm text-gray-600">
+                <CheckCircle className="w-4 h-4 text-green-600" />
+                <span>{(loaderData?.rubricVersionOptions ?? []).find((rv: any) => rv.id === cycle?.generalRubricVersionId)?.rubric?.name ?? 'Set'}</span>
+                <span className="text-xs text-gray-400 ml-2">(locked — reviewers have been assigned)</span>
+              </div>
+            ) : (
+            <Form method="post" className="flex items-end gap-3">
+              <input type="hidden" name="intent" value="set-general-rubric" />
+              <div className="flex-1">
+                <select
+                  name="rubricVersionId"
+                  defaultValue={cycle?.generalRubricVersionId ?? ""}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                >
+                  <option value="">No rubric assigned</option>
+                  {(loaderData?.rubricVersionOptions ?? []).map((rv: any) => (
+                    <option key={rv.id} value={rv.id}>
+                      {rv.rubric.name} — v{rv.versionNumber}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button
+                type="submit"
+                className="px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition"
+              >
+                Save
+              </button>
+            </Form>
+            )}
+          </div>
         </div>
       )}
 
@@ -1141,249 +1146,3 @@ export default function AdminCycleDetails() {
   )
 }
 
-function CompleteConfirmModal({ cycleId, onClose, onCompleted, onError }: {
-  cycleId: string;
-  onClose: () => void;
-  onCompleted: (forced: boolean) => void;
-  onError: (msg: string) => void;
-}) {
-  const [checking, setChecking] = useState(true);
-  const [pendingInterviews, setPendingInterviews] = useState(0);
-  const [undecidedApps, setUndecidedApps] = useState(0);
-  const [hasBlockers, setHasBlockers] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-
-  // Try without force first to check for blockers
-  useEffect(() => {
-    (async () => {
-      const res = await fetch(`/api/cycles/${cycleId}/status`, {
-        method: 'POST', credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ newStatus: 'Completed', force: false }),
-      });
-      if (res.ok) {
-        // No blockers — cycle completed
-        onCompleted(false);
-        return;
-      }
-      const body = await res.json().catch(() => ({}));
-      if (res.status === 409 && (body.pendingInterviews > 0 || body.undecidedApplications > 0)) {
-        setPendingInterviews(body.pendingInterviews ?? 0);
-        setUndecidedApps(body.undecidedApplications ?? 0);
-        setHasBlockers(true);
-      } else {
-        onError(body.error ?? 'Failed to complete cycle.');
-      }
-      setChecking(false);
-    })();
-  }, [cycleId]);
-
-  async function forceComplete() {
-    setSubmitting(true);
-    const res = await fetch(`/api/cycles/${cycleId}/status`, {
-      method: 'POST', credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ newStatus: 'Completed', force: true }),
-    });
-    if (res.ok) {
-      onCompleted(true);
-    } else {
-      const body = await res.json().catch(() => ({}));
-      onError(body.error ?? 'Failed to force-complete cycle.');
-    }
-    setSubmitting(false);
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6 space-y-4" onClick={e => e.stopPropagation()}>
-        {checking ? (
-          <div className="text-center py-4">
-            <p className="text-sm text-gray-500">Checking cycle readiness...</p>
-          </div>
-        ) : hasBlockers ? (
-          <>
-            <h2 className="text-lg font-semibold text-gray-900">Cycle has unfinished work</h2>
-            <div className="space-y-2">
-              {pendingInterviews > 0 && (
-                <div className="flex items-center gap-2 text-sm bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-3">
-                  <span className="font-semibold text-yellow-800">{pendingInterviews}</span>
-                  <span className="text-yellow-700">interview{pendingInterviews !== 1 ? 's' : ''} not yet completed</span>
-                </div>
-              )}
-              {undecidedApps > 0 && (
-                <div className="flex items-center gap-2 text-sm bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-3">
-                  <span className="font-semibold text-yellow-800">{undecidedApps}</span>
-                  <span className="text-yellow-700">applicant{undecidedApps !== 1 ? 's' : ''} without a released decision</span>
-                </div>
-              )}
-            </div>
-            <p className="text-sm text-gray-500">
-              Resolve these before completing the cycle, or force-close if you're sure.
-            </p>
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                onClick={onClose}
-                className="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-              >
-                Go back
-              </button>
-              <button
-                onClick={forceComplete}
-                disabled={submitting}
-                className="px-3 py-2 text-sm font-medium text-red-700 bg-red-50 border border-red-200 rounded-md hover:bg-red-100 disabled:opacity-50"
-              >
-                {submitting ? 'Closing...' : 'Force Close'}
-              </button>
-            </div>
-          </>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function GeneralRubricPicker({ currentRubricVersionId, rubricVersionOptions, locked }: {
-  currentRubricVersionId: string | null;
-  rubricVersionOptions: any[];
-  locked: boolean;
-}) {
-  const [editing, setEditing] = useState(!currentRubricVersionId);
-  const currentRubric = rubricVersionOptions.find((rv: any) => rv.id === currentRubricVersionId);
-
-  return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 space-y-3">
-      <h3 className="text-sm font-bold text-gray-700">General Application Rubric</h3>
-      <p className="text-xs text-gray-500">Reviewers score every application against this rubric (in addition to the per-domain rubric set by domain leads).</p>
-
-      {locked ? (
-        <div className="flex items-center gap-2 text-sm text-gray-600">
-          <CheckCircle className="w-4 h-4 text-green-600" />
-          <span>{currentRubric?.rubric?.name ?? 'Set'} — v{currentRubric?.versionNumber}</span>
-          <span className="text-xs text-gray-400 ml-2">(locked — reviews have started)</span>
-        </div>
-      ) : currentRubricVersionId && !editing ? (
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-sm text-gray-600">
-            <CheckCircle className="w-4 h-4 text-green-600" />
-            <span>{currentRubric?.rubric?.name ?? 'Set'} — v{currentRubric?.versionNumber}</span>
-          </div>
-          <button
-            onClick={() => setEditing(true)}
-            className="text-xs text-blue-600 hover:text-blue-800 font-medium"
-          >
-            Change
-          </button>
-        </div>
-      ) : (
-        <Form method="post" className="flex items-end gap-3" onSubmit={() => setEditing(false)}>
-          <input type="hidden" name="intent" value="set-general-rubric" />
-          <div className="flex-1">
-            <select
-              name="rubricVersionId"
-              defaultValue={currentRubricVersionId ?? ""}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-            >
-              <option value="">No rubric assigned</option>
-              {rubricVersionOptions.map((rv: any) => (
-                <option key={rv.id} value={rv.id}>
-                  {rv.rubric.name} — v{rv.versionNumber}
-                </option>
-              ))}
-            </select>
-          </div>
-          <button
-            type="submit"
-            className="px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition"
-          >
-            Save
-          </button>
-          {currentRubricVersionId && (
-            <button
-              type="button"
-              onClick={() => setEditing(false)}
-              className="px-3 py-2 text-sm font-medium text-gray-600 hover:text-gray-800"
-            >
-              Cancel
-            </button>
-          )}
-        </Form>
-      )}
-    </div>
-  );
-}
-
-function GeneralFormPicker({ currentCvId, currentCvName, options, locked }: {
-  currentCvId: string | null;
-  currentCvName: string | null;
-  options: any[];
-  locked: boolean;
-}) {
-  const [editing, setEditing] = useState(!currentCvId);
-
-  return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 space-y-3">
-      <h3 className="text-sm font-bold text-gray-700">General Application Form</h3>
-
-      {locked ? (
-        currentCvId ? (
-          <div className="flex items-center gap-2 text-sm text-gray-600">
-            <CheckCircle className="w-4 h-4 text-green-600" />
-            <span>{currentCvName}</span>
-            <span className="text-xs text-gray-400 ml-2">(locked — cycle is past Draft)</span>
-          </div>
-        ) : (
-          <p className="text-sm text-gray-400">No general form linked.</p>
-        )
-      ) : currentCvId && !editing ? (
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-sm text-gray-600">
-            <CheckCircle className="w-4 h-4 text-green-600" />
-            <span>{currentCvName}</span>
-          </div>
-          <button
-            onClick={() => setEditing(true)}
-            className="text-xs text-blue-600 hover:text-blue-800 font-medium"
-          >
-            Change
-          </button>
-        </div>
-      ) : options.length > 0 ? (
-        <Form method="post" className="flex items-end gap-3" onSubmit={() => setEditing(false)}>
-          <input type="hidden" name="intent" value="link-general-form" />
-          <div className="flex-1">
-            <select
-              name="challengeVersionId"
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-              defaultValue={currentCvId ?? ""}
-            >
-              <option value="" disabled>Select a general form...</option>
-              {options.map((cv: any) => (
-                <option key={cv.id} value={cv.id}>
-                  {cv.challenge?.name ?? 'Untitled'} ({(cv.questions as any[])?.length ?? 0} questions)
-                </option>
-              ))}
-            </select>
-          </div>
-          <button
-            type="submit"
-            className="px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition"
-          >
-            Save
-          </button>
-          {currentCvId && (
-            <button
-              type="button"
-              onClick={() => setEditing(false)}
-              className="px-3 py-2 text-sm font-medium text-gray-600 hover:text-gray-800"
-            >
-              Cancel
-            </button>
-          )}
-        </Form>
-      ) : (
-        <p className="text-xs text-gray-400">No general forms available. Create a challenge with no domain on the Challenges page first.</p>
-      )}
-    </div>
-  );
-}

@@ -4,7 +4,7 @@ import { redirect } from "react-router";
 import type { Route } from "./+types/domain-lead";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { CheckCircle, Plus, Trash2, Check, Clock, X, CircleDashed, ChevronDown } from "lucide-react";
+import { CheckCircle, Plus, Trash2, Check, Clock, X, CircleDashed } from "lucide-react";
 import { inferDomainApplicationStatus } from "~/lib/domain-application-status";
 import { getReviewStatus } from "~/lib/review-status";
 import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
@@ -88,15 +88,15 @@ export async function loader({ request }: Route.LoaderArgs) {
         orderBy: { createdAt: "desc" },
       });
 
-      // Pick the single most recent cycle that is Draft, Open, or UnderReview
-      const activeCycle = allCycles.find((c) => {
+      // Filter to cycles whose latest status is Draft, Open, or UnderReview
+      const activeCycles = allCycles.filter((c) => {
         const status = c.statusUpdates[0]?.newStatus;
         return status && ["Draft", "Open", "UnderReview"].includes(status);
-      }) ?? null;
+      });
 
-      if (!activeCycle) return [{ assignment, cycle: null, apps: [], challengeVersionOptions: [], selectedChallengeVersionId: null, isChallengeReady: false }];
+      if (activeCycles.length === 0) return [{ assignment, cycle: null, apps: [], challengeVersionOptions: [], selectedChallengeVersionId: null, isChallengeReady: false }];
 
-      return [await (async (cycle) => {
+      return Promise.all(activeCycles.map(async (cycle) => {
 
       // Challenge versions available for this domain
       const challengeVersionOptions = await prisma.challengeVersion.findMany({
@@ -274,7 +274,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         : false;
 
       return { assignment, cycle, apps: appsWithStatus, challengeVersionOptions, selectedChallengeVersionId, isChallengeReady, interviews, reviewers, delibsSessions, draftDecisions, cycleReviewersForDomain, initialDelibsCount, finalDelibsCount, rubricVersionOptions, currentRubricVersionId, rubricCriteria, interviewers, hasApplicationReviews };
-      })(activeCycle)];
+      }));
     })
   );
 
@@ -365,39 +365,6 @@ export async function action({ request }: Route.ActionArgs) {
   return redirect("/domain-lead");
 }
 
-function Section({ title, badge, defaultOpen = true, children }: {
-  title: string;
-  badge?: React.ReactNode;
-  defaultOpen?: boolean;
-  children: React.ReactNode;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <div className="border border-gray-200 rounded-lg overflow-hidden">
-      <button
-        onClick={() => setOpen(!open)}
-        className="w-full px-5 py-3 flex items-center justify-between bg-gray-50 hover:bg-gray-100 transition text-left"
-      >
-        <span className="font-semibold text-gray-900 text-sm">{title}</span>
-        <div className="flex items-center gap-2">
-          {badge}
-          <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${open ? "rotate-180" : ""}`} />
-        </div>
-      </button>
-      {open && <div className="p-5 border-t border-gray-200">{children}</div>}
-    </div>
-  );
-}
-
-function StatPill({ label, value, color = "text-gray-900" }: { label: string; value: number; color?: string }) {
-  return (
-    <div className="flex items-center gap-1.5 text-sm">
-      <span className={`font-semibold ${color}`}>{value}</span>
-      <span className="text-gray-500">{label}</span>
-    </div>
-  );
-}
-
 export default function DomainLeadDashboard() {
   const data = useLoaderData<typeof loader>() as any;
   const domainData = data?.domainData ?? [];
@@ -418,37 +385,21 @@ export default function DomainLeadDashboard() {
       {domainData.map(({ assignment, cycle, apps, challengeVersionOptions, selectedChallengeVersionId, isChallengeReady, interviews, reviewers: cycleReviewers, delibsSessions, draftDecisions, cycleReviewersForDomain, initialDelibsCount, finalDelibsCount, rubricVersionOptions, currentRubricVersionId, rubricCriteria, interviewers, hasApplicationReviews }: any, idx: number) => {
         const currentStatus = cycle?.statusUpdates[0]?.newStatus ?? null;
 
-        // Compute stats for progress badges
-        const fullyReviewed = apps.filter((a: any) => {
-          const da = a.domainApplications?.[0];
-          return da?.reviews?.length > 0 && da.reviews.every((r: any) => r.submittedAt);
-        }).length;
-        const needsReviewers = apps.filter((a: any) => {
-          const da = a.domainApplications?.[0];
-          return !da?.reviews || da.reviews.length === 0;
-        }).length;
-        const withDecisions = apps.filter((a: any) => {
-          const da = a.domainApplications?.[0];
-          return da?.decisions?.some((d: any) => d.stage === "Final" || d.stage === "Released");
-        }).length;
-        const scheduledInterviews = interviews.filter((i: any) => i.status === "Scheduled").length;
-        const completedInterviews = interviews.filter((i: any) => i.status === "Completed").length;
-
         return (
-          <section key={`${assignment.id}-${cycle?.id ?? idx}`} className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+          <section key={`${assignment.id}-${cycle?.id ?? idx}`} className="bg-white border border-gray-200 rounded-xl p-6 space-y-4 shadow-sm">
             {!cycle ? (
-              <div className="p-6">
+              <>
                 <div className="flex items-center gap-3">
                   <h2 className="text-xl font-semibold text-gray-800">{assignment.domain.name}</h2>
                 </div>
-                <div className="mt-3 bg-gray-50 rounded-lg p-6 text-gray-500 text-sm">
+                <div className="bg-white border border-gray-200 rounded-lg p-6 text-gray-500 text-sm">
                   No active cycle for this domain.
                 </div>
-              </div>
+              </>
             ) : (
               <>
-                {/* Domain header */}
-                <div className="px-6 py-4 border-b border-gray-200 bg-white">
+                {/* Consistent header for all phases */}
+                <div className="pb-2 border-b border-gray-200">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <h2 className="text-xl font-semibold text-gray-800">{assignment.domain.name}</h2>
@@ -461,226 +412,127 @@ export default function DomainLeadDashboard() {
                       )}
                     </div>
                     {currentStatus !== "Draft" && (
-                      <div className="flex items-center gap-4">
-                        <StatPill label="submitted" value={apps.length} />
-                        {fullyReviewed > 0 && <StatPill label="reviewed" value={fullyReviewed} color="text-green-700" />}
-                        {withDecisions > 0 && <StatPill label="decided" value={withDecisions} color="text-blue-700" />}
+                      <div className="text-sm">
+                        <span className="font-semibold text-gray-900">{apps.length}</span>
+                        <span className="text-gray-500 ml-1">submitted</span>
                       </div>
                     )}
                   </div>
                   <p className="text-sm text-gray-500 mt-1">{STATUS_MESSAGES[currentStatus]}</p>
                 </div>
 
-                <div className="p-6 space-y-4">
-                  {/* Setup — Draft only */}
-                  {currentStatus === "Draft" && (
-                    <Section
-                      title="Setup"
-                      badge={
-                        isChallengeReady && currentRubricVersionId
-                          ? <span className="text-xs text-green-700 bg-green-100 px-2 py-0.5 rounded-full font-medium">Ready</span>
-                          : <span className="text-xs text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded-full font-medium">Action needed</span>
-                      }
-                      defaultOpen={!isChallengeReady || !currentRubricVersionId}
-                    >
-                      <div className="space-y-4">
-                        <DraftSection
-                          cycle={cycle}
-                          domainId={assignment.domainId}
-                          challengeVersionOptions={challengeVersionOptions}
-                          selectedChallengeVersionId={selectedChallengeVersionId}
-                          isChallengeReady={isChallengeReady}
-                        />
-                        <RubricPicker
-                          cycleId={cycle.id}
-                          domainId={assignment.domainId}
-                          options={rubricVersionOptions ?? []}
-                          selectedId={currentRubricVersionId}
-                          locked={hasApplicationReviews}
-                        />
-                        <div className="flex items-center gap-3 pt-2 border-t border-gray-100">
-                          {selectedChallengeVersionId && (() => {
-                            const cv = challengeVersionOptions.find((c: any) => c.id === selectedChallengeVersionId);
-                            return cv?.challenge?.id ? (
-                              <Link to={`/challenges/${cv.challenge.id}`} className="text-xs text-blue-600 hover:text-blue-800 font-medium">
-                                Edit Challenge →
-                              </Link>
-                            ) : null;
-                          })()}
-                          <Link to="/rubrics" className="text-xs text-blue-600 hover:text-blue-800 font-medium">
-                            Manage Rubrics →
-                          </Link>
-                        </div>
-                      </div>
-                    </Section>
-                  )}
+                {/* Challenge setup — Draft only */}
+                {currentStatus === "Draft" && (
+                  <DraftSection
+                    cycle={cycle}
+                    domainId={assignment.domainId}
+                    challengeVersionOptions={challengeVersionOptions}
+                    selectedChallengeVersionId={selectedChallengeVersionId}
+                    isChallengeReady={isChallengeReady}
+                  />
+                )}
 
-                  {/* Rubric picker — Open + UnderReview (separate from Draft setup) */}
-                  {currentStatus !== "Draft" && (currentStatus === "Open" || currentStatus === "UnderReview") && (
-                    <Section
-                      title="Rubric"
-                      badge={currentRubricVersionId
-                        ? <span className="text-xs text-green-700 bg-green-100 px-2 py-0.5 rounded-full font-medium">Set</span>
-                        : <span className="text-xs text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded-full font-medium">Not set</span>
-                      }
-                      defaultOpen={!currentRubricVersionId}
-                    >
-                      <RubricPicker
-                        cycleId={cycle.id}
-                        domainId={assignment.domainId}
-                        options={rubricVersionOptions ?? []}
-                        selectedId={currentRubricVersionId}
-                        locked={hasApplicationReviews}
-                      />
-                      <div className="flex items-center gap-3 pt-2 mt-2 border-t border-gray-100">
-                        <Link to="/rubrics" className="text-xs text-blue-600 hover:text-blue-800 font-medium">
-                          Manage Rubrics →
-                        </Link>
-                        {selectedChallengeVersionId && (() => {
-                          const cv = challengeVersionOptions.find((c: any) => c.id === selectedChallengeVersionId);
-                          return cv?.challenge?.id ? (
-                            <Link to={`/challenges/${cv.challenge.id}`} className="text-xs text-blue-600 hover:text-blue-800 font-medium">
-                              View Challenge →
-                            </Link>
-                          ) : null;
-                        })()}
-                      </div>
-                    </Section>
-                  )}
+                {/* Rubric picker — Draft + Open + UnderReview */}
+                {(currentStatus === "Draft" || currentStatus === "Open" || currentStatus === "UnderReview") && (
+                  <RubricPicker
+                    cycleId={cycle.id}
+                    domainId={assignment.domainId}
+                    options={rubricVersionOptions ?? []}
+                    selectedId={currentRubricVersionId}
+                    locked={hasApplicationReviews}
+                  />
+                )}
 
-                  {/* Team — Reviewers + Interviewers */}
-                  <Section
-                    title="Team"
-                    badge={
-                      <span className="text-xs text-gray-600">
-                        {cycleReviewers.length} reviewers, {(interviewers ?? []).length} interviewers
-                      </span>
-                    }
-                    defaultOpen={currentStatus === "Draft" || currentStatus === "Open"}
-                  >
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <ReviewerSection cycleId={cycle.id} domainId={assignment.domainId} initialReviewers={cycleReviewers} />
-                      <InterviewerSection cycleId={cycle.id} domainId={assignment.domainId} initialInterviewers={interviewers ?? []} />
-                    </div>
-                  </Section>
-
-                  {/* Applications */}
-                  {currentStatus !== "Draft" && (
-                    <Section
-                      title="Applications"
-                      badge={
-                        <div className="flex items-center gap-3 text-xs text-gray-500">
-                          <span>{apps.length} submitted</span>
-                          <span>·</span>
-                          <span>{fullyReviewed} reviewed</span>
-                          {needsReviewers > 0 && <><span>·</span><span className="text-yellow-700">{needsReviewers} need reviewers</span></>}
-                        </div>
-                      }
-                      defaultOpen={true}
-                    >
-                      {apps.length > 0 ? (
-                        <ApplicationsTable
-                          apps={apps}
-                          draftDecisions={draftDecisions ?? []}
-                          cycleReviewersForDomain={cycleReviewersForDomain}
-                          cycleId={cycle.id}
-                          domainId={assignment.domainId}
-                          currentStatus={currentStatus}
-                          canAssignReviewers={!!currentRubricVersionId && !!cycle.generalRubricVersionId}
-                          rubricCriteria={rubricCriteria ?? []}
-                        />
-                      ) : (
-                        <div className="text-center text-gray-500 text-sm py-6">
-                          No submitted applications yet.
-                        </div>
-                      )}
-                    </Section>
-                  )}
-
-                  {/* Deliberations — UnderReview only */}
-                  {currentStatus === "UnderReview" && (
-                    <Section
-                      title="Deliberations"
-                      badge={
-                        <div className="flex items-center gap-3 text-xs text-gray-500">
-                          <span>{initialDelibsCount ?? 0} ready for initial</span>
-                          <span>·</span>
-                          <span>{finalDelibsCount ?? 0} ready for final</span>
-                        </div>
-                      }
-                      defaultOpen={(initialDelibsCount ?? 0) > 0 || (finalDelibsCount ?? 0) > 0}
-                    >
-                      <DelibsSection cycleId={cycle.id} domainId={assignment.domainId} sessions={delibsSessions ?? []} initialCount={initialDelibsCount ?? 0} finalCount={finalDelibsCount ?? 0} />
-                    </Section>
-                  )}
-
-                  {/* Interviews */}
-                  {interviews.length > 0 && (
-                    <Section
-                      title="Interviews"
-                      badge={
-                        <div className="flex items-center gap-3 text-xs text-gray-500">
-                          {scheduledInterviews > 0 && <span>{scheduledInterviews} scheduled</span>}
-                          {completedInterviews > 0 && <><span>·</span><span>{completedInterviews} completed</span></>}
-                        </div>
-                      }
-                      defaultOpen={false}
-                    >
-                      <table className="w-full text-sm">
-                        <thead className="bg-gray-50 text-xs font-medium text-gray-500 uppercase tracking-wide">
-                          <tr>
-                            <th className="px-6 py-3 text-left">Applicant</th>
-                            <th className="px-6 py-3 text-left">Time</th>
-                            <th className="px-6 py-3 text-left">Status</th>
-                            <th className="px-6 py-3 text-left">In-Domain</th>
-                            <th className="px-6 py-3 text-left">Cross-Domain</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100">
-                          {interviews.map((interview: any) => {
-                            const start = new Date(interview.startTime);
-                            const end = new Date(interview.endTime);
-                            const formatAssignment = (a: any) => {
-                              const m = a.cycleInterviewer.daliMember;
-                              return m.firstName && m.lastName
-                                ? `${m.firstName} ${m.lastName}`
-                                : m.daliEmail ?? '?';
-                            };
-                            const inDomain = interview.assignments
-                              .filter((a: any) => a.role === 'InDomain' && a.status === 'Active')
-                              .map(formatAssignment)
-                              .join(', ') || '—';
-                            const crossDomain = interview.assignments
-                              .filter((a: any) => a.role === 'CrossDomain' && a.status === 'Active')
-                              .map((a: any) => `${formatAssignment(a)} (${a.cycleInterviewer.domain.name})`)
-                              .join(', ') || '—';
-                            return (
-                              <tr key={interview.id} className="hover:bg-gray-50">
-                                <td className="px-6 py-4 font-medium text-gray-900">
-                                  {interview.domainApplication.application.user.firstName} {interview.domainApplication.application.user.lastName}
-                                </td>
-                                <td className="px-6 py-4 text-gray-600">
-                                  {start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}{' '}
-                                  {start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} –{' '}
-                                  {end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
-                                </td>
-                                <td className="px-6 py-4">
-                                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${
-                                    interview.status === "Completed" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"
-                                  }`}>
-                                    {interview.status}
-                                  </span>
-                                </td>
-                                <td className="px-6 py-4 text-gray-600 text-xs">{inDomain}</td>
-                                <td className="px-6 py-4 text-gray-600 text-xs">{crossDomain}</td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </Section>
-                  )}
+                {/* Reviewer + Interviewer Rosters — Draft + Open + UnderReview */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <ReviewerSection cycleId={cycle.id} domainId={assignment.domainId} initialReviewers={cycleReviewers} />
+                  <InterviewerSection cycleId={cycle.id} domainId={assignment.domainId} initialInterviewers={interviewers ?? []} />
                 </div>
+
+                {/* Applications table — Open + UnderReview */}
+                {currentStatus !== "Draft" && apps.length > 0 && (
+                  <ApplicationsTable
+                    apps={apps}
+                    draftDecisions={draftDecisions ?? []}
+                    cycleReviewersForDomain={cycleReviewersForDomain}
+                    cycleId={cycle.id}
+                    domainId={assignment.domainId}
+                    currentStatus={currentStatus}
+                    canAssignReviewers={!!currentRubricVersionId && !!cycle.generalRubricVersionId}
+                    rubricCriteria={rubricCriteria ?? []}
+                  />
+                )}
+
+                {currentStatus !== "Draft" && apps.length === 0 && (
+                  <div className="bg-white border border-gray-200 rounded-lg p-6 text-center text-gray-500 text-sm">
+                    No submitted applications yet.
+                  </div>
+                )}
+
+                {/* Delibs — UnderReview only */}
+                {currentStatus === "UnderReview" && (
+                  <DelibsSection cycleId={cycle.id} domainId={assignment.domainId} sessions={delibsSessions ?? []} initialCount={initialDelibsCount ?? 0} finalCount={finalDelibsCount ?? 0} />
+                )}
+
+
+                    {/* Interview Dashboard */}
+                    {interviews.length > 0 && (
+                      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
+                          <h3 className="font-semibold text-gray-900">Scheduled Interviews ({interviews.length})</h3>
+                        </div>
+                        <table className="w-full text-sm">
+                          <thead className="bg-gray-50 text-xs font-medium text-gray-500 uppercase tracking-wide">
+                            <tr>
+                              <th className="px-6 py-3 text-left">Applicant</th>
+                              <th className="px-6 py-3 text-left">Time</th>
+                              <th className="px-6 py-3 text-left">Status</th>
+                              <th className="px-6 py-3 text-left">In-Domain</th>
+                              <th className="px-6 py-3 text-left">Cross-Domain</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {interviews.map((interview: any) => {
+                              const start = new Date(interview.startTime);
+                              const end = new Date(interview.endTime);
+                              const formatAssignment = (a: any) => {
+                                const m = a.cycleInterviewer.daliMember;
+                                return m.firstName && m.lastName
+                                  ? `${m.firstName} ${m.lastName}`
+                                  : m.daliEmail ?? '?';
+                              };
+                              const inDomain = interview.assignments
+                                .filter((a: any) => a.role === 'InDomain' && a.status === 'Active')
+                                .map(formatAssignment)
+                                .join(', ') || '—';
+                              const crossDomain = interview.assignments
+                                .filter((a: any) => a.role === 'CrossDomain' && a.status === 'Active')
+                                .map((a: any) => `${formatAssignment(a)} (${a.cycleInterviewer.domain.name})`)
+                                .join(', ') || '—';
+                              return (
+                                <tr key={interview.id} className="hover:bg-gray-50">
+                                  <td className="px-6 py-4 font-medium text-gray-900">
+                                    {interview.domainApplication.application.user.firstName} {interview.domainApplication.application.user.lastName}
+                                  </td>
+                                  <td className="px-6 py-4 text-gray-600">
+                                    {start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}{' '}
+                                    {start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} –{' '}
+                                    {end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+                                  </td>
+                                  <td className="px-6 py-4">
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-green-100 text-green-700">
+                                      {interview.status}
+                                    </span>
+                                  </td>
+                                  <td className="px-6 py-4 text-gray-600 text-xs">{inDomain}</td>
+                                  <td className="px-6 py-4 text-gray-600 text-xs">{crossDomain}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
               </>
             )}
           </section>

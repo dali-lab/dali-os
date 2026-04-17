@@ -2,13 +2,13 @@ import { redirect } from "react-router";
 import type { Route } from "./+types/admin.challenges";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead, isDomainLead } from "~/lib/roles";
+import { isHiringLead } from "~/lib/roles";
 import Challenges from "~/components/Challenges";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
-  if (!(await isHiringLead(auth.user.sub)) && !(await isDomainLead(auth.user.sub))) return redirect("/");
+  if (!(await isHiringLead(auth.user.sub))) return redirect("/");
   const [domains, challenges] = await Promise.all([
     prisma.domain.findMany({ orderBy: { name: "asc" } }),
     prisma.challenge.findMany({
@@ -27,7 +27,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
-  if (!(await isHiringLead(auth.user.sub)) && !(await isDomainLead(auth.user.sub))) return redirect("/");
+  if (!(await isHiringLead(auth.user.sub))) return redirect("/");
 
   const formData = await request.formData();
   const intent = formData.get("intent") as string;
