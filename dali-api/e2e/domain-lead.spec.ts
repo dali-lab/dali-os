@@ -19,23 +19,11 @@ test.describe('domain lead workflow', () => {
     await expect(page.getByText('Diego Rivera').first()).toBeVisible();
   });
 
-  test('shows locked rubric picker', async ({ page }) => {
+  test('shows collapsible sections', async ({ page }) => {
     await page.goto('/domain-lead');
-    await expect(page.getByText('Domain Rubric').first()).toBeVisible();
-    await expect(page.getByText(/locked/).first()).toBeVisible();
-  });
-
-  test('shows reviewer and interviewer roster sections', async ({ page }) => {
-    await page.goto('/domain-lead');
-    await expect(page.getByText(/Reviewers for this Domain/).first()).toBeVisible();
-    await expect(page.getByText(/Interviewers for this Domain/).first()).toBeVisible();
-  });
-
-  test('shows deliberations section', async ({ page }) => {
-    await page.goto('/domain-lead');
+    await expect(page.getByText('Team').first()).toBeVisible();
+    await expect(page.getByText('Applications').first()).toBeVisible();
     await expect(page.getByText('Deliberations').first()).toBeVisible();
-    await expect(page.getByText('Initial Delibs').first()).toBeVisible();
-    await expect(page.getByText('Final Delibs').first()).toBeVisible();
   });
 
   test('application detail page shows challenge responses', async ({ page }) => {
