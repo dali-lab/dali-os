@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.cycles.$cycleId.reviewers";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead } from "~/lib/roles";
+import { isHiringLead, hasCycleAccess } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -10,6 +10,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const auth = await requireAuth(request);
   if (!auth.ok) return withCors(request, auth.response);
+
+  if (!(await hasCycleAccess(auth.user.sub, params.cycleId!)))
+    return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
 
   const reviewers = await prisma.cycleReviewer.findMany({
     where: { applicationCycleId: params.cycleId },

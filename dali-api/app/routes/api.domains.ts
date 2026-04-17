@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.domains";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead } from "~/lib/roles";
+import { isHiringLead, isDomainLead, isAdmin } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -10,6 +10,14 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const auth = await requireAuth(request);
   if (!auth.ok) return withCors(request, auth.response);
+
+  const [hl, dl, admin] = await Promise.all([
+    isHiringLead(auth.user.sub),
+    isDomainLead(auth.user.sub),
+    isAdmin(auth.user.sub),
+  ]);
+  if (!hl && !dl && !admin)
+    return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
 
   const domains = await prisma.domain.findMany({
     orderBy: { name: "asc" },

@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.delibs.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead, isDomainLead } from "~/lib/roles";
+import { isHiringLead, isDomainLead, hasCycleAccess } from "~/lib/roles";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -14,6 +14,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!session) {
     return Response.json({ error: "Not found" }, { status: 404 });
   }
+
+  if (!(await hasCycleAccess(auth.user.sub, session.applicationCycleId)))
+    return Response.json({ error: "Forbidden" }, { status: 403 });
 
   return Response.json(session);
 }
