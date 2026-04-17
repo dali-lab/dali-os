@@ -119,8 +119,19 @@ export function getPlainText(doc: Y.Doc): string {
     lines.push(node.toString());
   }
   // XmlElement.toString() wraps in tags like <paragraph>text</paragraph>,
-  // so strip them to get plain text.
-  return lines.map((l) => l.replace(/<[^>]+>/g, "")).join("\n");
+  // so strip them to get plain text. Loop until stable to handle malformed
+  // nested fragments like `<scr<script>ipt>`.
+  return lines
+    .map((l) => {
+      let prev: string;
+      let cur = l;
+      do {
+        prev = cur;
+        cur = prev.replace(/<[^>]+>/g, "");
+      } while (cur !== prev);
+      return cur;
+    })
+    .join("\n");
 }
 
 export interface StoredDocState {
