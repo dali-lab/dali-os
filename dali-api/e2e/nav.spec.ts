@@ -2,7 +2,7 @@ import { test, expect } from './fixtures';
 
 test.describe('navigation for hiring lead', () => {
   test.beforeEach(async ({ loginAs }) => {
-    await loginAs({ daliEmail: 'henry.scheible@dali.dartmouth.edu' });
+    await loginAs({ daliEmail: 'jordan.taylor@dali.dartmouth.edu' });
   });
 
   test('shows hiring lead and domain lead nav tabs', async ({ page }) => {
