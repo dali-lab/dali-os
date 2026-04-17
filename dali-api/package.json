@@ -18,12 +18,20 @@
     "db:seed:members": "tsx prisma/seed-members.ts"
   },
   "dependencies": {
+    "@hocuspocus/provider": "^3.4.4",
+    "@hocuspocus/server": "^3.4.4",
     "@neondatabase/serverless": "^1.0.2",
     "@prisma/adapter-neon": "^7.7.0",
     "@prisma/adapter-pg": "^7.6.0",
     "@prisma/client": "^7.7.0",
     "@react-router/node": "7.14.0",
     "@react-router/serve": "7.14.0",
+    "@tiptap/extension-collaboration": "^3.22.3",
+    "@tiptap/extension-collaboration-cursor": "^3.0.0",
+    "@tiptap/extension-placeholder": "^3.22.3",
+    "@tiptap/pm": "^3.22.3",
+    "@tiptap/react": "^3.22.3",
+    "@tiptap/starter-kit": "^3.22.3",
     "google-auth-library": "^10.6.2",
     "isbot": "^5.1.36",
     "jose": "^6.2.2",
@@ -31,7 +39,10 @@
     "pg": "^8.20.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "react-router": "7.14.0"
+    "react-router": "7.14.0",
+    "y-indexeddb": "^9.0.12",
+    "y-prosemirror": "^1.3.7",
+    "yjs": "^13.6.30"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

@@ -105,4 +105,8 @@ export default [
 
   // Submission URL checking
   route("api/check-url", "routes/api.check-url.ts"),
+
+  // Collaborative editing version history
+  route("api/collab/versions", "routes/api.collab.versions.ts"),
+  route("api/collab/versions/:id", "routes/api.collab.versions.$id.ts"),
 ] satisfies RouteConfig;
