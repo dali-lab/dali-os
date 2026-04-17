@@ -13,12 +13,19 @@ async function main() {
       daliEmail: "admin@dali.dartmouth.edu",
       firstName: "Admin",
       lastName: "User",
-      daliMember: { create: { daliEmail: "admin@dali.dartmouth.edu", firstName: "Admin", lastName: "User" } },
+      daliMember: {
+        create: {
+          daliEmail: "admin@dali.dartmouth.edu",
+          firstName: "Admin",
+          lastName: "User",
+          roles: ["Admin"],
+        },
+      },
     },
   });
   await prisma.dALIMember.update({
     where: { daliEmail: "admin@dali.dartmouth.edu" },
-    data: { firstName: "Admin", lastName: "User" },
+    data: { firstName: "Admin", lastName: "User", roles: ["Admin"] },
   });
 
   // ── Domains ────────────────────────────────────────────────────────────────
