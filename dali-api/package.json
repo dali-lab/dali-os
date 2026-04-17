@@ -9,6 +9,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
     "typecheck": "react-router typegen && tsc",
     "db:reset": "PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION=yes prisma migrate reset --force && prisma db seed",
     "db:reset:local": "PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION=yes DATABASE_URL=postgresql://dali:dali@localhost:5432/dali prisma migrate reset --force && DATABASE_URL=postgresql://dali:dali@localhost:5432/dali prisma db seed",
@@ -35,6 +37,7 @@
     "seed": "tsx prisma/seed.ts"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "@react-router/dev": "7.14.0",
     "@tailwindcss/vite": "^4.2.2",
     "@types/node": "^22",

@@ -7,15 +7,25 @@ const prisma = new PrismaClient({ adapter });
 async function main() {
   // ── Admin user (creates forms, challenges, and cycle) ──────────────────────
   const admin = await prisma.user.upsert({
-    where: { netId: "f007abc" },
-    update: {},
+    where: { daliEmail: "admin@dali.dartmouth.edu" },
+    update: { firstName: "Admin", lastName: "User" },
     create: {
-      netId: "f007abc",
       daliEmail: "admin@dali.dartmouth.edu",
       firstName: "Admin",
       lastName: "User",
-      daliMember: { create: { daliEmail: "admin@dali.dartmouth.edu" } },
+      daliMember: {
+        create: {
+          daliEmail: "admin@dali.dartmouth.edu",
+          firstName: "Admin",
+          lastName: "User",
+          roles: ["Admin"],
+        },
+      },
     },
+  });
+  await prisma.dALIMember.update({
+    where: { daliEmail: "admin@dali.dartmouth.edu" },
+    data: { firstName: "Admin", lastName: "User", roles: ["Admin"] },
   });
 
   // ── Domains ────────────────────────────────────────────────────────────────
@@ -211,10 +221,11 @@ async function main() {
   ]);
 
   // ── Application form + version ─────────────────────────────────────────────
-  const form = await prisma.applicationForm.upsert({
-    where: { id: "form-main" },
+  // ── General application form (as a Challenge with domainId: null) ──────────
+  const generalFormChallenge = await prisma.challenge.upsert({
+    where: { id: "challenge-general-form" },
     update: {},
-    create: { id: "form-main" },
+    create: { id: "challenge-general-form", name: "General Application Form" },
   });
 
   const formQuestions = [
@@ -240,13 +251,14 @@ async function main() {
     },
   ];
 
-  const formVersion = await prisma.applicationFormVersion.upsert({
-    where: { id: "fv-main-v1" },
+  const generalFormVersion = await prisma.challengeVersion.upsert({
+    where: { id: "cv-general-form-v1" },
     update: {},
     create: {
-      id: "fv-main-v1",
+      id: "cv-general-form-v1",
       questions: formQuestions,
-      applicationFormId: form.id,
+      challengeId: generalFormChallenge.id,
+      domainId: null,
       createdById: admin.id,
     },
   });
@@ -260,7 +272,7 @@ async function main() {
     create: { id: "rubric-general", name: "General Application Rubric", domainId: null },
   });
 
-  const generalRubricVersion = await prisma.rubricVersion.upsert({
+  await prisma.rubricVersion.upsert({
     where: { id: "rv-general-v1" },
     update: {},
     create: {
@@ -268,7 +280,6 @@ async function main() {
       rubricId: generalRubric.id,
       versionNumber: 1,
       createdById: admin.id,
-      applicationFormVersionId: "fv-main-v1",
       criteria: [
         { key: "rc-motivation", label: "Motivation & Fit", description: "Does the applicant articulate why they want to join DALI and what they'll contribute?", maxScore: 5 },
         { key: "rc-communication", label: "Communication", description: "Are responses clear, specific, and well-structured?", maxScore: 5 },
@@ -301,17 +312,29 @@ async function main() {
     },
   });
 
-  // Attach engineering rubric to both eng challenge versions
-  await Promise.all([
-    prisma.challengeVersion.update({
-      where: { id: "cv-eng" },
-      data: { rubricVersionId: engRubricVersion.id },
-    }),
-    prisma.challengeVersion.update({
-      where: { id: "cv-eng-v2" },
-      data: { rubricVersionId: engRubricVersion.id },
-    }),
-  ]);
+  // Design rubric
+  const designRubric = await prisma.rubric.upsert({
+    where: { id: "rubric-design" },
+    update: {},
+    create: { id: "rubric-design", name: "Design Rubric", domainId: designDomain.id },
+  });
+
+  const designRubricVersion = await prisma.rubricVersion.upsert({
+    where: { id: "rv-design-v1" },
+    update: {},
+    create: {
+      id: "rv-design-v1",
+      rubricId: designRubric.id,
+      versionNumber: 1,
+      createdById: admin.id,
+      criteria: [
+        { key: "rc-visual-craft", label: "Visual Craft", description: "Does the applicant demonstrate strong visual design skills and attention to detail?", maxScore: 5 },
+        { key: "rc-design-process", label: "Design Process", description: "Is there evidence of a thoughtful, user-centered design process?", maxScore: 5 },
+        { key: "rc-systems-thinking", label: "Systems Thinking", description: "Can the applicant think holistically about design systems and consistency?", maxScore: 5 },
+        { key: "rc-iteration", label: "Iteration & Feedback", description: "Does the applicant show willingness to iterate based on feedback and testing?", maxScore: 5 },
+      ],
+    },
+  });
 
   // Product rubric
   const pmRubric = await prisma.rubric.upsert({
@@ -336,17 +359,7 @@ async function main() {
     },
   });
 
-  // Attach product rubric to pm challenge version
-  await prisma.challengeVersion.update({
-    where: { id: "cv-pm" },
-    data: { rubricVersionId: pmRubricVersion.id },
-  });
-
   // ── Application cycle: Fall 2026 ───────────────────────────────────────────
-  // Status updates use explicit, ascending createdAt values so latest-status
-  // queries (`orderBy: { createdAt: "desc" }`) are deterministic. Without
-  // explicit timestamps prisma stamps every row in the same nested create with
-  // the same instant and ties resolve nondeterministically.
   const seedNow = Date.now();
   const ts = (offsetMs: number) => new Date(seedNow + offsetMs);
   const cycle = await prisma.applicationCycle.upsert({
@@ -355,15 +368,18 @@ async function main() {
     create: {
       id: "cycle-fall-2026",
       name: "Fall 2026",
+      closeDate: new Date("2026-09-30T23:59:59Z"),
+      generalRubricVersionId: "rv-general-v1",
       domains: {
         create: [
-          { domainId: designDomain.id },
-          { domainId: engDomain.id },
-          { domainId: pmDomain.id },
+          { domainId: designDomain.id, rubricVersionId: designRubricVersion.id },
+          { domainId: engDomain.id, rubricVersionId: engRubricVersion.id },
+          { domainId: pmDomain.id, rubricVersionId: pmRubricVersion.id },
         ],
       },
       challengeVersions: {
         create: [
+          { challengeVersionId: generalFormVersion.id },
           { challengeVersionId: designCv.id },
           { challengeVersionId: engCv.id },
           { challengeVersionId: pmCv.id },
@@ -373,7 +389,7 @@ async function main() {
         create: [
           { newStatus: "Draft", userId: admin.id, createdAt: ts(-3000) },
           { newStatus: "Open", userId: admin.id, createdAt: ts(-2000) },
-          { newStatus: "Closed", userId: admin.id, createdAt: ts(-1000) },
+          { newStatus: "UnderReview", userId: admin.id, createdAt: ts(-1000) },
         ],
       },
     },
@@ -429,7 +445,7 @@ async function main() {
       },
       userId: alice.id,
       applicationCycleId: cycle.id,
-      applicationFormVersionId: formVersion.id,
+      generalChallengeVersionId: generalFormVersion.id,
       statusUpdates: {
         create: [
           { newStatus: "Draft", userId: alice.id, createdAt: ts(-2000) },
@@ -439,6 +455,7 @@ async function main() {
       domainApplications: {
         create: [
           {
+            id: "da-alice-eng",
             challengeVersionId: engCv.id,
             answers: {
               "eq-00000000-0000-0000-0000-000000000001":
@@ -468,7 +485,7 @@ async function main() {
       },
       userId: bob.id,
       applicationCycleId: cycle.id,
-      applicationFormVersionId: formVersion.id,
+      generalChallengeVersionId: generalFormVersion.id,
       statusUpdates: {
         create: [
           { newStatus: "Draft", userId: bob.id, createdAt: ts(-2000) },
@@ -478,6 +495,7 @@ async function main() {
       domainApplications: {
         create: [
           {
+            id: "da-bob-design",
             challengeVersionId: designCv.id,
             answers: {
               "dq-00000000-0000-0000-0000-000000000001":
@@ -489,6 +507,7 @@ async function main() {
             },
           },
           {
+            id: "da-bob-pm",
             challengeVersionId: pmCv.id,
             answers: {
               "pq-00000000-0000-0000-0000-000000000001":
@@ -503,7 +522,7 @@ async function main() {
   });
 
   // Carol: draft Engineering application (not yet submitted)
-  const carolApp = await prisma.application.upsert({
+  await prisma.application.upsert({
     where: { id: "app-carol" },
     update: {},
     create: {
@@ -515,7 +534,7 @@ async function main() {
       },
       userId: carol.id,
       applicationCycleId: cycle.id,
-      applicationFormVersionId: formVersion.id,
+      generalChallengeVersionId: generalFormVersion.id,
       statusUpdates: {
         create: [{ newStatus: "Draft", userId: carol.id }],
       },
@@ -530,14 +549,459 @@ async function main() {
     },
   });
 
-  // ── Application cycle: Winter 2028 (Open) ─────────────────────────────────
+  // ── Additional Fall 2026 applicants ───────────────────────────────────────
+  // Diego (Eng), Eve (Design), Felix (Product), Grace (Eng), Harper (Design),
+  // Ivan (Eng), Jade (Design), Kenji (Eng), Leo (Eng) — last four need
+  // reviewer assignment (submitted, no reviews yet).
+  const [diego, eve, felix, grace, harper, ivan, jade, kenji, leo] = await Promise.all([
+    prisma.user.upsert({
+      where: { netId: "f007di4" },
+      update: {},
+      create: {
+        netId: "f007di4",
+        dartmouthEmail: "diego.s.rivera.26@dartmouth.edu",
+        firstName: "Diego",
+        lastName: "Rivera",
+      },
+    }),
+    prisma.user.upsert({
+      where: { netId: "f007ev5" },
+      update: {},
+      create: {
+        netId: "f007ev5",
+        dartmouthEmail: "eve.m.park.27@dartmouth.edu",
+        firstName: "Eve",
+        lastName: "Park",
+      },
+    }),
+    prisma.user.upsert({
+      where: { netId: "f007fe6" },
+      update: {},
+      create: {
+        netId: "f007fe6",
+        dartmouthEmail: "felix.t.nguyen.26@dartmouth.edu",
+        firstName: "Felix",
+        lastName: "Nguyen",
+      },
+    }),
+    prisma.user.upsert({
+      where: { netId: "f007gr7" },
+      update: {},
+      create: {
+        netId: "f007gr7",
+        dartmouthEmail: "grace.l.okafor.28@dartmouth.edu",
+        firstName: "Grace",
+        lastName: "Okafor",
+      },
+    }),
+    prisma.user.upsert({
+      where: { netId: "f007ha8" },
+      update: {},
+      create: {
+        netId: "f007ha8",
+        dartmouthEmail: "harper.j.sato.27@dartmouth.edu",
+        firstName: "Harper",
+        lastName: "Sato",
+      },
+    }),
+    prisma.user.upsert({
+      where: { netId: "f007iv9" },
+      update: {},
+      create: {
+        netId: "f007iv9",
+        dartmouthEmail: "ivan.d.kozlov.28@dartmouth.edu",
+        firstName: "Ivan",
+        lastName: "Kozlov",
+      },
+    }),
+    prisma.user.upsert({
+      where: { netId: "f007ja0" },
+      update: {},
+      create: {
+        netId: "f007ja0",
+        dartmouthEmail: "jade.r.montgomery.27@dartmouth.edu",
+        firstName: "Jade",
+        lastName: "Montgomery",
+      },
+    }),
+    prisma.user.upsert({
+      where: { netId: "f007ke1" },
+      update: {},
+      create: {
+        netId: "f007ke1",
+        dartmouthEmail: "kenji.h.yamada.28@dartmouth.edu",
+        firstName: "Kenji",
+        lastName: "Yamada",
+      },
+    }),
+    prisma.user.upsert({
+      where: { netId: "f007le2" },
+      update: {},
+      create: {
+        netId: "f007le2",
+        dartmouthEmail: "leo.p.brennan.26@dartmouth.edu",
+        firstName: "Leo",
+        lastName: "Brennan",
+      },
+    }),
+  ]);
+
+  // Diego: submitted Engineering application, strong candidate
+  await prisma.application.upsert({
+    where: { id: "app-diego" },
+    update: {},
+    create: {
+      id: "app-diego",
+      answers: {
+        "fq-00000000-0000-0000-0000-000000000001":
+          "DALI blends research-quality engineering with products students actually use — that's rare and what I want to be part of.",
+        "fq-00000000-0000-0000-0000-000000000002": "Junior, Computer Science + Math",
+      },
+      userId: diego.id,
+      applicationCycleId: cycle.id,
+      generalChallengeVersionId: generalFormVersion.id,
+      statusUpdates: {
+        create: [
+          { newStatus: "Draft", userId: diego.id, createdAt: ts(-2000) },
+          { newStatus: "Submitted", userId: diego.id, createdAt: ts(-1000) },
+        ],
+      },
+      domainApplications: {
+        create: [
+          {
+            id: "da-diego-eng",
+            challengeVersionId: engCv.id,
+            answers: {
+              "eq-00000000-0000-0000-0000-000000000001":
+                "I wrote a type-checker for a small functional language as a final project. Unification was the hard part — I ended up implementing Hindley-Milner after two weeks of painful debugging.",
+              "eq-00000000-0000-0000-0000-000000000002":
+                "github.com/diego/hm-checker — I'd split the unifier into its own module and add property-based tests.",
+              "eq-00000000-0000-0000-0000-000000000003":
+                "I've been reading about deterministic simulation testing in databases. The idea that you can replay exact schedules to debug concurrency bugs is wild.",
+            },
+          },
+        ],
+      },
+    },
+  });
+
+  // Eve: submitted Design application, strong candidate
+  await prisma.application.upsert({
+    where: { id: "app-eve" },
+    update: {},
+    create: {
+      id: "app-eve",
+      answers: {
+        "fq-00000000-0000-0000-0000-000000000001":
+          "I want to design for a team that ships to real users and iterates — DALI projects do both.",
+        "fq-00000000-0000-0000-0000-000000000002": "Sophomore, Studio Art + Cognitive Science",
+      },
+      userId: eve.id,
+      applicationCycleId: cycle.id,
+      generalChallengeVersionId: generalFormVersion.id,
+      statusUpdates: {
+        create: [
+          { newStatus: "Draft", userId: eve.id, createdAt: ts(-2000) },
+          { newStatus: "Submitted", userId: eve.id, createdAt: ts(-1000) },
+        ],
+      },
+      domainApplications: {
+        create: [
+          {
+            id: "da-eve-design",
+            challengeVersionId: designCv.id,
+            answers: {
+              "dq-00000000-0000-0000-0000-000000000001":
+                "I interview three or four actual users before touching Figma. My first wireframes are always ugly and paper — it saves tons of time downstream.",
+              "dq-00000000-0000-0000-0000-000000000002":
+                "evepark.design — recent case study on a library book-return kiosk.",
+              "dq-00000000-0000-0000-0000-000000000003":
+                "We were convinced freshmen wanted a map view for our dining app, but testing showed they just wanted a list sorted by wait time. We cut the map.",
+            },
+          },
+        ],
+      },
+    },
+  });
+
+  // Felix: submitted Product application
+  await prisma.application.upsert({
+    where: { id: "app-felix" },
+    update: {},
+    create: {
+      id: "app-felix",
+      answers: {
+        "fq-00000000-0000-0000-0000-000000000001":
+          "I'm drawn to DALI's combination of real stakeholders and short feedback loops.",
+        "fq-00000000-0000-0000-0000-000000000002": "Junior, Economics + Government",
+      },
+      userId: felix.id,
+      applicationCycleId: cycle.id,
+      generalChallengeVersionId: generalFormVersion.id,
+      statusUpdates: {
+        create: [
+          { newStatus: "Draft", userId: felix.id, createdAt: ts(-2000) },
+          { newStatus: "Submitted", userId: felix.id, createdAt: ts(-1000) },
+        ],
+      },
+      domainApplications: {
+        create: [
+          {
+            id: "da-felix-pm",
+            challengeVersionId: pmCv.id,
+            answers: {
+              "pq-00000000-0000-0000-0000-000000000001":
+                "Canvas assignment notifications are noisy and land at inconvenient times. I'd batch them into a single daily digest, preserving only 'grade posted' as real-time.",
+              "pq-00000000-0000-0000-0000-000000000002":
+                "Running a student org's budget, I had to cut 30% mid-semester. I built a priority matrix with the exec team and used it to defend every line in the meeting.",
+            },
+          },
+        ],
+      },
+    },
+  });
+
+  // Grace: submitted Engineering application — weaker answers, will be rejected
+  await prisma.application.upsert({
+    where: { id: "app-grace" },
+    update: {},
+    create: {
+      id: "app-grace",
+      answers: {
+        "fq-00000000-0000-0000-0000-000000000001":
+          "I want to join DALI because it would look great on my resume.",
+        "fq-00000000-0000-0000-0000-000000000002": "Freshman, Undeclared",
+      },
+      userId: grace.id,
+      applicationCycleId: cycle.id,
+      generalChallengeVersionId: generalFormVersion.id,
+      statusUpdates: {
+        create: [
+          { newStatus: "Draft", userId: grace.id, createdAt: ts(-2000) },
+          { newStatus: "Submitted", userId: grace.id, createdAt: ts(-1000) },
+        ],
+      },
+      domainApplications: {
+        create: [
+          {
+            id: "da-grace-eng",
+            challengeVersionId: engCv.id,
+            answers: {
+              "eq-00000000-0000-0000-0000-000000000001":
+                "I took CS 1 and built a calculator.",
+              "eq-00000000-0000-0000-0000-000000000002":
+                "No public repos yet.",
+              "eq-00000000-0000-0000-0000-000000000003":
+                "I'm interested in AI.",
+            },
+          },
+        ],
+      },
+    },
+  });
+
+  // Harper: submitted Design application — still mid-review (reviews not all submitted)
+  await prisma.application.upsert({
+    where: { id: "app-harper" },
+    update: {},
+    create: {
+      id: "app-harper",
+      answers: {
+        "fq-00000000-0000-0000-0000-000000000001":
+          "I've followed DALI term showcases for a year and the breadth of projects is what drew me in.",
+        "fq-00000000-0000-0000-0000-000000000002": "Sophomore, Film & Media Studies",
+      },
+      userId: harper.id,
+      applicationCycleId: cycle.id,
+      generalChallengeVersionId: generalFormVersion.id,
+      statusUpdates: {
+        create: [
+          { newStatus: "Draft", userId: harper.id, createdAt: ts(-2000) },
+          { newStatus: "Submitted", userId: harper.id, createdAt: ts(-1000) },
+        ],
+      },
+      domainApplications: {
+        create: [
+          {
+            id: "da-harper-design",
+            challengeVersionId: designCv.id,
+            answers: {
+              "dq-00000000-0000-0000-0000-000000000001":
+                "I start from constraints — who, where, what device — and let form follow. I sketch in Procreate before any high-fidelity work.",
+              "dq-00000000-0000-0000-0000-000000000002":
+                "harper-sato.cargo.site",
+              "dq-00000000-0000-0000-0000-000000000003":
+                "A study of how film students annotated shot lists showed us margins mattered more than colors — we redesigned around whitespace.",
+            },
+          },
+        ],
+      },
+    },
+  });
+
+  // Ivan: submitted Engineering application — no reviewers assigned yet
+  await prisma.application.upsert({
+    where: { id: "app-ivan" },
+    update: {},
+    create: {
+      id: "app-ivan",
+      answers: {
+        "fq-00000000-0000-0000-0000-000000000001":
+          "I want to work on things where the deployment matters as much as the code — DALI fits that better than any student org I've seen.",
+        "fq-00000000-0000-0000-0000-000000000002": "Freshman, Computer Science + Physics",
+      },
+      userId: ivan.id,
+      applicationCycleId: cycle.id,
+      generalChallengeVersionId: generalFormVersion.id,
+      statusUpdates: {
+        create: [
+          { newStatus: "Draft", userId: ivan.id, createdAt: ts(-2000) },
+          { newStatus: "Submitted", userId: ivan.id, createdAt: ts(-1000) },
+        ],
+      },
+      domainApplications: {
+        create: [
+          {
+            id: "da-ivan-eng",
+            challengeVersionId: engCv.id,
+            answers: {
+              "eq-00000000-0000-0000-0000-000000000001":
+                "Ported a finicky build pipeline from Make to Bazel for a research group. The win was incremental builds going from 40s to 3s; the lesson was that nobody cares about Bazel's purity if the upgrade path isn't clear.",
+              "eq-00000000-0000-0000-0000-000000000002":
+                "github.com/ivan-k/sim-toolkit — a small numerical simulation helper. I'd replace the ad-hoc logging with structured traces now.",
+              "eq-00000000-0000-0000-0000-000000000003":
+                "Reading about PL design for differentiable programming — the idea that a compiler can produce gradients is still wild to me.",
+            },
+          },
+        ],
+      },
+    },
+  });
+
+  // Jade: submitted Design application — no reviewers assigned yet
+  await prisma.application.upsert({
+    where: { id: "app-jade" },
+    update: {},
+    create: {
+      id: "app-jade",
+      answers: {
+        "fq-00000000-0000-0000-0000-000000000001":
+          "DALI is the rare place where design work actually ships to real users on campus. That's what I want to be part of.",
+        "fq-00000000-0000-0000-0000-000000000002": "Junior, Geography + Human-Centered Design",
+      },
+      userId: jade.id,
+      applicationCycleId: cycle.id,
+      generalChallengeVersionId: generalFormVersion.id,
+      statusUpdates: {
+        create: [
+          { newStatus: "Draft", userId: jade.id, createdAt: ts(-2000) },
+          { newStatus: "Submitted", userId: jade.id, createdAt: ts(-1000) },
+        ],
+      },
+      domainApplications: {
+        create: [
+          {
+            id: "da-jade-design",
+            challengeVersionId: designCv.id,
+            answers: {
+              "dq-00000000-0000-0000-0000-000000000001":
+                "I start with a short research sprint — five-minute interviews with the people who will actually use it. From there I work in Figma, but only after sketches I'm willing to throw away.",
+              "dq-00000000-0000-0000-0000-000000000002":
+                "jadem-design.notion.site — recent wayfinding redesign for the library.",
+              "dq-00000000-0000-0000-0000-000000000003":
+                "We assumed users wanted dark mode by default on a tool used mostly in bright outdoor light. Testing with field researchers showed the exact opposite — high-contrast light mode was unreadable without the blue-light filter.",
+            },
+          },
+        ],
+      },
+    },
+  });
+
+  // Kenji: submitted Engineering application — no reviewers assigned yet
+  await prisma.application.upsert({
+    where: { id: "app-kenji" },
+    update: {},
+    create: {
+      id: "app-kenji",
+      answers: {
+        "fq-00000000-0000-0000-0000-000000000001":
+          "I've contributed to a few open-source React libraries and want to work somewhere the feedback loop from code to user is this tight.",
+        "fq-00000000-0000-0000-0000-000000000002": "Freshman, Computer Science",
+      },
+      userId: kenji.id,
+      applicationCycleId: cycle.id,
+      generalChallengeVersionId: generalFormVersion.id,
+      statusUpdates: {
+        create: [
+          { newStatus: "Draft", userId: kenji.id, createdAt: ts(-2000) },
+          { newStatus: "Submitted", userId: kenji.id, createdAt: ts(-1000) },
+        ],
+      },
+      domainApplications: {
+        create: [
+          {
+            id: "da-kenji-eng",
+            challengeVersionId: engCv.id,
+            answers: {
+              "eq-00000000-0000-0000-0000-000000000001":
+                "Wrote a small virtual-list component for my personal blog because the existing libraries didn't handle variable-height rows well. Chunked measurement with a ResizeObserver turned out to be the key.",
+              "eq-00000000-0000-0000-0000-000000000002":
+                "github.com/kenjiy/virtual-list-lite — I'd pull the measurement cache out into a reusable hook.",
+              "eq-00000000-0000-0000-0000-000000000003":
+                "WebGPU shader toolchains. It feels like we're a few years away from shader code being portable in the way JavaScript is.",
+            },
+          },
+        ],
+      },
+    },
+  });
+
+  // Leo: submitted Engineering application — no reviewers assigned yet
+  await prisma.application.upsert({
+    where: { id: "app-leo" },
+    update: {},
+    create: {
+      id: "app-leo",
+      answers: {
+        "fq-00000000-0000-0000-0000-000000000001":
+          "I came to Dartmouth planning to do pure math and ended up loving infrastructure work. DALI's mix of research and shipping is exactly what I'm looking for.",
+        "fq-00000000-0000-0000-0000-000000000002": "Senior, Math + Computer Science",
+      },
+      userId: leo.id,
+      applicationCycleId: cycle.id,
+      generalChallengeVersionId: generalFormVersion.id,
+      statusUpdates: {
+        create: [
+          { newStatus: "Draft", userId: leo.id, createdAt: ts(-2000) },
+          { newStatus: "Submitted", userId: leo.id, createdAt: ts(-1000) },
+        ],
+      },
+      domainApplications: {
+        create: [
+          {
+            id: "da-leo-eng",
+            challengeVersionId: engCv.id,
+            answers: {
+              "eq-00000000-0000-0000-0000-000000000001":
+                "Automated a flaky CI matrix for a research lab — the fix wasn't code, it was figuring out which failures were environment-dependent vs. real regressions and quarantining the first set behind a retry.",
+              "eq-00000000-0000-0000-0000-000000000002":
+                "github.com/leo-b/tidy-ci — scripts to triage CI logs. Would rewrite it in Rust now that the log corpus has grown.",
+              "eq-00000000-0000-0000-0000-000000000003":
+                "Linear types. Every time I think I understand them I find a new edge case that reframes what memory safety can mean.",
+            },
+          },
+        ],
+      },
+    },
+  });
+
+  // ── Application cycle: Winter 2028 (Draft) ────────────────────────────────
   const cycle2028 = await prisma.applicationCycle.upsert({
     where: { id: "cycle-winter-2028" },
     update: {},
     create: {
       id: "cycle-winter-2028",
       name: "Winter 2028",
-      formVersionId: formVersion.id,
       domains: {
         create: [
           { domainId: designDomain.id },
@@ -547,14 +1011,12 @@ async function main() {
       },
       challengeVersions: {
         create: [
+          { challengeVersionId: generalFormVersion.id },
           { challengeVersionId: designCv.id },
           { challengeVersionId: engCv2.id },
           { challengeVersionId: pmCv.id },
         ],
       },
-      // Winter 2028 stays in Draft so it doesn't violate the single-active-
-      // cycle invariant (Fall 2026 is Closed = active). An admin would advance
-      // this one to Open after Fall 2026 reaches DecisionsReleased.
       statusUpdates: {
         create: [
           { newStatus: "Draft", userId: admin.id, createdAt: ts(-1000) },
@@ -590,7 +1052,7 @@ async function main() {
       },
       userId: dana.id,
       applicationCycleId: cycle2028.id,
-      applicationFormVersionId: formVersion.id,
+      generalChallengeVersionId: generalFormVersion.id,
       statusUpdates: {
         create: [
           { newStatus: "Draft", userId: dana.id, createdAt: ts(-2000) },
@@ -617,21 +1079,384 @@ async function main() {
     },
   });
 
-  // ── Domain lead user ──────────────────────────────────────────────────────
-  const engLead = await prisma.user.upsert({
-    where: { netId: "f007el1" },
+  // ── Application cycle: Winter 2027 (Completed — past cycle) ──────────────
+  // Winter 2027 is a finished cycle: every submitted applicant has a Released
+  // terminal decision. This keeps the single-active-cycle invariant intact
+  // (only Fall 2026 is Open/UnderReview) while still exercising the
+  // "past cycle" surfaces of the UI.
+  const cycleWinter2027 = await prisma.applicationCycle.upsert({
+    where: { id: "cycle-winter-2027" },
     update: {},
     create: {
-      netId: "f007el1",
-      daliEmail: "eng.lead@dali.dartmouth.edu",
-      firstName: "Engineering",
-      lastName: "Lead",
-      daliMember: { create: { daliEmail: "eng.lead@dali.dartmouth.edu" } },
+      id: "cycle-winter-2027",
+      name: "Winter 2027",
+      closeDate: new Date("2027-02-15T23:59:59Z"),
+      generalRubricVersionId: "rv-general-v1",
+      domains: {
+        create: [
+          { domainId: designDomain.id },
+          { domainId: engDomain.id },
+          { domainId: pmDomain.id },
+        ],
+      },
+      challengeVersions: {
+        create: [
+          { challengeVersionId: generalFormVersion.id },
+          { challengeVersionId: designCv.id },
+          { challengeVersionId: engCv.id },
+          { challengeVersionId: pmCv.id },
+        ],
+      },
+      statusUpdates: {
+        create: [
+          { newStatus: "Draft", userId: admin.id, createdAt: ts(-5000) },
+          { newStatus: "Open", userId: admin.id, createdAt: ts(-4000) },
+        ],
+      },
     },
   });
 
-  const engLeadMember = await prisma.dALIMember.findUniqueOrThrow({
+  // Idempotently advance Winter 2027 past Open → UnderReview → Completed.
+  // Explicit ids so re-seeds don't pile up duplicate status rows.
+  for (const [id, newStatus, offsetMs] of [
+    ["acsu-w2027-underreview", "UnderReview", -3500],
+    ["acsu-w2027-completed", "Completed", -3000],
+  ] as const) {
+    await prisma.applicationCycleStatusUpdate.upsert({
+      where: { id },
+      update: {},
+      create: {
+        id,
+        applicationCycleId: cycleWinter2027.id,
+        newStatus,
+        userId: admin.id,
+        createdAt: ts(offsetMs),
+      },
+    });
+  }
+
+  // ── Applicants for Winter 2027 ────────────────────────────────────────────
+  const [emma, liam, sofia, noah, olivia, ethan, ava, mason] = await Promise.all([
+    prisma.user.upsert({
+      where: { netId: "f007em5" },
+      update: {},
+      create: { netId: "f007em5", dartmouthEmail: "emma.j.torres.27@dartmouth.edu", firstName: "Emma", lastName: "Torres" },
+    }),
+    prisma.user.upsert({
+      where: { netId: "f007li6" },
+      update: {},
+      create: { netId: "f007li6", dartmouthEmail: "liam.t.nguyen.28@dartmouth.edu", firstName: "Liam", lastName: "Nguyen" },
+    }),
+    prisma.user.upsert({
+      where: { netId: "f007so7" },
+      update: {},
+      create: { netId: "f007so7", dartmouthEmail: "sofia.a.martinez.27@dartmouth.edu", firstName: "Sofia", lastName: "Martinez" },
+    }),
+    prisma.user.upsert({
+      where: { netId: "f007no8" },
+      update: {},
+      create: { netId: "f007no8", dartmouthEmail: "noah.r.williams.28@dartmouth.edu", firstName: "Noah", lastName: "Williams" },
+    }),
+    prisma.user.upsert({
+      where: { netId: "f007ol9" },
+      update: {},
+      create: { netId: "f007ol9", dartmouthEmail: "olivia.k.brown.27@dartmouth.edu", firstName: "Olivia", lastName: "Brown" },
+    }),
+    prisma.user.upsert({
+      where: { netId: "f007et0" },
+      update: {},
+      create: { netId: "f007et0", dartmouthEmail: "ethan.m.davis.28@dartmouth.edu", firstName: "Ethan", lastName: "Davis" },
+    }),
+    prisma.user.upsert({
+      where: { netId: "f007av1" },
+      update: {},
+      create: { netId: "f007av1", dartmouthEmail: "ava.c.wilson.27@dartmouth.edu", firstName: "Ava", lastName: "Wilson" },
+    }),
+    prisma.user.upsert({
+      where: { netId: "f007ma2" },
+      update: {},
+      create: { netId: "f007ma2", dartmouthEmail: "mason.h.taylor.28@dartmouth.edu", firstName: "Mason", lastName: "Taylor" },
+    }),
+  ]);
+
+  // Emma: submitted Engineering application
+  await prisma.application.upsert({
+    where: { id: "app-emma" },
+    update: {},
+    create: {
+      id: "app-emma",
+      answers: {
+        "fq-00000000-0000-0000-0000-000000000001": "I've been building side projects since freshman year and want to work on something with real users. DALI's shipping culture is exactly what I'm looking for.",
+        "fq-00000000-0000-0000-0000-000000000002": "Sophomore, Computer Science and Math",
+        "fq-00000000-0000-0000-0000-000000000003": "I run the Women in CS club and mentor underclassmen in intro CS.",
+      },
+      userId: emma.id,
+      applicationCycleId: cycleWinter2027.id,
+      generalChallengeVersionId: generalFormVersion.id,
+      statusUpdates: { create: [
+        { newStatus: "Draft", userId: emma.id, createdAt: ts(-3500) },
+        { newStatus: "Submitted", userId: emma.id, createdAt: ts(-3000) },
+      ] },
+      domainApplications: { create: [{
+        id: "da-emma-eng",
+        challengeVersionId: engCv.id,
+        answers: {
+          "eq-00000000-0000-0000-0000-000000000001": "I built a peer-to-peer file sharing system for my networks class. The trickiest part was NAT traversal — I ended up implementing STUN/TURN relay as a fallback.",
+          "eq-00000000-0000-0000-0000-000000000002": "github.com/emma/p2p-share — I'd add end-to-end encryption if I did it again.",
+          "eq-00000000-0000-0000-0000-000000000003": "I've been learning about distributed consensus algorithms, especially Raft. The leader election protocol is elegant.",
+        },
+      }] },
+    },
+  });
+
+  // Liam: submitted Engineering + Design application
+  await prisma.application.upsert({
+    where: { id: "app-liam" },
+    update: {},
+    create: {
+      id: "app-liam",
+      answers: {
+        "fq-00000000-0000-0000-0000-000000000001": "I'm a full-stack developer who also loves design. DALI is the only place on campus where I can do both.",
+        "fq-00000000-0000-0000-0000-000000000002": "Junior, Computer Science modified with Digital Arts",
+      },
+      userId: liam.id,
+      applicationCycleId: cycleWinter2027.id,
+      generalChallengeVersionId: generalFormVersion.id,
+      statusUpdates: { create: [
+        { newStatus: "Draft", userId: liam.id, createdAt: ts(-3400) },
+        { newStatus: "Submitted", userId: liam.id, createdAt: ts(-2800) },
+      ] },
+      domainApplications: { create: [
+        {
+          id: "da-liam-eng",
+          challengeVersionId: engCv.id,
+          answers: {
+            "eq-00000000-0000-0000-0000-000000000001": "I refactored a legacy PHP monolith into a microservices architecture using Go. The challenge was maintaining backwards compatibility while migrating one service at a time.",
+            "eq-00000000-0000-0000-0000-000000000002": "github.com/liam/go-migrate — I'd invest more in integration tests upfront.",
+            "eq-00000000-0000-0000-0000-000000000003": "I'm exploring WebGL and Three.js to build interactive 3D data visualizations.",
+          },
+        },
+        {
+          id: "da-liam-design",
+          challengeVersionId: designCv.id,
+          answers: {
+            "dq-00000000-0000-0000-0000-000000000001": "I start with competitive analysis, then create user personas and journey maps before wireframing in Figma. I always test with at least 5 users before moving to high-fidelity.",
+            "dq-00000000-0000-0000-0000-000000000002": "dribbble.com/liam-designs",
+            "dq-00000000-0000-0000-0000-000000000003": "Testing our campus dining app with international students revealed that our meal plan terminology was confusing. We added a glossary tooltip that reduced support tickets by 40%.",
+          },
+        },
+      ] },
+    },
+  });
+
+  // Sofia: submitted Design application
+  await prisma.application.upsert({
+    where: { id: "app-sofia" },
+    update: {},
+    create: {
+      id: "app-sofia",
+      answers: {
+        "fq-00000000-0000-0000-0000-000000000001": "I believe great products come from deep empathy for users. DALI's collaborative environment is where I want to sharpen my UX craft.",
+        "fq-00000000-0000-0000-0000-000000000002": "Sophomore, Cognitive Science and Studio Art",
+        "fq-00000000-0000-0000-0000-000000000003": "I volunteer at the Hood Museum designing accessible exhibit guides.",
+      },
+      userId: sofia.id,
+      applicationCycleId: cycleWinter2027.id,
+      generalChallengeVersionId: generalFormVersion.id,
+      statusUpdates: { create: [
+        { newStatus: "Draft", userId: sofia.id, createdAt: ts(-3300) },
+        { newStatus: "Submitted", userId: sofia.id, createdAt: ts(-2700) },
+      ] },
+      domainApplications: { create: [{
+        id: "da-sofia-design",
+        challengeVersionId: designCv.id,
+        answers: {
+          "dq-00000000-0000-0000-0000-000000000001": "My process is research-first: contextual inquiry, affinity mapping, then rapid prototyping. I iterate based on usability testing, not stakeholder opinions.",
+          "dq-00000000-0000-0000-0000-000000000002": "behance.net/sofia-martinez",
+          "dq-00000000-0000-0000-0000-000000000003": "Accessibility testing with screen reader users completely changed how I think about information hierarchy. I now design content structure before visual layout.",
+        },
+      }] },
+    },
+  });
+
+  // Noah: submitted Product application
+  await prisma.application.upsert({
+    where: { id: "app-noah" },
+    update: {},
+    create: {
+      id: "app-noah",
+      answers: {
+        "fq-00000000-0000-0000-0000-000000000001": "I've led two student org product launches and want to learn how a real product team operates. DALI's project structure mirrors industry workflows I want to master.",
+        "fq-00000000-0000-0000-0000-000000000002": "Junior, Economics modified with Computer Science",
+      },
+      userId: noah.id,
+      applicationCycleId: cycleWinter2027.id,
+      generalChallengeVersionId: generalFormVersion.id,
+      statusUpdates: { create: [
+        { newStatus: "Draft", userId: noah.id, createdAt: ts(-3200) },
+        { newStatus: "Submitted", userId: noah.id, createdAt: ts(-2600) },
+      ] },
+      domainApplications: { create: [{
+        id: "da-noah-pm",
+        challengeVersionId: pmCv.id,
+        answers: {
+          "pq-00000000-0000-0000-0000-000000000001": "Slack's notification system is overwhelming. I'd add an AI-powered digest that summarizes channels you haven't checked, prioritized by relevance. I'd validate with a 2-week diary study tracking notification fatigue.",
+          "pq-00000000-0000-0000-0000-000000000002": "During a hackathon, we had to choose between building a native app or a PWA with 12 hours left. I ran a quick cost-benefit analysis, chose PWA for faster iteration, and we won Best Technical Implementation.",
+        },
+      }] },
+    },
+  });
+
+  // Olivia: submitted Engineering application
+  await prisma.application.upsert({
+    where: { id: "app-olivia" },
+    update: {},
+    create: {
+      id: "app-olivia",
+      answers: {
+        "fq-00000000-0000-0000-0000-000000000001": "I want to bridge the gap between academic CS and real-world software engineering. DALI is the best place at Dartmouth to do that.",
+        "fq-00000000-0000-0000-0000-000000000002": "Sophomore, Computer Science",
+        "fq-00000000-0000-0000-0000-000000000003": "I'm on the club volleyball team and love the teamwork parallels between sports and software.",
+      },
+      userId: olivia.id,
+      applicationCycleId: cycleWinter2027.id,
+      generalChallengeVersionId: generalFormVersion.id,
+      statusUpdates: { create: [
+        { newStatus: "Draft", userId: olivia.id, createdAt: ts(-3100) },
+        { newStatus: "Submitted", userId: olivia.id, createdAt: ts(-2500) },
+      ] },
+      domainApplications: { create: [{
+        id: "da-olivia-eng",
+        challengeVersionId: engCv.id,
+        answers: {
+          "eq-00000000-0000-0000-0000-000000000001": "I built a compiler for a subset of Python targeting LLVM IR. The hardest part was implementing closure capture correctly — I had to trace variable lifetimes across nested scopes.",
+          "eq-00000000-0000-0000-0000-000000000002": "github.com/olivia/mini-python — I'd add proper error recovery in the parser instead of just panicking.",
+          "eq-00000000-0000-0000-0000-000000000003": "I've been exploring formal verification with Lean 4. Proving properties about code is addictive once you get the hang of it.",
+        },
+      }] },
+    },
+  });
+
+  // Ethan: submitted Product + Engineering application
+  await prisma.application.upsert({
+    where: { id: "app-ethan" },
+    update: {},
+    create: {
+      id: "app-ethan",
+      answers: {
+        "fq-00000000-0000-0000-0000-000000000001": "I'm a technical PM at heart — I love understanding systems deeply enough to make better product decisions. DALI lets me flex both muscles.",
+        "fq-00000000-0000-0000-0000-000000000002": "Junior, Engineering Sciences",
+      },
+      userId: ethan.id,
+      applicationCycleId: cycleWinter2027.id,
+      generalChallengeVersionId: generalFormVersion.id,
+      statusUpdates: { create: [
+        { newStatus: "Draft", userId: ethan.id, createdAt: ts(-3000) },
+        { newStatus: "Submitted", userId: ethan.id, createdAt: ts(-2400) },
+      ] },
+      domainApplications: { create: [
+        {
+          id: "da-ethan-pm",
+          challengeVersionId: pmCv.id,
+          answers: {
+            "pq-00000000-0000-0000-0000-000000000001": "Google Maps' offline mode is clunky — you have to manually download areas. I'd auto-cache routes you frequently travel and validate by measuring data usage reduction in areas with spotty coverage.",
+            "pq-00000000-0000-0000-0000-000000000002": "Leading a team of 6 to build a campus safety app with no budget. I talked to 50 students, identified the core need (walking alone at night), and scoped the MVP to just a buddy-matching feature.",
+          },
+        },
+        {
+          id: "da-ethan-eng",
+          challengeVersionId: engCv.id,
+          answers: {
+            "eq-00000000-0000-0000-0000-000000000001": "I built a real-time collaborative whiteboard using WebSockets and operational transforms. The main challenge was conflict resolution when two users draw in the same area simultaneously.",
+            "eq-00000000-0000-0000-0000-000000000002": "github.com/ethan/collab-board — I'd switch to CRDTs for better offline support.",
+            "eq-00000000-0000-0000-0000-000000000003": "Kubernetes and container orchestration. I've been running a small homelab cluster to understand scheduling and resource limits.",
+          },
+        },
+      ] },
+    },
+  });
+
+  // Ava: submitted Design + Product application
+  await prisma.application.upsert({
+    where: { id: "app-ava" },
+    update: {},
+    create: {
+      id: "app-ava",
+      answers: {
+        "fq-00000000-0000-0000-0000-000000000001": "I'm passionate about the intersection of design and product strategy. DALI's project-based learning model is exactly how I learn best.",
+        "fq-00000000-0000-0000-0000-000000000002": "Sophomore, Human-Centered Design and Engineering",
+        "fq-00000000-0000-0000-0000-000000000003": "I spent last summer at a design consultancy in NYC working on healthcare UX.",
+      },
+      userId: ava.id,
+      applicationCycleId: cycleWinter2027.id,
+      generalChallengeVersionId: generalFormVersion.id,
+      statusUpdates: { create: [
+        { newStatus: "Draft", userId: ava.id, createdAt: ts(-2900) },
+        { newStatus: "Submitted", userId: ava.id, createdAt: ts(-2300) },
+      ] },
+      domainApplications: { create: [
+        {
+          id: "da-ava-design",
+          challengeVersionId: designCv.id,
+          answers: {
+            "dq-00000000-0000-0000-0000-000000000001": "I follow a double-diamond approach: diverge with research, converge on insights, diverge with ideation, converge on a tested solution. Every decision is backed by user evidence.",
+            "dq-00000000-0000-0000-0000-000000000002": "figma.com/@ava-wilson-design",
+            "dq-00000000-0000-0000-0000-000000000003": "We assumed patients wanted more data in our health dashboard. User testing showed they actually wanted less — just their top 3 actionable items. We cut 60% of the UI and satisfaction scores jumped.",
+          },
+        },
+        {
+          id: "da-ava-pm",
+          challengeVersionId: pmCv.id,
+          answers: {
+            "pq-00000000-0000-0000-0000-000000000001": "Venmo's social feed is a privacy risk disguised as a feature. I'd make transactions private by default and add an opt-in 'share' button. Validation: track what percentage of users actively choose to share vs. the current passive exposure.",
+            "pq-00000000-0000-0000-0000-000000000002": "Choosing between two competing research findings in a summer internship. One said users wanted simplicity, the other said they wanted power features. I segmented by user type and built progressive disclosure — simple by default, powerful on demand.",
+          },
+        },
+      ] },
+    },
+  });
+
+  // Mason: draft Engineering application (not yet submitted — edge case)
+  await prisma.application.upsert({
+    where: { id: "app-mason" },
+    update: {},
+    create: {
+      id: "app-mason",
+      answers: {
+        "fq-00000000-0000-0000-0000-000000000001": "I want to work on meaningful projects with a talented team.",
+        "fq-00000000-0000-0000-0000-000000000002": "Junior, Computer Science",
+      },
+      userId: mason.id,
+      applicationCycleId: cycleWinter2027.id,
+      generalChallengeVersionId: generalFormVersion.id,
+      statusUpdates: { create: [
+        { newStatus: "Draft", userId: mason.id, createdAt: ts(-2800) },
+      ] },
+      domainApplications: { create: [{
+        id: "da-mason-eng",
+        challengeVersionId: engCv.id,
+        answers: {
+          "eq-00000000-0000-0000-0000-000000000001": "Working on it...",
+        },
+      }] },
+    },
+  });
+
+  // ── Domain lead user ──────────────────────────────────────────────────────
+  const engLead = await prisma.user.upsert({
     where: { daliEmail: "eng.lead@dali.dartmouth.edu" },
+    update: { firstName: "Mira", lastName: "Chen" },
+    create: {
+      daliEmail: "eng.lead@dali.dartmouth.edu",
+      firstName: "Mira",
+      lastName: "Chen",
+      daliMember: { create: { daliEmail: "eng.lead@dali.dartmouth.edu", firstName: "Mira", lastName: "Chen" } },
+    },
+  });
+
+  const engLeadMember = await prisma.dALIMember.update({
+    where: { daliEmail: "eng.lead@dali.dartmouth.edu" },
+    data: { firstName: "Mira", lastName: "Chen" },
   });
 
   await prisma.domainLeadAssignment.upsert({
@@ -644,8 +1469,42 @@ async function main() {
     },
   });
 
-  // ── Interview scheduling seed ──────────────────────────────────────────────
+  // ── Jordan Taylor (Hiring Lead + Engineering Domain Lead) ──────────────────
+  const jordan = await prisma.user.upsert({
+    where: { daliEmail: "jordan.taylor@dali.dartmouth.edu" },
+    update: { firstName: "Jordan", lastName: "Taylor" },
+    create: {
+      daliEmail: "jordan.taylor@dali.dartmouth.edu",
+      firstName: "Jordan",
+      lastName: "Taylor",
+      daliMember: {
+        create: {
+          daliEmail: "jordan.taylor@dali.dartmouth.edu",
+          firstName: "Jordan",
+          lastName: "Taylor",
+          roles: ["HiringLead"],
+        },
+      },
+    },
+    include: { daliMember: true },
+  });
 
+  const jordanMember = await prisma.dALIMember.update({
+    where: { daliEmail: "jordan.taylor@dali.dartmouth.edu" },
+    data: { firstName: "Jordan", lastName: "Taylor" },
+  });
+
+  await prisma.domainLeadAssignment.upsert({
+    where: { id: "dla-jordan-eng" },
+    update: {},
+    create: {
+      id: "dla-jordan-eng",
+      memberId: jordanMember.id,
+      domainId: engDomain.id,
+    },
+  });
+
+  // ── Interview config ──────────────────────────────────────────────────────
   const today = new Date();
   const interviewStart = new Date(today);
   interviewStart.setDate(today.getDate() + 1);
@@ -677,45 +1536,139 @@ async function main() {
     },
   });
 
+  // ── Reviewers + Interviewers ──────────────────────────────────────────────
+  // Two reviewers+interviewers per domain so every domain app has enough
+  // review coverage and invited applicants see real slot options.
   const reviewerData = [
-    { netId: "rev001", email: "reviewer1@dali.dartmouth.edu", first: "Riley", last: "Engineer", domainId: engDomain.id },
-    { netId: "rev002", email: "reviewer2@dali.dartmouth.edu", first: "Dana", last: "Designer", domainId: designDomain.id },
-    { netId: "rev003", email: "reviewer3@dali.dartmouth.edu", first: "Pat", last: "Product", domainId: pmDomain.id },
+    { email: "reviewer1@dali.dartmouth.edu", first: "Riley", last: "Okonkwo", domainId: engDomain.id },
+    { email: "reviewer2@dali.dartmouth.edu", first: "Sam", last: "Alvarez", domainId: designDomain.id },
+    { email: "reviewer3@dali.dartmouth.edu", first: "Pat", last: "Mikhailov", domainId: pmDomain.id },
+    { email: "eng.lead@dali.dartmouth.edu", first: "Mira", last: "Chen", domainId: engDomain.id },
+    { email: "design.lead@dali.dartmouth.edu", first: "Isabela", last: "Ferreira", domainId: designDomain.id },
+    { email: "pm.lead@dali.dartmouth.edu", first: "Theo", last: "Abernathy", domainId: pmDomain.id },
   ];
+
+  const reviewerMembers: Array<{ id: string; domainId: string }> = [];
 
   for (const r of reviewerData) {
     const user = await prisma.user.upsert({
-      where: { netId: r.netId },
-      update: {},
+      where: { daliEmail: r.email },
+      update: { firstName: r.first, lastName: r.last },
       create: {
-        netId: r.netId,
         daliEmail: r.email,
         firstName: r.first,
         lastName: r.last,
-        daliMember: { create: { daliEmail: r.email } },
+        daliMember: { create: { daliEmail: r.email, firstName: r.first, lastName: r.last } },
       },
       include: { daliMember: true },
     });
 
     if (!user.daliMember) continue;
+    // Sync names onto the DALIMember row — the dashboard renders from there,
+    // and older seeds created members without names.
+    await prisma.dALIMember.update({
+      where: { id: user.daliMember.id },
+      data: { firstName: r.first, lastName: r.last },
+    });
+    reviewerMembers.push({ id: user.daliMember.id, domainId: r.domainId });
 
+    // CycleReviewer (for written reviews)
     await prisma.cycleReviewer.upsert({
-      where: { daliMemberId_applicationCycleId: { daliMemberId: user.daliMember.id, applicationCycleId: cycle.id } },
+      where: {
+        daliMemberId_applicationCycleId_domainId: {
+          daliMemberId: user.daliMember.id,
+          applicationCycleId: cycle.id,
+          domainId: r.domainId,
+        },
+      },
       update: {},
       create: {
         daliMemberId: user.daliMember.id,
         applicationCycleId: cycle.id,
         domainId: r.domainId,
-        isLead: false,
+      },
+    });
+
+    // CycleInterviewer (for conducting interviews)
+    await prisma.cycleInterviewer.upsert({
+      where: {
+        daliMemberId_applicationCycleId_domainId: {
+          daliMemberId: user.daliMember.id,
+          applicationCycleId: cycle.id,
+          domainId: r.domainId,
+        },
+      },
+      update: {},
+      create: {
+        daliMemberId: user.daliMember.id,
+        applicationCycleId: cycle.id,
+        domainId: r.domainId,
       },
     });
   }
 
-  // ── Reviewer availability ────────────────────────────────────────────────
-  const allReviewers = await prisma.cycleReviewer.findMany({
-    where: { applicationCycleId: cycle.id },
-  });
+  // ── Engineering reviewers for Winter 2027 ──────────────────────────────────
+  for (const rm of reviewerMembers.filter(r => r.domainId === engDomain.id)) {
+    await prisma.cycleReviewer.upsert({
+      where: {
+        daliMemberId_applicationCycleId_domainId: {
+          daliMemberId: rm.id,
+          applicationCycleId: cycleWinter2027.id,
+          domainId: engDomain.id,
+        },
+      },
+      update: {},
+      create: {
+        daliMemberId: rm.id,
+        applicationCycleId: cycleWinter2027.id,
+        domainId: engDomain.id,
+      },
+    });
+  }
 
+  // ── Winter 2027 terminal decisions ────────────────────────────────────────
+  // Completed cycle: every submitted DomainApplication gets a single Released
+  // Accept/Waitlist/Reject decision. We skip the Draft → Final audit chain
+  // here (unlike Fall 2026) — Winter 2027 is a lightweight "past cycle"
+  // backdrop and doesn't need full audit history. No reviewers/interviews are
+  // seeded for its applicants.
+  type TerminalSpec = { slug: string; domainAppId: string; type: "Accepted" | "Waitlisted" | "Rejected"; notes?: string };
+  const winter2027Terminals: TerminalSpec[] = [
+    { slug: "emma-eng", domainAppId: "da-emma-eng", type: "Accepted", notes: "Outstanding technical round." },
+    { slug: "liam-eng", domainAppId: "da-liam-eng", type: "Accepted" },
+    { slug: "liam-design", domainAppId: "da-liam-design", type: "Waitlisted" },
+    { slug: "sofia-design", domainAppId: "da-sofia-design", type: "Accepted" },
+    { slug: "noah-pm", domainAppId: "da-noah-pm", type: "Accepted" },
+    { slug: "olivia-eng", domainAppId: "da-olivia-eng", type: "Rejected" },
+    { slug: "ethan-pm", domainAppId: "da-ethan-pm", type: "Waitlisted" },
+    { slug: "ethan-eng", domainAppId: "da-ethan-eng", type: "Rejected" },
+    { slug: "ava-design", domainAppId: "da-ava-design", type: "Rejected" },
+    { slug: "ava-pm", domainAppId: "da-ava-pm", type: "Rejected" },
+  ];
+
+  for (const [index, spec] of winter2027Terminals.entries()) {
+    const id = `dec-w2027-${spec.slug}-released`;
+    await prisma.decision.upsert({
+      where: { id },
+      update: {},
+      create: {
+        id,
+        domainApplicationId: spec.domainAppId,
+        type: spec.type,
+        stage: "Released",
+        madeById: jordanMember.id,
+        // Waitlist rank is taken from the position inside the Waitlisted
+        // subset (stable, deterministic).
+        waitlistRank: spec.type === "Waitlisted"
+          ? winter2027Terminals.filter(s => s.type === "Waitlisted").findIndex(s => s.slug === spec.slug) + 1
+          : null,
+        createdAt: ts(-2800 + index),
+        notes: spec.notes ?? null,
+      },
+    });
+  }
+
+  // ── Interviewer availability ──────────────────────────────────────────────
   const availabilityWindows: { startTime: Date; endTime: Date }[] = [];
   const cursor = new Date(interviewStart);
   while (cursor <= interviewEnd) {
@@ -730,31 +1683,515 @@ async function main() {
     cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
 
-  for (const reviewer of allReviewers) {
-    await prisma.reviewerAvailability.deleteMany({
-      where: { cycleReviewerId: reviewer.id },
+  const allInterviewers = await prisma.cycleInterviewer.findMany({
+    where: { applicationCycleId: cycle.id },
+  });
+
+  for (const interviewer of allInterviewers) {
+    await prisma.interviewerAvailability.deleteMany({
+      where: { cycleInterviewerId: interviewer.id },
     });
     for (const w of availabilityWindows) {
-      await prisma.reviewerAvailability.create({
-        data: { cycleReviewerId: reviewer.id, startTime: w.startTime, endTime: w.endTime },
+      await prisma.interviewerAvailability.create({
+        data: { cycleInterviewerId: interviewer.id, startTime: w.startTime, endTime: w.endTime },
       });
     }
   }
 
-  console.log(`  Rubrics: ${generalRubric.name}, ${engRubric.name}, ${pmRubric.name}`);
+  // ── Fall 2026 review + delibs + decision + interview seeding ─────────────
+  // Look up every CycleReviewer by its member email so we can reference them
+  // as either a reviewer or (later) as an interviewer.
+  const designLeadMember = await prisma.dALIMember.findUniqueOrThrow({
+    where: { daliEmail: "design.lead@dali.dartmouth.edu" },
+  });
+  const pmLeadMember = await prisma.dALIMember.findUniqueOrThrow({
+    where: { daliEmail: "pm.lead@dali.dartmouth.edu" },
+  });
+  const rileyMember = await prisma.dALIMember.findUniqueOrThrow({
+    where: { daliEmail: "reviewer1@dali.dartmouth.edu" },
+  });
+  const samMember = await prisma.dALIMember.findUniqueOrThrow({
+    where: { daliEmail: "reviewer2@dali.dartmouth.edu" },
+  });
+  const patMember = await prisma.dALIMember.findUniqueOrThrow({
+    where: { daliEmail: "reviewer3@dali.dartmouth.edu" },
+  });
+
+  async function getCycleReviewer(daliMemberId: string, domainId: string) {
+    return prisma.cycleReviewer.findUniqueOrThrow({
+      where: {
+        daliMemberId_applicationCycleId_domainId: {
+          daliMemberId,
+          applicationCycleId: cycle.id,
+          domainId,
+        },
+      },
+    });
+  }
+
+  const rileyEngRv = await getCycleReviewer(rileyMember.id, engDomain.id);
+  const engLeadRv = await getCycleReviewer(engLeadMember.id, engDomain.id);
+  const samDesignRv = await getCycleReviewer(samMember.id, designDomain.id);
+  const designLeadRv = await getCycleReviewer(designLeadMember.id, designDomain.id);
+  const patPmRv = await getCycleReviewer(patMember.id, pmDomain.id);
+  const pmLeadRv = await getCycleReviewer(pmLeadMember.id, pmDomain.id);
+
+  // Strong/plausible scores — full 5s where it's a clear "Strong Hire", 3s
+  // where it's borderline, 1–2s for the reject case. Keep the existing Alice
+  // scores to preserve continuity with the prior seed.
+  const engScoresStrong = { "rc-technical-depth": 5, "rc-problem-solving": 5, "rc-code-quality": 4, "rc-curiosity": 5 };
+  const engScoresStrong2 = { "rc-technical-depth": 4, "rc-problem-solving": 5, "rc-code-quality": 4, "rc-curiosity": 5 };
+  const engScoresMid = { "rc-technical-depth": 3, "rc-problem-solving": 4, "rc-code-quality": 3, "rc-curiosity": 4 };
+  const engScoresLow = { "rc-technical-depth": 1, "rc-problem-solving": 2, "rc-code-quality": 1, "rc-curiosity": 2 };
+  const designScoresStrong = { "rc-visual-craft": 5, "rc-design-process": 5, "rc-systems-thinking": 4, "rc-iteration": 5 };
+  const designScoresMid = { "rc-visual-craft": 3, "rc-design-process": 4, "rc-systems-thinking": 3, "rc-iteration": 4 };
+  const pmScoresStrong = { "rc-product-thinking": 5, "rc-decision-making": 4, "rc-user-empathy": 5 };
+  const pmScoresMid = { "rc-product-thinking": 4, "rc-decision-making": 3, "rc-user-empathy": 4 };
+
+  type ReviewSpec = {
+    domainAppId: string;
+    cycleReviewerId: string;
+    scores: Record<string, number>;
+    feedback: string;
+    rejectionRationale?: string;
+    overallRecommendation: string;
+    submitted: boolean;
+  };
+
+  const reviewSpecs: ReviewSpec[] = [
+    // Alice — Engineering: two submitted reviews. (Previously one was left
+    // in-progress, which is inconsistent with her Released decision downstream.)
+    {
+      domainAppId: "da-alice-eng",
+      cycleReviewerId: rileyEngRv.id,
+      scores: engScoresStrong2,
+      feedback: "Excellent systems thinking. The rate-limiter example shows real depth.",
+      overallRecommendation: "Strong Hire",
+      submitted: true,
+    },
+    {
+      domainAppId: "da-alice-eng",
+      cycleReviewerId: engLeadRv.id,
+      scores: engScoresMid,
+      feedback: "Good fundamentals, could use more specifics on the implementation.",
+      overallRecommendation: "Hire",
+      submitted: true,
+    },
+    // Diego — Engineering: strong, will be invited + booked
+    {
+      domainAppId: "da-diego-eng",
+      cycleReviewerId: rileyEngRv.id,
+      scores: engScoresStrong,
+      feedback: "HM type-checker is ambitious for an intro-level project. Answers are precise.",
+      overallRecommendation: "Strong Hire",
+      submitted: true,
+    },
+    {
+      domainAppId: "da-diego-eng",
+      cycleReviewerId: engLeadRv.id,
+      scores: engScoresStrong2,
+      feedback: "Curiosity about deterministic simulation testing is a great signal.",
+      overallRecommendation: "Strong Hire",
+      submitted: true,
+    },
+    // Bob — Design
+    {
+      domainAppId: "da-bob-design",
+      cycleReviewerId: samDesignRv.id,
+      scores: designScoresStrong,
+      feedback: "Clear process with concrete examples. Portfolio is solid.",
+      overallRecommendation: "Hire",
+      submitted: true,
+    },
+    {
+      domainAppId: "da-bob-design",
+      cycleReviewerId: designLeadRv.id,
+      scores: designScoresMid,
+      feedback: "Strong process story, visual craft a bit uneven across pieces.",
+      overallRecommendation: "Lean Hire",
+      submitted: true,
+    },
+    // Bob — Product
+    {
+      domainAppId: "da-bob-pm",
+      cycleReviewerId: patPmRv.id,
+      scores: pmScoresStrong,
+      feedback: "Focus-mode pitch is thoughtful and measurable.",
+      overallRecommendation: "Hire",
+      submitted: true,
+    },
+    {
+      domainAppId: "da-bob-pm",
+      cycleReviewerId: pmLeadRv.id,
+      scores: pmScoresMid,
+      feedback: "Decision-making example was decent but stakeholder-light.",
+      overallRecommendation: "Hire",
+      submitted: true,
+    },
+    // Eve — Design
+    {
+      domainAppId: "da-eve-design",
+      cycleReviewerId: samDesignRv.id,
+      scores: designScoresStrong,
+      feedback: "Paper-first approach and the kiosk case study are both strong signals.",
+      overallRecommendation: "Strong Hire",
+      submitted: true,
+    },
+    {
+      domainAppId: "da-eve-design",
+      cycleReviewerId: designLeadRv.id,
+      scores: designScoresStrong,
+      feedback: "The iteration story (cutting the map view) is textbook user-centered design.",
+      overallRecommendation: "Hire",
+      submitted: true,
+    },
+    // Felix — Product
+    {
+      domainAppId: "da-felix-pm",
+      cycleReviewerId: patPmRv.id,
+      scores: pmScoresStrong,
+      feedback: "Canvas redesign pitch is grounded in a real pain point.",
+      overallRecommendation: "Hire",
+      submitted: true,
+    },
+    {
+      domainAppId: "da-felix-pm",
+      cycleReviewerId: pmLeadRv.id,
+      scores: pmScoresMid,
+      feedback: "Budget example was good; would like more explicit tradeoff analysis.",
+      overallRecommendation: "Lean Hire",
+      submitted: true,
+    },
+    // Grace — Engineering: reject
+    {
+      domainAppId: "da-grace-eng",
+      cycleReviewerId: rileyEngRv.id,
+      scores: engScoresLow,
+      feedback: "Answers are thin and don't demonstrate technical depth.",
+      rejectionRationale: "Experience level below what this cycle can support — recommend reapplying after CS 10/11.",
+      overallRecommendation: "No Hire",
+      submitted: true,
+    },
+    {
+      domainAppId: "da-grace-eng",
+      cycleReviewerId: engLeadRv.id,
+      scores: engScoresLow,
+      feedback: "No code samples and motivation feels generic.",
+      rejectionRationale: "Insufficient technical background and unclear motivation for DALI specifically.",
+      overallRecommendation: "Lean No Hire",
+      submitted: true,
+    },
+    // Harper — Design: mid-review, one in-progress review only (no submitted)
+    {
+      domainAppId: "da-harper-design",
+      cycleReviewerId: samDesignRv.id,
+      scores: { "rc-visual-craft": 4, "rc-design-process": 3 },
+      feedback: "Strong sketch work, still drafting thoughts on the iteration story.",
+      overallRecommendation: "",
+      submitted: false,
+    },
+  ];
+
+  for (const spec of reviewSpecs) {
+    const base = {
+      scores: spec.scores,
+      feedback: spec.feedback,
+      rejectionRationale: spec.rejectionRationale ?? "",
+      overallRecommendation: spec.overallRecommendation || null,
+      annotations: [],
+      submittedAt: spec.submitted ? ts(-500) : null,
+      submittedById: spec.submitted ? engLeadMember.id : null,
+    };
+    await prisma.applicationReview.upsert({
+      where: {
+        cycleReviewerId_domainApplicationId: {
+          cycleReviewerId: spec.cycleReviewerId,
+          domainApplicationId: spec.domainAppId,
+        },
+      },
+      update: base,
+      create: {
+        cycleReviewerId: spec.cycleReviewerId,
+        domainApplicationId: spec.domainAppId,
+        ...base,
+      },
+    });
+  }
+
+  // ── Initial DelibsSessions (Closed) ───────────────────────────────────────
+  // Each domain's Initial delibs was run and closed: decided-interview cards
+  // went to the Interview column, rejects to the Reject column. Harper is
+  // deliberately absent from the Design session because her review isn't
+  // all-submitted yet (delibs eligibility requires `every submittedAt != null`).
+  await prisma.delibsSession.upsert({
+    where: {
+      domainId_applicationCycleId_type: {
+        domainId: engDomain.id,
+        applicationCycleId: cycle.id,
+        type: "Initial",
+      },
+    },
+    update: {
+      status: "Closed",
+      columnOrder: {
+        "No Decision": [],
+        "Interview": ["da-alice-eng", "da-diego-eng"],
+        "Reject": ["da-grace-eng"],
+      },
+    },
+    create: {
+      domainId: engDomain.id,
+      applicationCycleId: cycle.id,
+      type: "Initial",
+      status: "Closed",
+      openedById: engLeadMember.id,
+      columnOrder: {
+        "No Decision": [],
+        "Interview": ["da-alice-eng", "da-diego-eng"],
+        "Reject": ["da-grace-eng"],
+      },
+    },
+  });
+
+  await prisma.delibsSession.upsert({
+    where: {
+      domainId_applicationCycleId_type: {
+        domainId: designDomain.id,
+        applicationCycleId: cycle.id,
+        type: "Initial",
+      },
+    },
+    update: {
+      status: "Closed",
+      columnOrder: {
+        "No Decision": [],
+        "Interview": ["da-bob-design", "da-eve-design"],
+        "Reject": [],
+      },
+    },
+    create: {
+      domainId: designDomain.id,
+      applicationCycleId: cycle.id,
+      type: "Initial",
+      status: "Closed",
+      openedById: designLeadMember.id,
+      columnOrder: {
+        "No Decision": [],
+        "Interview": ["da-bob-design", "da-eve-design"],
+        "Reject": [],
+      },
+    },
+  });
+
+  await prisma.delibsSession.upsert({
+    where: {
+      domainId_applicationCycleId_type: {
+        domainId: pmDomain.id,
+        applicationCycleId: cycle.id,
+        type: "Initial",
+      },
+    },
+    update: {
+      status: "Closed",
+      columnOrder: {
+        "No Decision": [],
+        "Interview": ["da-bob-pm", "da-felix-pm"],
+        "Reject": [],
+      },
+    },
+    create: {
+      domainId: pmDomain.id,
+      applicationCycleId: cycle.id,
+      type: "Initial",
+      status: "Closed",
+      openedById: pmLeadMember.id,
+      columnOrder: {
+        "No Decision": [],
+        "Interview": ["da-bob-pm", "da-felix-pm"],
+        "Reject": [],
+      },
+    },
+  });
+
+  // ── Decision audit chains ─────────────────────────────────────────────────
+  // Each invited/rejected applicant gets three append-only Decision rows —
+  // Draft → Final → Released — with distinct timestamps. Domain leads draft +
+  // finalize; hiring lead releases (per spec §Final Delibs).
+  type DecisionSpec = {
+    slug: string;
+    domainAppId: string;
+    type: "InvitedToInterview" | "Rejected";
+    madeBy: string;
+    notes?: string;
+  };
+  const decisionSpecs: DecisionSpec[] = [
+    { slug: "alice-eng", domainAppId: "da-alice-eng", type: "InvitedToInterview", madeBy: engLeadMember.id, notes: "Strong across both reviews." },
+    { slug: "bob-design", domainAppId: "da-bob-design", type: "InvitedToInterview", madeBy: designLeadMember.id },
+    { slug: "bob-pm", domainAppId: "da-bob-pm", type: "InvitedToInterview", madeBy: pmLeadMember.id },
+    { slug: "diego-eng", domainAppId: "da-diego-eng", type: "InvitedToInterview", madeBy: engLeadMember.id, notes: "Top signal in the Engineering round." },
+    { slug: "eve-design", domainAppId: "da-eve-design", type: "InvitedToInterview", madeBy: designLeadMember.id },
+    { slug: "felix-pm", domainAppId: "da-felix-pm", type: "InvitedToInterview", madeBy: pmLeadMember.id },
+    { slug: "grace-eng", domainAppId: "da-grace-eng", type: "Rejected", madeBy: engLeadMember.id, notes: "Both reviewers recommended no-hire." },
+  ];
+
+  for (const spec of decisionSpecs) {
+    const baseId = `dec-${spec.slug}`;
+    await prisma.decision.upsert({
+      where: { id: `${baseId}-draft` },
+      update: {},
+      create: {
+        id: `${baseId}-draft`,
+        domainApplicationId: spec.domainAppId,
+        type: spec.type,
+        stage: "Draft",
+        madeById: spec.madeBy,
+        createdAt: ts(-450),
+        notes: spec.notes ?? null,
+      },
+    });
+    await prisma.decision.upsert({
+      where: { id: `${baseId}-final` },
+      update: {},
+      create: {
+        id: `${baseId}-final`,
+        domainApplicationId: spec.domainAppId,
+        type: spec.type,
+        stage: "Final",
+        madeById: spec.madeBy,
+        createdAt: ts(-350),
+        notes: spec.notes ?? null,
+      },
+    });
+    await prisma.decision.upsert({
+      where: { id: `${baseId}-released` },
+      update: {},
+      create: {
+        id: `${baseId}-released`,
+        domainApplicationId: spec.domainAppId,
+        type: spec.type,
+        stage: "Released",
+        madeById: jordanMember.id,
+        createdAt: ts(-250),
+        notes: spec.notes ?? null,
+      },
+    });
+  }
+
+  // ── Booked interviews for Alice and Diego ─────────────────────────────────
+  // Use the first two availabilityWindows entries (consecutive weekdays,
+  // 14:00–16:00 UTC), pick the first 30-minute slot in each. Different days
+  // guarantee Riley (shared InDomain interviewer) is never double-booked.
+  async function getCycleInterviewer(daliMemberId: string, domainId: string) {
+    return prisma.cycleInterviewer.findUniqueOrThrow({
+      where: {
+        daliMemberId_applicationCycleId_domainId: {
+          daliMemberId,
+          applicationCycleId: cycle.id,
+          domainId,
+        },
+      },
+    });
+  }
+
+  const rileyCI = await getCycleInterviewer(rileyMember.id, engDomain.id);
+  const samCI = await getCycleInterviewer(samMember.id, designDomain.id);
+  const patCI = await getCycleInterviewer(patMember.id, pmDomain.id);
+
+  const interviewBookings: {
+    id: string;
+    domainAppId: string;
+    window: { startTime: Date; endTime: Date };
+    inDomainCI: { id: string };
+    crossDomainCI: { id: string };
+  }[] = [];
+
+  if (availabilityWindows.length >= 2) {
+    interviewBookings.push(
+      {
+        id: "interview-alice",
+        domainAppId: "da-alice-eng",
+        window: availabilityWindows[0],
+        inDomainCI: rileyCI,
+        crossDomainCI: samCI,
+      },
+      {
+        id: "interview-diego",
+        domainAppId: "da-diego-eng",
+        window: availabilityWindows[1],
+        inDomainCI: rileyCI,
+        crossDomainCI: patCI,
+      },
+    );
+  }
+
+  const slotMs = 30 * 60 * 1000;
+  for (const booking of interviewBookings) {
+    const start = new Date(booking.window.startTime);
+    const end = new Date(start.getTime() + slotMs);
+    const interview = await prisma.interview.upsert({
+      where: { id: booking.id },
+      update: {
+        startTime: start,
+        endTime: end,
+        status: "Scheduled",
+      },
+      create: {
+        id: booking.id,
+        domainApplicationId: booking.domainAppId,
+        applicationCycleId: cycle.id,
+        startTime: start,
+        endTime: end,
+        status: "Scheduled",
+      },
+    });
+
+    await prisma.interviewAssignment.deleteMany({
+      where: { interviewId: interview.id },
+    });
+    await prisma.interviewAssignment.createMany({
+      data: [
+        {
+          interviewId: interview.id,
+          cycleInterviewerId: booking.inDomainCI.id,
+          role: "InDomain",
+          status: "Active",
+        },
+        {
+          interviewId: interview.id,
+          cycleInterviewerId: booking.crossDomainCI.id,
+          role: "CrossDomain",
+          status: "Active",
+        },
+      ],
+    });
+  }
+
   console.log("Seed complete:");
   console.log(`  Admin: ${admin.firstName} ${admin.lastName}`);
   console.log(`  Domains: ${[designDomain, engDomain, pmDomain].map((d) => d.name).join(", ")}`);
-  console.log(`  Cycle: ${cycle.name} (Closed) ← active`);
+  console.log(`  Rubrics: General, ${designRubric.name}, ${engRubric.name}, ${pmRubric.name}`);
+  console.log(`  Cycle: ${cycle.name} (UnderReview) ← active`);
+  console.log(`  Cycle: ${cycleWinter2027.name} (Completed) — 10 terminal decisions released`);
   console.log(`  Cycle: ${cycle2028.name} (Draft)`);
-  console.log(
-    `  Applications: ${aliceApp.id} (submitted), ${bobApp.id} (submitted), ${carolApp.id} (draft)`,
-  );
+  console.log(`  Fall 2026 applicants:`);
+  console.log(`    alice (eng) — booked interview`);
+  console.log(`    bob (design+pm) — invited, not booked`);
+  console.log(`    carol (eng) — draft`);
+  console.log(`    diego (eng) — booked interview`);
+  console.log(`    eve (design) — invited, not booked`);
+  console.log(`    felix (pm) — invited, not booked`);
+  console.log(`    grace (eng) — rejected`);
+  console.log(`    harper (design) — pending review`);
+  console.log(`    ivan (eng) — submitted, no reviewers assigned`);
+  console.log(`    jade (design) — submitted, no reviewers assigned`);
+  console.log(`    kenji (eng) — submitted, no reviewers assigned`);
+  console.log(`    leo (eng) — submitted, no reviewers assigned`);
   console.log(`  Application: app-dana (submitted, Winter 2028)`);
+  console.log(`  Winter 2027: emma(eng), liam(eng+design), sofia(design), noah(pm), olivia(eng), ethan(pm+eng), ava(design+pm), mason(eng/draft)`);
   console.log(`  Domain lead: ${engLead.firstName} ${engLead.lastName} → Engineering`);
-  console.log(
-    `  Interview config + 3 reviewers (each with ${availabilityWindows.length} availability blocks) seeded for cycle ${cycle.id}`,
-  );
+  console.log(`  ${reviewerData.length} reviewers + ${reviewerData.length} interviewers seeded for Fall 2026`);
+  console.log(`  ${allInterviewers.length} interviewers × ${availabilityWindows.length} availability blocks`);
+  console.log(`  ${reviewSpecs.length} ApplicationReviews + ${decisionSpecs.length * 3} Decisions + ${interviewBookings.length} booked interviews for Fall 2026`);
 }
 
 main()

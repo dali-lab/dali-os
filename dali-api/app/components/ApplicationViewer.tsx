@@ -233,9 +233,7 @@ function AnnotatableField({
 export interface ApplicationViewerProps {
   application: {
     answers: unknown
-    applicationCycle: {
-      formVersion: { questions: unknown } | null
-    }
+    generalChallengeVersion: { questions: unknown } | null
     domainApplications: Array<{
       id: string
       answers: unknown

@@ -6,24 +6,28 @@
 
 import type { Route } from "./+types/dev-login-as";
 import { signAccessToken } from "~/lib/auth";
+import { isDevLoginEnabled } from "~/lib/dev-login";
 import { prisma } from "~/lib/db";
 
 export async function loader({ request }: Route.LoaderArgs) {
-  if (process.env.NODE_ENV === "production") {
+  if (!isDevLoginEnabled()) {
     return new Response("Not found", { status: 404 });
   }
 
   const url = new URL(request.url);
   const netId = url.searchParams.get("netId");
-  const redirect = url.searchParams.get("redirect") ?? "http://localhost:5173/portal";
+  const daliEmail = url.searchParams.get("daliEmail");
+  const redirect = url.searchParams.get("redirect") ?? "http://localhost:3001/";
 
-  if (!netId) {
-    return new Response("Missing ?netId param", { status: 400 });
+  if (!netId && !daliEmail) {
+    return new Response("Missing ?netId or ?daliEmail param", { status: 400 });
   }
 
-  const user = await prisma.user.findUnique({ where: { netId } });
+  const user = daliEmail
+    ? await prisma.user.findUnique({ where: { daliEmail } })
+    : await prisma.user.findUnique({ where: { netId: netId! } });
   if (!user) {
-    return new Response(`No user with netId ${netId}`, { status: 404 });
+    return new Response(`No user found for ${daliEmail ? `daliEmail ${daliEmail}` : `netId ${netId}`}`, { status: 404 });
   }
 
   const email = user.daliEmail ?? user.dartmouthEmail ?? "";

@@ -1,68 +1,61 @@
-import { Link, useLoaderData } from "react-router";
+import { Link, redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/domain-lead.application.$id";
 import { prisma } from "~/lib/db";
+import { requireAuth } from "~/lib/auth";
+import { isDomainLead } from "~/lib/roles";
 
-export async function loader({ params }: Route.LoaderArgs) {
-  // TODO: replace with session user once login flow is built
+export async function loader({ request, params }: Route.LoaderArgs) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return redirect("/login");
+
   const member = await prisma.dALIMember.findFirst({
-    where: { daliEmail: "eng.lead@dali.dartmouth.edu" },
+    where: { userId: auth.user.sub },
     include: { domainLeadAssignments: true },
   });
 
-  if (!member) {
-    return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 });
+  if (!member || member.domainLeadAssignments.length === 0) {
+    return redirect("/reviewer");
   }
 
   const leadDomainIds = member.domainLeadAssignments.map((a) => a.domainId);
 
-  const application = await prisma.application.findUniqueOrThrow({
+  const da = await prisma.domainApplication.findUnique({
     where: { id: params.id },
     include: {
-      user: true,
-      applicationFormVersion: true,
-      domainApplications: {
+      challengeVersion: { include: { domain: true } },
+      application: {
         include: {
-          challengeVersion: { include: { domain: true } },
+          user: true,
+          generalChallengeVersion: true,
+          applicationCycle: {
+            include: { statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 } },
+          },
         },
-      },
-      applicationCycle: {
-        include: { statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 } },
       },
     },
   });
 
-  // Check that at least one domain application belongs to a domain the user leads
-  const hasAccess = application.domainApplications.some((da) =>
-    leadDomainIds.includes(da.challengeVersion.domainId)
-  );
-
-  if (!hasAccess) {
-    return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 });
+  if (!da) {
+    return redirect("/domain-lead");
   }
 
-  // Filter to only domain applications the user leads
-  const visibleDomainApps = application.domainApplications.filter((da) =>
-    leadDomainIds.includes(da.challengeVersion.domainId)
-  );
+  // Check that this domain application belongs to a domain the user leads
+  if (!leadDomainIds.includes(da.challengeVersion.domainId!)) {
+    return redirect("/domain-lead");
+  }
 
-  return { application, visibleDomainApps };
+  return { domainApplication: da, application: da.application };
 }
 
 export default function DomainLeadApplicationView() {
-  const data = useLoaderData<typeof loader>() as any;
-  const application = data?.application;
-  const visibleDomainApps = data?.visibleDomainApps ?? [];
+  const { domainApplication: da, application } = useLoaderData<typeof loader>() as any;
 
-  if (!application) {
-    return <div className="text-gray-500 py-8 text-center">Application not found or access denied.</div>;
-  }
-
-  const formVersion = application.applicationFormVersion;
-  const questions: any[] = formVersion?.questions ?? [];
+  const formVersion = application.generalChallengeVersion;
+  const generalQuestions: any[] = formVersion?.questions ?? [];
+  const challengeQuestions: any[] = da.challengeVersion.questions ?? [];
 
   return (
     <div className="space-y-6 max-w-3xl">
-      {/* Back link */}
       <Link
         to="/domain-lead"
         className="text-sm text-blue-600 hover:text-blue-800 font-medium"
@@ -70,7 +63,6 @@ export default function DomainLeadApplicationView() {
         ← Back to Dashboard
       </Link>
 
-      {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-gray-900">
           {application.user.firstName} {application.user.lastName}
@@ -79,10 +71,10 @@ export default function DomainLeadApplicationView() {
       </div>
 
       {/* General application answers */}
-      {questions.length > 0 && (
+      {generalQuestions.length > 0 && (
         <section className="bg-white border border-gray-200 rounded-lg p-6 space-y-5">
           <h2 className="text-lg font-semibold text-gray-900">General Application</h2>
-          {questions.map((q: any) => {
+          {generalQuestions.map((q: any) => {
             const answer = application.answers?.[q.key];
             return (
               <div key={q.key}>
@@ -97,27 +89,22 @@ export default function DomainLeadApplicationView() {
       )}
 
       {/* Domain challenge answers */}
-      {visibleDomainApps.map((da: any) => {
-        const challengeQuestions: any[] = da.challengeVersion.questions ?? [];
-        return (
-          <section key={da.id} className="bg-white border border-gray-200 rounded-lg p-6 space-y-5">
-            <h2 className="text-lg font-semibold text-gray-900">
-              {da.challengeVersion.domain.name} Challenge
-            </h2>
-            {challengeQuestions.map((q: any) => {
-              const answer = da.answers?.[q.key];
-              return (
-                <div key={q.key}>
-                  <div className="text-sm font-medium text-gray-700 mb-1">{q.data.label}</div>
-                  <div className="text-sm text-gray-900 bg-gray-50 rounded p-3 whitespace-pre-wrap">
-                    {answer || <span className="text-gray-400 italic">No answer provided</span>}
-                  </div>
-                </div>
-              );
-            })}
-          </section>
-        );
-      })}
+      <section className="bg-white border border-gray-200 rounded-lg p-6 space-y-5">
+        <h2 className="text-lg font-semibold text-gray-900">
+          {da.challengeVersion.domain.name} Challenge
+        </h2>
+        {challengeQuestions.map((q: any) => {
+          const answer = da.answers?.[q.key];
+          return (
+            <div key={q.key}>
+              <div className="text-sm font-medium text-gray-700 mb-1">{q.data.label}</div>
+              <div className="text-sm text-gray-900 bg-gray-50 rounded p-3 whitespace-pre-wrap">
+                {answer || <span className="text-gray-400 italic">No answer provided</span>}
+              </div>
+            </div>
+          );
+        })}
+      </section>
     </div>
   );
 }
