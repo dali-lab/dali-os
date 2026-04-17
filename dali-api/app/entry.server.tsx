@@ -2,6 +2,10 @@ import type { EntryContext } from "react-router";
 import { ServerRouter } from "react-router";
 import { renderToPipeableStream } from "react-dom/server";
 import { PassThrough } from "node:stream";
+import { startCollabServer } from "~/collab/server";
+
+// Start Hocuspocus collab server on a second port (runs once due to module caching).
+startCollabServer();
 
 export default async function handleRequest(
   request: Request,
