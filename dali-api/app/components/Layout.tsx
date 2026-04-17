@@ -63,7 +63,7 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
       label: 'Members',
       to: '/admin-console',
       icon: Users,
-      show: isAdmin,
+      show: isAdmin || isHiringLead,
       active: path.startsWith('/admin-console'),
       sub: null,
     },
@@ -73,22 +73,22 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
   const initials = user.email.slice(0, 2).toUpperCase()
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      {/* Top bar — logo, user */}
-      <div className="bg-white border-b border-gray-200 sticky top-0 z-20">
+    <div className="min-h-screen bg-section-bg flex flex-col">
+      {/* Top bar — dark DALI header */}
+      <div className="bg-dark-blue sticky top-0 z-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-14">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 bg-blue-600 rounded-md flex items-center justify-center">
-              <span className="text-white font-bold text-base leading-none">D</span>
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 bg-accent-coral rounded-md flex items-center justify-center">
+              <span className="text-white font-bold text-base leading-none font-heading">D</span>
             </div>
-            <span className="font-bold text-lg text-gray-900 tracking-tight">DALI Hiring</span>
+            <span className="font-heading font-bold text-lg text-white tracking-tight">DALI Hiring</span>
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-xs text-gray-400 hidden sm:block">{user.email}</span>
-            <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-xs">
+            <span className="text-xs text-white/50 hidden sm:block">{user.email}</span>
+            <div className="w-8 h-8 rounded-full bg-accent-coral text-white flex items-center justify-center font-bold text-xs">
               {initials}
             </div>
-            <a href="/logout" className="text-gray-400 hover:text-gray-600 transition" title="Log out">
+            <a href="/logout" className="text-white/40 hover:text-white/70 transition" title="Log out">
               <LogOut className="w-4 h-4" />
             </a>
           </div>
@@ -96,19 +96,19 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
       </div>
 
       {/* Navigation bar — primary tabs + sub-tabs inline */}
-      <div className="bg-white border-b border-gray-100 sticky top-14 z-10">
+      <div className="bg-white border-b border-gray-200 sticky top-14 z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-6 h-10">
+          <div className="flex items-center gap-6 h-11">
             {/* Primary tabs */}
             <nav className="flex items-center gap-1 -mb-px h-full">
               {sections.map((section) => (
                 <Link
                   key={section.to}
                   to={section.to}
-                  className={`inline-flex items-center gap-1.5 px-3 h-full border-b-2 text-sm font-medium transition-colors whitespace-nowrap ${
+                  className={`inline-flex items-center gap-1.5 px-3 h-full border-b-2 text-sm font-heading font-semibold transition-colors whitespace-nowrap ${
                     section.active
-                      ? 'border-blue-600 text-gray-900'
-                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                      ? 'border-accent-coral text-dark-blue'
+                      : 'border-transparent text-gray-400 hover:text-dark-blue'
                   }`}
                 >
                   <section.icon className="w-3.5 h-3.5" />
@@ -128,8 +128,8 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
                       to={item.to}
                       className={`px-2.5 py-1 text-xs font-medium rounded-full transition-colors ${
                         item.active
-                          ? 'bg-blue-50 text-blue-700'
-                          : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                          ? 'bg-accent-coral/10 text-accent-coral'
+                          : 'text-gray-400 hover:text-dark-blue hover:bg-gray-50'
                       }`}
                     >
                       {item.label}

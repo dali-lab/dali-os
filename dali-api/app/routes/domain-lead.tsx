@@ -94,7 +94,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         return status && ["Draft", "Open", "UnderReview"].includes(status);
       }) ?? null;
 
-      if (!activeCycle) return [{ assignment, cycle: null, apps: [], challengeVersionOptions: [], selectedChallengeVersionId: null, isChallengeReady: false }];
+      if (!activeCycle) return [{ assignment, cycle: null, apps: [], challengeVersionOptions: [], selectedChallengeVersionId: null, isChallengeReady: false, interviews: [], reviewers: [], delibsSessions: [], draftDecisions: [], cycleReviewersForDomain: [], initialDelibsCount: 0, finalDelibsCount: 0, rubricVersionOptions: [], currentRubricVersionId: null, rubricCriteria: [], interviewers: [], hasApplicationReviews: false }];
 
       return [await (async (cycle) => {
 
@@ -490,6 +490,7 @@ export default function DomainLeadDashboard() {
                           challengeVersionOptions={challengeVersionOptions}
                           selectedChallengeVersionId={selectedChallengeVersionId}
                           isChallengeReady={isChallengeReady}
+                          currentRubricVersionId={currentRubricVersionId}
                         />
                         <RubricPicker
                           cycleId={cycle.id}
@@ -499,14 +500,18 @@ export default function DomainLeadDashboard() {
                           locked={hasApplicationReviews}
                         />
                         <div className="flex items-center gap-3 pt-2 border-t border-gray-100">
-                          {selectedChallengeVersionId && (() => {
+                          {selectedChallengeVersionId ? (() => {
                             const cv = challengeVersionOptions.find((c: any) => c.id === selectedChallengeVersionId);
                             return cv?.challenge?.id ? (
                               <Link to={`/challenges/${cv.challenge.id}`} className="text-xs text-blue-600 hover:text-blue-800 font-medium">
                                 Edit Challenge →
                               </Link>
                             ) : null;
-                          })()}
+                          })() : (
+                            <Link to="/challenges" className="text-xs text-blue-600 hover:text-blue-800 font-medium">
+                              Create Challenge →
+                            </Link>
+                          )}
                           <Link to="/rubrics" className="text-xs text-blue-600 hover:text-blue-800 font-medium">
                             Manage Rubrics →
                           </Link>
@@ -515,35 +520,73 @@ export default function DomainLeadDashboard() {
                     </Section>
                   )}
 
-                  {/* Rubric picker — Open + UnderReview (separate from Draft setup) */}
+                  {/* Setup & Config — Open + UnderReview */}
                   {currentStatus !== "Draft" && (currentStatus === "Open" || currentStatus === "UnderReview") && (
                     <Section
-                      title="Rubric"
-                      badge={currentRubricVersionId
-                        ? <span className="text-xs text-green-700 bg-green-100 px-2 py-0.5 rounded-full font-medium">Set</span>
-                        : <span className="text-xs text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded-full font-medium">Not set</span>
+                      title="Setup"
+                      badge={
+                        currentRubricVersionId && selectedChallengeVersionId
+                          ? <span className="text-xs text-green-700 bg-green-100 px-2 py-0.5 rounded-full font-medium">Configured</span>
+                          : <span className="text-xs text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded-full font-medium">Needs attention</span>
                       }
-                      defaultOpen={!currentRubricVersionId}
+                      defaultOpen={!currentRubricVersionId || !selectedChallengeVersionId}
                     >
-                      <RubricPicker
-                        cycleId={cycle.id}
-                        domainId={assignment.domainId}
-                        options={rubricVersionOptions ?? []}
-                        selectedId={currentRubricVersionId}
-                        locked={hasApplicationReviews}
-                      />
-                      <div className="flex items-center gap-3 pt-2 mt-2 border-t border-gray-100">
-                        <Link to="/rubrics" className="text-xs text-blue-600 hover:text-blue-800 font-medium">
-                          Manage Rubrics →
-                        </Link>
-                        {selectedChallengeVersionId && (() => {
-                          const cv = challengeVersionOptions.find((c: any) => c.id === selectedChallengeVersionId);
-                          return cv?.challenge?.id ? (
-                            <Link to={`/challenges/${cv.challenge.id}`} className="text-xs text-blue-600 hover:text-blue-800 font-medium">
-                              View Challenge →
-                            </Link>
-                          ) : null;
-                        })()}
+                      <div className="space-y-4">
+                        {/* Challenge info */}
+                        <div>
+                          <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Domain Challenge</h4>
+                          {selectedChallengeVersionId ? (
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2 text-sm text-gray-600">
+                                <CheckCircle className="w-4 h-4 text-green-600" />
+                                <span>{challengeVersionOptions.find((c: any) => c.id === selectedChallengeVersionId)?.challenge?.name ?? "Linked"}</span>
+                              </div>
+                              {(() => {
+                                const cv = challengeVersionOptions.find((c: any) => c.id === selectedChallengeVersionId);
+                                return cv?.challenge?.id ? (
+                                  <Link to={`/challenges/${cv.challenge.id}`} className="text-xs text-blue-600 hover:text-blue-800 font-medium">
+                                    Edit →
+                                  </Link>
+                                ) : null;
+                              })()}
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm text-gray-400">No challenge linked</span>
+                              <Link to="/challenges" className="text-xs text-blue-600 hover:text-blue-800 font-medium">
+                                Create Challenge →
+                              </Link>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Rubric */}
+                        <div>
+                          <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Domain Rubric</h4>
+                          <RubricPicker
+                            cycleId={cycle.id}
+                            domainId={assignment.domainId}
+                            options={rubricVersionOptions ?? []}
+                            selectedId={currentRubricVersionId}
+                            locked={hasApplicationReviews}
+                          />
+                        </div>
+
+                        {!cycle.generalRubricVersionId && (
+                          <div className="flex items-center gap-2 text-sm text-yellow-800 bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-2">
+                            <Clock className="w-4 h-4 flex-shrink-0" />
+                            <span>Waiting on hiring lead to set the general application rubric — reviewer assignment is blocked until both rubrics are set.</span>
+                          </div>
+                        )}
+
+                        <div className="flex items-center gap-3 pt-2 border-t border-gray-100">
+                          <Link to="/challenges" className="text-xs text-blue-600 hover:text-blue-800 font-medium">
+                            All Challenges →
+                          </Link>
+                          <Link to="/rubrics" className="text-xs text-blue-600 hover:text-blue-800 font-medium">
+                            All Rubrics →
+                          </Link>
+                        </div>
                       </div>
                     </Section>
                   )}
@@ -614,72 +657,120 @@ export default function DomainLeadDashboard() {
                     </Section>
                   )}
 
-                  {/* Interviews */}
-                  {interviews.length > 0 && (
-                    <Section
-                      title="Interviews"
-                      badge={
-                        <div className="flex items-center gap-3 text-xs text-gray-500">
-                          {scheduledInterviews > 0 && <span>{scheduledInterviews} scheduled</span>}
-                          {completedInterviews > 0 && <><span>·</span><span>{completedInterviews} completed</span></>}
+                  {/* Interviews — show when any applicant has been invited */}
+                  {(() => {
+                    const invited = apps.filter((a: any) => {
+                      const status = a.domainApplications?.[0]?.inferredStatus;
+                      return status === "InvitedToInterview" || status === "InterviewScheduled" || status === "PostInterviewPending";
+                    });
+                    const awaitingBooking = invited.filter((a: any) => a.domainApplications?.[0]?.inferredStatus === "InvitedToInterview");
+                    const hasAnyInterviewActivity = invited.length > 0 || interviews.length > 0;
+
+                    const interviewersWithAvailability = (interviewers ?? []).filter((i: any) => i.availabilityHours > 0);
+                    const noAvailability = invited.length > 0 && interviewersWithAvailability.length === 0;
+
+                    return hasAnyInterviewActivity ? (
+                      <Section
+                        title="Interviews"
+                        badge={
+                          <div className="flex items-center gap-3 text-xs text-gray-500">
+                            {awaitingBooking.length > 0 && <span className="text-yellow-700">{awaitingBooking.length} awaiting booking</span>}
+                            {scheduledInterviews > 0 && <><span>·</span><span>{scheduledInterviews} scheduled</span></>}
+                            {completedInterviews > 0 && <><span>·</span><span className="text-green-700">{completedInterviews} completed</span></>}
+                          </div>
+                        }
+                        defaultOpen={true}
+                      >
+                        <div className="space-y-4">
+                          {/* Availability warning */}
+                          {noAvailability && (
+                            <div className="flex items-center gap-2 text-sm text-yellow-800 bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-3">
+                              <Clock className="w-4 h-4 flex-shrink-0" />
+                              <span>No interviewers have set their availability yet. Applicants can't book interviews until interviewers submit availability blocks.</span>
+                            </div>
+                          )}
+
+                          {/* Awaiting booking */}
+                          {awaitingBooking.length > 0 && (
+                            <div>
+                              <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Awaiting Booking</h4>
+                              <div className="divide-y divide-gray-100 border border-gray-200 rounded-lg">
+                                {awaitingBooking.map((app: any) => (
+                                  <div key={app.id} className="flex items-center justify-between px-4 py-3">
+                                    <span className="text-sm font-medium text-gray-900">
+                                      {app.user.firstName} {app.user.lastName}
+                                    </span>
+                                    <span className="text-xs text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded-full font-medium">
+                                      Invited — not booked
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Scheduled / Completed interviews */}
+                          {interviews.length > 0 && (
+                            <div>
+                              <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Booked Interviews</h4>
+                              <table className="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
+                                <thead className="bg-gray-50 text-xs font-medium text-gray-500 uppercase tracking-wide">
+                                  <tr>
+                                    <th className="px-4 py-2 text-left">Applicant</th>
+                                    <th className="px-4 py-2 text-left">Time</th>
+                                    <th className="px-4 py-2 text-left">Status</th>
+                                    <th className="px-4 py-2 text-left">In-Domain</th>
+                                    <th className="px-4 py-2 text-left">Cross-Domain</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                  {interviews.map((interview: any) => {
+                                    const start = new Date(interview.startTime);
+                                    const end = new Date(interview.endTime);
+                                    const formatAssignment = (a: any) => {
+                                      const m = a.cycleInterviewer.daliMember;
+                                      return m.firstName && m.lastName
+                                        ? `${m.firstName} ${m.lastName}`
+                                        : m.daliEmail ?? '?';
+                                    };
+                                    const inDomain = interview.assignments
+                                      .filter((a: any) => a.role === 'InDomain' && a.status === 'Active')
+                                      .map(formatAssignment)
+                                      .join(', ') || '—';
+                                    const crossDomain = interview.assignments
+                                      .filter((a: any) => a.role === 'CrossDomain' && a.status === 'Active')
+                                      .map((a: any) => `${formatAssignment(a)} (${a.cycleInterviewer.domain.name})`)
+                                      .join(', ') || '—';
+                                    return (
+                                      <tr key={interview.id} className="hover:bg-gray-50">
+                                        <td className="px-4 py-3 font-medium text-gray-900">
+                                          {interview.domainApplication.application.user.firstName} {interview.domainApplication.application.user.lastName}
+                                        </td>
+                                        <td className="px-4 py-3 text-gray-600">
+                                          {start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}{' '}
+                                          {start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} –{' '}
+                                          {end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+                                        </td>
+                                        <td className="px-4 py-3">
+                                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${
+                                            interview.status === "Completed" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"
+                                          }`}>
+                                            {interview.status}
+                                          </span>
+                                        </td>
+                                        <td className="px-4 py-3 text-gray-600 text-xs">{inDomain}</td>
+                                        <td className="px-4 py-3 text-gray-600 text-xs">{crossDomain}</td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
                         </div>
-                      }
-                      defaultOpen={false}
-                    >
-                      <table className="w-full text-sm">
-                        <thead className="bg-gray-50 text-xs font-medium text-gray-500 uppercase tracking-wide">
-                          <tr>
-                            <th className="px-6 py-3 text-left">Applicant</th>
-                            <th className="px-6 py-3 text-left">Time</th>
-                            <th className="px-6 py-3 text-left">Status</th>
-                            <th className="px-6 py-3 text-left">In-Domain</th>
-                            <th className="px-6 py-3 text-left">Cross-Domain</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100">
-                          {interviews.map((interview: any) => {
-                            const start = new Date(interview.startTime);
-                            const end = new Date(interview.endTime);
-                            const formatAssignment = (a: any) => {
-                              const m = a.cycleInterviewer.daliMember;
-                              return m.firstName && m.lastName
-                                ? `${m.firstName} ${m.lastName}`
-                                : m.daliEmail ?? '?';
-                            };
-                            const inDomain = interview.assignments
-                              .filter((a: any) => a.role === 'InDomain' && a.status === 'Active')
-                              .map(formatAssignment)
-                              .join(', ') || '—';
-                            const crossDomain = interview.assignments
-                              .filter((a: any) => a.role === 'CrossDomain' && a.status === 'Active')
-                              .map((a: any) => `${formatAssignment(a)} (${a.cycleInterviewer.domain.name})`)
-                              .join(', ') || '—';
-                            return (
-                              <tr key={interview.id} className="hover:bg-gray-50">
-                                <td className="px-6 py-4 font-medium text-gray-900">
-                                  {interview.domainApplication.application.user.firstName} {interview.domainApplication.application.user.lastName}
-                                </td>
-                                <td className="px-6 py-4 text-gray-600">
-                                  {start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}{' '}
-                                  {start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} –{' '}
-                                  {end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
-                                </td>
-                                <td className="px-6 py-4">
-                                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${
-                                    interview.status === "Completed" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"
-                                  }`}>
-                                    {interview.status}
-                                  </span>
-                                </td>
-                                <td className="px-6 py-4 text-gray-600 text-xs">{inDomain}</td>
-                                <td className="px-6 py-4 text-gray-600 text-xs">{crossDomain}</td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </Section>
-                  )}
+                      </Section>
+                    ) : null;
+                  })()}
                 </div>
               </>
             )}
@@ -690,12 +781,13 @@ export default function DomainLeadDashboard() {
   );
 }
 
-function DraftSection({ cycle, domainId, challengeVersionOptions, selectedChallengeVersionId, isChallengeReady }: {
+function DraftSection({ cycle, domainId, challengeVersionOptions, selectedChallengeVersionId, isChallengeReady, currentRubricVersionId }: {
   cycle: any;
   domainId: string;
   challengeVersionOptions: any[];
   selectedChallengeVersionId: string | null;
   isChallengeReady: boolean;
+  currentRubricVersionId: string | null;
 }) {
   const selectedVersion = challengeVersionOptions.find((cv: any) => cv.id === selectedChallengeVersionId);
   const questionCount: number = selectedVersion?.questions?.length ?? 0;
@@ -762,13 +854,19 @@ function DraftSection({ cycle, domainId, challengeVersionOptions, selectedChalle
               </p>
             </div>
           </div>
+          {!currentRubricVersionId && (
+            <div className="flex items-center gap-2 text-sm text-yellow-800 bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-2">
+              <span>Set a domain rubric below before marking as ready</span>
+            </div>
+          )}
           <Form method="post">
             <input type="hidden" name="intent" value="mark-ready" />
             <input type="hidden" name="cycleId" value={cycle.id} />
             <input type="hidden" name="domainId" value={domainId} />
             <button
               type="submit"
-              className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700"
+              disabled={!currentRubricVersionId}
+              className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <CheckCircle className="w-4 h-4" />
               Mark Configuration as Ready
@@ -1348,13 +1446,24 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
           {currentStatus === "UnderReview" && (
             <button
               onClick={async () => {
-                await fetch(`/api/cycles/${cycleId}/domains/${domainId}/auto-assign`, {
+                const res = await fetch(`/api/cycles/${cycleId}/domains/${domainId}/auto-assign`, {
                   method: "POST", credentials: "include",
                 });
-                window.location.reload();
+                if (res.ok) {
+                  window.location.reload();
+                } else {
+                  const body = await res.json().catch(() => ({}));
+                  alert(body.error ?? "Auto-assign failed. Check that rubrics are set and reviewers are added.");
+                }
               }}
-              disabled={!canAssignReviewers}
-              title={!canAssignReviewers ? "Set both domain and general rubrics before assigning reviewers" : undefined}
+              disabled={!canAssignReviewers || cycleReviewersForDomain.length === 0}
+              title={
+                !canAssignReviewers
+                  ? "Set both domain and general rubrics before assigning reviewers"
+                  : cycleReviewersForDomain.length === 0
+                    ? "Add reviewers to this domain first"
+                    : undefined
+              }
               className="px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition disabled:opacity-50"
             >
               Auto-Assign Reviewers

@@ -401,7 +401,7 @@ function InvitedToInterviewView({
 
       {slots.length === 0 ? (
         <div className={`px-6 py-8 rounded-2xl ${cardBg} text-center`}>
-          <p className="text-gray-500">No available interview slots right now. Please check back later.</p>
+          <p className="text-gray-500">No interview slots are available yet. The DALI team is still setting up interview times — check back soon.</p>
         </div>
       ) : (
         <>
