@@ -267,14 +267,16 @@ test.describe('scheduling API: domain filtering edge cases', () => {
   test('non-invited applicant cannot book an interview', async ({ page, loginAs }) => {
     await loginAs({ netId: 'f007ha8' }); // Harper - Design, pending review, NOT invited
 
+    // available-slots is restricted to invited applicants + cycle members
     const slotsRes = await page.request.get(
       `/api/cycles/${CYCLE}/available-slots?domainId=domain-design`,
     );
-    const slots = await slotsRes.json();
+    expect(slotsRes.status()).toBe(403);
 
+    // Booking endpoint also rejects non-invited applicants
     const bookRes = await page.request.post(
       `/api/domain-applications/da-harper-design/schedule-interview`,
-      { data: { startTime: slots[0].startTime } },
+      { data: { startTime: new Date().toISOString() } },
     );
     expect(bookRes.status()).toBe(403);
   });
@@ -282,14 +284,16 @@ test.describe('scheduling API: domain filtering edge cases', () => {
   test('rejected applicant cannot book an interview', async ({ page, loginAs }) => {
     await loginAs({ netId: 'f007gr7' }); // Grace - Engineering, REJECTED
 
+    // available-slots is restricted to invited applicants + cycle members
     const slotsRes = await page.request.get(
       `/api/cycles/${CYCLE}/available-slots?domainId=domain-eng`,
     );
-    const slots = await slotsRes.json();
+    expect(slotsRes.status()).toBe(403);
 
+    // Booking endpoint also rejects rejected applicants
     const bookRes = await page.request.post(
       `/api/domain-applications/da-grace-eng/schedule-interview`,
-      { data: { startTime: slots[0].startTime } },
+      { data: { startTime: new Date().toISOString() } },
     );
     expect(bookRes.status()).toBe(403);
   });
