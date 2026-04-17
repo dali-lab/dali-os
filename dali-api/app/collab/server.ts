@@ -4,7 +4,11 @@ import { loadDocument, maybeSnapshot, storeDocument } from "./persistence";
 import { isPresenceRoom } from "./roomName";
 import { authorizeCollabDoc } from "~/lib/collabAuth";
 
+const WS_MAX_PAYLOAD_BYTES = 1_048_576; // 1 MB
+const WS_MAX_CONNECTIONS = 100;
+
 let server: Server | null = null;
+let connectionCount = 0;
 
 // userIds that have edited each doc since the last snapshot was written.
 // Drained in onStoreDocument / onDisconnect so version rows record only the
@@ -39,6 +43,14 @@ export function startCollabServer() {
     // to onStoreDocument every `debounce` ms.
     debounce: 2000,
 
+    async onConnect({ documentName }: { documentName: string }) {
+      if (connectionCount >= WS_MAX_CONNECTIONS) {
+        throw new Error("Too many connections");
+      }
+      connectionCount++;
+      console.log(`[collab:server] onConnect doc=${documentName} (connections: ${connectionCount})`);
+    },
+
     async onAuthenticate({
       token,
       documentName,
@@ -64,10 +76,6 @@ export function startCollabServer() {
         `[collab:server] auth ok for user=${user.sub} doc=${documentName}`,
       );
       return { user };
-    },
-
-    async onConnect({ documentName }: { documentName: string }) {
-      console.log(`[collab:server] onConnect doc=${documentName}`);
     },
 
     async onLoadDocument({ document, documentName }: { document: any; documentName: string }) {
@@ -97,7 +105,8 @@ export function startCollabServer() {
     },
 
     async onDisconnect({ documentName, document }: { documentName: string; document: any }) {
-      console.log(`[collab:server] onDisconnect doc=${documentName}`);
+      connectionCount = Math.max(0, connectionCount - 1);
+      console.log(`[collab:server] onDisconnect doc=${documentName} (connections: ${connectionCount})`);
       const stored = await storeDocument(documentName, document);
       if (!stored) return;
       const authors = drainAuthors(documentName);
@@ -109,7 +118,7 @@ export function startCollabServer() {
         for (const a of authors) recordAuthor(documentName, a);
       }
     },
-  });
+  }, { maxPayload: WS_MAX_PAYLOAD_BYTES });
 
   server.listen();
   console.log(`[collab] Hocuspocus server listening on port ${port}`);

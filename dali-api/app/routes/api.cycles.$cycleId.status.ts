@@ -31,7 +31,10 @@ async function maybeAutoClose(cycleId: string) {
   });
 }
 
-export async function loader({ params }: Route.LoaderArgs) {
+export async function loader({ request, params }: Route.LoaderArgs) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
+
   await maybeAutoClose(params.cycleId!);
 
   const updates = await prisma.applicationCycleStatusUpdate.findMany({

@@ -8,6 +8,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const preflight = handlePreflight(request);
   if (preflight) return preflight;
 
+  const auth = await requireAuth(request);
+  if (!auth.ok) return withCors(request, auth.response);
+
   const reviewers = await prisma.cycleReviewer.findMany({
     where: { applicationCycleId: params.cycleId },
     include: {

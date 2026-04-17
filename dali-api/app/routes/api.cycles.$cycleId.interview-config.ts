@@ -8,7 +8,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const preflight = handlePreflight(request);
   if (preflight) return preflight;
 
-  // Dev: skip auth on read so the mentor/admin pages can fetch without login
+  const auth = await requireAuth(request);
+  if (!auth.ok) return withCors(request, auth.response);
+
   const config = await prisma.interviewConfig.findUnique({
     where: { applicationCycleId: params.cycleId },
   });

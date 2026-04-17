@@ -8,6 +8,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   const preflight = handlePreflight(request);
   if (preflight) return preflight;
 
+  const auth = await requireAuth(request);
+  if (!auth.ok) return withCors(request, auth.response);
+
   const domains = await prisma.domain.findMany({
     orderBy: { name: "asc" },
     include: {

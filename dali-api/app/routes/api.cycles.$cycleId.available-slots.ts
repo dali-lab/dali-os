@@ -1,10 +1,14 @@
 import type { Route } from "./+types/api.cycles.$cycleId.available-slots";
+import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { computeAvailableSlots } from "~/lib/scheduling";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const preflight = handlePreflight(request);
   if (preflight) return preflight;
+
+  const auth = await requireAuth(request);
+  if (!auth.ok) return withCors(request, auth.response);
 
   const url = new URL(request.url);
   const domainIds = url.searchParams.getAll("domainId");
