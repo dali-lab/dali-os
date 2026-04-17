@@ -1,9 +1,11 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { redirect, useLoaderData, useFetcher, useNavigate } from "react-router";
 import type { Route } from "./+types/portal.apply";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { getActiveCycle } from "~/lib/cycles";
+import { checkGitHubUrl, checkFigmaUrl } from "~/lib/submission-check";
+import type { SubmissionCheckResult } from "~/lib/submission-check";
 import type { Question } from "~/types";
 
 // ─── Loader ──────────────────────────────────────────────────────────────────
@@ -200,6 +202,11 @@ export async function action({ request }: Route.ActionArgs) {
       domainApplicationId: string;
       answers: Record<string, string>;
     }[];
+    const urlQuestions = JSON.parse(formData.get("urlQuestions") as string ?? "[]") as {
+      key: string;
+      url: string;
+      type: "github_url" | "figma_url";
+    }[];
 
     // Save final answers
     await prisma.application.update({
@@ -212,6 +219,26 @@ export async function action({ request }: Route.ActionArgs) {
         where: { id: da.domainApplicationId },
         data: { answers: da.answers },
       });
+    }
+
+    // Run server-side URL checks (non-blocking — warnings only)
+    const urlWarnings: Record<string, SubmissionCheckResult> = {};
+    const urlCheckResults = await Promise.all(
+      urlQuestions
+        .filter(q => q.url.trim())
+        .map(async q => ({
+          key: q.key,
+          result: await (q.type === "figma_url" ? checkFigmaUrl(q.url) : checkGitHubUrl(q.url)),
+        })),
+    );
+    for (const { key, result } of urlCheckResults) {
+      if (result.status !== "valid") {
+        urlWarnings[key] = result;
+      }
+    }
+
+    if (Object.keys(urlWarnings).length > 0) {
+      return { urlWarnings };
     }
 
     // Create Submitted status update
@@ -229,16 +256,55 @@ export async function action({ request }: Route.ActionArgs) {
   return { error: "Unknown intent" };
 }
 
+// ─── URL Check Status ────────────────────────────────────────────────────────
+
+type UrlCheckState = {
+  status: "idle" | "checking" | "done";
+  result?: SubmissionCheckResult;
+};
+
+function UrlCheckIndicator({ state }: { state: UrlCheckState }) {
+  if (state.status === "checking") {
+    return (
+      <span className="text-xs text-gray-400 flex items-center gap-1 mt-1">
+        <span className="inline-block w-3 h-3 border-2 border-gray-300 border-t-accent-coral rounded-full animate-spin" />
+        Checking URL...
+      </span>
+    );
+  }
+  if (state.status === "done" && state.result) {
+    if (state.result.status === "valid") {
+      return (
+        <span className="text-xs text-green-600 flex items-center gap-1 mt-1">
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+          {state.result.message}
+        </span>
+      );
+    }
+    return (
+      <span className="text-xs text-amber-600 flex items-center gap-1 mt-1">
+        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+        {state.result.message}
+      </span>
+    );
+  }
+  return null;
+}
+
 // ─── QuestionField Component ─────────────────────────────────────────────────
 
 function QuestionField({
   question,
   value,
   onChange,
+  urlCheckState,
+  onUrlBlur,
 }: {
   question: Question;
   value: string;
   onChange: (v: string) => void;
+  urlCheckState?: UrlCheckState;
+  onUrlBlur?: () => void;
 }) {
   const inputBase =
     "w-full rounded-lg border border-gray-200 bg-white text-sm text-dark-blue placeholder:text-gray-400 focus:outline-none focus:border-accent-coral px-4 py-2";
@@ -269,6 +335,25 @@ function QuestionField({
           </option>
         ))}
       </select>
+    );
+  }
+
+  if (question.type === "github_url" || question.type === "figma_url") {
+    const placeholder = question.type === "github_url"
+      ? "https://github.com/owner/repo"
+      : "https://www.figma.com/file/...";
+    return (
+      <div>
+        <input
+          type="url"
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          onBlur={onUrlBlur}
+          className={inputBase}
+          placeholder={placeholder}
+        />
+        {urlCheckState && <UrlCheckIndicator state={urlCheckState} />}
+      </div>
     );
   }
 
@@ -310,6 +395,9 @@ export default function PortalApply() {
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [urlWarnings, setUrlWarnings] = useState<Record<string, string>>({});
+  const [urlChecks, setUrlChecks] = useState<Record<string, UrlCheckState>>({});
+  const [confirmedSubmit, setConfirmedSubmit] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const createFetcher = useFetcher();
 
@@ -356,6 +444,29 @@ export default function PortalApply() {
     }
   }
 
+  const checkUrlField = useCallback(async (key: string, url: string, type: "github_url" | "figma_url") => {
+    if (!url.trim()) {
+      setUrlChecks(prev => ({ ...prev, [key]: { status: "idle" } }));
+      return;
+    }
+    setUrlChecks(prev => ({ ...prev, [key]: { status: "checking" } }));
+    try {
+      const res = await fetch("/api/check-url", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, type }),
+      });
+      const result = await res.json();
+      setUrlChecks(prev => ({ ...prev, [key]: { status: "done", result } }));
+    } catch {
+      setUrlChecks(prev => ({
+        ...prev,
+        [key]: { status: "done", result: { status: "error", url, message: "Failed to check URL" } },
+      }));
+    }
+  }, []);
+
   async function handleCreateDraft() {
     if (selectedDomainIds.length === 0) {
       setError("Please select at least one role.");
@@ -377,8 +488,9 @@ export default function PortalApply() {
     }
   }, [createFetcher.data]);
 
-  async function handleSubmit() {
+  async function handleSubmit(force = false) {
     setError(null);
+    setUrlWarnings({});
     if (!draft) return;
 
     // Validate required general questions
@@ -403,6 +515,23 @@ export default function PortalApply() {
       }
     }
 
+    // Collect URL questions from general and domain-specific forms
+    const urlQuestions: { key: string; url: string; type: "github_url" | "figma_url" }[] = [];
+    for (const q of formQuestions as Question[]) {
+      if ((q.type === "github_url" || q.type === "figma_url") && answers[q.key]?.trim()) {
+        urlQuestions.push({ key: q.key, url: answers[q.key], type: q.type as "github_url" | "figma_url" });
+      }
+    }
+    for (const domainId of selectedDomainIds) {
+      const domain = domains.find((d: any) => d.id === domainId);
+      if (!domain) continue;
+      for (const q of domain.challengeQuestions as Question[]) {
+        if ((q.type === "github_url" || q.type === "figma_url") && domainAnswers[domainId]?.[q.key]?.trim()) {
+          urlQuestions.push({ key: q.key, url: domainAnswers[domainId][q.key], type: q.type as "github_url" | "figma_url" });
+        }
+      }
+    }
+
     setSubmitting(true);
     try {
       const daPayload = (draft.domainApplications ?? []).map((da: any) => ({
@@ -415,6 +544,7 @@ export default function PortalApply() {
         applicationId: draft.id,
         answers: JSON.stringify(answers),
         domainAnswers: JSON.stringify(daPayload),
+        urlQuestions: JSON.stringify(force ? [] : urlQuestions),
       });
 
       const res = await fetch("/portal/apply", {
@@ -426,6 +556,17 @@ export default function PortalApply() {
 
       if (res.redirected) {
         navigate("/portal");
+        return;
+      }
+
+      const data = await res.json();
+      if (data.urlWarnings) {
+        const warnings: Record<string, string> = {};
+        for (const [key, result] of Object.entries(data.urlWarnings) as [string, SubmissionCheckResult][]) {
+          warnings[key] = result.message;
+        }
+        setUrlWarnings(warnings);
+        setConfirmedSubmit(true);
       }
     } finally {
       setSubmitting(false);
@@ -528,7 +669,12 @@ export default function PortalApply() {
                   question={q}
                   value={answers[q.key] ?? ""}
                   onChange={v => setAnswer(q.key, v)}
+                  urlCheckState={urlChecks[q.key]}
+                  onUrlBlur={() => checkUrlField(q.key, answers[q.key] ?? "", q.type as "github_url" | "figma_url")}
                 />
+                {urlWarnings[q.key] && (
+                  <p className="text-xs text-amber-600 mt-1">{urlWarnings[q.key]}</p>
+                )}
               </div>
             ))}
           </div>
@@ -556,7 +702,12 @@ export default function PortalApply() {
                       question={q}
                       value={domainAnswers[domainId]?.[q.key] ?? ""}
                       onChange={v => setDomainAnswer(domainId, q.key, v)}
+                      urlCheckState={urlChecks[q.key]}
+                      onUrlBlur={() => checkUrlField(q.key, domainAnswers[domainId]?.[q.key] ?? "", q.type as "github_url" | "figma_url")}
                     />
+                    {urlWarnings[q.key] && (
+                      <p className="text-xs text-amber-600 mt-1">{urlWarnings[q.key]}</p>
+                    )}
                   </div>
                 ))}
               </div>
@@ -564,6 +715,16 @@ export default function PortalApply() {
           })}
 
         {error && <p className="text-sm text-red-500">{error}</p>}
+
+        {/* URL warnings banner */}
+        {Object.keys(urlWarnings).length > 0 && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4">
+            <p className="text-sm font-semibold text-amber-800 mb-1">Some URLs may have issues</p>
+            <p className="text-xs text-amber-700">
+              One or more of your submitted links appear to be private or inaccessible. You can still submit, but reviewers may not be able to view them.
+            </p>
+          </div>
+        )}
 
         {/* Actions */}
         <div className="flex items-center gap-3 pt-2">
@@ -574,13 +735,23 @@ export default function PortalApply() {
           >
             {saving ? "Saving..." : "Save Draft"}
           </button>
-          <button
-            onClick={handleSubmit}
-            disabled={submitting}
-            className="px-6 py-2.5 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition disabled:opacity-50"
-          >
-            {submitting ? "Submitting..." : "Submit Application"}
-          </button>
+          {confirmedSubmit ? (
+            <button
+              onClick={() => handleSubmit(true)}
+              disabled={submitting}
+              className="px-6 py-2.5 rounded-full bg-amber-500 text-white text-sm font-semibold hover:bg-amber-600 transition disabled:opacity-50"
+            >
+              {submitting ? "Submitting..." : "Submit Anyway"}
+            </button>
+          ) : (
+            <button
+              onClick={() => handleSubmit()}
+              disabled={submitting}
+              className="px-6 py-2.5 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition disabled:opacity-50"
+            >
+              {submitting ? "Submitting..." : "Submit Application"}
+            </button>
+          )}
           <span className="text-xs text-gray-400 ml-1">
             {saving ? "Saving..." : "Auto-saved"}
           </span>

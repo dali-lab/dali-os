@@ -78,10 +78,10 @@ async function main() {
     },
     {
       key: "dq-00000000-0000-0000-0000-000000000002",
-      type: "text",
+      type: "figma_url",
       required: true,
       data: {
-        label: "Share a link to your portfolio or a sample of your work.",
+        label: "Share a link to your Figma portfolio or a sample of your work.",
       },
     },
     {
@@ -107,7 +107,7 @@ async function main() {
     },
     {
       key: "eq-00000000-0000-0000-0000-000000000002",
-      type: "text",
+      type: "github_url",
       required: true,
       data: {
         label:
@@ -155,9 +155,9 @@ async function main() {
     },
     {
       key: "eq2-00000000-0000-0000-0000-000000000002",
-      type: "text",
+      type: "github_url",
       required: true,
-      data: { label: "Link to a project you built. What's one thing you'd do differently today?" },
+      data: { label: "Link to a GitHub repo you built. What's one thing you'd do differently today?" },
     },
     {
       key: "eq2-00000000-0000-0000-0000-000000000003",

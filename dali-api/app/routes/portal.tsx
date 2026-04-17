@@ -720,6 +720,7 @@ export default function Portal() {
   const {
     cycleName,
     cycleId,
+    cycleStatus,
     domainApplications,
     slotDurationMinutes,
     hasApplication,
@@ -745,7 +746,7 @@ export default function Portal() {
   // If no application exists yet, show ApplicationOpen.
   const das = domainApplications as DomainAppData[];
 
-  let primaryStage: DomainApplicationStatus = "ApplicationOpen";
+  let primaryStage: DomainApplicationStatus | "ApplicationsClosed" = "ApplicationOpen";
   let primaryDa: DomainAppData | null = null;
 
   if (das.length > 0) {
@@ -771,8 +772,10 @@ export default function Portal() {
     }
   } else if (applicationStatus === "Submitted") {
     primaryStage = "Pending";
-  } else if (!hasApplication) {
+  } else if (!hasApplication && cycleStatus === "Open") {
     primaryStage = "ApplicationOpen";
+  } else if (!hasApplication) {
+    primaryStage = "ApplicationsClosed";
   }
 
   return (
@@ -796,6 +799,19 @@ export default function Portal() {
 
       {/* Content */}
       <div className="px-6 md:px-16 lg:px-24 py-10">
+        {primaryStage === "ApplicationsClosed" && (
+          <div className="max-w-2xl mx-auto text-center py-16">
+            <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-gray-100 flex items-center justify-center">
+              <svg className="w-8 h-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">Applications Closed</h2>
+            <p className="text-gray-500 leading-relaxed">
+              The application window for {cycleName} has closed. Check back for future application cycles!
+            </p>
+          </div>
+        )}
         {primaryStage === "ApplicationOpen" && <ApplicationOpenView cycleName={cycleName} />}
         {primaryStage === "Pending" && <PendingView cycleName={cycleName} />}
         {primaryStage === "Rejected" && <RejectedView cycleName={cycleName} />}

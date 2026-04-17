@@ -102,4 +102,7 @@ export default [
 
   // Interview assignment notes
   route("api/interview-assignments/:id/notes", "routes/api.interview-assignments.$id.notes.ts"),
+
+  // Submission URL checking
+  route("api/check-url", "routes/api.check-url.ts"),
 ] satisfies RouteConfig;
