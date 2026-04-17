@@ -108,4 +108,7 @@ export default [
   // Email sending + template management
   route("api/email/send", "routes/api.email.send.ts"),
   route("api/email-templates/:key", "routes/api.email-templates.$key.ts"),
+  // Collaborative editing version history
+  route("api/collab/versions", "routes/api.collab.versions.ts"),
+  route("api/collab/versions/:id", "routes/api.collab.versions.$id.ts"),
 ] satisfies RouteConfig;

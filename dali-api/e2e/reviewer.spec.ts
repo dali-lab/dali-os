@@ -21,6 +21,7 @@ test.describe('reviewer workflow', () => {
   test('can navigate to a review detail page', async ({ page }) => {
     await page.goto('/reviewer');
     const reviewLink = page.getByRole('link', { name: /View Review|Continue Review|Start Review/ }).first();
+    await reviewLink.waitFor({ state: 'visible' });
     await reviewLink.click();
     await expect(page).toHaveURL(/\/reviewer\/application\/.+/);
   });
@@ -28,6 +29,7 @@ test.describe('reviewer workflow', () => {
   test('review detail shows scoring form', async ({ page }) => {
     await page.goto('/reviewer');
     const reviewLink = page.getByRole('link', { name: /View Review|Continue Review|Start Review/ }).first();
+    await reviewLink.waitFor({ state: 'visible' });
     await reviewLink.click();
 
     await expect(page.getByText('Your Review')).toBeVisible();
@@ -40,7 +42,7 @@ test.describe('reviewer workflow', () => {
     await expect(page.getByText('Strong Hire')).toBeVisible();
     await expect(page.getByText('No Hire', { exact: true })).toBeVisible();
 
-    // Feedback textarea
-    await expect(page.getByPlaceholder(/Strengths, weaknesses/)).toBeVisible();
+    // Internal Feedback collaborative editor section
+    await expect(page.getByRole('heading', { name: 'Internal Feedback' })).toBeVisible();
   });
 });

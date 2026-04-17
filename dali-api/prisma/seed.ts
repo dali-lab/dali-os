@@ -13,12 +13,19 @@ async function main() {
       daliEmail: "admin@dali.dartmouth.edu",
       firstName: "Admin",
       lastName: "User",
-      daliMember: { create: { daliEmail: "admin@dali.dartmouth.edu", firstName: "Admin", lastName: "User" } },
+      daliMember: {
+        create: {
+          daliEmail: "admin@dali.dartmouth.edu",
+          firstName: "Admin",
+          lastName: "User",
+          roles: ["Admin"],
+        },
+      },
     },
   });
   await prisma.dALIMember.update({
     where: { daliEmail: "admin@dali.dartmouth.edu" },
-    data: { firstName: "Admin", lastName: "User" },
+    data: { firstName: "Admin", lastName: "User", roles: ["Admin"] },
   });
 
   // ── Domains ────────────────────────────────────────────────────────────────
@@ -1462,19 +1469,19 @@ async function main() {
     },
   });
 
-  // ── Henry Scheible (Hiring Lead + Engineering Domain Lead) ─────────────────
-  const henry = await prisma.user.upsert({
-    where: { daliEmail: "henry.scheible@dali.dartmouth.edu" },
-    update: { firstName: "Henry", lastName: "Scheible" },
+  // ── Jordan Taylor (Hiring Lead + Engineering Domain Lead) ──────────────────
+  const jordan = await prisma.user.upsert({
+    where: { daliEmail: "jordan.taylor@dali.dartmouth.edu" },
+    update: { firstName: "Jordan", lastName: "Taylor" },
     create: {
-      daliEmail: "henry.scheible@dali.dartmouth.edu",
-      firstName: "Henry",
-      lastName: "Scheible",
+      daliEmail: "jordan.taylor@dali.dartmouth.edu",
+      firstName: "Jordan",
+      lastName: "Taylor",
       daliMember: {
         create: {
-          daliEmail: "henry.scheible@dali.dartmouth.edu",
-          firstName: "Henry",
-          lastName: "Scheible",
+          daliEmail: "jordan.taylor@dali.dartmouth.edu",
+          firstName: "Jordan",
+          lastName: "Taylor",
           roles: ["HiringLead"],
         },
       },
@@ -1482,17 +1489,17 @@ async function main() {
     include: { daliMember: true },
   });
 
-  const henryMember = await prisma.dALIMember.update({
-    where: { daliEmail: "henry.scheible@dali.dartmouth.edu" },
-    data: { firstName: "Henry", lastName: "Scheible" },
+  const jordanMember = await prisma.dALIMember.update({
+    where: { daliEmail: "jordan.taylor@dali.dartmouth.edu" },
+    data: { firstName: "Jordan", lastName: "Taylor" },
   });
 
   await prisma.domainLeadAssignment.upsert({
-    where: { id: "dla-henry-eng" },
+    where: { id: "dla-jordan-eng" },
     update: {},
     create: {
-      id: "dla-henry-eng",
-      memberId: henryMember.id,
+      id: "dla-jordan-eng",
+      memberId: jordanMember.id,
       domainId: engDomain.id,
     },
   });
@@ -1649,7 +1656,7 @@ async function main() {
         domainApplicationId: spec.domainAppId,
         type: spec.type,
         stage: "Released",
-        madeById: henryMember.id,
+        madeById: jordanMember.id,
         // Waitlist rank is taken from the position inside the Waitlisted
         // subset (stable, deterministic).
         waitlistRank: spec.type === "Waitlisted"
@@ -2063,7 +2070,7 @@ async function main() {
         domainApplicationId: spec.domainAppId,
         type: spec.type,
         stage: "Released",
-        madeById: henryMember.id,
+        madeById: jordanMember.id,
         createdAt: ts(-250),
         notes: spec.notes ?? null,
       },

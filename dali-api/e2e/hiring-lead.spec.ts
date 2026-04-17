@@ -2,7 +2,7 @@ import { test, expect } from './fixtures';
 
 test.describe('hiring lead workflow', () => {
   test.beforeEach(async ({ loginAs }) => {
-    await loginAs({ daliEmail: 'henry.scheible@dali.dartmouth.edu' });
+    await loginAs({ daliEmail: 'jordan.taylor@dali.dartmouth.edu' });
   });
 
   test('cycles list shows all cycles with status badges', async ({ page }) => {

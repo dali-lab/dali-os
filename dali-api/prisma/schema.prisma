@@ -553,6 +553,39 @@ model RubricVersion {
   cyclesAsGeneralRubric ApplicationCycle[] @relation("CycleGeneralRubric")
 }
 
+// ─── Collaborative Editing ───────────────────────────────────────────────────
+
+// Stores the Y.js binary state for each collaborative document.
+// Document naming convention:
+//   review:{reviewId}:feedback
+//   review:{reviewId}:rejectionRationale
+//   interview:{interviewId}:notes        (joint)
+//   interview:{interviewId}:recommendation
+model CollabDocument {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  state     Bytes
+  updatedAt DateTime @updatedAt
+
+  versions  CollabDocumentVersion[]
+}
+
+// Periodic snapshots of a CollabDocument's Y.Doc state. One row written per
+// onStoreDocument tick (every ~30s during active editing — see persistence.ts
+// `maybeSnapshot`). Idle docs accrue no rows. Powers the version-history UI.
+model CollabDocumentVersion {
+  id        String   @id @default(cuid())
+  name      String
+  state     Bytes // Y.Doc binary at snapshot time
+  plainText String // mirror, for fast preview without decoding `state`
+  authorIds String[] // userIds that edited since previous snapshot, best-effort
+  createdAt DateTime @default(now())
+
+  collabDocument CollabDocument @relation(fields: [name], references: [name], onDelete: Cascade)
+
+  @@index([name, createdAt(sort: Desc)])
+}
+
 // ─── OAuth & Sessions ────────────────────────────────────────────────────────
 
 model OAuthSession {
