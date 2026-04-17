@@ -84,14 +84,15 @@ export async function action({ request, params }: Route.ActionArgs) {
         }
       }
 
-      // Create Draft decisions and close session in a transaction
+      // Create Final decisions and close session in a transaction.
+      // Decisions go straight to Final so the hiring lead can release them.
       await prisma.$transaction(async (tx) => {
         for (const [index, d] of decisions.entries()) {
           await tx.decision.create({
             data: {
               domainApplicationId: d.domainApplicationId,
               type: d.type as any,
-              stage: "Draft",
+              stage: "Final",
               madeById: member.id,
               waitlistRank: d.type === "Waitlisted" ? index + 1 : null,
             },
