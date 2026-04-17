@@ -191,8 +191,8 @@ function PulsingDot({ color }: { color: string }) {
   return <span className={`w-2 h-2 rounded-full ${color} animate-pulse`} />;
 }
 
-function StageIndicator({ stage }: { stage: DomainApplicationStatus }) {
-  const steps: { label: string; keys: DomainApplicationStatus[] }[] = [
+function StageIndicator({ stage }: { stage: DomainApplicationStatus | "ApplicationsClosed" }) {
+  const steps: { label: string; keys: (DomainApplicationStatus | "ApplicationsClosed")[] }[] = [
     { label: "Applied", keys: ["ApplicationOpen"] },
     { label: "Review", keys: ["Pending"] },
     { label: "Interview", keys: ["InvitedToInterview", "InterviewScheduled", "PostInterviewPending"] },
