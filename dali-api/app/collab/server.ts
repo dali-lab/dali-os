@@ -120,8 +120,13 @@ export function startCollabServer() {
     },
   }, { maxPayload: WS_MAX_PAYLOAD_BYTES });
 
-  server.listen();
-  console.log(`[collab] Hocuspocus server listening on port ${port}`);
+  server.listen().catch((err: any) => {
+    if (err?.code === "EADDRINUSE") {
+      console.log(`[collab] Port ${port} already in use — collab server likely running from a previous load`);
+    } else {
+      console.error(`[collab] Failed to start Hocuspocus server:`, err);
+    }
+  });
 
   return server;
 }

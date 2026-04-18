@@ -24,6 +24,18 @@ export async function getActiveCycle() {
   for (const cycle of cycles) {
     const latest = cycle.statusUpdates[0]?.newStatus;
     if (latest && (ACTIVE_STATUSES as readonly string[]).includes(latest)) {
+      // Auto-close: if cycle is Open and past its close date, transition to UnderReview
+      if (latest === "Open" && cycle.closeDate && new Date() > cycle.closeDate) {
+        const alreadyClosed = await prisma.applicationCycleStatusUpdate.findFirst({
+          where: { applicationCycleId: cycle.id, newStatus: "UnderReview" },
+        });
+        if (!alreadyClosed) {
+          await prisma.applicationCycleStatusUpdate.create({
+            data: { applicationCycleId: cycle.id, newStatus: "UnderReview" },
+          });
+        }
+        return { ...cycle, currentStatus: "UnderReview" as ActiveStatus };
+      }
       return { ...cycle, currentStatus: latest as ActiveStatus };
     }
   }

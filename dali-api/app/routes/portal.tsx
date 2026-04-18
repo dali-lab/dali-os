@@ -191,8 +191,8 @@ function PulsingDot({ color }: { color: string }) {
   return <span className={`w-2 h-2 rounded-full ${color} animate-pulse`} />;
 }
 
-function StageIndicator({ stage }: { stage: DomainApplicationStatus }) {
-  const steps: { label: string; keys: DomainApplicationStatus[] }[] = [
+function StageIndicator({ stage }: { stage: DomainApplicationStatus | "ApplicationsClosed" }) {
+  const steps: { label: string; keys: (DomainApplicationStatus | "ApplicationsClosed")[] }[] = [
     { label: "Applied", keys: ["ApplicationOpen"] },
     { label: "Review", keys: ["Pending"] },
     { label: "Interview", keys: ["InvitedToInterview", "InterviewScheduled", "PostInterviewPending"] },
@@ -401,7 +401,7 @@ function InvitedToInterviewView({
 
       {slots.length === 0 ? (
         <div className={`px-6 py-8 rounded-2xl ${cardBg} text-center`}>
-          <p className="text-gray-500">No available interview slots right now. Please check back later.</p>
+          <p className="text-gray-500">No interview slots are available yet. The DALI team is still setting up interview times — check back soon.</p>
         </div>
       ) : (
         <>
