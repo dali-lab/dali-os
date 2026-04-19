@@ -18,6 +18,8 @@
     "db:seed:members": "tsx prisma/seed-members.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1030.0",
+    "@aws-sdk/s3-request-presigner": "^3.1030.0",
     "@hocuspocus/provider": "^3.4.4",
     "@hocuspocus/server": "^3.4.4",
     "@neondatabase/serverless": "^1.0.2",

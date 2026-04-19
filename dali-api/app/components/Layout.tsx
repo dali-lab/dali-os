@@ -9,6 +9,7 @@ import {
   Calendar,
   Shield,
   Video,
+  Mail,
   FileText,
   MessageSquare,
 } from 'lucide-react'
@@ -58,6 +59,13 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
         { label: 'Challenges', to: '/challenges', active: path.startsWith('/challenges') },
         { label: 'Rubrics', to: '/rubrics', active: path.startsWith('/rubrics') },
       ],
+    },
+    {
+      label: 'Emails',
+      to: '/emails',
+      icon: Mail,
+      show: isHiringLead,
+      active: location.pathname.startsWith('/emails'),
     },
     {
       label: 'Members',
