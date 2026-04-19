@@ -78,10 +78,10 @@ async function main() {
     },
     {
       key: "dq-00000000-0000-0000-0000-000000000002",
-      type: "text",
+      type: "figma_url",
       required: true,
       data: {
-        label: "Share a link to your portfolio or a sample of your work.",
+        label: "Share a link to your Figma portfolio or a sample of your work.",
       },
     },
     {
@@ -107,7 +107,7 @@ async function main() {
     },
     {
       key: "eq-00000000-0000-0000-0000-000000000002",
-      type: "text",
+      type: "github_url",
       required: true,
       data: {
         label:
@@ -155,9 +155,9 @@ async function main() {
     },
     {
       key: "eq2-00000000-0000-0000-0000-000000000002",
-      type: "text",
+      type: "github_url",
       required: true,
-      data: { label: "Link to a project you built. What's one thing you'd do differently today?" },
+      data: { label: "Link to a GitHub repo you built. What's one thing you'd do differently today?" },
     },
     {
       key: "eq2-00000000-0000-0000-0000-000000000003",
@@ -2014,9 +2014,9 @@ async function main() {
   });
 
   // ── Decision audit chains ─────────────────────────────────────────────────
-  // Each invited/rejected applicant gets three append-only Decision rows —
-  // Draft → Final → Released — with distinct timestamps. Domain leads draft +
-  // finalize; hiring lead releases (per spec §Final Delibs).
+  // Each decision starts as Draft → Final. InvitedToInterview decisions also
+  // get Released (required for interview booking). Rejected decisions stay at
+  // Final so terminal-decision checks don't push the cycle into finalDelibs.
   type DecisionSpec = {
     slug: string;
     domainAppId: string;
@@ -2062,19 +2062,24 @@ async function main() {
         notes: spec.notes ?? null,
       },
     });
-    await prisma.decision.upsert({
-      where: { id: `${baseId}-released` },
-      update: {},
-      create: {
-        id: `${baseId}-released`,
-        domainApplicationId: spec.domainAppId,
-        type: spec.type,
-        stage: "Released",
-        madeById: jordanMember.id,
-        createdAt: ts(-250),
-        notes: spec.notes ?? null,
-      },
-    });
+    // Release InvitedToInterview decisions (needed for interview booking).
+    // Rejected decisions stay at Final to keep the cycle in readingApplications
+    // stage for reviewers (Released Rejected would trigger finalDelibs).
+    if (spec.type === "InvitedToInterview") {
+      await prisma.decision.upsert({
+        where: { id: `${baseId}-released` },
+        update: {},
+        create: {
+          id: `${baseId}-released`,
+          domainApplicationId: spec.domainAppId,
+          type: spec.type,
+          stage: "Released",
+          madeById: jordanMember.id,
+          createdAt: ts(-250),
+          notes: spec.notes ?? null,
+        },
+      });
+    }
   }
 
   // ── Booked interviews for Alice and Diego ─────────────────────────────────
@@ -2234,6 +2239,7 @@ async function main() {
     })
   }
   console.log(`  ${defaultTemplates.length} email templates seeded`)
+  console.log(`  ${reviewSpecs.length} ApplicationReviews + ${decisionSpecs.filter(s => s.type === "InvitedToInterview").length * 3 + decisionSpecs.filter(s => s.type !== "InvitedToInterview").length * 2} Decisions + ${interviewBookings.length} booked interviews for Fall 2026`);
 }
 
 main()

@@ -4,6 +4,7 @@ import { exchangeGoogleCode, issueTokens } from "~/lib/oauth";
 import { setTokenCookies } from "~/lib/cookies";
 
 const OAUTH_STATE_COOKIE = "__dali_oauth_state";
+const ACCOUNT_TYPE_COOKIE = "__dali_account_type";
 
 function parseCookies(request: Request): Record<string, string> {
   const header = request.headers.get("Cookie") ?? "";
@@ -63,53 +64,99 @@ export async function loader({ request }: Route.LoaderArgs) {
     });
   }
 
-  // Enforce DALI domain
-  if (!googleUser.email.endsWith("@dali.dartmouth.edu")) {
-    return new Response(null, {
-      status: 302,
-      headers: {
-        "Set-Cookie": clearStateCookie,
-        Location: "/login?error=access_denied",
-      },
-    });
+  // Determine account type from the cookie set during the login action
+  const accountType = cookies[ACCOUNT_TYPE_COOKIE] ?? "";
+  const clearAccountTypeCookie = `${ACCOUNT_TYPE_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax`;
+  const isMemberLogin = accountType === "member";
+
+  // For member login, enforce DALI domain
+  if (isMemberLogin && !googleUser.email.endsWith("@dali.dartmouth.edu")) {
+    const headers = new Headers();
+    headers.append("Set-Cookie", clearStateCookie);
+    headers.append("Set-Cookie", clearAccountTypeCookie);
+    headers.set("Location", "/login?error=access_denied");
+    return new Response(null, { status: 302, headers });
   }
 
-  // Upsert user
-  const user = await prisma.user.upsert({
-    where: { daliEmail: googleUser.email },
-    update: { firstName: googleUser.firstName, lastName: googleUser.lastName },
-    create: {
-      daliEmail: googleUser.email,
-      firstName: googleUser.firstName,
-      lastName: googleUser.lastName,
-    },
-  });
+  let user;
+  let authType: string;
+  let redirectTo: string;
 
-  // Ensure a DALIMember record exists for this DALI user.
-  // Seeded members have a row keyed by daliEmail but no userId yet — attach
-  // the userId to that row rather than trying to create a duplicate.
-  const existingMember = await prisma.dALIMember.findFirst({
-    where: { OR: [{ userId: user.id }, { daliEmail: googleUser.email }] },
-  });
-  if (existingMember) {
-    if (!existingMember.userId) {
-      await prisma.dALIMember.update({
-        where: { id: existingMember.id },
-        data: { userId: user.id },
+  if (googleUser.email.endsWith("@dali.dartmouth.edu")) {
+    // DALI member flow
+    user = await prisma.user.upsert({
+      where: { daliEmail: googleUser.email },
+      update: { firstName: googleUser.firstName, lastName: googleUser.lastName },
+      create: {
+        daliEmail: googleUser.email,
+        firstName: googleUser.firstName,
+        lastName: googleUser.lastName,
+      },
+    });
+
+    // Ensure a DALIMember record exists for this DALI user.
+    const existingMember = await prisma.dALIMember.findFirst({
+      where: { OR: [{ userId: user.id }, { daliEmail: googleUser.email }] },
+    });
+    if (existingMember) {
+      if (!existingMember.userId) {
+        await prisma.dALIMember.update({
+          where: { id: existingMember.id },
+          data: { userId: user.id },
+        });
+      }
+    } else {
+      await prisma.dALIMember.create({
+        data: { userId: user.id, daliEmail: googleUser.email },
       });
     }
-  } else {
-    await prisma.dALIMember.create({
-      data: { userId: user.id, daliEmail: googleUser.email },
+
+    authType = "member";
+    redirectTo = "/reviewer";
+  } else if (googleUser.email.endsWith("@dartmouth.edu")) {
+    // Dartmouth student via Google (non-DALI email)
+    user = await prisma.user.upsert({
+      where: { dartmouthEmail: googleUser.email },
+      update: { firstName: googleUser.firstName, lastName: googleUser.lastName },
+      create: {
+        dartmouthEmail: googleUser.email,
+        firstName: googleUser.firstName,
+        lastName: googleUser.lastName,
+      },
     });
+    authType = "dartmouth";
+    redirectTo = "/portal";
+  } else {
+    // External partner — any Google account
+    // Use a findFirst+create pattern since there's no unique constraint on generic emails
+    let existing = await prisma.user.findFirst({
+      where: { dartmouthEmail: googleUser.email },
+    });
+    if (existing) {
+      user = await prisma.user.update({
+        where: { id: existing.id },
+        data: { firstName: googleUser.firstName, lastName: googleUser.lastName },
+      });
+    } else {
+      user = await prisma.user.create({
+        data: {
+          dartmouthEmail: googleUser.email,
+          firstName: googleUser.firstName,
+          lastName: googleUser.lastName,
+        },
+      });
+    }
+    authType = "partner";
+    redirectTo = "/portal";
   }
 
   // Issue tokens and set cookies
-  const tokens = await issueTokens(user.id, "member");
+  const tokens = await issueTokens(user.id, authType);
   const headers = new Headers();
   headers.append("Set-Cookie", clearStateCookie);
+  headers.append("Set-Cookie", clearAccountTypeCookie);
   setTokenCookies(headers, tokens.access_token, tokens.refresh_token);
-  headers.set("Location", "/reviewer");
+  headers.set("Location", redirectTo);
 
   return new Response(null, { status: 302, headers });
 }

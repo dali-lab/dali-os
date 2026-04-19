@@ -32,7 +32,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         decisions: { none: { stage: { in: ["Final" as const, "Released" as const] } } },
       }
     : {
-        interview: { status: "Completed" as const },
+        interviews: { some: { status: "Completed" as const } },
       };
 
   const domainApplications = await prisma.domainApplication.findMany({

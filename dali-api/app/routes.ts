@@ -22,12 +22,19 @@ export default [
     route("schedule-interview", "routes/applicant.schedule-interview.tsx"),
   ]),
 
+  // Applicant portal (lightweight layout)
+  layout("routes/applicant-layout.tsx", [
+    route("portal", "routes/portal.tsx"),
+    route("portal/apply", "routes/portal.apply.tsx"),
+  ]),
+
   // Login (no layout)
   route("login", "routes/login.tsx"),
   route("dev-login", "routes/dev-login.ts"),
   route("dev-login-as", "routes/dev-login-as.ts"),
   route("logout", "routes/logout.ts"),
   route("auth/callback/google", "routes/auth.callback.google.ts"),
+  route("auth/callback/cas", "routes/auth.callback.cas.ts"),
 
   // OAuth endpoints (no layout)
   route("oauth/authorize", "routes/oauth.authorize.ts"),
@@ -108,6 +115,9 @@ export default [
   // Email sending + template management
   route("api/email/send", "routes/api.email.send.ts"),
   route("api/email-templates/:key", "routes/api.email-templates.$key.ts"),
+  // Submission URL checking
+  route("api/check-url", "routes/api.check-url.ts"),
+
   // Collaborative editing version history
   route("api/collab/versions", "routes/api.collab.versions.ts"),
   route("api/collab/versions/:id", "routes/api.collab.versions.$id.ts"),

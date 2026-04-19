@@ -2,6 +2,7 @@ import type { Route } from "./+types/api.cycles.$cycleId.interviews";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
+import { hasCycleAccess } from "~/lib/roles";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const preflight = handlePreflight(request);
@@ -9,6 +10,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const auth = await requireAuth(request);
   if (!auth.ok) return withCors(request, auth.response);
+
+  if (!(await hasCycleAccess(auth.user.sub, params.cycleId!)))
+    return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
 
   const interviews = await prisma.interview.findMany({
     where: { applicationCycleId: params.cycleId },

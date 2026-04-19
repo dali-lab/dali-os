@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.delibs.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead, isDomainLead } from "~/lib/roles";
+import { isHiringLead, isDomainLead, hasCycleAccess } from "~/lib/roles";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -14,6 +14,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!session) {
     return Response.json({ error: "Not found" }, { status: 404 });
   }
+
+  if (!(await hasCycleAccess(auth.user.sub, session.applicationCycleId)))
+    return Response.json({ error: "Forbidden" }, { status: 403 });
 
   return Response.json(session);
 }
@@ -84,14 +87,15 @@ export async function action({ request, params }: Route.ActionArgs) {
         }
       }
 
-      // Create Draft decisions and close session in a transaction
+      // Create Final decisions and close session in a transaction.
+      // Decisions go straight to Final so the hiring lead can release them.
       await prisma.$transaction(async (tx) => {
         for (const [index, d] of decisions.entries()) {
           await tx.decision.create({
             data: {
               domainApplicationId: d.domainApplicationId,
               type: d.type as any,
-              stage: "Draft",
+              stage: "Final",
               madeById: member.id,
               waitlistRank: d.type === "Waitlisted" ? index + 1 : null,
             },

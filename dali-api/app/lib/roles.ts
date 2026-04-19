@@ -65,3 +65,29 @@ export async function isDomainLead(userId: string): Promise<boolean> {
 export async function requireMember(userId: string) {
   return prisma.dALIMember.findFirst({ where: { userId } });
 }
+
+// ─── Cycle-scoped access ────────────────────────────────────────────────────
+
+/**
+ * Check whether a user may read cycle-scoped hiring data.
+ * Hiring leads and domain leads pass immediately (1 DB query).
+ * Other DALI members pass only if they are a CycleReviewer or
+ * CycleInterviewer for the given cycle.
+ */
+export async function hasCycleAccess(userId: string, cycleId: string): Promise<boolean> {
+  const roles = await getUserRoles(userId);
+  if (roles.isHiringLead || roles.isDomainLead) return true;
+  if (!roles.memberId) return false;
+
+  const [reviewer, interviewer] = await Promise.all([
+    prisma.cycleReviewer.findFirst({
+      where: { daliMemberId: roles.memberId, applicationCycleId: cycleId },
+      select: { id: true },
+    }),
+    prisma.cycleInterviewer.findFirst({
+      where: { daliMemberId: roles.memberId, applicationCycleId: cycleId },
+      select: { id: true },
+    }),
+  ]);
+  return reviewer !== null || interviewer !== null;
+}

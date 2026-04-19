@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
+import { OAuth2Client } from "google-auth-library";
 import { prisma } from "~/lib/db";
 import { signAccessToken } from "~/lib/auth";
 
@@ -305,10 +306,15 @@ export async function exchangeGoogleCode(code: string, callbackUrl: string) {
   const data = await res.json();
   const idToken = data.id_token as string;
 
-  // decode the id_token payload (already verified by Google)
-  const payload = JSON.parse(
-    Buffer.from(idToken.split(".")[1], "base64url").toString(),
-  );
+  const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+  const ticket = await client.verifyIdToken({
+    idToken,
+    audience: process.env.GOOGLE_CLIENT_ID!,
+  });
+  const payload = ticket.getPayload();
+  if (!payload) {
+    throw new OAuthError("server_error", "Failed to verify Google ID token");
+  }
 
   return {
     email: payload.email as string,
