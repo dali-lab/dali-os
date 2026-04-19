@@ -869,19 +869,13 @@ function DraftSection({ cycle, domainId, challengeVersionOptions, selectedChalle
               </p>
             </div>
           </div>
-          {!currentRubricVersionId && (
-            <div className="flex items-center gap-2 text-sm text-yellow-800 bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-2">
-              <span>Set a domain rubric below before marking as ready</span>
-            </div>
-          )}
           <Form method="post">
             <input type="hidden" name="intent" value="mark-ready" />
             <input type="hidden" name="cycleId" value={cycle.id} />
             <input type="hidden" name="domainId" value={domainId} />
             <button
               type="submit"
-              disabled={!currentRubricVersionId}
-              className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700"
             >
               <CheckCircle className="w-4 h-4" />
               Mark Configuration as Ready
