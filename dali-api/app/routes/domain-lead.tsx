@@ -523,19 +523,18 @@ export default function DomainLeadDashboard() {
                     </Section>
                   )}
 
-                  {/* Setup & Config — Open + UnderReview */}
+                  {/* Setup — just the domain challenge */}
                   {currentStatus !== "Draft" && (currentStatus === "Open" || currentStatus === "UnderReview") && (
                     <Section
                       title="Setup"
                       badge={
-                        currentRubricVersionId && selectedChallengeVersionId
+                        selectedChallengeVersionId
                           ? <span className="text-xs text-green-700 bg-green-100 px-2 py-0.5 rounded-full font-medium">Configured</span>
                           : <span className="text-xs text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded-full font-medium">Needs attention</span>
                       }
-                      defaultOpen={!currentRubricVersionId || !selectedChallengeVersionId}
+                      defaultOpen={!selectedChallengeVersionId}
                     >
                       <div className="space-y-4">
-                        {/* Challenge info */}
                         <div>
                           <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Domain Challenge</h4>
                           {selectedChallengeVersionId ? (
@@ -543,8 +542,11 @@ export default function DomainLeadDashboard() {
                               <div className="flex items-center gap-2 text-sm text-gray-600">
                                 <CheckCircle className="w-4 h-4 text-green-600" />
                                 <span>{challengeVersionOptions.find((c: any) => c.id === selectedChallengeVersionId)?.challenge?.name ?? "Linked"}</span>
+                                {hasApplicationReviews && (
+                                  <span className="text-xs text-gray-400 ml-1">(locked — reviewers have been assigned)</span>
+                                )}
                               </div>
-                              {(() => {
+                              {!hasApplicationReviews && (() => {
                                 const cv = challengeVersionOptions.find((c: any) => c.id === selectedChallengeVersionId);
                                 return cv?.challenge?.id ? (
                                   <Link to={`/challenges/${cv.challenge.id}`} className="text-xs text-blue-600 hover:text-blue-800 font-medium">
@@ -563,50 +565,60 @@ export default function DomainLeadDashboard() {
                           )}
                         </div>
 
-                        {/* Rubric */}
-                        <div>
-                          <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Domain Rubric</h4>
-                          <RubricPicker
-                            cycleId={cycle.id}
-                            domainId={assignment.domainId}
-                            options={rubricVersionOptions ?? []}
-                            selectedId={currentRubricVersionId}
-                            locked={hasApplicationReviews}
-                          />
-                        </div>
-
-                        {!cycle.generalRubricVersionId && (
-                          <div className="flex items-center gap-2 text-sm text-yellow-800 bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-2">
-                            <Clock className="w-4 h-4 flex-shrink-0" />
-                            <span>Waiting on hiring lead to set the general application rubric — reviewer assignment is blocked until both rubrics are set.</span>
-                          </div>
-                        )}
-
                         <div className="flex items-center gap-3 pt-2 border-t border-gray-100">
                           <Link to="/challenges" className="text-xs text-blue-600 hover:text-blue-800 font-medium">
                             All Challenges →
-                          </Link>
-                          <Link to="/rubrics" className="text-xs text-blue-600 hover:text-blue-800 font-medium">
-                            All Rubrics →
                           </Link>
                         </div>
                       </div>
                     </Section>
                   )}
 
-                  {/* Team — Reviewers + Interviewers */}
+                  {/* Reviews — Team + Rubric (editable until reviewers are assigned) */}
                   <Section
-                    title="Team"
+                    title="Reviews"
                     badge={
-                      <span className="text-xs text-gray-600">
-                        {cycleReviewers.length} reviewers, {(interviewers ?? []).length} interviewers
-                      </span>
+                      <div className="flex items-center gap-3 text-xs text-gray-600">
+                        <span>{cycleReviewers.length} reviewers, {(interviewers ?? []).length} interviewers</span>
+                        {currentRubricVersionId
+                          ? <span className="text-green-700">· rubric set</span>
+                          : <span className="text-yellow-700">· no rubric</span>}
+                      </div>
                     }
-                    defaultOpen={currentStatus === "Draft" || currentStatus === "Open"}
+                    defaultOpen={currentStatus === "Draft" || currentStatus === "Open" || !currentRubricVersionId}
                   >
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <ReviewerSection cycleId={cycle.id} domainId={assignment.domainId} initialReviewers={cycleReviewers} />
-                      <InterviewerSection cycleId={cycle.id} domainId={assignment.domainId} initialInterviewers={interviewers ?? []} />
+                    <div className="space-y-6">
+                      {/* Domain Rubric */}
+                      <div>
+                        <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Domain Rubric</h4>
+                        <RubricPicker
+                          cycleId={cycle.id}
+                          domainId={assignment.domainId}
+                          options={rubricVersionOptions ?? []}
+                          selectedId={currentRubricVersionId}
+                          locked={hasApplicationReviews}
+                        />
+                        {!cycle.generalRubricVersionId && (
+                          <div className="mt-3 flex items-center gap-2 text-sm text-yellow-800 bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-2">
+                            <Clock className="w-4 h-4 flex-shrink-0" />
+                            <span>Waiting on hiring lead to set the general application rubric — reviewer assignment is blocked until both rubrics are set.</span>
+                          </div>
+                        )}
+                        <div className="mt-2">
+                          <Link to="/rubrics" className="text-xs text-blue-600 hover:text-blue-800 font-medium">
+                            All Rubrics →
+                          </Link>
+                        </div>
+                      </div>
+
+                      {/* Team — Reviewers + Interviewers */}
+                      <div>
+                        <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Team</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <ReviewerSection cycleId={cycle.id} domainId={assignment.domainId} initialReviewers={cycleReviewers} />
+                          <InterviewerSection cycleId={cycle.id} domainId={assignment.domainId} initialInterviewers={interviewers ?? []} />
+                        </div>
+                      </div>
                     </div>
                   </Section>
 
