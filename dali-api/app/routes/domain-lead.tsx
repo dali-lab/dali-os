@@ -88,10 +88,13 @@ export async function loader({ request }: Route.LoaderArgs) {
         orderBy: { createdAt: "desc" },
       });
 
-      // Pick the single most recent cycle that is Draft, Open, or UnderReview
+      // Pick the single most recent cycle — prefer Open/UnderReview over Draft
       const activeCycle = allCycles.find((c) => {
         const status = c.statusUpdates[0]?.newStatus;
-        return status && ["Draft", "Open", "UnderReview"].includes(status);
+        return status && ["Open", "UnderReview"].includes(status);
+      }) ?? allCycles.find((c) => {
+        const status = c.statusUpdates[0]?.newStatus;
+        return status === "Draft";
       }) ?? null;
 
       if (!activeCycle) return [{ assignment, cycle: null, apps: [], challengeVersionOptions: [], selectedChallengeVersionId: null, isChallengeReady: false, interviews: [], reviewers: [], delibsSessions: [], draftDecisions: [], cycleReviewersForDomain: [], initialDelibsCount: 0, finalDelibsCount: 0, rubricVersionOptions: [], currentRubricVersionId: null, rubricCriteria: [], interviewers: [], hasApplicationReviews: false }];

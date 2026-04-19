@@ -52,6 +52,20 @@ async function inferUnderReviewStage(cycleId: string, memberId: string): Promise
     return 'readingApplications';
   }
 
+  // Even after some applicants are invited, reviewers with assigned reviews
+  // should still see the reviews stage so they can access their review work.
+  const myReviewerIds = await prisma.cycleReviewer.findMany({
+    where: { daliMemberId: memberId, applicationCycleId: cycleId },
+    select: { id: true },
+  });
+  if (myReviewerIds.length > 0) {
+    const reviewerIds = myReviewerIds.map(r => r.id);
+    const hasReviews = await prisma.applicationReview.count({
+      where: { cycleReviewerId: { in: reviewerIds } },
+    });
+    if (hasReviews > 0) return 'readingApplications';
+  }
+
   // Check if any interviews have been completed (signals final delibs phase)
   const completedInterviews = await prisma.interview.count({
     where: { applicationCycleId: cycleId, status: "Completed" },

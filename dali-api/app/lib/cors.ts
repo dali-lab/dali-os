@@ -1,3 +1,5 @@
+import { securityHeaders } from "~/lib/security-headers";
+
 const ALLOWED_ORIGINS = [
   "http://localhost:5173",
   process.env.FRONTEND_URL,
@@ -16,6 +18,9 @@ export function corsHeaders(request: Request): Record<string, string> {
 
 export function withCors(request: Request, response: Response): Response {
   for (const [k, v] of Object.entries(corsHeaders(request))) {
+    response.headers.set(k, v);
+  }
+  for (const [k, v] of Object.entries(securityHeaders())) {
     response.headers.set(k, v);
   }
   return response;
