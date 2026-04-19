@@ -166,13 +166,22 @@ jobs:
             GOOGLE_CLIENT_ID="preview-placeholder.apps.googleusercontent.com" \
             CAS_BASE_URL="https://login.dartmouth.edu/cas"
 
+      - name: Allocate public IPs (idempotent)
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          APP: ${{ steps.urls.outputs.app }}
+        run: |
+          flyctl ips allocate-v4 --shared -a "$APP" 2>&1 || true
+          flyctl ips allocate-v6 -a "$APP" 2>&1 || true
+
       - name: Deploy
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
           APP: ${{ steps.urls.outputs.app }}
         run: |
           cd ./dali-api
-          flyctl deploy --config fly.preview.toml -a "$APP"
+          flyctl deploy --config fly.preview.toml -a "$APP" \
+            --ha=false --strategy immediate --wait-timeout 600 --verbose
 
   comment-on-pr:
     name: Comment preview URL on PR
