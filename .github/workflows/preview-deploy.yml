@@ -221,7 +221,7 @@ jobs:
         run: |
           set +e
           echo "=== releases list ==="
-          flyctl releases list -a "$APP"
+          flyctl releases -a "$APP"
           echo "=== machines list ==="
           flyctl machines list -a "$APP"
           echo "=== recent logs (no-tail) ==="

@@ -2,7 +2,11 @@ app = "dali-api-preview-template"
 primary_region = "iad"
 
 [deploy]
-  release_command = "sh -c 'npx prisma migrate deploy && npx prisma db seed'"
+  # Retry migrate up to 4× with backoff. Neon's compute can cold-start on
+  # a fresh release machine, and Prisma's pg_advisory_lock acquire has a
+  # hard-coded 10s timeout — the first attempt sometimes loses the race.
+  # See issue #101.
+  release_command = "sh -c 'n=0; until npx prisma migrate deploy; do n=$((n+1)); [ $n -ge 4 ] && exit 1; sleep $n; done; npx prisma db seed'"
 
 [build.args]
   OMIT_DEV = "false"
