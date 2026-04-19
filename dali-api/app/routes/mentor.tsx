@@ -419,25 +419,15 @@ export default function MentorDashboard() {
         </p>
       </div>
 
-      {/* Availability prompt — interview config is set but this interviewer hasn't submitted availability yet */}
+      {/* Availability prompt — small reminder when interview config is set but availability isn't */}
       {needsAvailabilityPrompt && (
-        <div className="bg-accent-coral/10 border border-accent-coral/30 rounded-xl p-5 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <CalendarDays className="w-5 h-5 text-accent-coral flex-shrink-0" />
-            <div>
-              <p className="text-sm font-semibold text-dark-blue">Interview times have been set — please add your availability</p>
-              <p className="text-sm text-gray-600 mt-0.5">
-                Applicants can't book interviews with you until you submit your availability blocks.
-              </p>
-            </div>
-          </div>
-          <a
-            href="/interviewer"
-            className="shrink-0 px-4 py-2 rounded-lg bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition whitespace-nowrap"
-          >
-            Set Availability →
-          </a>
-        </div>
+        <a
+          href="/interviewer"
+          className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-accent-coral/10 border border-accent-coral/30 text-sm text-dark-blue hover:bg-accent-coral/15 transition w-fit"
+        >
+          <CalendarDays className="w-4 h-4 text-accent-coral" />
+          <span>Put in your interview availability now →</span>
+        </a>
       )}
 
       {/* Stage progress */}
