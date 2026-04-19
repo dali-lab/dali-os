@@ -147,6 +147,12 @@ jobs:
             echo "App $APP already exists — continuing"
           else
             flyctl apps create "$APP" --org "$ORG"
+            # Wait for the app to become queryable (API eventual consistency)
+            for i in 1 2 3 4; do
+              flyctl apps show "$APP" >/dev/null 2>&1 && break
+              echo "Waiting for app to become available (attempt $i)..."
+              sleep $i
+            done
           fi
 
       - name: Set Fly secrets
@@ -187,7 +193,11 @@ jobs:
           JWT_SECRET=$(openssl rand -hex 32)
           echo "::add-mask::$JWT_SECRET"
 
-          flyctl secrets set -a "$APP" --stage \
+          # Fly's API is eventually consistent — the app may not be
+          # queryable immediately after creation. Retry up to 4 times
+          # with exponential backoff.
+          n=0
+          until flyctl secrets set -a "$APP" --stage \
             DATABASE_URL="$DATABASE_URL" \
             ENABLE_DEV_LOGIN=true \
             JWT_SECRET="$JWT_SECRET" \
@@ -195,6 +205,15 @@ jobs:
             API_BASE_URL="$URL" \
             GOOGLE_CLIENT_ID="preview-placeholder.apps.googleusercontent.com" \
             CAS_BASE_URL="https://login.dartmouth.edu/cas"
+          do
+            n=$((n+1))
+            if [ $n -ge 4 ]; then
+              echo "flyctl secrets set failed after $n attempts" >&2
+              exit 1
+            fi
+            echo "flyctl secrets set failed (attempt $n/4) — retrying in ${n}s..."
+            sleep $n
+          done
 
       - name: Allocate public IPs (idempotent)
         env:
@@ -220,6 +239,10 @@ jobs:
           APP: ${{ steps.urls.outputs.app }}
         run: |
           set +e
+          if ! flyctl apps show "$APP" >/dev/null 2>&1; then
+            echo "App $APP does not exist — skipping diagnostics"
+            exit 0
+          fi
           echo "=== releases list ==="
           flyctl releases -a "$APP"
           echo "=== machines list ==="
