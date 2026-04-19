@@ -167,6 +167,8 @@ export function FormBuilderTab({
               <option value="text">Short Text</option>
               <option value="textarea">Long Text</option>
               <option value="select">Dropdown Select</option>
+              <option value="github_url">GitHub URL</option>
+              <option value="figma_url">Figma URL</option>
             </select>
           </div>
 

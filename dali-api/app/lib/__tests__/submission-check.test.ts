@@ -1,23 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { checkGitHubUrl, checkFigmaUrl, checkUrl } from "~/lib/submission-check";
 
-vi.mock("node:child_process", () => ({
-  execFile: vi.fn(),
-}));
-
-vi.mock("node:util", () => ({
-  promisify: (fn: unknown) => fn,
-}));
-
-import { execFile } from "node:child_process";
-const execFileMock = vi.mocked(execFile);
-
 const fetchMock = vi.fn();
 vi.stubGlobal("fetch", fetchMock);
 
 beforeEach(() => {
   fetchMock.mockReset();
-  execFileMock.mockReset();
 });
 
 // --------------- GitHub URL parsing ---------------
@@ -39,88 +27,91 @@ describe("checkGitHubUrl — URL parsing", () => {
   });
 
   it("accepts a standard GitHub repo URL", async () => {
-    execFileMock.mockResolvedValueOnce({ stdout: "abc123\trefs/heads/main\n", stderr: "" });
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200, text: async () => "0044abc123def456789012345678901234567890 refs/heads/main\n" });
     const result = await checkGitHubUrl("https://github.com/dali-lab/dali-os");
     expect(result.status).toBe("valid");
-    expect(execFileMock).toHaveBeenCalledWith(
-      "git",
-      ["ls-remote", "https://github.com/dali-lab/dali-os.git"],
-      expect.objectContaining({ timeout: 15_000 }),
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://github.com/dali-lab/dali-os.git/info/refs?service=git-upload-pack",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
   });
 
   it("strips .git suffix before re-adding it", async () => {
-    execFileMock.mockResolvedValueOnce({ stdout: "abc123\trefs/heads/main\n", stderr: "" });
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200, text: async () => "0044abc123def456789012345678901234567890 refs/heads/main\n" });
     await checkGitHubUrl("https://github.com/owner/repo.git");
-    expect(execFileMock).toHaveBeenCalledWith(
-      "git",
-      ["ls-remote", "https://github.com/owner/repo.git"],
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://github.com/owner/repo.git/info/refs?service=git-upload-pack",
       expect.anything(),
     );
   });
 
   it("handles trailing slashes and extra path segments", async () => {
-    execFileMock.mockResolvedValueOnce({ stdout: "abc123\trefs/heads/main\n", stderr: "" });
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200, text: async () => "0044abc123def456789012345678901234567890 refs/heads/main\n" });
     await checkGitHubUrl("https://github.com/owner/repo/tree/main/src");
-    expect(execFileMock).toHaveBeenCalledWith(
-      "git",
-      ["ls-remote", "https://github.com/owner/repo.git"],
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://github.com/owner/repo.git/info/refs?service=git-upload-pack",
       expect.anything(),
     );
   });
 
   it("handles www.github.com", async () => {
-    execFileMock.mockResolvedValueOnce({ stdout: "abc123\trefs/heads/main\n", stderr: "" });
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200, text: async () => "0044abc123def456789012345678901234567890 refs/heads/main\n" });
     await checkGitHubUrl("https://www.github.com/owner/repo");
-    expect(execFileMock).toHaveBeenCalledWith(
-      "git",
-      ["ls-remote", "https://github.com/owner/repo.git"],
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://github.com/owner/repo.git/info/refs?service=git-upload-pack",
       expect.anything(),
     );
   });
 });
 
-// --------------- GitHub git ls-remote responses ---------------
+// --------------- GitHub Smart HTTP responses ---------------
 
-describe("checkGitHubUrl — git ls-remote responses", () => {
-  it("returns 'private' when git ls-remote fails with 'not found'", async () => {
-    execFileMock.mockRejectedValueOnce(new Error("fatal: remote error: Repository not found."));
+describe("checkGitHubUrl — Smart HTTP responses", () => {
+  it("returns 'private' on 404", async () => {
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 404 });
     const result = await checkGitHubUrl("https://github.com/owner/repo");
     expect(result.status).toBe("private");
   });
 
-  it("returns 'private' when git ls-remote exits with code 128", async () => {
-    execFileMock.mockRejectedValueOnce(new Error("exit code 128"));
+  it("returns 'private' on 401", async () => {
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 401 });
     const result = await checkGitHubUrl("https://github.com/owner/repo");
     expect(result.status).toBe("private");
   });
 
-  it("returns 'empty' when stdout is empty", async () => {
-    execFileMock.mockResolvedValueOnce({ stdout: "", stderr: "" });
+  it("returns 'private' on 403", async () => {
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 403 });
+    const result = await checkGitHubUrl("https://github.com/owner/repo");
+    expect(result.status).toBe("private");
+  });
+
+  it("returns 'empty' when response has no refs", async () => {
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200, text: async () => "001e# service=git-upload-pack\n0000" });
     const result = await checkGitHubUrl("https://github.com/owner/repo");
     expect(result.status).toBe("empty");
   });
 
-  it("returns 'empty' when stdout is only whitespace", async () => {
-    execFileMock.mockResolvedValueOnce({ stdout: "  \n  ", stderr: "" });
-    const result = await checkGitHubUrl("https://github.com/owner/repo");
-    expect(result.status).toBe("empty");
-  });
-
-  it("returns 'valid' when stdout has refs", async () => {
-    execFileMock.mockResolvedValueOnce({
-      stdout: "abc123def456\trefs/heads/main\n789abc\trefs/tags/v1.0\n",
-      stderr: "",
+  it("returns 'valid' when response has refs", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      text: async () => "001e# service=git-upload-pack\n00000044abc123def456789012345678901234567890 refs/heads/main\n",
     });
     const result = await checkGitHubUrl("https://github.com/owner/repo");
     expect(result.status).toBe("valid");
   });
 
-  it("returns 'error' on unexpected failure", async () => {
-    execFileMock.mockRejectedValueOnce(new Error("git: command not found"));
+  it("returns 'error' on unexpected status code", async () => {
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 500 });
     const result = await checkGitHubUrl("https://github.com/owner/repo");
     expect(result.status).toBe("error");
-    expect(result.message).toContain("git: command not found");
+  });
+
+  it("returns 'error' on network failure", async () => {
+    fetchMock.mockRejectedValueOnce(new Error("network timeout"));
+    const result = await checkGitHubUrl("https://github.com/owner/repo");
+    expect(result.status).toBe("error");
+    expect(result.message).toContain("network timeout");
   });
 });
 
@@ -218,10 +209,13 @@ describe("checkFigmaUrl — page fetch responses", () => {
 
 describe("checkUrl", () => {
   it("routes GitHub URLs to checkGitHubUrl", async () => {
-    execFileMock.mockResolvedValueOnce({ stdout: "abc\trefs/heads/main\n", stderr: "" });
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200, text: async () => "0044abc123def456789012345678901234567890 refs/heads/main\n" });
     const result = await checkUrl("https://github.com/owner/repo");
     expect(result.status).toBe("valid");
-    expect(execFileMock).toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("github.com/owner/repo.git/info/refs"),
+      expect.anything(),
+    );
   });
 
   it("routes Figma URLs to checkFigmaUrl", async () => {

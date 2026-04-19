@@ -29,12 +29,83 @@ import { requireAuth } from '~/lib/auth'
 import type { Route } from './+types/mentor'
 
 // Map DB cycle status → mentor-facing stage.
+// During UnderReview, infer the sub-stage from data.
 function cycleStatusToStage(status: string): CycleStage {
   switch (status) {
     case 'Open': return 'applicationsOpen'
-    case 'UnderReview': return 'readingApplications'
+    case 'UnderReview': return 'readingApplications' // refined below in loader
     default: return 'challengeSetup'
   }
+}
+
+async function inferUnderReviewStage(cycleId: string, memberId: string): Promise<CycleStage> {
+  // Check if any Released InvitedToInterview decisions exist for this cycle
+  const invitedDecisions = await prisma.decision.count({
+    where: {
+      stage: "Released",
+      type: "InvitedToInterview",
+      domainApplication: { application: { applicationCycleId: cycleId } },
+    },
+  });
+
+  if (invitedDecisions === 0) {
+    return 'readingApplications';
+  }
+
+  // Even after some applicants are invited, reviewers with assigned reviews
+  // should still see the reviews stage so they can access their review work.
+  const myReviewerIds = await prisma.cycleReviewer.findMany({
+    where: { daliMemberId: memberId, applicationCycleId: cycleId },
+    select: { id: true },
+  });
+  if (myReviewerIds.length > 0) {
+    const reviewerIds = myReviewerIds.map(r => r.id);
+    const hasReviews = await prisma.applicationReview.count({
+      where: { cycleReviewerId: { in: reviewerIds } },
+    });
+    if (hasReviews > 0) return 'readingApplications';
+  }
+
+  // Check if any interviews have been completed (signals final delibs phase)
+  const completedInterviews = await prisma.interview.count({
+    where: { applicationCycleId: cycleId, status: "Completed" },
+  });
+
+  // Check if any Released Accepted/Rejected/Waitlisted decisions exist (post-final-delibs)
+  const terminalDecisions = await prisma.decision.count({
+    where: {
+      stage: "Released",
+      type: { in: ["Accepted", "Rejected", "Waitlisted"] },
+      domainApplication: { application: { applicationCycleId: cycleId } },
+    },
+  });
+
+  if (terminalDecisions > 0) {
+    return 'finalDelibs';
+  }
+
+  if (completedInterviews > 0) {
+    return 'finalDelibs';
+  }
+
+  // Check if this member is an interviewer with active assignments
+  const myInterviewerRecords = await prisma.cycleInterviewer.findMany({
+    where: { daliMemberId: memberId, applicationCycleId: cycleId },
+    select: { id: true },
+  });
+
+  if (myInterviewerRecords.length > 0) {
+    const interviewerIds = myInterviewerRecords.map(r => r.id);
+    const scheduledInterviews = await prisma.interviewAssignment.count({
+      where: { cycleInterviewerId: { in: interviewerIds }, status: "Active" },
+    });
+
+    if (scheduledInterviews > 0) {
+      return 'interviews';
+    }
+  }
+
+  return 'collectingAvailability';
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -84,9 +155,15 @@ export async function loader({ request }: Route.LoaderArgs) {
     orderBy: { createdAt: 'asc' },
   })
 
+  // Infer the sub-stage within UnderReview from actual data
+  let currentStage = cycleStatusToStage(activeCycleStatus);
+  if (activeCycleStatus === 'UnderReview') {
+    currentStage = await inferUnderReviewStage(active.id, member.id);
+  }
+
   return {
     activeCycle: { id: active.id, name: active.name },
-    currentStage: cycleStatusToStage(activeCycleStatus),
+    currentStage,
     mentorUserId: auth.user.sub,
     memberId: member.id,
     myReviews,
@@ -324,6 +401,32 @@ export default function MentorDashboard() {
         </p>
       </div>
 
+      {/* Stage progress */}
+      <div className="flex items-center gap-1 overflow-x-auto pb-1">
+        {(['readingApplications', 'collectingAvailability', 'interviews', 'finalDelibs'] as CycleStage[]).map((stage, i, arr) => {
+          const labels: Record<string, string> = { readingApplications: 'Reviews', collectingAvailability: 'Availability', interviews: 'Interviews', finalDelibs: 'Decisions' };
+          const stageOrder = arr.indexOf(currentStage);
+          const thisOrder = i;
+          const isActive = stage === currentStage;
+          const isPast = thisOrder < stageOrder;
+          return (
+            <div key={stage} className="flex items-center gap-1">
+              <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                isActive ? 'bg-accent-coral text-white' : isPast ? 'bg-accent-coral/20 text-accent-coral' : 'bg-gray-100 text-gray-400'
+              }`}>
+                {isPast && (
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+                {labels[stage] ?? stage}
+              </div>
+              {i < arr.length - 1 && <div className={`w-4 h-px ${isPast ? 'bg-accent-coral/40' : 'bg-gray-200'}`} />}
+            </div>
+          );
+        })}
+      </div>
+
       <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 flex items-center justify-between shadow-sm">
         <div className="flex items-center gap-5">
           <div className="bg-blue-100 p-3 rounded-xl">
@@ -331,7 +434,7 @@ export default function MentorDashboard() {
           </div>
           <div>
             <h2 className="text-xs font-bold text-blue-800 uppercase tracking-wider mb-1">
-              Current Cycle Stage
+              Current Stage
             </h2>
             <p className="text-xl font-bold text-blue-900">
               {stageInfo[currentStage].title}

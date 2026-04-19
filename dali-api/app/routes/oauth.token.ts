@@ -9,13 +9,18 @@ import {
 import { setTokenCookies, parseRefreshToken } from "~/lib/cookies";
 import type { UserInfo } from "~/lib/oauth";
 import { withCors, handlePreflight, preflightLoader } from "~/lib/cors";
+import { checkRateLimit } from "~/lib/rate-limit";
+import { safeJson } from "~/lib/safe-json";
+
+const RATE_LIMIT_MAX = 10;
+const RATE_LIMIT_WINDOW_MS = 60_000;
 
 export const loader = preflightLoader;
 
-async function parseBody(request: Request): Promise<Record<string, string>> {
+async function parseBody(request: Request): Promise<Record<string, string> | Response> {
   const contentType = request.headers.get("Content-Type") ?? "";
   if (contentType.includes("application/json")) {
-    return request.json();
+    return safeJson<Record<string, string>>(request);
   }
 
   const formData = await request.formData();
@@ -26,7 +31,11 @@ export async function action({ request }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
   if (preflight) return preflight;
 
+  const rateLimited = checkRateLimit(request, { max: RATE_LIMIT_MAX, windowMs: RATE_LIMIT_WINDOW_MS });
+  if (rateLimited) return withCors(request, rateLimited);
+
   const body = await parseBody(request);
+  if (body instanceof Response) return withCors(request, body);
   const grantType = body.grant_type;
 
   try {

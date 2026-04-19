@@ -1,11 +1,19 @@
 import type { Route } from "./+types/api.domain-applications.$id.decisions";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead, isDomainLead } from "~/lib/roles";
+import { isHiringLead, isDomainLead, hasCycleAccess } from "~/lib/roles";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
+
+  const domainApp = await prisma.domainApplication.findUnique({
+    where: { id: params.id },
+    select: { application: { select: { applicationCycleId: true } } },
+  });
+  if (!domainApp) return Response.json({ error: "Not found" }, { status: 404 });
+  if (!(await hasCycleAccess(auth.user.sub, domainApp.application.applicationCycleId)))
+    return Response.json({ error: "Forbidden" }, { status: 403 });
 
   const decisions = await prisma.decision.findMany({
     where: { domainApplicationId: params.id },

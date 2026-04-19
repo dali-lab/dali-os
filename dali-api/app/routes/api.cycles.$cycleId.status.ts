@@ -1,6 +1,6 @@
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead } from "~/lib/roles";
+import { isHiringLead, hasCycleAccess } from "~/lib/roles";
 import { findOtherActiveCycleId } from "~/lib/cycles";
 import type { Route } from "./+types/api.cycles.$cycleId.status";
 
@@ -31,7 +31,13 @@ async function maybeAutoClose(cycleId: string) {
   });
 }
 
-export async function loader({ params }: Route.LoaderArgs) {
+export async function loader({ request, params }: Route.LoaderArgs) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
+
+  if (!(await hasCycleAccess(auth.user.sub, params.cycleId!)))
+    return Response.json({ error: "Forbidden" }, { status: 403 });
+
   await maybeAutoClose(params.cycleId!);
 
   const updates = await prisma.applicationCycleStatusUpdate.findMany({

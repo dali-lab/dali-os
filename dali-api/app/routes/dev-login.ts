@@ -160,9 +160,10 @@ async function loginAsUser(user: { id: string; daliEmail: string | null; dartmou
     "SameSite=Lax",
   ].join("; ");
 
+  const redirect = type === "member" ? "/" : "/portal";
   return new Response(null, {
     status: 302,
-    headers: { "Set-Cookie": cookie, Location: "/" },
+    headers: { "Set-Cookie": cookie, Location: redirect },
   });
 }
 
