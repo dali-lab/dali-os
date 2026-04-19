@@ -161,17 +161,35 @@ export async function loader({ request }: Route.LoaderArgs) {
     currentStage = await inferUnderReviewStage(active.id, member.id);
   }
 
+  // Check if this member is a cycle interviewer with no availability set yet
+  // (so we can prompt them once interview config is set up).
+  const cycleInterviewers = await prisma.cycleInterviewer.findMany({
+    where: { daliMemberId: member.id, applicationCycleId: active.id },
+    select: { id: true },
+  });
+  let needsAvailabilityPrompt = false;
+  if (cycleInterviewers.length > 0) {
+    const [hasInterviewConfig, availabilityCount] = await Promise.all([
+      prisma.interviewConfig.findUnique({ where: { applicationCycleId: active.id } }),
+      prisma.interviewerAvailability.count({
+        where: { cycleInterviewerId: { in: cycleInterviewers.map(ci => ci.id) } },
+      }),
+    ]);
+    needsAvailabilityPrompt = !!hasInterviewConfig && availabilityCount === 0;
+  }
+
   return {
     activeCycle: { id: active.id, name: active.name },
     currentStage,
     mentorUserId: auth.user.sub,
     memberId: member.id,
     myReviews,
+    needsAvailabilityPrompt,
   }
 }
 
 export default function MentorDashboard() {
-  const { activeCycle, currentStage, myReviews } = useLoaderData<typeof loader>() as any
+  const { activeCycle, currentStage, myReviews, needsAvailabilityPrompt } = useLoaderData<typeof loader>() as any
 
   if (!activeCycle) {
     return (
@@ -400,6 +418,27 @@ export default function MentorDashboard() {
           Manage your hiring responsibilities.
         </p>
       </div>
+
+      {/* Availability prompt — interview config is set but this interviewer hasn't submitted availability yet */}
+      {needsAvailabilityPrompt && (
+        <div className="bg-accent-coral/10 border border-accent-coral/30 rounded-xl p-5 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <CalendarDays className="w-5 h-5 text-accent-coral flex-shrink-0" />
+            <div>
+              <p className="text-sm font-semibold text-dark-blue">Interview times have been set — please add your availability</p>
+              <p className="text-sm text-gray-600 mt-0.5">
+                Applicants can't book interviews with you until you submit your availability blocks.
+              </p>
+            </div>
+          </div>
+          <a
+            href="/interviewer"
+            className="shrink-0 px-4 py-2 rounded-lg bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition whitespace-nowrap"
+          >
+            Set Availability →
+          </a>
+        </div>
+      )}
 
       {/* Stage progress */}
       <div className="flex items-center gap-1 overflow-x-auto pb-1">
