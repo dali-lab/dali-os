@@ -164,11 +164,16 @@ jobs:
           fi
 
           API="https://console.neon.tech/api/v2/projects/$PROJECT_ID"
+          # pooled=false: prisma migrate deploy acquires pg_advisory_lock,
+          # which is session-scoped and unreliable through Neon's pooler
+          # (PgBouncer-style transaction pooling reuses backend sessions).
+          # See issue #101 for longer-term investigation across deploy paths.
           URI_RES=$(curl -sf -G "$API/connection_uri" \
             -H "Authorization: Bearer $NEON_API_KEY" \
             --data-urlencode "branch_id=$BRANCH_ID" \
             --data-urlencode "database_name=neondb" \
-            --data-urlencode "role_name=neondb_owner")
+            --data-urlencode "role_name=neondb_owner" \
+            --data-urlencode "pooled=false")
           DATABASE_URL=$(echo "$URI_RES" | jq -r '.uri')
           if [ -z "$DATABASE_URL" ] || [ "$DATABASE_URL" = "null" ]; then
             echo "failed to fetch connection_uri for $BRANCH_ID" >&2
