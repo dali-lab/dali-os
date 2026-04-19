@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { redirect, useLoaderData, useFetcher, useNavigate } from "react-router";
+import { redirect, useLoaderData, useFetcher } from "react-router";
 import type { Route } from "./+types/portal.apply";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
@@ -374,8 +374,6 @@ function QuestionField({
 export default function PortalApply() {
   const loaderData = useLoaderData<typeof loader>() as any;
   const { cycleId, cycleName, generalChallengeVersionId, formQuestions, domains } = loaderData;
-  const navigate = useNavigate();
-
   const [draft, setDraft] = useState(loaderData.draft);
   const [selectedDomainIds, setSelectedDomainIds] = useState<string[]>(
     loaderData.draft?.selectedDomainIds ?? [],
@@ -400,6 +398,7 @@ export default function PortalApply() {
   const [confirmedSubmit, setConfirmedSubmit] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const createFetcher = useFetcher();
+  const submitFetcher = useFetcher();
 
   // Auto-save debounce
   function scheduleSave() {
@@ -488,7 +487,7 @@ export default function PortalApply() {
     }
   }, [createFetcher.data]);
 
-  async function handleSubmit(force = false) {
+  function handleSubmit(force = false) {
     setError(null);
     setUrlWarnings({});
     if (!draft) return;
@@ -533,45 +532,38 @@ export default function PortalApply() {
     }
 
     setSubmitting(true);
-    try {
-      const daPayload = (draft.domainApplications ?? []).map((da: any) => ({
-        domainApplicationId: da.id,
-        answers: domainAnswers[da.domainId] ?? {},
-      }));
 
-      const form = new URLSearchParams({
-        intent: "submit",
-        applicationId: draft.id,
-        answers: JSON.stringify(answers),
-        domainAnswers: JSON.stringify(daPayload),
-        urlQuestions: JSON.stringify(force ? [] : urlQuestions),
-      });
+    const daPayload = (draft.domainApplications ?? []).map((da: any) => ({
+      domainApplicationId: da.id,
+      answers: domainAnswers[da.domainId] ?? {},
+    }));
 
-      const res = await fetch("/portal/apply", {
-        method: "POST",
-        credentials: "include",
-        body: form,
-        redirect: "follow",
-      });
+    const form = new FormData();
+    form.set("intent", "submit");
+    form.set("applicationId", draft.id);
+    form.set("answers", JSON.stringify(answers));
+    form.set("domainAnswers", JSON.stringify(daPayload));
+    form.set("urlQuestions", JSON.stringify(force ? [] : urlQuestions));
 
-      if (res.redirected) {
-        navigate("/portal");
-        return;
-      }
+    submitFetcher.submit(form, { method: "post" });
+  }
 
-      const data = await res.json();
-      if (data.urlWarnings) {
+  // Handle submit response (urlWarnings) — redirects are handled automatically by React Router
+  useEffect(() => {
+    if (submitFetcher.state === "idle" && submitFetcher.data) {
+      setSubmitting(false);
+      if (submitFetcher.data.urlWarnings) {
         const warnings: Record<string, string> = {};
-        for (const [key, result] of Object.entries(data.urlWarnings) as [string, SubmissionCheckResult][]) {
+        for (const [key, result] of Object.entries(submitFetcher.data.urlWarnings) as [string, SubmissionCheckResult][]) {
           warnings[key] = result.message;
         }
         setUrlWarnings(warnings);
         setConfirmedSubmit(true);
       }
-    } finally {
+    } else if (submitFetcher.state === "idle") {
       setSubmitting(false);
     }
-  }
+  }, [submitFetcher.state, submitFetcher.data]);
 
   // Show domain selection if no draft yet
   if (!draft) {
