@@ -3,6 +3,7 @@ import { Link, redirect, useLoaderData, useSubmit } from 'react-router'
 import { ArrowLeft, HelpCircle, X, Check } from 'lucide-react'
 import { prisma } from '~/lib/db'
 import { requireAuth } from '~/lib/auth'
+import { hasCycleAccess } from '~/lib/roles'
 import { parseAccessToken } from '~/lib/cookies'
 import type { Route } from './+types/mentor.application.$id'
 import { ApplicationViewer } from '~/components/ApplicationViewer'
@@ -54,6 +55,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       },
     }),
   ])
+
+  if (!(await hasCycleAccess(auth.user.sub, application.applicationCycleId)))
+    throw redirect('/login')
 
   // Pass JWT for WebSocket auth
   const collabToken = parseAccessToken(request)

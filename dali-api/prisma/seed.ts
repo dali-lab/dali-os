@@ -78,10 +78,10 @@ async function main() {
     },
     {
       key: "dq-00000000-0000-0000-0000-000000000002",
-      type: "text",
+      type: "figma_url",
       required: true,
       data: {
-        label: "Share a link to your portfolio or a sample of your work.",
+        label: "Share a link to your Figma portfolio or a sample of your work.",
       },
     },
     {
@@ -107,7 +107,7 @@ async function main() {
     },
     {
       key: "eq-00000000-0000-0000-0000-000000000002",
-      type: "text",
+      type: "github_url",
       required: true,
       data: {
         label:
@@ -155,9 +155,9 @@ async function main() {
     },
     {
       key: "eq2-00000000-0000-0000-0000-000000000002",
-      type: "text",
+      type: "github_url",
       required: true,
-      data: { label: "Link to a project you built. What's one thing you'd do differently today?" },
+      data: { label: "Link to a GitHub repo you built. What's one thing you'd do differently today?" },
     },
     {
       key: "eq2-00000000-0000-0000-0000-000000000003",
@@ -2014,9 +2014,9 @@ async function main() {
   });
 
   // ── Decision audit chains ─────────────────────────────────────────────────
-  // Each invited/rejected applicant gets three append-only Decision rows —
-  // Draft → Final → Released — with distinct timestamps. Domain leads draft +
-  // finalize; hiring lead releases (per spec §Final Delibs).
+  // Each decision starts as Draft → Final. InvitedToInterview decisions also
+  // get Released (required for interview booking). Rejected decisions stay at
+  // Final so terminal-decision checks don't push the cycle into finalDelibs.
   type DecisionSpec = {
     slug: string;
     domainAppId: string;
@@ -2062,19 +2062,24 @@ async function main() {
         notes: spec.notes ?? null,
       },
     });
-    await prisma.decision.upsert({
-      where: { id: `${baseId}-released` },
-      update: {},
-      create: {
-        id: `${baseId}-released`,
-        domainApplicationId: spec.domainAppId,
-        type: spec.type,
-        stage: "Released",
-        madeById: jordanMember.id,
-        createdAt: ts(-250),
-        notes: spec.notes ?? null,
-      },
-    });
+    // Release InvitedToInterview decisions (needed for interview booking).
+    // Rejected decisions stay at Final to keep the cycle in readingApplications
+    // stage for reviewers (Released Rejected would trigger finalDelibs).
+    if (spec.type === "InvitedToInterview") {
+      await prisma.decision.upsert({
+        where: { id: `${baseId}-released` },
+        update: {},
+        create: {
+          id: `${baseId}-released`,
+          domainApplicationId: spec.domainAppId,
+          type: spec.type,
+          stage: "Released",
+          madeById: jordanMember.id,
+          createdAt: ts(-250),
+          notes: spec.notes ?? null,
+        },
+      });
+    }
   }
 
   // ── Booked interviews for Alice and Diego ─────────────────────────────────
@@ -2192,6 +2197,49 @@ async function main() {
   console.log(`  ${reviewerData.length} reviewers + ${reviewerData.length} interviewers seeded for Fall 2026`);
   console.log(`  ${allInterviewers.length} interviewers × ${availabilityWindows.length} availability blocks`);
   console.log(`  ${reviewSpecs.length} ApplicationReviews + ${decisionSpecs.length * 3} Decisions + ${interviewBookings.length} booked interviews for Fall 2026`);
+
+  // ── Email templates ────────────────────────────────────────────────────────
+  const defaultTemplates = [
+    {
+      templateKey: 'application_received',
+      subject: 'We received your DALI application!',
+      body: `Hi {{firstName}},\n\nThank you for applying to DALI! We've received your application and our team will be reviewing it over the coming weeks.\n\nWe'll reach out with updates as decisions are made. In the meantime, feel free to reach out to us at applications@dali.dartmouth.edu if you have any questions.\n\nBest,\nThe DALI Team`,
+    },
+    {
+      templateKey: 'rejection',
+      subject: 'Your DALI Application',
+      body: `Hi {{firstName}},\n\nThank you so much for applying to DALI and for the time and effort you put into your application. After careful consideration, we regret to inform you that we will not be moving forward with your application for this cycle.\n\nThis was an incredibly competitive cycle, and this decision is not a reflection of your abilities or potential. We strongly encourage you to apply again in the future — many of our current members were not accepted on their first try.\n\nThank you again for your interest in DALI. We wish you all the best.\n\nWarm regards,\nThe DALI Team`,
+    },
+    {
+      templateKey: 'interview_invite_applicant',
+      subject: "You're invited to interview with DALI!",
+      body: `Hi {{firstName}},\n\nCongratulations — we were impressed by your application and would love to invite you to interview with DALI!\n\nPlease log in to your application portal to view available interview slots and confirm your availability. Interviews are typically 20–30 minutes and held in person at the DALI Lab (Sudikoff 007).\n\nIf you have any scheduling conflicts or questions, please don't hesitate to reach out to us at applications@dali.dartmouth.edu.\n\nWe look forward to meeting you!\n\nBest,\nThe DALI Team`,
+    },
+    {
+      templateKey: 'interview_invite_mentor',
+      subject: 'DALI interview assigned to you',
+      body: `Hi {{firstName}},\n\nYou've been assigned to conduct an interview for the current DALI hiring cycle. Please log in to the reviewer dashboard to view your assigned applicant(s) and interview details.\n\nIf you have any conflicts or questions, please reach out to the hiring lead as soon as possible.\n\nThanks for your help making DALI hiring happen!\n\n— The DALI Team`,
+    },
+    {
+      templateKey: 'waitlist',
+      subject: 'Update on your DALI application',
+      body: `Hi {{firstName}},\n\nThank you for your patience as we reviewed applications for this cycle. We're excited to let you know that you've been placed on our waitlist!\n\nThis means we were very impressed by your application and interview, and if a spot opens up, we'd love to have you join the team. We'll be in touch with any updates.\n\nThank you again for your interest in DALI — we hope to work with you soon.\n\nBest,\nThe DALI Team`,
+    },
+    {
+      templateKey: 'acceptance',
+      subject: 'Welcome to DALI!',
+      body: `Hi {{firstName}},\n\nWe are thrilled to offer you a spot in DALI!\n\nAfter a highly competitive review process, we believe you'll be a fantastic addition to our team. Please log in to your application portal to confirm your acceptance.\n\nOnboarding details and next steps will follow shortly. In the meantime, if you have any questions, feel free to reach out to us at applications@dali.dartmouth.edu.\n\nWelcome to the family — we can't wait to work with you!\n\nWarmly,\nThe DALI Team`,
+    },
+  ]
+  for (const t of defaultTemplates) {
+    await prisma.emailTemplate.upsert({
+      where: { templateKey: t.templateKey },
+      update: {},
+      create: t,
+    })
+  }
+  console.log(`  ${defaultTemplates.length} email templates seeded`)
+  console.log(`  ${reviewSpecs.length} ApplicationReviews + ${decisionSpecs.filter(s => s.type === "InvitedToInterview").length * 3 + decisionSpecs.filter(s => s.type !== "InvitedToInterview").length * 2} Decisions + ${interviewBookings.length} booked interviews for Fall 2026`);
 }
 
 main()

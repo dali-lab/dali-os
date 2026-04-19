@@ -1,10 +1,19 @@
 import type { Route } from "./+types/api.interview-assignments.$id.notes";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
+import { hasCycleAccess } from "~/lib/roles";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
+
+  const assignment = await prisma.interviewAssignment.findUnique({
+    where: { id: params.id },
+    select: { interview: { select: { applicationCycleId: true } } },
+  });
+  if (!assignment) return Response.json({ error: "Not found" }, { status: 404 });
+  if (!(await hasCycleAccess(auth.user.sub, assignment.interview.applicationCycleId)))
+    return Response.json({ error: "Forbidden" }, { status: 403 });
 
   const versions = await prisma.interviewNoteVersion.findMany({
     where: { interviewAssignmentId: params.id },

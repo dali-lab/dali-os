@@ -15,10 +15,17 @@ export default [
     route("challenges/:id", "routes/admin.challenges.$id.tsx"),
     route("rubrics", "routes/rubrics.tsx"),
     route("rubrics/:id", "routes/rubrics.$id.tsx"),
+    route("emails", "routes/hiring-lead.emails.tsx"),
     route("admin-console", "routes/admin-console.tsx"),
     route("interviewer", "routes/interviewer.tsx"),
     route("interviewer/interview/:interviewId", "routes/interviewer.interview.$interviewId.tsx"),
     route("schedule-interview", "routes/applicant.schedule-interview.tsx"),
+  ]),
+
+  // Applicant portal (lightweight layout)
+  layout("routes/applicant-layout.tsx", [
+    route("portal", "routes/portal.tsx"),
+    route("portal/apply", "routes/portal.apply.tsx"),
   ]),
 
   // Login (no layout)
@@ -27,6 +34,7 @@ export default [
   route("dev-login-as", "routes/dev-login-as.ts"),
   route("logout", "routes/logout.ts"),
   route("auth/callback/google", "routes/auth.callback.google.ts"),
+  route("auth/callback/cas", "routes/auth.callback.cas.ts"),
 
   // OAuth endpoints (no layout)
   route("oauth/authorize", "routes/oauth.authorize.ts"),
@@ -95,6 +103,20 @@ export default [
 
   // Interview assignment notes
   route("api/interview-assignments/:id/notes", "routes/api.interview-assignments.$id.notes.ts"),
+
+  // S3 file upload
+  route("api/upload/presign", "routes/api.upload.presign.ts"),
+  route("api/upload/url", "routes/api.upload.url.ts"),
+
+  // Gmail OAuth one-time authorization
+  route("admin/authorize-gmail", "routes/admin.authorize-gmail.ts"),
+  route("admin/authorize-gmail/callback", "routes/admin.authorize-gmail.callback.ts"),
+
+  // Email sending + template management
+  route("api/email/send", "routes/api.email.send.ts"),
+  route("api/email-templates/:key", "routes/api.email-templates.$key.ts"),
+  // Submission URL checking
+  route("api/check-url", "routes/api.check-url.ts"),
 
   // Collaborative editing version history
   route("api/collab/versions", "routes/api.collab.versions.ts"),

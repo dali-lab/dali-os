@@ -28,7 +28,15 @@ export default defineConfig({
     ],
   },
   ssr: {
-    external: ["@prisma/client", "@prisma/adapter-pg"],
+    external: [
+      "@prisma/client",
+      "@prisma/adapter-pg",
+      "@hocuspocus/server",
+      "@hocuspocus/provider",
+      "yjs",
+      "y-prosemirror",
+      "y-protocols",
+    ],
   },
   server: {
     port: 3001,

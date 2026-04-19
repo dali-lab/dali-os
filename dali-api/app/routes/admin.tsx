@@ -4,7 +4,7 @@ import type { Route } from "./+types/admin";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isHiringLead } from "~/lib/roles";
-import { ChevronRight, Plus, X } from "lucide-react";
+import { ChevronRight, ChevronDown, Plus, X } from "lucide-react";
 
 const STATUS_LABELS: Record<string, string> = {
   Draft: "Draft",
@@ -126,33 +126,107 @@ export default function AdminDashboard() {
       )}
 
 
-      {cycles.length === 0 ? (
-        <div className="bg-white border border-gray-200 rounded-lg p-8 text-center text-gray-500">
-          No cycles yet.
+      <ActiveCycleHero cycles={cycles} />
+      <PastCycles cycles={cycles} />
+    </div>
+  );
+}
+
+function ActiveCycleHero({ cycles }: { cycles: any[] }) {
+  // Prefer Open/UnderReview (truly active) over Draft
+  const activeCycle = cycles.find((c: any) => {
+    const status = c.statusUpdates[0]?.newStatus;
+    return status && ["Open", "UnderReview"].includes(status);
+  }) ?? cycles.find((c: any) => {
+    const status = c.statusUpdates[0]?.newStatus;
+    return status === "Draft";
+  });
+
+  if (!activeCycle) {
+    return (
+      <div className="bg-white border-2 border-dashed border-gray-300 rounded-xl p-8 text-center">
+        <p className="text-gray-500 mb-1">No active hiring cycle.</p>
+        <p className="text-sm text-gray-400">Create a new cycle to get started.</p>
+      </div>
+    );
+  }
+
+  const currentStatus = activeCycle.statusUpdates[0]?.newStatus ?? "Draft";
+  const domains = activeCycle.domains.map((d: any) => d.domain.name);
+
+  return (
+    <Link
+      to={`/hiring-lead-admin/cycle/${activeCycle.id}`}
+      className="block bg-white border border-gray-200 rounded-xl p-6 hover:border-blue-300 hover:shadow-md transition-all"
+    >
+      <div className="flex items-start justify-between">
+        <div className="space-y-2">
+          <div className="flex items-center gap-3">
+            <span className="text-xl font-bold text-gray-900">{activeCycle.name}</span>
+            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[currentStatus]}`}>
+              {STATUS_LABELS[currentStatus]}
+            </span>
+          </div>
+          <div className="flex items-center gap-4 text-sm text-gray-500">
+            <span>{domains.join(", ") || "No domains"}</span>
+            <span>·</span>
+            <span>{activeCycle._count.applications} application{activeCycle._count.applications !== 1 ? "s" : ""}</span>
+          </div>
         </div>
-      ) : (
-        <div className="space-y-3">
-          {cycles.map((cycle: any) => {
+        <div className="flex items-center gap-2 text-blue-600 font-medium text-sm">
+          Manage Cycle
+          <ChevronRight className="w-4 h-4" />
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+function PastCycles({ cycles }: { cycles: any[] }) {
+  const [open, setOpen] = useState(false);
+
+  // Find the hero cycle ID so we can exclude it (must match ActiveCycleHero logic)
+  const heroCycle = cycles.find((c: any) => {
+    const status = c.statusUpdates[0]?.newStatus;
+    return status && ["Open", "UnderReview"].includes(status);
+  }) ?? cycles.find((c: any) => {
+    const status = c.statusUpdates[0]?.newStatus;
+    return status === "Draft";
+  });
+  const pastCycles = cycles.filter((c: any) => c.id !== heroCycle?.id);
+
+  if (pastCycles.length === 0) return null;
+
+  return (
+    <div className="border border-gray-200 rounded-lg overflow-hidden">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full px-5 py-3 flex items-center justify-between bg-gray-50 hover:bg-gray-100 transition text-left"
+      >
+        <span className="text-sm font-semibold text-gray-700">Past Cycles ({pastCycles.length})</span>
+        <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div className="divide-y divide-gray-100">
+          {pastCycles.map((cycle: any) => {
             const currentStatus = cycle.statusUpdates[0]?.newStatus ?? "Draft";
             const domains = cycle.domains.map((d: any) => d.domain.name);
             return (
               <Link
                 key={cycle.id}
                 to={`/hiring-lead-admin/cycle/${cycle.id}`}
-                className="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-6 py-4 hover:bg-gray-50 transition-colors"
+                className="flex items-center justify-between px-5 py-3 hover:bg-gray-50 transition-colors"
               >
-                <div className="space-y-1">
-                  <div className="flex items-center gap-3">
-                    <span className="font-semibold text-gray-900">{cycle.name}</span>
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[currentStatus]}`}>
-                      {STATUS_LABELS[currentStatus]}
-                    </span>
-                  </div>
-                  <div className="text-sm text-gray-500">
-                    {domains.join(", ") || "No domains"} · {cycle._count.applications} application{cycle._count.applications !== 1 ? "s" : ""}
-                  </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium text-gray-900">{cycle.name}</span>
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[currentStatus]}`}>
+                    {STATUS_LABELS[currentStatus]}
+                  </span>
+                  <span className="text-xs text-gray-400">
+                    {domains.join(", ")} · {cycle._count.applications} app{cycle._count.applications !== 1 ? "s" : ""}
+                  </span>
                 </div>
-                <ChevronRight className="w-5 h-5 text-gray-400" />
+                <ChevronRight className="w-4 h-4 text-gray-400" />
               </Link>
             );
           })}

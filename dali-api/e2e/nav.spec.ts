@@ -8,10 +8,8 @@ test.describe('navigation for hiring lead', () => {
   test('shows hiring lead and domain lead nav tabs', async ({ page }) => {
     await page.goto('/reviewer');
     const nav = page.locator('nav');
-    await expect(nav.getByRole('link', { name: 'Reviewer Dashboard' })).toBeVisible();
-    await expect(nav.getByRole('link', { name: 'Domain Lead' })).toBeVisible();
-    await expect(nav.getByRole('link', { name: 'Challenges' })).toBeVisible();
-    await expect(nav.getByRole('link', { name: 'Rubrics' })).toBeVisible();
+    await expect(nav.getByRole('link', { name: 'Reviews' })).toBeVisible();
+    await expect(nav.getByRole('link', { name: 'Domain' })).toBeVisible();
     await expect(nav.getByRole('link', { name: 'Cycles' })).toBeVisible();
   });
 
@@ -27,12 +25,11 @@ test.describe('navigation for domain lead', () => {
     await loginAs({ daliEmail: 'eng.lead@dali.dartmouth.edu' });
   });
 
-  test('shows domain lead and interviewer tabs but not cycles', async ({ page }) => {
+  test('shows domain lead tab but not cycles', async ({ page }) => {
     await page.goto('/reviewer');
     const nav = page.locator('nav');
-    await expect(nav.getByRole('link', { name: 'Reviewer Dashboard' })).toBeVisible();
-    await expect(nav.getByRole('link', { name: 'Domain Lead' })).toBeVisible();
-    await expect(nav.getByRole('link', { name: 'Interviewer' })).toBeVisible();
+    await expect(nav.getByRole('link', { name: 'Reviews' })).toBeVisible();
+    await expect(nav.getByRole('link', { name: 'Domain' })).toBeVisible();
     await expect(nav.getByRole('link', { name: 'Cycles' })).not.toBeVisible();
   });
 });
@@ -42,12 +39,11 @@ test.describe('navigation for reviewer', () => {
     await loginAs({ daliEmail: 'reviewer1@dali.dartmouth.edu' });
   });
 
-  test('shows reviewer and interviewer tabs only', async ({ page }) => {
+  test('shows reviews tab only', async ({ page }) => {
     await page.goto('/reviewer');
     const nav = page.locator('nav');
-    await expect(nav.getByRole('link', { name: 'Reviewer Dashboard' })).toBeVisible();
-    await expect(nav.getByRole('link', { name: 'Interviewer' })).toBeVisible();
-    await expect(nav.getByRole('link', { name: 'Domain Lead' })).not.toBeVisible();
+    await expect(nav.getByRole('link', { name: 'Reviews' })).toBeVisible();
+    await expect(nav.getByRole('link', { name: 'Domain' })).not.toBeVisible();
     await expect(nav.getByRole('link', { name: 'Cycles' })).not.toBeVisible();
   });
 });

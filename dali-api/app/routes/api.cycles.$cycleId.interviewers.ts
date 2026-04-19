@@ -1,11 +1,14 @@
 import type { Route } from "./+types/api.cycles.$cycleId.interviewers";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead, isDomainLead } from "~/lib/roles";
+import { isHiringLead, isDomainLead, hasCycleAccess } from "~/lib/roles";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
+
+  if (!(await hasCycleAccess(auth.user.sub, params.cycleId!)))
+    return Response.json({ error: "Forbidden" }, { status: 403 });
 
   const interviewers = await prisma.cycleInterviewer.findMany({
     where: { applicationCycleId: params.cycleId },
