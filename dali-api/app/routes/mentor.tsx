@@ -401,32 +401,6 @@ export default function MentorDashboard() {
         </p>
       </div>
 
-      {/* Stage progress */}
-      <div className="flex items-center gap-1 overflow-x-auto pb-1">
-        {(['readingApplications', 'collectingAvailability', 'interviews', 'finalDelibs'] as CycleStage[]).map((stage, i, arr) => {
-          const labels: Record<string, string> = { readingApplications: 'Reviews', collectingAvailability: 'Availability', interviews: 'Interviews', finalDelibs: 'Decisions' };
-          const stageOrder = arr.indexOf(currentStage);
-          const thisOrder = i;
-          const isActive = stage === currentStage;
-          const isPast = thisOrder < stageOrder;
-          return (
-            <div key={stage} className="flex items-center gap-1">
-              <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
-                isActive ? 'bg-accent-coral text-white' : isPast ? 'bg-accent-coral/20 text-accent-coral' : 'bg-gray-100 text-gray-400'
-              }`}>
-                {isPast && (
-                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                  </svg>
-                )}
-                {labels[stage] ?? stage}
-              </div>
-              {i < arr.length - 1 && <div className={`w-4 h-px ${isPast ? 'bg-accent-coral/40' : 'bg-gray-200'}`} />}
-            </div>
-          );
-        })}
-      </div>
-
       <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 flex items-center justify-between shadow-sm">
         <div className="flex items-center gap-5">
           <div className="bg-blue-100 p-3 rounded-xl">
