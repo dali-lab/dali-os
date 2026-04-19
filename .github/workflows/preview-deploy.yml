@@ -11,7 +11,8 @@ concurrency:
 env:
   PROJECT_ID: falling-morning-15858013
   PARENT_BRANCH_NAME: development
-  FLY_ORG: ${{ vars.FLY_ORG || 'personal' }}
+  FLY_ORG_OVERRIDE: ${{ vars.FLY_ORG }}
+  FLY_ORG_REFERENCE_APP: dali-api-dev
 
 jobs:
   prep-neon-db:
@@ -112,13 +113,34 @@ jobs:
           echo "app=$APP" >>"$GITHUB_OUTPUT"
           echo "url=$URL" >>"$GITHUB_OUTPUT"
 
+      - name: Resolve Fly org
+        id: fly-org
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          ORG="${FLY_ORG_OVERRIDE:-}"
+          if [ -z "$ORG" ]; then
+            ORG=$(flyctl apps list --json \
+              | jq -r --arg app "$FLY_ORG_REFERENCE_APP" \
+                  '.[] | select((.Name // .name) == $app)
+                       | (.Organization.Slug // .organization.slug // empty)')
+          fi
+          if [ -z "$ORG" ] || [ "$ORG" = "null" ]; then
+            echo "Could not resolve Fly org (checked vars.FLY_ORG and $FLY_ORG_REFERENCE_APP)" >&2
+            exit 1
+          fi
+          echo "Using Fly org: $ORG"
+          echo "org=$ORG" >>"$GITHUB_OUTPUT"
+
       - name: Ensure Fly app exists
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
           APP: ${{ steps.urls.outputs.app }}
+          ORG: ${{ steps.fly-org.outputs.org }}
         run: |
           set -o pipefail
-          if flyctl apps create "$APP" --org "$FLY_ORG" 2>&1 | tee /tmp/create.log; then
+          if flyctl apps create "$APP" --org "$ORG" 2>&1 | tee /tmp/create.log; then
             exit 0
           fi
           if grep -qiE "already (exists|taken)" /tmp/create.log; then
