@@ -271,9 +271,10 @@ export default function MentorDashboard() {
       .catch(() => {})
   }, [currentStage, activeCycle.id])
 
-  // Fetch scheduled interviews when in interviews stage
+  // Always fetch scheduled interviews — the Interviews section renders
+  // whenever the reviewer has any, regardless of the inferred stage.
   useEffect(() => {
-    if (currentStage !== 'interviews' || !activeCycle) return
+    if (!activeCycle) return
     fetch(`/api/cycles/${activeCycle.id}/my-interviews`, { credentials: 'include' })
       .then(r => r.ok ? r.json() : [])
       .then((assignments: any[]) => {
@@ -485,7 +486,7 @@ export default function MentorDashboard() {
           </section>
         )}
 
-        {currentStage === 'readingApplications' && (
+        {reviews.length > 0 && (
           <section>
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-lg font-semibold text-gray-900 flex items-center">
@@ -736,7 +737,7 @@ export default function MentorDashboard() {
           </section>
         )}
 
-        {currentStage === 'interviews' && (
+        {scheduledInterviews.length > 0 && (
           <section>
             <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
               <Video className="w-5 h-5 mr-2 text-blue-600" />
