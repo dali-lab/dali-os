@@ -20,7 +20,7 @@ jobs:
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     outputs:
-      database_url: ${{ steps.connect.outputs.database_url }}
+      database_url_b64: ${{ steps.connect.outputs.database_url_b64 }}
     steps:
       - name: Find or create Neon branch, then wipe schema
         id: connect
@@ -89,7 +89,10 @@ jobs:
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
             -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
 
-          echo "database_url=$DATABASE_URL" >>"$GITHUB_OUTPUT"
+          # Base64-encode so GitHub's mask list doesn't strip the value when
+          # it crosses into the deploy-api job via needs.*.outputs.*.
+          B64_URL=$(printf '%s' "$DATABASE_URL" | base64 -w0)
+          echo "database_url_b64=$B64_URL" >>"$GITHUB_OUTPUT"
 
   deploy-api:
     name: Deploy API (dali-api-pr-${{ github.event.pull_request.number }})
@@ -151,9 +154,16 @@ jobs:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
           APP: ${{ steps.urls.outputs.app }}
           URL: ${{ steps.urls.outputs.url }}
-          DATABASE_URL: ${{ needs.prep-neon-db.outputs.database_url }}
+          DATABASE_URL_B64: ${{ needs.prep-neon-db.outputs.database_url_b64 }}
           PREVIEW_JWT_SECRET: ${{ secrets.PREVIEW_JWT_SECRET }}
         run: |
+          set -euo pipefail
+          DATABASE_URL=$(printf '%s' "$DATABASE_URL_B64" | base64 -d)
+          if [ -z "$DATABASE_URL" ]; then
+            echo "Decoded DATABASE_URL is empty — refusing to deploy" >&2
+            exit 1
+          fi
+          echo "::add-mask::$DATABASE_URL"
           flyctl secrets set -a "$APP" --stage \
             DATABASE_URL="$DATABASE_URL" \
             ENABLE_DEV_LOGIN=true \
