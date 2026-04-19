@@ -1,0 +1,40 @@
+// POST /api/upload/presign
+// Body: { key: string, contentType: string }
+// Returns: { uploadUrl: string, key: string }
+//
+// The client uploads directly to S3 using the presigned PUT URL.
+// After upload, store the key in the DB and use GET /api/upload/url?key=... to read it.
+
+import { requireAuth } from '~/lib/auth'
+import { getUploadUrl } from '~/lib/s3'
+
+const ALLOWED_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+  'application/pdf',
+])
+
+export async function action({ request }: { request: Request }) {
+  const auth = await requireAuth(request)
+  if (!auth.ok) return Response.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { key, contentType } = await request.json()
+
+  if (!key || typeof key !== 'string') {
+    return Response.json({ error: 'key is required' }, { status: 400 })
+  }
+  if (!contentType || !ALLOWED_TYPES.has(contentType)) {
+    return Response.json(
+      { error: `contentType must be one of: ${[...ALLOWED_TYPES].join(', ')}` },
+      { status: 400 },
+    )
+  }
+
+  // Scope all keys under uploads/ to avoid collisions with other bucket contents
+  const scopedKey = key.startsWith('uploads/') ? key : `uploads/${key}`
+
+  const uploadUrl = await getUploadUrl(scopedKey, contentType)
+  return Response.json({ uploadUrl, key: scopedKey })
+}

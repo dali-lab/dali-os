@@ -627,6 +627,19 @@ model RefreshToken {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
+// Email template overrides stored by hiring leads. templateKey matches the
+// hardcoded default keys (e.g. "application_received"). subject/body use
+// {{firstName}} interpolation. One row per key — upserted on save.
+model EmailTemplate {
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  templateKey String   @unique
+  subject     String
+  body        String
+}
+
 // Which domains a DALIMember leads (permanent assignment, not cycle-scoped)
 model DomainLeadAssignment {
   id        String     @id @default(cuid())

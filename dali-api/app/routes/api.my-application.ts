@@ -2,6 +2,9 @@ import type { Route } from "./+types/api.my-application";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
+import { sendEmail, applicationReceivedEmail } from "~/lib/gmail";
+
+const GMAIL_USER = "applications@dali.dartmouth.edu";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const preflight = handlePreflight(request);
@@ -77,4 +80,96 @@ export async function loader({ request }: Route.LoaderArgs) {
     cycleStatus,
     cycleId: cycle.id,
   }));
+}
+
+// POST /api/my-application
+// Body: { answers: Record<string, string>, domainAnswers?: Record<string, Record<string, string>> }
+// Creates or updates the application and marks it as Submitted, then sends a confirmation email.
+export async function action({ request }: Route.ActionArgs) {
+  const preflight = handlePreflight(request);
+  if (preflight) return preflight;
+
+  const auth = await requireAuth(request);
+  if (!auth.ok) return withCors(request, auth.response);
+
+  const userId = auth.user.sub;
+
+  let body: { answers?: Record<string, string> } = {};
+  try {
+    body = await request.json();
+  } catch {
+    return withCors(request, Response.json({ error: "Invalid JSON" }, { status: 400 }));
+  }
+
+  const answers = body.answers ?? {};
+
+  // Get the latest cycle and its form version
+  const cycle = await prisma.applicationCycle.findFirst({
+    orderBy: { createdAt: "desc" },
+    include: {
+      formVersion: true,
+      statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
+    },
+  });
+
+  if (!cycle || !cycle.formVersion) {
+    return withCors(request, Response.json({ error: "No active application cycle" }, { status: 400 }));
+  }
+
+  const cycleStatus = cycle.statusUpdates[0]?.newStatus ?? "Draft";
+  if (cycleStatus !== "Open") {
+    return withCors(request, Response.json({ error: "Applications are not open" }, { status: 400 }));
+  }
+
+  // Check for existing application
+  const existing = await prisma.application.findFirst({
+    where: { userId, applicationCycleId: cycle.id },
+    include: { statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 } },
+  });
+
+  if (existing) {
+    const status = existing.statusUpdates[0]?.newStatus;
+    if (status === "Submitted") {
+      return withCors(request, Response.json({ error: "Application already submitted" }, { status: 409 }));
+    }
+    // Update draft answers and submit
+    await prisma.application.update({
+      where: { id: existing.id },
+      data: {
+        answers,
+        statusUpdates: { create: { newStatus: "Submitted", userId } },
+      },
+    });
+  } else {
+    // Create new application as Submitted
+    await prisma.application.create({
+      data: {
+        userId,
+        applicationCycleId: cycle.id,
+        applicationFormVersionId: cycle.formVersion.id,
+        answers,
+        statusUpdates: { create: { newStatus: "Submitted", userId } },
+      },
+    });
+  }
+
+  // Send confirmation email (best-effort — don't fail the submission if email fails)
+  try {
+    const gmailUser = await prisma.user.findUnique({
+      where: { daliEmail: GMAIL_USER },
+      select: { googleRefreshToken: true },
+    });
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (gmailUser?.googleRefreshToken && user) {
+      const { subject, html } = applicationReceivedEmail(user.firstName);
+      const to = user.dartmouthEmail ?? user.daliEmail ?? "";
+      if (to) {
+        await sendEmail({ refreshToken: gmailUser.googleRefreshToken, to, subject, html });
+      }
+    }
+  } catch (err) {
+    console.error("Failed to send application confirmation email:", err);
+  }
+
+  return withCors(request, Response.json({ ok: true }));
 }
