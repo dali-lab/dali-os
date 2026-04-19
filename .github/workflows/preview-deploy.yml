@@ -139,15 +139,12 @@ jobs:
           APP: ${{ steps.urls.outputs.app }}
           ORG: ${{ steps.fly-org.outputs.org }}
         run: |
-          set -o pipefail
-          if flyctl apps create "$APP" --org "$ORG" 2>&1 | tee /tmp/create.log; then
-            exit 0
-          fi
-          if grep -qiE "already (exists|taken)" /tmp/create.log; then
+          set -euo pipefail
+          if flyctl apps show "$APP" >/dev/null 2>&1; then
             echo "App $APP already exists — continuing"
-            exit 0
+          else
+            flyctl apps create "$APP" --org "$ORG"
           fi
-          exit 1
 
       - name: Set Fly secrets
         env:
