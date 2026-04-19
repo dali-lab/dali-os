@@ -1,3 +1,4 @@
+app = "dali-api-preview-template"
 primary_region = "iad"
 
 [deploy]
