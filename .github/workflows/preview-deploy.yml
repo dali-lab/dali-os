@@ -1,0 +1,258 @@
+name: PR Preview Deploy
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: preview-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  PROJECT_ID: falling-morning-15858013
+  PARENT_BRANCH_NAME: development
+  FLY_ORG_OVERRIDE: ${{ vars.FLY_ORG }}
+  FLY_ORG_REFERENCE_APP: dali-api-dev
+
+jobs:
+  prep-neon-db:
+    name: Prepare Neon branch (preview-pr-${{ github.event.pull_request.number }})
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    outputs:
+      branch_id: ${{ steps.connect.outputs.branch_id }}
+    steps:
+      - name: Find or create Neon branch, then wipe schema
+        id: connect
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          BRANCH_NAME="preview-pr-$PR"
+          API="https://console.neon.tech/api/v2/projects/$PROJECT_ID"
+
+          BRANCHES=$(curl -sf "$API/branches" \
+            -H "Authorization: Bearer $NEON_API_KEY")
+
+          PARENT_ID=$(echo "$BRANCHES" | jq -r \
+            --arg n "$PARENT_BRANCH_NAME" \
+            '.branches[] | select(.name==$n) | .id')
+          if [ -z "$PARENT_ID" ] || [ "$PARENT_ID" = "null" ]; then
+            echo "parent branch '$PARENT_BRANCH_NAME' not found in Neon project" >&2
+            exit 1
+          fi
+
+          BRANCH_ID=$(echo "$BRANCHES" | jq -r \
+            --arg n "$BRANCH_NAME" \
+            '.branches[] | select(.name==$n) | .id')
+
+          if [ -z "$BRANCH_ID" ] || [ "$BRANCH_ID" = "null" ]; then
+            echo "Creating new Neon branch $BRANCH_NAME off $PARENT_BRANCH_NAME"
+            CREATE_RES=$(curl -sf -X POST "$API/branches" \
+              -H "Authorization: Bearer $NEON_API_KEY" \
+              -H "Content-Type: application/json" \
+              -d "$(jq -n \
+                --arg name "$BRANCH_NAME" \
+                --arg parent "$PARENT_ID" \
+                '{branch: {name: $name, parent_id: $parent}, endpoints: [{type: "read_write"}]}')")
+            BRANCH_ID=$(echo "$CREATE_RES" | jq -r '.branch.id')
+          else
+            echo "Reusing existing Neon branch $BRANCH_NAME ($BRANCH_ID)"
+            ENDPOINTS=$(curl -sf "$API/branches/$BRANCH_ID/endpoints" \
+              -H "Authorization: Bearer $NEON_API_KEY")
+            EP_COUNT=$(echo "$ENDPOINTS" | jq -r '.endpoints | length')
+            if [ "$EP_COUNT" = "0" ]; then
+              echo "No endpoint on branch — creating one"
+              curl -sf -X POST "$API/endpoints" \
+                -H "Authorization: Bearer $NEON_API_KEY" \
+                -H "Content-Type: application/json" \
+                -d "$(jq -n \
+                  --arg branch "$BRANCH_ID" \
+                  '{endpoint: {branch_id: $branch, type: "read_write"}}')" >/dev/null
+            fi
+          fi
+
+          URI_RES=$(curl -sf -G "$API/connection_uri" \
+            -H "Authorization: Bearer $NEON_API_KEY" \
+            --data-urlencode "branch_id=$BRANCH_ID" \
+            --data-urlencode "database_name=neondb" \
+            --data-urlencode "role_name=neondb_owner")
+          DATABASE_URL=$(echo "$URI_RES" | jq -r '.uri')
+          if [ -z "$DATABASE_URL" ] || [ "$DATABASE_URL" = "null" ]; then
+            echo "failed to fetch connection_uri" >&2
+            exit 1
+          fi
+          echo "::add-mask::$DATABASE_URL"
+
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
+            -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+
+          # Emit only the branch_id (non-secret). The deploy-api job re-fetches
+          # the connection URI itself — GitHub's output sanitizer strips
+          # secret-like values across jobs even when base64-encoded.
+          echo "branch_id=$BRANCH_ID" >>"$GITHUB_OUTPUT"
+
+  deploy-api:
+    name: Deploy API (dali-api-pr-${{ github.event.pull_request.number }})
+    needs: [prep-neon-db]
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    outputs:
+      url: ${{ steps.urls.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Compute preview identifiers
+        id: urls
+        env:
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          APP="dali-api-pr-$PR"
+          URL="https://$APP.fly.dev"
+          echo "app=$APP" >>"$GITHUB_OUTPUT"
+          echo "url=$URL" >>"$GITHUB_OUTPUT"
+
+      - name: Resolve Fly org
+        id: fly-org
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          ORG="${FLY_ORG_OVERRIDE:-}"
+          if [ -z "$ORG" ]; then
+            ORG=$(flyctl apps list --json \
+              | jq -r --arg app "$FLY_ORG_REFERENCE_APP" \
+                  '.[] | select((.Name // .name) == $app)
+                       | (.Organization.Slug // .organization.slug // empty)')
+          fi
+          if [ -z "$ORG" ] || [ "$ORG" = "null" ]; then
+            echo "Could not resolve Fly org (checked vars.FLY_ORG and $FLY_ORG_REFERENCE_APP)" >&2
+            exit 1
+          fi
+          echo "Using Fly org: $ORG"
+          echo "org=$ORG" >>"$GITHUB_OUTPUT"
+
+      - name: Ensure Fly app exists
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          APP: ${{ steps.urls.outputs.app }}
+          ORG: ${{ steps.fly-org.outputs.org }}
+        run: |
+          set -euo pipefail
+          if flyctl apps show "$APP" >/dev/null 2>&1; then
+            echo "App $APP already exists — continuing"
+          else
+            flyctl apps create "$APP" --org "$ORG"
+          fi
+
+      - name: Set Fly secrets
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          APP: ${{ steps.urls.outputs.app }}
+          URL: ${{ steps.urls.outputs.url }}
+          BRANCH_ID: ${{ needs.prep-neon-db.outputs.branch_id }}
+        run: |
+          set -euo pipefail
+          if [ -z "$BRANCH_ID" ]; then
+            echo "branch_id from prep-neon-db is empty — refusing to deploy" >&2
+            exit 1
+          fi
+
+          API="https://console.neon.tech/api/v2/projects/$PROJECT_ID"
+          # pooled=false: prisma migrate deploy acquires pg_advisory_lock,
+          # which is session-scoped and unreliable through Neon's pooler
+          # (PgBouncer-style transaction pooling reuses backend sessions).
+          # See issue #101 for longer-term investigation across deploy paths.
+          URI_RES=$(curl -sf -G "$API/connection_uri" \
+            -H "Authorization: Bearer $NEON_API_KEY" \
+            --data-urlencode "branch_id=$BRANCH_ID" \
+            --data-urlencode "database_name=neondb" \
+            --data-urlencode "role_name=neondb_owner" \
+            --data-urlencode "pooled=false")
+          DATABASE_URL=$(echo "$URI_RES" | jq -r '.uri')
+          if [ -z "$DATABASE_URL" ] || [ "$DATABASE_URL" = "null" ]; then
+            echo "failed to fetch connection_uri for $BRANCH_ID" >&2
+            exit 1
+          fi
+          echo "::add-mask::$DATABASE_URL"
+
+          # Preview JWT is per-deploy: the DB is wiped on every push, so
+          # stability across deploys doesn't matter. Keeps us from depending
+          # on a PREVIEW_JWT_SECRET repo secret that isn't set.
+          JWT_SECRET=$(openssl rand -hex 32)
+          echo "::add-mask::$JWT_SECRET"
+
+          flyctl secrets set -a "$APP" --stage \
+            DATABASE_URL="$DATABASE_URL" \
+            ENABLE_DEV_LOGIN=true \
+            JWT_SECRET="$JWT_SECRET" \
+            FRONTEND_URL="https://dali-web-dev.fly.dev" \
+            API_BASE_URL="$URL" \
+            GOOGLE_CLIENT_ID="preview-placeholder.apps.googleusercontent.com" \
+            CAS_BASE_URL="https://login.dartmouth.edu/cas"
+
+      - name: Allocate public IPs (idempotent)
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          APP: ${{ steps.urls.outputs.app }}
+        run: |
+          flyctl ips allocate-v4 --shared -a "$APP" 2>&1 || true
+          flyctl ips allocate-v6 -a "$APP" 2>&1 || true
+
+      - name: Deploy
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          APP: ${{ steps.urls.outputs.app }}
+        run: |
+          cd ./dali-api
+          flyctl deploy --config fly.preview.toml -a "$APP" \
+            --ha=false --strategy immediate --wait-timeout 600 --verbose
+
+      - name: Dump release diagnostics on failure
+        if: failure()
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          APP: ${{ steps.urls.outputs.app }}
+        run: |
+          set +e
+          echo "=== releases list ==="
+          flyctl releases -a "$APP"
+          echo "=== machines list ==="
+          flyctl machines list -a "$APP"
+          echo "=== recent logs (no-tail) ==="
+          flyctl logs -a "$APP" --no-tail
+
+  comment-on-pr:
+    name: Comment preview URL on PR
+    needs: [deploy-api]
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Find existing preview comment
+        id: find
+        uses: peter-evans/find-comment@v3
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: github-actions[bot]
+          body-includes: <!-- preview-deploy -->
+
+      - name: Upsert preview comment
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          comment-id: ${{ steps.find.outputs.comment-id }}
+          issue-number: ${{ github.event.pull_request.number }}
+          edit-mode: replace
+          body: |
+            <!-- preview-deploy -->
+            **Preview API deployed** — ${{ needs.deploy-api.outputs.url }}
+
+            - Pick a seeded user at [`/dev-login`](${{ needs.deploy-api.outputs.url }}/dev-login).
+            - Database is a Neon branch `preview-pr-${{ github.event.pull_request.number }}` (reset + reseeded on every push).
+            - Torn down automatically when this PR closes.

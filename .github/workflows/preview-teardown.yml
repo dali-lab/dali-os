@@ -1,0 +1,67 @@
+name: PR Preview Teardown
+
+on:
+  pull_request:
+    types: [closed]
+
+concurrency:
+  group: preview-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+env:
+  PROJECT_ID: falling-morning-15858013
+
+jobs:
+  teardown:
+    name: Destroy preview for PR #${{ github.event.pull_request.number }}
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Destroy Fly app
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -o pipefail
+          APP="dali-api-pr-$PR"
+          if flyctl apps destroy "$APP" --yes 2>&1 | tee /tmp/destroy.log; then
+            exit 0
+          fi
+          if grep -qiE "(not found|could not find|does not exist)" /tmp/destroy.log; then
+            echo "App $APP already gone — nothing to do"
+            exit 0
+          fi
+          exit 1
+
+      - name: Delete Neon branch
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          BRANCH_NAME="preview-pr-$PR"
+          API="https://console.neon.tech/api/v2/projects/$PROJECT_ID"
+
+          BRANCHES=$(curl -sf "$API/branches" \
+            -H "Authorization: Bearer $NEON_API_KEY")
+          BRANCH_ID=$(echo "$BRANCHES" | jq -r \
+            --arg n "$BRANCH_NAME" \
+            '.branches[] | select(.name==$n) | .id')
+
+          if [ -z "$BRANCH_ID" ] || [ "$BRANCH_ID" = "null" ]; then
+            echo "Neon branch $BRANCH_NAME not found — nothing to do"
+            exit 0
+          fi
+
+          CODE=$(curl -s -o /tmp/del.json -w "%{http_code}" \
+            -X DELETE "$API/branches/$BRANCH_ID" \
+            -H "Authorization: Bearer $NEON_API_KEY")
+          if [ "$CODE" = "200" ] || [ "$CODE" = "202" ] || [ "$CODE" = "404" ]; then
+            echo "Neon branch $BRANCH_NAME delete returned $CODE"
+            exit 0
+          fi
+          echo "Neon delete failed with $CODE:" >&2
+          cat /tmp/del.json >&2
+          exit 1
