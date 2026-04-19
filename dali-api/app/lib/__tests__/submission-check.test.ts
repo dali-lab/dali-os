@@ -137,11 +137,11 @@ describe("checkFigmaUrl — URL parsing", () => {
     );
   });
 
-  it("accepts a /design/ URL", async () => {
+  it("accepts a /design/ URL and preserves path segment", async () => {
     fetchMock.mockResolvedValueOnce({ ok: true, status: 200 });
     await checkFigmaUrl("https://figma.com/design/xyz789/Another-File");
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://www.figma.com/file/xyz789",
+      "https://www.figma.com/design/xyz789",
       expect.objectContaining({ redirect: "manual" }),
     );
   });
@@ -161,14 +161,32 @@ describe("checkFigmaUrl — URL parsing", () => {
 describe("checkFigmaUrl — page fetch responses", () => {
   const url = "https://figma.com/file/abc123/Design";
 
-  it("returns 'private' on redirect (302)", async () => {
-    fetchMock.mockResolvedValueOnce({ ok: false, status: 302 });
+  it("returns 'valid' when redirect stays on figma.com (canonical rewrite)", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 302,
+      headers: new Headers({ location: "https://www.figma.com/design/abc123/Design" }),
+    });
+    const result = await checkFigmaUrl(url);
+    expect(result.status).toBe("valid");
+  });
+
+  it("returns 'private' when redirect goes to figma login", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 302,
+      headers: new Headers({ location: "https://www.figma.com/login?redirect_uri=..." }),
+    });
     const result = await checkFigmaUrl(url);
     expect(result.status).toBe("private");
   });
 
-  it("returns 'private' on 301 redirect", async () => {
-    fetchMock.mockResolvedValueOnce({ ok: false, status: 301 });
+  it("returns 'private' on redirect with no location header", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 301,
+      headers: new Headers(),
+    });
     const result = await checkFigmaUrl(url);
     expect(result.status).toBe("private");
   });

@@ -12,7 +12,7 @@ import { withCors, handlePreflight, preflightLoader } from "~/lib/cors";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { safeJson } from "~/lib/safe-json";
 
-const RATE_LIMIT_MAX = 10;
+const RATE_LIMIT_MAX = 200;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 
 export const loader = preflightLoader;
