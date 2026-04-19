@@ -4,7 +4,13 @@ import { loadDocument, maybeSnapshot, storeDocument } from "./persistence";
 import { isPresenceRoom } from "./roomName";
 import { authorizeCollabDoc } from "~/lib/collabAuth";
 
+const WS_MAX_PAYLOAD_BYTES = 1_048_576; // 1 MB
+const WS_MAX_CONNECTIONS = 100;
+const WS_MAX_CONNECTIONS_PER_USER = 20;
+
 let server: Server | null = null;
+let connectionCount = 0;
+const userConnectionCounts = new Map<string, number>();
 
 // userIds that have edited each doc since the last snapshot was written.
 // Drained in onStoreDocument / onDisconnect so version rows record only the
@@ -39,6 +45,11 @@ export function startCollabServer() {
     // to onStoreDocument every `debounce` ms.
     debounce: 2000,
 
+    async onConnect() {
+      // No-op: connection counting is deferred to onAuthenticate so that
+      // unauthenticated connections cannot exhaust the pool.
+    },
+
     async onAuthenticate({
       token,
       documentName,
@@ -60,14 +71,23 @@ export function startCollabServer() {
         }
       }
 
+      // Only count authenticated+authorized sessions toward the limit.
+      // No TOCTOU risk: no await between check and increment, so
+      // single-threaded JS guarantees atomicity.
+      const userCount = userConnectionCounts.get(user.sub) ?? 0;
+      if (userCount >= WS_MAX_CONNECTIONS_PER_USER) {
+        throw new Error("Too many connections for this user");
+      }
+      if (connectionCount >= WS_MAX_CONNECTIONS) {
+        throw new Error("Too many connections");
+      }
+      userConnectionCounts.set(user.sub, userCount + 1);
+      connectionCount++;
+
       console.log(
-        `[collab:server] auth ok for user=${user.sub} doc=${documentName}`,
+        `[collab:server] auth ok for user=${user.sub} doc=${documentName} (connections: ${connectionCount})`,
       );
       return { user };
-    },
-
-    async onConnect({ documentName }: { documentName: string }) {
-      console.log(`[collab:server] onConnect doc=${documentName}`);
     },
 
     async onLoadDocument({ document, documentName }: { document: any; documentName: string }) {
@@ -96,8 +116,15 @@ export function startCollabServer() {
       }
     },
 
-    async onDisconnect({ documentName, document }: { documentName: string; document: any }) {
-      console.log(`[collab:server] onDisconnect doc=${documentName}`);
+    async onDisconnect({ documentName, document, context }: { documentName: string; document: any; context: any }) {
+      connectionCount = Math.max(0, connectionCount - 1);
+      const userId = context?.user?.sub;
+      if (userId) {
+        const prev = userConnectionCounts.get(userId) ?? 0;
+        if (prev <= 1) userConnectionCounts.delete(userId);
+        else userConnectionCounts.set(userId, prev - 1);
+      }
+      console.log(`[collab:server] onDisconnect doc=${documentName} (connections: ${connectionCount})`);
       const stored = await storeDocument(documentName, document);
       if (!stored) return;
       const authors = drainAuthors(documentName);
@@ -109,10 +136,15 @@ export function startCollabServer() {
         for (const a of authors) recordAuthor(documentName, a);
       }
     },
-  });
+  }, { maxPayload: WS_MAX_PAYLOAD_BYTES });
 
-  server.listen();
-  console.log(`[collab] Hocuspocus server listening on port ${port}`);
+  server.listen().catch((err: any) => {
+    if (err?.code === "EADDRINUSE") {
+      console.log(`[collab] Port ${port} already in use — collab server likely running from a previous load`);
+    } else {
+      console.error(`[collab] Failed to start Hocuspocus server:`, err);
+    }
+  });
 
   return server;
 }

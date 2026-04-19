@@ -3,6 +3,7 @@ import { ServerRouter } from "react-router";
 import { renderToPipeableStream } from "react-dom/server";
 import { PassThrough } from "node:stream";
 import { startCollabServer } from "~/collab/server";
+import { securityHeaders } from "~/lib/security-headers";
 
 // Start Hocuspocus collab server on a second port (runs once due to module caching).
 startCollabServer();
@@ -25,6 +26,9 @@ export default async function handleRequest(
           body.on("end", () => {
             const html = `<!DOCTYPE html>${Buffer.concat(chunks).toString("utf-8")}`;
             responseHeaders.set("Content-Type", "text/html");
+            for (const [k, v] of Object.entries(securityHeaders())) {
+              responseHeaders.set(k, v);
+            }
             resolve(
               new Response(html, {
                 status: responseStatusCode,

@@ -93,7 +93,7 @@ export interface Rubric {
 
 export interface Question {
   key: string
-  type: 'text' | 'textarea' | 'select'
+  type: 'text' | 'textarea' | 'select' | 'github_url' | 'figma_url'
   required: boolean
   data: {
     label: string

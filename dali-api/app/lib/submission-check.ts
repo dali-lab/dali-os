@@ -1,8 +1,3 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-
-const execFileAsync = promisify(execFile);
-
 export type SubmissionCheckResult = {
   status: "valid" | "private" | "empty" | "invalid_url" | "error";
   url: string;
@@ -59,7 +54,7 @@ function parseFigmaUrl(url: string): { fileKey: string } | null {
 
 /**
  * check whether a GitHub repo URL points to a public, non-empty repository
- * uses `git ls-remote` to check for repo existence and content without cloning.
+ * uses the Git Smart HTTP protocol to list refs without needing the git binary.
  */
 export async function checkGitHubUrl(
   url: string,
@@ -73,14 +68,29 @@ export async function checkGitHubUrl(
     };
   }
 
-  const repoUrl = `https://github.com/${parsed.owner}/${parsed.repo}.git`;
+  const refsUrl = `https://github.com/${parsed.owner}/${parsed.repo}.git/info/refs?service=git-upload-pack`;
 
   try {
-    const { stdout } = await execFileAsync("git", ["ls-remote", repoUrl], {
-      timeout: 15_000,
-    });
+    const res = await fetch(refsUrl, { signal: AbortSignal.timeout(15_000) });
 
-    if (stdout.trim().length === 0) {
+    if (res.status === 401 || res.status === 403 || res.status === 404) {
+      return {
+        status: "private",
+        url,
+        message: "Repository is private or does not exist",
+      };
+    }
+
+    if (!res.ok) {
+      return { status: "error", url, message: `GitHub returned ${res.status}` };
+    }
+
+    const body = await res.text();
+
+    // The response contains pkt-line formatted refs.
+    // Non-empty repos have lines with 40-char hex SHAs (e.g. "004477319e2a... HEAD")
+    // An empty repo has only the service header and a flush packet.
+    if (!/[0-9a-f]{40}/.test(body)) {
       return {
         status: "empty",
         url,
@@ -94,21 +104,10 @@ export async function checkGitHubUrl(
       message: "Repository is public and has content",
     };
   } catch (err) {
-    const message = (err as Error).message ?? "";
-    if (
-      message.includes("Repository not found") ||
-      message.includes("exit code 128")
-    ) {
-      return {
-        status: "private",
-        url,
-        message: "Repository is private or does not exist",
-      };
-    }
     return {
       status: "error",
       url,
-      message: `Failed to check GitHub repo: ${message}`,
+      message: `Failed to check GitHub repo: ${(err as Error).message}`,
     };
   }
 }
