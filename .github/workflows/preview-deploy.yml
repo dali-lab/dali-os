@@ -180,6 +180,20 @@ jobs:
           flyctl deploy --config fly.preview.toml -a "$APP" \
             --ha=false --strategy immediate --wait-timeout 600 --verbose
 
+      - name: Dump release diagnostics on failure
+        if: failure()
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          APP: ${{ steps.urls.outputs.app }}
+        run: |
+          set +e
+          echo "=== releases list ==="
+          flyctl releases list -a "$APP"
+          echo "=== machines list ==="
+          flyctl machines list -a "$APP"
+          echo "=== recent logs (no-tail) ==="
+          flyctl logs -a "$APP" --no-tail
+
   comment-on-pr:
     name: Comment preview URL on PR
     needs: [deploy-api]
