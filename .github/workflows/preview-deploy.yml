@@ -10,7 +10,7 @@ concurrency:
 
 env:
   PROJECT_ID: falling-morning-15858013
-  PARENT_BRANCH_NAME: dev
+  PARENT_BRANCH_NAME: development
   FLY_ORG: ${{ vars.FLY_ORG || 'personal' }}
 
 jobs:
