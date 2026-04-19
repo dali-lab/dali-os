@@ -143,16 +143,18 @@ jobs:
           ORG: ${{ steps.fly-org.outputs.org }}
         run: |
           set -euo pipefail
-          if flyctl apps show "$APP" >/dev/null 2>&1; then
-            echo "App $APP already exists — continuing"
+
+          # Validate the app is usable, not just that it exists.
+          # flyctl apps show can return 0 for zombie apps that are stuck
+          # in a broken state after a partial teardown. flyctl status
+          # exercises the full appcompact query that secrets/deploy use,
+          # so if it fails the app is unusable.
+          if flyctl status -a "$APP" >/dev/null 2>&1; then
+            echo "App $APP exists and is queryable — continuing"
           else
+            # Destroy any zombie remnant (ignore errors if it doesn't exist)
+            flyctl apps destroy "$APP" --yes 2>/dev/null || true
             flyctl apps create "$APP" --org "$ORG"
-            # Wait for the app to become queryable (API eventual consistency)
-            for i in 1 2 3 4; do
-              flyctl apps show "$APP" >/dev/null 2>&1 && break
-              echo "Waiting for app to become available (attempt $i)..."
-              sleep $i
-            done
           fi
 
       - name: Set Fly secrets
