@@ -20,7 +20,7 @@ jobs:
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     outputs:
-      database_url_b64: ${{ steps.connect.outputs.database_url_b64 }}
+      branch_id: ${{ steps.connect.outputs.branch_id }}
     steps:
       - name: Find or create Neon branch, then wipe schema
         id: connect
@@ -89,10 +89,10 @@ jobs:
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
             -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
 
-          # Base64-encode so GitHub's mask list doesn't strip the value when
-          # it crosses into the deploy-api job via needs.*.outputs.*.
-          B64_URL=$(printf '%s' "$DATABASE_URL" | base64 -w0)
-          echo "database_url_b64=$B64_URL" >>"$GITHUB_OUTPUT"
+          # Emit only the branch_id (non-secret). The deploy-api job re-fetches
+          # the connection URI itself — GitHub's output sanitizer strips
+          # secret-like values across jobs even when base64-encoded.
+          echo "branch_id=$BRANCH_ID" >>"$GITHUB_OUTPUT"
 
   deploy-api:
     name: Deploy API (dali-api-pr-${{ github.event.pull_request.number }})
@@ -152,22 +152,40 @@ jobs:
       - name: Set Fly secrets
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
           APP: ${{ steps.urls.outputs.app }}
           URL: ${{ steps.urls.outputs.url }}
-          DATABASE_URL_B64: ${{ needs.prep-neon-db.outputs.database_url_b64 }}
-          PREVIEW_JWT_SECRET: ${{ secrets.PREVIEW_JWT_SECRET }}
+          BRANCH_ID: ${{ needs.prep-neon-db.outputs.branch_id }}
         run: |
           set -euo pipefail
-          DATABASE_URL=$(printf '%s' "$DATABASE_URL_B64" | base64 -d)
-          if [ -z "$DATABASE_URL" ]; then
-            echo "Decoded DATABASE_URL is empty — refusing to deploy" >&2
+          if [ -z "$BRANCH_ID" ]; then
+            echo "branch_id from prep-neon-db is empty — refusing to deploy" >&2
+            exit 1
+          fi
+
+          API="https://console.neon.tech/api/v2/projects/$PROJECT_ID"
+          URI_RES=$(curl -sf -G "$API/connection_uri" \
+            -H "Authorization: Bearer $NEON_API_KEY" \
+            --data-urlencode "branch_id=$BRANCH_ID" \
+            --data-urlencode "database_name=neondb" \
+            --data-urlencode "role_name=neondb_owner")
+          DATABASE_URL=$(echo "$URI_RES" | jq -r '.uri')
+          if [ -z "$DATABASE_URL" ] || [ "$DATABASE_URL" = "null" ]; then
+            echo "failed to fetch connection_uri for $BRANCH_ID" >&2
             exit 1
           fi
           echo "::add-mask::$DATABASE_URL"
+
+          # Preview JWT is per-deploy: the DB is wiped on every push, so
+          # stability across deploys doesn't matter. Keeps us from depending
+          # on a PREVIEW_JWT_SECRET repo secret that isn't set.
+          JWT_SECRET=$(openssl rand -hex 32)
+          echo "::add-mask::$JWT_SECRET"
+
           flyctl secrets set -a "$APP" --stage \
             DATABASE_URL="$DATABASE_URL" \
             ENABLE_DEV_LOGIN=true \
-            JWT_SECRET="$PREVIEW_JWT_SECRET" \
+            JWT_SECRET="$JWT_SECRET" \
             FRONTEND_URL="https://dali-web-dev.fly.dev" \
             API_BASE_URL="$URL" \
             GOOGLE_CLIENT_ID="preview-placeholder.apps.googleusercontent.com" \
