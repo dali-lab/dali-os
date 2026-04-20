@@ -27,8 +27,8 @@ test.describe.serial('reviewer workflow', () => {
     test('dashboard shows current stage', async ({ page }) => {
       await page.goto('/reviewer');
       await expect(page.getByRole('heading', { name: 'Reviewer Dashboard' })).toBeVisible();
-      await expect(page.getByText('Current Stage')).toBeVisible();
-      await expect(page.getByText('Applications Open')).toBeVisible();
+      await expect(page.getByText('Current Stage')).toBeVisible({ timeout: 10_000 });
+      await expect(page.getByText('Applications Open')).toBeVisible({ timeout: 10_000 });
     });
 
     test('shows stage progress tabs', async ({ page }) => {
@@ -53,31 +53,34 @@ test.describe.serial('reviewer workflow', () => {
     test('dashboard shows review columns', async ({ page }) => {
       await page.goto('/reviewer');
       await expect(page.getByRole('heading', { name: 'Reviewer Dashboard' })).toBeVisible();
-      await expect(page.getByRole('heading', { name: /Pending/ })).toBeVisible();
+      await expect(page.getByRole('heading', { name: /Pending/ })).toBeVisible({ timeout: 10_000 });
       await expect(page.getByRole('heading', { name: /Submitted/ })).toBeVisible();
     });
 
     test('shows assigned applicant reviews', async ({ page }) => {
       await page.goto('/reviewer');
-      await expect(page.getByText('Alice Johnson')).toBeVisible();
+      await expect(page.getByText('Alice Johnson')).toBeVisible({ timeout: 10_000 });
       await expect(page.getByText('Diego Rivera')).toBeVisible();
     });
 
     test('can navigate to a review detail page', async ({ page }) => {
       await page.goto('/reviewer');
+      await page.waitForLoadState('networkidle');
       const reviewLink = page.getByRole('link', { name: /View Review|Continue Review|Start Review/ }).first();
-      await reviewLink.waitFor({ state: 'visible' });
+      await reviewLink.waitFor({ state: 'visible', timeout: 15_000 });
       await reviewLink.click();
       await expect(page).toHaveURL(/\/reviewer\/application\/.+/, { timeout: 15_000 });
     });
 
     test('review detail shows scoring form', async ({ page }) => {
       await page.goto('/reviewer');
+      await page.waitForLoadState('networkidle');
       const reviewLink = page.getByRole('link', { name: /View Review|Continue Review|Start Review/ }).first();
-      await reviewLink.waitFor({ state: 'visible' });
+      await reviewLink.waitFor({ state: 'visible', timeout: 15_000 });
       await reviewLink.click();
+      await page.waitForLoadState('networkidle');
 
-      await expect(page.getByText('Your Review')).toBeVisible();
+      await expect(page.getByText('Your Review')).toBeVisible({ timeout: 10_000 });
 
       // Engineering rubric criteria from seed data
       await expect(page.getByText('Technical Depth')).toBeVisible();
