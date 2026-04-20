@@ -295,8 +295,8 @@ jobs:
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
         run: |
-          # Look for "@preview: <message>" (single or multi-line until next blank line or EOF)
-          MSG=$(echo "$PR_BODY" | sed -n '/@preview:/,/^$/{ s/^@preview:[[:space:]]*//; /^$/d; p; }')
+          # Look for "@preview" with optional colon, grab the rest of the line
+          MSG=$(echo "$PR_BODY" | grep -oP '@preview:?\s*\K.+' | head -1 | tr -d '\r')
           if [ -n "$MSG" ]; then
             echo "found=true" >>"$GITHUB_OUTPUT"
             # Escape for JSON
@@ -347,6 +347,7 @@ jobs:
           PREVIEW_URL: ${{ needs.deploy-api.outputs.url }}
           BRANCH: ${{ github.head_ref }}
         run: |
+          DEPLOY_TIME=$(date -u +"%b %d, %Y %H:%M UTC")
           BLOCKS=$(jq -nc \
             --arg pr_num "$PR_NUM" \
             --arg pr_title "$PR_TITLE" \
@@ -357,6 +358,7 @@ jobs:
             --arg deletions "$PR_DELETIONS" \
             --arg preview "$PREVIEW_URL" \
             --arg branch "$BRANCH" \
+            --arg deploy_time "$DEPLOY_TIME" \
             --arg custom_found "$CUSTOM_FOUND" \
             --arg custom_msg "$CUSTOM_MSG" \
             '
@@ -382,7 +384,7 @@ jobs:
               {
                 "type": "context",
                 "elements": [
-                  { "type": "mrkdwn", "text": "Commits: \($commits) · Lines changed: +\($additions) / -\($deletions) · Branch: `\($branch)`" }
+                  { "type": "mrkdwn", "text": "Commits: \($commits) · Lines changed: +\($additions) / -\($deletions) · Branch: `\($branch)` · Deployed: \($deploy_time)" }
                 ]
               }
             ]
