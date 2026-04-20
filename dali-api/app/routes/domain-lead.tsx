@@ -543,8 +543,11 @@ export default function DomainLeadDashboard() {
                               <div className="flex items-center gap-2 text-sm text-gray-600">
                                 <CheckCircle className="w-4 h-4 text-green-600" />
                                 <span>{challengeVersionOptions.find((c: any) => c.id === selectedChallengeVersionId)?.challenge?.name ?? "Linked"}</span>
+                                {hasApplicationReviews && (
+                                  <span className="text-xs text-gray-400 ml-1">(locked — reviewers have been assigned)</span>
+                                )}
                               </div>
-                              {(() => {
+                              {!hasApplicationReviews && (() => {
                                 const cv = challengeVersionOptions.find((c: any) => c.id === selectedChallengeVersionId);
                                 return cv?.challenge?.id ? (
                                   <Link to={`/challenges/${cv.challenge.id}`} className="text-xs text-blue-600 hover:text-blue-800 font-medium">
