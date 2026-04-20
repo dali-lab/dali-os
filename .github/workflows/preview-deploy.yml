@@ -294,5 +294,7 @@ jobs:
           method: chat.postMessage
           token: ${{ secrets.SLACK_BOT_TOKEN }}
           payload: |
-            channel: ${{ vars.SLACK_CHANNEL_ID }}
-            text: ":rocket: *PR #${{ github.event.pull_request.number }}* preview deployed\n<${{ github.event.pull_request.html_url }}|${{ github.event.pull_request.title }}> by ${{ github.event.pull_request.user.login }}\nPreview: ${{ needs.deploy-api.outputs.url }}"
+            {
+              "channel": "${{ vars.SLACK_CHANNEL_ID }}",
+              "text": ":rocket: *PR #${{ github.event.pull_request.number }}* preview deployed\n<${{ github.event.pull_request.html_url }}|${{ github.event.pull_request.title }}> by ${{ github.event.pull_request.user.login }}\nPreview: ${{ needs.deploy-api.outputs.url }}"
+            }
