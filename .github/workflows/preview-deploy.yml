@@ -287,6 +287,8 @@ jobs:
     needs: [deploy-api]
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
     steps:
       - name: Extract custom message from PR body
         id: custom
@@ -302,6 +304,30 @@ jobs:
             # Remove surrounding quotes jq adds
             MSG=${MSG:1:-1}
             echo "msg=$MSG" >>"$GITHUB_OUTPUT"
+          else
+            echo "found=false" >>"$GITHUB_OUTPUT"
+          fi
+
+      - name: Find existing Slack timestamp comment
+        id: find-ts
+        uses: peter-evans/find-comment@v3
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: github-actions[bot]
+          body-includes: <!-- slack-ts:
+
+      - name: Extract Slack timestamp
+        id: ts
+        run: |
+          COMMENT_BODY="${{ steps.find-ts.outputs.comment-body }}"
+          if [ -n "$COMMENT_BODY" ]; then
+            TS=$(echo "$COMMENT_BODY" | grep -oP '<!-- slack-ts: \K[0-9.]+')
+            if [ -n "$TS" ]; then
+              echo "found=true" >>"$GITHUB_OUTPUT"
+              echo "ts=$TS" >>"$GITHUB_OUTPUT"
+            else
+              echo "found=false" >>"$GITHUB_OUTPUT"
+            fi
           else
             echo "found=false" >>"$GITHUB_OUTPUT"
           fi
@@ -370,14 +396,23 @@ jobs:
             ')
           echo "blocks=$BLOCKS" >>"$GITHUB_OUTPUT"
 
-      - name: Post preview link to Slack
+      - name: Post or update Slack message
+        id: slack
         uses: slackapi/slack-github-action@v2.1.0
         with:
-          method: chat.postMessage
+          method: ${{ steps.ts.outputs.found == 'true' && 'chat.update' || 'chat.postMessage' }}
           token: ${{ secrets.SLACK_BOT_TOKEN }}
           payload: |
             {
               "channel": "${{ vars.SLACK_CHANNEL_ID }}",
+              ${{ steps.ts.outputs.found == 'true' && format('"ts": "{0}",', steps.ts.outputs.ts) || '' }}
               "text": "PR #${{ github.event.pull_request.number }} preview is live",
               "blocks": ${{ steps.blocks.outputs.blocks }}
             }
+
+      - name: Save Slack timestamp to PR
+        if: steps.ts.outputs.found != 'true'
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body: "<!-- slack-ts: ${{ fromJSON(steps.slack.outputs.response).ts }} -->"
