@@ -435,7 +435,7 @@ function FileUploadField({
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          key: `applications/${questionKey}/${file.name}`,
+          key: `applications/${questionKey}/${crypto.randomUUID()}-${file.name}`,
           contentType: file.type,
         }),
       });
