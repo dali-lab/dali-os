@@ -314,7 +314,7 @@ jobs:
         with:
           issue-number: ${{ github.event.pull_request.number }}
           comment-author: github-actions[bot]
-          body-includes: <!-- slack-ts:
+          body-includes: "<!-- slack-ts:"
 
       - name: Extract Slack timestamp
         id: ts
