@@ -281,3 +281,18 @@ jobs:
             - Pick a seeded user at [`/dev-login`](${{ needs.deploy-api.outputs.url }}/dev-login).
             - Database is a Neon branch `preview-pr-${{ github.event.pull_request.number }}` (reset + reseeded on every push).
             - Torn down automatically when this PR closes.
+
+  notify-slack:
+    name: Notify Slack
+    needs: [deploy-api]
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post preview link to Slack
+        uses: slackapi/slack-github-action@v2.1.0
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            channel: ${{ vars.SLACK_CHANNEL_ID }}
+            text: ":rocket: *PR #${{ github.event.pull_request.number }}* preview deployed\n<${{ github.event.pull_request.html_url }}|${{ github.event.pull_request.title }}> by ${{ github.event.pull_request.user.login }}\nPreview: ${{ needs.deploy-api.outputs.url }}"
