@@ -1,0 +1,73 @@
+name: PR Preview Sweeper
+
+on:
+  schedule:
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+
+env:
+  PROJECT_ID: falling-morning-15858013
+
+jobs:
+  sweep:
+    name: Destroy orphan previews
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    steps:
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Build set of open PR numbers
+        id: open
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          NUMBERS=$(gh api --paginate \
+            "repos/${{ github.repository }}/pulls?state=open&per_page=100" \
+            --jq '.[].number' | sort -u | tr '\n' ' ')
+          echo "open PRs: ${NUMBERS:-<none>}"
+          echo "numbers=$NUMBERS" >>"$GITHUB_OUTPUT"
+
+      - name: Destroy orphan Fly apps
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          OPEN_PRS: ${{ steps.open.outputs.numbers }}
+        run: |
+          set -euo pipefail
+          APPS=$(flyctl apps list --json \
+            | jq -r '.[] | select(.Name | startswith("dali-api-pr-")) | .Name')
+          for APP in $APPS; do
+            PR="${APP#dali-api-pr-}"
+            if echo " $OPEN_PRS " | grep -q " $PR "; then
+              echo "Keeping $APP (PR #$PR is open)"
+            else
+              echo "Destroying orphan $APP"
+              flyctl apps destroy "$APP" --yes || echo "failed to destroy $APP — continuing"
+            fi
+          done
+
+      - name: Destroy orphan Neon branches
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          OPEN_PRS: ${{ steps.open.outputs.numbers }}
+        run: |
+          set -euo pipefail
+          API="https://console.neon.tech/api/v2/projects/$PROJECT_ID"
+          BRANCHES=$(curl -sf "$API/branches" \
+            -H "Authorization: Bearer $NEON_API_KEY")
+
+          echo "$BRANCHES" | jq -r \
+            '.branches[] | select(.name | startswith("preview-pr-")) | "\(.id) \(.name)"' \
+            | while read -r BRANCH_ID NAME; do
+            PR="${NAME#preview-pr-}"
+            if echo " $OPEN_PRS " | grep -q " $PR "; then
+              echo "Keeping $NAME (PR #$PR is open)"
+              continue
+            fi
+            echo "Deleting orphan $NAME ($BRANCH_ID)"
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+              -X DELETE "$API/branches/$BRANCH_ID" \
+              -H "Authorization: Bearer $NEON_API_KEY")
+            echo "  → HTTP $CODE"
+          done
