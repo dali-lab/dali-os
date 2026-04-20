@@ -161,17 +161,35 @@ export async function loader({ request }: Route.LoaderArgs) {
     currentStage = await inferUnderReviewStage(active.id, member.id);
   }
 
+  // Check if this member is a cycle interviewer with no availability set yet
+  // (so we can prompt them once interview config is set up).
+  const cycleInterviewers = await prisma.cycleInterviewer.findMany({
+    where: { daliMemberId: member.id, applicationCycleId: active.id },
+    select: { id: true },
+  });
+  let needsAvailabilityPrompt = false;
+  if (cycleInterviewers.length > 0) {
+    const [hasInterviewConfig, availabilityCount] = await Promise.all([
+      prisma.interviewConfig.findUnique({ where: { applicationCycleId: active.id } }),
+      prisma.interviewerAvailability.count({
+        where: { cycleInterviewerId: { in: cycleInterviewers.map(ci => ci.id) } },
+      }),
+    ]);
+    needsAvailabilityPrompt = !!hasInterviewConfig && availabilityCount === 0;
+  }
+
   return {
     activeCycle: { id: active.id, name: active.name },
     currentStage,
     mentorUserId: auth.user.sub,
     memberId: member.id,
     myReviews,
+    needsAvailabilityPrompt,
   }
 }
 
 export default function MentorDashboard() {
-  const { activeCycle, currentStage, myReviews } = useLoaderData<typeof loader>() as any
+  const { activeCycle, currentStage, myReviews, needsAvailabilityPrompt } = useLoaderData<typeof loader>() as any
 
   if (!activeCycle) {
     return (
@@ -253,9 +271,10 @@ export default function MentorDashboard() {
       .catch(() => {})
   }, [currentStage, activeCycle.id])
 
-  // Fetch scheduled interviews when in interviews stage
+  // Always fetch scheduled interviews — the Interviews section renders
+  // whenever the reviewer has any, regardless of the inferred stage.
   useEffect(() => {
-    if (currentStage !== 'interviews' || !activeCycle) return
+    if (!activeCycle) return
     fetch(`/api/cycles/${activeCycle.id}/my-interviews`, { credentials: 'include' })
       .then(r => r.ok ? r.json() : [])
       .then((assignments: any[]) => {
@@ -401,6 +420,17 @@ export default function MentorDashboard() {
         </p>
       </div>
 
+      {/* Availability prompt — small reminder when interview config is set but availability isn't */}
+      {needsAvailabilityPrompt && (
+        <a
+          href="/interviewer"
+          className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-accent-coral/10 border border-accent-coral/30 text-sm text-dark-blue hover:bg-accent-coral/15 transition w-fit"
+        >
+          <CalendarDays className="w-4 h-4 text-accent-coral" />
+          <span>Put in your interview availability now →</span>
+        </a>
+      )}
+
       <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 flex items-center justify-between shadow-sm">
         <div className="flex items-center gap-5">
           <div className="bg-blue-100 p-3 rounded-xl">
@@ -456,7 +486,7 @@ export default function MentorDashboard() {
           </section>
         )}
 
-        {currentStage === 'readingApplications' && (
+        {reviews.length > 0 && (
           <section>
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-lg font-semibold text-gray-900 flex items-center">
@@ -707,7 +737,7 @@ export default function MentorDashboard() {
           </section>
         )}
 
-        {currentStage === 'interviews' && (
+        {scheduledInterviews.length > 0 && (
           <section>
             <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
               <Video className="w-5 h-5 mr-2 text-blue-600" />
