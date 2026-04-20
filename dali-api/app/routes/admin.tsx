@@ -132,15 +132,24 @@ export default function AdminDashboard() {
   );
 }
 
+// Single source of truth for hero cycle selection.
+// ActiveCycleHero features the result; PastCycles excludes it.
+// Prefers Open/UnderReview (truly active) over Draft.
+function selectHeroCycle(cycles: any[]): any | undefined {
+  return (
+    cycles.find((c: any) => {
+      const status = c.statusUpdates[0]?.newStatus;
+      return status && ["Open", "UnderReview"].includes(status);
+    }) ??
+    cycles.find((c: any) => {
+      const status = c.statusUpdates[0]?.newStatus;
+      return status === "Draft";
+    })
+  );
+}
+
 function ActiveCycleHero({ cycles }: { cycles: any[] }) {
-  // Prefer Open/UnderReview (truly active) over Draft
-  const activeCycle = cycles.find((c: any) => {
-    const status = c.statusUpdates[0]?.newStatus;
-    return status && ["Open", "UnderReview"].includes(status);
-  }) ?? cycles.find((c: any) => {
-    const status = c.statusUpdates[0]?.newStatus;
-    return status === "Draft";
-  });
+  const activeCycle = selectHeroCycle(cycles);
 
   if (!activeCycle) {
     return (
@@ -185,14 +194,8 @@ function ActiveCycleHero({ cycles }: { cycles: any[] }) {
 function PastCycles({ cycles }: { cycles: any[] }) {
   const [open, setOpen] = useState(false);
 
-  // Find the hero cycle ID so we can exclude it (must match ActiveCycleHero logic)
-  const heroCycle = cycles.find((c: any) => {
-    const status = c.statusUpdates[0]?.newStatus;
-    return status && ["Open", "UnderReview"].includes(status);
-  }) ?? cycles.find((c: any) => {
-    const status = c.statusUpdates[0]?.newStatus;
-    return status === "Draft";
-  });
+  // Exclude the hero cycle (same selection as ActiveCycleHero)
+  const heroCycle = selectHeroCycle(cycles);
   const pastCycles = cycles.filter((c: any) => c.id !== heroCycle?.id);
 
   if (pastCycles.length === 0) return null;

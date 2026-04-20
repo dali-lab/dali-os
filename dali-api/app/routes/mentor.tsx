@@ -161,17 +161,35 @@ export async function loader({ request }: Route.LoaderArgs) {
     currentStage = await inferUnderReviewStage(active.id, member.id);
   }
 
+  // Check if this member is a cycle interviewer with no availability set yet
+  // (so we can prompt them once interview config is set up).
+  const cycleInterviewers = await prisma.cycleInterviewer.findMany({
+    where: { daliMemberId: member.id, applicationCycleId: active.id },
+    select: { id: true },
+  });
+  let needsAvailabilityPrompt = false;
+  if (cycleInterviewers.length > 0) {
+    const [hasInterviewConfig, availabilityCount] = await Promise.all([
+      prisma.interviewConfig.findUnique({ where: { applicationCycleId: active.id } }),
+      prisma.interviewerAvailability.count({
+        where: { cycleInterviewerId: { in: cycleInterviewers.map(ci => ci.id) } },
+      }),
+    ]);
+    needsAvailabilityPrompt = !!hasInterviewConfig && availabilityCount === 0;
+  }
+
   return {
     activeCycle: { id: active.id, name: active.name },
     currentStage,
     mentorUserId: auth.user.sub,
     memberId: member.id,
     myReviews,
+    needsAvailabilityPrompt,
   }
 }
 
 export default function MentorDashboard() {
-  const { activeCycle, currentStage, myReviews } = useLoaderData<typeof loader>() as any
+  const { activeCycle, currentStage, myReviews, needsAvailabilityPrompt } = useLoaderData<typeof loader>() as any
 
   if (!activeCycle) {
     return (
@@ -253,9 +271,10 @@ export default function MentorDashboard() {
       .catch(() => {})
   }, [currentStage, activeCycle.id])
 
-  // Fetch scheduled interviews when in interviews stage
+  // Always fetch scheduled interviews — the Interviews section renders
+  // whenever the reviewer has any, regardless of the inferred stage.
   useEffect(() => {
-    if (currentStage !== 'interviews' || !activeCycle) return
+    if (!activeCycle) return
     fetch(`/api/cycles/${activeCycle.id}/my-interviews`, { credentials: 'include' })
       .then(r => r.ok ? r.json() : [])
       .then((assignments: any[]) => {
@@ -401,31 +420,16 @@ export default function MentorDashboard() {
         </p>
       </div>
 
-      {/* Stage progress */}
-      <div className="flex items-center gap-1 overflow-x-auto pb-1">
-        {(['readingApplications', 'collectingAvailability', 'interviews', 'finalDelibs'] as CycleStage[]).map((stage, i, arr) => {
-          const labels: Record<string, string> = { readingApplications: 'Reviews', collectingAvailability: 'Availability', interviews: 'Interviews', finalDelibs: 'Decisions' };
-          const stageOrder = arr.indexOf(currentStage);
-          const thisOrder = i;
-          const isActive = stage === currentStage;
-          const isPast = thisOrder < stageOrder;
-          return (
-            <div key={stage} className="flex items-center gap-1">
-              <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
-                isActive ? 'bg-accent-coral text-white' : isPast ? 'bg-accent-coral/20 text-accent-coral' : 'bg-gray-100 text-gray-400'
-              }`}>
-                {isPast && (
-                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                  </svg>
-                )}
-                {labels[stage] ?? stage}
-              </div>
-              {i < arr.length - 1 && <div className={`w-4 h-px ${isPast ? 'bg-accent-coral/40' : 'bg-gray-200'}`} />}
-            </div>
-          );
-        })}
-      </div>
+      {/* Availability prompt — small reminder when interview config is set but availability isn't */}
+      {needsAvailabilityPrompt && (
+        <a
+          href="/interviewer"
+          className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-accent-coral/10 border border-accent-coral/30 text-sm text-dark-blue hover:bg-accent-coral/15 transition w-fit"
+        >
+          <CalendarDays className="w-4 h-4 text-accent-coral" />
+          <span>Put in your interview availability now →</span>
+        </a>
+      )}
 
       <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 flex items-center justify-between shadow-sm">
         <div className="flex items-center gap-5">
@@ -482,7 +486,7 @@ export default function MentorDashboard() {
           </section>
         )}
 
-        {currentStage === 'readingApplications' && (
+        {reviews.length > 0 && (
           <section>
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-lg font-semibold text-gray-900 flex items-center">
@@ -733,7 +737,7 @@ export default function MentorDashboard() {
           </section>
         )}
 
-        {currentStage === 'interviews' && (
+        {scheduledInterviews.length > 0 && (
           <section>
             <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
               <Video className="w-5 h-5 mr-2 text-blue-600" />
