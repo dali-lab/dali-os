@@ -288,6 +288,88 @@ jobs:
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
+      - name: Extract custom message from PR body
+        id: custom
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          # Look for "@preview: <message>" (single or multi-line until next blank line or EOF)
+          MSG=$(echo "$PR_BODY" | sed -n '/@preview:/,/^$/{ s/^@preview:[[:space:]]*//; /^$/d; p; }')
+          if [ -n "$MSG" ]; then
+            echo "found=true" >>"$GITHUB_OUTPUT"
+            # Escape for JSON
+            MSG=$(echo "$MSG" | jq -Rsa .)
+            # Remove surrounding quotes jq adds
+            MSG=${MSG:1:-1}
+            echo "msg=$MSG" >>"$GITHUB_OUTPUT"
+          else
+            echo "found=false" >>"$GITHUB_OUTPUT"
+          fi
+
+      - name: Build Slack blocks
+        id: blocks
+        env:
+          CUSTOM_FOUND: ${{ steps.custom.outputs.found }}
+          CUSTOM_MSG: ${{ steps.custom.outputs.msg }}
+          PR_NUM: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_COMMITS: ${{ github.event.pull_request.commits }}
+          PR_ADDITIONS: ${{ github.event.pull_request.additions }}
+          PR_DELETIONS: ${{ github.event.pull_request.deletions }}
+          PREVIEW_URL: ${{ needs.deploy-api.outputs.url }}
+          BRANCH: ${{ github.head_ref }}
+        run: |
+          BLOCKS=$(jq -nc \
+            --arg pr_num "$PR_NUM" \
+            --arg pr_title "$PR_TITLE" \
+            --arg pr_url "$PR_URL" \
+            --arg author "$PR_AUTHOR" \
+            --arg commits "$PR_COMMITS" \
+            --arg additions "$PR_ADDITIONS" \
+            --arg deletions "$PR_DELETIONS" \
+            --arg preview "$PREVIEW_URL" \
+            --arg branch "$BRANCH" \
+            --arg custom_found "$CUSTOM_FOUND" \
+            --arg custom_msg "$CUSTOM_MSG" \
+            '
+            [
+              {
+                "type": "header",
+                "text": { "type": "plain_text", "text": ":rocket:  Preview Deploy Live", "emoji": true }
+              },
+              {
+                "type": "section",
+                "fields": [
+                  { "type": "mrkdwn", "text": "*Pull Request*\n<\($pr_url)|#\($pr_num) — \($pr_title)>" },
+                  { "type": "mrkdwn", "text": "*Author*\n<https://github.com/\($author)|@\($author)>" }
+                ]
+              },
+              {
+                "type": "section",
+                "fields": [
+                  { "type": "mrkdwn", "text": "*Preview API*\n<\($preview)|\($preview)>" },
+                  { "type": "mrkdwn", "text": "*Dev Login*\n<\($preview)/dev-login|Pick a seeded user>" }
+                ]
+              },
+              {
+                "type": "context",
+                "elements": [
+                  { "type": "mrkdwn", "text": "Commits: \($commits) · Lines changed: +\($additions) / -\($deletions) · Branch: `\($branch)`" }
+                ]
+              }
+            ]
+            + if $custom_found == "true" then [
+                { "type": "divider" },
+                {
+                  "type": "section",
+                  "text": { "type": "mrkdwn", "text": "> \($custom_msg)" }
+                }
+              ] else [] end
+            ')
+          echo "blocks=$BLOCKS" >>"$GITHUB_OUTPUT"
+
       - name: Post preview link to Slack
         uses: slackapi/slack-github-action@v2.1.0
         with:
@@ -296,5 +378,6 @@ jobs:
           payload: |
             {
               "channel": "${{ vars.SLACK_CHANNEL_ID }}",
-              "text": ":rocket: *PR #${{ github.event.pull_request.number }}* preview deployed\n<${{ github.event.pull_request.html_url }}|${{ github.event.pull_request.title }}> by ${{ github.event.pull_request.user.login }}\nPreview: ${{ needs.deploy-api.outputs.url }}"
+              "text": "PR #${{ github.event.pull_request.number }} preview is live",
+              "blocks": ${{ steps.blocks.outputs.blocks }}
             }
