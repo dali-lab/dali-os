@@ -285,3 +285,141 @@ jobs:
             - Pick a seeded user at [`/dev-login`](${{ needs.deploy-api.outputs.url }}/dev-login).
             - Database is a Neon branch `preview-pr-${{ github.event.pull_request.number }}` (reset + reseeded on every push).
             - Torn down automatically when this PR closes.
+
+  notify-slack:
+    name: Notify Slack
+    needs: [deploy-api]
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Extract custom message from PR body
+        id: custom
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          # Look for "@preview" with optional colon, grab the rest of the line
+          MSG=$(echo "$PR_BODY" | grep -oP '@preview:?\s*\K.+' | head -1 | tr -d '\r')
+          if [ -n "$MSG" ]; then
+            echo "found=true" >>"$GITHUB_OUTPUT"
+            # Escape for JSON
+            MSG=$(printf '%s' "$MSG" | jq -Rsa .)
+            # Remove surrounding quotes jq adds
+            MSG=${MSG:1:-1}
+            echo "msg=$MSG" >>"$GITHUB_OUTPUT"
+          else
+            echo "found=false" >>"$GITHUB_OUTPUT"
+          fi
+
+      - name: Find existing Slack timestamp comment
+        id: find-ts
+        uses: peter-evans/find-comment@v3
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: github-actions[bot]
+          body-includes: "<!-- slack-ts:"
+
+      - name: Extract Slack timestamp
+        id: ts
+        run: |
+          COMMENT_BODY="${{ steps.find-ts.outputs.comment-body }}"
+          if [ -n "$COMMENT_BODY" ]; then
+            TS=$(echo "$COMMENT_BODY" | grep -oP '<!-- slack-ts: \K[0-9.]+')
+            if [ -n "$TS" ]; then
+              echo "found=true" >>"$GITHUB_OUTPUT"
+              echo "ts=$TS" >>"$GITHUB_OUTPUT"
+            else
+              echo "found=false" >>"$GITHUB_OUTPUT"
+            fi
+          else
+            echo "found=false" >>"$GITHUB_OUTPUT"
+          fi
+
+      - name: Build Slack blocks
+        id: blocks
+        env:
+          CUSTOM_FOUND: ${{ steps.custom.outputs.found }}
+          CUSTOM_MSG: ${{ steps.custom.outputs.msg }}
+          PR_NUM: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_COMMITS: ${{ github.event.pull_request.commits }}
+          PR_ADDITIONS: ${{ github.event.pull_request.additions }}
+          PR_DELETIONS: ${{ github.event.pull_request.deletions }}
+          PREVIEW_URL: ${{ needs.deploy-api.outputs.url }}
+          BRANCH: ${{ github.head_ref }}
+        run: |
+          DEPLOY_TIME=$(date -u +"%b %d, %Y %H:%M UTC")
+          BLOCKS=$(jq -nc \
+            --arg pr_num "$PR_NUM" \
+            --arg pr_title "$PR_TITLE" \
+            --arg pr_url "$PR_URL" \
+            --arg author "$PR_AUTHOR" \
+            --arg commits "$PR_COMMITS" \
+            --arg additions "$PR_ADDITIONS" \
+            --arg deletions "$PR_DELETIONS" \
+            --arg preview "$PREVIEW_URL" \
+            --arg branch "$BRANCH" \
+            --arg deploy_time "$DEPLOY_TIME" \
+            --arg custom_found "$CUSTOM_FOUND" \
+            --arg custom_msg "$CUSTOM_MSG" \
+            '
+            [
+              {
+                "type": "header",
+                "text": { "type": "plain_text", "text": ":rocket:  Preview Deploy Live", "emoji": true }
+              },
+              {
+                "type": "section",
+                "fields": [
+                  { "type": "mrkdwn", "text": "*Pull Request*\n<\($pr_url)|#\($pr_num) — \($pr_title)>" },
+                  { "type": "mrkdwn", "text": "*Author*\n<https://github.com/\($author)|@\($author)>" }
+                ]
+              },
+              {
+                "type": "section",
+                "fields": [
+                  { "type": "mrkdwn", "text": "*Preview API*\n<\($preview)|\($preview)>" },
+                  { "type": "mrkdwn", "text": "*Dev Login*\n<\($preview)/dev-login|Pick a seeded user>" }
+                ]
+              },
+              {
+                "type": "context",
+                "elements": [
+                  { "type": "mrkdwn", "text": "Commits: \($commits) · Lines changed: +\($additions) / -\($deletions) · Branch: `\($branch)` · Deployed: \($deploy_time)" }
+                ]
+              }
+            ]
+            + if $custom_found == "true" then [
+                { "type": "divider" },
+                {
+                  "type": "section",
+                  "text": { "type": "mrkdwn", "text": "> \($custom_msg)" }
+                }
+              ] else [] end
+            ')
+          echo "blocks=$BLOCKS" >>"$GITHUB_OUTPUT"
+
+      - name: Post or update Slack message
+        id: slack
+        uses: slackapi/slack-github-action@v2.1.0
+        with:
+          method: ${{ steps.ts.outputs.found == 'true' && 'chat.update' || 'chat.postMessage' }}
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          errors: true
+          payload: |
+            {
+              "channel": "${{ vars.SLACK_CHANNEL_ID }}",
+              ${{ steps.ts.outputs.found == 'true' && format('"ts": "{0}",', steps.ts.outputs.ts) || '' }}
+              "text": "PR #${{ github.event.pull_request.number }} preview is live",
+              "blocks": ${{ steps.blocks.outputs.blocks }}
+            }
+      # save timestamp in html comment
+      - name: Save Slack timestamp to PR
+        if: steps.ts.outputs.found != 'true'
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body: "<!-- slack-ts: ${{ fromJSON(steps.slack.outputs.response).ts }} -->"
