@@ -440,8 +440,10 @@ function FileUploadField({
         }),
       });
       if (!presignRes.ok) {
-        const err = await presignRes.json();
-        throw new Error(err.error ?? "Failed to get upload URL");
+        const text = await presignRes.text();
+        let message = "Failed to get upload URL";
+        try { message = JSON.parse(text).error ?? message; } catch {}
+        throw new Error(message);
       }
       const { uploadUrl, key } = await presignRes.json();
 

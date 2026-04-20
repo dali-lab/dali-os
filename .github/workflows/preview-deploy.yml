@@ -206,7 +206,11 @@ jobs:
             FRONTEND_URL="https://dali-web-dev.fly.dev" \
             API_BASE_URL="$URL" \
             GOOGLE_CLIENT_ID="preview-placeholder.apps.googleusercontent.com" \
-            CAS_BASE_URL="https://login.dartmouth.edu/cas"
+            CAS_BASE_URL="https://login.dartmouth.edu/cas" \
+            AWS_REGION="us-east-1" \
+            AWS_ACCESS_KEY_ID="${{ secrets.AWS_ACCESS_KEY_ID }}" \
+            AWS_SECRET_ACCESS_KEY="${{ secrets.AWS_SECRET_ACCESS_KEY }}" \
+            AWS_S3_BUCKET="dali-os-uploads-dev"
           do
             n=$((n+1))
             if [ $n -ge 4 ]; then
