@@ -75,7 +75,7 @@ export function ChallengeDetail() {
           {!isCreatingVersion && (
             <button
               onClick={() => {
-                if (selectedVersion) setSelectedDomainId(selectedVersion.domainId)
+                if (selectedVersion && selectedVersion.domainId) setSelectedDomainId(selectedVersion.domainId)
                 setIsCreatingVersion(true)
               }}
               className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 shadow-sm"
@@ -113,7 +113,7 @@ export function ChallengeDetail() {
                     <div className="flex items-center justify-between mb-2">
                       <div>
                         <span className="font-medium text-gray-900">v{versionNumber}</span>
-                        <p className="text-xs text-gray-500">{version.domain.name}</p>
+                        <p className="text-xs text-gray-500">{version.domain?.name ?? 'General'}</p>
                         <p className="text-sm text-gray-500">
                           {(version.questions as unknown as Question[]).length} questions
                         </p>
@@ -168,14 +168,14 @@ export function ChallengeDetail() {
                     Version {challenge.versions.findIndex((v) => v.id === selectedVersionId) + 1} Preview
                   </h2>
                   <p className="text-sm text-gray-500 mt-1">
-                    {selectedVersion.domain.name} · Created by{' '}
+                    {selectedVersion.domain?.name ?? 'General'} · Created by{' '}
                     {selectedVersion.createdBy.firstName} {selectedVersion.createdBy.lastName} on{' '}
                     {formatDateTime(selectedVersion.createdAt)}
                   </p>
                 </div>
                 <button
                   onClick={() => {
-                    setSelectedDomainId(selectedVersion.domainId)
+                    if (selectedVersion.domainId) setSelectedDomainId(selectedVersion.domainId)
                     setIsCreatingVersion(true)
                   }}
                   className="text-sm text-blue-600 hover:text-blue-700 font-medium"

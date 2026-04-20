@@ -93,13 +93,15 @@ export interface Rubric {
 
 export interface Question {
   key: string
-  type: 'text' | 'textarea' | 'select' | 'github_url' | 'figma_url'
+  type: 'text' | 'textarea' | 'select' | 'github_url' | 'figma_url' | 'file' | 'skills_rating'
   required: boolean
   data: {
     label: string
     description?: string
     options?: string[]
     showForRoles?: string[]
+    afterDomains?: boolean
+    accept?: string
   }
 }
 

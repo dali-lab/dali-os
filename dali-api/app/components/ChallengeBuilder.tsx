@@ -78,9 +78,10 @@ export function FormBuilderTab({
         label: editForm.data.label,
         description: editForm.data.description,
         options:
-          editForm.type === 'select'
+          (editForm.type === 'select' || editForm.type === 'skills_rating')
             ? optionsText.split('\n').filter((o) => o.trim() !== '')
             : undefined,
+        accept: editForm.type === 'file' ? (editForm.data.accept || undefined) : undefined,
         showForRoles: showForRoles.length > 0 ? showForRoles : undefined,
       },
     }
@@ -169,6 +170,8 @@ export function FormBuilderTab({
               <option value="select">Dropdown Select</option>
               <option value="github_url">GitHub URL</option>
               <option value="figma_url">Figma URL</option>
+              <option value="file">File Upload</option>
+              <option value="skills_rating">Skills Rating</option>
             </select>
           </div>
 
@@ -222,6 +225,46 @@ export function FormBuilderTab({
                 className="block w-full rounded-md border border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
                 placeholder="Option 1&#10;Option 2&#10;Option 3"
               />
+            </div>
+          )}
+
+          {editForm.type === 'skills_rating' && (
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Skills (One per line)
+              </label>
+              <textarea
+                rows={4}
+                value={optionsText}
+                onChange={(e) => setOptionsText(e.target.value)}
+                className="block w-full rounded-md border border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
+                placeholder="JavaScript&#10;Python&#10;React.js&#10;Figma"
+              />
+              <p className="text-xs text-gray-500 mt-1">Applicants will rate each skill from 0-5.</p>
+            </div>
+          )}
+
+          {editForm.type === 'file' && (
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Accepted File Types
+              </label>
+              <input
+                type="text"
+                value={editForm.data?.accept || ''}
+                onChange={(e) =>
+                  setEditForm({
+                    ...editForm,
+                    data: {
+                      ...editForm.data!,
+                      accept: e.target.value,
+                    },
+                  })
+                }
+                className="block w-full rounded-md border border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
+                placeholder="e.g. application/pdf"
+              />
+              <p className="text-xs text-gray-500 mt-1">MIME types, comma-separated (e.g. application/pdf, image/png)</p>
             </div>
           )}
         </div>
@@ -295,7 +338,7 @@ export function FormBuilderTab({
                     </p>
                   )}
 
-                  {q.type === 'select' && q.data.options && (
+                  {(q.type === 'select' || q.type === 'skills_rating') && q.data.options && (
                     <div className="mt-2 flex flex-wrap gap-2">
                       {q.data.options.map((opt) => (
                         <span
@@ -306,6 +349,10 @@ export function FormBuilderTab({
                         </span>
                       ))}
                     </div>
+                  )}
+
+                  {q.type === 'file' && q.data.accept && (
+                    <p className="text-xs text-gray-500 mt-1">Accepts: {q.data.accept}</p>
                   )}
                 </div>
 
