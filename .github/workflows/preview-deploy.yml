@@ -300,7 +300,7 @@ jobs:
           if [ -n "$MSG" ]; then
             echo "found=true" >>"$GITHUB_OUTPUT"
             # Escape for JSON
-            MSG=$(echo "$MSG" | jq -Rsa .)
+            MSG=$(printf '%s' "$MSG" | jq -Rsa .)
             # Remove surrounding quotes jq adds
             MSG=${MSG:1:-1}
             echo "msg=$MSG" >>"$GITHUB_OUTPUT"
