@@ -34,6 +34,7 @@ export function ChallengeDetail() {
   const [selectedDomainId, setSelectedDomainId] = useState<string>(defaultDomainId)
 
   const selectedVersion = challenge.versions.find((v) => v.id === selectedVersionId)
+  const isGeneralForm = challenge.versions.some((v) => v.domainId === null)
 
   const nextVersionNumber = challenge.versions.length + 1
 
@@ -158,6 +159,7 @@ export function ChallengeDetail() {
                 initialQuestions={(selectedVersion?.questions as unknown as Question[]) || []}
                 onSave={handleSaveNewVersion}
                 onCancel={() => setIsCreatingVersion(false)}
+                isGeneralForm={isGeneralForm}
               />
             </div>
           ) : selectedVersion ? (
@@ -203,6 +205,11 @@ export function ChallengeDetail() {
                         <span className="text-xs font-medium text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full capitalize">
                           {q.type}
                         </span>
+                        {q.data.afterDomains && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-800">
+                            After Domains
+                          </span>
+                        )}
                       </div>
                       {q.data.description && (
                         <p className="text-sm text-gray-500 mb-2">{q.data.description}</p>

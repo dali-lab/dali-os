@@ -6,11 +6,13 @@ interface FormBuilderTabProps {
   initialQuestions?: Question[]
   onSave?: (questions: Question[]) => void
   onCancel?: () => void
+  isGeneralForm?: boolean
 }
 export function FormBuilderTab({
   initialQuestions = [],
   onSave,
   onCancel,
+  isGeneralForm = false,
 }: FormBuilderTabProps) {
   const [questions, setQuestions] = useState<Question[]>(initialQuestions)
   const [editingKey, setEditingKey] = useState<string | null>(null)
@@ -83,6 +85,7 @@ export function FormBuilderTab({
             : undefined,
         accept: editForm.type === 'file' ? (editForm.data.accept || undefined) : undefined,
         showForRoles: showForRoles.length > 0 ? showForRoles : undefined,
+        afterDomains: isGeneralForm && editForm.data.afterDomains ? true : undefined,
       },
     }
     if (isAdding) {
@@ -175,7 +178,7 @@ export function FormBuilderTab({
             </select>
           </div>
 
-          <div className="flex items-center mt-6">
+          <div className="flex items-center gap-6 mt-6">
             <label className="flex items-center cursor-pointer">
               <input
                 type="checkbox"
@@ -190,6 +193,25 @@ export function FormBuilderTab({
               />
               <span className="ml-2 text-sm text-gray-700">Required field</span>
             </label>
+            {isGeneralForm && (
+              <label className="flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={editForm.data?.afterDomains || false}
+                  onChange={(e) =>
+                    setEditForm({
+                      ...editForm,
+                      data: {
+                        ...editForm.data!,
+                        afterDomains: e.target.checked,
+                      },
+                    })
+                  }
+                  className="rounded border-gray-300 text-amber-600 shadow-sm focus:border-amber-300 focus:ring focus:ring-amber-200 focus:ring-opacity-50"
+                />
+                <span className="ml-2 text-sm text-gray-700">Show after domain questions</span>
+              </label>
+            )}
           </div>
 
           <div className="col-span-2">
@@ -325,6 +347,11 @@ export function FormBuilderTab({
                     {q.data.showForRoles && q.data.showForRoles.length > 0 && (
                       <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-purple-100 text-purple-800">
                         Conditional
+                      </span>
+                    )}
+                    {q.data.afterDomains && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-800">
+                        After Domains
                       </span>
                     )}
                     <span className="text-xs font-medium text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full capitalize">
