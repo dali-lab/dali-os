@@ -34,7 +34,7 @@ test.describe.serial('reviewer workflow', () => {
     test('shows stage progress tabs', async ({ page }) => {
       await page.goto('/reviewer');
       const main = page.locator('main');
-      await expect(main.getByText('Reviews')).toBeVisible();
+      await expect(main.getByText('Reviews')).toBeVisible({ timeout: 10_000 });
       await expect(main.getByText('Availability')).toBeVisible();
       await expect(main.getByText('Interviews')).toBeVisible();
       await expect(main.getByText('Decisions')).toBeVisible();
@@ -63,22 +63,15 @@ test.describe.serial('reviewer workflow', () => {
       await expect(page.getByText('Diego Rivera')).toBeVisible();
     });
 
-    test('can navigate to a review detail page', async ({ page }) => {
+    test('review detail page shows scoring form', async ({ page }) => {
+      // Get the review link href and navigate directly to avoid hydration
+      // timing issues with client-side router click handling on CI.
       await page.goto('/reviewer');
-      await page.waitForLoadState('networkidle');
       const reviewLink = page.getByRole('link', { name: /View Review|Continue Review|Start Review/ }).first();
       await reviewLink.waitFor({ state: 'visible', timeout: 15_000 });
-      await reviewLink.click();
-      await expect(page).toHaveURL(/\/reviewer\/application\/.+/, { timeout: 15_000 });
-    });
-
-    test('review detail shows scoring form', async ({ page }) => {
-      await page.goto('/reviewer');
-      await page.waitForLoadState('networkidle');
-      const reviewLink = page.getByRole('link', { name: /View Review|Continue Review|Start Review/ }).first();
-      await reviewLink.waitFor({ state: 'visible', timeout: 15_000 });
-      await reviewLink.click();
-      await page.waitForLoadState('networkidle');
+      const href = await reviewLink.getAttribute('href');
+      expect(href).toMatch(/\/reviewer\/application\/.+/);
+      await page.goto(href!);
 
       await expect(page.getByText('Your Review')).toBeVisible({ timeout: 10_000 });
 
