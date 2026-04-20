@@ -70,27 +70,48 @@ async function main() {
   const designQuestions = [
     {
       key: "dq-00000000-0000-0000-0000-000000000001",
-      type: "text",
-      required: true,
+      type: "figma_url",
+      required: false,
       data: {
-        label: "Walk us through your design process for a recent project.",
+        label: "Submit your design challenge for UI/UX here!",
+        description: "Enter your Figma link — make sure the permission settings are set to anyone with the link can view!",
       },
     },
     {
       key: "dq-00000000-0000-0000-0000-000000000002",
       type: "figma_url",
-      required: true,
+      required: false,
       data: {
-        label: "Share a link to your Figma portfolio or a sample of your work.",
+        label: "Submit your design challenge for GRAPHICS here!",
+        description: "Enter your Figma link — make sure the permission settings are set to anyone with the link can view!",
       },
     },
     {
       key: "dq-00000000-0000-0000-0000-000000000003",
-      type: "text",
+      type: "figma_url",
       required: false,
       data: {
-        label:
-          "Describe a time when user research changed the direction of a design. What did you learn?",
+        label: "Submit your design challenge for ANIMATION here!",
+        description: "Enter your Figma link — make sure the permission settings are set to anyone with the link can view!",
+      },
+    },
+    {
+      key: "dq-00000000-0000-0000-0000-000000000004",
+      type: "figma_url",
+      required: false,
+      data: {
+        label: "Submit your design challenge for 3D MODELING here!",
+        description: "Enter your Figma link — make sure the permission settings are set to anyone with the link can view!",
+      },
+    },
+    {
+      key: "dq-00000000-0000-0000-0000-000000000005",
+      type: "skills_rating",
+      required: true,
+      data: {
+        label: "Designer Skills Rating",
+        description: "Rate your experience with the following tools on a scale of 0-5. Respond with 0 if you've never used the application before and 5 if you have significant experience and skill.",
+        options: ["Figma", "Sketch/Invision", "Adobe XD", "Adobe Photoshop", "Adobe Illustrator", "Adobe After Effects", "HTML/CSS"],
       },
     },
   ];
@@ -98,29 +119,57 @@ async function main() {
   const engQuestions = [
     {
       key: "eq-00000000-0000-0000-0000-000000000001",
-      type: "text",
-      required: true,
+      type: "github_url",
+      required: false,
       data: {
-        label:
-          "Describe a technical challenge you solved and how you approached it.",
+        label: "Submit a Github link to your FULLSTACK Developer Challenge here!",
+        description: "Please double check that the repository is publicly viewable and that you have an in-depth README that explains your code.",
       },
     },
     {
       key: "eq-00000000-0000-0000-0000-000000000002",
       type: "github_url",
-      required: true,
+      required: false,
       data: {
-        label:
-          "Link to a GitHub repo or code sample you're proud of. What would you change now?",
+        label: "Submit a Github link to your DATA Developer Challenge here!",
+        description: "Please double check that the repository is publicly viewable and that you have an in-depth README that explains your code.",
       },
     },
     {
       key: "eq-00000000-0000-0000-0000-000000000003",
-      type: "text",
+      type: "github_url",
       required: false,
       data: {
-        label:
-          "What's a technology or concept you've been learning recently, and why does it interest you?",
+        label: "Submit a Github link to your AR/VR Developer Challenge here!",
+        description: "Please double check that the repository is publicly viewable and that you have an in-depth README that explains your code.",
+      },
+    },
+    {
+      key: "eq-00000000-0000-0000-0000-000000000004",
+      type: "github_url",
+      required: false,
+      data: {
+        label: "Submit a Github link to your outside code sample here!",
+        description: "Please double check that the repository is publicly viewable and that you have an in-depth README that explains your code.",
+      },
+    },
+    {
+      key: "eq-00000000-0000-0000-0000-000000000005",
+      type: "skills_rating",
+      required: true,
+      data: {
+        label: "Developer Skills Rating",
+        description: "Rate your experience with the following languages/frameworks on a scale of 0-5. Respond with 0 if you've never used the language/framework before and 5 if you have significant experience and skill to the point where you don't need to look at documentation.\n\nDon't be intimidated by the number of skills here — we definitely don't expect you to know all of them!",
+        options: ["Bash/Terminal", "Git", "C", "C#", "Unity", "JavaScript", "TypeScript", "Python", "Ruby (on Rails)", "React.js", "React Native", "Swift", "Flutter", "iOS", "Android", "MongoDB", "Express", "Node.js", "SQL", "IoT", "R", "Tidy-Verse", "Pandas", "D3", "Figma", "SKlearn", "Deep/Machine Learning", "Cloud Data Storage"],
+      },
+    },
+    {
+      key: "eq-00000000-0000-0000-0000-000000000006",
+      type: "textarea",
+      required: false,
+      data: {
+        label: "Are there any other languages/frameworks/skills you'd like to highlight?",
+        description: "List them and include a number to rate your confidence (e.g. C++ - 3, Unreal Engine - 5).",
       },
     },
   ];
@@ -128,20 +177,12 @@ async function main() {
   const pmQuestions = [
     {
       key: "pq-00000000-0000-0000-0000-000000000001",
-      type: "text",
+      type: "file",
       required: true,
       data: {
-        label:
-          "Pick a product you use every day. What's one thing you'd improve and how would you validate that change?",
-      },
-    },
-    {
-      key: "pq-00000000-0000-0000-0000-000000000002",
-      type: "text",
-      required: true,
-      data: {
-        label:
-          "Describe a time you had to make a decision with limited information. What happened?",
+        label: "Upload a PDF of your short answers and challenges here.",
+        description: "Make sure to keep answers to 1-2 paragraphs (~200 words). The example agenda can be 1-2 pages with a 1-2 paragraph explanation afterward. Ensure that your file is in the correct format (PDF) and that all of your PM application materials are there!",
+        accept: "application/pdf",
       },
     },
   ];
@@ -149,27 +190,49 @@ async function main() {
   const engQuestionsV2 = [
     {
       key: "eq2-00000000-0000-0000-0000-000000000001",
-      type: "text",
-      required: true,
-      data: { label: "Walk us through a system you designed from scratch. What tradeoffs did you make?" },
+      type: "github_url",
+      required: false,
+      data: {
+        label: "Submit a Github link to your FULLSTACK Developer Challenge here!",
+        description: "Please double check that the repository is publicly viewable and that you have an in-depth README that explains your code.",
+      },
     },
     {
       key: "eq2-00000000-0000-0000-0000-000000000002",
       type: "github_url",
-      required: true,
-      data: { label: "Link to a GitHub repo you built. What's one thing you'd do differently today?" },
+      required: false,
+      data: {
+        label: "Submit a Github link to your DATA Developer Challenge here!",
+        description: "Please double check that the repository is publicly viewable and that you have an in-depth README that explains your code.",
+      },
     },
     {
       key: "eq2-00000000-0000-0000-0000-000000000003",
-      type: "text",
-      required: true,
-      data: { label: "Describe a bug that took you a long time to track down. How did you find it?" },
+      type: "github_url",
+      required: false,
+      data: {
+        label: "Submit a Github link to your outside code sample here!",
+        description: "Please double check that the repository is publicly viewable and that you have an in-depth README that explains your code.",
+      },
     },
     {
       key: "eq2-00000000-0000-0000-0000-000000000004",
-      type: "text",
+      type: "skills_rating",
+      required: true,
+      data: {
+        label: "Developer Skills Rating",
+        description: "Rate your experience with the following languages/frameworks on a scale of 0-5.",
+        options: ["Bash/Terminal", "Git", "JavaScript", "TypeScript", "Python", "React.js", "Node.js", "SQL"],
+      },
+    },
+    {
+      key: "eq2-00000000-0000-0000-0000-000000000005",
+      type: "textarea",
       required: false,
-      data: { label: "What's a technology or tool you've been exploring lately?" },
+      data: {
+        label: "Are there any other languages/frameworks/skills you'd like to highlight?",
+        description: "List them and include a number to rate your confidence (e.g. C++ - 3, Unreal Engine - 5).",
+      },
     },
   ];
 
@@ -233,21 +296,137 @@ async function main() {
       key: "fq-00000000-0000-0000-0000-000000000001",
       type: "text",
       required: true,
-      data: { label: "Why do you want to join DALI?" },
+      data: { label: "First and Last Name" },
     },
     {
       key: "fq-00000000-0000-0000-0000-000000000002",
       type: "text",
       required: true,
-      data: { label: "What year are you, and what are you studying?" },
+      data: { label: "Dartmouth Net ID" },
     },
     {
       key: "fq-00000000-0000-0000-0000-000000000003",
+      type: "select",
+      required: true,
+      data: {
+        label: "Graduation Year",
+        options: ["2026", "2027", "2028", "2029"],
+      },
+    },
+    {
+      key: "fq-00000000-0000-0000-0000-000000000004",
       type: "text",
       required: false,
+      data: { label: "Pronouns" },
+    },
+    {
+      key: "fq-00000000-0000-0000-0000-000000000005",
+      type: "textarea",
+      required: false,
       data: {
-        label: "Is there anything else you'd like us to know about you?",
+        label: "Have you applied to DALI in the past? If so, please update this application to reflect progress since your previous application!",
+        description: "We are always excited to hear from repeat applicants!",
       },
+    },
+    {
+      key: "fq-00000000-0000-0000-0000-000000000006",
+      type: "text",
+      required: true,
+      data: { label: "Where did you hear about DALI Lab?" },
+    },
+    {
+      key: "fq-00000000-0000-0000-0000-000000000007",
+      type: "text",
+      required: true,
+      data: {
+        label: "Intended Major(s) & Minor(s)",
+        description: "If you're undecided, feel free to put that!",
+      },
+    },
+    {
+      key: "fq-00000000-0000-0000-0000-000000000008",
+      type: "text",
+      required: true,
+      data: {
+        label: "Terms you would intend to work for DALI in the next academic year",
+        description: "These would be considered terms that you are on campus and willing to work if hired for. This could also line up with what your D-plan looks like!",
+      },
+    },
+    {
+      key: "fq-00000000-0000-0000-0000-000000000009",
+      type: "select",
+      required: true,
+      data: {
+        label: "Preferred/intended start term",
+        description: "We expect accepted applicants to begin in either the Spring or following Fall term! We generally do not do deferrals, so if you are not available to begin in these upcoming terms please explain your circumstances above or reach out to applications@dali.dartmouth.edu.",
+        options: ["Spring", "Fall"],
+      },
+    },
+    {
+      key: "fq-00000000-0000-0000-0000-000000000010",
+      type: "textarea",
+      required: true,
+      data: {
+        label: "How involved are you in your extracurricular activities?",
+        description: "List each activity and its weekly time commitment (e.g. ENGS 12 TA: 4 hours)",
+      },
+    },
+    {
+      key: "fq-00000000-0000-0000-0000-000000000011",
+      type: "textarea",
+      required: true,
+      data: {
+        label: "How many hours would you be able to commit to DALI per week?",
+        description: "We generally expect DALI members to commit 10-15 hours/week. DALI is also paid work, so feel free to elaborate upon whether DALI would replace the hours you might have spent on a different activity.",
+      },
+    },
+    {
+      key: "fq-00000000-0000-0000-0000-000000000012",
+      type: "textarea",
+      required: true,
+      data: {
+        label: "Please list any relevant experience to the work you would like to do at DALI.",
+        description: "In particular, list any relevant courses that you've taken relating to your role (e.g. CS classes, art/design classes, etc.), as well as leadership roles.",
+      },
+    },
+    {
+      key: "fq-00000000-0000-0000-0000-000000000013",
+      type: "text",
+      required: true,
+      data: {
+        label: "Have you previously attended any DALI-sponsored workshops or mini-series?",
+        description: "If yes, please list them here. If no, write \"None\".",
+      },
+    },
+    {
+      key: "fq-00000000-0000-0000-0000-000000000014",
+      type: "textarea",
+      required: true,
+      data: { label: "Why do you want to work at DALI?" },
+    },
+    {
+      key: "fq-00000000-0000-0000-0000-000000000015",
+      type: "textarea",
+      required: true,
+      data: { label: "What is something that you've made and what did you love about it? Where did you stumble?" },
+    },
+    {
+      key: "fq-00000000-0000-0000-0000-000000000016",
+      type: "textarea",
+      required: true,
+      data: { label: "Describe a collaborative experience that you've had. What did you like about it and what could have been improved to make it more awesome?" },
+    },
+    {
+      key: "fq-00000000-0000-0000-0000-000000000017",
+      type: "textarea",
+      required: false,
+      data: { label: "Is there anything else you would like to highlight about yourself since you last applied?", afterDomains: true },
+    },
+    {
+      key: "fq-00000000-0000-0000-0000-000000000018",
+      type: "textarea",
+      required: false,
+      data: { label: "Is there anything else you'd like us to know that you haven't yet been able to touch on in this application?", afterDomains: true },
     },
   ];
 
@@ -389,7 +568,6 @@ async function main() {
         create: [
           { newStatus: "Draft", userId: admin.id, createdAt: ts(-3000) },
           { newStatus: "Open", userId: admin.id, createdAt: ts(-2000) },
-          { newStatus: "UnderReview", userId: admin.id, createdAt: ts(-1000) },
         ],
       },
     },
@@ -437,11 +615,21 @@ async function main() {
     create: {
       id: "app-alice",
       answers: {
-        "fq-00000000-0000-0000-0000-000000000001":
-          "DALI's focus on real-world impact and cross-functional teams is exactly the environment I want to grow in.",
-        "fq-00000000-0000-0000-0000-000000000002":
-          "Sophomore, Computer Science",
-        "fq-00000000-0000-0000-0000-000000000003": "I'm also a TA for CS 10.",
+        "fq-00000000-0000-0000-0000-000000000001": "Alice Johnson",
+        "fq-00000000-0000-0000-0000-000000000002": "f007al1",
+        "fq-00000000-0000-0000-0000-000000000003": "2028",
+        "fq-00000000-0000-0000-0000-000000000004": "she/her",
+        "fq-00000000-0000-0000-0000-000000000006": "Friend in DALI",
+        "fq-00000000-0000-0000-0000-000000000007": "Computer Science",
+        "fq-00000000-0000-0000-0000-000000000008": "Fall, Winter, Spring",
+        "fq-00000000-0000-0000-0000-000000000009": "Fall",
+        "fq-00000000-0000-0000-0000-000000000010": "CS 10 TA: 5 hours\nWomen in CS: 3 hours\nClub Tennis: 4 hours",
+        "fq-00000000-0000-0000-0000-000000000011": "12-15 hours. DALI would replace my current grading shifts as a TA.",
+        "fq-00000000-0000-0000-0000-000000000012": "CS 1, CS 10, CS 30 (current). TA for CS 10. Built several personal projects in React and Node.js.",
+        "fq-00000000-0000-0000-0000-000000000013": "Intro to React Workshop (Fall 2025)",
+        "fq-00000000-0000-0000-0000-000000000014": "DALI's focus on real-world impact and cross-functional teams is exactly the environment I want to grow in. I want to ship products that students actually use.",
+        "fq-00000000-0000-0000-0000-000000000015": "I built a distributed rate-limiter for my systems class using a token-bucket algorithm. I loved seeing it handle real traffic patterns. I stumbled on handling clock skew across nodes — it took me a week to get right.",
+        "fq-00000000-0000-0000-0000-000000000016": "In my systems class, our team of 4 built a mini MapReduce. I loved how we divided the work cleanly — I handled the shuffle phase while others did map and reduce. We could have improved our testing strategy; we only tested end-to-end and missed subtle edge cases.",
       },
       userId: alice.id,
       applicationCycleId: cycle.id,
@@ -458,12 +646,9 @@ async function main() {
             id: "da-alice-eng",
             challengeVersionId: engCv.id,
             answers: {
-              "eq-00000000-0000-0000-0000-000000000001":
-                "I built a distributed rate-limiter for my systems class using a token-bucket algorithm. The hardest part was handling clock skew across nodes.",
-              "eq-00000000-0000-0000-0000-000000000002":
-                "github.com/alice/ratelimiter — I'd add better observability hooks now.",
-              "eq-00000000-0000-0000-0000-000000000003":
-                "I've been learning Rust because I want to understand memory safety at a deeper level than C++.",
+              "eq-00000000-0000-0000-0000-000000000001": "https://github.com/alice/fullstack-challenge",
+              "eq-00000000-0000-0000-0000-000000000005": "Bash/Terminal: 4\nGit: 4\nC: 2\nC#: 0\nUnity: 0\nJavaScript: 4\nTypeScript: 3\nPython: 4\nRuby (on Rails): 0\nReact.js: 3\nReact Native: 1\nSwift: 0\nFlutter: 0\niOS: 0\nAndroid: 0\nMongoDB: 2\nExpress: 3\nNode.js: 4\nSQL: 3\nIoT: 0\nR: 1\nTidy-Verse: 0\nPandas: 2\nD3: 1\nFigma: 1\nSKlearn: 1\nDeep/Machine Learning: 1\nCloud Data Storage: 1",
+              "eq-00000000-0000-0000-0000-000000000006": "Rust - 2, Docker - 3",
             },
           },
         ],
@@ -478,10 +663,21 @@ async function main() {
     create: {
       id: "app-bob",
       answers: {
-        "fq-00000000-0000-0000-0000-000000000001":
-          "I've admired DALI projects on campus for two years and want to contribute to products that reach real users.",
-        "fq-00000000-0000-0000-0000-000000000002":
-          "Junior, Studio Art + Government",
+        "fq-00000000-0000-0000-0000-000000000001": "Bob Chen",
+        "fq-00000000-0000-0000-0000-000000000002": "f007bo2",
+        "fq-00000000-0000-0000-0000-000000000003": "2027",
+        "fq-00000000-0000-0000-0000-000000000004": "he/him",
+        "fq-00000000-0000-0000-0000-000000000006": "DALI term showcase",
+        "fq-00000000-0000-0000-0000-000000000007": "Studio Art, Government minor",
+        "fq-00000000-0000-0000-0000-000000000008": "Fall, Winter",
+        "fq-00000000-0000-0000-0000-000000000009": "Fall",
+        "fq-00000000-0000-0000-0000-000000000010": "Dartmouth Journal of Art: 6 hours\nStudent Assembly: 3 hours\nIntramural basketball: 2 hours",
+        "fq-00000000-0000-0000-0000-000000000011": "10-12 hours. I would step back from my Student Assembly role to make room.",
+        "fq-00000000-0000-0000-0000-000000000012": "ARTS 17, ARTS 25 (graphic design), GOV 6. Art Director for Dartmouth Journal of Art. Led a UX redesign for a student org's website.",
+        "fq-00000000-0000-0000-0000-000000000013": "Figma for Beginners Workshop (Winter 2025)",
+        "fq-00000000-0000-0000-0000-000000000014": "I've admired DALI projects on campus for two years and want to contribute to products that reach real users. The mix of design and product work is a perfect fit for my skills.",
+        "fq-00000000-0000-0000-0000-000000000015": "I redesigned the Dartmouth Journal of Art's print layout from scratch. I loved the challenge of balancing readability with visual impact. I stumbled on typography hierarchy — my first drafts were too busy and I had to simplify.",
+        "fq-00000000-0000-0000-0000-000000000016": "Working on the Journal of Art editorial team, we had to coordinate between writers, photographers, and designers. I loved the creative energy, but we could have improved our feedback cadence — sometimes revisions came in too late.",
       },
       userId: bob.id,
       applicationCycleId: cycle.id,
@@ -498,22 +694,16 @@ async function main() {
             id: "da-bob-design",
             challengeVersionId: designCv.id,
             answers: {
-              "dq-00000000-0000-0000-0000-000000000001":
-                "I start with stakeholder interviews, then low-fi sketches before moving to Figma.",
-              "dq-00000000-0000-0000-0000-000000000002":
-                "figma.com/file/bob-portfolio",
-              "dq-00000000-0000-0000-0000-000000000003":
-                "User testing revealed our icon set was culturally ambiguous for international students, so we switched to labelled buttons.",
+              "dq-00000000-0000-0000-0000-000000000001": "https://www.figma.com/file/abc123/bob-uiux-challenge",
+              "dq-00000000-0000-0000-0000-000000000002": "https://www.figma.com/file/def456/bob-graphics-challenge",
+              "dq-00000000-0000-0000-0000-000000000005": "Figma: 4\nSketch/Invision: 2\nAdobe XD: 1\nAdobe Photoshop: 4\nAdobe Illustrator: 4\nAdobe After Effects: 2\nHTML/CSS: 3",
             },
           },
           {
             id: "da-bob-pm",
             challengeVersionId: pmCv.id,
             answers: {
-              "pq-00000000-0000-0000-0000-000000000001":
-                "Notion's sidebar navigation is overwhelming. I'd introduce a 'focus mode' that hides unused sections, then A/B test retention after 30 days.",
-              "pq-00000000-0000-0000-0000-000000000002":
-                "During a hackathon I had to pick a tech stack with no prior data. I time-boxed spikes to 20 minutes each and chose based on team familiarity.",
+              "pq-00000000-0000-0000-0000-000000000001": "uploads/applications/app-bob/pq-00000000-0000-0000-0000-000000000001/pm-challenge.pdf",
             },
           },
         ],
@@ -528,9 +718,10 @@ async function main() {
     create: {
       id: "app-carol",
       answers: {
-        "fq-00000000-0000-0000-0000-000000000001":
-          "I want to work on products with real impact.",
-        "fq-00000000-0000-0000-0000-000000000002": "Senior, Computer Science",
+        "fq-00000000-0000-0000-0000-000000000001": "Carol Patel",
+        "fq-00000000-0000-0000-0000-000000000002": "f007ca3",
+        "fq-00000000-0000-0000-0000-000000000003": "2026",
+        "fq-00000000-0000-0000-0000-000000000007": "Computer Science",
       },
       userId: carol.id,
       applicationCycleId: cycle.id,
@@ -653,9 +844,21 @@ async function main() {
     create: {
       id: "app-diego",
       answers: {
-        "fq-00000000-0000-0000-0000-000000000001":
-          "DALI blends research-quality engineering with products students actually use — that's rare and what I want to be part of.",
-        "fq-00000000-0000-0000-0000-000000000002": "Junior, Computer Science + Math",
+        "fq-00000000-0000-0000-0000-000000000001": "Diego Rivera",
+        "fq-00000000-0000-0000-0000-000000000002": "f007di4",
+        "fq-00000000-0000-0000-0000-000000000003": "2027",
+        "fq-00000000-0000-0000-0000-000000000004": "he/him",
+        "fq-00000000-0000-0000-0000-000000000006": "CS department mailing list",
+        "fq-00000000-0000-0000-0000-000000000007": "Computer Science, Mathematics minor",
+        "fq-00000000-0000-0000-0000-000000000008": "Fall, Winter, Spring",
+        "fq-00000000-0000-0000-0000-000000000009": "Fall",
+        "fq-00000000-0000-0000-0000-000000000010": "CS Research Assistant (Prof. Li): 8 hours\nACM Programming Club: 3 hours",
+        "fq-00000000-0000-0000-0000-000000000011": "12-15 hours. DALI would replace my research assistant position.",
+        "fq-00000000-0000-0000-0000-000000000012": "CS 1, CS 10, CS 30, CS 31, CS 50 (current). Research assistant building compilers. Strong background in systems programming and functional languages.",
+        "fq-00000000-0000-0000-0000-000000000013": "None",
+        "fq-00000000-0000-0000-0000-000000000014": "DALI blends research-quality engineering with products students actually use — that's rare and what I want to be part of.",
+        "fq-00000000-0000-0000-0000-000000000015": "I wrote a type-checker for a small functional language as a final project. I loved the elegance of Hindley-Milner unification. I stumbled on implementing let-polymorphism — the generalization step took two weeks of painful debugging.",
+        "fq-00000000-0000-0000-0000-000000000016": "In our compilers class, our team of 3 built a small optimizing compiler. I loved the clear module boundaries — I owned the type checker, one person did parsing, another did codegen. We could have improved by writing integration tests earlier instead of only testing at the end.",
       },
       userId: diego.id,
       applicationCycleId: cycle.id,
@@ -672,12 +875,11 @@ async function main() {
             id: "da-diego-eng",
             challengeVersionId: engCv.id,
             answers: {
-              "eq-00000000-0000-0000-0000-000000000001":
-                "I wrote a type-checker for a small functional language as a final project. Unification was the hard part — I ended up implementing Hindley-Milner after two weeks of painful debugging.",
-              "eq-00000000-0000-0000-0000-000000000002":
-                "github.com/diego/hm-checker — I'd split the unifier into its own module and add property-based tests.",
-              "eq-00000000-0000-0000-0000-000000000003":
-                "I've been reading about deterministic simulation testing in databases. The idea that you can replay exact schedules to debug concurrency bugs is wild.",
+              "eq-00000000-0000-0000-0000-000000000001": "https://github.com/diego/fullstack-challenge",
+              "eq-00000000-0000-0000-0000-000000000002": "https://github.com/diego/data-challenge",
+              "eq-00000000-0000-0000-0000-000000000004": "https://github.com/diego/hm-checker",
+              "eq-00000000-0000-0000-0000-000000000005": "Bash/Terminal: 5\nGit: 5\nC: 4\nC#: 1\nUnity: 0\nJavaScript: 4\nTypeScript: 4\nPython: 5\nRuby (on Rails): 0\nReact.js: 3\nReact Native: 0\nSwift: 0\nFlutter: 0\niOS: 0\nAndroid: 0\nMongoDB: 2\nExpress: 3\nNode.js: 4\nSQL: 4\nIoT: 0\nR: 3\nTidy-Verse: 1\nPandas: 4\nD3: 2\nFigma: 1\nSKlearn: 3\nDeep/Machine Learning: 2\nCloud Data Storage: 2",
+              "eq-00000000-0000-0000-0000-000000000006": "OCaml - 4, Haskell - 3, LLVM - 2",
             },
           },
         ],
@@ -692,9 +894,21 @@ async function main() {
     create: {
       id: "app-eve",
       answers: {
-        "fq-00000000-0000-0000-0000-000000000001":
-          "I want to design for a team that ships to real users and iterates — DALI projects do both.",
-        "fq-00000000-0000-0000-0000-000000000002": "Sophomore, Studio Art + Cognitive Science",
+        "fq-00000000-0000-0000-0000-000000000001": "Eve Park",
+        "fq-00000000-0000-0000-0000-000000000002": "f007ev5",
+        "fq-00000000-0000-0000-0000-000000000003": "2028",
+        "fq-00000000-0000-0000-0000-000000000004": "she/they",
+        "fq-00000000-0000-0000-0000-000000000006": "DALI showcase event",
+        "fq-00000000-0000-0000-0000-000000000007": "Studio Art, Cognitive Science minor",
+        "fq-00000000-0000-0000-0000-000000000008": "Fall, Winter, Spring",
+        "fq-00000000-0000-0000-0000-000000000009": "Fall",
+        "fq-00000000-0000-0000-0000-000000000010": "Design for Dartmouth (student org): 5 hours\nHood Museum Volunteer: 3 hours\nYoga Club: 2 hours",
+        "fq-00000000-0000-0000-0000-000000000011": "12-14 hours. I would reduce my museum volunteer hours to accommodate DALI.",
+        "fq-00000000-0000-0000-0000-000000000012": "ARTS 8, ARTS 17, COGS 1, COGS 11. Lead designer for Design for Dartmouth student org. Experience with user research methods and prototyping.",
+        "fq-00000000-0000-0000-0000-000000000013": "Figma for Beginners Workshop (Fall 2025), Design Thinking Mini-Series (Winter 2026)",
+        "fq-00000000-0000-0000-0000-000000000014": "I want to design for a team that ships to real users and iterates — DALI projects do both. The cognitive science side of my studies gives me a unique lens on usability.",
+        "fq-00000000-0000-0000-0000-000000000015": "I designed a library book-return kiosk interface as part of a UX course. I loved the constraint of designing for hurried users. I stumbled on information architecture — my first version had too many steps in the flow.",
+        "fq-00000000-0000-0000-0000-000000000016": "In Design for Dartmouth, our team of 5 redesigned a campus wayfinding app. I loved that everyone brought different perspectives — an engineer, a writer, and three designers. We could have improved by doing user testing earlier instead of polishing mockups first.",
       },
       userId: eve.id,
       applicationCycleId: cycle.id,
@@ -711,12 +925,9 @@ async function main() {
             id: "da-eve-design",
             challengeVersionId: designCv.id,
             answers: {
-              "dq-00000000-0000-0000-0000-000000000001":
-                "I interview three or four actual users before touching Figma. My first wireframes are always ugly and paper — it saves tons of time downstream.",
-              "dq-00000000-0000-0000-0000-000000000002":
-                "evepark.design — recent case study on a library book-return kiosk.",
-              "dq-00000000-0000-0000-0000-000000000003":
-                "We were convinced freshmen wanted a map view for our dining app, but testing showed they just wanted a list sorted by wait time. We cut the map.",
+              "dq-00000000-0000-0000-0000-000000000001": "https://www.figma.com/file/eve123/eve-uiux-challenge",
+              "dq-00000000-0000-0000-0000-000000000002": "https://www.figma.com/file/eve456/eve-graphics-challenge",
+              "dq-00000000-0000-0000-0000-000000000005": "Figma: 5\nSketch/Invision: 2\nAdobe XD: 1\nAdobe Photoshop: 3\nAdobe Illustrator: 4\nAdobe After Effects: 1\nHTML/CSS: 2",
             },
           },
         ],
@@ -731,9 +942,21 @@ async function main() {
     create: {
       id: "app-felix",
       answers: {
-        "fq-00000000-0000-0000-0000-000000000001":
-          "I'm drawn to DALI's combination of real stakeholders and short feedback loops.",
-        "fq-00000000-0000-0000-0000-000000000002": "Junior, Economics + Government",
+        "fq-00000000-0000-0000-0000-000000000001": "Felix Nguyen",
+        "fq-00000000-0000-0000-0000-000000000002": "f007fe6",
+        "fq-00000000-0000-0000-0000-000000000003": "2027",
+        "fq-00000000-0000-0000-0000-000000000004": "he/him",
+        "fq-00000000-0000-0000-0000-000000000006": "DALI website",
+        "fq-00000000-0000-0000-0000-000000000007": "Economics, Government minor",
+        "fq-00000000-0000-0000-0000-000000000008": "Fall, Winter",
+        "fq-00000000-0000-0000-0000-000000000009": "Fall",
+        "fq-00000000-0000-0000-0000-000000000010": "Dartmouth Entrepreneurship Club (President): 6 hours\nCS TA: 4 hours\nDartmouth Consulting Group: 3 hours",
+        "fq-00000000-0000-0000-0000-000000000011": "10-12 hours. I would step down from the consulting group to prioritize DALI.",
+        "fq-00000000-0000-0000-0000-000000000012": "ECON 1, ECON 22, GOV 3, CS 1. President of Entrepreneurship Club — ran two pitch competitions. Led product strategy for a student org's app launch.",
+        "fq-00000000-0000-0000-0000-000000000013": "PM Workshop Series (Winter 2026)",
+        "fq-00000000-0000-0000-0000-000000000014": "I'm drawn to DALI's combination of real stakeholders and short feedback loops. I want to learn how to run a product team in a setting where decisions actually ship.",
+        "fq-00000000-0000-0000-0000-000000000015": "I led the launch of a campus event discovery app for the Entrepreneurship Club. I loved running user interviews and watching the product evolve. I stumbled on scope creep — we tried to add a social feed and it delayed launch by two weeks.",
+        "fq-00000000-0000-0000-0000-000000000016": "Running the Entrepreneurship Club's pitch competition required coordinating judges, mentors, and 20 teams. I loved the energy of the event. We could have improved by creating a shared timeline earlier — last-minute logistics caused some confusion.",
       },
       userId: felix.id,
       applicationCycleId: cycle.id,
@@ -750,10 +973,7 @@ async function main() {
             id: "da-felix-pm",
             challengeVersionId: pmCv.id,
             answers: {
-              "pq-00000000-0000-0000-0000-000000000001":
-                "Canvas assignment notifications are noisy and land at inconvenient times. I'd batch them into a single daily digest, preserving only 'grade posted' as real-time.",
-              "pq-00000000-0000-0000-0000-000000000002":
-                "Running a student org's budget, I had to cut 30% mid-semester. I built a priority matrix with the exec team and used it to defend every line in the meeting.",
+              "pq-00000000-0000-0000-0000-000000000001": "uploads/applications/app-felix/pq-00000000-0000-0000-0000-000000000001/pm-challenge.pdf",
             },
           },
         ],
@@ -768,9 +988,20 @@ async function main() {
     create: {
       id: "app-grace",
       answers: {
-        "fq-00000000-0000-0000-0000-000000000001":
-          "I want to join DALI because it would look great on my resume.",
-        "fq-00000000-0000-0000-0000-000000000002": "Freshman, Undeclared",
+        "fq-00000000-0000-0000-0000-000000000001": "Grace Okafor",
+        "fq-00000000-0000-0000-0000-000000000002": "f007gr7",
+        "fq-00000000-0000-0000-0000-000000000003": "2029",
+        "fq-00000000-0000-0000-0000-000000000006": "Activities fair",
+        "fq-00000000-0000-0000-0000-000000000007": "Undecided",
+        "fq-00000000-0000-0000-0000-000000000008": "Fall, Winter",
+        "fq-00000000-0000-0000-0000-000000000009": "Fall",
+        "fq-00000000-0000-0000-0000-000000000010": "Intramural soccer: 3 hours\nDorm council: 1 hour",
+        "fq-00000000-0000-0000-0000-000000000011": "10 hours. I don't have many commitments right now.",
+        "fq-00000000-0000-0000-0000-000000000012": "CS 1 (current). No prior coding experience before college.",
+        "fq-00000000-0000-0000-0000-000000000013": "None",
+        "fq-00000000-0000-0000-0000-000000000014": "I want to join DALI because it would look great on my resume and I want to learn to code.",
+        "fq-00000000-0000-0000-0000-000000000015": "I built a calculator in CS 1. It was cool to see it work. I didn't really stumble on anything specific.",
+        "fq-00000000-0000-0000-0000-000000000016": "In high school I worked on a group project for history class. It was fine. We could have communicated better.",
       },
       userId: grace.id,
       applicationCycleId: cycle.id,
@@ -787,12 +1018,7 @@ async function main() {
             id: "da-grace-eng",
             challengeVersionId: engCv.id,
             answers: {
-              "eq-00000000-0000-0000-0000-000000000001":
-                "I took CS 1 and built a calculator.",
-              "eq-00000000-0000-0000-0000-000000000002":
-                "No public repos yet.",
-              "eq-00000000-0000-0000-0000-000000000003":
-                "I'm interested in AI.",
+              "eq-00000000-0000-0000-0000-000000000005": "Bash/Terminal: 1\nGit: 0\nC: 0\nC#: 0\nUnity: 0\nJavaScript: 1\nTypeScript: 0\nPython: 1\nRuby (on Rails): 0\nReact.js: 0\nReact Native: 0\nSwift: 0\nFlutter: 0\niOS: 0\nAndroid: 0\nMongoDB: 0\nExpress: 0\nNode.js: 0\nSQL: 0\nIoT: 0\nR: 0\nTidy-Verse: 0\nPandas: 0\nD3: 0\nFigma: 0\nSKlearn: 0\nDeep/Machine Learning: 0\nCloud Data Storage: 0",
             },
           },
         ],
@@ -807,9 +1033,21 @@ async function main() {
     create: {
       id: "app-harper",
       answers: {
-        "fq-00000000-0000-0000-0000-000000000001":
-          "I've followed DALI term showcases for a year and the breadth of projects is what drew me in.",
-        "fq-00000000-0000-0000-0000-000000000002": "Sophomore, Film & Media Studies",
+        "fq-00000000-0000-0000-0000-000000000001": "Harper Sato",
+        "fq-00000000-0000-0000-0000-000000000002": "f007ha8",
+        "fq-00000000-0000-0000-0000-000000000003": "2028",
+        "fq-00000000-0000-0000-0000-000000000004": "they/them",
+        "fq-00000000-0000-0000-0000-000000000006": "DALI term showcase",
+        "fq-00000000-0000-0000-0000-000000000007": "Film & Media Studies",
+        "fq-00000000-0000-0000-0000-000000000008": "Fall, Winter, Spring",
+        "fq-00000000-0000-0000-0000-000000000009": "Spring",
+        "fq-00000000-0000-0000-0000-000000000010": "Film Club (VP): 5 hours\nFreelance video editing: 4 hours\nDartmouth Broadcasting: 3 hours",
+        "fq-00000000-0000-0000-0000-000000000011": "10-12 hours. I would scale back freelance work.",
+        "fq-00000000-0000-0000-0000-000000000012": "FILM 1, FILM 14, ARTS 17. VP of Film Club. Freelance motion graphics and video editing for student organizations.",
+        "fq-00000000-0000-0000-0000-000000000013": "None",
+        "fq-00000000-0000-0000-0000-000000000014": "I've followed DALI term showcases for a year and the breadth of projects drew me in. I want to bring motion design and animation skills to product teams.",
+        "fq-00000000-0000-0000-0000-000000000015": "I created a short animated explainer video for a campus sustainability campaign. I loved the storytelling challenge of condensing complex data into 60 seconds. I stumbled on pacing — my first cut was too fast and testers couldn't absorb the info.",
+        "fq-00000000-0000-0000-0000-000000000016": "On Film Club's annual short film, I directed a team of 8. I loved the creative problem-solving when we lost our location and had to pivot. We could have improved by storyboarding more thoroughly before shooting — we wasted time on scenes we cut.",
       },
       userId: harper.id,
       applicationCycleId: cycle.id,
@@ -826,12 +1064,9 @@ async function main() {
             id: "da-harper-design",
             challengeVersionId: designCv.id,
             answers: {
-              "dq-00000000-0000-0000-0000-000000000001":
-                "I start from constraints — who, where, what device — and let form follow. I sketch in Procreate before any high-fidelity work.",
-              "dq-00000000-0000-0000-0000-000000000002":
-                "harper-sato.cargo.site",
-              "dq-00000000-0000-0000-0000-000000000003":
-                "A study of how film students annotated shot lists showed us margins mattered more than colors — we redesigned around whitespace.",
+              "dq-00000000-0000-0000-0000-000000000001": "https://www.figma.com/file/harper123/harper-uiux-challenge",
+              "dq-00000000-0000-0000-0000-000000000003": "https://www.figma.com/file/harper456/harper-animation-challenge",
+              "dq-00000000-0000-0000-0000-000000000005": "Figma: 3\nSketch/Invision: 1\nAdobe XD: 1\nAdobe Photoshop: 3\nAdobe Illustrator: 2\nAdobe After Effects: 4\nHTML/CSS: 2",
             },
           },
         ],
@@ -846,9 +1081,21 @@ async function main() {
     create: {
       id: "app-ivan",
       answers: {
-        "fq-00000000-0000-0000-0000-000000000001":
-          "I want to work on things where the deployment matters as much as the code — DALI fits that better than any student org I've seen.",
-        "fq-00000000-0000-0000-0000-000000000002": "Freshman, Computer Science + Physics",
+        "fq-00000000-0000-0000-0000-000000000001": "Ivan Kozlov",
+        "fq-00000000-0000-0000-0000-000000000002": "f007iv9",
+        "fq-00000000-0000-0000-0000-000000000003": "2029",
+        "fq-00000000-0000-0000-0000-000000000004": "he/him",
+        "fq-00000000-0000-0000-0000-000000000006": "Professor recommendation",
+        "fq-00000000-0000-0000-0000-000000000007": "Computer Science, Physics minor",
+        "fq-00000000-0000-0000-0000-000000000008": "Fall, Winter, Spring",
+        "fq-00000000-0000-0000-0000-000000000009": "Spring",
+        "fq-00000000-0000-0000-0000-000000000010": "Physics Research Lab: 6 hours\nRobotics Club: 4 hours",
+        "fq-00000000-0000-0000-0000-000000000011": "10-12 hours. I would reduce my robotics club hours.",
+        "fq-00000000-0000-0000-0000-000000000012": "CS 1, CS 10 (current), PHYS 13, PHYS 14. Built a simulation toolkit for a physics research group. Self-taught in Python and C.",
+        "fq-00000000-0000-0000-0000-000000000013": "None",
+        "fq-00000000-0000-0000-0000-000000000014": "I want to work on things where the deployment matters as much as the code — DALI fits that better than any student org I've seen.",
+        "fq-00000000-0000-0000-0000-000000000015": "I built a numerical simulation toolkit for a physics research group. I loved optimizing the performance to handle large datasets. I stumbled on ad-hoc logging — I should have used structured traces from the start.",
+        "fq-00000000-0000-0000-0000-000000000016": "In the Robotics Club, our team of 6 built an autonomous line-following robot. I loved the hardware-software integration challenge. We could have improved by defining clearer interfaces between the sensor team and the control team earlier.",
       },
       userId: ivan.id,
       applicationCycleId: cycle.id,
@@ -865,12 +1112,10 @@ async function main() {
             id: "da-ivan-eng",
             challengeVersionId: engCv.id,
             answers: {
-              "eq-00000000-0000-0000-0000-000000000001":
-                "Ported a finicky build pipeline from Make to Bazel for a research group. The win was incremental builds going from 40s to 3s; the lesson was that nobody cares about Bazel's purity if the upgrade path isn't clear.",
-              "eq-00000000-0000-0000-0000-000000000002":
-                "github.com/ivan-k/sim-toolkit — a small numerical simulation helper. I'd replace the ad-hoc logging with structured traces now.",
-              "eq-00000000-0000-0000-0000-000000000003":
-                "Reading about PL design for differentiable programming — the idea that a compiler can produce gradients is still wild to me.",
+              "eq-00000000-0000-0000-0000-000000000001": "https://github.com/ivan-k/fullstack-challenge",
+              "eq-00000000-0000-0000-0000-000000000004": "https://github.com/ivan-k/sim-toolkit",
+              "eq-00000000-0000-0000-0000-000000000005": "Bash/Terminal: 3\nGit: 3\nC: 3\nC#: 0\nUnity: 0\nJavaScript: 2\nTypeScript: 1\nPython: 4\nRuby (on Rails): 0\nReact.js: 1\nReact Native: 0\nSwift: 0\nFlutter: 0\niOS: 0\nAndroid: 0\nMongoDB: 0\nExpress: 1\nNode.js: 2\nSQL: 1\nIoT: 2\nR: 0\nTidy-Verse: 0\nPandas: 3\nD3: 0\nFigma: 0\nSKlearn: 1\nDeep/Machine Learning: 1\nCloud Data Storage: 0",
+              "eq-00000000-0000-0000-0000-000000000006": "MATLAB - 3, NumPy - 4",
             },
           },
         ],
@@ -885,9 +1130,23 @@ async function main() {
     create: {
       id: "app-jade",
       answers: {
-        "fq-00000000-0000-0000-0000-000000000001":
-          "DALI is the rare place where design work actually ships to real users on campus. That's what I want to be part of.",
-        "fq-00000000-0000-0000-0000-000000000002": "Junior, Geography + Human-Centered Design",
+        "fq-00000000-0000-0000-0000-000000000001": "Jade Montgomery",
+        "fq-00000000-0000-0000-0000-000000000002": "f007ja0",
+        "fq-00000000-0000-0000-0000-000000000003": "2027",
+        "fq-00000000-0000-0000-0000-000000000004": "she/her",
+        "fq-00000000-0000-0000-0000-000000000005": "Yes, I applied in Fall 2025 and was waitlisted. Since then I've completed the HCD capstone and led a design project for the library.",
+        "fq-00000000-0000-0000-0000-000000000006": "Applied previously",
+        "fq-00000000-0000-0000-0000-000000000007": "Geography, Human-Centered Design minor",
+        "fq-00000000-0000-0000-0000-000000000008": "Fall, Winter",
+        "fq-00000000-0000-0000-0000-000000000009": "Fall",
+        "fq-00000000-0000-0000-0000-000000000010": "HCD Lab Assistant: 5 hours\nOutdoor Club: 3 hours\nFreelance UX work: 4 hours",
+        "fq-00000000-0000-0000-0000-000000000011": "12-14 hours. I would reduce my freelance work.",
+        "fq-00000000-0000-0000-0000-000000000012": "GEOG 5, GEOG 30, HCD 1, HCD 50 (capstone). Lab assistant for HCD program. Led wayfinding redesign project for Baker-Berry Library.",
+        "fq-00000000-0000-0000-0000-000000000013": "Design Thinking Mini-Series (Winter 2025)",
+        "fq-00000000-0000-0000-0000-000000000014": "DALI is the rare place where design work actually ships to real users on campus. That's what I want to be part of.",
+        "fq-00000000-0000-0000-0000-000000000015": "I redesigned the wayfinding system for Baker-Berry Library. I loved the research phase — five-minute intercept interviews with real library visitors. I stumbled on scope — I tried to cover all four floors and should have focused on the main entrance first.",
+        "fq-00000000-0000-0000-0000-000000000016": "In my HCD capstone, our team of 4 designed a campus accessibility tool. I loved how our different majors brought different lenses — a CS student, an engineer, and two designers. We could have improved by establishing a shared design language earlier.",
+        "fq-00000000-0000-0000-0000-000000000017": "Since my last application, I completed the HCD capstone project and received an A. I also took on freelance UX work for two local nonprofits.",
       },
       userId: jade.id,
       applicationCycleId: cycle.id,
@@ -904,12 +1163,9 @@ async function main() {
             id: "da-jade-design",
             challengeVersionId: designCv.id,
             answers: {
-              "dq-00000000-0000-0000-0000-000000000001":
-                "I start with a short research sprint — five-minute interviews with the people who will actually use it. From there I work in Figma, but only after sketches I'm willing to throw away.",
-              "dq-00000000-0000-0000-0000-000000000002":
-                "jadem-design.notion.site — recent wayfinding redesign for the library.",
-              "dq-00000000-0000-0000-0000-000000000003":
-                "We assumed users wanted dark mode by default on a tool used mostly in bright outdoor light. Testing with field researchers showed the exact opposite — high-contrast light mode was unreadable without the blue-light filter.",
+              "dq-00000000-0000-0000-0000-000000000001": "https://www.figma.com/file/jade123/jade-uiux-challenge",
+              "dq-00000000-0000-0000-0000-000000000002": "https://www.figma.com/file/jade456/jade-graphics-challenge",
+              "dq-00000000-0000-0000-0000-000000000005": "Figma: 5\nSketch/Invision: 3\nAdobe XD: 2\nAdobe Photoshop: 3\nAdobe Illustrator: 4\nAdobe After Effects: 1\nHTML/CSS: 3",
             },
           },
         ],
@@ -924,9 +1180,21 @@ async function main() {
     create: {
       id: "app-kenji",
       answers: {
-        "fq-00000000-0000-0000-0000-000000000001":
-          "I've contributed to a few open-source React libraries and want to work somewhere the feedback loop from code to user is this tight.",
-        "fq-00000000-0000-0000-0000-000000000002": "Freshman, Computer Science",
+        "fq-00000000-0000-0000-0000-000000000001": "Kenji Yamada",
+        "fq-00000000-0000-0000-0000-000000000002": "f007ke1",
+        "fq-00000000-0000-0000-0000-000000000003": "2029",
+        "fq-00000000-0000-0000-0000-000000000004": "he/him",
+        "fq-00000000-0000-0000-0000-000000000006": "Open-source community",
+        "fq-00000000-0000-0000-0000-000000000007": "Computer Science",
+        "fq-00000000-0000-0000-0000-000000000008": "Fall, Winter, Spring",
+        "fq-00000000-0000-0000-0000-000000000009": "Fall",
+        "fq-00000000-0000-0000-0000-000000000010": "Open-source contributions: 5 hours\nCS study group leader: 2 hours",
+        "fq-00000000-0000-0000-0000-000000000011": "12-15 hours. I would scale back open-source contributions to focus on DALI projects.",
+        "fq-00000000-0000-0000-0000-000000000012": "CS 1, CS 10 (current). Contributed to several open-source React libraries before college. Self-taught in web development since age 14.",
+        "fq-00000000-0000-0000-0000-000000000013": "Intro to React Workshop (Fall 2025)",
+        "fq-00000000-0000-0000-0000-000000000014": "I've contributed to a few open-source React libraries and want to work somewhere the feedback loop from code to user is this tight.",
+        "fq-00000000-0000-0000-0000-000000000015": "I wrote a virtual-list component for my personal blog because existing libraries didn't handle variable-height rows well. I loved the performance optimization challenge. I stumbled on the measurement cache — ResizeObserver edge cases took a while to iron out.",
+        "fq-00000000-0000-0000-0000-000000000016": "Contributing to an open-source React component library, I collaborated asynchronously with developers across time zones. I loved the code review culture and learning from experienced devs. We could have improved our onboarding docs — new contributors often got stuck on the build setup.",
       },
       userId: kenji.id,
       applicationCycleId: cycle.id,
@@ -943,12 +1211,10 @@ async function main() {
             id: "da-kenji-eng",
             challengeVersionId: engCv.id,
             answers: {
-              "eq-00000000-0000-0000-0000-000000000001":
-                "Wrote a small virtual-list component for my personal blog because the existing libraries didn't handle variable-height rows well. Chunked measurement with a ResizeObserver turned out to be the key.",
-              "eq-00000000-0000-0000-0000-000000000002":
-                "github.com/kenjiy/virtual-list-lite — I'd pull the measurement cache out into a reusable hook.",
-              "eq-00000000-0000-0000-0000-000000000003":
-                "WebGPU shader toolchains. It feels like we're a few years away from shader code being portable in the way JavaScript is.",
+              "eq-00000000-0000-0000-0000-000000000001": "https://github.com/kenjiy/fullstack-challenge",
+              "eq-00000000-0000-0000-0000-000000000004": "https://github.com/kenjiy/virtual-list-lite",
+              "eq-00000000-0000-0000-0000-000000000005": "Bash/Terminal: 3\nGit: 4\nC: 1\nC#: 0\nUnity: 0\nJavaScript: 5\nTypeScript: 4\nPython: 2\nRuby (on Rails): 0\nReact.js: 5\nReact Native: 2\nSwift: 0\nFlutter: 0\niOS: 0\nAndroid: 0\nMongoDB: 1\nExpress: 3\nNode.js: 4\nSQL: 1\nIoT: 0\nR: 0\nTidy-Verse: 0\nPandas: 0\nD3: 1\nFigma: 1\nSKlearn: 0\nDeep/Machine Learning: 0\nCloud Data Storage: 1",
+              "eq-00000000-0000-0000-0000-000000000006": "Next.js - 3, Tailwind CSS - 4, WebGL - 2",
             },
           },
         ],
@@ -963,9 +1229,23 @@ async function main() {
     create: {
       id: "app-leo",
       answers: {
-        "fq-00000000-0000-0000-0000-000000000001":
-          "I came to Dartmouth planning to do pure math and ended up loving infrastructure work. DALI's mix of research and shipping is exactly what I'm looking for.",
-        "fq-00000000-0000-0000-0000-000000000002": "Senior, Math + Computer Science",
+        "fq-00000000-0000-0000-0000-000000000001": "Leo Brennan",
+        "fq-00000000-0000-0000-0000-000000000002": "f007le2",
+        "fq-00000000-0000-0000-0000-000000000003": "2026",
+        "fq-00000000-0000-0000-0000-000000000004": "he/him",
+        "fq-00000000-0000-0000-0000-000000000005": "Yes, I applied in Winter 2025 and was rejected. Since then I've completed CS 50, built several full-stack projects, and contributed to open-source infrastructure tools.",
+        "fq-00000000-0000-0000-0000-000000000006": "Previous applicant",
+        "fq-00000000-0000-0000-0000-000000000007": "Mathematics, Computer Science minor",
+        "fq-00000000-0000-0000-0000-000000000008": "Fall, Winter",
+        "fq-00000000-0000-0000-0000-000000000009": "Fall",
+        "fq-00000000-0000-0000-0000-000000000010": "CS Research (distributed systems): 8 hours\nMath tutoring center: 3 hours",
+        "fq-00000000-0000-0000-0000-000000000011": "10-12 hours. I would reduce my tutoring center hours.",
+        "fq-00000000-0000-0000-0000-000000000012": "CS 1, CS 10, CS 30, CS 31, CS 50, MATH 22, MATH 71. Research assistant in distributed systems lab. Built CI/CD automation tools for research projects.",
+        "fq-00000000-0000-0000-0000-000000000013": "None",
+        "fq-00000000-0000-0000-0000-000000000014": "I came to Dartmouth planning to do pure math and ended up loving infrastructure work. DALI's mix of research and shipping is exactly what I'm looking for.",
+        "fq-00000000-0000-0000-0000-000000000015": "I automated a flaky CI matrix for a research lab. I loved the detective work of figuring out which failures were environment-dependent vs. real regressions. I stumbled on the quarantine logic — deciding when a flaky test should be promoted back to blocking took several iterations.",
+        "fq-00000000-0000-0000-0000-000000000016": "In the distributed systems lab, our team of 5 worked on a consensus protocol implementation. I loved the rigorous approach to correctness. We could have improved by writing a formal specification first — we found bugs late that a TLA+ model would have caught.",
+        "fq-00000000-0000-0000-0000-000000000017": "Since my last application, I've completed CS 50 (operating systems), contributed to two open-source CI tools, and built a log triage system used by three research groups.",
       },
       userId: leo.id,
       applicationCycleId: cycle.id,
@@ -982,12 +1262,10 @@ async function main() {
             id: "da-leo-eng",
             challengeVersionId: engCv.id,
             answers: {
-              "eq-00000000-0000-0000-0000-000000000001":
-                "Automated a flaky CI matrix for a research lab — the fix wasn't code, it was figuring out which failures were environment-dependent vs. real regressions and quarantining the first set behind a retry.",
-              "eq-00000000-0000-0000-0000-000000000002":
-                "github.com/leo-b/tidy-ci — scripts to triage CI logs. Would rewrite it in Rust now that the log corpus has grown.",
-              "eq-00000000-0000-0000-0000-000000000003":
-                "Linear types. Every time I think I understand them I find a new edge case that reframes what memory safety can mean.",
+              "eq-00000000-0000-0000-0000-000000000001": "https://github.com/leo-b/fullstack-challenge",
+              "eq-00000000-0000-0000-0000-000000000004": "https://github.com/leo-b/tidy-ci",
+              "eq-00000000-0000-0000-0000-000000000005": "Bash/Terminal: 5\nGit: 5\nC: 4\nC#: 0\nUnity: 0\nJavaScript: 3\nTypeScript: 3\nPython: 5\nRuby (on Rails): 1\nReact.js: 2\nReact Native: 0\nSwift: 0\nFlutter: 0\niOS: 0\nAndroid: 0\nMongoDB: 2\nExpress: 2\nNode.js: 3\nSQL: 4\nIoT: 0\nR: 2\nTidy-Verse: 1\nPandas: 3\nD3: 1\nFigma: 0\nSKlearn: 2\nDeep/Machine Learning: 1\nCloud Data Storage: 3",
+              "eq-00000000-0000-0000-0000-000000000006": "Rust - 3, Go - 4, Docker - 4, Kubernetes - 2, TLA+ - 2",
             },
           },
         ],
@@ -1043,12 +1321,22 @@ async function main() {
     create: {
       id: "app-dana",
       answers: {
-        "fq-00000000-0000-0000-0000-000000000001":
-          "I want to build things that matter. DALI's track record of shipping real products is why I'm applying.",
-        "fq-00000000-0000-0000-0000-000000000002":
-          "Freshman, Computer Science",
-        "fq-00000000-0000-0000-0000-000000000003":
-          "I competed in ICPC regionals this fall and placed in the top 10.",
+        "fq-00000000-0000-0000-0000-000000000001": "Dana Kim",
+        "fq-00000000-0000-0000-0000-000000000002": "f007da4",
+        "fq-00000000-0000-0000-0000-000000000003": "2029",
+        "fq-00000000-0000-0000-0000-000000000004": "she/her",
+        "fq-00000000-0000-0000-0000-000000000006": "CS department email",
+        "fq-00000000-0000-0000-0000-000000000007": "Computer Science",
+        "fq-00000000-0000-0000-0000-000000000008": "Winter, Spring, Fall",
+        "fq-00000000-0000-0000-0000-000000000009": "Spring",
+        "fq-00000000-0000-0000-0000-000000000010": "ICPC Training: 6 hours\nCS Study Group: 2 hours\nBadminton Club: 3 hours",
+        "fq-00000000-0000-0000-0000-000000000011": "12-15 hours. I would reduce ICPC training since the season ends in winter.",
+        "fq-00000000-0000-0000-0000-000000000012": "CS 1, CS 10 (current). Competed in ICPC regionals (top 10). Built a real-time collaborative code editor using CRDTs as a personal project.",
+        "fq-00000000-0000-0000-0000-000000000013": "None",
+        "fq-00000000-0000-0000-0000-000000000014": "I want to build things that matter. DALI's track record of shipping real products is why I'm applying.",
+        "fq-00000000-0000-0000-0000-000000000015": "I built a real-time collaborative code editor using CRDTs. I loved the elegance of eventual consistency. I stumbled on the merge logic — raw CRDTs got gnarly with nested data structures.",
+        "fq-00000000-0000-0000-0000-000000000016": "In ICPC training, my team of 3 practices solving problems under time pressure. I love how we divide problems by difficulty and play to each person's strengths. We could improve by doing more post-contest analysis together instead of individually.",
+        "fq-00000000-0000-0000-0000-000000000018": "I competed in ICPC regionals this fall and placed in the top 10.",
       },
       userId: dana.id,
       applicationCycleId: cycle2028.id,
@@ -1064,14 +1352,10 @@ async function main() {
           {
             challengeVersionId: engCv2.id,
             answers: {
-              "eq2-00000000-0000-0000-0000-000000000001":
-                "I built a real-time collaborative code editor using CRDTs. The main tradeoff was consistency vs. latency — I chose eventual consistency to keep the UI snappy.",
-              "eq2-00000000-0000-0000-0000-000000000002":
-                "github.com/dana/collab-editor — I'd use operational transforms instead of raw CRDTs if I did it again; the merge logic got gnarly.",
-              "eq2-00000000-0000-0000-0000-000000000003":
-                "A race condition in my websocket handler that only appeared under high load. Found it by adding structured logging and replaying prod traffic locally.",
-              "eq2-00000000-0000-0000-0000-000000000004":
-                "WebAssembly — I want to understand how browser-native performance boundaries actually work.",
+              "eq2-00000000-0000-0000-0000-000000000001": "https://github.com/dana/fullstack-challenge",
+              "eq2-00000000-0000-0000-0000-000000000003": "https://github.com/dana/collab-editor",
+              "eq2-00000000-0000-0000-0000-000000000004": "Bash/Terminal: 3\nGit: 3\nJavaScript: 4\nTypeScript: 3\nPython: 4\nReact.js: 2\nNode.js: 3\nSQL: 2",
+              "eq2-00000000-0000-0000-0000-000000000005": "WebAssembly - 2, C++ - 3, WebSockets - 3",
             },
           },
         ],
@@ -1186,9 +1470,22 @@ async function main() {
     create: {
       id: "app-emma",
       answers: {
-        "fq-00000000-0000-0000-0000-000000000001": "I've been building side projects since freshman year and want to work on something with real users. DALI's shipping culture is exactly what I'm looking for.",
-        "fq-00000000-0000-0000-0000-000000000002": "Sophomore, Computer Science and Math",
-        "fq-00000000-0000-0000-0000-000000000003": "I run the Women in CS club and mentor underclassmen in intro CS.",
+        "fq-00000000-0000-0000-0000-000000000001": "Emma Torres",
+        "fq-00000000-0000-0000-0000-000000000002": "f007em5",
+        "fq-00000000-0000-0000-0000-000000000003": "2028",
+        "fq-00000000-0000-0000-0000-000000000004": "she/her",
+        "fq-00000000-0000-0000-0000-000000000006": "Women in CS club",
+        "fq-00000000-0000-0000-0000-000000000007": "Computer Science, Mathematics minor",
+        "fq-00000000-0000-0000-0000-000000000008": "Winter, Spring, Fall",
+        "fq-00000000-0000-0000-0000-000000000009": "Spring",
+        "fq-00000000-0000-0000-0000-000000000010": "Women in CS (President): 5 hours\nCS 1 Mentor: 3 hours\nClub Soccer: 4 hours",
+        "fq-00000000-0000-0000-0000-000000000011": "12-14 hours. DALI would replace my mentoring hours since the term schedule aligns well.",
+        "fq-00000000-0000-0000-0000-000000000012": "CS 1, CS 10, CS 30, MATH 22. President of Women in CS. Mentor for intro CS students. Built side projects in React and Python.",
+        "fq-00000000-0000-0000-0000-000000000013": "Intro to React Workshop (Fall 2025)",
+        "fq-00000000-0000-0000-0000-000000000014": "I've been building side projects since freshman year and want to work on something with real users. DALI's shipping culture is exactly what I'm looking for.",
+        "fq-00000000-0000-0000-0000-000000000015": "I built a peer-to-peer file sharing system for my networks class. I loved the challenge of NAT traversal. I stumbled on implementing STUN/TURN relay as a fallback — the RFC was dense and my first implementation had subtle bugs.",
+        "fq-00000000-0000-0000-0000-000000000016": "Running the Women in CS club, I coordinate events with 8 board members. I love how we divide ownership of different event series. We could have improved our handoff process between outgoing and incoming board members — a lot of institutional knowledge was lost.",
+        "fq-00000000-0000-0000-0000-000000000018": "I run the Women in CS club and mentor underclassmen in intro CS.",
       },
       userId: emma.id,
       applicationCycleId: cycleWinter2027.id,
@@ -1201,9 +1498,10 @@ async function main() {
         id: "da-emma-eng",
         challengeVersionId: engCv.id,
         answers: {
-          "eq-00000000-0000-0000-0000-000000000001": "I built a peer-to-peer file sharing system for my networks class. The trickiest part was NAT traversal — I ended up implementing STUN/TURN relay as a fallback.",
-          "eq-00000000-0000-0000-0000-000000000002": "github.com/emma/p2p-share — I'd add end-to-end encryption if I did it again.",
-          "eq-00000000-0000-0000-0000-000000000003": "I've been learning about distributed consensus algorithms, especially Raft. The leader election protocol is elegant.",
+          "eq-00000000-0000-0000-0000-000000000001": "https://github.com/emma/fullstack-challenge",
+          "eq-00000000-0000-0000-0000-000000000004": "https://github.com/emma/p2p-share",
+          "eq-00000000-0000-0000-0000-000000000005": "Bash/Terminal: 3\nGit: 4\nC: 2\nC#: 0\nUnity: 0\nJavaScript: 4\nTypeScript: 3\nPython: 4\nRuby (on Rails): 0\nReact.js: 3\nReact Native: 0\nSwift: 0\nFlutter: 0\niOS: 0\nAndroid: 0\nMongoDB: 1\nExpress: 2\nNode.js: 3\nSQL: 2\nIoT: 0\nR: 1\nTidy-Verse: 0\nPandas: 2\nD3: 0\nFigma: 1\nSKlearn: 1\nDeep/Machine Learning: 0\nCloud Data Storage: 1",
+          "eq-00000000-0000-0000-0000-000000000006": "Socket.io - 3, WebRTC - 2",
         },
       }] },
     },
@@ -1216,8 +1514,21 @@ async function main() {
     create: {
       id: "app-liam",
       answers: {
-        "fq-00000000-0000-0000-0000-000000000001": "I'm a full-stack developer who also loves design. DALI is the only place on campus where I can do both.",
-        "fq-00000000-0000-0000-0000-000000000002": "Junior, Computer Science modified with Digital Arts",
+        "fq-00000000-0000-0000-0000-000000000001": "Liam Nguyen",
+        "fq-00000000-0000-0000-0000-000000000002": "f007li6",
+        "fq-00000000-0000-0000-0000-000000000003": "2027",
+        "fq-00000000-0000-0000-0000-000000000004": "he/him",
+        "fq-00000000-0000-0000-0000-000000000006": "Friend in DALI",
+        "fq-00000000-0000-0000-0000-000000000007": "Computer Science modified with Digital Arts",
+        "fq-00000000-0000-0000-0000-000000000008": "Winter, Spring",
+        "fq-00000000-0000-0000-0000-000000000009": "Spring",
+        "fq-00000000-0000-0000-0000-000000000010": "Digital Arts Studio: 4 hours\nWeb Dev freelance: 5 hours\nFilm Club: 2 hours",
+        "fq-00000000-0000-0000-0000-000000000011": "12-15 hours. I would drop my freelance web dev work.",
+        "fq-00000000-0000-0000-0000-000000000012": "CS 1, CS 10, CS 30, ARTS 17, ARTS 25. Freelance web developer with focus on interactive front-ends. Experience with Three.js and WebGL.",
+        "fq-00000000-0000-0000-0000-000000000013": "None",
+        "fq-00000000-0000-0000-0000-000000000014": "I'm a full-stack developer who also loves design. DALI is the only place on campus where I can do both.",
+        "fq-00000000-0000-0000-0000-000000000015": "I built an interactive 3D data visualization using Three.js for a digital arts class. I loved blending aesthetics with data accuracy. I stumbled on performance — my first version tried to render too many particles and crashed on mobile.",
+        "fq-00000000-0000-0000-0000-000000000016": "On a freelance project, I worked with a designer and a copywriter to rebuild a local nonprofit's website. I loved how each person's expertise elevated the final product. We could have improved by setting up a shared Figma workspace earlier instead of emailing screenshots back and forth.",
       },
       userId: liam.id,
       applicationCycleId: cycleWinter2027.id,
@@ -1231,18 +1542,18 @@ async function main() {
           id: "da-liam-eng",
           challengeVersionId: engCv.id,
           answers: {
-            "eq-00000000-0000-0000-0000-000000000001": "I refactored a legacy PHP monolith into a microservices architecture using Go. The challenge was maintaining backwards compatibility while migrating one service at a time.",
-            "eq-00000000-0000-0000-0000-000000000002": "github.com/liam/go-migrate — I'd invest more in integration tests upfront.",
-            "eq-00000000-0000-0000-0000-000000000003": "I'm exploring WebGL and Three.js to build interactive 3D data visualizations.",
+            "eq-00000000-0000-0000-0000-000000000001": "https://github.com/liam/fullstack-challenge",
+            "eq-00000000-0000-0000-0000-000000000004": "https://github.com/liam/go-migrate",
+            "eq-00000000-0000-0000-0000-000000000005": "Bash/Terminal: 4\nGit: 4\nC: 2\nC#: 0\nUnity: 0\nJavaScript: 5\nTypeScript: 4\nPython: 3\nRuby (on Rails): 0\nReact.js: 4\nReact Native: 1\nSwift: 0\nFlutter: 0\niOS: 0\nAndroid: 0\nMongoDB: 2\nExpress: 3\nNode.js: 4\nSQL: 2\nIoT: 0\nR: 0\nTidy-Verse: 0\nPandas: 1\nD3: 2\nFigma: 3\nSKlearn: 0\nDeep/Machine Learning: 0\nCloud Data Storage: 1",
+            "eq-00000000-0000-0000-0000-000000000006": "Three.js - 4, WebGL - 3, Go - 3",
           },
         },
         {
           id: "da-liam-design",
           challengeVersionId: designCv.id,
           answers: {
-            "dq-00000000-0000-0000-0000-000000000001": "I start with competitive analysis, then create user personas and journey maps before wireframing in Figma. I always test with at least 5 users before moving to high-fidelity.",
-            "dq-00000000-0000-0000-0000-000000000002": "dribbble.com/liam-designs",
-            "dq-00000000-0000-0000-0000-000000000003": "Testing our campus dining app with international students revealed that our meal plan terminology was confusing. We added a glossary tooltip that reduced support tickets by 40%.",
+            "dq-00000000-0000-0000-0000-000000000001": "https://www.figma.com/file/liam123/liam-uiux-challenge",
+            "dq-00000000-0000-0000-0000-000000000005": "Figma: 3\nSketch/Invision: 1\nAdobe XD: 1\nAdobe Photoshop: 2\nAdobe Illustrator: 2\nAdobe After Effects: 2\nHTML/CSS: 4",
           },
         },
       ] },
@@ -1256,9 +1567,22 @@ async function main() {
     create: {
       id: "app-sofia",
       answers: {
-        "fq-00000000-0000-0000-0000-000000000001": "I believe great products come from deep empathy for users. DALI's collaborative environment is where I want to sharpen my UX craft.",
-        "fq-00000000-0000-0000-0000-000000000002": "Sophomore, Cognitive Science and Studio Art",
-        "fq-00000000-0000-0000-0000-000000000003": "I volunteer at the Hood Museum designing accessible exhibit guides.",
+        "fq-00000000-0000-0000-0000-000000000001": "Sofia Martinez",
+        "fq-00000000-0000-0000-0000-000000000002": "f007so7",
+        "fq-00000000-0000-0000-0000-000000000003": "2028",
+        "fq-00000000-0000-0000-0000-000000000004": "she/her",
+        "fq-00000000-0000-0000-0000-000000000006": "Hood Museum volunteer network",
+        "fq-00000000-0000-0000-0000-000000000007": "Cognitive Science, Studio Art minor",
+        "fq-00000000-0000-0000-0000-000000000008": "Winter, Spring, Fall",
+        "fq-00000000-0000-0000-0000-000000000009": "Spring",
+        "fq-00000000-0000-0000-0000-000000000010": "Hood Museum Volunteer (Design): 4 hours\nCognitive Science Society: 2 hours\nDance Ensemble: 3 hours",
+        "fq-00000000-0000-0000-0000-000000000011": "10-12 hours. I would reduce dance rehearsal commitments.",
+        "fq-00000000-0000-0000-0000-000000000012": "COGS 1, COGS 11, ARTS 8, ARTS 17. Volunteer designer for Hood Museum creating accessible exhibit guides. Experience with user research and accessibility testing.",
+        "fq-00000000-0000-0000-0000-000000000013": "Design Thinking Mini-Series (Fall 2025)",
+        "fq-00000000-0000-0000-0000-000000000014": "I believe great products come from deep empathy for users. DALI's collaborative environment is where I want to sharpen my UX craft.",
+        "fq-00000000-0000-0000-0000-000000000015": "I designed accessible exhibit guides for the Hood Museum. I loved the challenge of making complex art history approachable. I stumbled on text sizing — what worked on screen was too small in the physical gallery setting.",
+        "fq-00000000-0000-0000-0000-000000000016": "At the Hood Museum, I worked with curators, educators, and other student designers. I loved learning about the art from curators while bringing a fresh design perspective. We could have improved by testing prototypes with actual visitors earlier in the process.",
+        "fq-00000000-0000-0000-0000-000000000018": "I volunteer at the Hood Museum designing accessible exhibit guides.",
       },
       userId: sofia.id,
       applicationCycleId: cycleWinter2027.id,
@@ -1271,9 +1595,9 @@ async function main() {
         id: "da-sofia-design",
         challengeVersionId: designCv.id,
         answers: {
-          "dq-00000000-0000-0000-0000-000000000001": "My process is research-first: contextual inquiry, affinity mapping, then rapid prototyping. I iterate based on usability testing, not stakeholder opinions.",
-          "dq-00000000-0000-0000-0000-000000000002": "behance.net/sofia-martinez",
-          "dq-00000000-0000-0000-0000-000000000003": "Accessibility testing with screen reader users completely changed how I think about information hierarchy. I now design content structure before visual layout.",
+          "dq-00000000-0000-0000-0000-000000000001": "https://www.figma.com/file/sofia123/sofia-uiux-challenge",
+          "dq-00000000-0000-0000-0000-000000000002": "https://www.figma.com/file/sofia456/sofia-graphics-challenge",
+          "dq-00000000-0000-0000-0000-000000000005": "Figma: 4\nSketch/Invision: 1\nAdobe XD: 2\nAdobe Photoshop: 3\nAdobe Illustrator: 3\nAdobe After Effects: 1\nHTML/CSS: 2",
         },
       }] },
     },
@@ -1286,8 +1610,21 @@ async function main() {
     create: {
       id: "app-noah",
       answers: {
-        "fq-00000000-0000-0000-0000-000000000001": "I've led two student org product launches and want to learn how a real product team operates. DALI's project structure mirrors industry workflows I want to master.",
-        "fq-00000000-0000-0000-0000-000000000002": "Junior, Economics modified with Computer Science",
+        "fq-00000000-0000-0000-0000-000000000001": "Noah Williams",
+        "fq-00000000-0000-0000-0000-000000000002": "f007no8",
+        "fq-00000000-0000-0000-0000-000000000003": "2027",
+        "fq-00000000-0000-0000-0000-000000000004": "he/him",
+        "fq-00000000-0000-0000-0000-000000000006": "DALI website",
+        "fq-00000000-0000-0000-0000-000000000007": "Economics modified with Computer Science",
+        "fq-00000000-0000-0000-0000-000000000008": "Winter, Spring",
+        "fq-00000000-0000-0000-0000-000000000009": "Spring",
+        "fq-00000000-0000-0000-0000-000000000010": "Student Government (VP): 6 hours\nStartup Incubator: 4 hours\nIntramural volleyball: 2 hours",
+        "fq-00000000-0000-0000-0000-000000000011": "10-12 hours. I would step back from the startup incubator.",
+        "fq-00000000-0000-0000-0000-000000000012": "ECON 1, ECON 22, ECON 26, CS 1, CS 10. VP of Student Government. Led two student org product launches including a campus events app.",
+        "fq-00000000-0000-0000-0000-000000000013": "PM Workshop Series (Fall 2025)",
+        "fq-00000000-0000-0000-0000-000000000014": "I've led two student org product launches and want to learn how a real product team operates. DALI's project structure mirrors industry workflows I want to master.",
+        "fq-00000000-0000-0000-0000-000000000015": "I built a campus events discovery app with a team of 4. I loved running user interviews and watching the product evolve from idea to launch. I stumbled on prioritization — we tried to build everything at once instead of shipping a focused MVP.",
+        "fq-00000000-0000-0000-0000-000000000016": "Leading Student Government's tech initiative, I worked with designers, developers, and administrators. I loved bridging the gap between what students wanted and what was technically feasible. We could have improved by doing more regular check-ins with the dev team instead of just milestone reviews.",
       },
       userId: noah.id,
       applicationCycleId: cycleWinter2027.id,
@@ -1300,8 +1637,7 @@ async function main() {
         id: "da-noah-pm",
         challengeVersionId: pmCv.id,
         answers: {
-          "pq-00000000-0000-0000-0000-000000000001": "Slack's notification system is overwhelming. I'd add an AI-powered digest that summarizes channels you haven't checked, prioritized by relevance. I'd validate with a 2-week diary study tracking notification fatigue.",
-          "pq-00000000-0000-0000-0000-000000000002": "During a hackathon, we had to choose between building a native app or a PWA with 12 hours left. I ran a quick cost-benefit analysis, chose PWA for faster iteration, and we won Best Technical Implementation.",
+          "pq-00000000-0000-0000-0000-000000000001": "uploads/applications/app-noah/pq-00000000-0000-0000-0000-000000000001/pm-challenge.pdf",
         },
       }] },
     },
@@ -1314,9 +1650,22 @@ async function main() {
     create: {
       id: "app-olivia",
       answers: {
-        "fq-00000000-0000-0000-0000-000000000001": "I want to bridge the gap between academic CS and real-world software engineering. DALI is the best place at Dartmouth to do that.",
-        "fq-00000000-0000-0000-0000-000000000002": "Sophomore, Computer Science",
-        "fq-00000000-0000-0000-0000-000000000003": "I'm on the club volleyball team and love the teamwork parallels between sports and software.",
+        "fq-00000000-0000-0000-0000-000000000001": "Olivia Brown",
+        "fq-00000000-0000-0000-0000-000000000002": "f007ol9",
+        "fq-00000000-0000-0000-0000-000000000003": "2028",
+        "fq-00000000-0000-0000-0000-000000000004": "she/her",
+        "fq-00000000-0000-0000-0000-000000000006": "CS class announcement",
+        "fq-00000000-0000-0000-0000-000000000007": "Computer Science",
+        "fq-00000000-0000-0000-0000-000000000008": "Winter, Spring, Fall",
+        "fq-00000000-0000-0000-0000-000000000009": "Spring",
+        "fq-00000000-0000-0000-0000-000000000010": "Club Volleyball: 6 hours\nCS 10 Grader: 3 hours\nOutdoor Club: 2 hours",
+        "fq-00000000-0000-0000-0000-000000000011": "10-12 hours. I would drop my grading position.",
+        "fq-00000000-0000-0000-0000-000000000012": "CS 1, CS 10, CS 30. Grader for CS 10. Built a mini Python compiler as a personal project.",
+        "fq-00000000-0000-0000-0000-000000000013": "None",
+        "fq-00000000-0000-0000-0000-000000000014": "I want to bridge the gap between academic CS and real-world software engineering. DALI is the best place at Dartmouth to do that.",
+        "fq-00000000-0000-0000-0000-000000000015": "I built a compiler for a subset of Python targeting LLVM IR. I loved the satisfaction of seeing my compiled programs actually run. I stumbled on implementing closure capture — tracing variable lifetimes across nested scopes was much harder than I expected.",
+        "fq-00000000-0000-0000-0000-000000000016": "On the club volleyball team, we work together under pressure during tournaments. I love the trust and communication required. We could have improved by doing more structured post-game analysis instead of just moving on to the next match.",
+        "fq-00000000-0000-0000-0000-000000000018": "I'm on the club volleyball team and love the teamwork parallels between sports and software.",
       },
       userId: olivia.id,
       applicationCycleId: cycleWinter2027.id,
@@ -1329,9 +1678,10 @@ async function main() {
         id: "da-olivia-eng",
         challengeVersionId: engCv.id,
         answers: {
-          "eq-00000000-0000-0000-0000-000000000001": "I built a compiler for a subset of Python targeting LLVM IR. The hardest part was implementing closure capture correctly — I had to trace variable lifetimes across nested scopes.",
-          "eq-00000000-0000-0000-0000-000000000002": "github.com/olivia/mini-python — I'd add proper error recovery in the parser instead of just panicking.",
-          "eq-00000000-0000-0000-0000-000000000003": "I've been exploring formal verification with Lean 4. Proving properties about code is addictive once you get the hang of it.",
+          "eq-00000000-0000-0000-0000-000000000001": "https://github.com/olivia/fullstack-challenge",
+          "eq-00000000-0000-0000-0000-000000000004": "https://github.com/olivia/mini-python",
+          "eq-00000000-0000-0000-0000-000000000005": "Bash/Terminal: 3\nGit: 3\nC: 3\nC#: 0\nUnity: 0\nJavaScript: 3\nTypeScript: 2\nPython: 4\nRuby (on Rails): 0\nReact.js: 2\nReact Native: 0\nSwift: 0\nFlutter: 0\niOS: 0\nAndroid: 0\nMongoDB: 1\nExpress: 1\nNode.js: 2\nSQL: 2\nIoT: 0\nR: 0\nTidy-Verse: 0\nPandas: 1\nD3: 0\nFigma: 0\nSKlearn: 0\nDeep/Machine Learning: 0\nCloud Data Storage: 0",
+          "eq-00000000-0000-0000-0000-000000000006": "LLVM - 2, Lean 4 - 1",
         },
       }] },
     },
@@ -1344,8 +1694,21 @@ async function main() {
     create: {
       id: "app-ethan",
       answers: {
-        "fq-00000000-0000-0000-0000-000000000001": "I'm a technical PM at heart — I love understanding systems deeply enough to make better product decisions. DALI lets me flex both muscles.",
-        "fq-00000000-0000-0000-0000-000000000002": "Junior, Engineering Sciences",
+        "fq-00000000-0000-0000-0000-000000000001": "Ethan Davis",
+        "fq-00000000-0000-0000-0000-000000000002": "f007et0",
+        "fq-00000000-0000-0000-0000-000000000003": "2027",
+        "fq-00000000-0000-0000-0000-000000000004": "he/him",
+        "fq-00000000-0000-0000-0000-000000000006": "Engineering department",
+        "fq-00000000-0000-0000-0000-000000000007": "Engineering Sciences",
+        "fq-00000000-0000-0000-0000-000000000008": "Winter, Spring",
+        "fq-00000000-0000-0000-0000-000000000009": "Spring",
+        "fq-00000000-0000-0000-0000-000000000010": "Engineering Design Lab: 5 hours\nCampus Safety App Team Lead: 4 hours\nHomelab/side projects: 3 hours",
+        "fq-00000000-0000-0000-0000-000000000011": "12-15 hours. I would wind down my campus safety app role since it's near completion.",
+        "fq-00000000-0000-0000-0000-000000000012": "ENGS 12, ENGS 21, ENGS 31, CS 1, CS 10. Led a team of 6 building a campus safety app. Experience with hardware-software integration and Kubernetes.",
+        "fq-00000000-0000-0000-0000-000000000013": "None",
+        "fq-00000000-0000-0000-0000-000000000014": "I'm a technical PM at heart — I love understanding systems deeply enough to make better product decisions. DALI lets me flex both muscles.",
+        "fq-00000000-0000-0000-0000-000000000015": "I built a real-time collaborative whiteboard using WebSockets and operational transforms. I loved the challenge of making multi-user interactions feel seamless. I stumbled on conflict resolution when two users drew in the same area — the merge algorithm needed several iterations.",
+        "fq-00000000-0000-0000-0000-000000000016": "Leading the campus safety app team, I coordinated 6 people across design and engineering. I loved translating user needs (feeling safe walking at night) into concrete features. We could have improved by doing more frequent user testing instead of building in isolation for two weeks.",
       },
       userId: ethan.id,
       applicationCycleId: cycleWinter2027.id,
@@ -1359,17 +1722,17 @@ async function main() {
           id: "da-ethan-pm",
           challengeVersionId: pmCv.id,
           answers: {
-            "pq-00000000-0000-0000-0000-000000000001": "Google Maps' offline mode is clunky — you have to manually download areas. I'd auto-cache routes you frequently travel and validate by measuring data usage reduction in areas with spotty coverage.",
-            "pq-00000000-0000-0000-0000-000000000002": "Leading a team of 6 to build a campus safety app with no budget. I talked to 50 students, identified the core need (walking alone at night), and scoped the MVP to just a buddy-matching feature.",
+            "pq-00000000-0000-0000-0000-000000000001": "uploads/applications/app-ethan/pq-00000000-0000-0000-0000-000000000001/pm-challenge.pdf",
           },
         },
         {
           id: "da-ethan-eng",
           challengeVersionId: engCv.id,
           answers: {
-            "eq-00000000-0000-0000-0000-000000000001": "I built a real-time collaborative whiteboard using WebSockets and operational transforms. The main challenge was conflict resolution when two users draw in the same area simultaneously.",
-            "eq-00000000-0000-0000-0000-000000000002": "github.com/ethan/collab-board — I'd switch to CRDTs for better offline support.",
-            "eq-00000000-0000-0000-0000-000000000003": "Kubernetes and container orchestration. I've been running a small homelab cluster to understand scheduling and resource limits.",
+            "eq-00000000-0000-0000-0000-000000000001": "https://github.com/ethan/fullstack-challenge",
+            "eq-00000000-0000-0000-0000-000000000004": "https://github.com/ethan/collab-board",
+            "eq-00000000-0000-0000-0000-000000000005": "Bash/Terminal: 4\nGit: 3\nC: 3\nC#: 1\nUnity: 0\nJavaScript: 3\nTypeScript: 2\nPython: 3\nRuby (on Rails): 0\nReact.js: 2\nReact Native: 0\nSwift: 0\nFlutter: 0\niOS: 0\nAndroid: 0\nMongoDB: 1\nExpress: 2\nNode.js: 3\nSQL: 2\nIoT: 2\nR: 0\nTidy-Verse: 0\nPandas: 1\nD3: 0\nFigma: 1\nSKlearn: 0\nDeep/Machine Learning: 0\nCloud Data Storage: 2",
+            "eq-00000000-0000-0000-0000-000000000006": "Kubernetes - 3, Docker - 3, Arduino - 4",
           },
         },
       ] },
@@ -1383,9 +1746,22 @@ async function main() {
     create: {
       id: "app-ava",
       answers: {
-        "fq-00000000-0000-0000-0000-000000000001": "I'm passionate about the intersection of design and product strategy. DALI's project-based learning model is exactly how I learn best.",
-        "fq-00000000-0000-0000-0000-000000000002": "Sophomore, Human-Centered Design and Engineering",
-        "fq-00000000-0000-0000-0000-000000000003": "I spent last summer at a design consultancy in NYC working on healthcare UX.",
+        "fq-00000000-0000-0000-0000-000000000001": "Ava Wilson",
+        "fq-00000000-0000-0000-0000-000000000002": "f007av1",
+        "fq-00000000-0000-0000-0000-000000000003": "2028",
+        "fq-00000000-0000-0000-0000-000000000004": "she/her",
+        "fq-00000000-0000-0000-0000-000000000006": "Summer internship mentor",
+        "fq-00000000-0000-0000-0000-000000000007": "Human-Centered Design, Engineering minor",
+        "fq-00000000-0000-0000-0000-000000000008": "Winter, Spring, Fall",
+        "fq-00000000-0000-0000-0000-000000000009": "Spring",
+        "fq-00000000-0000-0000-0000-000000000010": "Design Consultancy Intern (summer): completed\nHCD Lab: 4 hours\nWomen in STEM: 2 hours",
+        "fq-00000000-0000-0000-0000-000000000011": "12-14 hours. I have a manageable course load this term.",
+        "fq-00000000-0000-0000-0000-000000000012": "HCD 1, HCD 40, ENGS 12, ENGS 21. Summer internship at a NYC design consultancy working on healthcare UX. Experience with user research, prototyping, and design systems.",
+        "fq-00000000-0000-0000-0000-000000000013": "Design Thinking Mini-Series (Fall 2025)",
+        "fq-00000000-0000-0000-0000-000000000014": "I'm passionate about the intersection of design and product strategy. DALI's project-based learning model is exactly how I learn best.",
+        "fq-00000000-0000-0000-0000-000000000015": "I redesigned a patient intake form for a healthcare startup during my summer internship. I loved simplifying a complex process into clear steps. I stumbled on balancing regulatory requirements with good UX — some fields had to exist even though they confused users.",
+        "fq-00000000-0000-0000-0000-000000000016": "At my internship, I worked with developers, a PM, and another designer on a health dashboard. I loved the double-diamond process we followed. We could have improved by including patients in our design reviews earlier — we relied too much on stakeholder proxies.",
+        "fq-00000000-0000-0000-0000-000000000018": "I spent last summer at a design consultancy in NYC working on healthcare UX.",
       },
       userId: ava.id,
       applicationCycleId: cycleWinter2027.id,
@@ -1408,7 +1784,7 @@ async function main() {
           id: "da-ava-pm",
           challengeVersionId: pmCv.id,
           answers: {
-            "pq-00000000-0000-0000-0000-000000000001": "Venmo's social feed is a privacy risk disguised as a feature. I'd make transactions private by default and add an opt-in 'share' button. Validation: track what percentage of users actively choose to share vs. the current passive exposure.",
+            "pq-00000000-0000-0000-0000-000000000001": "uploads/applications/app-ava/pq-00000000-0000-0000-0000-000000000001/pm-challenge.pdf",
             "pq-00000000-0000-0000-0000-000000000002": "Choosing between two competing research findings in a summer internship. One said users wanted simplicity, the other said they wanted power features. I segmented by user type and built progressive disclosure — simple by default, powerful on demand.",
           },
         },
@@ -1423,8 +1799,10 @@ async function main() {
     create: {
       id: "app-mason",
       answers: {
-        "fq-00000000-0000-0000-0000-000000000001": "I want to work on meaningful projects with a talented team.",
-        "fq-00000000-0000-0000-0000-000000000002": "Junior, Computer Science",
+        "fq-00000000-0000-0000-0000-000000000001": "Mason Taylor",
+        "fq-00000000-0000-0000-0000-000000000002": "f007ma2",
+        "fq-00000000-0000-0000-0000-000000000003": "2028",
+        "fq-00000000-0000-0000-0000-000000000007": "Computer Science",
       },
       userId: mason.id,
       applicationCycleId: cycleWinter2027.id,
@@ -1435,9 +1813,7 @@ async function main() {
       domainApplications: { create: [{
         id: "da-mason-eng",
         challengeVersionId: engCv.id,
-        answers: {
-          "eq-00000000-0000-0000-0000-000000000001": "Working on it...",
-        },
+        answers: {},
       }] },
     },
   });
@@ -2175,7 +2551,7 @@ async function main() {
   console.log(`  Admin: ${admin.firstName} ${admin.lastName}`);
   console.log(`  Domains: ${[designDomain, engDomain, pmDomain].map((d) => d.name).join(", ")}`);
   console.log(`  Rubrics: General, ${designRubric.name}, ${engRubric.name}, ${pmRubric.name}`);
-  console.log(`  Cycle: ${cycle.name} (UnderReview) ← active`);
+  console.log(`  Cycle: ${cycle.name} (Open) ← active`);
   console.log(`  Cycle: ${cycleWinter2027.name} (Completed) — 10 terminal decisions released`);
   console.log(`  Cycle: ${cycle2028.name} (Draft)`);
   console.log(`  Fall 2026 applicants:`);
