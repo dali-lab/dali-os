@@ -9,15 +9,21 @@ services:
       POSTGRES_DB: dali
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dali -d dali"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
 
   api:
     build:
       context: ./dali-api
       target: deps
-    command: sh -c "npx prisma generate && npx prisma migrate deploy && npm run dev & npx prisma studio --port 5555 --browser none & wait"
+    command: sh -c "npx prisma generate && npx prisma db push --force-reset && npx prisma db seed && npm run dev & npx prisma studio --port 5555 --browser none & wait"
     working_dir: /app
     ports:
       - "3001:3001"
+      - "3002:3002"
       - "5555:5555"
     volumes:
       - ./dali-api:/app
@@ -31,8 +37,10 @@ services:
       CAS_BASE_URL: https://login.dartmouth.edu/cas
       FRONTEND_URL: http://localhost:5173
       API_BASE_URL: http://localhost:3001
+      COLLAB_PORT: 3002
     depends_on:
-      - db
+      db:
+        condition: service_healthy
 
   web:
     build:
@@ -48,6 +56,7 @@ services:
     environment:
       VITE_DALI_DB_URL: http://localhost:3001
       VITE_FRONTEND_URL: http://localhost:5173
+      VITE_COLLAB_URL: ws://localhost:3002
     depends_on:
       - api
 

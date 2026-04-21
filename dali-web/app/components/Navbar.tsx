@@ -1,29 +1,22 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router';
+import { getUser, logout } from '@/lib/auth';
+import type { UserInfo } from '@/lib/auth';
 
 interface NavbarProps {
   className?: string;
 }
 
-interface SessionAccount {
-  id: string;
-  email: string;
-  firstName?: string;
-  lastName?: string;
+interface SessionAccount extends UserInfo {
   name?: string;
   picture?: string;
 }
 
 function getSession(): { account: SessionAccount } | null {
   if (typeof window === 'undefined') return null;
-  try {
-    const token = sessionStorage.getItem('access_token');
-    const raw = sessionStorage.getItem('account');
-    if (!token || !raw) return null;
-    return { account: JSON.parse(raw) };
-  } catch {
-    return null;
-  }
+  const user = getUser();
+  if (!user) return null;
+  return { account: user as SessionAccount };
 }
 
 const navLinks = [
@@ -124,27 +117,38 @@ export default function Navbar({ className = '' }: NavbarProps) {
           ))}
 
           {session ? (
-            <Link
-              to="/account"
-              className="flex items-center gap-2 pl-1 pr-3 py-1 rounded-full bg-[#E8F4FA] dark:bg-[#0d2133] hover:opacity-80 transition-opacity min-h-9"
-              onClick={() => window.scrollTo(0, 0)}
-            >
-              {session.account.picture ? (
-                <img
-                  src={session.account.picture}
-                  alt={displayName ?? ''}
-                  className="w-7 h-7 rounded-full object-cover bg-muted shrink-0"
-                  decoding="async"
-                />
-              ) : (
-                <div className="w-7 h-7 rounded-full bg-accent-coral flex items-center justify-center text-white text-xs font-bold">
-                  {(displayName ?? session.account.email)[0].toUpperCase()}
-                </div>
-              )}
-              <span className="text-sm font-semibold text-nav-primary dark:text-white max-w-[120px] truncate">
-                {displayName}
-              </span>
-            </Link>
+            <>
+              <Link
+                to="/portal"
+                className="flex items-center gap-2 pl-1 pr-3 py-1 rounded-full bg-[#E8F4FA] dark:bg-[#0d2133] hover:opacity-80 transition-opacity min-h-9"
+                onClick={() => window.scrollTo(0, 0)}
+              >
+                {session.account.picture ? (
+                  <img
+                    src={session.account.picture}
+                    alt={displayName ?? ''}
+                    className="w-7 h-7 rounded-full object-cover bg-muted shrink-0"
+                    decoding="async"
+                  />
+                ) : (
+                  <div className="w-7 h-7 rounded-full bg-accent-coral flex items-center justify-center text-white text-xs font-bold">
+                    {(displayName ?? session.account.email)[0].toUpperCase()}
+                  </div>
+                )}
+                <span className="text-sm font-semibold text-nav-primary dark:text-white max-w-[120px] truncate">
+                  {displayName}
+                </span>
+              </Link>
+              <button
+                onClick={async () => { await logout(); window.location.href = '/login'; }}
+                className="ml-1 p-1.5 rounded-full text-gray-400 hover:text-red-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition"
+                title="Log out"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+              </button>
+            </>
           ) : (
             <Link
               to="/login"
@@ -192,20 +196,28 @@ export default function Navbar({ className = '' }: NavbarProps) {
             ))}
 
             {session ? (
-              <Link
-                to="/account"
-                className="flex items-center gap-3 pt-4 border-t border-gray-100 dark:border-gray-700"
-                onClick={() => { setMobileMenuOpen(false); window.scrollTo(0, 0); }}
-              >
-                {session.account.picture ? (
-                  <img src={session.account.picture} alt="" className="w-8 h-8 rounded-full object-cover" />
-                ) : (
-                  <div className="w-8 h-8 rounded-full bg-accent-coral flex items-center justify-center text-white text-sm font-bold">
-                    {(displayName ?? session.account.email)[0].toUpperCase()}
-                  </div>
-                )}
-                <span className="text-sm font-semibold text-nav-primary dark:text-white">{displayName}</span>
-              </Link>
+              <>
+                <Link
+                  to="/portal"
+                  className="flex items-center gap-3 pt-4 border-t border-gray-100 dark:border-gray-700"
+                  onClick={() => { setMobileMenuOpen(false); window.scrollTo(0, 0); }}
+                >
+                  {session.account.picture ? (
+                    <img src={session.account.picture} alt="" className="w-8 h-8 rounded-full object-cover" />
+                  ) : (
+                    <div className="w-8 h-8 rounded-full bg-accent-coral flex items-center justify-center text-white text-sm font-bold">
+                      {(displayName ?? session.account.email)[0].toUpperCase()}
+                    </div>
+                  )}
+                  <span className="text-sm font-semibold text-nav-primary dark:text-white">{displayName}</span>
+                </Link>
+                <button
+                  onClick={async () => { await logout(); window.location.href = '/login'; }}
+                  className="text-sm text-gray-500 hover:text-red-500 pt-2"
+                >
+                  Log out
+                </button>
+              </>
             ) : (
               <Link
                 to="/login"

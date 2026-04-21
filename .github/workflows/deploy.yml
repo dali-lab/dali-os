@@ -1,0 +1,49 @@
+name: Fly Deploy
+
+on:
+  push:
+    branches:
+      - dev
+      - staging
+      - prod
+
+jobs:
+  prep-neon-db:
+    name: Prepare Neon database (${{ github.ref_name }})
+    runs-on: ubuntu-latest
+    if: github.ref_name == 'dev' || github.ref_name == 'staging'
+    steps:
+      - name: Wipe dev database
+        if: github.ref_name == 'dev'
+        env:
+          DEV_DATABASE_URL: ${{ secrets.DEV_DATABASE_URL }}
+        run: |
+          psql "$DEV_DATABASE_URL" -v ON_ERROR_STOP=1 \
+            -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+
+      - name: Restore staging database from prod
+        if: github.ref_name == 'staging'
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          PROJECT_ID: falling-morning-15858013
+        run: |
+          BRANCHES=$(curl -sf "https://console.neon.tech/api/v2/projects/$PROJECT_ID/branches" \
+            -H "Authorization: Bearer $NEON_API_KEY")
+          STAGING_ID=$(echo "$BRANCHES" | jq -r '.branches[] | select(.name=="staging") | .id')
+          PROD_ID=$(echo "$BRANCHES" | jq -r '.branches[] | select(.name=="production") | .id')
+          curl -sf -X POST "https://console.neon.tech/api/v2/projects/$PROJECT_ID/branches/$STAGING_ID/restore" \
+            -H "Authorization: Bearer $NEON_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"source_branch_id\": \"$PROD_ID\"}"
+
+  deploy-api:
+    name: Deploy API (${{ github.ref_name }})
+    needs: [prep-neon-db]
+    if: always() && (needs.prep-neon-db.result == 'success' || needs.prep-neon-db.result == 'skipped')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - run: cd ./dali-api && flyctl deploy --config fly.${{ github.ref_name }}.toml -a dali-api-${{ github.ref_name }}
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

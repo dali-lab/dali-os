@@ -1,0 +1,71 @@
+name: Test dali-api
+
+on:
+  push:
+    branches: [dev, prod]
+  pull_request:
+
+jobs:
+  test-api:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dali-api
+    env:
+      JWT_SECRET: test-secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npm test
+
+  e2e-api:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dali-api
+    env:
+      DATABASE_URL: postgresql://dali:dali@localhost:5432/dali
+      JWT_SECRET: test-secret-for-ci-at-least-32-chars
+      CAS_BASE_URL: https://login.dartmouth.edu/cas
+      FRONTEND_URL: http://localhost:5173
+      API_BASE_URL: http://localhost:3001
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: dali
+          POSTGRES_PASSWORD: dali
+          POSTGRES_DB: dali
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Generate Prisma client
+        run: npx prisma generate
+      - name: Run migrations and seed
+        run: npx prisma migrate reset --force && npx prisma db seed
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+      - name: Run e2e tests
+        run: npm run test:e2e
+      - name: Upload test artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            dali-api/e2e/test-results/
+            dali-api/playwright-report/
+          retention-days: 7
