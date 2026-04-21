@@ -35,5 +35,5 @@ export function SaveStatusIndicator({
       </span>
     );
   }
-  return <span className={`${base} text-gray-400`}>Not yet saved</span>;
+  return <span className={`${base} text-muted-foreground/70`}>Not yet saved</span>;
 }

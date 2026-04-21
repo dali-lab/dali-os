@@ -64,11 +64,11 @@ export default function ScheduleInterview() {
   if (!domainAppsToSchedule || domainAppsToSchedule.length === 0) {
     return (
       <div className="max-w-2xl mx-auto py-16 text-center">
-        <div className="w-12 h-12 bg-gray-100 text-gray-400 rounded-full flex items-center justify-center mx-auto mb-4">
+        <div className="w-12 h-12 bg-muted text-muted-foreground/70 rounded-full flex items-center justify-center mx-auto mb-4">
           <Calendar className="w-6 h-6" />
         </div>
-        <h1 className="text-xl font-bold text-gray-900 mb-2">No Interviews to Schedule</h1>
-        <p className="text-gray-500">You don't have any pending interview invitations right now.</p>
+        <h1 className="text-xl font-bold text-foreground mb-2">No Interviews to Schedule</h1>
+        <p className="text-muted-foreground">You don't have any pending interview invitations right now.</p>
       </div>
     );
   }
@@ -98,14 +98,14 @@ export default function ScheduleInterview() {
         <div className="w-12 h-12 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4">
           <Check className="w-6 h-6" />
         </div>
-        <h1 className="text-xl font-bold text-gray-900 mb-2">Interview Scheduled!</h1>
-        <p className="text-gray-500">
+        <h1 className="text-xl font-bold text-foreground mb-2">Interview Scheduled!</h1>
+        <p className="text-muted-foreground">
           Your interview is booked for{" "}
-          <span className="font-medium text-gray-900">
+          <span className="font-medium text-foreground">
             {bookedDate.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}
           </span>{" "}
           at{" "}
-          <span className="font-medium text-gray-900">
+          <span className="font-medium text-foreground">
             {bookedDate.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
           </span>
           .
@@ -131,10 +131,10 @@ export default function ScheduleInterview() {
   return (
     <div className="max-w-3xl mx-auto space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Schedule Your Interview</h1>
-        <p className="text-gray-500 mt-1">
+        <h1 className="text-2xl font-bold text-foreground">Schedule Your Interview</h1>
+        <p className="text-muted-foreground mt-1">
           You've been invited to interview for{" "}
-          <span className="font-medium text-gray-900">{domainApp.challengeVersion.domain.name}</span>.
+          <span className="font-medium text-foreground">{domainApp.challengeVersion.domain.name}</span>.
           Pick a time that works for you.
         </p>
       </div>
@@ -146,15 +146,15 @@ export default function ScheduleInterview() {
       )}
 
       {slots.length === 0 ? (
-        <div className="bg-white border border-gray-200 rounded-lg p-8 text-center">
-          <Clock className="w-8 h-8 text-gray-400 mx-auto mb-3" />
-          <p className="text-gray-500">No available interview slots right now. Please check back later.</p>
+        <div className="bg-card border border-border rounded-lg p-8 text-center">
+          <Clock className="w-8 h-8 text-muted-foreground/70 mx-auto mb-3" />
+          <p className="text-muted-foreground">No available interview slots right now. Please check back later.</p>
         </div>
       ) : (
         <div className="space-y-6">
           {Array.from(slotsByDate.entries()).map(([dateLabel, dateSlots]) => (
             <div key={dateLabel}>
-              <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wider mb-3">{dateLabel}</h3>
+              <h3 className="text-sm font-bold text-foreground/80 uppercase tracking-wider mb-3">{dateLabel}</h3>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
                 {dateSlots.map((slot: any) => {
                   const start = new Date(slot.startTime);
@@ -165,7 +165,7 @@ export default function ScheduleInterview() {
                       key={slot.startTime}
                       onClick={() => bookSlot(domainApp.id, slot.startTime)}
                       disabled={!!booking}
-                      className="px-3 py-3 text-sm font-medium rounded-lg border border-gray-200 bg-white hover:border-blue-400 hover:bg-blue-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="px-3 py-3 text-sm font-medium rounded-lg border border-border bg-card hover:border-blue-400 hover:bg-blue-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {isBooking ? (
                         "Booking..."

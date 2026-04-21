@@ -12,7 +12,7 @@ const STATUS_COLORS: Record<string, string> = {
   Scheduled: 'bg-blue-100 text-blue-700',
   Completed: 'bg-green-100 text-green-700',
   CancelledByApplicant: 'bg-red-100 text-red-700',
-  CancelledByAdmin: 'bg-gray-100 text-gray-700',
+  CancelledByAdmin: 'bg-muted text-foreground/80',
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -169,11 +169,11 @@ export default function InterviewerDashboard() {
   if (!isInterviewer || !activeCycle) {
     return (
       <div className="space-y-8">
-        <h1 className="text-2xl font-bold text-gray-900">
+        <h1 className="text-2xl font-bold text-foreground">
           Interviewer Dashboard
         </h1>
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8 text-center">
-          <p className="text-gray-500">
+        <div className="bg-card rounded-xl border border-border shadow-sm p-8 text-center">
+          <p className="text-muted-foreground">
             You are not assigned as an interviewer for any active hiring cycle.
           </p>
         </div>
@@ -192,10 +192,10 @@ export default function InterviewerDashboard() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">
+        <h1 className="text-2xl font-bold text-foreground">
           Interviewer Dashboard
         </h1>
-        <p className="text-gray-500 mt-1">{activeCycle.name}</p>
+        <p className="text-muted-foreground mt-1">{activeCycle.name}</p>
       </div>
 
       {/* Availability warning */}
@@ -211,36 +211,36 @@ export default function InterviewerDashboard() {
 
       {/* Assigned Interviews Table */}
       <section>
-        <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+        <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center">
           <Video className="w-5 h-5 mr-2 text-blue-600" />
           Assigned Interviews ({(assignments ?? []).length})
         </h2>
 
         {(assignments ?? []).length === 0 ? (
-          <div className="bg-white rounded-xl border border-gray-200 p-8 text-center shadow-sm">
-            <p className="text-gray-500">No interviews assigned yet.</p>
+          <div className="bg-card rounded-xl border border-border p-8 text-center shadow-sm">
+            <p className="text-muted-foreground">No interviews assigned yet.</p>
           </div>
         ) : (
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
             <table className="w-full text-sm">
               <thead>
-                <tr className="bg-gray-50 border-b border-gray-200">
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">
+                <tr className="bg-muted/50 border-b border-border">
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">
                     Time
                   </th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">
                     Applicant
                   </th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">
                     Domain
                   </th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">
                     Role
                   </th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">
                     Status
                   </th>
-                  <th className="px-4 py-3 text-right font-medium text-gray-600">
+                  <th className="px-4 py-3 text-right font-medium text-muted-foreground">
                     Action
                   </th>
                 </tr>
@@ -258,10 +258,10 @@ export default function InterviewerDashboard() {
                   const status = interview.status as string
 
                   return (
-                    <tr key={assignment.id} className="hover:bg-gray-50">
+                    <tr key={assignment.id} className="hover:bg-muted/50">
                       <td className="px-4 py-3">
-                        <div className="flex items-center text-gray-900">
-                          <Clock className="w-4 h-4 mr-1.5 text-gray-400" />
+                        <div className="flex items-center text-foreground">
+                          <Clock className="w-4 h-4 mr-1.5 text-muted-foreground/70" />
                           <span>
                             {startDate.toLocaleDateString(undefined, {
                               weekday: 'short',
@@ -280,12 +280,12 @@ export default function InterviewerDashboard() {
                           </span>
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-gray-900">
+                      <td className="px-4 py-3 text-foreground">
                         {applicant
                           ? `${applicant.firstName} ${applicant.lastName}`
                           : 'Applicant'}
                       </td>
-                      <td className="px-4 py-3 text-gray-700">
+                      <td className="px-4 py-3 text-foreground/80">
                         {domain ?? '—'}
                       </td>
                       <td className="px-4 py-3">
@@ -305,7 +305,7 @@ export default function InterviewerDashboard() {
                         <span
                           className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
                             STATUS_COLORS[status] ??
-                            'bg-gray-100 text-gray-700'
+                            'bg-muted text-foreground/80'
                           }`}
                         >
                           {STATUS_LABELS[status] ?? status}
@@ -331,10 +331,10 @@ export default function InterviewerDashboard() {
       {/* Availability Calendar */}
       <section>
         <div className="text-center mb-6">
-          <h2 className="text-lg font-semibold text-gray-900">
+          <h2 className="text-lg font-semibold text-foreground">
             Your Interview Availability
           </h2>
-          <p className="text-gray-500 mt-1 text-sm">
+          <p className="text-muted-foreground mt-1 text-sm">
             Click or drag to select the times you are available to conduct
             interviews. 15-minute blocks.
           </p>
@@ -352,8 +352,8 @@ export default function InterviewerDashboard() {
             saving={availabilitySaving}
           />
         ) : (
-          <div className="bg-white rounded-xl border border-gray-200 p-8 text-center shadow-sm">
-            <p className="text-gray-500">
+          <div className="bg-card rounded-xl border border-border p-8 text-center shadow-sm">
+            <p className="text-muted-foreground">
               Interview dates have not been configured yet. Please check back
               later.
             </p>
