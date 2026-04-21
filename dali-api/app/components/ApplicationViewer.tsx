@@ -180,7 +180,7 @@ function AnnotatableField({
   return (
     <div className="relative">
       <div ref={containerRef} onMouseUp={handleMouseUp}
-        className="text-base text-gray-900 whitespace-pre-wrap leading-relaxed select-text cursor-text">
+        className="text-base text-foreground whitespace-pre-wrap leading-relaxed select-text cursor-text">
         {renderAnnotatedText(value, fieldKey, annotations, handleAnnotationClick,
           popover && !popover.annotationId ? { start: popover.start, end: popover.end, color: pendingColor } : undefined)}
       </div>
@@ -189,15 +189,15 @@ function AnnotatableField({
         <>
           <div className="fixed inset-0 z-40" onClick={() => setPopover(null)} />
           <div
-            className="fixed z-50 bg-white rounded-xl shadow-xl border border-gray-200 p-3 w-64"
+            className="fixed z-50 bg-card rounded-xl shadow-xl border border-border p-3 w-64"
             style={{ left: Math.min(popover.x - 128, window.innerWidth - 272), top: popover.y }}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                 {popover.annotationId ? 'Edit annotation' : 'Add annotation'}
               </span>
-              <button onClick={() => setPopover(null)} className="text-gray-400 hover:text-gray-600">
+              <button onClick={() => setPopover(null)} className="text-muted-foreground/70 hover:text-muted-foreground">
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -210,7 +210,7 @@ function AnnotatableField({
             <textarea autoFocus rows={3} value={pendingComment}
               onChange={(e) => setPendingComment(e.target.value)}
               placeholder="Add a comment... (optional)"
-              className="w-full text-sm text-gray-900 border border-gray-200 rounded-lg p-2 resize-none focus:outline-none focus:ring-1 focus:ring-blue-400"
+              className="w-full text-sm text-foreground border border-border rounded-lg p-2 resize-none focus:outline-none focus:ring-1 focus:ring-blue-400"
               onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSave(); if (e.key === 'Escape') setPopover(null) }}
             />
             <div className="flex gap-2 mt-2">
@@ -221,7 +221,7 @@ function AnnotatableField({
                 <button onClick={handleDelete} className="text-xs font-medium text-red-600 hover:text-red-800 px-2">Remove</button>
               )}
             </div>
-            <p className="text-[10px] text-gray-400 mt-1.5 text-center">⌘↵ to save · Esc to cancel</p>
+            <p className="text-[10px] text-muted-foreground/70 mt-1.5 text-center">⌘↵ to save · Esc to cancel</p>
           </div>
         </>
       )}
@@ -281,14 +281,14 @@ export function ApplicationViewer({ application, questionLabels, initialAnnotati
   return (
     <div className="space-y-6">
       {/* General answers */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-900">General Information</h2>
+      <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-border bg-muted/50 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-foreground">General Information</h2>
         </div>
         <div className="p-6 space-y-6">
           {Object.entries(application.answers as Record<string, unknown>).map(([key, value]) => (
             <div key={key}>
-              <h3 className="text-sm font-medium text-gray-500 mb-1">
+              <h3 className="text-sm font-medium text-muted-foreground mb-1">
                 {questionLabels[key] ?? key}
               </h3>
               <AnnotatableField fieldKey={key} value={String(value ?? '')} {...fieldProps} />
@@ -302,16 +302,16 @@ export function ApplicationViewer({ application, questionLabels, initialAnnotati
         const domainName = dapp.challengeVersion.domain.name
         const challengeQuestions = dapp.challengeVersion.questions as unknown as Question[]
         return (
-          <div key={dapp.id} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-gray-900">{domainName} Challenge</h2>
+          <div key={dapp.id} className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
+            <div className="px-6 py-4 border-b border-border bg-muted/50 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-foreground">{domainName} Challenge</h2>
             </div>
             <div className="p-6 space-y-6">
               {Object.entries(dapp.answers as Record<string, unknown>).map(([key, value]) => {
                 const label = challengeQuestions.find((q) => q.key === key)?.data.label ?? questionLabels[key] ?? key
                 return (
                   <div key={key}>
-                    <h3 className="text-sm font-medium text-gray-500 mb-1">{label}</h3>
+                    <h3 className="text-sm font-medium text-muted-foreground mb-1">{label}</h3>
                     <AnnotatableField fieldKey={`${dapp.id}:${key}`} value={String(value ?? '')} {...fieldProps} />
                   </div>
                 )

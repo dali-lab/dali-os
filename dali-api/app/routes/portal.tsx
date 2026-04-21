@@ -178,7 +178,7 @@ function StatusBadge({ label, variant }: { label: string; variant: "blue" | "gre
     green: "bg-green-100 text-green-700",
     yellow: "bg-yellow-100 text-yellow-800",
     red: "bg-red-100 text-red-700",
-    gray: "bg-gray-100 text-gray-600",
+    gray: "bg-muted text-muted-foreground",
   };
   return (
     <span className={`text-xs px-2.5 py-0.5 rounded-full font-semibold ${styles[variant]}`}>
@@ -213,7 +213,7 @@ function StageIndicator({ stage }: { stage: DomainApplicationStatus | "Applicati
                 ? "bg-accent-coral text-white"
                 : isPast
                   ? "bg-accent-coral/20 text-accent-coral"
-                  : "bg-gray-100 text-gray-400"
+                  : "bg-muted text-muted-foreground/70"
             }`}>
               {isPast && (
                 <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -223,7 +223,7 @@ function StageIndicator({ stage }: { stage: DomainApplicationStatus | "Applicati
               {s.label}
             </div>
             {i < steps.length - 1 && (
-              <div className={`w-4 h-px ${isPast ? "bg-accent-coral/40" : "bg-gray-200"}`} />
+              <div className={`w-4 h-px ${isPast ? "bg-accent-coral/40" : "bg-muted"}`} />
             )}
           </div>
         );
@@ -243,7 +243,7 @@ function ApplicationOpenView({ cycleName }: { cycleName: string }) {
         </svg>
       </div>
       <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">Applications Are Open</h2>
-      <p className="text-gray-500 mb-8 leading-relaxed">
+      <p className="text-muted-foreground mb-8 leading-relaxed">
         The {cycleName} application cycle is now accepting applications. Start yours to join the DALI Lab!
       </p>
       <Link to="/portal/apply" className="px-8 py-3 rounded-full bg-accent-coral text-white font-semibold font-heading tracking-wider hover:bg-accent-coral/90 transition shadow-lg hover:shadow-xl">
@@ -263,7 +263,7 @@ function PendingView({ cycleName }: { cycleName: string }) {
           </svg>
         </div>
         <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">Application Pending Review</h2>
-        <p className="text-gray-500 leading-relaxed">
+        <p className="text-muted-foreground leading-relaxed">
           Your application is being reviewed by the DALI team. We'll update you here once a decision has been made.
         </p>
         <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-yellow-50 text-sm text-yellow-700">
@@ -281,13 +281,13 @@ function RejectedView({ cycleName }: { cycleName: string }) {
   return (
     <div className="max-w-2xl mx-auto py-12">
       <div className="text-center mb-10">
-        <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-gray-100 flex items-center justify-center">
-          <svg className="w-8 h-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-muted flex items-center justify-center">
+          <svg className="w-8 h-8 text-muted-foreground/70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
           </svg>
         </div>
         <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">Thank You for Applying</h2>
-        <p className="text-gray-500 leading-relaxed max-w-lg mx-auto">
+        <p className="text-muted-foreground leading-relaxed max-w-lg mx-auto">
           Unfortunately, we are unable to move your application forward for {cycleName}. The applicant pool was extremely competitive this cycle.
         </p>
       </div>
@@ -296,7 +296,7 @@ function RejectedView({ cycleName }: { cycleName: string }) {
         <h3 className="font-heading text-sm font-bold text-dark-blue uppercase tracking-wider mb-2">
           Want to know more?
         </h3>
-        <p className="text-sm text-gray-500 mb-4">
+        <p className="text-sm text-muted-foreground mb-4">
           You can request feedback on your application. A member of the DALI team will follow up with you via email.
         </p>
         {feedbackRequested ? (
@@ -388,7 +388,7 @@ function InvitedToInterviewView({
           </svg>
         </div>
         <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">You're Invited to Interview!</h2>
-        <p className="text-gray-500 leading-relaxed">
+        <p className="text-muted-foreground leading-relaxed">
           Congratulations! The DALI team would like to interview you for <span className="font-medium text-dark-blue">{domainApp.domainName}</span>. Please select a time slot below.
         </p>
       </div>
@@ -401,7 +401,7 @@ function InvitedToInterviewView({
 
       {slots.length === 0 ? (
         <div className={`px-6 py-8 rounded-2xl ${cardBg} text-center`}>
-          <p className="text-gray-500">No interview slots are available yet. The DALI team is still setting up interview times — check back soon.</p>
+          <p className="text-muted-foreground">No interview slots are available yet. The DALI team is still setting up interview times — check back soon.</p>
         </div>
       ) : (
         <>
@@ -417,7 +417,7 @@ function InvitedToInterviewView({
                       className={`px-4 py-3 rounded-xl text-sm font-medium border-2 transition-all text-left ${
                         selectedSlot === s.id
                           ? "border-accent-coral bg-accent-coral/5 text-accent-coral"
-                          : "border-gray-200 text-dark-blue hover:border-accent-coral/50"
+                          : "border-border text-dark-blue hover:border-accent-coral/50"
                       }`}
                     >
                       {s.time}
@@ -501,7 +501,7 @@ function InterviewScheduledView({
     return (
       <div className="max-w-2xl mx-auto py-12">
         <h2 className="font-heading text-xl font-bold text-dark-blue mb-2">Reschedule Interview</h2>
-        <p className="text-sm text-gray-500 mb-6">
+        <p className="text-sm text-muted-foreground mb-6">
           Currently scheduled: <strong>{slot.date}, {slot.time}</strong>. Pick a new time below.
         </p>
         <div className="space-y-6 mb-8">
@@ -513,7 +513,7 @@ function InterviewScheduledView({
                   <button
                     key={s.id}
                     onClick={() => handleReschedule(s)}
-                    className="px-4 py-3 rounded-xl text-sm font-medium border-2 border-gray-200 text-dark-blue hover:border-accent-coral/50 transition-all text-left"
+                    className="px-4 py-3 rounded-xl text-sm font-medium border-2 border-border text-dark-blue hover:border-accent-coral/50 transition-all text-left"
                   >
                     {s.time}
                   </button>
@@ -522,7 +522,7 @@ function InterviewScheduledView({
             </div>
           ))}
         </div>
-        <button onClick={() => setRescheduling(false)} className="text-sm font-semibold text-gray-500 hover:underline">
+        <button onClick={() => setRescheduling(false)} className="text-sm font-semibold text-muted-foreground hover:underline">
           Cancel
         </button>
       </div>
@@ -538,7 +538,7 @@ function InterviewScheduledView({
           </svg>
         </div>
         <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">Interview Confirmed</h2>
-        <p className="text-gray-500 leading-relaxed">
+        <p className="text-muted-foreground leading-relaxed">
           You're all set for your <span className="font-medium text-dark-blue">{domainApp.domainName}</span> interview!
         </p>
       </div>
@@ -546,14 +546,14 @@ function InterviewScheduledView({
       <div className={`px-6 py-6 rounded-2xl ${cardBg} mb-6`}>
         <div className="flex items-start justify-between mb-4">
           <div>
-            <span className="text-xs text-gray-500 uppercase tracking-wider font-medium">Date & Time</span>
+            <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Date & Time</span>
             <p className="text-lg font-bold text-dark-blue mt-1">{slot.date}</p>
             <p className="text-sm text-dark-blue">{slot.time}</p>
           </div>
           <StatusBadge label="Scheduled" variant="green" />
         </div>
-        <div className="pt-4 border-t border-gray-200/60">
-          <span className="text-xs text-gray-500 uppercase tracking-wider font-medium">Location</span>
+        <div className="pt-4 border-t border-border/60">
+          <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Location</span>
           <p className="text-sm text-dark-blue mt-1">DALI Lab, 3rd Floor Sudikoff, Dartmouth College</p>
         </div>
       </div>
@@ -570,19 +570,19 @@ function InterviewScheduledView({
           </svg>
           Add to Google Calendar
         </a>
-        <button onClick={() => setRescheduling(true)} className="px-5 py-2.5 rounded-full border-2 border-gray-200 text-sm font-semibold text-gray-600 hover:border-accent-coral hover:text-accent-coral transition">
+        <button onClick={() => setRescheduling(true)} className="px-5 py-2.5 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-accent-coral hover:text-accent-coral transition">
           Reschedule
         </button>
         {declining ? (
           <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-500">Cancel interview?</span>
+            <span className="text-sm text-muted-foreground">Cancel interview?</span>
             <button onClick={handleCancel} disabled={cancelling} className="text-sm font-semibold text-red-500 hover:underline">
               {cancelling ? "Cancelling..." : "Yes"}
             </button>
-            <button onClick={() => setDeclining(false)} className="text-sm font-semibold text-gray-500 hover:underline">No</button>
+            <button onClick={() => setDeclining(false)} className="text-sm font-semibold text-muted-foreground hover:underline">No</button>
           </div>
         ) : (
-          <button onClick={() => setDeclining(true)} className="text-sm font-semibold text-gray-500 hover:text-red-500 transition">
+          <button onClick={() => setDeclining(true)} className="text-sm font-semibold text-muted-foreground hover:text-red-500 transition">
             Cancel Interview
           </button>
         )}
@@ -601,7 +601,7 @@ function PostInterviewPendingView() {
         </svg>
       </div>
       <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">Interview Complete</h2>
-      <p className="text-gray-500 leading-relaxed mb-4">
+      <p className="text-muted-foreground leading-relaxed mb-4">
         Thanks for interviewing with us! The team is reviewing all candidates and will share a final decision soon.
       </p>
       <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-50 text-sm text-blue-600">
@@ -634,7 +634,7 @@ function AcceptedView({ cycleName }: { cycleName: string }) {
           </svg>
         </div>
         <h2 className="font-heading text-3xl font-bold text-dark-blue mb-3">Congratulations!</h2>
-        <p className="text-gray-500 leading-relaxed text-lg">
+        <p className="text-muted-foreground leading-relaxed text-lg">
           You've been accepted to DALI Lab for {cycleName}!
         </p>
       </div>
@@ -642,9 +642,9 @@ function AcceptedView({ cycleName }: { cycleName: string }) {
       <div className="mb-6">
         <div className="flex items-center justify-between mb-2">
           <span className="text-sm font-semibold text-dark-blue">Onboarding Progress</span>
-          <span className="text-sm text-gray-500">{completedCount}/{CHECKLIST.length}</span>
+          <span className="text-sm text-muted-foreground">{completedCount}/{CHECKLIST.length}</span>
         </div>
-        <div className="h-2 rounded-full bg-gray-200 overflow-hidden">
+        <div className="h-2 rounded-full bg-muted overflow-hidden">
           <div
             className="h-full rounded-full bg-accent-coral transition-all duration-400"
             style={{ width: `${(completedCount / CHECKLIST.length) * 100}%` }}
@@ -666,10 +666,10 @@ function AcceptedView({ cycleName }: { cycleName: string }) {
                 className="mt-0.5 w-5 h-5 rounded accent-accent-coral flex-shrink-0"
               />
               <div>
-                <span className={`text-sm font-semibold transition-colors ${checked[item.id] ? "text-gray-400 line-through" : "text-dark-blue"}`}>
+                <span className={`text-sm font-semibold transition-colors ${checked[item.id] ? "text-muted-foreground/70 line-through" : "text-dark-blue"}`}>
                   {item.label}
                 </span>
-                <p className={`text-xs mt-0.5 transition-colors ${checked[item.id] ? "text-gray-300" : "text-gray-500"}`}>
+                <p className={`text-xs mt-0.5 transition-colors ${checked[item.id] ? "text-muted-foreground/50" : "text-muted-foreground"}`}>
                   {item.description}
                 </p>
               </div>
@@ -691,14 +691,14 @@ function WaitlistedView({ cycleName }: { cycleName: string }) {
           </svg>
         </div>
         <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">You're on the Waitlist</h2>
-        <p className="text-gray-500 leading-relaxed max-w-lg mx-auto">
+        <p className="text-muted-foreground leading-relaxed max-w-lg mx-auto">
           You performed well in the interview process and we'd love to have you at DALI. We've placed you on the waitlist for {cycleName} and will reach out if a spot becomes available.
         </p>
       </div>
 
       <div className={`px-6 py-5 rounded-2xl ${cardBg}`}>
         <h3 className="font-heading text-sm font-bold text-dark-blue uppercase tracking-wider mb-3">What this means</h3>
-        <ul className="space-y-2 text-sm text-gray-600">
+        <ul className="space-y-2 text-sm text-muted-foreground">
           <li className="flex items-start gap-2">
             <span className="text-accent-teal mt-0.5">-</span>
             <span>If a spot opens, we'll contact you by email. No action needed on your part.</span>
@@ -736,7 +736,7 @@ export default function Portal() {
     return (
       <div className="max-w-2xl mx-auto py-16 text-center px-6">
         <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">No Active Cycle</h2>
-        <p className="text-gray-500">There is no active application cycle right now. Check back later!</p>
+        <p className="text-muted-foreground">There is no active application cycle right now. Check back later!</p>
       </div>
     );
   }
@@ -801,13 +801,13 @@ export default function Portal() {
       <div className="px-6 md:px-16 lg:px-24 py-10">
         {primaryStage === "ApplicationsClosed" && (
           <div className="max-w-2xl mx-auto text-center py-16">
-            <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-gray-100 flex items-center justify-center">
-              <svg className="w-8 h-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-muted flex items-center justify-center">
+              <svg className="w-8 h-8 text-muted-foreground/70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </div>
             <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">Applications Closed</h2>
-            <p className="text-gray-500 leading-relaxed">
+            <p className="text-muted-foreground leading-relaxed">
               The application window for {cycleName} has closed. Check back for future application cycles!
             </p>
           </div>
