@@ -1,13 +1,10 @@
-// DEV-ONLY: log in as any existing user by netId. Sets both __dali_at (api JWT)
-// and __dali_user (web display) cookies via Set-Cookie headers so it overwrites
-// any existing HttpOnly cookies from real OAuth sessions.
-//
-// Usage: GET /dev-login-as?netId=f007al1&redirect=http://localhost:5173/portal
+// DEV-ONLY: log in as any existing user by email.
+// Usage: GET /dev-login-as?email=foo@example.com&redirect=http://localhost:5173/portal
 
 import type { Route } from "./+types/dev-login-as";
-import { signAccessToken } from "~/lib/auth";
 import { isDevLoginEnabled } from "~/lib/dev-login";
 import { prisma } from "~/lib/db";
+import { randomBytes } from "node:crypto";
 
 export async function loader({ request }: Route.LoaderArgs) {
   if (!isDevLoginEnabled()) {
@@ -15,55 +12,43 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   const url = new URL(request.url);
-  const netId = url.searchParams.get("netId");
-  const daliEmail = url.searchParams.get("daliEmail");
-  const defaultRedirect = "http://localhost:3001/";
-  const redirect = url.searchParams.get("redirect") ?? defaultRedirect;
+  const email = url.searchParams.get("email");
+  const redirectTo = url.searchParams.get("redirect") ?? "http://localhost:3001/portal";
 
-  if (!netId && !daliEmail) {
-    return new Response("Missing ?netId or ?daliEmail param", { status: 400 });
+  if (!email) {
+    return new Response("Missing ?email param", { status: 400 });
   }
 
-  const user = daliEmail
-    ? await prisma.user.findUnique({ where: { daliEmail } })
-    : await prisma.user.findUnique({ where: { netId: netId! } });
+  const user = await prisma.user.findUnique({ where: { email } });
   if (!user) {
-    return new Response(`No user found for ${daliEmail ? `daliEmail ${daliEmail}` : `netId ${netId}`}`, { status: 404 });
+    return new Response(`No user found for email ${email}`, { status: 404 });
   }
 
-  const email = user.daliEmail ?? user.dartmouthEmail ?? "";
-  const type = user.daliEmail ? "member" : "applicant";
-
-  const token = await signAccessToken({
-    sub: user.id,
-    email,
-    type,
-    firstName: user.firstName,
-    lastName: user.lastName,
+  const token = randomBytes(32).toString("base64url");
+  await prisma.session.create({
+    data: {
+      token,
+      userId: user.id,
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      updatedAt: new Date(),
+    },
   });
 
-  const userPayload = JSON.stringify({
-    id: user.id,
-    email,
-    firstName: user.firstName,
-    lastName: user.lastName,
-    type,
+  const isProduction = process.env.NODE_ENV === "production";
+  const cookieParts = [
+    `better-auth.session_token=${token}`,
+    "Path=/",
+    "Max-Age=604800",
+    "HttpOnly",
+    "SameSite=Lax",
+  ];
+  if (isProduction) cookieParts.push("Secure");
+
+  return new Response(null, {
+    status: 302,
+    headers: {
+      "Set-Cookie": cookieParts.join("; "),
+      Location: redirectTo,
+    },
   });
-
-  const finalRedirect = url.searchParams.get("redirect")
-    ? redirect
-    : type === "member" ? "http://localhost:3001/" : "http://localhost:3001/portal";
-  const headers = new Headers({ Location: finalRedirect });
-  // __dali_at: api auth (HttpOnly so JS can't read; server-set overwrites any existing)
-  headers.append(
-    "Set-Cookie",
-    `__dali_at=${token}; Path=/; Max-Age=86400; HttpOnly; SameSite=Lax`,
-  );
-  // __dali_user: web display (NOT HttpOnly so dali-web JS can read it)
-  headers.append(
-    "Set-Cookie",
-    `__dali_user=${encodeURIComponent(userPayload)}; Path=/; Max-Age=86400; SameSite=Lax`,
-  );
-
-  return new Response(null, { status: 302, headers });
 }

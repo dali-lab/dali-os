@@ -7,10 +7,11 @@ const prisma = new PrismaClient({ adapter });
 async function main() {
   // ── Admin user (creates forms, challenges, and cycle) ──────────────────────
   const admin = await prisma.user.upsert({
-    where: { daliEmail: "admin@dali.dartmouth.edu" },
-    update: { firstName: "Admin", lastName: "User" },
+    where: { email: "admin@dali.dartmouth.edu" },
+    update: { firstName: "Admin", lastName: "User", name: "Admin User" },
     create: {
-      daliEmail: "admin@dali.dartmouth.edu",
+      email: "admin@dali.dartmouth.edu",
+      name: "Admin User",
       firstName: "Admin",
       lastName: "User",
       daliMember: {
@@ -398,31 +399,34 @@ async function main() {
   // ── Applicant users ────────────────────────────────────────────────────────
   const [alice, bob, carol] = await Promise.all([
     prisma.user.upsert({
-      where: { netId: "f007al1" },
+      where: { email: "f007al1@dartmouth.edu" },
       update: {},
       create: {
         netId: "f007al1",
-        dartmouthEmail: "alice.m.johnson.26@dartmouth.edu",
+        email: "alice.m.johnson.26@dartmouth.edu",
+        name: "Alice Johnson",
         firstName: "Alice",
         lastName: "Johnson",
       },
     }),
     prisma.user.upsert({
-      where: { netId: "f007bo2" },
+      where: { email: "f007bo2@dartmouth.edu" },
       update: {},
       create: {
         netId: "f007bo2",
-        dartmouthEmail: "bob.k.chen.27@dartmouth.edu",
+        email: "bob.k.chen.27@dartmouth.edu",
+        name: "Bob Chen",
         firstName: "Bob",
         lastName: "Chen",
       },
     }),
     prisma.user.upsert({
-      where: { netId: "f007ca3" },
+      where: { email: "f007ca3@dartmouth.edu" },
       update: {},
       create: {
         netId: "f007ca3",
-        dartmouthEmail: "carol.r.patel.26@dartmouth.edu",
+        email: "carol.r.patel.26@dartmouth.edu",
+        name: "Carol Patel",
         firstName: "Carol",
         lastName: "Patel",
       },
@@ -555,91 +559,100 @@ async function main() {
   // reviewer assignment (submitted, no reviews yet).
   const [diego, eve, felix, grace, harper, ivan, jade, kenji, leo] = await Promise.all([
     prisma.user.upsert({
-      where: { netId: "f007di4" },
+      where: { email: "f007di4@dartmouth.edu" },
       update: {},
       create: {
         netId: "f007di4",
-        dartmouthEmail: "diego.s.rivera.26@dartmouth.edu",
+        email: "diego.s.rivera.26@dartmouth.edu",
+        name: "Diego Rivera",
         firstName: "Diego",
         lastName: "Rivera",
       },
     }),
     prisma.user.upsert({
-      where: { netId: "f007ev5" },
+      where: { email: "f007ev5@dartmouth.edu" },
       update: {},
       create: {
         netId: "f007ev5",
-        dartmouthEmail: "eve.m.park.27@dartmouth.edu",
+        email: "eve.m.park.27@dartmouth.edu",
+        name: "Eve Park",
         firstName: "Eve",
         lastName: "Park",
       },
     }),
     prisma.user.upsert({
-      where: { netId: "f007fe6" },
+      where: { email: "f007fe6@dartmouth.edu" },
       update: {},
       create: {
         netId: "f007fe6",
-        dartmouthEmail: "felix.t.nguyen.26@dartmouth.edu",
+        email: "felix.t.nguyen.26@dartmouth.edu",
+        name: "Felix Nguyen",
         firstName: "Felix",
         lastName: "Nguyen",
       },
     }),
     prisma.user.upsert({
-      where: { netId: "f007gr7" },
+      where: { email: "f007gr7@dartmouth.edu" },
       update: {},
       create: {
         netId: "f007gr7",
-        dartmouthEmail: "grace.l.okafor.28@dartmouth.edu",
+        email: "grace.l.okafor.28@dartmouth.edu",
+        name: "Grace Okafor",
         firstName: "Grace",
         lastName: "Okafor",
       },
     }),
     prisma.user.upsert({
-      where: { netId: "f007ha8" },
+      where: { email: "f007ha8@dartmouth.edu" },
       update: {},
       create: {
         netId: "f007ha8",
-        dartmouthEmail: "harper.j.sato.27@dartmouth.edu",
+        email: "harper.j.sato.27@dartmouth.edu",
+        name: "Harper Sato",
         firstName: "Harper",
         lastName: "Sato",
       },
     }),
     prisma.user.upsert({
-      where: { netId: "f007iv9" },
+      where: { email: "f007iv9@dartmouth.edu" },
       update: {},
       create: {
         netId: "f007iv9",
-        dartmouthEmail: "ivan.d.kozlov.28@dartmouth.edu",
+        email: "ivan.d.kozlov.28@dartmouth.edu",
+        name: "Ivan Kozlov",
         firstName: "Ivan",
         lastName: "Kozlov",
       },
     }),
     prisma.user.upsert({
-      where: { netId: "f007ja0" },
+      where: { email: "f007ja0@dartmouth.edu" },
       update: {},
       create: {
         netId: "f007ja0",
-        dartmouthEmail: "jade.r.montgomery.27@dartmouth.edu",
+        email: "jade.r.montgomery.27@dartmouth.edu",
+        name: "Jade Montgomery",
         firstName: "Jade",
         lastName: "Montgomery",
       },
     }),
     prisma.user.upsert({
-      where: { netId: "f007ke1" },
+      where: { email: "f007ke1@dartmouth.edu" },
       update: {},
       create: {
         netId: "f007ke1",
-        dartmouthEmail: "kenji.h.yamada.28@dartmouth.edu",
+        email: "kenji.h.yamada.28@dartmouth.edu",
+        name: "Kenji Yamada",
         firstName: "Kenji",
         lastName: "Yamada",
       },
     }),
     prisma.user.upsert({
-      where: { netId: "f007le2" },
+      where: { email: "f007le2@dartmouth.edu" },
       update: {},
       create: {
         netId: "f007le2",
-        dartmouthEmail: "leo.p.brennan.26@dartmouth.edu",
+        email: "leo.p.brennan.26@dartmouth.edu",
+        name: "Leo Brennan",
         firstName: "Leo",
         lastName: "Brennan",
       },
@@ -1027,11 +1040,12 @@ async function main() {
 
   // Dana: submitted Engineering application in Winter 2028
   const dana = await prisma.user.upsert({
-    where: { netId: "f007da4" },
+    where: { email: "f007da4@dartmouth.edu" },
     update: {},
     create: {
       netId: "f007da4",
-      dartmouthEmail: "dana.l.kim.28@dartmouth.edu",
+      email: "dana.l.kim.28@dartmouth.edu",
+      name: "Dana Kim",
       firstName: "Dana",
       lastName: "Kim",
     },
@@ -1138,44 +1152,44 @@ async function main() {
   // ── Applicants for Winter 2027 ────────────────────────────────────────────
   const [emma, liam, sofia, noah, olivia, ethan, ava, mason] = await Promise.all([
     prisma.user.upsert({
-      where: { netId: "f007em5" },
+      where: { email: "f007em5@dartmouth.edu" },
       update: {},
-      create: { netId: "f007em5", dartmouthEmail: "emma.j.torres.27@dartmouth.edu", firstName: "Emma", lastName: "Torres" },
+      create: { netId: "f007em5", email: "emma.j.torres.27@dartmouth.edu", name: "Emma Torres", firstName: "Emma", lastName: "Torres" },
     }),
     prisma.user.upsert({
-      where: { netId: "f007li6" },
+      where: { email: "f007li6@dartmouth.edu" },
       update: {},
-      create: { netId: "f007li6", dartmouthEmail: "liam.t.nguyen.28@dartmouth.edu", firstName: "Liam", lastName: "Nguyen" },
+      create: { netId: "f007li6", email: "liam.t.nguyen.28@dartmouth.edu", name: "Liam Nguyen", firstName: "Liam", lastName: "Nguyen" },
     }),
     prisma.user.upsert({
-      where: { netId: "f007so7" },
+      where: { email: "f007so7@dartmouth.edu" },
       update: {},
-      create: { netId: "f007so7", dartmouthEmail: "sofia.a.martinez.27@dartmouth.edu", firstName: "Sofia", lastName: "Martinez" },
+      create: { netId: "f007so7", email: "sofia.a.martinez.27@dartmouth.edu", name: "Sofia Martinez", firstName: "Sofia", lastName: "Martinez" },
     }),
     prisma.user.upsert({
-      where: { netId: "f007no8" },
+      where: { email: "f007no8@dartmouth.edu" },
       update: {},
-      create: { netId: "f007no8", dartmouthEmail: "noah.r.williams.28@dartmouth.edu", firstName: "Noah", lastName: "Williams" },
+      create: { netId: "f007no8", email: "noah.r.williams.28@dartmouth.edu", name: "Noah Williams", firstName: "Noah", lastName: "Williams" },
     }),
     prisma.user.upsert({
-      where: { netId: "f007ol9" },
+      where: { email: "f007ol9@dartmouth.edu" },
       update: {},
-      create: { netId: "f007ol9", dartmouthEmail: "olivia.k.brown.27@dartmouth.edu", firstName: "Olivia", lastName: "Brown" },
+      create: { netId: "f007ol9", email: "olivia.k.brown.27@dartmouth.edu", name: "Olivia Brown", firstName: "Olivia", lastName: "Brown" },
     }),
     prisma.user.upsert({
-      where: { netId: "f007et0" },
+      where: { email: "f007et0@dartmouth.edu" },
       update: {},
-      create: { netId: "f007et0", dartmouthEmail: "ethan.m.davis.28@dartmouth.edu", firstName: "Ethan", lastName: "Davis" },
+      create: { netId: "f007et0", email: "ethan.m.davis.28@dartmouth.edu", name: "Ethan Davis", firstName: "Ethan", lastName: "Davis" },
     }),
     prisma.user.upsert({
-      where: { netId: "f007av1" },
+      where: { email: "f007av1@dartmouth.edu" },
       update: {},
-      create: { netId: "f007av1", dartmouthEmail: "ava.c.wilson.27@dartmouth.edu", firstName: "Ava", lastName: "Wilson" },
+      create: { netId: "f007av1", email: "ava.c.wilson.27@dartmouth.edu", name: "Ava Wilson", firstName: "Ava", lastName: "Wilson" },
     }),
     prisma.user.upsert({
-      where: { netId: "f007ma2" },
+      where: { email: "f007ma2@dartmouth.edu" },
       update: {},
-      create: { netId: "f007ma2", dartmouthEmail: "mason.h.taylor.28@dartmouth.edu", firstName: "Mason", lastName: "Taylor" },
+      create: { netId: "f007ma2", email: "mason.h.taylor.28@dartmouth.edu", name: "Mason Taylor", firstName: "Mason", lastName: "Taylor" },
     }),
   ]);
 
@@ -1444,10 +1458,11 @@ async function main() {
 
   // ── Domain lead user ──────────────────────────────────────────────────────
   const engLead = await prisma.user.upsert({
-    where: { daliEmail: "eng.lead@dali.dartmouth.edu" },
-    update: { firstName: "Mira", lastName: "Chen" },
+    where: { email: "eng.lead@dali.dartmouth.edu" },
+    update: { firstName: "Mira", lastName: "Chen", name: "Mira Chen" },
     create: {
-      daliEmail: "eng.lead@dali.dartmouth.edu",
+      email: "eng.lead@dali.dartmouth.edu",
+      name: "Mira Chen",
       firstName: "Mira",
       lastName: "Chen",
       daliMember: { create: { daliEmail: "eng.lead@dali.dartmouth.edu", firstName: "Mira", lastName: "Chen" } },
@@ -1471,10 +1486,11 @@ async function main() {
 
   // ── Jordan Taylor (Hiring Lead + Engineering Domain Lead) ──────────────────
   const jordan = await prisma.user.upsert({
-    where: { daliEmail: "jordan.taylor@dali.dartmouth.edu" },
-    update: { firstName: "Jordan", lastName: "Taylor" },
+    where: { email: "jordan.taylor@dali.dartmouth.edu" },
+    update: { firstName: "Jordan", lastName: "Taylor", name: "Jordan Taylor" },
     create: {
-      daliEmail: "jordan.taylor@dali.dartmouth.edu",
+      email: "jordan.taylor@dali.dartmouth.edu",
+      name: "Jordan Taylor",
       firstName: "Jordan",
       lastName: "Taylor",
       daliMember: {
@@ -1486,7 +1502,6 @@ async function main() {
         },
       },
     },
-    include: { daliMember: true },
   });
 
   const jordanMember = await prisma.dALIMember.update({
@@ -1552,38 +1567,40 @@ async function main() {
 
   for (const r of reviewerData) {
     const user = await prisma.user.upsert({
-      where: { daliEmail: r.email },
-      update: { firstName: r.first, lastName: r.last },
+      where: { email: r.email },
+      update: { firstName: r.first, lastName: r.last, name: `${r.first} ${r.last}` },
       create: {
-        daliEmail: r.email,
+        email: r.email,
+        name: `${r.first} ${r.last}`,
         firstName: r.first,
         lastName: r.last,
         daliMember: { create: { daliEmail: r.email, firstName: r.first, lastName: r.last } },
       },
-      include: { daliMember: true },
     });
 
-    if (!user.daliMember) continue;
+    const member = await prisma.dALIMember.findFirst({ where: { userId: user.id } });
+    if (!member) continue;
+
     // Sync names onto the DALIMember row — the dashboard renders from there,
     // and older seeds created members without names.
     await prisma.dALIMember.update({
-      where: { id: user.daliMember.id },
+      where: { id: member.id },
       data: { firstName: r.first, lastName: r.last },
     });
-    reviewerMembers.push({ id: user.daliMember.id, domainId: r.domainId });
+    reviewerMembers.push({ id: member.id, domainId: r.domainId });
 
     // CycleReviewer (for written reviews)
     await prisma.cycleReviewer.upsert({
       where: {
         daliMemberId_applicationCycleId_domainId: {
-          daliMemberId: user.daliMember.id,
+          daliMemberId: member.id,
           applicationCycleId: cycle.id,
           domainId: r.domainId,
         },
       },
       update: {},
       create: {
-        daliMemberId: user.daliMember.id,
+        daliMemberId: member.id,
         applicationCycleId: cycle.id,
         domainId: r.domainId,
       },
@@ -1593,14 +1610,14 @@ async function main() {
     await prisma.cycleInterviewer.upsert({
       where: {
         daliMemberId_applicationCycleId_domainId: {
-          daliMemberId: user.daliMember.id,
+          daliMemberId: member.id,
           applicationCycleId: cycle.id,
           domainId: r.domainId,
         },
       },
       update: {},
       create: {
-        daliMemberId: user.daliMember.id,
+        daliMemberId: member.id,
         applicationCycleId: cycle.id,
         domainId: r.domainId,
       },

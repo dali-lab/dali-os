@@ -47,7 +47,7 @@ export interface User {
   lastName: string
   netId?: string
   daliEmail?: string
-  dartmouthEmail?: string
+  email?: string
   isDaliMember?: boolean
 }
 

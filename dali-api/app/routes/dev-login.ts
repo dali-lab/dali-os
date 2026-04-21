@@ -1,11 +1,12 @@
-// DEV-ONLY: shows a list of all users and unlinked DALI members.
-// Click an existing user to log in; click an unlinked member to create a user on the fly.
+// DEV-ONLY: shows a list of all users. Click one to log in as them.
 // This route should never exist in production.
 
 import type { Route } from "./+types/dev-login";
-import { signAccessToken } from "~/lib/auth";
 import { isDevLoginEnabled } from "~/lib/dev-login";
 import { prisma } from "~/lib/db";
+import { auth } from "~/lib/auth";
+
+const DEV_PASSWORD = "dev-login-password-dali";
 
 export async function loader({ request }: Route.LoaderArgs) {
   if (!isDevLoginEnabled()) {
@@ -16,14 +17,12 @@ export async function loader({ request }: Route.LoaderArgs) {
   const userId = url.searchParams.get("userId");
   const memberId = url.searchParams.get("memberId");
 
-  // Log in as an existing user
   if (userId) {
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) return new Response("User not found", { status: 404 });
     return loginAsUser(user);
   }
 
-  // Create a user for an unlinked DALI member, then log in
   if (memberId) {
     const member = await prisma.dALIMember.findUnique({ where: { id: memberId } });
     if (!member) return new Response("Member not found", { status: 404 });
@@ -32,10 +31,13 @@ export async function loader({ request }: Route.LoaderArgs) {
       if (user) return loginAsUser(user);
     }
 
-    const user = await prisma.user.create({
-      data: {
-        daliEmail: member.daliEmail,
-        dartmouthEmail: member.dartmouthEmail,
+    const email = member.daliEmail ?? member.dartmouthEmail ?? `${member.id}@dev.local`;
+    const user = await prisma.user.upsert({
+      where: { email },
+      update: {},
+      create: {
+        email,
+        name: `${member.firstName ?? "Unknown"} ${member.lastName ?? "Member"}`,
         firstName: member.firstName ?? "Unknown",
         lastName: member.lastName ?? "Member",
       },
@@ -47,7 +49,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     return loginAsUser(user);
   }
 
-  // Show the user picker
   const users = await prisma.user.findMany({
     include: {
       daliMember: {
@@ -57,7 +58,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         },
       },
     },
-    orderBy: [{ daliEmail: "asc" }, { dartmouthEmail: "asc" }],
+    orderBy: { email: "asc" },
   });
 
   const unlinkedMembers = await prisma.dALIMember.findMany({
@@ -69,8 +70,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     orderBy: [{ daliEmail: "asc" }, { lastName: "asc" }],
   });
 
-  const daliUsers = users.filter(u => u.daliEmail);
-  const applicantUsers = users.filter(u => !u.daliEmail);
+  const daliUsers = users.filter(u => u.daliMember);
+  const applicantUsers = users.filter(u => !u.daliMember);
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -84,7 +85,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     h1 { font-size: 1.5rem; margin-bottom: 0.25rem; }
     .subtitle { color: #666; font-size: 0.875rem; margin-bottom: 1.5rem; }
     .search { width: 100%; padding: 0.625rem 1rem; border: 1px solid #ddd; border-radius: 0.5rem; font-size: 0.875rem; margin-bottom: 1rem; background: #fff; }
-    .search:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }
+    .search:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
     .section { margin-bottom: 2rem; }
     .section-title { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #888; margin-bottom: 0.5rem; padding-left: 0.25rem; }
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 0.5rem; }
@@ -111,23 +112,19 @@ export async function loader({ request }: Route.LoaderArgs) {
   <h1>Dev Login</h1>
   <p class="subtitle">Pick a user to log in as. Non-production only.</p>
   <input type="text" class="search" id="search" placeholder="Search by name or email..." autofocus />
-
   <div id="users">
     ${renderSection("DALI Members with Accounts", daliUsers.map(u => renderUserCard(u)))}
     ${renderSection("Applicants", applicantUsers.map(u => renderUserCard(u)))}
     ${renderSection("Unlinked DALI Members (will create account)", unlinkedMembers.map(m => renderMemberCard(m)))}
   </div>
-
   <script>
     document.getElementById('search').addEventListener('input', function(e) {
       const q = e.target.value.toLowerCase();
       document.querySelectorAll('.card, .card-unlinked').forEach(card => {
-        const text = card.textContent.toLowerCase();
-        card.style.display = text.includes(q) ? '' : 'none';
+        card.style.display = card.textContent.toLowerCase().includes(q) ? '' : 'none';
       });
       document.querySelectorAll('.section').forEach(section => {
-        const cards = section.querySelectorAll('.card, .card-unlinked');
-        const anyVisible = Array.from(cards).some(c => c.style.display !== 'none');
+        const anyVisible = Array.from(section.querySelectorAll('.card, .card-unlinked')).some(c => c.style.display !== 'none');
         section.style.display = anyVisible ? '' : 'none';
       });
     });
@@ -135,100 +132,76 @@ export async function loader({ request }: Route.LoaderArgs) {
 </body>
 </html>`;
 
-  return new Response(html, {
-    headers: { "Content-Type": "text/html; charset=utf-8" },
-  });
+  return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
 }
 
-async function loginAsUser(user: { id: string; daliEmail: string | null; dartmouthEmail: string | null; firstName: string; lastName: string }) {
-  const email = user.daliEmail ?? user.dartmouthEmail ?? "";
-  const type = user.daliEmail ? "member" : "applicant";
+async function loginAsUser(user: { id: string; email: string; name: string; firstName: string; lastName: string }) {
+  // Ensure a credential Account row exists for this user. Users seeded via
+  // Prisma have no Account row, so signInEmail would fail. We upsert the
+  // Account directly using BetterAuth's own password hasher so the stored
+  // hash is verifiable by signInEmail.
+  const ctx = await auth.$context;
+  const hash = await ctx.password.hash(DEV_PASSWORD);
+  const existing = await prisma.account.findFirst({
+    where: { userId: user.id, providerId: "credential" },
+  });
+  if (existing) {
+    await prisma.account.update({ where: { id: existing.id }, data: { password: hash } });
+  } else {
+    await prisma.account.create({
+      data: {
+        accountId: user.id,
+        providerId: "credential",
+        userId: user.id,
+        password: hash,
+        updatedAt: new Date(),
+      },
+    });
+  }
 
-  const token = await signAccessToken({
-    sub: user.id,
-    email,
-    type,
-    firstName: user.firstName,
-    lastName: user.lastName,
+  const isMember = !!(await prisma.dALIMember.findFirst({ where: { userId: user.id } }));
+
+  const signInRes = await auth.api.signInEmail({
+    body: { email: user.email, password: DEV_PASSWORD },
+    asResponse: true,
   });
 
-  const cookie = [
-    `__dali_at=${token}`,
-    "Max-Age=86400",
-    "Path=/",
-    "HttpOnly",
-    "SameSite=Lax",
-  ].join("; ");
-
-  const redirect = type === "member" ? "/" : "/portal";
-  return new Response(null, {
-    status: 302,
-    headers: { "Set-Cookie": cookie, Location: redirect },
-  });
+  const headers = new Headers(signInRes.headers);
+  headers.set("Location", isMember ? "/reviewer" : "/portal");
+  return new Response(null, { status: 302, headers });
 }
 
 function renderSection(title: string, cards: string[]): string {
   if (cards.length === 0) return "";
-  return `
-    <div class="section">
-      <div class="section-title">${title} (${cards.length})</div>
-      <div class="grid">${cards.join("\n")}</div>
-    </div>`;
+  return `<div class="section"><div class="section-title">${title} (${cards.length})</div><div class="grid">${cards.join("\n")}</div></div>`;
 }
 
 function renderUserCard(user: any): string {
-  const email = user.daliEmail ?? user.dartmouthEmail ?? "no email";
-  const badges = getBadges(user.daliEmail ? "member" : "applicant", user.daliMember);
-
-  return `
-    <a href="/dev-login?userId=${user.id}" class="card">
-      <div>
-        <div class="name">${esc(user.firstName)} ${esc(user.lastName)}</div>
-        <div class="email">${esc(email)}</div>
-        <div class="badges">${badges}</div>
-      </div>
-      <span class="action">Log in &rarr;</span>
-    </a>`;
+  const badges = getBadges(user.daliMember ? "member" : "applicant", user.daliMember);
+  return `<a href="/dev-login?userId=${user.id}" class="card"><div><div class="name">${esc(user.name)}</div><div class="email">${esc(user.email)}</div><div class="badges">${badges}</div></div><span class="action">Log in &rarr;</span></a>`;
 }
 
 function renderMemberCard(member: any): string {
-  const name = member.firstName && member.lastName
-    ? `${member.firstName} ${member.lastName}`
-    : "Unknown Name";
-  const email = member.daliEmail ?? member.dartmouthEmail ?? "no email";
+  const name = member.firstName && member.lastName ? `${member.firstName} ${member.lastName}` : "Unknown Name";
+  const email = member.daliEmail ?? member.email ?? "no email";
   const badges = getBadges("unlinked", member);
-
-  return `
-    <a href="/dev-login?memberId=${member.id}" class="card card-unlinked">
-      <div>
-        <div class="name">${esc(name)}</div>
-        <div class="email">${esc(email)}</div>
-        <div class="badges">${badges}</div>
-      </div>
-      <span class="action">Create &amp; log in &rarr;</span>
-    </a>`;
+  return `<a href="/dev-login?memberId=${member.id}" class="card card-unlinked"><div><div class="name">${esc(name)}</div><div class="email">${esc(email)}</div><div class="badges">${badges}</div></div><span class="action">Create &amp; log in &rarr;</span></a>`;
 }
 
 function getBadges(type: "member" | "applicant" | "unlinked", member: any): string {
   const badges: string[] = [];
-
   if (type === "unlinked") badges.push('<span class="badge badge-unlinked">No Account</span>');
   else if (type === "member") badges.push('<span class="badge badge-member">Member</span>');
   else badges.push('<span class="badge badge-applicant">Applicant</span>');
-
   if (member) {
     const roles: string[] = member.roles ?? [];
     if (roles.includes("Admin")) badges.push('<span class="badge badge-admin">Admin</span>');
     if (roles.includes("HiringLead")) badges.push('<span class="badge badge-admin">Hiring Lead</span>');
     if (member.domainLeadAssignments?.length > 0) {
-      const domains = member.domainLeadAssignments.map((a: any) => a.domain.name).join(", ");
-      badges.push(`<span class="badge badge-lead">Lead: ${domains}</span>`);
+      badges.push(`<span class="badge badge-lead">Lead: ${member.domainLeadAssignments.map((a: any) => a.domain.name).join(", ")}</span>`);
     }
-    if (member.cycleReviewers?.length > 0) {
-      badges.push('<span class="badge badge-reviewer">Reviewer</span>');
-    }
+    if (member.cycleReviewers?.length > 0) badges.push('<span class="badge badge-reviewer">Reviewer</span>');
   }
-
   return badges.join("");
 }
 

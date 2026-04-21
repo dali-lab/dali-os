@@ -8,7 +8,7 @@ interface NotionMember {
   firstName: string | null;
   lastName: string | null;
   daliEmail: string | null;
-  dartmouthEmail: string | null;
+  email: string | null;
   did: string | null;
 }
 
@@ -48,11 +48,11 @@ function extractMember(page: Record<string, unknown>): NotionMember {
   const lastName = nameParts.length > 1 ? nameParts.slice(1).join(" ") : null;
 
   const daliEmail = (props["dali email"]?.email as string | null) ?? null;
-  const dartmouthEmail = (props["dartmouth email"]?.email as string | null) ?? null;
+  const email = (props["dartmouth email"]?.email as string | null) ?? null;
   const didText = (props["did"]?.rich_text as Array<{ plain_text: string }> | undefined)?.[0]?.plain_text ?? null;
   const did = didText?.trim() || null;
 
-  return { firstName, lastName, daliEmail, dartmouthEmail, did };
+  return { firstName, lastName, daliEmail, email, did };
 }
 
 async function main() {

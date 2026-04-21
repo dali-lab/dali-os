@@ -82,25 +82,39 @@ export async function loader({ request }: { request: Request }) {
     })
   }
 
-  // Store the refresh token on the applications@ user row (upsert in case it doesn't exist yet)
-  await prisma.user.upsert({
-    where: { daliEmail: GMAIL_USER },
-    update: {
-      googleRefreshToken: refreshToken,
-      googleAccessToken: tokens.access_token ?? null,
-      googleTokenExpiresAt: tokens.expires_in
-        ? new Date(Date.now() + tokens.expires_in * 1000)
-        : null,
-    },
+  // Upsert the gmail user account row (creates User if needed, then upserts Account)
+  const gmailUser = await prisma.user.upsert({
+    where: { email: GMAIL_USER },
+    update: {},
     create: {
-      daliEmail: GMAIL_USER,
+      email: GMAIL_USER,
+      name: 'DALI Applications',
       firstName: 'DALI',
       lastName: 'Applications',
-      googleRefreshToken: refreshToken,
-      googleAccessToken: tokens.access_token ?? null,
-      googleTokenExpiresAt: tokens.expires_in
+    },
+  })
+
+  await prisma.account.upsert({
+    where: { id: `gmail-${gmailUser.id}` },
+    update: {
+      refreshToken,
+      accessToken: tokens.access_token ?? null,
+      accessTokenExpiresAt: tokens.expires_in
         ? new Date(Date.now() + tokens.expires_in * 1000)
         : null,
+      updatedAt: new Date(),
+    },
+    create: {
+      id: `gmail-${gmailUser.id}`,
+      accountId: GMAIL_USER,
+      providerId: 'gmail',
+      userId: gmailUser.id,
+      refreshToken,
+      accessToken: tokens.access_token ?? null,
+      accessTokenExpiresAt: tokens.expires_in
+        ? new Date(Date.now() + tokens.expires_in * 1000)
+        : null,
+      updatedAt: new Date(),
     },
   })
 

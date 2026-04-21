@@ -162,7 +162,7 @@ export async function action({ request }: Route.ActionArgs) {
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (gmailUser?.googleRefreshToken && user) {
       const { subject, html } = applicationReceivedEmail(user.firstName);
-      const to = user.dartmouthEmail ?? user.daliEmail ?? "";
+      const to = user.email ?? user.daliEmail ?? "";
       if (to) {
         await sendEmail({ refreshToken: gmailUser.googleRefreshToken, to, subject, html });
       }

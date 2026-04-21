@@ -11,7 +11,7 @@ export const currentUser: User = {
   id: 'user-1',
   firstName: 'Jane',
   lastName: 'Doe',
-  dartmouthEmail: 'jane.doe.26@dartmouth.edu',
+  email: 'jane.doe.26@dartmouth.edu',
   isDaliMember: false,
 }
 

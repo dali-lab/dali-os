@@ -21,14 +21,14 @@ import {
 const GMAIL_USER = 'applications@dali.dartmouth.edu'
 
 async function getGmailRefreshToken(): Promise<string> {
-  const user = await prisma.user.findUnique({
-    where: { daliEmail: GMAIL_USER },
-    select: { googleRefreshToken: true },
+  const account = await prisma.account.findFirst({
+    where: { user: { email: GMAIL_USER }, providerId: "gmail" },
+    select: { refreshToken: true },
   })
-  if (!user?.googleRefreshToken) {
+  if (!account?.refreshToken) {
     throw new Error('Gmail not authorized. Visit /admin/authorize-gmail first.')
   }
-  return user.googleRefreshToken
+  return account.refreshToken
 }
 
 export async function action({ request }: { request: Request }) {

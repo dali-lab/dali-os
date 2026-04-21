@@ -11,36 +11,74 @@ datasource db {
 }
 
 model User {
-  // unique identifier
-  id String @id @default(cuid())
+  id            String    @id @default(cuid())
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  // metadata
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  // BetterAuth required fields
+  name          String
+  email         String    @unique  // replaces dartmouthEmail
+  emailVerified Boolean   @default(false)
+  image         String?
 
-  // all nullable, but at least one of these must be non-null
-  netId          String? @unique // Dartmouth SSO
-  daliEmail      String? @unique // DALI Google
-  dartmouthEmail String? @unique // Dartmouth Google OAuth
+  // DALI-specific profile fields
+  firstName     String
+  lastName      String
 
-  // profile
-  firstName String
-  lastName  String
-
-  // Google API tokens (for calendar integration etc.) — populated when user
-  // signs in via Google with appropriate scopes
-  googleAccessToken       String?
-  googleRefreshToken      String?
-  googleTokenExpiresAt    DateTime?
+  // Additional identity fields
+  netId         String? @unique
+  daliEmail     String? @unique
 
   daliMember                    DALIMember?
   applicationCycleStatusUpdates ApplicationCycleStatusUpdate[]
   challengeVersions             ChallengeVersion[]
   applications                  Application[]
   applicationStatusUpdates      ApplicationStatusUpdate[]
-  oauthSessions                 OAuthSession[]
-  refreshTokens                 RefreshToken[]
   rubricVersions                RubricVersion[]
+
+  // BetterAuth relations
+  sessions      Session[]
+  accounts      Account[]
+}
+
+// ─── BetterAuth Tables ───────────────────────────────────────────────────────
+
+model Session {
+  id        String   @id @default(cuid())
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }
 
 // A DALI lab member. userId is optional because a member may be known (e.g. via daliEmail)
@@ -584,47 +622,6 @@ model CollabDocumentVersion {
   collabDocument CollabDocument @relation(fields: [name], references: [name], onDelete: Cascade)
 
   @@index([name, createdAt(sort: Desc)])
-}
-
-// ─── OAuth & Sessions ────────────────────────────────────────────────────────
-
-model OAuthSession {
-  id String @id @default(cuid())
-
-  // pkce fields
-  codeChallenge       String
-  codeChallengeMethod String @default("S256")
-
-  // oAuth params preserved across IDP redirect
-  redirectUri String
-  state       String
-  provider    String // "google" | "cas"
-  accountType String? // "member" | "partner" (Google only)
-
-  // set after IDP authenticates user
-  userId            String?
-  authorizationCode String? @unique
-  exchanged         Boolean @default(false)
-
-  // for chained Google → CAS account linking
-  linkUserId String?
-
-  expiresAt DateTime
-  createdAt DateTime @default(now())
-
-  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
-
-model RefreshToken {
-  id        String    @id @default(cuid())
-  tokenHash String    @unique // sha-256 token hash
-  userId    String
-  family    String // rotation detection
-  expiresAt DateTime
-  revokedAt DateTime?
-  createdAt DateTime  @default(now())
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 // Email template overrides stored by hiring leads. templateKey matches the

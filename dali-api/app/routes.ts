@@ -33,18 +33,11 @@ export default [
   route("dev-login", "routes/dev-login.ts"),
   route("dev-login-as", "routes/dev-login-as.ts"),
   route("logout", "routes/logout.ts"),
-  route("auth/callback/google", "routes/auth.callback.google.ts"),
-  route("auth/callback/cas", "routes/auth.callback.cas.ts"),
 
-  // OAuth endpoints (no layout)
-  route("oauth/authorize", "routes/oauth.authorize.ts"),
-  route("oauth/callback/google", "routes/oauth.callback.google.ts"),
-  route("oauth/callback/cas", "routes/oauth.callback.cas.ts"),
-  route("oauth/token", "routes/oauth.token.ts"),
-  route("oauth/revoke", "routes/oauth.revoke.ts"),
+  // BetterAuth handler (covers /api/auth/*)
+  route("api/auth/*", "routes/api.auth.$.ts"),
 
   // Authenticated API endpoints (no layout)
-  route("auth/link-member", "routes/auth.link-member.ts"),
   route("users/:id", "routes/users.$id.ts"),
 
   // Domain & member management API
