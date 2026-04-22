@@ -4,15 +4,19 @@ import { checkGitHubUrl, checkFigmaUrl } from "~/lib/submission-check";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { safeJson } from "~/lib/safe-json";
 
-const RATE_LIMIT_MAX = 5;
+const IP_RATE_LIMIT_MAX = 200;
+const USER_RATE_LIMIT_MAX = 20;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 
 export async function action({ request }: Route.ActionArgs) {
-  const rateLimited = checkRateLimit(request, { max: RATE_LIMIT_MAX, windowMs: RATE_LIMIT_WINDOW_MS });
-  if (rateLimited) return rateLimited;
+  const ipLimited = checkRateLimit(request, { max: IP_RATE_LIMIT_MAX, windowMs: RATE_LIMIT_WINDOW_MS });
+  if (ipLimited) return ipLimited;
 
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
+
+  const userLimited = checkRateLimit(request, { max: USER_RATE_LIMIT_MAX, windowMs: RATE_LIMIT_WINDOW_MS }, auth.user.sub);
+  if (userLimited) return userLimited;
 
   const body = await safeJson<{ url: string; type: "github_url" | "figma_url" }>(request);
   if (body instanceof Response) return body;
