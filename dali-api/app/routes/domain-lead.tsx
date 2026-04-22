@@ -543,8 +543,11 @@ export default function DomainLeadDashboard() {
                               <div className="flex items-center gap-2 text-sm text-gray-600">
                                 <CheckCircle className="w-4 h-4 text-green-600" />
                                 <span>{challengeVersionOptions.find((c: any) => c.id === selectedChallengeVersionId)?.challenge?.name ?? "Linked"}</span>
+                                {hasApplicationReviews && (
+                                  <span className="text-xs text-gray-400 ml-1">(locked — reviewers have been assigned)</span>
+                                )}
                               </div>
-                              {(() => {
+                              {!hasApplicationReviews && (() => {
                                 const cv = challengeVersionOptions.find((c: any) => c.id === selectedChallengeVersionId);
                                 return cv?.challenge?.id ? (
                                   <Link to={`/challenges/${cv.challenge.id}`} className="text-xs text-blue-600 hover:text-blue-800 font-medium">
@@ -1590,7 +1593,11 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
     }
   }
 
-  async function removeReview(reviewId: string) {
+  async function removeReview(reviewId: string, wasSubmitted: boolean) {
+    if (wasSubmitted) {
+      const ok = confirm("This reviewer has already submitted their review. Removing them will delete their scores and feedback. Continue?");
+      if (!ok) return;
+    }
     setRemoving(reviewId);
     try {
       const res = await fetch(`/api/reviews/${reviewId}`, {
@@ -1650,15 +1657,15 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
           >
             {icon}
             {name}
-            {editable && status !== "submitted" && (
+            {editable && (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  removeReview(r.id);
+                  removeReview(r.id, status === "submitted");
                 }}
                 disabled={removing === r.id}
                 className="ml-0.5 text-gray-400 hover:text-red-500 transition"
-                title="Remove reviewer"
+                title={status === "submitted" ? "Remove reviewer (deletes submitted review)" : "Remove reviewer"}
               >
                 <Trash2 className="w-3 h-3" />
               </button>
