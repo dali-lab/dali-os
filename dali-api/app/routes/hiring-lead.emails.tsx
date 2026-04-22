@@ -29,56 +29,59 @@ export async function loader({ request }: Route.LoaderArgs) {
   ] = await Promise.all([
     prisma.application.findMany({
       where: { applicationCycleId: cycle.id, statusUpdates: { some: { newStatus: 'Submitted' } } },
-      include: { user: { select: { firstName: true, email: true } } },
+      include: { user: { select: { firstName: true, dartmouthEmail: true, daliEmail: true } } },
     }),
     prisma.application.findMany({
       where: {
         applicationCycleId: cycle.id,
         domainApplications: { some: { decisions: { some: { stage: 'Released', type: 'Accepted' } } } },
       },
-      include: { user: { select: { firstName: true, email: true } } },
+      include: { user: { select: { firstName: true, dartmouthEmail: true, daliEmail: true } } },
     }),
     prisma.application.findMany({
       where: {
         applicationCycleId: cycle.id,
         domainApplications: { some: { decisions: { some: { stage: 'Released', type: 'Rejected' } } } },
       },
-      include: { user: { select: { firstName: true, email: true } } },
+      include: { user: { select: { firstName: true, dartmouthEmail: true, daliEmail: true } } },
     }),
     prisma.application.findMany({
       where: {
         applicationCycleId: cycle.id,
         domainApplications: { some: { decisions: { some: { stage: 'Released', type: 'Waitlisted' } } } },
       },
-      include: { user: { select: { firstName: true, email: true } } },
+      include: { user: { select: { firstName: true, dartmouthEmail: true, daliEmail: true } } },
     }),
     prisma.application.findMany({
       where: {
         applicationCycleId: cycle.id,
         domainApplications: { some: { decisions: { some: { stage: 'Released', type: 'InvitedToInterview' } } } },
       },
-      include: { user: { select: { firstName: true, email: true } } },
+      include: { user: { select: { firstName: true, dartmouthEmail: true, daliEmail: true } } },
     }),
     prisma.application.findMany({
       where: {
         applicationCycleId: cycle.id,
         domainApplications: { some: { interviews: { some: { status: 'Scheduled' } } } },
       },
-      include: { user: { select: { firstName: true, email: true } } },
+      include: { user: { select: { firstName: true, dartmouthEmail: true, daliEmail: true } } },
     }),
     prisma.cycleReviewer.findMany({
       where: { applicationCycleId: cycle.id },
-      include: { daliMember: { select: { firstName: true, user: { select: { email: true } } } } },
+      include: { daliMember: { select: { firstName: true, user: { select: { daliEmail: true, dartmouthEmail: true } } } } },
     }),
   ])
 
-  function appToRecipient(a: { user: { firstName: string; email: string } }) {
-    return { firstName: a.user.firstName, email: a.user.email }
+  function appToRecipient(a: { user: { firstName: string; dartmouthEmail: string | null; daliEmail: string | null } }) {
+    const email = a.user.dartmouthEmail ?? a.user.daliEmail
+    if (!email) return null
+    return { firstName: a.user.firstName, email }
   }
 
-  function reviewerToRecipient(r: { daliMember: { firstName: string | null; user: { email: string } | null } }) {
-    if (!r.daliMember.user?.email) return null
-    return { firstName: r.daliMember.firstName ?? 'Reviewer', email: r.daliMember.user.email }
+  function reviewerToRecipient(r: { daliMember: { firstName: string | null; user: { daliEmail: string | null; dartmouthEmail: string | null } | null } }) {
+    const email = r.daliMember.user?.daliEmail ?? r.daliMember.user?.dartmouthEmail
+    if (!email) return null
+    return { firstName: r.daliMember.firstName ?? 'Reviewer', email }
   }
 
   const recipientGroups = [

@@ -142,6 +142,12 @@
   .text-yellow-600, .text-yellow-700 { color: hsl(40 90% 65%) !important; }
   .text-yellow-800, .text-yellow-900 { color: hsl(40 90% 72%) !important; }
 
+  /* indigo-50/100 → dark indigo surface */
+  .bg-indigo-50  { background-color: hsl(240 35% 16%) !important; }
+  .bg-indigo-100 { background-color: hsl(240 35% 20%) !important; }
+  .text-indigo-600, .text-indigo-700 { color: hsl(235 80% 75%) !important; }
+  .text-indigo-800, .text-indigo-900 { color: hsl(235 80% 82%) !important; }
+
   /* border-gray-300 → use border token */
   .border-gray-300 { border-color: hsl(215 25% 28%) !important; }
   .border-gray-400 { border-color: hsl(215 20% 35%) !important; }
