@@ -1,54 +1,4 @@
-# Welcome to React Router!
-
-A modern, production-ready template for building full-stack React applications using React Router.
-
-[![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/remix-run/react-router-templates/tree/main/default)
-
-## Features
-
-- 🚀 Server-side rendering
-- ⚡️ Hot Module Replacement (HMR)
-- 📦 Asset bundling and optimization
-- 🔄 Data loading and mutations
-- 🔒 TypeScript by default
-- 🎉 TailwindCSS for styling
-- 📖 [React Router docs](https://reactrouter.com/)
-
-## Getting Started
-
-### Installation
-
-Install the dependencies:
-
-```bash
-npm install
-```
-
-### Development
-
-Start the development server with HMR:
-
-```bash
-npm run dev
-```
-
-Your application will be available at `http://localhost:5173`.
-
-### Seeding the Database
-
-With Docker Compose running, seed the database with sample data:
-
-```bash
-docker compose exec api npx tsx prisma/seed.ts
-```
-
-## Building for Production
-
-Create a production build:
-
-```bash
-npm run build
-```
+# DALI API
 
 ## Deployment
 
@@ -64,10 +14,13 @@ The API deploys to [Fly.io](https://fly.io) via GitHub Actions (`.github/workflo
 - **Staging**: The database is restored from the production Neon branch before deploying. New migrations are applied on top of real prod data. This catches data-incompatible migrations before they reach prod.
 - **Prod**: Only new Prisma migrations are applied. No database prep or seeding.
 
-## Styling
+## Rate Limits
 
-This template comes with [Tailwind CSS](https://tailwindcss.com/) already configured for a simple default starting experience. You can use whatever CSS framework you prefer.
+All windows are 60 seconds. Limits are generous on IP-based tiers because users may share a public IP via eduroam.
 
----
-
-Built with ❤️ using React Router.
+| Endpoint | Tier | Key | Limit | Purpose |
+|---|---|---|---|---|
+| `api.check-url` | 1 (pre-auth) | IP | 200/60s | DoS guard |
+| `api.check-url` | 2 (post-auth) | User ID | 20/60s | Per-user fairness |
+| `api.cycles.$cycleId.book-interview` | post-auth | User ID | 5/60s | Per-user fairness |
+| `oauth.token` | pre-auth | IP | 200/60s | Brute-force protection |
