@@ -456,7 +456,19 @@ export default function PortalApply() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url, type }),
       });
-      const result = await res.json();
+      if (!res.ok) {
+        const errorBody = await res.json().catch(() => ({}));
+        const message =
+          res.status === 429
+            ? "Too many checks — please wait a moment and try again"
+            : errorBody.error ?? `Unexpected error (${res.status})`;
+        setUrlChecks(prev => ({
+          ...prev,
+          [key]: { status: "done", result: { status: "error" as const, url, message } },
+        }));
+        return;
+      }
+      const result: SubmissionCheckResult = await res.json();
       setUrlChecks(prev => ({ ...prev, [key]: { status: "done", result } }));
     } catch {
       setUrlChecks(prev => ({
