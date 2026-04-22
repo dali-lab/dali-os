@@ -79,7 +79,7 @@ describe("exchangeAuthorizationCode", () => {
     code: "auth-code",
     codeVerifier: "test-verifier",
     redirectUri: "http://localhost:5173/login",
-    clientId: "dali-web",
+    clientId: "dali-api",
   };
 
   it("throws when session not found", async () => {

@@ -59,7 +59,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     "Set-Cookie",
     `__dali_at=${token}; Path=/; Max-Age=86400; HttpOnly; SameSite=Lax`,
   );
-  // __dali_user: web display (NOT HttpOnly so dali-web JS can read it)
+  // __dali_user: web display (NOT HttpOnly so client JS can read it)
   headers.append(
     "Set-Cookie",
     `__dali_user=${encodeURIComponent(userPayload)}; Path=/; Max-Age=86400; SameSite=Lax`,
