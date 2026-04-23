@@ -19,7 +19,7 @@ const RECOMMENDATION_COLORS: Record<string, string> = {
 };
 
 const STATUS_BADGE: Record<string, { bg: string; label: string }> = {
-  ApplicationOpen: { bg: "bg-gray-100 text-gray-700", label: "Draft" },
+  ApplicationOpen: { bg: "bg-muted text-foreground/80", label: "Draft" },
   Pending: { bg: "bg-yellow-100 text-yellow-800", label: "Pending Review" },
   Rejected: { bg: "bg-red-100 text-red-700", label: "Rejected" },
   InvitedToInterview: { bg: "bg-blue-100 text-blue-700", label: "Invited to Interview" },
@@ -162,10 +162,10 @@ export default function DomainLeadApplicationView() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">
+          <h1 className="text-2xl font-bold text-foreground">
             {application.user.firstName} {application.user.lastName}
           </h1>
-          <p className="text-gray-500 text-sm mt-0.5">
+          <p className="text-muted-foreground text-sm mt-0.5">
             {da.challengeVersion.domain?.name} · {application.applicationCycle.name}
           </p>
         </div>
@@ -179,15 +179,15 @@ export default function DomainLeadApplicationView() {
         {/* Left: Application content */}
         <div className="lg:col-span-2 space-y-6">
           {generalQuestions.length > 0 && (
-            <section className="bg-white border border-gray-200 rounded-lg p-6 space-y-5">
-              <h2 className="text-lg font-semibold text-gray-900">General Application</h2>
+            <section className="bg-card border border-border rounded-lg p-6 space-y-5">
+              <h2 className="text-lg font-semibold text-foreground">General Application</h2>
               {generalQuestions.map((q: any) => {
                 const answer = application.answers?.[q.key];
                 return (
                   <div key={q.key}>
-                    <div className="text-sm font-medium text-gray-700 mb-1">{q.data.label}</div>
-                    <div className="text-sm text-gray-900 bg-gray-50 rounded p-3 whitespace-pre-wrap">
-                      {answer || <span className="text-gray-400 italic">No answer provided</span>}
+                    <div className="text-sm font-medium text-foreground/80 mb-1">{q.data.label}</div>
+                    <div className="text-sm text-foreground bg-muted/50 rounded p-3 whitespace-pre-wrap">
+                      {answer || <span className="text-muted-foreground/70 italic">No answer provided</span>}
                     </div>
                   </div>
                 );
@@ -195,17 +195,17 @@ export default function DomainLeadApplicationView() {
             </section>
           )}
 
-          <section className="bg-white border border-gray-200 rounded-lg p-6 space-y-5">
-            <h2 className="text-lg font-semibold text-gray-900">
+          <section className="bg-card border border-border rounded-lg p-6 space-y-5">
+            <h2 className="text-lg font-semibold text-foreground">
               {da.challengeVersion.domain?.name} Challenge
             </h2>
             {challengeQuestions.map((q: any) => {
               const answer = da.answers?.[q.key];
               return (
                 <div key={q.key}>
-                  <div className="text-sm font-medium text-gray-700 mb-1">{q.data.label}</div>
-                  <div className="text-sm text-gray-900 bg-gray-50 rounded p-3 whitespace-pre-wrap">
-                    {answer || <span className="text-gray-400 italic">No answer provided</span>}
+                  <div className="text-sm font-medium text-foreground/80 mb-1">{q.data.label}</div>
+                  <div className="text-sm text-foreground bg-muted/50 rounded p-3 whitespace-pre-wrap">
+                    {answer || <span className="text-muted-foreground/70 italic">No answer provided</span>}
                   </div>
                 </div>
               );
@@ -216,14 +216,14 @@ export default function DomainLeadApplicationView() {
         {/* Right: Context sidebar */}
         <div className="space-y-4 lg:sticky lg:top-20 lg:self-start">
           {/* Reviews */}
-          <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-            <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
-              <h3 className="text-sm font-semibold text-gray-900">
+          <div className="bg-card border border-border rounded-lg overflow-hidden">
+            <div className="px-4 py-3 bg-muted/50 border-b border-border">
+              <h3 className="text-sm font-semibold text-foreground">
                 Reviews ({reviews.filter((r: any) => r.submittedAt).length}/{reviews.length})
               </h3>
             </div>
             {reviews.length === 0 ? (
-              <div className="px-4 py-6 text-center text-sm text-gray-400">
+              <div className="px-4 py-6 text-center text-sm text-muted-foreground/70">
                 No reviewers assigned yet.
               </div>
             ) : (
@@ -237,13 +237,13 @@ export default function DomainLeadApplicationView() {
 
           {/* Interview */}
           {interview && (
-            <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-              <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
-                <h3 className="text-sm font-semibold text-gray-900">Interview</h3>
+            <div className="bg-card border border-border rounded-lg overflow-hidden">
+              <div className="px-4 py-3 bg-muted/50 border-b border-border">
+                <h3 className="text-sm font-semibold text-foreground">Interview</h3>
               </div>
               <div className="px-4 py-3 space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-600">
+                  <span className="text-sm text-muted-foreground">
                     {new Date(interview.startTime).toLocaleDateString(undefined, { month: "short", day: "numeric" })}{" "}
                     {new Date(interview.startTime).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
                   </span>
@@ -255,15 +255,15 @@ export default function DomainLeadApplicationView() {
                 </div>
                 {interview.recommendation && (
                   <div className="text-sm">
-                    <span className="text-gray-500">Recommendation:</span>{" "}
-                    <span className="font-medium text-gray-900">{interview.recommendation}</span>
+                    <span className="text-muted-foreground">Recommendation:</span>{" "}
+                    <span className="font-medium text-foreground">{interview.recommendation}</span>
                   </div>
                 )}
                 {interview.recommendationNotes && (
-                  <p className="text-xs text-gray-600 bg-gray-50 rounded p-2">{interview.recommendationNotes}</p>
+                  <p className="text-xs text-muted-foreground bg-muted/50 rounded p-2">{interview.recommendationNotes}</p>
                 )}
                 {interview.assignments?.length > 0 && (
-                  <div className="text-xs text-gray-500 pt-1">
+                  <div className="text-xs text-muted-foreground pt-1">
                     Interviewers: {interview.assignments.map((a: any) => {
                       const m = a.cycleInterviewer?.daliMember;
                       return m ? `${m.firstName} ${m.lastName}` : "?";
@@ -276,20 +276,20 @@ export default function DomainLeadApplicationView() {
 
           {/* Decision history */}
           {decisions.length > 0 && (
-            <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-              <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
-                <h3 className="text-sm font-semibold text-gray-900">Decision History</h3>
+            <div className="bg-card border border-border rounded-lg overflow-hidden">
+              <div className="px-4 py-3 bg-muted/50 border-b border-border">
+                <h3 className="text-sm font-semibold text-foreground">Decision History</h3>
               </div>
               <div className="px-4 py-3 space-y-2">
                 {decisions.map((d: any) => (
                   <div key={d.id} className="flex items-center justify-between text-sm">
                     <div className="flex items-center gap-2">
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${DECISION_COLORS[d.type] ?? "bg-gray-100 text-gray-700"}`}>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${DECISION_COLORS[d.type] ?? "bg-muted text-foreground/80"}`}>
                         {d.type}
                       </span>
-                      <span className="text-xs text-gray-500">{STAGE_LABELS[d.stage] ?? d.stage}</span>
+                      <span className="text-xs text-muted-foreground">{STAGE_LABELS[d.stage] ?? d.stage}</span>
                     </div>
-                    <span className="text-xs text-gray-400">
+                    <span className="text-xs text-muted-foreground/70">
                       {new Date(d.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
                     </span>
                   </div>
@@ -314,7 +314,7 @@ function ReviewCard({ review, criteria }: { review: any; criteria: any[] }) {
     <div className="px-4 py-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-gray-900">{name}</span>
+          <span className="text-sm font-medium text-foreground">{name}</span>
           {isSubmitted ? (
             <span className="text-xs text-green-700 bg-green-100 px-1.5 py-0.5 rounded font-medium">Submitted</span>
           ) : (
@@ -322,7 +322,7 @@ function ReviewCard({ review, criteria }: { review: any; criteria: any[] }) {
           )}
         </div>
         {review.overallRecommendation && (
-          <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${RECOMMENDATION_COLORS[review.overallRecommendation] ?? "bg-gray-100 text-gray-700"}`}>
+          <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${RECOMMENDATION_COLORS[review.overallRecommendation] ?? "bg-muted text-foreground/80"}`}>
             {review.overallRecommendation}
           </span>
         )}
@@ -335,7 +335,7 @@ function ReviewCard({ review, criteria }: { review: any; criteria: any[] }) {
             const score = scores[c.key];
             if (score == null) return null;
             return (
-              <span key={c.key} className="text-xs bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded" title={c.label}>
+              <span key={c.key} className="text-xs bg-muted text-foreground/80 px-1.5 py-0.5 rounded" title={c.label}>
                 {c.label?.split(" ")[0]}: {score}/{c.maxScore}
               </span>
             );
@@ -356,7 +356,7 @@ function ReviewCard({ review, criteria }: { review: any; criteria: any[] }) {
       {expanded && (
         <div className="mt-2 space-y-2">
           {review.feedback && (
-            <p className="text-xs text-gray-600 bg-gray-50 rounded p-2">{review.feedback}</p>
+            <p className="text-xs text-muted-foreground bg-muted/50 rounded p-2">{review.feedback}</p>
           )}
           {review.rejectionRationale && (
             <p className="text-xs text-red-600 bg-red-50 rounded p-2">

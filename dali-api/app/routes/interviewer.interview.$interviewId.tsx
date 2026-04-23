@@ -14,7 +14,14 @@ import {
 } from 'lucide-react'
 import { prisma } from '~/lib/db'
 import { requireAuth } from '~/lib/auth'
-import { parseAccessToken } from '~/lib/cookies'
+function parseSessionToken(request: Request): string | null {
+  const header = request.headers.get("Cookie") ?? "";
+  for (const part of header.split(";")) {
+    const [k, ...rest] = part.split("=");
+    if (k?.trim() === "better-auth.session_token") return rest.join("=").trim();
+  }
+  return null;
+}
 import { CollaborativeEditor } from '~/components/CollaborativeEditor'
 import { PresenceProvider } from '~/components/collab/PresenceProvider'
 import { PresenceBar } from '~/components/collab/PresenceBar'
@@ -32,7 +39,7 @@ const STATUS_COLORS: Record<string, string> = {
   Scheduled: 'bg-blue-100 text-blue-700',
   Completed: 'bg-green-100 text-green-700',
   CancelledByApplicant: 'bg-red-100 text-red-700',
-  CancelledByAdmin: 'bg-gray-100 text-gray-700',
+  CancelledByAdmin: 'bg-muted text-foreground/80',
 }
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -103,8 +110,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     }
   }
 
-  // Pass JWT for WebSocket auth
-  const collabToken = parseAccessToken(request)
+  const collabToken = parseSessionToken(request)
 
   // Build user display name for cursors
   const userName = [member.firstName, member.lastName].filter(Boolean).join(' ') || auth.user.email
@@ -260,7 +266,7 @@ export default function InterviewDetailPage() {
       <div className="flex items-center justify-between">
         <Link
           to="/interviewer"
-          className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700"
+          className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground/80"
         >
           <ArrowLeft className="w-4 h-4 mr-1" />
           Back to Dashboard
@@ -269,19 +275,19 @@ export default function InterviewDetailPage() {
       </div>
 
       {/* Header */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+      <div className="bg-card rounded-xl border border-border shadow-sm p-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h1 className="text-xl font-bold text-gray-900 flex items-center">
+            <h1 className="text-xl font-bold text-foreground flex items-center">
               <Video className="w-5 h-5 mr-2 text-blue-600" />
               Interview:{' '}
               {applicant
                 ? `${applicant.firstName} ${applicant.lastName}`
                 : 'Applicant'}
             </h1>
-            <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-gray-600">
+            <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
               <span className="flex items-center">
-                <Clock className="w-4 h-4 mr-1 text-gray-400" />
+                <Clock className="w-4 h-4 mr-1 text-muted-foreground/70" />
                 {startDate.toLocaleDateString(undefined, {
                   weekday: 'long',
                   month: 'long',
@@ -299,7 +305,7 @@ export default function InterviewDetailPage() {
                 })}
               </span>
               {domain && (
-                <span className="px-2 py-0.5 bg-gray-100 text-gray-700 rounded text-xs font-medium">
+                <span className="px-2 py-0.5 bg-muted text-foreground/80 rounded text-xs font-medium">
                   {domain}
                 </span>
               )}
@@ -308,7 +314,7 @@ export default function InterviewDetailPage() {
                   isCompleted
                     ? 'bg-green-100 text-green-700'
                     : STATUS_COLORS[interview.status] ??
-                      'bg-gray-100 text-gray-700'
+                      'bg-muted text-foreground/80'
                 }`}
               >
                 {isCompleted ? 'Completed' : interview.status}
@@ -329,38 +335,38 @@ export default function InterviewDetailPage() {
       </div>
 
       {/* Application (collapsible) */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
+      <div className="bg-card rounded-xl border border-border shadow-sm">
         <button
           onClick={() => setShowApplication(!showApplication)}
-          className="w-full flex items-center justify-between px-6 py-4 text-left hover:bg-gray-50 rounded-xl"
+          className="w-full flex items-center justify-between px-6 py-4 text-left hover:bg-muted/50 rounded-xl"
         >
-          <span className="flex items-center text-lg font-semibold text-gray-900">
+          <span className="flex items-center text-lg font-semibold text-foreground">
             <FileText className="w-5 h-5 mr-2 text-blue-600" />
             Application
           </span>
           <ChevronDown
-            className={`w-5 h-5 text-gray-400 transition-transform ${
+            className={`w-5 h-5 text-muted-foreground/70 transition-transform ${
               showApplication ? 'rotate-180' : ''
             }`}
           />
         </button>
         {showApplication && (
-          <div className="px-6 pb-6 space-y-6 border-t border-gray-100 pt-6">
+          <div className="px-6 pb-6 space-y-6 border-t border-border pt-6">
             {generalQuestions.length > 0 && (
               <div className="space-y-4">
-                <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+                <h3 className="text-sm font-semibold text-foreground/80 uppercase tracking-wide">
                   General Application
                 </h3>
                 {generalQuestions.map((q: any) => {
                   const answer = application?.answers?.[q.key]
                   return (
                     <div key={q.key}>
-                      <div className="text-sm font-medium text-gray-700 mb-1">
+                      <div className="text-sm font-medium text-foreground/80 mb-1">
                         {q.data?.label ?? q.key}
                       </div>
-                      <div className="text-sm text-gray-900 bg-gray-50 rounded p-3 whitespace-pre-wrap">
+                      <div className="text-sm text-foreground bg-muted/50 rounded p-3 whitespace-pre-wrap">
                         {answer || (
-                          <span className="text-gray-400 italic">
+                          <span className="text-muted-foreground/70 italic">
                             No answer provided
                           </span>
                         )}
@@ -372,19 +378,19 @@ export default function InterviewDetailPage() {
             )}
             {domainQuestions.length > 0 && (
               <div className="space-y-4">
-                <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+                <h3 className="text-sm font-semibold text-foreground/80 uppercase tracking-wide">
                   {domain} Challenge
                 </h3>
                 {domainQuestions.map((q: any) => {
                   const answer = interview.domainApplication?.answers?.[q.key]
                   return (
                     <div key={q.key}>
-                      <div className="text-sm font-medium text-gray-700 mb-1">
+                      <div className="text-sm font-medium text-foreground/80 mb-1">
                         {q.data?.label ?? q.key}
                       </div>
-                      <div className="text-sm text-gray-900 bg-gray-50 rounded p-3 whitespace-pre-wrap">
+                      <div className="text-sm text-foreground bg-muted/50 rounded p-3 whitespace-pre-wrap">
                         {answer || (
-                          <span className="text-gray-400 italic">
+                          <span className="text-muted-foreground/70 italic">
                             No answer provided
                           </span>
                         )}
@@ -399,25 +405,25 @@ export default function InterviewDetailPage() {
       </div>
 
       {/* Reviewer Notes (collapsible) */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
+      <div className="bg-card rounded-xl border border-border shadow-sm">
         <button
           onClick={() => setShowReviews(!showReviews)}
-          className="w-full flex items-center justify-between px-6 py-4 text-left hover:bg-gray-50 rounded-xl"
+          className="w-full flex items-center justify-between px-6 py-4 text-left hover:bg-muted/50 rounded-xl"
         >
-          <span className="flex items-center text-lg font-semibold text-gray-900">
+          <span className="flex items-center text-lg font-semibold text-foreground">
             <MessageSquare className="w-5 h-5 mr-2 text-blue-600" />
             Reviewer Notes ({submittedReviews.length})
           </span>
           <ChevronDown
-            className={`w-5 h-5 text-gray-400 transition-transform ${
+            className={`w-5 h-5 text-muted-foreground/70 transition-transform ${
               showReviews ? 'rotate-180' : ''
             }`}
           />
         </button>
         {showReviews && (
-          <div className="px-6 pb-6 border-t border-gray-100 pt-6">
+          <div className="px-6 pb-6 border-t border-border pt-6">
             {submittedReviews.length === 0 ? (
-              <p className="text-sm text-gray-500 italic">
+              <p className="text-sm text-muted-foreground italic">
                 No submitted reviews for this applicant.
               </p>
             ) : (
@@ -434,15 +440,15 @@ export default function InterviewDetailPage() {
                   return (
                     <div
                       key={review.id}
-                      className="border border-gray-200 rounded-lg p-4 space-y-3"
+                      className="border border-border rounded-lg p-4 space-y-3"
                     >
                       <div className="flex items-center justify-between">
                         <div>
-                          <div className="text-sm font-semibold text-gray-900">
+                          <div className="text-sm font-semibold text-foreground">
                             {reviewerName}
                           </div>
                           {review.submittedAt && (
-                            <div className="text-xs text-gray-500">
+                            <div className="text-xs text-muted-foreground">
                               Submitted{' '}
                               {new Date(
                                 review.submittedAt,
@@ -465,12 +471,12 @@ export default function InterviewDetailPage() {
                           {scoreEntries.map(([key, score]) => (
                             <div
                               key={key}
-                              className="flex items-center justify-between text-xs bg-gray-50 rounded px-2 py-1"
+                              className="flex items-center justify-between text-xs bg-muted/50 rounded px-2 py-1"
                             >
-                              <span className="text-gray-600">
+                              <span className="text-muted-foreground">
                                 {criteriaByKey[key]?.label ?? key}
                               </span>
-                              <span className="font-semibold text-gray-900">
+                              <span className="font-semibold text-foreground">
                                 {score}
                               </span>
                             </div>
@@ -479,20 +485,20 @@ export default function InterviewDetailPage() {
                       )}
                       {review.feedback && (
                         <div>
-                          <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
+                          <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
                             Feedback
                           </div>
-                          <p className="text-sm text-gray-700 whitespace-pre-wrap bg-gray-50 rounded p-3">
+                          <p className="text-sm text-foreground/80 whitespace-pre-wrap bg-muted/50 rounded p-3">
                             {review.feedback}
                           </p>
                         </div>
                       )}
                       {review.rejectionRationale && (
                         <div>
-                          <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
+                          <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
                             Rejection rationale
                           </div>
-                          <p className="text-sm text-gray-700 whitespace-pre-wrap bg-gray-50 rounded p-3">
+                          <p className="text-sm text-foreground/80 whitespace-pre-wrap bg-muted/50 rounded p-3">
                             {review.rejectionRationale}
                           </p>
                         </div>
@@ -507,11 +513,11 @@ export default function InterviewDetailPage() {
       </div>
 
       {/* Joint Interview Notes — collaborative editor */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">
+      <div className="bg-card rounded-xl border border-border shadow-sm p-6">
+        <h2 className="text-lg font-semibold text-foreground mb-4">
           Interview Notes
         </h2>
-        <p className="text-xs text-gray-500 mb-3">
+        <p className="text-xs text-muted-foreground mb-3">
           Shared notes — both interviewers edit this document in real-time.
         </p>
         {collabToken ? (
@@ -531,8 +537,8 @@ export default function InterviewDetailPage() {
       </div>
 
       {/* Joint Recommendation */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">
+      <div className="bg-card rounded-xl border border-border shadow-sm p-6">
+        <h2 className="text-lg font-semibold text-foreground mb-4">
           Joint Recommendation
         </h2>
 
@@ -548,7 +554,7 @@ export default function InterviewDetailPage() {
               <button
                 onClick={handleReopen}
                 disabled={completing}
-                className="text-xs font-medium text-green-700 hover:text-green-900 underline disabled:text-gray-400 disabled:no-underline"
+                className="text-xs font-medium text-green-700 hover:text-green-900 underline disabled:text-muted-foreground/70 disabled:no-underline"
               >
                 {completing ? 'Reopening…' : 'Reopen'}
               </button>
@@ -566,7 +572,7 @@ export default function InterviewDetailPage() {
         ) : (
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-foreground/80 mb-1">
                 Recommendation
               </label>
               <select
@@ -584,7 +590,7 @@ export default function InterviewDetailPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-foreground/80 mb-1">
                 Recommendation Notes
               </label>
               {collabToken ? (
@@ -606,7 +612,7 @@ export default function InterviewDetailPage() {
               <button
                 onClick={handleSaveRecommendation}
                 disabled={savingRecommendation || !recommendation}
-                className="inline-flex items-center px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-lg hover:bg-gray-200 disabled:opacity-50"
+                className="inline-flex items-center px-4 py-2 text-sm font-medium text-foreground/80 bg-muted border border-gray-300 rounded-lg hover:bg-muted disabled:opacity-50"
               >
                 <Save className="w-4 h-4 mr-1.5" />
                 {savingRecommendation ? 'Saving...' : 'Save Draft'}

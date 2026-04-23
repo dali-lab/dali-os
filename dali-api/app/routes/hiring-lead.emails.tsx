@@ -26,10 +26,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!cycle) return { cycle: null, recipientGroups: [], templatesByType: {}, collabToken, userName }
 
   // ── Recipients ──────────────────────────────────────────────────────────────
-  function emailOf(user: { dartmouthEmail: string | null; daliEmail?: string | null; netId: string | null }): string | null {
-    return user.dartmouthEmail ?? (user as any).daliEmail ?? (user.netId ? `${user.netId}@dartmouth.edu` : null)
-  }
-
   const [
     submittedApps,
     acceptedApps,
@@ -41,57 +37,59 @@ export async function loader({ request }: Route.LoaderArgs) {
   ] = await Promise.all([
     prisma.application.findMany({
       where: { applicationCycleId: cycle.id, statusUpdates: { some: { newStatus: 'Submitted' } } },
-      include: { user: { select: { firstName: true, dartmouthEmail: true, netId: true } } },
+      include: { user: { select: { firstName: true, dartmouthEmail: true, daliEmail: true } } },
     }),
     prisma.application.findMany({
       where: {
         applicationCycleId: cycle.id,
         domainApplications: { some: { decisions: { some: { stage: 'Released', type: 'Accepted' } } } },
       },
-      include: { user: { select: { firstName: true, dartmouthEmail: true, netId: true } } },
+      include: { user: { select: { firstName: true, dartmouthEmail: true, daliEmail: true } } },
     }),
     prisma.application.findMany({
       where: {
         applicationCycleId: cycle.id,
         domainApplications: { some: { decisions: { some: { stage: 'Released', type: 'Rejected' } } } },
       },
-      include: { user: { select: { firstName: true, dartmouthEmail: true, netId: true } } },
+      include: { user: { select: { firstName: true, dartmouthEmail: true, daliEmail: true } } },
     }),
     prisma.application.findMany({
       where: {
         applicationCycleId: cycle.id,
         domainApplications: { some: { decisions: { some: { stage: 'Released', type: 'Waitlisted' } } } },
       },
-      include: { user: { select: { firstName: true, dartmouthEmail: true, netId: true } } },
+      include: { user: { select: { firstName: true, dartmouthEmail: true, daliEmail: true } } },
     }),
     prisma.application.findMany({
       where: {
         applicationCycleId: cycle.id,
         domainApplications: { some: { decisions: { some: { stage: 'Released', type: 'InvitedToInterview' } } } },
       },
-      include: { user: { select: { firstName: true, dartmouthEmail: true, netId: true } } },
+      include: { user: { select: { firstName: true, dartmouthEmail: true, daliEmail: true } } },
     }),
     prisma.application.findMany({
       where: {
         applicationCycleId: cycle.id,
         domainApplications: { some: { interviews: { some: { status: 'Scheduled' } } } },
       },
-      include: { user: { select: { firstName: true, dartmouthEmail: true, netId: true } } },
+      include: { user: { select: { firstName: true, dartmouthEmail: true, daliEmail: true } } },
     }),
     prisma.cycleReviewer.findMany({
       where: { applicationCycleId: cycle.id },
-      include: { daliMember: { select: { firstName: true, dartmouthEmail: true, daliEmail: true } } },
+      include: { daliMember: { select: { firstName: true, user: { select: { daliEmail: true, dartmouthEmail: true } } } } },
     }),
   ])
 
-  function appToRecipient(a: { user: { firstName: string; dartmouthEmail: string | null; netId: string | null } }) {
-    const email = emailOf(a.user)
-    return email ? { firstName: a.user.firstName, email } : null
+  function appToRecipient(a: { user: { firstName: string; dartmouthEmail: string | null; daliEmail: string | null } }) {
+    const email = a.user.dartmouthEmail ?? a.user.daliEmail
+    if (!email) return null
+    return { firstName: a.user.firstName, email }
   }
 
-  function reviewerToRecipient(r: { daliMember: { firstName: string | null; dartmouthEmail: string | null; daliEmail: string | null } }) {
-    const email = r.daliMember.dartmouthEmail ?? r.daliMember.daliEmail
-    return email ? { firstName: r.daliMember.firstName ?? 'Reviewer', email } : null
+  function reviewerToRecipient(r: { daliMember: { firstName: string | null; user: { daliEmail: string | null; dartmouthEmail: string | null } | null } }) {
+    const email = r.daliMember.user?.daliEmail ?? r.daliMember.user?.dartmouthEmail
+    if (!email) return null
+    return { firstName: r.daliMember.firstName ?? 'Reviewer', email }
   }
 
   const recipientGroups = [
@@ -510,14 +508,14 @@ export default function EmailsPage() {
                       )}
                       {modified && <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-700">unsaved changes</span>}
                     </div>
-                    <p className="text-xs text-gray-500">{def.description}</p>
+                    <p className="text-xs text-muted-foreground">{def.description}</p>
                   </div>
                 </div>
-                {isOpen ? <ChevronUp className="w-4 h-4 text-gray-400 shrink-0" /> : <ChevronDown className="w-4 h-4 text-gray-400 shrink-0" />}
+                {isOpen ? <ChevronUp className="w-4 h-4 text-muted-foreground/70 shrink-0" /> : <ChevronDown className="w-4 h-4 text-muted-foreground/70 shrink-0" />}
               </button>
 
               {isOpen && (
-                <div className="border-t border-gray-200 divide-y divide-gray-100">
+                <div className="border-t border-border divide-y divide-gray-100">
                   {/* Template editor */}
                   <div className="px-6 py-5 space-y-4">
                     <div className="flex items-center justify-between">
@@ -532,7 +530,7 @@ export default function EmailsPage() {
                       {modified && (
                         <button
                           onClick={() => resetEdits(def)}
-                          className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition"
+                          className="inline-flex items-center gap-1 text-xs text-muted-foreground/70 hover:text-muted-foreground transition"
                         >
                           <RotateCcw className="w-3 h-3" /> Discard changes
                         </button>
@@ -540,7 +538,7 @@ export default function EmailsPage() {
                     </div>
 
                     <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Subject</label>
+                      <label className="block text-xs font-medium text-muted-foreground mb-1">Subject</label>
                       <input
                         type="text"
                         value={getSubject(def)}
@@ -550,15 +548,15 @@ export default function EmailsPage() {
                     </div>
 
                     <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Body</label>
+                      <label className="block text-xs font-medium text-muted-foreground mb-1">Body</label>
                       <textarea
                         rows={7}
                         value={getBody(def)}
                         onChange={e => setBodies(prev => ({ ...prev, [def.type]: e.target.value }))}
                         className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono resize-y"
                       />
-                      <p className="text-xs text-gray-400 mt-1">
-                        Use <code className="bg-gray-100 px-1 rounded">{'{{firstName}}'}</code> to personalize per recipient.
+                      <p className="text-xs text-muted-foreground/70 mt-1">
+                        Use <code className="bg-muted px-1 rounded">{'{{firstName}}'}</code> to personalize per recipient.
                       </p>
                     </div>
 
@@ -621,7 +619,7 @@ export default function EmailsPage() {
 
                   {/* Recipient group + checklist */}
                   <div className="px-6 py-5 space-y-4">
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Recipients</p>
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Recipients</p>
 
                     {def.compatibleGroups.length > 1 && (
                       <div className="flex gap-2 flex-wrap">
@@ -643,12 +641,12 @@ export default function EmailsPage() {
                     )}
 
                     {group && (
-                      <div className="border border-gray-200 rounded-lg overflow-hidden">
-                        <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+                      <div className="border border-border rounded-lg overflow-hidden">
+                        <div className="px-4 py-3 bg-muted/50 border-b border-border flex items-center justify-between">
                           <div className="flex items-center gap-2">
-                            <Users className="w-4 h-4 text-gray-400" />
-                            <span className="text-sm font-medium text-gray-700">{group.label}</span>
-                            <span className="text-xs text-gray-400">({recipients.length} of {group.recipients.length})</span>
+                            <Users className="w-4 h-4 text-muted-foreground/70" />
+                            <span className="text-sm font-medium text-foreground/80">{group.label}</span>
+                            <span className="text-xs text-muted-foreground/70">({recipients.length} of {group.recipients.length})</span>
                           </div>
                           {ex.size > 0 && (
                             <button
@@ -661,7 +659,7 @@ export default function EmailsPage() {
                         </div>
                         <div className="max-h-52 overflow-y-auto divide-y divide-gray-100">
                           {group.recipients.length === 0 ? (
-                            <p className="px-4 py-6 text-sm text-gray-400 text-center">No recipients in this group yet.</p>
+                            <p className="px-4 py-6 text-sm text-muted-foreground/70 text-center">No recipients in this group yet.</p>
                           ) : (
                             group.recipients.map(r => {
                               const isExcluded = ex.has(r.email)
@@ -672,12 +670,12 @@ export default function EmailsPage() {
                                   className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 transition text-left"
                                 >
                                   {isExcluded
-                                    ? <Square className="w-4 h-4 text-gray-300 shrink-0" />
+                                    ? <Square className="w-4 h-4 text-muted-foreground/50 shrink-0" />
                                     : <CheckSquare className="w-4 h-4 text-blue-600 shrink-0" />}
-                                  <span className={`text-sm ${isExcluded ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
+                                  <span className={`text-sm ${isExcluded ? 'text-muted-foreground/70 line-through' : 'text-foreground'}`}>
                                     {r.firstName}
                                   </span>
-                                  <span className={`text-xs ml-auto ${isExcluded ? 'text-gray-300' : 'text-gray-400'}`}>
+                                  <span className={`text-xs ml-auto ${isExcluded ? 'text-muted-foreground/50' : 'text-muted-foreground/70'}`}>
                                     {r.email}
                                   </span>
                                 </button>

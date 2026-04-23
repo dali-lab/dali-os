@@ -126,7 +126,7 @@ function AddDomainLeadButton({ memberId, domain, onAdded }: { memberId: string; 
       <input type="hidden" name="intent" value="add-domain-lead" />
       <input type="hidden" name="memberId" value={memberId} />
       <input type="hidden" name="domainId" value={domain.id} />
-      <button type="submit" className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
+      <button type="submit" className="w-full text-left px-4 py-2 text-sm text-foreground/80 hover:bg-muted/50">
         {domain.name}
       </button>
     </fetcher.Form>
@@ -162,7 +162,7 @@ function DomainLeadPicker({
         <div className="relative">
           <button
             onClick={() => setOpen(!open)}
-            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-200"
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground hover:bg-muted"
           >
             + Domain
             <ChevronDown className="w-3 h-3" />
@@ -170,7 +170,7 @@ function DomainLeadPicker({
           {open && (
             <>
               <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-              <div className="absolute left-0 z-20 mt-1 w-40 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5">
+              <div className="absolute left-0 z-20 mt-1 w-40 rounded-md shadow-lg bg-card ring-1 ring-black ring-opacity-5">
                 <div className="py-1">
                   {available.map((domain) => (
                     <AddDomainLeadButton
@@ -208,7 +208,7 @@ function AdminToggle({ member }: { member: Member }) {
         className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
           isAdminMember
             ? "bg-blue-100 text-blue-800 hover:bg-blue-200"
-            : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+            : "bg-muted text-muted-foreground hover:bg-muted"
         }`}
       >
         {isAdminMember ? <Check className="w-3 h-3" /> : <Shield className="w-3 h-3" />}
@@ -235,7 +235,7 @@ function HiringLeadToggle({ member }: { member: Member }) {
         className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
           isHiringLead
             ? "bg-green-100 text-green-800 hover:bg-green-200"
-            : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+            : "bg-muted text-muted-foreground hover:bg-muted"
         }`}
       >
         {isHiringLead ? <Check className="w-3 h-3" /> : <Shield className="w-3 h-3" />}
@@ -266,9 +266,9 @@ export default function AdminConsole() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Users className="w-6 h-6 text-gray-700" />
-          <h1 className="text-2xl font-bold text-gray-900">DALI Members</h1>
-          <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+          <Users className="w-6 h-6 text-foreground/80" />
+          <h1 className="text-2xl font-bold text-foreground">DALI Members</h1>
+          <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground">
             {filtered.length}{filtered.length !== members.length ? ` of ${members.length}` : ""} members
           </span>
         </div>
@@ -281,7 +281,7 @@ export default function AdminConsole() {
                 className={`px-3 py-1.5 font-medium transition-colors ${
                   roleFilter === f
                     ? "bg-gray-900 text-white"
-                    : "bg-white text-gray-600 hover:bg-gray-50"
+                    : "bg-card text-muted-foreground hover:bg-muted/50"
                 }`}
               >
                 {f === "all" ? "All" : f === "admin" ? "Admins" : "Hiring Leads"}
@@ -298,32 +298,32 @@ export default function AdminConsole() {
         </div>
       </div>
 
-      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+      <div className="bg-card border border-border rounded-lg overflow-hidden">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-gray-200 bg-gray-50">
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Name</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">DALI Email</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Linked User</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Admin</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Hiring Lead</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Domain Lead</th>
+            <tr className="border-b border-border bg-muted/50">
+              <th className="text-left px-4 py-3 font-medium text-muted-foreground">Name</th>
+              <th className="text-left px-4 py-3 font-medium text-muted-foreground">DALI Email</th>
+              <th className="text-left px-4 py-3 font-medium text-muted-foreground">Linked User</th>
+              <th className="text-left px-4 py-3 font-medium text-muted-foreground">Admin</th>
+              <th className="text-left px-4 py-3 font-medium text-muted-foreground">Hiring Lead</th>
+              <th className="text-left px-4 py-3 font-medium text-muted-foreground">Domain Lead</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
+                <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground/70">
                   No members found.
                 </td>
               </tr>
             )}
             {filtered.map((member) => (
-              <tr key={member.id} className="hover:bg-gray-50">
-                <td className="px-4 py-3 font-medium text-gray-900">
+              <tr key={member.id} className="hover:bg-muted/50">
+                <td className="px-4 py-3 font-medium text-foreground">
                   {member.firstName} {member.lastName}
                 </td>
-                <td className="px-4 py-3 text-gray-500">{member.daliEmail ?? "—"}</td>
+                <td className="px-4 py-3 text-muted-foreground">{member.daliEmail ?? "—"}</td>
                 <td className="px-4 py-3">
                   {member.user ? (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
@@ -331,7 +331,7 @@ export default function AdminConsole() {
                       {member.user.firstName} {member.user.lastName}
                     </span>
                   ) : (
-                    <span className="text-xs text-gray-400">No account</span>
+                    <span className="text-xs text-muted-foreground/70">No account</span>
                   )}
                 </td>
                 <td className="px-4 py-3">
