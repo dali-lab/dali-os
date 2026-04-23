@@ -21,7 +21,8 @@ test.describe('domain lead workflow', () => {
 
   test('shows collapsible sections', async ({ page }) => {
     await page.goto('/domain-lead');
-    await expect(page.getByText('Team').first()).toBeVisible();
+    await expect(page.getByText('Setup').first()).toBeVisible();
+    await expect(page.getByText('Reviews').first()).toBeVisible();
     await expect(page.getByText('Applications').first()).toBeVisible();
     await expect(page.getByText('Deliberations').first()).toBeVisible();
   });
