@@ -55,7 +55,7 @@ export function PresenceBar({ className, max = 4 }: PresenceBarProps) {
 
   return (
     <div
-      className={`inline-flex items-center gap-2 text-xs text-gray-400 ${className ?? ""}`}
+      className={`inline-flex items-center gap-2 text-xs text-muted-foreground/70 ${className ?? ""}`}
       title={
         ctx.connected
           ? `${visiblePeers.length} viewing`
@@ -96,7 +96,7 @@ export function PresenceBar({ className, max = 4 }: PresenceBarProps) {
         })}
         {overflow > 0 && (
           <span
-            className="relative inline-flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-semibold text-gray-600 bg-gray-200 ring-2 ring-white"
+            className="relative inline-flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-semibold text-muted-foreground bg-muted ring-2 ring-white"
             title={`${overflow} more`}
           >
             +{overflow}

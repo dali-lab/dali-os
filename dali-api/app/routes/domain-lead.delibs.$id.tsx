@@ -186,11 +186,11 @@ export default function DelibsKanban() {
   const isClosed = session.status === "Closed";
 
   const COLUMN_STYLES: Record<string, { bg: string; border: string; header: string; badge: string }> = {
-    "No Decision": { bg: "bg-gray-50", border: "border-gray-200", header: "text-gray-700", badge: "bg-white text-gray-600 border-gray-200" },
-    Interview: { bg: "bg-blue-50/50", border: "border-blue-200", header: "text-blue-800", badge: "bg-white text-blue-700 border-blue-200" },
-    Accept: { bg: "bg-green-50/50", border: "border-green-200", header: "text-green-800", badge: "bg-white text-green-700 border-green-200" },
-    Waitlist: { bg: "bg-yellow-50/50", border: "border-yellow-200", header: "text-yellow-800", badge: "bg-white text-yellow-700 border-yellow-200" },
-    Reject: { bg: "bg-red-50/50", border: "border-red-200", header: "text-red-800", badge: "bg-white text-red-700 border-red-200" },
+    "No Decision": { bg: "bg-muted/50", border: "border-border", header: "text-foreground/80", badge: "bg-card text-muted-foreground border-border" },
+    Interview: { bg: "bg-blue-50/50", border: "border-blue-200", header: "text-blue-800", badge: "bg-card text-blue-700 border-blue-200" },
+    Accept: { bg: "bg-green-50/50", border: "border-green-200", header: "text-green-800", badge: "bg-card text-green-700 border-green-200" },
+    Waitlist: { bg: "bg-yellow-50/50", border: "border-yellow-200", header: "text-yellow-800", badge: "bg-card text-yellow-700 border-yellow-200" },
+    Reject: { bg: "bg-red-50/50", border: "border-red-200", header: "text-red-800", badge: "bg-card text-red-700 border-red-200" },
   };
 
   return (
@@ -199,24 +199,24 @@ export default function DelibsKanban() {
         <div>
           <button
             onClick={() => navigate("/domain-lead")}
-            className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700 mb-2"
+            className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground/80 mb-2"
           >
             <ArrowLeft className="w-4 h-4 mr-1" /> Back to Dashboard
           </button>
-          <h1 className="text-2xl font-bold text-gray-900">
+          <h1 className="text-2xl font-bold text-foreground">
             {session.type === "Initial" ? "Initial" : "Final"} Deliberations —{" "}
             {session.domain.name}
           </h1>
-          <p className="text-sm text-gray-500 mt-1">
+          <p className="text-sm text-muted-foreground mt-1">
             Drag applications between columns. Changes save automatically.
           </p>
         </div>
         <div className="flex items-center gap-3">
           {saving && (
-            <span className="text-xs text-gray-400">Saving...</span>
+            <span className="text-xs text-muted-foreground/70">Saving...</span>
           )}
           {isClosed ? (
-            <span className="px-3 py-1.5 text-sm font-medium bg-gray-100 text-gray-600 rounded-lg">
+            <span className="px-3 py-1.5 text-sm font-medium bg-muted text-muted-foreground rounded-lg">
               Closed
             </span>
           ) : (
@@ -251,7 +251,7 @@ export default function DelibsKanban() {
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowCloseConfirm(false)}
-              className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+              className="px-3 py-1.5 text-sm font-medium text-foreground/80 bg-card border border-gray-300 rounded-lg hover:bg-muted/50"
             >
               Cancel
             </button>
@@ -314,7 +314,7 @@ export default function DelibsKanban() {
                       draggable={!isClosed}
                       onDragStart={() => handleDragStart(id)}
                       onDragEnd={handleDragEnd}
-                      className={`bg-white p-3 rounded-lg border border-gray-200 shadow-sm transition-all ${
+                      className={`bg-card p-3 rounded-lg border border-border shadow-sm transition-all ${
                         isClosed
                           ? "cursor-default"
                           : "cursor-grab hover:shadow-md active:cursor-grabbing"
@@ -322,15 +322,15 @@ export default function DelibsKanban() {
                     >
                       <div className="flex items-start gap-2">
                         {!isClosed && (
-                          <GripVertical className="w-4 h-4 text-gray-300 mt-0.5 flex-shrink-0" />
+                          <GripVertical className="w-4 h-4 text-muted-foreground/50 mt-0.5 flex-shrink-0" />
                         )}
                         <div className="flex-1 min-w-0">
-                          <h4 className="font-bold text-gray-900 text-sm truncate">
+                          <h4 className="font-bold text-foreground text-sm truncate">
                             {da.application.user.firstName}{" "}
                             {da.application.user.lastName}
                           </h4>
                           <div className="flex items-center gap-2 mt-1">
-                            <span className="text-xs text-gray-500">
+                            <span className="text-xs text-muted-foreground">
                               {submittedCount}/{reviewCount} reviews
                             </span>
                             {avgScore !== null && (
@@ -344,7 +344,7 @@ export default function DelibsKanban() {
                             .map((r: any) => (
                               <span
                                 key={r.id}
-                                className="inline-block mt-1 mr-1 text-[10px] font-medium px-1.5 py-0.5 rounded border border-gray-200 bg-gray-50 text-gray-600"
+                                className="inline-block mt-1 mr-1 text-[10px] font-medium px-1.5 py-0.5 rounded border border-border bg-muted/50 text-muted-foreground"
                               >
                                 {r.overallRecommendation}
                               </span>
@@ -356,8 +356,8 @@ export default function DelibsKanban() {
                 })}
 
                 {items.length === 0 && (
-                  <div className="py-8 text-center border-2 border-dashed border-gray-300 rounded-lg bg-white/50">
-                    <p className="text-sm text-gray-400 italic">Empty</p>
+                  <div className="py-8 text-center border-2 border-dashed border-gray-300 rounded-lg bg-card/50">
+                    <p className="text-sm text-muted-foreground/70 italic">Empty</p>
                   </div>
                 )}
               </div>

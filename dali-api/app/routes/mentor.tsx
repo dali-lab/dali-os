@@ -194,9 +194,9 @@ export default function MentorDashboard() {
   if (!activeCycle) {
     return (
       <div className="space-y-8">
-        <h1 className="text-2xl font-bold text-gray-900">Reviewer Dashboard</h1>
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8 text-center">
-          <p className="text-gray-500">You are not assigned as a reviewer for any active cycle.</p>
+        <h1 className="text-2xl font-bold text-foreground">Reviewer Dashboard</h1>
+        <div className="bg-card rounded-xl border border-border shadow-sm p-8 text-center">
+          <p className="text-muted-foreground">You are not assigned as a reviewer for any active cycle.</p>
         </div>
       </div>
     )
@@ -414,8 +414,8 @@ export default function MentorDashboard() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Reviewer Dashboard</h1>
-        <p className="mt-1 text-gray-500">
+        <h1 className="text-2xl font-bold text-foreground">Reviewer Dashboard</h1>
+        <p className="mt-1 text-muted-foreground">
           Manage your hiring responsibilities.
         </p>
       </div>
@@ -449,8 +449,8 @@ export default function MentorDashboard() {
           </div>
         </div>
         {stageInfo[currentStage].dueDate && (
-          <div className="text-right bg-white px-4 py-2 rounded-lg border border-blue-100 shadow-sm">
-            <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
+          <div className="text-right bg-card px-4 py-2 rounded-lg border border-blue-100 shadow-sm">
+            <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1">
               Due Date
             </p>
             <p className="text-sm font-bold text-red-600">
@@ -470,14 +470,14 @@ export default function MentorDashboard() {
       <div className="transition-all duration-300">
         {currentStage === 'challengeSetup' && (
           <section className="max-w-2xl mx-auto">
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8 text-center">
+            <div className="bg-card rounded-xl border border-border shadow-sm p-8 text-center">
               <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
                 <FileText className="w-6 h-6" />
               </div>
-              <h2 className="text-xl font-bold text-gray-900 mb-2">
+              <h2 className="text-xl font-bold text-foreground mb-2">
                 Challenge Setup in Progress
               </h2>
-              <p className="text-gray-500">
+              <p className="text-muted-foreground">
                 Your Domain Lead is currently setting up the challenge questions
                 for this cycle. You will be notified when applications are ready
                 for review.
@@ -489,7 +489,7 @@ export default function MentorDashboard() {
         {reviews.length > 0 && (
           <section>
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-lg font-semibold text-gray-900 flex items-center">
+              <h2 className="text-lg font-semibold text-foreground flex items-center">
                 <FileText className="w-5 h-5 mr-2 text-blue-600" />
                 Your Reviews ({reviews.length})
               </h2>
@@ -497,10 +497,10 @@ export default function MentorDashboard() {
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {/* Pending Column */}
-              <div className="bg-gray-50 rounded-xl border border-gray-200 p-4 flex flex-col gap-3 min-h-[400px]">
-                <div className="flex items-center justify-between border-b border-gray-200 pb-2 mb-2">
-                  <h3 className="font-bold text-gray-700">Pending</h3>
-                  <span className="bg-white px-2.5 py-0.5 rounded-full text-xs font-bold border shadow-sm text-gray-600">
+              <div className="bg-muted/50 rounded-xl border border-border p-4 flex flex-col gap-3 min-h-[400px]">
+                <div className="flex items-center justify-between border-b border-border pb-2 mb-2">
+                  <h3 className="font-bold text-foreground/80">Pending</h3>
+                  <span className="bg-card px-2.5 py-0.5 rounded-full text-xs font-bold border shadow-sm text-muted-foreground">
                     {pendingReviews.length}
                   </span>
                 </div>
@@ -508,8 +508,8 @@ export default function MentorDashboard() {
                   <ReviewCard key={r.id} review={r} variant="pending" />
                 ))}
                 {pendingReviews.length === 0 && (
-                  <div className="py-8 text-center border-2 border-dashed border-gray-300 rounded-lg bg-white/50">
-                    <p className="text-sm text-gray-500 italic">No pending reviews</p>
+                  <div className="py-8 text-center border-2 border-dashed border-gray-300 rounded-lg bg-card/50">
+                    <p className="text-sm text-muted-foreground italic">No pending reviews</p>
                   </div>
                 )}
               </div>
@@ -518,7 +518,7 @@ export default function MentorDashboard() {
               <div className="bg-blue-50/50 rounded-xl border border-blue-100 p-4 flex flex-col gap-3 min-h-[400px]">
                 <div className="flex items-center justify-between border-b border-blue-200 pb-2 mb-2">
                   <h3 className="font-bold text-blue-800">In Progress</h3>
-                  <span className="bg-white px-2.5 py-0.5 rounded-full text-xs font-bold border border-blue-200 shadow-sm text-blue-700">
+                  <span className="bg-card px-2.5 py-0.5 rounded-full text-xs font-bold border border-blue-200 shadow-sm text-blue-700">
                     {inProgressReviews.length}
                   </span>
                 </div>
@@ -526,7 +526,7 @@ export default function MentorDashboard() {
                   <ReviewCard key={r.id} review={r} variant="inProgress" />
                 ))}
                 {inProgressReviews.length === 0 && (
-                  <div className="py-8 text-center border-2 border-dashed border-blue-200 rounded-lg bg-white/50">
+                  <div className="py-8 text-center border-2 border-dashed border-blue-200 rounded-lg bg-card/50">
                     <p className="text-sm text-blue-400 italic">None in progress</p>
                   </div>
                 )}
@@ -536,7 +536,7 @@ export default function MentorDashboard() {
               <div className="bg-green-50/50 rounded-xl border border-green-100 p-4 flex flex-col gap-3 min-h-[400px]">
                 <div className="flex items-center justify-between border-b border-green-200 pb-2 mb-2">
                   <h3 className="font-bold text-green-800">Submitted</h3>
-                  <span className="bg-white px-2.5 py-0.5 rounded-full text-xs font-bold border border-green-200 shadow-sm text-green-700">
+                  <span className="bg-card px-2.5 py-0.5 rounded-full text-xs font-bold border border-green-200 shadow-sm text-green-700">
                     {submittedReviews.length}
                   </span>
                 </div>
@@ -544,7 +544,7 @@ export default function MentorDashboard() {
                   <ReviewCard key={r.id} review={r} variant="submitted" />
                 ))}
                 {submittedReviews.length === 0 && (
-                  <div className="py-8 text-center border-2 border-dashed border-green-200 rounded-lg bg-white/50">
+                  <div className="py-8 text-center border-2 border-dashed border-green-200 rounded-lg bg-card/50">
                     <p className="text-sm text-green-500 italic">No submitted reviews</p>
                   </div>
                 )}
@@ -556,11 +556,11 @@ export default function MentorDashboard() {
         {currentStage === 'writtenDelibs' && (
           <section>
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-gray-900 flex items-center">
+              <h2 className="text-lg font-semibold text-foreground flex items-center">
                 <EyeOff className="w-5 h-5 mr-2 text-blue-600" />
                 Written Deliberations — Live View
               </h2>
-              <span className="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full flex items-center">
+              <span className="text-sm text-muted-foreground bg-muted px-3 py-1 rounded-full flex items-center">
                 <EyeOff className="w-4 h-4 mr-1" /> Blinded • Read-only
               </span>
             </div>
@@ -573,8 +573,8 @@ export default function MentorDashboard() {
                   !writtenDelibsBuckets.cut.includes(r.id),
               )
               return undecidedApps.length > 0 ? (
-                <div className="bg-gray-50 rounded-xl border border-gray-200 p-5 mb-6">
-                  <h3 className="font-semibold text-gray-700 mb-3">
+                <div className="bg-muted/50 rounded-xl border border-border p-5 mb-6">
+                  <h3 className="font-semibold text-foreground/80 mb-3">
                     Undecided ({undecidedApps.length})
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -588,18 +588,18 @@ export default function MentorDashboard() {
                           to={`/reviewer/application/${appId}`}
                           className="block group"
                         >
-                          <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm group-hover:border-blue-400 group-hover:ring-1 group-hover:ring-blue-400 transition-all">
+                          <div className="bg-card rounded-lg border border-border p-4 shadow-sm group-hover:border-blue-400 group-hover:ring-1 group-hover:ring-blue-400 transition-all">
                             <div className="flex justify-between items-start">
-                              <h4 className="font-bold text-gray-900 mb-1 group-hover:text-blue-700">
+                              <h4 className="font-bold text-foreground mb-1 group-hover:text-blue-700">
                                 Applicant {blindedMap.get(r.domainApplication?.application?.id ?? r.id)}
                               </h4>
-                              <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-blue-500" />
+                              <ChevronRight className="w-4 h-4 text-muted-foreground/70 group-hover:text-blue-500" />
                             </div>
-                            <p className="text-xs text-gray-500 mb-2">
+                            <p className="text-xs text-muted-foreground mb-2">
                               {domain?.name ?? 'Unknown Domain'}
                             </p>
                             {r.overallRecommendation && (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-medium border border-gray-200 bg-gray-50 text-gray-600">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-medium border border-border bg-muted/50 text-muted-foreground">
                                 {r.overallRecommendation}
                               </span>
                             )}
@@ -620,7 +620,7 @@ export default function MentorDashboard() {
                   <h3 className="font-bold text-lg text-green-900">
                     Advance to Interview
                   </h3>
-                  <span className="bg-white px-2.5 py-0.5 rounded-full text-xs font-bold border shadow-sm">
+                  <span className="bg-card px-2.5 py-0.5 rounded-full text-xs font-bold border shadow-sm">
                     {writtenDelibsBuckets.advance.length}
                   </span>
                 </div>
@@ -635,18 +635,18 @@ export default function MentorDashboard() {
                         to={`/reviewer/application/${r.domainApplication?.applicationId}`}
                         className="block group"
                       >
-                        <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm group-hover:border-blue-400 transition-colors flex justify-between items-center">
-                          <span className="font-bold text-gray-900 block group-hover:text-blue-700">
+                        <div className="bg-card p-4 rounded-lg border border-border shadow-sm group-hover:border-blue-400 transition-colors flex justify-between items-center">
+                          <span className="font-bold text-foreground block group-hover:text-blue-700">
                             {user?.firstName ?? 'Applicant'} {user?.lastName ?? blindedMap.get(rId)}
                           </span>
-                          <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-blue-500" />
+                          <ChevronRight className="w-4 h-4 text-muted-foreground/70 group-hover:text-blue-500" />
                         </div>
                       </Link>
                     )
                   })}
                   {writtenDelibsBuckets.advance.length === 0 && (
-                    <div className="py-8 text-center border-2 border-dashed border-gray-300 rounded-lg bg-white/50">
-                      <p className="text-sm text-gray-500 italic">Empty</p>
+                    <div className="py-8 text-center border-2 border-dashed border-gray-300 rounded-lg bg-card/50">
+                      <p className="text-sm text-muted-foreground italic">Empty</p>
                     </div>
                   )}
                 </div>
@@ -656,7 +656,7 @@ export default function MentorDashboard() {
               <div className="rounded-xl border border-red-200 bg-red-50/50 p-5 min-h-[200px]">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="font-bold text-lg text-red-900">Cut</h3>
-                  <span className="bg-white px-2.5 py-0.5 rounded-full text-xs font-bold border shadow-sm">
+                  <span className="bg-card px-2.5 py-0.5 rounded-full text-xs font-bold border shadow-sm">
                     {writtenDelibsBuckets.cut.length}
                   </span>
                 </div>
@@ -671,18 +671,18 @@ export default function MentorDashboard() {
                         to={`/reviewer/application/${r.domainApplication?.applicationId}`}
                         className="block group"
                       >
-                        <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm group-hover:border-blue-400 transition-colors flex justify-between items-center">
-                          <span className="font-bold text-gray-900 block group-hover:text-blue-700">
+                        <div className="bg-card p-4 rounded-lg border border-border shadow-sm group-hover:border-blue-400 transition-colors flex justify-between items-center">
+                          <span className="font-bold text-foreground block group-hover:text-blue-700">
                             {user?.firstName ?? 'Applicant'} {user?.lastName ?? blindedMap.get(rId)}
                           </span>
-                          <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-blue-500" />
+                          <ChevronRight className="w-4 h-4 text-muted-foreground/70 group-hover:text-blue-500" />
                         </div>
                       </Link>
                     )
                   })}
                   {writtenDelibsBuckets.cut.length === 0 && (
-                    <div className="py-8 text-center border-2 border-dashed border-gray-300 rounded-lg bg-white/50">
-                      <p className="text-sm text-gray-500 italic">Empty</p>
+                    <div className="py-8 text-center border-2 border-dashed border-gray-300 rounded-lg bg-card/50">
+                      <p className="text-sm text-muted-foreground italic">Empty</p>
                     </div>
                   )}
                 </div>
@@ -697,10 +697,10 @@ export default function MentorDashboard() {
               <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
                 <CalendarDays className="w-6 h-6" />
               </div>
-              <h2 className="text-xl font-bold text-gray-900">
+              <h2 className="text-xl font-bold text-foreground">
                 Your Interview Availability
               </h2>
-              <p className="text-gray-500 mt-2">
+              <p className="text-muted-foreground mt-2">
                 Click or drag to select the times you are available to conduct
                 interviews. 15-minute blocks.
               </p>
@@ -728,8 +728,8 @@ export default function MentorDashboard() {
                 />
               </>
             ) : (
-              <div className="bg-white rounded-xl border border-gray-200 p-8 text-center shadow-sm">
-                <p className="text-gray-500">
+              <div className="bg-card rounded-xl border border-border p-8 text-center shadow-sm">
+                <p className="text-muted-foreground">
                   Interview dates have not been configured yet. Please check back later or contact your Domain Lead.
                 </p>
               </div>
@@ -739,14 +739,14 @@ export default function MentorDashboard() {
 
         {scheduledInterviews.length > 0 && (
           <section>
-            <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+            <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center">
               <Video className="w-5 h-5 mr-2 text-blue-600" />
               Your Scheduled Interviews ({scheduledInterviews.length})
             </h2>
 
             {scheduledInterviews.length === 0 ? (
-              <div className="bg-white rounded-xl border border-gray-200 p-8 text-center shadow-sm">
-                <p className="text-gray-500">
+              <div className="bg-card rounded-xl border border-border p-8 text-center shadow-sm">
+                <p className="text-muted-foreground">
                   No upcoming interviews scheduled.
                 </p>
               </div>
@@ -766,15 +766,15 @@ export default function MentorDashboard() {
                   return (
                     <div
                       key={assignment.id}
-                      className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col"
+                      className="bg-card rounded-xl border border-border shadow-sm overflow-hidden flex flex-col"
                     >
-                      <div className="p-6 border-b border-gray-200 bg-gray-50 flex justify-between items-start">
+                      <div className="p-6 border-b border-border bg-muted/50 flex justify-between items-start">
                         <div>
-                          <h3 className="text-lg font-bold text-gray-900 mb-1">
+                          <h3 className="text-lg font-bold text-foreground mb-1">
                             {applicant ? `${applicant.firstName} ${applicant.lastName}` : 'Applicant'}
                           </h3>
                           {domains && (
-                            <p className="text-xs text-gray-500">{domains}</p>
+                            <p className="text-xs text-muted-foreground">{domains}</p>
                           )}
                           <Link
                             to={`/mentor/application/${interview.applicationId}`}
@@ -784,15 +784,15 @@ export default function MentorDashboard() {
                             <ChevronRight className="w-3 h-3 ml-0.5" />
                           </Link>
                         </div>
-                        <div className="text-right bg-white px-3 py-2 rounded-lg border shadow-sm">
-                          <p className="text-sm font-bold text-gray-900">
+                        <div className="text-right bg-card px-3 py-2 rounded-lg border shadow-sm">
+                          <p className="text-sm font-bold text-foreground">
                             {startDate.toLocaleDateString(undefined, {
                               weekday: 'short',
                               month: 'short',
                               day: 'numeric',
                             })}
                           </p>
-                          <p className="text-sm text-gray-500">
+                          <p className="text-sm text-muted-foreground">
                             {startDate.toLocaleTimeString(undefined, {
                               hour: 'numeric',
                               minute: '2-digit',
@@ -806,7 +806,7 @@ export default function MentorDashboard() {
                         </div>
                       </div>
                       <div className="p-6 flex-1 flex flex-col">
-                        <label className="block text-sm font-bold text-gray-700 mb-2">
+                        <label className="block text-sm font-bold text-foreground/80 mb-2">
                           Interview Notes
                         </label>
                         <textarea
@@ -842,11 +842,11 @@ export default function MentorDashboard() {
         {currentStage === 'finalDelibs' && (
           <section>
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-lg font-semibold text-gray-900 flex items-center">
+              <h2 className="text-lg font-semibold text-foreground flex items-center">
                 <ListOrdered className="w-5 h-5 mr-2 text-blue-600" />
                 Final Deliberations
               </h2>
-              <span className="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full flex items-center">
+              <span className="text-sm text-muted-foreground bg-muted px-3 py-1 rounded-full flex items-center">
                 <EyeOff className="w-4 h-4 mr-1" /> Read-only live view
               </span>
             </div>
@@ -868,7 +868,7 @@ export default function MentorDashboard() {
                       >
                         {bucket}
                       </h3>
-                      <span className="bg-white px-2.5 py-0.5 rounded-full text-xs font-bold border shadow-sm">
+                      <span className="bg-card px-2.5 py-0.5 rounded-full text-xs font-bold border shadow-sm">
                         {appIds.length}
                       </span>
                     </div>
@@ -883,16 +883,16 @@ export default function MentorDashboard() {
                             to={`/reviewer/application/${r?.domainApplication?.applicationId ?? appId}`}
                             className="block group"
                           >
-                            <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm flex items-start gap-3 group-hover:border-blue-400 transition-colors">
-                              <span className="text-gray-400 font-bold text-sm mt-0.5 w-4">
+                            <div className="bg-card p-4 rounded-lg border border-border shadow-sm flex items-start gap-3 group-hover:border-blue-400 transition-colors">
+                              <span className="text-muted-foreground/70 font-bold text-sm mt-0.5 w-4">
                                 {i + 1}.
                               </span>
                               <div className="flex-1">
                                 <div className="flex justify-between items-start">
-                                  <span className="font-bold text-gray-900 block group-hover:text-blue-700">
+                                  <span className="font-bold text-foreground block group-hover:text-blue-700">
                                     {user ? `${user.firstName} ${user.lastName}` : `Applicant ${blindedMap.get(appId)}`}
                                   </span>
-                                  <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-blue-500" />
+                                  <ChevronRight className="w-4 h-4 text-muted-foreground/70 group-hover:text-blue-500" />
                                 </div>
                               </div>
                             </div>
@@ -900,8 +900,8 @@ export default function MentorDashboard() {
                         )
                       })}
                       {appIds.length === 0 && (
-                        <div className="py-8 text-center border-2 border-dashed border-gray-300 rounded-lg bg-white/50">
-                          <p className="text-sm text-gray-500 italic">Empty</p>
+                        <div className="py-8 text-center border-2 border-dashed border-gray-300 rounded-lg bg-card/50">
+                          <p className="text-sm text-muted-foreground italic">Empty</p>
                         </div>
                       )}
                     </div>
@@ -926,19 +926,19 @@ function ReviewCard({ review, variant }: { review: any; variant: 'pending' | 'in
     ? 'border-green-200'
     : variant === 'inProgress'
     ? 'border-blue-200 ring-1 ring-blue-100'
-    : 'border-gray-200'
+    : 'border-border'
 
   return (
-    <div className={`bg-white p-4 rounded-lg border ${borderClass} shadow-sm hover:shadow-md transition-shadow`}>
+    <div className={`bg-card p-4 rounded-lg border ${borderClass} shadow-sm hover:shadow-md transition-shadow`}>
       <div className="flex justify-between items-start mb-1">
-        <h4 className="font-bold text-gray-900">
+        <h4 className="font-bold text-foreground">
           {user?.firstName ?? '?'} {user?.lastName ?? ''}
         </h4>
         {variant === 'submitted' && <CheckCircle className="w-4 h-4 text-green-500" />}
       </div>
-      <p className="text-xs text-gray-500 mb-3">{domain?.name ?? 'Unknown Domain'}</p>
+      <p className="text-xs text-muted-foreground mb-3">{domain?.name ?? 'Unknown Domain'}</p>
       {variant === 'submitted' && review.overallRecommendation && (
-        <p className="text-xs font-medium text-gray-600 mb-3 bg-gray-100 inline-block px-2 py-0.5 rounded">
+        <p className="text-xs font-medium text-muted-foreground mb-3 bg-muted inline-block px-2 py-0.5 rounded">
           {review.overallRecommendation}
         </p>
       )}
@@ -950,7 +950,7 @@ function ReviewCard({ review, variant }: { review: any; variant: 'pending' | 'in
               ? 'bg-blue-50 text-blue-700 hover:bg-blue-100'
               : variant === 'inProgress'
               ? 'bg-blue-600 text-white hover:bg-blue-700'
-              : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+              : 'bg-card border border-gray-300 text-foreground/80 hover:bg-muted/50'
           }`}
         >
           {variant === 'pending' ? 'Start Review' : variant === 'inProgress' ? 'Continue Review' : 'View Review'}
