@@ -42,6 +42,86 @@ export async function getActiveCycle() {
   return null;
 }
 
+export type CycleStage =
+  | 'challengeSetup'
+  | 'challengesReady'
+  | 'applicationsOpen'
+  | 'readingApplications'
+  | 'writtenDelibs'
+  | 'collectingAvailability'
+  | 'interviews'
+  | 'finalDelibs'
+
+/** Map DB cycle status → mentor-facing stage. */
+export function cycleStatusToStage(status: string): CycleStage {
+  switch (status) {
+    case 'Open': return 'applicationsOpen'
+    case 'UnderReview': return 'readingApplications' // refined by inferUnderReviewStage
+    default: return 'challengeSetup'
+  }
+}
+
+/**
+ * Infer the sub-stage within UnderReview from actual data.
+ * `reviewerIds` are the CycleReviewer IDs for this member in this cycle.
+ */
+export async function inferUnderReviewStage(
+  cycleId: string,
+  memberId: string,
+  reviewerIds: string[],
+): Promise<CycleStage> {
+  const invitedDecisions = await prisma.decision.count({
+    where: {
+      stage: "Released",
+      type: "InvitedToInterview",
+      domainApplication: { application: { applicationCycleId: cycleId } },
+    },
+  });
+
+  if (invitedDecisions === 0) {
+    return 'readingApplications';
+  }
+
+  // Even after some applicants are invited, reviewers with assigned reviews
+  // should still see the reviews stage so they can access their review work.
+  if (reviewerIds.length > 0) {
+    const hasReviews = await prisma.applicationReview.count({
+      where: { cycleReviewerId: { in: reviewerIds } },
+    });
+    if (hasReviews > 0) return 'readingApplications';
+  }
+
+  const completedInterviews = await prisma.interview.count({
+    where: { applicationCycleId: cycleId, status: "Completed" },
+  });
+
+  const terminalDecisions = await prisma.decision.count({
+    where: {
+      stage: "Released",
+      type: { in: ["Accepted", "Rejected", "Waitlisted"] },
+      domainApplication: { application: { applicationCycleId: cycleId } },
+    },
+  });
+
+  if (terminalDecisions > 0) return 'finalDelibs';
+  if (completedInterviews > 0) return 'finalDelibs';
+
+  const myInterviewerRecords = await prisma.cycleInterviewer.findMany({
+    where: { daliMemberId: memberId, applicationCycleId: cycleId },
+    select: { id: true },
+  });
+
+  if (myInterviewerRecords.length > 0) {
+    const interviewerIds = myInterviewerRecords.map(r => r.id);
+    const scheduledInterviews = await prisma.interviewAssignment.count({
+      where: { cycleInterviewerId: { in: interviewerIds }, status: "Active" },
+    });
+    if (scheduledInterviews > 0) return 'interviews';
+  }
+
+  return 'collectingAvailability';
+}
+
 /**
  * Returns the id of any *other* cycle (i.e. not `excludingCycleId`) that is
  * currently active, or null if none. Used to enforce single-active-cycle when
