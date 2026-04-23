@@ -67,6 +67,7 @@ model DALIMember {
   decisions             Decision[]
   applicationReviews    ApplicationReview[]    @relation("SubmittedBy")
   delibSessions         DelibsSession[]
+  emailTemplates        EmailTemplate[]
 }
 
 model ApplicationCycle {
@@ -627,17 +628,36 @@ model RefreshToken {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
-// Email template overrides stored by hiring leads. templateKey matches the
-// hardcoded default keys (e.g. "application_received"). subject/body use
-// {{firstName}} interpolation. One row per key — upserted on save.
-model EmailTemplate {
-  id          String   @id @default(cuid())
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+// ─── Email Templates ────────────────────────────────────────────────────────
 
-  templateKey String   @unique
-  subject     String
-  body        String
+// Each value maps to one email template. Decision-related values mirror
+// DecisionType so releasing a Decision can look up its template directly.
+enum EmailTemplateType {
+  ApplicationReceived     // confirmation after submission
+  Rejected                // generic rejection (pre-interview)
+  RejectedPostInterview   // rejection after interview stage
+  InvitedToInterview      // applicant interview invite
+  InterviewInviteMentor   // internal: reviewer/mentor interview assignment
+  Waitlisted
+  Accepted
+}
+
+// Append-only, immutable template versions. Never updated — only created.
+// Current template = latest record by createdAt for a given type.
+// Full version history is preserved for audit.
+model EmailTemplate {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  type    EmailTemplateType
+  subject String
+  body    String   // plain text with {{firstName}} interpolation
+  version Int      // monotonically increasing per type, starting at 1
+
+  createdById String
+  createdBy   DALIMember @relation(fields: [createdById], references: [id])
+
+  @@index([type, createdAt])
 }
 
 // Which domains a DALIMember leads (permanent assignment, not cycle-scoped)
