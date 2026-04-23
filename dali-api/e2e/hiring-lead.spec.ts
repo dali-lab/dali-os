@@ -10,7 +10,7 @@ test.describe('hiring lead workflow', () => {
     await expect(page.getByRole('heading', { name: 'Hiring Cycles' })).toBeVisible();
     await expect(page.getByRole('button', { name: /New Cycle/ })).toBeVisible();
     await expect(page.getByText('Fall 2026').first()).toBeVisible();
-    await expect(page.getByText('Under Review').first()).toBeVisible();
+    await expect(page.getByText('Open').first()).toBeVisible();
   });
 
   test('can navigate to cycle detail', async ({ page }) => {

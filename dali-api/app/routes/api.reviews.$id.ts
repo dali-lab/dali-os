@@ -45,16 +45,15 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   if (request.method === "DELETE") {
-    if (review.submittedAt) {
-      return Response.json({ error: "Cannot delete a submitted review" }, { status: 409 });
-    }
-
     const isLead = await isDomainLead(auth.user.sub);
     const isHL = await isHiringLead(auth.user.sub);
     if (!isLead && !isHL) {
       return Response.json({ error: "Forbidden" }, { status: 403 });
     }
 
+    // Submitted reviews are allowed to be deleted by domain/hiring leads —
+    // the client is expected to confirm with the user first since this
+    // destroys the submitted scores/feedback.
     await prisma.applicationReview.delete({ where: { id: params.id } });
     return Response.json({ deleted: true });
   }

@@ -32,7 +32,7 @@ function parseGitHubUrl(url: string): { owner: string; repo: string } | null {
  * extract file key from a Figma URL.
  * supports: figma.com/file/{key}/... and figma.com/design/{key}/...
  */
-function parseFigmaUrl(url: string): { fileKey: string } | null {
+function parseFigmaUrl(url: string): { fileKey: string; pathSegment: string } | null {
   try {
     const parsed = new URL(url);
     if (
@@ -46,7 +46,7 @@ function parseFigmaUrl(url: string): { fileKey: string } | null {
     if (segments[0] !== "file" && segments[0] !== "design") return null;
     const fileKey = segments[1];
     if (!fileKey) return null;
-    return { fileKey };
+    return { fileKey, pathSegment: segments[0] };
   } catch {
     return null;
   }
@@ -129,12 +129,26 @@ export async function checkFigmaUrl(
     };
   }
 
-  const pageUrl = `https://www.figma.com/file/${parsed.fileKey}`;
+  const pageUrl = `https://www.figma.com/${parsed.pathSegment}/${parsed.fileKey}`;
 
   try {
     const res = await fetch(pageUrl, { redirect: "manual" });
 
     if (res.status >= 300 && res.status < 400) {
+      const location = res.headers.get("location") ?? "";
+      if (!location) {
+        return { status: "private", url, message: "Figma file is private (redirects to login)" };
+      }
+      try {
+        const dest = new URL(location, pageUrl);
+        const isFigma = dest.hostname === "figma.com" || dest.hostname === "www.figma.com";
+        const isLogin = dest.pathname.startsWith("/login");
+        if (isFigma && !isLogin) {
+          return { status: "valid", url, message: "Figma file is publicly accessible" };
+        }
+      } catch {
+        // malformed location header — fall through to private
+      }
       return {
         status: "private",
         url,

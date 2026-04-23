@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { redirect, useLoaderData, useFetcher, useNavigate } from "react-router";
+import { redirect, useLoaderData, useFetcher } from "react-router";
 import type { Route } from "./+types/portal.apply";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
@@ -171,6 +171,69 @@ export async function action({ request }: Route.ActionArgs) {
     };
   }
 
+  if (intent === "update-domains") {
+    const applicationId = formData.get("applicationId") as string;
+    const cycleId = formData.get("cycleId") as string;
+    const newDomainIds = JSON.parse(formData.get("selectedDomainIds") as string) as string[];
+
+    // Find existing domain applications for this application
+    const existing = await prisma.domainApplication.findMany({
+      where: { applicationId },
+      include: { challengeVersion: { select: { domainId: true } } },
+    });
+
+    const existingDomainIds = existing.map(da => da.challengeVersion.domainId);
+
+    // Domains to add (not already in DB)
+    const toAdd = newDomainIds.filter(id => !existingDomainIds.includes(id));
+
+    if (toAdd.length > 0) {
+      const cvacs = await prisma.challengeVersionApplicationCycle.findMany({
+        where: { applicationCycleId: cycleId },
+        include: { challengeVersion: true },
+      });
+
+      for (const domainId of toAdd) {
+        const cv = cvacs.find(c => c.challengeVersion.domainId === domainId);
+        if (cv) {
+          await prisma.domainApplication.create({
+            data: {
+              applicationId,
+              challengeVersionId: cv.challengeVersionId,
+              answers: {},
+            },
+          });
+        }
+      }
+    }
+
+    // Don't delete removed domains — keep answers intact for re-adding.
+    // Frontend tracks selectedDomainIds locally and only renders selected ones.
+
+    // Return full updated draft
+    const updatedApp = await prisma.application.findUnique({
+      where: { id: applicationId },
+      include: {
+        domainApplications: {
+          include: { challengeVersion: { select: { domainId: true } } },
+        },
+      },
+    });
+
+    return {
+      draft: updatedApp ? {
+        id: updatedApp.id,
+        answers: updatedApp.answers,
+        selectedDomainIds: newDomainIds,
+        domainApplications: updatedApp.domainApplications.map((da) => ({
+          id: da.id,
+          domainId: da.challengeVersion.domainId,
+          answers: da.answers,
+        })),
+      } : null,
+    };
+  }
+
   if (intent === "save-draft") {
     const applicationId = formData.get("applicationId") as string;
     const answers = JSON.parse(formData.get("answers") as string);
@@ -266,7 +329,7 @@ type UrlCheckState = {
 function UrlCheckIndicator({ state }: { state: UrlCheckState }) {
   if (state.status === "checking") {
     return (
-      <span className="text-xs text-gray-400 flex items-center gap-1 mt-1">
+      <span className="text-xs text-muted-foreground/70 flex items-center gap-1 mt-1">
         <span className="inline-block w-3 h-3 border-2 border-gray-300 border-t-accent-coral rounded-full animate-spin" />
         Checking URL...
       </span>
@@ -291,6 +354,186 @@ function UrlCheckIndicator({ state }: { state: UrlCheckState }) {
   return null;
 }
 
+// ─── SkillsRatingField Component ────────────────────────────────────────────
+
+function SkillsRatingField({
+  skills,
+  value,
+  onChange,
+}: {
+  skills: string[];
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  // Parse "Skill: N\nSkill: N" into a map
+  const ratings: Record<string, string> = {};
+  if (value) {
+    for (const line of value.split("\n")) {
+      const idx = line.lastIndexOf(":");
+      if (idx > 0) {
+        const skill = line.slice(0, idx).trim();
+        const rating = line.slice(idx + 1).trim();
+        ratings[skill] = rating;
+      }
+    }
+  }
+
+  function setRating(skill: string, rating: string) {
+    const updated = { ...ratings, [skill]: rating };
+    const serialized = skills
+      .map(s => `${s}: ${updated[s] ?? "0"}`)
+      .join("\n");
+    onChange(serialized);
+  }
+
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2">
+      {skills.map(skill => (
+        <div key={skill} className="flex items-center justify-between gap-2 py-1">
+          <span className="text-sm text-dark-blue truncate">{skill}</span>
+          <select
+            value={ratings[skill] ?? "0"}
+            onChange={e => setRating(skill, e.target.value)}
+            className="w-14 shrink-0 rounded-md border border-gray-200 bg-white text-sm text-center text-dark-blue py-1 focus:outline-none focus:border-accent-coral"
+          >
+            {["0", "1", "2", "3", "4", "5"].map(n => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+          </select>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── FileUploadField Component ──────────────────────────────────────────────
+
+function FileUploadField({
+  value,
+  onChange,
+  accept,
+  questionKey,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  accept?: string;
+  questionKey: string;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fileName = value ? value.split("/").pop() ?? "Uploaded file" : null;
+
+  async function handleFile(file: File) {
+    setError(null);
+    setUploading(true);
+    try {
+      // 1. Get presigned upload URL
+      const presignRes = await fetch("/api/upload/presign", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          key: `applications/${questionKey}/${crypto.randomUUID()}-${file.name}`,
+          contentType: file.type,
+        }),
+      });
+      if (!presignRes.ok) {
+        const text = await presignRes.text();
+        let message = "Failed to get upload URL";
+        try { message = JSON.parse(text).error ?? message; } catch {}
+        throw new Error(message);
+      }
+      const { uploadUrl, key } = await presignRes.json();
+
+      // 2. Upload directly to S3
+      const uploadRes = await fetch(uploadUrl, {
+        method: "PUT",
+        body: file,
+        headers: { "Content-Type": file.type },
+      });
+      if (!uploadRes.ok) throw new Error("Upload failed");
+
+      // 3. Store the S3 key as the answer
+      onChange(key);
+    } catch (err: any) {
+      setError(err.message ?? "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) handleFile(file);
+  }
+
+  if (uploading) {
+    return (
+      <div className="flex items-center gap-2 px-4 py-3 rounded-lg border border-gray-200 bg-white text-sm text-gray-500">
+        <span className="inline-block w-4 h-4 border-2 border-gray-300 border-t-accent-coral rounded-full animate-spin" />
+        Uploading...
+      </div>
+    );
+  }
+
+  if (fileName) {
+    return (
+      <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-gray-200 bg-white">
+        <svg className="w-5 h-5 text-accent-coral shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+        </svg>
+        <span className="text-sm text-dark-blue truncate flex-1">{fileName}</span>
+        <button
+          type="button"
+          onClick={() => { onChange(""); if (fileRef.current) fileRef.current.value = ""; }}
+          className="text-xs text-gray-400 hover:text-red-500 transition"
+        >
+          Remove
+        </button>
+        <button
+          type="button"
+          onClick={() => fileRef.current?.click()}
+          className="text-xs text-accent-coral hover:text-accent-coral/80 transition"
+        >
+          Replace
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept={accept}
+          onChange={handleInputChange}
+          className="hidden"
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => fileRef.current?.click()}
+        className="flex items-center gap-2 px-4 py-3 rounded-lg border-2 border-dashed border-gray-200 bg-white text-sm text-gray-500 hover:border-accent-coral hover:text-accent-coral transition w-full"
+      >
+        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+        </svg>
+        Choose file to upload
+      </button>
+      <input
+        ref={fileRef}
+        type="file"
+        accept={accept}
+        onChange={handleInputChange}
+        className="hidden"
+      />
+      {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
+    </div>
+  );
+}
+
 // ─── QuestionField Component ─────────────────────────────────────────────────
 
 function QuestionField({
@@ -307,7 +550,7 @@ function QuestionField({
   onUrlBlur?: () => void;
 }) {
   const inputBase =
-    "w-full rounded-lg border border-gray-200 bg-white text-sm text-dark-blue placeholder:text-gray-400 focus:outline-none focus:border-accent-coral px-4 py-2";
+    "w-full rounded-lg border border-border bg-card text-sm text-dark-blue placeholder:text-muted-foreground/70 focus:outline-none focus:border-accent-coral px-4 py-2";
 
   if (question.type === "textarea") {
     return (
@@ -335,6 +578,27 @@ function QuestionField({
           </option>
         ))}
       </select>
+    );
+  }
+
+  if (question.type === "file") {
+    return (
+      <FileUploadField
+        value={value}
+        onChange={onChange}
+        accept={question.data.accept}
+        questionKey={question.key}
+      />
+    );
+  }
+
+  if (question.type === "skills_rating") {
+    return (
+      <SkillsRatingField
+        skills={question.data.options ?? []}
+        value={value}
+        onChange={onChange}
+      />
     );
   }
 
@@ -369,13 +633,25 @@ function QuestionField({
   );
 }
 
+// ─── Domain Colors ──────────────────────────────────────────────────────────
+
+const DOMAIN_COLORS = [
+  { border: "border-l-accent-pink", text: "text-accent-pink", bg: "bg-accent-pink", pillText: "text-white" },
+  { border: "border-l-accent-teal", text: "text-accent-teal", bg: "bg-accent-teal", pillText: "text-white" },
+  { border: "border-l-accent-yellow", text: "text-yellow-700", bg: "bg-accent-yellow", pillText: "text-dark-blue" },
+  { border: "border-l-accent-coral", text: "text-accent-coral", bg: "bg-accent-coral", pillText: "text-white" },
+  { border: "border-l-accent-green", text: "text-green-700", bg: "bg-accent-green", pillText: "text-dark-blue" },
+];
+
+function getDomainColor(index: number) {
+  return DOMAIN_COLORS[index % DOMAIN_COLORS.length];
+}
+
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export default function PortalApply() {
   const loaderData = useLoaderData<typeof loader>() as any;
   const { cycleId, cycleName, generalChallengeVersionId, formQuestions, domains } = loaderData;
-  const navigate = useNavigate();
-
   const [draft, setDraft] = useState(loaderData.draft);
   const [selectedDomainIds, setSelectedDomainIds] = useState<string[]>(
     loaderData.draft?.selectedDomainIds ?? [],
@@ -400,6 +676,7 @@ export default function PortalApply() {
   const [confirmedSubmit, setConfirmedSubmit] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const createFetcher = useFetcher();
+  const submitFetcher = useFetcher();
 
   // Auto-save debounce
   function scheduleSave() {
@@ -457,7 +734,19 @@ export default function PortalApply() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url, type }),
       });
-      const result = await res.json();
+      if (!res.ok) {
+        const errorBody = await res.json().catch(() => ({}));
+        const message =
+          res.status === 429
+            ? "Too many checks — please wait a moment and try again"
+            : errorBody.error ?? `Unexpected error (${res.status})`;
+        setUrlChecks(prev => ({
+          ...prev,
+          [key]: { status: "done", result: { status: "error" as const, url, message } },
+        }));
+        return;
+      }
+      const result: SubmissionCheckResult = await res.json();
       setUrlChecks(prev => ({ ...prev, [key]: { status: "done", result } }));
     } catch {
       setUrlChecks(prev => ({
@@ -467,9 +756,26 @@ export default function PortalApply() {
     }
   }, []);
 
-  async function handleCreateDraft() {
+  function toggleDomain(domainId: string) {
+    const newIds = selectedDomainIds.includes(domainId)
+      ? selectedDomainIds.filter(id => id !== domainId)
+      : [...selectedDomainIds, domainId];
+    setSelectedDomainIds(newIds);
+
+    // If draft exists, sync domains to server (create new DomainApplications as needed)
+    if (draft) {
+      const form = new FormData();
+      form.set("intent", "update-domains");
+      form.set("applicationId", draft.id);
+      form.set("cycleId", cycleId);
+      form.set("selectedDomainIds", JSON.stringify(newIds));
+      createFetcher.submit(form, { method: "post" });
+    }
+  }
+
+  function handleCreateDraft() {
     if (selectedDomainIds.length === 0) {
-      setError("Please select at least one role.");
+      setError("Please select at least one domain.");
       return;
     }
 
@@ -481,38 +787,53 @@ export default function PortalApply() {
     createFetcher.submit(form, { method: "post" });
   }
 
-  // When create-draft returns, set the draft state
+  // When create-draft or update-domains returns, update the draft state
   useEffect(() => {
     if (createFetcher.data?.draft) {
-      setDraft(createFetcher.data.draft);
+      const newDraft = createFetcher.data.draft;
+      setDraft(newDraft);
+      // Restore domain answers from any existing DomainApplications (for re-added domains)
+      setDomainAnswers(prev => {
+        const updated = { ...prev };
+        for (const da of newDraft.domainApplications ?? []) {
+          if (!updated[da.domainId] || Object.keys(updated[da.domainId]).length === 0) {
+            updated[da.domainId] = (da.answers as Record<string, string>) ?? {};
+          }
+        }
+        return updated;
+      });
     }
   }, [createFetcher.data]);
 
-  async function handleSubmit(force = false) {
+  function handleSubmit(force = false) {
     setError(null);
     setUrlWarnings({});
     if (!draft) return;
 
-    // Validate required general questions
-    const missingGeneral = (formQuestions as Question[]).filter(
-      q => q.required && !answers[q.key]?.trim(),
-    );
-    if (missingGeneral.length > 0) {
-      setError(`Please answer all required questions (${missingGeneral.length} remaining).`);
+    if (selectedDomainIds.length === 0) {
+      setError("Please select at least one domain.");
       return;
     }
 
-    // Validate required domain questions
+    // Validate all required questions across general + selected domains
+    let totalRequired = 0;
+    let totalMissing = 0;
+
+    const requiredGeneral = (formQuestions as Question[]).filter(q => q.required);
+    totalRequired += requiredGeneral.length;
+    totalMissing += requiredGeneral.filter(q => !answers[q.key]?.trim()).length;
+
     for (const domainId of selectedDomainIds) {
       const domain = domains.find((d: any) => d.id === domainId);
       if (!domain) continue;
-      const missing = (domain.challengeQuestions as Question[]).filter(
-        (q: Question) => q.required && !(domainAnswers[domainId]?.[q.key]?.trim()),
-      );
-      if (missing.length > 0) {
-        setError(`Please answer all required ${domain.name} questions (${missing.length} remaining).`);
-        return;
-      }
+      const requiredDomain = (domain.challengeQuestions as Question[]).filter((q: Question) => q.required);
+      totalRequired += requiredDomain.length;
+      totalMissing += requiredDomain.filter((q: Question) => !(domainAnswers[domainId]?.[q.key]?.trim())).length;
+    }
+
+    if (totalMissing > 0) {
+      setError(`Please answer all required questions (${totalMissing} of ${totalRequired} unanswered).`);
+      return;
     }
 
     // Collect URL questions from general and domain-specific forms
@@ -533,186 +854,223 @@ export default function PortalApply() {
     }
 
     setSubmitting(true);
-    try {
-      const daPayload = (draft.domainApplications ?? []).map((da: any) => ({
+
+    const daPayload = (draft.domainApplications ?? [])
+      .filter((da: any) => selectedDomainIds.includes(da.domainId))
+      .map((da: any) => ({
         domainApplicationId: da.id,
         answers: domainAnswers[da.domainId] ?? {},
       }));
 
-      const form = new URLSearchParams({
-        intent: "submit",
-        applicationId: draft.id,
-        answers: JSON.stringify(answers),
-        domainAnswers: JSON.stringify(daPayload),
-        urlQuestions: JSON.stringify(force ? [] : urlQuestions),
-      });
+    const form = new FormData();
+    form.set("intent", "submit");
+    form.set("applicationId", draft.id);
+    form.set("answers", JSON.stringify(answers));
+    form.set("domainAnswers", JSON.stringify(daPayload));
+    form.set("urlQuestions", JSON.stringify(force ? [] : urlQuestions));
 
-      const res = await fetch("/portal/apply", {
-        method: "POST",
-        credentials: "include",
-        body: form,
-        redirect: "follow",
-      });
+    submitFetcher.submit(form, { method: "post" });
+  }
 
-      if (res.redirected) {
-        navigate("/portal");
-        return;
-      }
-
-      const data = await res.json();
-      if (data.urlWarnings) {
+  // Handle submit response (urlWarnings) — redirects are handled automatically by React Router
+  useEffect(() => {
+    if (submitFetcher.state === "idle" && submitFetcher.data) {
+      setSubmitting(false);
+      if (submitFetcher.data.urlWarnings) {
         const warnings: Record<string, string> = {};
-        for (const [key, result] of Object.entries(data.urlWarnings) as [string, SubmissionCheckResult][]) {
+        for (const [key, result] of Object.entries(submitFetcher.data.urlWarnings) as [string, SubmissionCheckResult][]) {
           warnings[key] = result.message;
         }
         setUrlWarnings(warnings);
         setConfirmedSubmit(true);
       }
-    } finally {
+    } else if (submitFetcher.state === "idle") {
       setSubmitting(false);
     }
-  }
+  }, [submitFetcher.state, submitFetcher.data]);
 
-  // Show domain selection if no draft yet
-  if (!draft) {
+  // Render domain pill selector (shared between both states)
+  function renderDomainSelector() {
     return (
-      <div className="max-w-3xl mx-auto px-6 py-10">
-        <div className="mb-8">
-          <h2 className="font-heading text-xl font-bold text-dark-blue">{cycleName} Application</h2>
-          <p className="text-sm text-gray-500 mt-1">Select the roles you'd like to apply for to get started.</p>
-        </div>
-
-        <div className="px-6 py-5 rounded-2xl bg-[#E8F4FA]">
-          <h3 className="font-heading text-base font-bold text-dark-blue mb-1">
-            Roles <span className="text-accent-coral">*</span>
-          </h3>
-          <p className="text-xs text-gray-500 mb-3">Select every role you'd like to be considered for.</p>
-          <div className="flex flex-wrap gap-2">
-            {(domains as any[]).map((d: any) => (
+      <div className="px-6 py-5 rounded-2xl bg-[#E8F4FA]">
+        <h3 className="font-heading text-base font-bold text-dark-blue mb-1">
+          Domains <span className="text-accent-coral">*</span>
+        </h3>
+        <p className="text-xs text-muted-foreground mb-3">
+          Select the domains you'd like to apply for. You can change this anytime before submitting.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {(domains as any[]).map((d: any, i: number) => {
+            const isSelected = selectedDomainIds.includes(d.id);
+            const color = getDomainColor(i);
+            return (
               <button
                 key={d.id}
-                onClick={() =>
-                  setSelectedDomainIds(prev =>
-                    prev.includes(d.id)
-                      ? prev.filter(id => id !== d.id)
-                      : [...prev, d.id],
-                  )
-                }
+                onClick={() => toggleDomain(d.id)}
                 className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
-                  selectedDomainIds.includes(d.id)
-                    ? "bg-accent-coral text-white border-accent-coral"
-                    : "bg-white text-dark-blue border-gray-200 hover:border-accent-coral"
+                  isSelected
+                    ? `${color.bg} ${color.pillText} border-transparent`
+                    : "bg-card text-dark-blue border-border hover:border-accent-coral"
                 }`}
               >
                 {d.name}
               </button>
-            ))}
-          </div>
-        </div>
-
-        {error && <p className="text-sm text-red-500 mt-4">{error}</p>}
-
-        <div className="mt-6">
-          <button
-            onClick={handleCreateDraft}
-            disabled={selectedDomainIds.length === 0}
-            className="px-6 py-2.5 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition disabled:opacity-50"
-          >
-            Start Application
-          </button>
+            );
+          })}
         </div>
       </div>
     );
   }
 
-  // Application form
+  // No draft yet — show domain selector + start button
+  if (!draft) {
+    return (
+      <div className="max-w-3xl mx-auto px-6 py-10">
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="font-heading text-xl font-bold text-dark-blue">{cycleName} Application</h2>
+        </div>
+        <p className="text-sm text-gray-500 mb-8">
+          Select the domains you'd like to apply for, then start your application.
+        </p>
+
+        <div className="space-y-8">
+          {renderDomainSelector()}
+
+          {error && <p className="text-sm text-red-500">{error}</p>}
+
+          <div>
+            <button
+              onClick={handleCreateDraft}
+              disabled={selectedDomainIds.length === 0}
+              className="px-6 py-2.5 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition disabled:opacity-50"
+            >
+              Start Application
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Application form (single screen with inline domain management)
   return (
     <div className="max-w-3xl mx-auto px-6 py-10">
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h2 className="font-heading text-xl font-bold text-dark-blue">{cycleName} Application</h2>
-          <p className="text-sm text-gray-500 mt-1">Fill out the form below. Your progress is saved automatically.</p>
-        </div>
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="font-heading text-xl font-bold text-dark-blue">{cycleName} Application</h2>
         <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-blue-100 text-blue-700">Draft</span>
       </div>
+      <p className="text-sm text-muted-foreground mb-8">
+        Fill out the form below. Your progress is saved automatically.
+      </p>
 
       <div className="space-y-8">
-        {/* Roles display */}
-        <div className="px-6 py-5 rounded-2xl bg-[#E8F4FA]">
-          <h3 className="font-heading text-base font-bold text-dark-blue mb-2">Roles Applied</h3>
-          <div className="flex flex-wrap gap-1.5">
-            {selectedDomainIds.map(id => {
-              const domain = (domains as any[]).find((d: any) => d.id === id);
-              return (
-                <span key={id} className="text-xs px-2 py-0.5 rounded-full bg-white text-dark-blue border border-gray-200">
-                  {domain?.name ?? id}
-                </span>
-              );
-            })}
-          </div>
-        </div>
+        {/* Domain selector (interactive) */}
+        {renderDomainSelector()}
 
-        {/* General questions */}
-        {(formQuestions as Question[]).length > 0 && (
-          <div className="space-y-6">
-            <h3 className="font-heading text-sm font-bold text-dark-blue uppercase tracking-wider">General Questions</h3>
-            {(formQuestions as Question[]).map(q => (
-              <div key={q.key}>
-                <label className="block text-sm font-semibold text-dark-blue mb-1">
-                  {q.data.label}
-                  {q.required && <span className="text-accent-coral ml-0.5">*</span>}
-                </label>
-                {q.data.description && (
-                  <p className="text-xs text-gray-500 mb-1">{q.data.description}</p>
-                )}
-                <QuestionField
-                  question={q}
-                  value={answers[q.key] ?? ""}
-                  onChange={v => setAnswer(q.key, v)}
-                  urlCheckState={urlChecks[q.key]}
-                  onUrlBlur={() => checkUrlField(q.key, answers[q.key] ?? "", q.type as "github_url" | "figma_url")}
-                />
-                {urlWarnings[q.key] && (
-                  <p className="text-xs text-amber-600 mt-1">{urlWarnings[q.key]}</p>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
+        {/* General questions (before domains) */}
+        {(() => {
+          const beforeQuestions = (formQuestions as Question[]).filter(q => !q.data.afterDomains);
+          return beforeQuestions.length > 0 ? (
+            <div className="rounded-2xl bg-[#E8F4FA] px-6 py-5 space-y-6">
+              <h3 className="font-heading text-sm font-bold text-dark-blue uppercase tracking-wider">General Questions</h3>
+              {beforeQuestions.map(q => (
+                <div key={q.key}>
+                  <label className="block text-sm font-semibold text-dark-blue mb-1">
+                    {q.data.label}
+                    {q.required && <span className="text-accent-coral ml-0.5">*</span>}
+                  </label>
+                  {q.data.description && (
+                    <p className="text-xs text-muted-foreground mb-1">{q.data.description}</p>
+                  )}
+                  <QuestionField
+                    question={q}
+                    value={answers[q.key] ?? ""}
+                    onChange={v => setAnswer(q.key, v)}
+                    urlCheckState={urlChecks[q.key]}
+                    onUrlBlur={() => checkUrlField(q.key, answers[q.key] ?? "", q.type as "github_url" | "figma_url")}
+                  />
+                  {urlWarnings[q.key] && (
+                    <p className="text-xs text-amber-600 mt-1">{urlWarnings[q.key]}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : null;
+        })()}
 
-        {/* Domain-specific questions */}
+        {/* Domain-specific questions — colored left border cards */}
         {selectedDomainIds.map(domainId => {
-            const domain = (domains as any[]).find((d: any) => d.id === domainId);
-            if (!domain || domain.challengeQuestions.length === 0) return null;
-            return (
-              <div key={domainId} className="space-y-6">
-                <h3 className="font-heading text-sm font-bold uppercase tracking-wider text-accent-coral">
+          const domainIndex = (domains as any[]).findIndex((d: any) => d.id === domainId);
+          const domain = (domains as any[])[domainIndex];
+          if (!domain || domain.challengeQuestions.length === 0) return null;
+          const color = getDomainColor(domainIndex);
+
+          return (
+            <div key={domainId} className={`rounded-2xl bg-[#E8F4FA] border-l-4 ${color.border} px-6 py-5 space-y-6`}>
+              <div className="flex items-center justify-between">
+                <h3 className={`font-heading text-sm font-bold uppercase tracking-wider ${color.text}`}>
                   {domain.name} Questions
                 </h3>
-                {(domain.challengeQuestions as Question[]).map((q: Question) => (
-                  <div key={q.key}>
-                    <label className="block text-sm font-semibold text-dark-blue mb-1">
-                      {q.data.label}
-                      {q.required && <span className="text-accent-coral ml-0.5">*</span>}
-                    </label>
-                    {q.data.description && (
-                      <p className="text-xs text-gray-500 mb-1">{q.data.description}</p>
-                    )}
-                    <QuestionField
-                      question={q}
-                      value={domainAnswers[domainId]?.[q.key] ?? ""}
-                      onChange={v => setDomainAnswer(domainId, q.key, v)}
-                      urlCheckState={urlChecks[q.key]}
-                      onUrlBlur={() => checkUrlField(q.key, domainAnswers[domainId]?.[q.key] ?? "", q.type as "github_url" | "figma_url")}
-                    />
-                    {urlWarnings[q.key] && (
-                      <p className="text-xs text-amber-600 mt-1">{urlWarnings[q.key]}</p>
-                    )}
-                  </div>
-                ))}
+                <button
+                  onClick={() => toggleDomain(domainId)}
+                  aria-label={`Remove ${domain.name}`}
+                  className="w-6 h-6 rounded-full flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 transition"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
               </div>
-            );
-          })}
+              {(domain.challengeQuestions as Question[]).map((q: Question) => (
+                <div key={q.key}>
+                  <label className="block text-sm font-semibold text-dark-blue mb-1">
+                    {q.data.label}
+                    {q.required && <span className="text-accent-coral ml-0.5">*</span>}
+                  </label>
+                  {q.data.description && (
+                    <p className="text-xs text-gray-500 mb-1">{q.data.description}</p>
+                  )}
+                  <QuestionField
+                    question={q}
+                    value={domainAnswers[domainId]?.[q.key] ?? ""}
+                    onChange={v => setDomainAnswer(domainId, q.key, v)}
+                    urlCheckState={urlChecks[q.key]}
+                    onUrlBlur={() => checkUrlField(q.key, domainAnswers[domainId]?.[q.key] ?? "", q.type as "github_url" | "figma_url")}
+                  />
+                  {urlWarnings[q.key] && (
+                    <p className="text-xs text-amber-600 mt-1">{urlWarnings[q.key]}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          );
+        })}
+
+        {/* General questions (after domains — "anything else") */}
+        {(() => {
+          const afterQuestions = (formQuestions as Question[]).filter(q => q.data.afterDomains);
+          return afterQuestions.length > 0 ? (
+            <div className="rounded-2xl bg-[#E8F4FA] px-6 py-5 space-y-6">
+              <h3 className="font-heading text-sm font-bold text-dark-blue uppercase tracking-wider">Anything Else</h3>
+              {afterQuestions.map(q => (
+                <div key={q.key}>
+                  <label className="block text-sm font-semibold text-dark-blue mb-1">
+                    {q.data.label}
+                    {q.required && <span className="text-accent-coral ml-0.5">*</span>}
+                  </label>
+                  {q.data.description && (
+                    <p className="text-xs text-gray-500 mb-1">{q.data.description}</p>
+                  )}
+                  <QuestionField
+                    question={q}
+                    value={answers[q.key] ?? ""}
+                    onChange={v => setAnswer(q.key, v)}
+                  />
+                </div>
+              ))}
+            </div>
+          ) : null;
+        })()}
 
         {error && <p className="text-sm text-red-500">{error}</p>}
 
@@ -731,7 +1089,7 @@ export default function PortalApply() {
           <button
             onClick={() => doSave()}
             disabled={saving}
-            className="px-5 py-2.5 rounded-full border-2 border-gray-200 text-sm font-semibold text-gray-600 hover:border-accent-coral hover:text-accent-coral transition disabled:opacity-50"
+            className="px-5 py-2.5 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-accent-coral hover:text-accent-coral transition disabled:opacity-50"
           >
             {saving ? "Saving..." : "Save Draft"}
           </button>
@@ -752,8 +1110,20 @@ export default function PortalApply() {
               {submitting ? "Submitting..." : "Submit Application"}
             </button>
           )}
-          <span className="text-xs text-gray-400 ml-1">
-            {saving ? "Saving..." : "Auto-saved"}
+          <span className="text-xs text-muted-foreground/70 flex items-center gap-1.5">
+            {saving ? (
+              <>
+                <span className="inline-block w-3 h-3 border-2 border-gray-300 border-t-accent-coral rounded-full animate-spin" />
+                Saving...
+              </>
+            ) : (
+              <>
+                <svg className="w-3.5 h-3.5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+                Draft auto-saved
+              </>
+            )}
           </span>
         </div>
       </div>
