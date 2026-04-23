@@ -350,9 +350,9 @@ export function CollaborativeEditor({
   return (
     <div
       ref={containerRef}
-      className={`relative rounded-lg border bg-white ${
+      className={`relative rounded-lg border bg-card ${
         disabled
-          ? "border-gray-200 bg-gray-50 opacity-75"
+          ? "border-border bg-muted/50 opacity-75"
           : "border-gray-300 focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent"
       } ${className ?? ""}`}
     >
@@ -361,7 +361,7 @@ export function CollaborativeEditor({
         onClick={() => setHistoryOpen(true)}
         title="Version history"
         aria-label="Version history"
-        className="absolute top-1.5 right-1.5 z-10 p-1 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+        className="absolute top-1.5 right-1.5 z-10 p-1 rounded text-muted-foreground/70 hover:text-foreground/80 hover:bg-muted transition-colors"
       >
         <History size={14} />
       </button>
