@@ -71,20 +71,20 @@ export function RubricDetail() {
       <div>
         <Link
           to="/rubrics"
-          className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700 mb-4"
+          className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground/80 mb-4"
         >
           <ArrowLeft className="w-4 h-4 mr-1" /> Back to Rubrics
         </Link>
         <div className="flex justify-between items-start">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">{rubric.name}</h1>
-            <p className="mt-1 text-gray-500">
+            <h1 className="text-2xl font-bold text-foreground">{rubric.name}</h1>
+            <p className="mt-1 text-muted-foreground">
               {rubric.domain ? (
                 <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-700">
                   {rubric.domain.name}
                 </span>
               ) : (
-                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
+                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-muted text-muted-foreground">
                   General
                 </span>
               )}
@@ -105,9 +105,9 @@ export function RubricDetail() {
       <div className="flex gap-6">
         {/* Left Sidebar: Versions List */}
         <div className="w-64 flex-shrink-0 space-y-4">
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-            <div className="p-4 border-b border-gray-200 bg-gray-50">
-              <h3 className="font-bold text-gray-900">Version History</h3>
+          <div className="bg-card rounded-xl border border-border overflow-hidden shadow-sm">
+            <div className="p-4 border-b border-border bg-muted/50">
+              <h3 className="font-bold text-foreground">Version History</h3>
             </div>
             <div className="divide-y divide-gray-100 max-h-[600px] overflow-y-auto">
               {isCreatingVersion && (
@@ -132,7 +132,7 @@ export function RubricDetail() {
                       className={`w-full text-left p-4 transition-colors ${
                         !isCreatingVersion && selectedVersionId === version.id
                           ? 'bg-blue-50 border-l-4 border-blue-600'
-                          : 'hover:bg-gray-50 border-l-4 border-transparent'
+                          : 'hover:bg-muted/50 border-l-4 border-transparent'
                       }`}
                     >
                       <div className="flex justify-between items-center mb-1">
@@ -140,17 +140,17 @@ export function RubricDetail() {
                           className={`font-bold ${
                             !isCreatingVersion && selectedVersionId === version.id
                               ? 'text-blue-900'
-                              : 'text-gray-900'
+                              : 'text-foreground'
                           }`}
                         >
                           Version {version.versionNumber}
                         </span>
                       </div>
-                      <div className="flex items-center text-xs text-gray-500 mt-2 gap-1">
+                      <div className="flex items-center text-xs text-muted-foreground mt-2 gap-1">
                         <Clock className="w-3 h-3" />
                         {formatDateTime(version.createdAt)}
                       </div>
-                      <div className="flex items-center text-xs text-gray-500 mt-1 gap-1">
+                      <div className="flex items-center text-xs text-muted-foreground mt-1 gap-1">
                         <UserIcon className="w-3 h-3" />
                         {version.createdBy.firstName} {version.createdBy.lastName}
                       </div>
@@ -158,7 +158,7 @@ export function RubricDetail() {
                   )
                 })}
               {rubric.versions.length === 0 && !isCreatingVersion && (
-                <div className="p-6 text-center text-gray-500 text-sm italic">
+                <div className="p-6 text-center text-muted-foreground text-sm italic">
                   No versions yet.
                 </div>
               )}
@@ -169,15 +169,15 @@ export function RubricDetail() {
         {/* Right Content Area */}
         <div className="flex-1">
           {isCreatingVersion ? (
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col min-h-[600px]">
-              <div className="p-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
+            <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden flex flex-col min-h-[600px]">
+              <div className="p-4 border-b border-border bg-muted/50 flex justify-between items-center">
                 <div className="flex items-center gap-4 flex-wrap">
-                  <h2 className="font-bold text-gray-900">Drafting Version {nextVersionNumber}</h2>
+                  <h2 className="font-bold text-foreground">Drafting Version {nextVersionNumber}</h2>
                 </div>
                 <div className="flex gap-2">
                   <button
                     onClick={() => setIsCreatingVersion(false)}
-                    className="px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-md"
+                    className="px-3 py-1.5 text-sm font-medium text-foreground/80 hover:bg-muted rounded-md"
                   >
                     Cancel
                   </button>
@@ -193,31 +193,31 @@ export function RubricDetail() {
                   </Form>
                 </div>
               </div>
-              <div className="p-6 flex-1 bg-gray-50">
+              <div className="p-6 flex-1 bg-muted/50">
                 <div className="max-w-2xl mx-auto space-y-6">
                   <div className="space-y-3">
                     {criteria.map((c) => (
                       <div
                         key={c.key}
-                        className="bg-white border border-gray-200 rounded-lg p-4 flex gap-3 group"
+                        className="bg-card border border-border rounded-lg p-4 flex gap-3 group"
                       >
-                        <div className="text-gray-400 mt-1">
+                        <div className="text-muted-foreground/70 mt-1">
                           <GripVertical className="w-4 h-4" />
                         </div>
                         <div className="flex-1">
                           <div className="flex justify-between items-start">
-                            <h4 className="font-bold text-gray-900">{c.label}</h4>
+                            <h4 className="font-bold text-foreground">{c.label}</h4>
                             <span className="text-xs font-medium bg-blue-50 text-blue-700 px-2 py-1 rounded">
                               Max: {c.maxScore}
                             </span>
                           </div>
                           {c.description && (
-                            <p className="text-sm text-gray-500 mt-1">{c.description}</p>
+                            <p className="text-sm text-muted-foreground mt-1">{c.description}</p>
                           )}
                         </div>
                         <button
                           onClick={() => handleRemoveCriterion(c.key)}
-                          className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                          className="text-muted-foreground/70 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -225,13 +225,13 @@ export function RubricDetail() {
                     ))}
                     {criteria.length === 0 && (
                       <div className="text-center py-8 border-2 border-dashed border-gray-300 rounded-lg">
-                        <p className="text-gray-500">No criteria added yet.</p>
+                        <p className="text-muted-foreground">No criteria added yet.</p>
                       </div>
                     )}
                   </div>
 
-                  <div className="bg-white border border-gray-200 rounded-lg p-4">
-                    <h4 className="text-sm font-bold text-gray-900 mb-3">Add Criterion</h4>
+                  <div className="bg-card border border-border rounded-lg p-4">
+                    <h4 className="text-sm font-bold text-foreground mb-3">Add Criterion</h4>
                     <div className="space-y-3">
                       <div className="grid grid-cols-4 gap-3">
                         <div className="col-span-3">
@@ -240,7 +240,7 @@ export function RubricDetail() {
                             placeholder="Label (e.g. Communication)"
                             value={newLabel}
                             onChange={(e) => setNewLabel(e.target.value)}
-                            className="w-full border border-gray-300 rounded-md p-2 text-sm text-gray-900 bg-white focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full border border-gray-300 rounded-md p-2 text-sm text-foreground bg-card focus:ring-blue-500 focus:border-blue-500"
                           />
                         </div>
                         <div className="col-span-1">
@@ -251,7 +251,7 @@ export function RubricDetail() {
                             placeholder="Max Score"
                             value={newMaxScore}
                             onChange={(e) => setNewMaxScore(parseInt(e.target.value) || 5)}
-                            className="w-full border border-gray-300 rounded-md p-2 text-sm text-gray-900 bg-white focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full border border-gray-300 rounded-md p-2 text-sm text-foreground bg-card focus:ring-blue-500 focus:border-blue-500"
                           />
                         </div>
                       </div>
@@ -261,12 +261,12 @@ export function RubricDetail() {
                         value={newDescription}
                         onChange={(e) => setNewDescription(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && handleAddCriterion()}
-                        className="w-full border border-gray-300 rounded-md p-2 text-sm text-gray-900 bg-white focus:ring-blue-500 focus:border-blue-500"
+                        className="w-full border border-gray-300 rounded-md p-2 text-sm text-foreground bg-card focus:ring-blue-500 focus:border-blue-500"
                       />
                       <button
                         onClick={handleAddCriterion}
                         disabled={!newLabel.trim()}
-                        className="w-full py-2 bg-gray-100 text-gray-700 font-medium rounded-md text-sm hover:bg-gray-200 disabled:opacity-50"
+                        className="w-full py-2 bg-muted text-foreground/80 font-medium rounded-md text-sm hover:bg-muted disabled:opacity-50"
                       >
                         Add Criterion
                       </button>
@@ -276,15 +276,15 @@ export function RubricDetail() {
               </div>
             </div>
           ) : selectedVersion ? (
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden min-h-[600px]">
-              <div className="p-6 border-b border-gray-200 flex justify-between items-start">
+            <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden min-h-[600px]">
+              <div className="p-6 border-b border-border flex justify-between items-start">
                 <div>
                   <div className="flex items-center gap-3 mb-2">
-                    <h2 className="text-xl font-bold text-gray-900">
+                    <h2 className="text-xl font-bold text-foreground">
                       Version {selectedVersion.versionNumber}
                     </h2>
                   </div>
-                  <div className="flex items-center gap-4 text-sm text-gray-500">
+                  <div className="flex items-center gap-4 text-sm text-muted-foreground">
                     <span className="flex items-center gap-1">
                       <Clock className="w-4 h-4" />
                       {formatDateTime(selectedVersion.createdAt)}
@@ -295,40 +295,40 @@ export function RubricDetail() {
                     </span>
                   </div>
                 </div>
-                <div className="bg-gray-50 px-4 py-2 rounded-lg border border-gray-200 text-center">
-                  <span className="block text-2xl font-bold text-gray-900">
+                <div className="bg-muted/50 px-4 py-2 rounded-lg border border-border text-center">
+                  <span className="block text-2xl font-bold text-foreground">
                     {(selectedVersion.criteria as unknown as RubricCriterion[]).length}
                   </span>
-                  <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     Criteria
                   </span>
                 </div>
               </div>
-              <div className="p-6 bg-gray-50 min-h-full">
+              <div className="p-6 bg-muted/50 min-h-full">
                 <div className="max-w-2xl mx-auto space-y-4">
                   {(selectedVersion.criteria as unknown as RubricCriterion[]).map((c) => (
-                    <div key={c.key} className="bg-white border border-gray-200 rounded-lg p-4">
+                    <div key={c.key} className="bg-card border border-border rounded-lg p-4">
                       <div className="flex justify-between items-start">
-                        <h4 className="font-bold text-gray-900">{c.label}</h4>
+                        <h4 className="font-bold text-foreground">{c.label}</h4>
                         <span className="text-xs font-medium bg-blue-50 text-blue-700 px-2 py-1 rounded">
                           Max: {c.maxScore}
                         </span>
                       </div>
                       {c.description && (
-                        <p className="text-sm text-gray-500 mt-1">{c.description}</p>
+                        <p className="text-sm text-muted-foreground mt-1">{c.description}</p>
                       )}
                     </div>
                   ))}
                   {(selectedVersion.criteria as unknown as RubricCriterion[]).length === 0 && (
                     <div className="text-center py-8">
-                      <p className="text-gray-500">No criteria in this version.</p>
+                      <p className="text-muted-foreground">No criteria in this version.</p>
                     </div>
                   )}
                 </div>
               </div>
             </div>
           ) : (
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm flex items-center justify-center min-h-[600px] text-gray-500">
+            <div className="bg-card rounded-xl border border-border shadow-sm flex items-center justify-center min-h-[600px] text-muted-foreground">
               Select a version to view details
             </div>
           )}

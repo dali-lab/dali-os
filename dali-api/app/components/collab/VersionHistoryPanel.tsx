@@ -137,17 +137,17 @@ export function VersionHistoryPanel({ documentName, onClose }: VersionHistoryPan
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-xl shadow-2xl border border-gray-200 w-[min(900px,92vw)] h-[min(640px,86vh)] flex overflow-hidden"
+        className="bg-card rounded-xl shadow-2xl border border-border w-[min(900px,92vw)] h-[min(640px,86vh)] flex overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Left: version list */}
-        <div className="w-72 border-r border-gray-200 flex flex-col">
-          <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between bg-gray-50">
-            <h2 className="text-sm font-semibold text-gray-900">Version history</h2>
+        <div className="w-72 border-r border-border flex flex-col">
+          <div className="px-4 py-3 border-b border-border flex items-center justify-between bg-muted/50">
+            <h2 className="text-sm font-semibold text-foreground">Version history</h2>
             <button
               type="button"
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-600"
+              className="text-muted-foreground/70 hover:text-muted-foreground"
               aria-label="Close"
             >
               <X size={16} />
@@ -155,10 +155,10 @@ export function VersionHistoryPanel({ documentName, onClose }: VersionHistoryPan
           </div>
           <div className="flex-1 overflow-y-auto">
             {versions === null && !error && (
-              <div className="p-4 text-sm text-gray-500">Loading...</div>
+              <div className="p-4 text-sm text-muted-foreground">Loading...</div>
             )}
             {versions !== null && versions.length === 0 && (
-              <div className="p-4 text-sm text-gray-500">
+              <div className="p-4 text-sm text-muted-foreground">
                 No saved versions yet. Edits are snapshotted every ~30 seconds.
               </div>
             )}
@@ -169,19 +169,19 @@ export function VersionHistoryPanel({ documentName, onClose }: VersionHistoryPan
                   key={v.id}
                   type="button"
                   onClick={() => setSelectedId(v.id)}
-                  className={`w-full text-left px-4 py-3 border-b border-gray-100 hover:bg-gray-50 ${
+                  className={`w-full text-left px-4 py-3 border-b border-border hover:bg-muted/50 ${
                     isSelected ? "bg-blue-50 hover:bg-blue-50" : ""
                   }`}
                   title={new Date(v.createdAt).toLocaleString()}
                 >
-                  <div className="text-xs font-medium text-gray-900">
+                  <div className="text-xs font-medium text-foreground">
                     {relativeTime(v.createdAt)}
                   </div>
-                  <div className="text-[11px] text-gray-500 mt-0.5">
+                  <div className="text-[11px] text-muted-foreground mt-0.5">
                     {authorLabel(v.authors)}
                   </div>
                   {v.plainTextPreview && (
-                    <div className="text-xs text-gray-600 mt-1 line-clamp-2 whitespace-pre-wrap">
+                    <div className="text-xs text-muted-foreground mt-1 line-clamp-2 whitespace-pre-wrap">
                       {v.plainTextPreview}
                     </div>
                   )}
@@ -194,21 +194,21 @@ export function VersionHistoryPanel({ documentName, onClose }: VersionHistoryPan
         {/* Right: preview + restore */}
         <div className="flex-1 flex flex-col">
           {selectedId === null ? (
-            <div className="flex-1 flex items-center justify-center text-sm text-gray-400">
+            <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground/70">
               Select a version to preview.
             </div>
           ) : detail === null ? (
-            <div className="flex-1 flex items-center justify-center text-sm text-gray-400">
+            <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground/70">
               Loading...
             </div>
           ) : (
             <>
-              <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+              <div className="px-6 py-4 border-b border-border flex items-center justify-between">
                 <div>
-                  <div className="text-sm font-semibold text-gray-900">
+                  <div className="text-sm font-semibold text-foreground">
                     {new Date(detail.createdAt).toLocaleString()}
                   </div>
-                  <div className="text-xs text-gray-500 mt-0.5">
+                  <div className="text-xs text-muted-foreground mt-0.5">
                     {authorLabel(detail.authors)}
                   </div>
                 </div>
@@ -221,9 +221,9 @@ export function VersionHistoryPanel({ documentName, onClose }: VersionHistoryPan
                   {restoring ? "Restoring..." : "Restore this version"}
                 </button>
               </div>
-              <div className="flex-1 overflow-y-auto p-6 whitespace-pre-wrap text-sm text-gray-800 font-mono leading-relaxed">
+              <div className="flex-1 overflow-y-auto p-6 whitespace-pre-wrap text-sm text-foreground font-mono leading-relaxed">
                 {detail.plainText || (
-                  <span className="text-gray-400 italic">(empty)</span>
+                  <span className="text-muted-foreground/70 italic">(empty)</span>
                 )}
               </div>
             </>

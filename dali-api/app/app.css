@@ -59,37 +59,102 @@
 /* Dark mode overrides */
 @media (prefers-color-scheme: dark) {
   :root {
-    --color-background: hsl(210 50% 12%);
-    --color-foreground: hsl(210 20% 98%);
-    --color-card: hsl(210 45% 18%);
-    --color-card-foreground: hsl(0 0% 100%);
-    --color-popover: hsl(210 45% 16%);
-    --color-popover-foreground: hsl(210 20% 98%);
-    --color-primary: hsl(210 20% 98%);
-    --color-primary-foreground: hsl(210 50% 12%);
-    --color-secondary: hsl(210 40% 22%);
-    --color-secondary-foreground: hsl(210 20% 98%);
-    --color-muted: hsl(210 35% 20%);
-    --color-muted-foreground: hsl(210 15% 70%);
-    --color-destructive: hsl(0 62.8% 45%);
-    --color-destructive-foreground: hsl(210 20% 98%);
-    --color-border: hsl(210 30% 25%);
-    --color-input: hsl(210 35% 20%);
-    --color-ring: hsl(210 30% 70%);
-    --color-accent-coral: hsl(354 65% 55%);
-    --color-accent-coral-light: hsl(354 55% 65%);
-    --color-accent-teal: hsl(177 40% 45%);
-    --color-dark-blue: hsl(0 0% 100%);
-    --color-nav-primary: hsl(0 0% 100%);
-    --color-section-bg: hsl(205 60% 35%);
-    --color-section-bg-alt: hsl(205 78% 34%);
-    --color-text-secondary: hsl(210 20% 80%);
-    --color-sidebar: hsl(240 5.9% 10%);
-    --color-sidebar-foreground: hsl(240 4.8% 95.9%);
-    --color-sidebar-accent: hsl(240 3.7% 15.9%);
-    --color-sidebar-accent-foreground: hsl(240 4.8% 95.9%);
-    --color-sidebar-border: hsl(240 3.7% 15.9%);
+    --color-background: hsl(215 35% 10%);
+    --color-foreground: hsl(210 20% 95%);
+    --color-card: hsl(215 32% 15%);
+    --color-card-foreground: hsl(210 20% 95%);
+    --color-popover: hsl(215 32% 13%);
+    --color-popover-foreground: hsl(210 20% 95%);
+    --color-primary: hsl(210 20% 95%);
+    --color-primary-foreground: hsl(215 35% 10%);
+    --color-secondary: hsl(215 28% 20%);
+    --color-secondary-foreground: hsl(210 20% 90%);
+    --color-muted: hsl(215 25% 18%);
+    --color-muted-foreground: hsl(210 15% 65%);
+    --color-accent: hsl(215 28% 20%);
+    --color-accent-foreground: hsl(210 20% 95%);
+    --color-destructive: hsl(0 72% 60%);
+    --color-destructive-foreground: hsl(0 0% 98%);
+    --color-border: hsl(215 25% 22%);
+    --color-input: hsl(215 28% 18%);
+    --color-ring: hsl(177 45% 55%);
+    --color-accent-coral: hsl(354 70% 65%);
+    --color-accent-coral-light: hsl(354 60% 75%);
+    --color-accent-teal: hsl(177 50% 58%);
+    --color-dali-teal: hsl(177 50% 58%);
+    --color-dark-blue: hsl(210 20% 88%);
+    --color-nav-primary: hsl(210 20% 95%);
+    /* section-bg = same as background in dark — no mid-blue page wash */
+    --color-section-bg: hsl(215 35% 10%);
+    --color-section-bg-alt: hsl(215 32% 13%);
+    --color-text-secondary: hsl(210 15% 62%);
+    --color-sidebar: hsl(215 35% 8%);
+    --color-sidebar-foreground: hsl(210 15% 85%);
+    --color-sidebar-primary: hsl(177 50% 58%);
+    --color-sidebar-primary-foreground: hsl(215 35% 8%);
+    --color-sidebar-accent: hsl(215 28% 16%);
+    --color-sidebar-accent-foreground: hsl(210 15% 85%);
+    --color-sidebar-border: hsl(215 25% 20%);
+    --color-sidebar-ring: hsl(177 50% 58%);
   }
+
+  /* Remap light status colors to dark-friendly equivalents */
+
+  /* blue-50/100 backgrounds → subtle dark blue surface */
+  .bg-blue-50  { background-color: hsl(215 40% 16%) !important; }
+  .bg-blue-100 { background-color: hsl(215 40% 20%) !important; }
+  .bg-blue-50\/50 { background-color: hsl(215 40% 16% / 0.5) !important; }
+
+  /* blue text → lighter/brighter for dark bg */
+  .text-blue-600, .text-blue-700 { color: hsl(213 80% 70%) !important; }
+  .text-blue-800, .text-blue-900 { color: hsl(213 80% 80%) !important; }
+  .text-blue-500 { color: hsl(213 80% 65%) !important; }
+
+  /* blue borders → muted */
+  .border-blue-100, .border-blue-200 { border-color: hsl(215 40% 28%) !important; }
+  .border-blue-400, .border-blue-500, .border-blue-600 { border-color: hsl(213 70% 55%) !important; }
+
+  /* blue solid buttons stay blue but slightly muted */
+  .bg-blue-600 { background-color: hsl(213 70% 42%) !important; }
+  .bg-blue-700, .hover\:bg-blue-700:hover { background-color: hsl(213 70% 36%) !important; }
+
+  /* green-50/100 → dark green surface */
+  .bg-green-50  { background-color: hsl(150 30% 14%) !important; }
+  .bg-green-100 { background-color: hsl(150 30% 18%) !important; }
+  .bg-green-50\/50 { background-color: hsl(150 30% 14% / 0.5) !important; }
+  .text-green-500 { color: hsl(145 55% 58%) !important; }
+  .text-green-600, .text-green-700 { color: hsl(145 55% 62%) !important; }
+  .text-green-800, .text-green-900 { color: hsl(145 55% 72%) !important; }
+  .border-green-100 { border-color: hsl(150 30% 22%) !important; }
+  .border-green-200 { border-color: hsl(150 30% 26%) !important; }
+  .bg-green-600, .bg-green-700 { background-color: hsl(145 50% 32%) !important; }
+
+  /* red-50/100 → dark red surface */
+  .bg-red-50  { background-color: hsl(0 30% 14%) !important; }
+  .bg-red-100 { background-color: hsl(0 30% 18%) !important; }
+  .text-red-500, .text-red-600, .text-red-700 { color: hsl(0 80% 70%) !important; }
+  .text-red-800, .text-red-900 { color: hsl(0 80% 78%) !important; }
+  .border-red-200 { border-color: hsl(0 30% 28%) !important; }
+
+  /* yellow-50/100 → dark amber surface */
+  .bg-yellow-50  { background-color: hsl(40 30% 13%) !important; }
+  .bg-yellow-100 { background-color: hsl(40 30% 17%) !important; }
+  .text-yellow-600, .text-yellow-700 { color: hsl(40 90% 65%) !important; }
+  .text-yellow-800, .text-yellow-900 { color: hsl(40 90% 72%) !important; }
+
+  /* indigo-50/100 → dark indigo surface */
+  .bg-indigo-50  { background-color: hsl(240 35% 16%) !important; }
+  .bg-indigo-100 { background-color: hsl(240 35% 20%) !important; }
+  .text-indigo-600, .text-indigo-700 { color: hsl(235 80% 75%) !important; }
+  .text-indigo-800, .text-indigo-900 { color: hsl(235 80% 82%) !important; }
+
+  /* border-gray-300 → use border token */
+  .border-gray-300 { border-color: hsl(215 25% 28%) !important; }
+  .border-gray-400 { border-color: hsl(215 20% 35%) !important; }
+  .border-gray-700 { border-color: hsl(215 20% 30%) !important; }
+
+  /* Brand pale-blue tint → elevated dark surface (login hero, applicant portal cards) */
+  .bg-\[\#E8F4FA\] { background-color: hsl(215 32% 15%) !important; }
 }
 
 * {

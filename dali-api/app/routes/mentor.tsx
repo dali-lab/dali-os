@@ -286,9 +286,9 @@ export default function MentorDashboard() {
   if (!activeCycle) {
     return (
       <div className="space-y-8">
-        <h1 className="text-2xl font-bold text-gray-900">Reviewer Dashboard</h1>
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8 text-center">
-          <p className="text-gray-500">You are not assigned as a reviewer for any active cycle.</p>
+        <h1 className="text-2xl font-bold text-foreground">Reviewer Dashboard</h1>
+        <div className="bg-card rounded-xl border border-border shadow-sm p-8 text-center">
+          <p className="text-muted-foreground">You are not assigned as a reviewer for any active cycle.</p>
         </div>
       </div>
     )
@@ -459,8 +459,8 @@ export default function MentorDashboard() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Reviewer Dashboard</h1>
-        <p className="mt-1 text-gray-500">
+        <h1 className="text-2xl font-bold text-foreground">Reviewer Dashboard</h1>
+        <p className="mt-1 text-muted-foreground">
           Manage your hiring responsibilities.
         </p>
       </div>
@@ -876,19 +876,19 @@ function ReviewCard({ review, variant }: { review: any; variant: 'pending' | 'in
     ? 'border-green-200'
     : variant === 'inProgress'
     ? 'border-blue-200 ring-1 ring-blue-100'
-    : 'border-gray-200'
+    : 'border-border'
 
   return (
-    <div className={`bg-white p-4 rounded-lg border ${borderClass} shadow-sm hover:shadow-md transition-shadow`}>
+    <div className={`bg-card p-4 rounded-lg border ${borderClass} shadow-sm hover:shadow-md transition-shadow`}>
       <div className="flex justify-between items-start mb-1">
-        <h4 className="font-bold text-gray-900">
+        <h4 className="font-bold text-foreground">
           {user?.firstName ?? '?'} {user?.lastName ?? ''}
         </h4>
         {variant === 'submitted' && <CheckCircle className="w-4 h-4 text-green-500" />}
       </div>
-      <p className="text-xs text-gray-500 mb-3">{domain?.name ?? 'Unknown Domain'}</p>
+      <p className="text-xs text-muted-foreground mb-3">{domain?.name ?? 'Unknown Domain'}</p>
       {variant === 'submitted' && review.overallRecommendation && (
-        <p className="text-xs font-medium text-gray-600 mb-3 bg-gray-100 inline-block px-2 py-0.5 rounded">
+        <p className="text-xs font-medium text-muted-foreground mb-3 bg-muted inline-block px-2 py-0.5 rounded">
           {review.overallRecommendation}
         </p>
       )}
@@ -900,7 +900,7 @@ function ReviewCard({ review, variant }: { review: any; variant: 'pending' | 'in
               ? 'bg-blue-50 text-blue-700 hover:bg-blue-100'
               : variant === 'inProgress'
               ? 'bg-blue-600 text-white hover:bg-blue-700'
-              : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+              : 'bg-card border border-gray-300 text-foreground/80 hover:bg-muted/50'
           }`}
         >
           {variant === 'pending' ? 'Start Review' : variant === 'inProgress' ? 'Continue Review' : 'View Review'}

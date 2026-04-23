@@ -80,7 +80,7 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
   return (
     <div className="min-h-screen bg-section-bg flex flex-col">
       {/* Top bar — dark DALI header */}
-      <div className="bg-dark-blue sticky top-0 z-20">
+      <div className="bg-[hsl(203,38%,23%)] dark:bg-[hsl(215,35%,10%)] sticky top-0 z-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-14">
           <div className="flex items-center gap-2.5">
             <div className="w-7 h-7 bg-accent-coral rounded-md flex items-center justify-center">
@@ -101,7 +101,7 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
       </div>
 
       {/* Navigation bar — primary tabs + sub-tabs inline */}
-      <div className="bg-white border-b border-gray-200 sticky top-14 z-10">
+      <div className="bg-card border-b border-border sticky top-14 z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-6 h-11">
             {/* Primary tabs */}
@@ -112,8 +112,8 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
                   to={section.to}
                   className={`inline-flex items-center gap-1.5 px-3 h-full border-b-2 text-sm font-heading font-semibold transition-colors whitespace-nowrap ${
                     section.active
-                      ? 'border-accent-coral text-dark-blue'
-                      : 'border-transparent text-gray-400 hover:text-dark-blue'
+                      ? 'border-accent-coral text-foreground'
+                      : 'border-transparent text-muted-foreground hover:text-foreground'
                   }`}
                 >
                   <section.icon className="w-3.5 h-3.5" />
@@ -125,7 +125,7 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
             {/* Separator + sub-tabs (if active section has them) */}
             {activeSection?.sub && (
               <>
-                <div className="w-px h-5 bg-gray-200" />
+                <div className="w-px h-5 bg-border" />
                 <nav className="flex items-center gap-0.5">
                   {activeSection.sub.map((item) => (
                     <Link
@@ -134,7 +134,7 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
                       className={`px-2.5 py-1 text-xs font-medium rounded-full transition-colors ${
                         item.active
                           ? 'bg-accent-coral/10 text-accent-coral'
-                          : 'text-gray-400 hover:text-dark-blue hover:bg-gray-50'
+                          : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                       }`}
                     >
                       {item.label}

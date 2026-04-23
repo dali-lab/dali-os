@@ -120,7 +120,7 @@ export default function Login() {
           <h1 className="font-heading text-3xl font-bold text-dark-blue mb-2">
             Sign in
           </h1>
-          <p className="text-gray-500 mb-10">
+          <p className="text-muted-foreground mb-10">
             Select how you'd like to continue
           </p>
 
@@ -148,11 +148,11 @@ export default function Login() {
                   <span className="font-heading font-semibold text-dark-blue group-hover:text-accent-coral transition block">
                     DALI Member
                   </span>
-                  <span className="text-xs text-gray-500 mt-0.5 block">
+                  <span className="text-xs text-muted-foreground mt-0.5 block">
                     @dali.dartmouth.edu Google account
                   </span>
                 </div>
-                <svg className="w-4 h-4 text-gray-400 group-hover:text-accent-coral transition flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4 text-muted-foreground group-hover:text-accent-coral transition flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>
               </button>
@@ -166,7 +166,7 @@ export default function Login() {
                 type="submit"
                 className="w-full flex items-center gap-4 p-5 rounded-2xl border-2 border-transparent bg-[#E8F4FA] hover:border-accent-coral transition group text-left"
               >
-                <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center flex-shrink-0 shadow-sm">
+                <div className="w-10 h-10 rounded-full bg-card flex items-center justify-center flex-shrink-0 shadow-sm">
                   <svg className="w-5 h-5 text-dark-blue" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 14l9-5-9-5-9 5 9 5z" />
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z" />
@@ -176,11 +176,11 @@ export default function Login() {
                   <span className="font-heading font-semibold text-dark-blue group-hover:text-accent-coral transition block">
                     Dartmouth Student
                   </span>
-                  <span className="text-xs text-gray-500 mt-0.5 block">
+                  <span className="text-xs text-muted-foreground mt-0.5 block">
                     Dartmouth CAS single sign-on
                   </span>
                 </div>
-                <svg className="w-4 h-4 text-gray-400 group-hover:text-accent-coral transition flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4 text-muted-foreground group-hover:text-accent-coral transition flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>
               </button>
