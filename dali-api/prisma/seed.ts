@@ -2198,47 +2198,54 @@ async function main() {
   console.log(`  ${allInterviewers.length} interviewers × ${availabilityWindows.length} availability blocks`);
   console.log(`  ${reviewSpecs.length} ApplicationReviews + ${decisionSpecs.length * 3} Decisions + ${interviewBookings.length} booked interviews for Fall 2026`);
 
-  // ── Email templates ────────────────────────────────────────────────────────
-  const defaultTemplates = [
+  // ── Email templates (versioned, keyed by EmailTemplateType) ─────────────────
+  const seedTemplates: { type: 'ApplicationReceived' | 'Rejected' | 'RejectedPostInterview' | 'InvitedToInterview' | 'InterviewInviteMentor' | 'Waitlisted' | 'Accepted'; subject: string; body: string }[] = [
     {
-      templateKey: 'application_received',
+      type: 'ApplicationReceived',
       subject: 'We received your DALI application!',
       body: `Hi {{firstName}},\n\nThank you for applying to DALI! We've received your application and our team will be reviewing it over the coming weeks.\n\nWe'll reach out with updates as decisions are made. In the meantime, feel free to reach out to us at applications@dali.dartmouth.edu if you have any questions.\n\nBest,\nThe DALI Team`,
     },
     {
-      templateKey: 'rejection',
+      type: 'Rejected',
       subject: 'Your DALI Application',
       body: `Hi {{firstName}},\n\nThank you so much for applying to DALI and for the time and effort you put into your application. After careful consideration, we regret to inform you that we will not be moving forward with your application for this cycle.\n\nThis was an incredibly competitive cycle, and this decision is not a reflection of your abilities or potential. We strongly encourage you to apply again in the future — many of our current members were not accepted on their first try.\n\nThank you again for your interest in DALI. We wish you all the best.\n\nWarm regards,\nThe DALI Team`,
     },
     {
-      templateKey: 'interview_invite_applicant',
+      type: 'RejectedPostInterview',
+      subject: 'Your DALI Application',
+      body: `Hi {{firstName}},\n\nThank you for interviewing with DALI. We really enjoyed getting to know you, and we appreciate the time and effort you put into both your application and interview.\n\nAfter careful deliberation, we unfortunately will not be able to offer you a position for this cycle. This was an incredibly competitive cycle, and this decision does not reflect your abilities or potential.\n\nWe strongly encourage you to apply again in the future — many of our current members were not accepted on their first try.\n\nThank you again for your interest in DALI. We wish you all the best.\n\nWarm regards,\nThe DALI Team`,
+    },
+    {
+      type: 'InvitedToInterview',
       subject: "You're invited to interview with DALI!",
       body: `Hi {{firstName}},\n\nCongratulations — we were impressed by your application and would love to invite you to interview with DALI!\n\nPlease log in to your application portal to view available interview slots and confirm your availability. Interviews are typically 20–30 minutes and held in person at the DALI Lab (Sudikoff 007).\n\nIf you have any scheduling conflicts or questions, please don't hesitate to reach out to us at applications@dali.dartmouth.edu.\n\nWe look forward to meeting you!\n\nBest,\nThe DALI Team`,
     },
     {
-      templateKey: 'interview_invite_mentor',
+      type: 'InterviewInviteMentor',
       subject: 'DALI interview assigned to you',
       body: `Hi {{firstName}},\n\nYou've been assigned to conduct an interview for the current DALI hiring cycle. Please log in to the reviewer dashboard to view your assigned applicant(s) and interview details.\n\nIf you have any conflicts or questions, please reach out to the hiring lead as soon as possible.\n\nThanks for your help making DALI hiring happen!\n\n— The DALI Team`,
     },
     {
-      templateKey: 'waitlist',
+      type: 'Waitlisted',
       subject: 'Update on your DALI application',
       body: `Hi {{firstName}},\n\nThank you for your patience as we reviewed applications for this cycle. We're excited to let you know that you've been placed on our waitlist!\n\nThis means we were very impressed by your application and interview, and if a spot opens up, we'd love to have you join the team. We'll be in touch with any updates.\n\nThank you again for your interest in DALI — we hope to work with you soon.\n\nBest,\nThe DALI Team`,
     },
     {
-      templateKey: 'acceptance',
+      type: 'Accepted',
       subject: 'Welcome to DALI!',
       body: `Hi {{firstName}},\n\nWe are thrilled to offer you a spot in DALI!\n\nAfter a highly competitive review process, we believe you'll be a fantastic addition to our team. Please log in to your application portal to confirm your acceptance.\n\nOnboarding details and next steps will follow shortly. In the meantime, if you have any questions, feel free to reach out to us at applications@dali.dartmouth.edu.\n\nWelcome to the family — we can't wait to work with you!\n\nWarmly,\nThe DALI Team`,
     },
   ]
-  for (const t of defaultTemplates) {
-    await prisma.emailTemplate.upsert({
-      where: { templateKey: t.templateKey },
-      update: {},
-      create: t,
-    })
+  for (const t of seedTemplates) {
+    // Only seed if no version exists yet for this type
+    const existing = await prisma.emailTemplate.findFirst({ where: { type: t.type } })
+    if (!existing) {
+      await prisma.emailTemplate.create({
+        data: { ...t, version: 1, createdById: engLeadMember.id },
+      })
+    }
   }
-  console.log(`  ${defaultTemplates.length} email templates seeded`)
+  console.log(`  ${seedTemplates.length} email templates seeded`)
   console.log(`  ${reviewSpecs.length} ApplicationReviews + ${decisionSpecs.filter(s => s.type === "InvitedToInterview").length * 3 + decisionSpecs.filter(s => s.type !== "InvitedToInterview").length * 2} Decisions + ${interviewBookings.length} booked interviews for Fall 2026`);
 }
 

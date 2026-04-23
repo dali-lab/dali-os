@@ -312,7 +312,7 @@ export default function AdminCycleDetails() {
     Draft: 'Draft', Open: 'Open', UnderReview: 'Under Review', Completed: 'Completed',
   }
   const STATUS_COLORS: Record<string, string> = {
-    Draft: 'bg-gray-100 text-gray-700', Open: 'bg-green-100 text-green-700',
+    Draft: 'bg-muted text-muted-foreground', Open: 'bg-green-100 text-green-700',
     UnderReview: 'bg-yellow-100 text-yellow-700', Completed: 'bg-blue-100 text-blue-700',
   }
 
@@ -482,14 +482,14 @@ export default function AdminCycleDetails() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Cycle Management</h1>
-        <p className="text-gray-500 mt-1">Configure interviews for cycle <span className="font-mono text-xs bg-gray-100 px-1.5 py-0.5 rounded">{cycleId}</span></p>
+        <h1 className="text-2xl font-bold text-foreground">Cycle Management</h1>
+        <p className="text-muted-foreground mt-1">Configure interviews for cycle <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">{cycleId}</span></p>
       </div>
 
       {/* Cycle Status */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 flex items-center justify-between">
+      <div className="bg-card rounded-xl border border-border shadow-sm p-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <span className="text-sm font-medium text-gray-500">Status:</span>
+          <span className="text-sm font-medium text-muted-foreground">Status:</span>
           <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-bold ${STATUS_COLORS[cycleStatus]}`}>
             {STATUS_LABELS[cycleStatus] ?? cycleStatus}
           </span>
@@ -557,19 +557,19 @@ export default function AdminCycleDetails() {
         const ready = hasCloseDate && allDomainsCovered && hasGeneralForm && hasGeneralRubric;
         return (
           <div className={`rounded-xl border p-4 space-y-3 ${ready ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200'}`}>
-            <h3 className="text-sm font-bold text-gray-900">Checklist to Open Applications</h3>
+            <h3 className="text-sm font-bold text-foreground">Checklist to Open Applications</h3>
             <div className="space-y-2">
               <div className="flex items-center gap-2 text-sm">
                 {hasCloseDate
                   ? <CheckCircle className="w-4 h-4 text-green-600" />
-                  : <Circle className="w-4 h-4 text-gray-400" />}
-                <span className={hasCloseDate ? 'text-green-800' : 'text-gray-600'}>Close date is set</span>
+                  : <Circle className="w-4 h-4 text-muted-foreground/70" />}
+                <span className={hasCloseDate ? 'text-green-800' : 'text-muted-foreground'}>Close date is set</span>
               </div>
               <div className="flex items-center gap-2 text-sm">
                 {allDomainsCovered
                   ? <CheckCircle className="w-4 h-4 text-green-600" />
-                  : <Circle className="w-4 h-4 text-gray-400" />}
-                <span className={allDomainsCovered ? 'text-green-800' : 'text-gray-600'}>
+                  : <Circle className="w-4 h-4 text-muted-foreground/70" />}
+                <span className={allDomainsCovered ? 'text-green-800' : 'text-muted-foreground'}>
                   Every domain has a challenge version linked
                   {domains.length === 0 && ' (no domains added)'}
                 </span>
@@ -577,14 +577,14 @@ export default function AdminCycleDetails() {
               <div className="flex items-center gap-2 text-sm">
                 {hasGeneralForm
                   ? <CheckCircle className="w-4 h-4 text-green-600" />
-                  : <Circle className="w-4 h-4 text-gray-400" />}
-                <span className={hasGeneralForm ? 'text-green-800' : 'text-gray-600'}>General application form is linked</span>
+                  : <Circle className="w-4 h-4 text-muted-foreground/70" />}
+                <span className={hasGeneralForm ? 'text-green-800' : 'text-muted-foreground'}>General application form is linked</span>
               </div>
               <div className="flex items-center gap-2 text-sm">
                 {hasGeneralRubric
                   ? <CheckCircle className="w-4 h-4 text-green-600" />
-                  : <Circle className="w-4 h-4 text-gray-400" />}
-                <span className={hasGeneralRubric ? 'text-green-800' : 'text-gray-600'}>General application rubric is set</span>
+                  : <Circle className="w-4 h-4 text-muted-foreground/70" />}
+                <span className={hasGeneralRubric ? 'text-green-800' : 'text-muted-foreground'}>General application rubric is set</span>
               </div>
             </div>
           </div>
@@ -592,7 +592,7 @@ export default function AdminCycleDetails() {
       })()}
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+      <div className="flex gap-1 bg-muted rounded-lg p-1">
         {([
           { key: 'setup' as const, label: 'Cycle Setup', icon: LayoutDashboard },
           { key: 'config' as const, label: 'Interview Setup', icon: Settings },
@@ -604,7 +604,7 @@ export default function AdminCycleDetails() {
             key={t.key}
             onClick={() => setTab(t.key)}
             className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition ${
-              tab === t.key ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              tab === t.key ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
             }`}
           >
             <t.icon className="w-4 h-4" />
@@ -617,8 +617,8 @@ export default function AdminCycleDetails() {
       {tab === 'setup' && (
         <div className="space-y-6">
           {/* Close Date */}
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-            <h3 className="text-sm font-bold text-gray-700 mb-3">Application Close Date</h3>
+          <div className="bg-card rounded-xl border border-border shadow-sm p-6">
+            <h3 className="text-sm font-bold text-foreground/80 mb-3">Application Close Date</h3>
             <Form method="post" className="flex items-end gap-3">
               <input type="hidden" name="intent" value="set-close-date" />
               <div className="flex-1">
@@ -639,10 +639,10 @@ export default function AdminCycleDetails() {
           </div>
 
           {/* Domains */}
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 space-y-4">
-            <h3 className="text-sm font-bold text-gray-700">Domains in this Cycle</h3>
+          <div className="bg-card rounded-xl border border-border shadow-sm p-6 space-y-4">
+            <h3 className="text-sm font-bold text-foreground/80">Domains in this Cycle</h3>
             {(cycle?.domains ?? []).length > 0 ? (
-              <div className="divide-y divide-gray-100">
+              <div className="divide-y divide-border">
                 {(cycle?.domains ?? []).map((d: any) => {
                   const hasChallengeVersion = (cycle?.challengeVersions ?? []).some(
                     (cv: any) => cv.challengeVersion?.domainId === d.domainId
@@ -650,7 +650,7 @@ export default function AdminCycleDetails() {
                   return (
                     <div key={d.domainId} className="flex items-center justify-between py-2">
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-gray-900">{d.domain?.name ?? d.domainId}</span>
+                        <span className="text-sm font-medium text-foreground">{d.domain?.name ?? d.domainId}</span>
                         {hasChallengeVersion ? (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700">
                             <CheckCircle className="w-3 h-3" /> Challenge linked
@@ -675,13 +675,13 @@ export default function AdminCycleDetails() {
                 })}
               </div>
             ) : (
-              <p className="text-sm text-gray-400">No domains added yet.</p>
+              <p className="text-sm text-muted-foreground/70">No domains added yet.</p>
             )}
             {cycleStatus === 'Draft' && (
-              <Form method="post" className="flex items-end gap-3 pt-2 border-t border-gray-100">
+              <Form method="post" className="flex items-end gap-3 pt-2 border-t border-border">
                 <input type="hidden" name="intent" value="add-domain" />
                 <div className="flex-1">
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Add Domain</label>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">Add Domain</label>
                   <select
                     name="domainId"
                     className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
@@ -732,10 +732,10 @@ export default function AdminCycleDetails() {
       {tab === 'config' && (
         <div className="space-y-6">
           {/* Interview Config */}
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 space-y-6">
+          <div className="bg-card rounded-xl border border-border shadow-sm p-6 space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1">Slot Duration</label>
+              <label className="block text-sm font-bold text-foreground/80 mb-1">Slot Duration</label>
               <select
                 value={config.slotDurationMinutes}
                 onChange={e => setConfig(c => ({ ...c, slotDurationMinutes: Number(e.target.value) }))}
@@ -745,7 +745,7 @@ export default function AdminCycleDetails() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1">Buffer Between Interviews</label>
+              <label className="block text-sm font-bold text-foreground/80 mb-1">Buffer Between Interviews</label>
               <select
                 value={config.bufferMinutes}
                 onChange={e => setConfig(c => ({ ...c, bufferMinutes: Number(e.target.value) }))}
@@ -755,7 +755,7 @@ export default function AdminCycleDetails() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1">Day Start</label>
+              <label className="block text-sm font-bold text-foreground/80 mb-1">Day Start</label>
               <select
                 value={config.dayStartHour}
                 onChange={e => setConfig(c => ({ ...c, dayStartHour: Number(e.target.value) }))}
@@ -765,7 +765,7 @@ export default function AdminCycleDetails() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1">Day End</label>
+              <label className="block text-sm font-bold text-foreground/80 mb-1">Day End</label>
               <select
                 value={config.dayEndHour}
                 onChange={e => setConfig(c => ({ ...c, dayEndHour: Number(e.target.value) }))}
@@ -775,7 +775,7 @@ export default function AdminCycleDetails() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1">Interview Start Date</label>
+              <label className="block text-sm font-bold text-foreground/80 mb-1">Interview Start Date</label>
               <input
                 type="date"
                 value={config.interviewStartDate}
@@ -784,7 +784,7 @@ export default function AdminCycleDetails() {
               />
             </div>
             <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1">Interview End Date</label>
+              <label className="block text-sm font-bold text-foreground/80 mb-1">Interview End Date</label>
               <input
                 type="date"
                 value={config.interviewEndDate}
@@ -812,13 +812,13 @@ export default function AdminCycleDetails() {
       {tab === 'reviewers' && (
         <div className="space-y-4">
           {/* Add reviewer form */}
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-            <h3 className="text-sm font-bold text-gray-700 mb-4 flex items-center gap-2">
+          <div className="bg-card rounded-xl border border-border shadow-sm p-6">
+            <h3 className="text-sm font-bold text-foreground/80 mb-4 flex items-center gap-2">
               <Plus className="w-4 h-4" /> Add Reviewer
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">DALI Member</label>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">DALI Member</label>
                 <select
                   value={newMemberId}
                   onChange={e => setNewMemberId(e.target.value)}
@@ -833,7 +833,7 @@ export default function AdminCycleDetails() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Domain</label>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Domain</label>
                 <select
                   value={newDomainId}
                   onChange={e => setNewDomainId(e.target.value)}
@@ -856,22 +856,22 @@ export default function AdminCycleDetails() {
           </div>
 
           {/* Roster table */}
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200">
+              <thead className="bg-muted/50 border-b border-border">
                 <tr>
-                  <th className="text-left px-4 py-3 font-bold text-gray-700">Reviewer</th>
-                  <th className="text-left px-4 py-3 font-bold text-gray-700">Domain</th>
-                  <th className="text-right px-4 py-3 font-bold text-gray-700">Actions</th>
+                  <th className="text-left px-4 py-3 font-bold text-foreground/80">Reviewer</th>
+                  <th className="text-left px-4 py-3 font-bold text-foreground/80">Domain</th>
+                  <th className="text-right px-4 py-3 font-bold text-foreground/80">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-border">
                 {reviewers.map(r => (
-                  <tr key={r.id} className="hover:bg-gray-50 transition">
-                    <td className="px-4 py-3 font-medium text-gray-900">
+                  <tr key={r.id} className="hover:bg-muted/50 transition">
+                    <td className="px-4 py-3 font-medium text-foreground">
                       {r.daliMember.user ? `${r.daliMember.user.firstName} ${r.daliMember.user.lastName}` : r.daliMember.id}
                     </td>
-                    <td className="px-4 py-3 text-gray-600">{r.domain.name}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{r.domain.name}</td>
                     <td className="px-4 py-3 text-right">
                       <button onClick={() => removeReviewer(r.id)} className="text-red-500 hover:text-red-700 transition">
                         <Trash2 className="w-4 h-4" />
@@ -880,20 +880,20 @@ export default function AdminCycleDetails() {
                   </tr>
                 ))}
                 {reviewers.length === 0 && (
-                  <tr><td colSpan={4} className="px-4 py-8 text-center text-gray-400">No reviewers assigned yet.</td></tr>
+                  <tr><td colSpan={4} className="px-4 py-8 text-center text-muted-foreground/70">No reviewers assigned yet.</td></tr>
                 )}
               </tbody>
             </table>
           </div>
 
           {/* Add interviewer form */}
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-            <h3 className="text-sm font-bold text-gray-700 mb-4 flex items-center gap-2">
+          <div className="bg-card rounded-xl border border-border shadow-sm p-6">
+            <h3 className="text-sm font-bold text-foreground/80 mb-4 flex items-center gap-2">
               <Plus className="w-4 h-4" /> Add Interviewer
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">DALI Member</label>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">DALI Member</label>
                 <select
                   value={newInterviewerMemberId}
                   onChange={e => setNewInterviewerMemberId(e.target.value)}
@@ -908,7 +908,7 @@ export default function AdminCycleDetails() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Domain</label>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Domain</label>
                 <select
                   value={newInterviewerDomainId}
                   onChange={e => setNewInterviewerDomainId(e.target.value)}
@@ -931,23 +931,23 @@ export default function AdminCycleDetails() {
           </div>
 
           {/* Interviewer roster table */}
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200">
+              <thead className="bg-muted/50 border-b border-border">
                 <tr>
-                  <th className="text-left px-4 py-3 font-bold text-gray-700">Interviewer</th>
-                  <th className="text-left px-4 py-3 font-bold text-gray-700">Domain</th>
-                  <th className="text-right px-4 py-3 font-bold text-gray-700">Actions</th>
+                  <th className="text-left px-4 py-3 font-bold text-foreground/80">Interviewer</th>
+                  <th className="text-left px-4 py-3 font-bold text-foreground/80">Domain</th>
+                  <th className="text-right px-4 py-3 font-bold text-foreground/80">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-border">
                 {interviewers.map((i: any) => {
                   const m = i.daliMember
                   const name = m?.firstName && m?.lastName ? `${m.firstName} ${m.lastName}` : m?.daliEmail ?? i.daliMemberId
                   return (
-                    <tr key={i.id} className="hover:bg-gray-50 transition">
-                      <td className="px-4 py-3 font-medium text-gray-900">{name}</td>
-                      <td className="px-4 py-3 text-gray-600">{i.domain?.name ?? ''}</td>
+                    <tr key={i.id} className="hover:bg-muted/50 transition">
+                      <td className="px-4 py-3 font-medium text-foreground">{name}</td>
+                      <td className="px-4 py-3 text-muted-foreground">{i.domain?.name ?? ''}</td>
                       <td className="px-4 py-3 text-right">
                         <button onClick={() => removeInterviewer(i.id)} className="text-red-500 hover:text-red-700 transition">
                           <Trash2 className="w-4 h-4" />
@@ -957,7 +957,7 @@ export default function AdminCycleDetails() {
                   )
                 })}
                 {interviewers.length === 0 && (
-                  <tr><td colSpan={3} className="px-4 py-8 text-center text-gray-400">No interviewers assigned yet.</td></tr>
+                  <tr><td colSpan={3} className="px-4 py-8 text-center text-muted-foreground/70">No interviewers assigned yet.</td></tr>
                 )}
               </tbody>
             </table>
@@ -968,19 +968,19 @@ export default function AdminCycleDetails() {
       {/* ── Interview Dashboard Tab ── */}
       {tab === 'dashboard' && (
         <div className="space-y-4">
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200">
+              <thead className="bg-muted/50 border-b border-border">
                 <tr>
-                  <th className="text-left px-4 py-3 font-bold text-gray-700">Applicant</th>
-                  <th className="text-left px-4 py-3 font-bold text-gray-700">Domain</th>
-                  <th className="text-left px-4 py-3 font-bold text-gray-700">Time</th>
-                  <th className="text-left px-4 py-3 font-bold text-gray-700">Status</th>
-                  <th className="text-left px-4 py-3 font-bold text-gray-700">Interviewers</th>
-                  <th className="text-right px-4 py-3 font-bold text-gray-700">Actions</th>
+                  <th className="text-left px-4 py-3 font-bold text-foreground/80">Applicant</th>
+                  <th className="text-left px-4 py-3 font-bold text-foreground/80">Domain</th>
+                  <th className="text-left px-4 py-3 font-bold text-foreground/80">Time</th>
+                  <th className="text-left px-4 py-3 font-bold text-foreground/80">Status</th>
+                  <th className="text-left px-4 py-3 font-bold text-foreground/80">Interviewers</th>
+                  <th className="text-right px-4 py-3 font-bold text-foreground/80">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-border">
                 {interviews.map(interview => {
                   const isFuture = new Date(interview.startTime) > new Date()
                   const domainName = interview.domainApplication.challengeVersion.domain.name
@@ -988,12 +988,12 @@ export default function AdminCycleDetails() {
                   const end = new Date(interview.endTime)
 
                   return (
-                    <tr key={interview.id} className="hover:bg-gray-50 transition">
-                      <td className="px-4 py-3 font-medium text-gray-900">
+                    <tr key={interview.id} className="hover:bg-muted/50 transition">
+                      <td className="px-4 py-3 font-medium text-foreground">
                         {interview.domainApplication.application.user.firstName} {interview.domainApplication.application.user.lastName}
                       </td>
-                      <td className="px-4 py-3 text-gray-600">{domainName || '—'}</td>
-                      <td className="px-4 py-3 text-gray-600">
+                      <td className="px-4 py-3 text-muted-foreground">{domainName || '—'}</td>
+                      <td className="px-4 py-3 text-muted-foreground">
                         {start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}{' '}
                         {start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} –{' '}
                         {end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
@@ -1002,12 +1002,12 @@ export default function AdminCycleDetails() {
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${
                           interview.status === 'Scheduled' ? 'bg-green-100 text-green-700' :
                           interview.status === 'Completed' ? 'bg-blue-100 text-blue-700' :
-                          'bg-gray-100 text-gray-600'
+                          'bg-muted text-muted-foreground'
                         }`}>
                           {interview.status}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-gray-600 text-xs">
+                      <td className="px-4 py-3 text-muted-foreground text-xs">
                         {interview.assignments
                           .filter((a: any) => a.status === 'Active')
                           .map((a: any) => {
@@ -1057,7 +1057,7 @@ export default function AdminCycleDetails() {
                   )
                 })}
                 {interviews.length === 0 && (
-                  <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">No interviews scheduled yet.</td></tr>
+                  <tr><td colSpan={6} className="px-4 py-8 text-center text-muted-foreground/70">No interviews scheduled yet.</td></tr>
                 )}
               </tbody>
             </table>
@@ -1068,9 +1068,9 @@ export default function AdminCycleDetails() {
       {/* ── Decisions Tab ── */}
       {tab === 'decisions' && (
         <div className="space-y-4">
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
-              <h3 className="font-bold text-gray-900">Final Decisions Ready for Release</h3>
+          <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
+            <div className="px-6 py-4 border-b border-border bg-muted/50 flex items-center justify-between">
+              <h3 className="font-bold text-foreground">Final Decisions Ready for Release</h3>
               {pendingDecisions.length > 0 && (
                 <button
                   onClick={async () => {
@@ -1086,22 +1086,22 @@ export default function AdminCycleDetails() {
               )}
             </div>
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200">
+              <thead className="bg-muted/50 border-b border-border">
                 <tr>
-                  <th className="text-left px-4 py-3 font-bold text-gray-700">Applicant</th>
-                  <th className="text-left px-4 py-3 font-bold text-gray-700">Domain</th>
-                  <th className="text-left px-4 py-3 font-bold text-gray-700">Decision</th>
-                  <th className="text-left px-4 py-3 font-bold text-gray-700">Made By</th>
-                  <th className="text-right px-4 py-3 font-bold text-gray-700">Action</th>
+                  <th className="text-left px-4 py-3 font-bold text-foreground/80">Applicant</th>
+                  <th className="text-left px-4 py-3 font-bold text-foreground/80">Domain</th>
+                  <th className="text-left px-4 py-3 font-bold text-foreground/80">Decision</th>
+                  <th className="text-left px-4 py-3 font-bold text-foreground/80">Made By</th>
+                  <th className="text-right px-4 py-3 font-bold text-foreground/80">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-border">
                 {pendingDecisions.map((d: any) => (
-                  <tr key={d.id} className="hover:bg-gray-50 transition">
-                    <td className="px-4 py-3 font-medium text-gray-900">
+                  <tr key={d.id} className="hover:bg-muted/50 transition">
+                    <td className="px-4 py-3 font-medium text-foreground">
                       {d.domainApplication.application.user.firstName} {d.domainApplication.application.user.lastName}
                     </td>
-                    <td className="px-4 py-3 text-gray-600">{d.domainApplication.challengeVersion.domain.name}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{d.domainApplication.challengeVersion.domain.name}</td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${
                         d.type === 'Accepted' ? 'bg-green-100 text-green-700' :
@@ -1112,7 +1112,7 @@ export default function AdminCycleDetails() {
                         {d.type}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-gray-600">{d.madeBy.firstName} {d.madeBy.lastName}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{d.madeBy.firstName} {d.madeBy.lastName}</td>
                     <td className="px-4 py-3 text-right">
                       <button
                         onClick={async () => {
@@ -1130,7 +1130,7 @@ export default function AdminCycleDetails() {
                   </tr>
                 ))}
                 {pendingDecisions.length === 0 && (
-                  <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400">No Final decisions awaiting release.</td></tr>
+                  <tr><td colSpan={5} className="px-4 py-8 text-center text-muted-foreground/70">No Final decisions awaiting release.</td></tr>
                 )}
               </tbody>
             </table>
@@ -1196,14 +1196,14 @@ function CompleteConfirmModal({ cycleId, onClose, onCompleted, onError }: {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6 space-y-4" onClick={e => e.stopPropagation()}>
+      <div className="bg-card rounded-lg shadow-xl w-full max-w-md p-6 space-y-4" onClick={e => e.stopPropagation()}>
         {checking ? (
           <div className="text-center py-4">
-            <p className="text-sm text-gray-500">Checking cycle readiness...</p>
+            <p className="text-sm text-muted-foreground">Checking cycle readiness...</p>
           </div>
         ) : hasBlockers ? (
           <>
-            <h2 className="text-lg font-semibold text-gray-900">Cycle has unfinished work</h2>
+            <h2 className="text-lg font-semibold text-foreground">Cycle has unfinished work</h2>
             <div className="space-y-2">
               {pendingInterviews > 0 && (
                 <div className="flex items-center gap-2 text-sm bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-3">
@@ -1218,13 +1218,13 @@ function CompleteConfirmModal({ cycleId, onClose, onCompleted, onError }: {
                 </div>
               )}
             </div>
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-muted-foreground">
               Resolve these before completing the cycle, or force-close if you're sure.
             </p>
             <div className="flex justify-end gap-2 pt-2">
               <button
                 onClick={onClose}
-                className="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                className="px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-border rounded-md hover:bg-muted/50"
               >
                 Go back
               </button>
@@ -1252,19 +1252,19 @@ function GeneralRubricPicker({ currentRubricVersionId, rubricVersionOptions, loc
   const currentRubric = rubricVersionOptions.find((rv: any) => rv.id === currentRubricVersionId);
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 space-y-3">
-      <h3 className="text-sm font-bold text-gray-700">General Application Rubric</h3>
-      <p className="text-xs text-gray-500">Reviewers score every application against this rubric (in addition to the per-domain rubric set by domain leads).</p>
+    <div className="bg-card rounded-xl border border-border shadow-sm p-6 space-y-3">
+      <h3 className="text-sm font-bold text-foreground/80">General Application Rubric</h3>
+      <p className="text-xs text-muted-foreground">Reviewers score every application against this rubric (in addition to the per-domain rubric set by domain leads).</p>
 
       {locked ? (
-        <div className="flex items-center gap-2 text-sm text-gray-600">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <CheckCircle className="w-4 h-4 text-green-600" />
           <span>{currentRubric?.rubric?.name ?? 'Set'} — v{currentRubric?.versionNumber}</span>
-          <span className="text-xs text-gray-400 ml-2">(locked — reviews have started)</span>
+          <span className="text-xs text-muted-foreground/70 ml-2">(locked — reviews have started)</span>
         </div>
       ) : currentRubricVersionId && !editing ? (
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-sm text-gray-600">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <CheckCircle className="w-4 h-4 text-green-600" />
             <span>{currentRubric?.rubric?.name ?? 'Set'} — v{currentRubric?.versionNumber}</span>
           </div>
@@ -1302,7 +1302,7 @@ function GeneralRubricPicker({ currentRubricVersionId, rubricVersionOptions, loc
             <button
               type="button"
               onClick={() => setEditing(false)}
-              className="px-3 py-2 text-sm font-medium text-gray-600 hover:text-gray-800"
+              className="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground"
             >
               Cancel
             </button>
@@ -1322,22 +1322,22 @@ function GeneralFormPicker({ currentCvId, currentCvName, options, locked }: {
   const [editing, setEditing] = useState(!currentCvId);
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 space-y-3">
-      <h3 className="text-sm font-bold text-gray-700">General Application Form</h3>
+    <div className="bg-card rounded-xl border border-border shadow-sm p-6 space-y-3">
+      <h3 className="text-sm font-bold text-foreground/80">General Application Form</h3>
 
       {locked ? (
         currentCvId ? (
-          <div className="flex items-center gap-2 text-sm text-gray-600">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <CheckCircle className="w-4 h-4 text-green-600" />
             <span>{currentCvName}</span>
-            <span className="text-xs text-gray-400 ml-2">(locked — cycle is past Draft)</span>
+            <span className="text-xs text-muted-foreground/70 ml-2">(locked — cycle is past Draft)</span>
           </div>
         ) : (
-          <p className="text-sm text-gray-400">No general form linked.</p>
+          <p className="text-sm text-muted-foreground/70">No general form linked.</p>
         )
       ) : currentCvId && !editing ? (
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-sm text-gray-600">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <CheckCircle className="w-4 h-4 text-green-600" />
             <span>{currentCvName}</span>
           </div>
@@ -1375,14 +1375,14 @@ function GeneralFormPicker({ currentCvId, currentCvName, options, locked }: {
             <button
               type="button"
               onClick={() => setEditing(false)}
-              className="px-3 py-2 text-sm font-medium text-gray-600 hover:text-gray-800"
+              className="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground"
             >
               Cancel
             </button>
           )}
         </Form>
       ) : (
-        <p className="text-xs text-gray-400">No general forms available. Create a challenge with no domain on the Challenges page first.</p>
+        <p className="text-xs text-muted-foreground/70">No general forms available. Create a challenge with no domain on the Challenges page first.</p>
       )}
     </div>
   );

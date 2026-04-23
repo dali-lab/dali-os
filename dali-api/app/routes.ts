@@ -114,7 +114,8 @@ export default [
 
   // Email sending + template management
   route("api/email/send", "routes/api.email.send.ts"),
-  route("api/email-templates/:key", "routes/api.email-templates.$key.ts"),
+  route("api/email-templates", "routes/api.email-templates.ts"),
+  route("api/email-templates/:type", "routes/api.email-templates.$type.ts"),
   // Submission URL checking
   route("api/check-url", "routes/api.check-url.ts"),
 
