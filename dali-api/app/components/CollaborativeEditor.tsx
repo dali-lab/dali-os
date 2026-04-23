@@ -224,8 +224,12 @@ function CollaborativeEditorInner({
   userNameRef.current = userName;
   colorRef.current = color;
 
+  // The inner component only ever mounts client-side (after the outer
+  // component's useEffect sets entry), so there's no SSR hydration concern
+  // and we can let tiptap render synchronously.
   const editor = useEditor({
-    immediatelyRender: false,
+    immediatelyRender: true,
+    shouldRerenderOnTransaction: false,
     extensions: [
       StarterKit.configure({
         // Disable built-in undo/redo — yUndoPlugin provides collab-aware undo
@@ -242,6 +246,15 @@ function CollaborativeEditorInner({
       },
     },
   });
+
+  // Diagnostic: confirm editable state after editor mounts
+  useEffect(() => {
+    if (editor) {
+      console.log(
+        `[collab:${documentName}] editor ready, editable=${editor.isEditable}, contenteditable=${editor.view.dom.contentEditable}`,
+      );
+    }
+  }, [editor, documentName]);
 
   useEffect(() => {
     if (editor) editor.setEditable(!disabled);
