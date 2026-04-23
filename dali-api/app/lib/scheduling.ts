@@ -486,8 +486,10 @@ function parseTzDateTime(dateStr: string, hour: number, minute: number, timezone
   const utcGuess = new Date(fakeLocal + "Z");
   const parts = formatter.formatToParts(utcGuess);
   const get = (type: string) => parseInt(parts.find((p) => p.type === type)?.value ?? "0");
-  const localAtUtc = new Date(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"), get("second"));
-  const offsetMs = localAtUtc.getTime() - utcGuess.getTime();
+  // Use Date.UTC so the comparison is timezone-independent (new Date(y,m,d,...)
+  // uses the system timezone, which breaks when it matches the target timezone).
+  const localAtUtcMs = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"), get("second"));
+  const offsetMs = localAtUtcMs - utcGuess.getTime();
 
   return new Date(utcGuess.getTime() - offsetMs);
 }
