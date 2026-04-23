@@ -17,7 +17,7 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  Draft: "bg-gray-100 text-gray-700",
+  Draft: "bg-muted text-foreground/80",
   Open: "bg-green-100 text-green-700",
   UnderReview: "bg-yellow-100 text-yellow-700",
   Completed: "bg-blue-100 text-blue-700",
@@ -376,27 +376,27 @@ function Section({ title, badge, defaultOpen = true, children }: {
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="border border-gray-200 rounded-lg overflow-hidden">
+    <div className="border border-border rounded-lg overflow-hidden">
       <button
         onClick={() => setOpen(!open)}
-        className="w-full px-5 py-3 flex items-center justify-between bg-gray-50 hover:bg-gray-100 transition text-left"
+        className="w-full px-5 py-3 flex items-center justify-between bg-muted/50 hover:bg-muted transition text-left"
       >
-        <span className="font-semibold text-gray-900 text-sm">{title}</span>
+        <span className="font-semibold text-foreground text-sm">{title}</span>
         <div className="flex items-center gap-2">
           {badge}
-          <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${open ? "rotate-180" : ""}`} />
+          <ChevronDown className={`w-4 h-4 text-muted-foreground/70 transition-transform ${open ? "rotate-180" : ""}`} />
         </div>
       </button>
-      {open && <div className="p-5 border-t border-gray-200">{children}</div>}
+      {open && <div className="p-5 border-t border-border">{children}</div>}
     </div>
   );
 }
 
-function StatPill({ label, value, color = "text-gray-900" }: { label: string; value: number; color?: string }) {
+function StatPill({ label, value, color = "text-foreground" }: { label: string; value: number; color?: string }) {
   return (
     <div className="flex items-center gap-1.5 text-sm">
       <span className={`font-semibold ${color}`}>{value}</span>
-      <span className="text-gray-500">{label}</span>
+      <span className="text-muted-foreground">{label}</span>
     </div>
   );
 }
@@ -408,15 +408,15 @@ export default function DomainLeadDashboard() {
   if (domainData.length === 0) {
     return (
       <div className="text-center py-16">
-        <h1 className="text-2xl font-bold text-gray-900 mb-2">Domain Lead Dashboard</h1>
-        <p className="text-gray-500">You are not assigned as a domain lead for any domain.</p>
+        <h1 className="text-2xl font-bold text-foreground mb-2">Domain Lead Dashboard</h1>
+        <p className="text-muted-foreground">You are not assigned as a domain lead for any domain.</p>
       </div>
     );
   }
 
   return (
     <div className="space-y-8">
-      <h1 className="text-2xl font-bold text-gray-900">Domain Lead Dashboard</h1>
+      <h1 className="text-2xl font-bold text-foreground">Domain Lead Dashboard</h1>
 
       {domainData.map(({ assignment, cycle, apps, challengeVersionOptions, selectedChallengeVersionId, isChallengeReady, interviews, reviewers: cycleReviewers, delibsSessions, draftDecisions, cycleReviewersForDomain, initialDelibsCount, finalDelibsCount, rubricVersionOptions, currentRubricVersionId, rubricCriteria, interviewers, hasApplicationReviews }: any, idx: number) => {
         const currentStatus = cycle?.statusUpdates[0]?.newStatus ?? null;
@@ -438,25 +438,25 @@ export default function DomainLeadDashboard() {
         const completedInterviews = interviews.filter((i: any) => i.status === "Completed").length;
 
         return (
-          <section key={`${assignment.id}-${cycle?.id ?? idx}`} className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+          <section key={`${assignment.id}-${cycle?.id ?? idx}`} className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
             {!cycle ? (
               <div className="p-6">
                 <div className="flex items-center gap-3">
-                  <h2 className="text-xl font-semibold text-gray-800">{assignment.domain.name}</h2>
+                  <h2 className="text-xl font-semibold text-foreground">{assignment.domain.name}</h2>
                 </div>
-                <div className="mt-3 bg-gray-50 rounded-lg p-6 text-gray-500 text-sm">
+                <div className="mt-3 bg-muted/50 rounded-lg p-6 text-muted-foreground text-sm">
                   No active cycle for this domain.
                 </div>
               </div>
             ) : (
               <>
                 {/* Domain header */}
-                <div className="px-6 py-4 border-b border-gray-200 bg-white">
+                <div className="px-6 py-4 border-b border-border bg-card">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <h2 className="text-xl font-semibold text-gray-800">{assignment.domain.name}</h2>
-                      <span className="text-gray-400">·</span>
-                      <span className="text-lg text-gray-600">{cycle.name}</span>
+                      <h2 className="text-xl font-semibold text-foreground">{assignment.domain.name}</h2>
+                      <span className="text-muted-foreground/70">·</span>
+                      <span className="text-lg text-muted-foreground">{cycle.name}</span>
                       {currentStatus && (
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[currentStatus]}`}>
                           {STATUS_LABELS[currentStatus]}
@@ -471,7 +471,7 @@ export default function DomainLeadDashboard() {
                       </div>
                     )}
                   </div>
-                  <p className="text-sm text-gray-500 mt-1">{STATUS_MESSAGES[currentStatus]}</p>
+                  <p className="text-sm text-muted-foreground mt-1">{STATUS_MESSAGES[currentStatus]}</p>
                 </div>
 
                 <div className="p-6 space-y-4">
@@ -502,7 +502,7 @@ export default function DomainLeadDashboard() {
                           selectedId={currentRubricVersionId}
                           locked={hasApplicationReviews}
                         />
-                        <div className="flex items-center gap-3 pt-2 border-t border-gray-100">
+                        <div className="flex items-center gap-3 pt-2 border-t border-border">
                           {selectedChallengeVersionId ? (() => {
                             const cv = challengeVersionOptions.find((c: any) => c.id === selectedChallengeVersionId);
                             return cv?.challenge?.id ? (
@@ -537,14 +537,14 @@ export default function DomainLeadDashboard() {
                       <div className="space-y-4">
                         {/* Challenge info */}
                         <div>
-                          <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Domain Challenge</h4>
+                          <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">Domain Challenge</h4>
                           {selectedChallengeVersionId ? (
                             <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2 text-sm text-gray-600">
+                              <div className="flex items-center gap-2 text-sm text-muted-foreground">
                                 <CheckCircle className="w-4 h-4 text-green-600" />
                                 <span>{challengeVersionOptions.find((c: any) => c.id === selectedChallengeVersionId)?.challenge?.name ?? "Linked"}</span>
                                 {hasApplicationReviews && (
-                                  <span className="text-xs text-gray-400 ml-1">(locked — reviewers have been assigned)</span>
+                                  <span className="text-xs text-muted-foreground/70 ml-1">(locked — reviewers have been assigned)</span>
                                 )}
                               </div>
                               {!hasApplicationReviews && (() => {
@@ -558,7 +558,7 @@ export default function DomainLeadDashboard() {
                             </div>
                           ) : (
                             <div className="flex items-center justify-between">
-                              <span className="text-sm text-gray-400">No challenge linked</span>
+                              <span className="text-sm text-muted-foreground/70">No challenge linked</span>
                               <Link to="/challenges" className="text-xs text-blue-600 hover:text-blue-800 font-medium">
                                 Create Challenge →
                               </Link>
@@ -568,7 +568,7 @@ export default function DomainLeadDashboard() {
 
                         {/* Rubric */}
                         <div>
-                          <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Domain Rubric</h4>
+                          <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">Domain Rubric</h4>
                           <RubricPicker
                             cycleId={cycle.id}
                             domainId={assignment.domainId}
@@ -585,7 +585,7 @@ export default function DomainLeadDashboard() {
                           </div>
                         )}
 
-                        <div className="flex items-center gap-3 pt-2 border-t border-gray-100">
+                        <div className="flex items-center gap-3 pt-2 border-t border-border">
                           <Link to="/challenges" className="text-xs text-blue-600 hover:text-blue-800 font-medium">
                             All Challenges →
                           </Link>
@@ -601,7 +601,7 @@ export default function DomainLeadDashboard() {
                   <Section
                     title="Team"
                     badge={
-                      <span className="text-xs text-gray-600">
+                      <span className="text-xs text-muted-foreground">
                         {cycleReviewers.length} reviewers, {(interviewers ?? []).length} interviewers
                       </span>
                     }
@@ -618,7 +618,7 @@ export default function DomainLeadDashboard() {
                     <Section
                       title="Applications"
                       badge={
-                        <div className="flex items-center gap-3 text-xs text-gray-500">
+                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
                           <span>{apps.length} submitted</span>
                           <span>·</span>
                           <span>{fullyReviewed} reviewed</span>
@@ -639,7 +639,7 @@ export default function DomainLeadDashboard() {
                           rubricCriteria={rubricCriteria ?? []}
                         />
                       ) : (
-                        <div className="text-center text-gray-500 text-sm py-6">
+                        <div className="text-center text-muted-foreground text-sm py-6">
                           No submitted applications yet.
                         </div>
                       )}
@@ -651,7 +651,7 @@ export default function DomainLeadDashboard() {
                     <Section
                       title="Deliberations"
                       badge={
-                        <div className="flex items-center gap-3 text-xs text-gray-500">
+                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
                           <span>{initialDelibsCount ?? 0} ready for initial</span>
                           <span>·</span>
                           <span>{finalDelibsCount ?? 0} ready for final</span>
@@ -679,7 +679,7 @@ export default function DomainLeadDashboard() {
                       <Section
                         title="Interviews"
                         badge={
-                          <div className="flex items-center gap-3 text-xs text-gray-500">
+                          <div className="flex items-center gap-3 text-xs text-muted-foreground">
                             {awaitingBooking.length > 0 && <span className="text-yellow-700">{awaitingBooking.length} awaiting booking</span>}
                             {scheduledInterviews > 0 && <><span>·</span><span>{scheduledInterviews} scheduled</span></>}
                             {completedInterviews > 0 && <><span>·</span><span className="text-green-700">{completedInterviews} completed</span></>}
@@ -699,11 +699,11 @@ export default function DomainLeadDashboard() {
                           {/* Awaiting booking */}
                           {awaitingBooking.length > 0 && (
                             <div>
-                              <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Awaiting Booking</h4>
-                              <div className="divide-y divide-gray-100 border border-gray-200 rounded-lg">
+                              <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">Awaiting Booking</h4>
+                              <div className="divide-y divide-gray-100 border border-border rounded-lg">
                                 {awaitingBooking.map((app: any) => (
                                   <div key={app.id} className="flex items-center justify-between px-4 py-3">
-                                    <span className="text-sm font-medium text-gray-900">
+                                    <span className="text-sm font-medium text-foreground">
                                       {app.user.firstName} {app.user.lastName}
                                     </span>
                                     <span className="text-xs text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded-full font-medium">
@@ -718,9 +718,9 @@ export default function DomainLeadDashboard() {
                           {/* Scheduled / Completed interviews */}
                           {interviews.length > 0 && (
                             <div>
-                              <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Booked Interviews</h4>
-                              <table className="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
-                                <thead className="bg-gray-50 text-xs font-medium text-gray-500 uppercase tracking-wide">
+                              <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">Booked Interviews</h4>
+                              <table className="w-full text-sm border border-border rounded-lg overflow-hidden">
+                                <thead className="bg-muted/50 text-xs font-medium text-muted-foreground uppercase tracking-wide">
                                   <tr>
                                     <th className="px-4 py-2 text-left">Applicant</th>
                                     <th className="px-4 py-2 text-left">Time</th>
@@ -748,11 +748,11 @@ export default function DomainLeadDashboard() {
                                       .map((a: any) => `${formatAssignment(a)} (${a.cycleInterviewer.domain.name})`)
                                       .join(', ') || '—';
                                     return (
-                                      <tr key={interview.id} className="hover:bg-gray-50">
-                                        <td className="px-4 py-3 font-medium text-gray-900">
+                                      <tr key={interview.id} className="hover:bg-muted/50">
+                                        <td className="px-4 py-3 font-medium text-foreground">
                                           {interview.domainApplication.application.user.firstName} {interview.domainApplication.application.user.lastName}
                                         </td>
-                                        <td className="px-4 py-3 text-gray-600">
+                                        <td className="px-4 py-3 text-muted-foreground">
                                           {start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}{' '}
                                           {start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} –{' '}
                                           {end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
@@ -764,8 +764,8 @@ export default function DomainLeadDashboard() {
                                             {interview.status}
                                           </span>
                                         </td>
-                                        <td className="px-4 py-3 text-gray-600 text-xs">{inDomain}</td>
-                                        <td className="px-4 py-3 text-gray-600 text-xs">{crossDomain}</td>
+                                        <td className="px-4 py-3 text-muted-foreground text-xs">{inDomain}</td>
+                                        <td className="px-4 py-3 text-muted-foreground text-xs">{crossDomain}</td>
                                       </tr>
                                     );
                                   })}
@@ -801,29 +801,29 @@ function DraftSection({ cycle, domainId, challengeVersionOptions, selectedChalle
   // State 3: Challenge selected and marked ready — "Challenge Questions Finalized"
   if (selectedChallengeVersionId && isChallengeReady) {
     return (
-      <div className="bg-white border border-gray-200 rounded-xl p-8 flex flex-col items-center text-center space-y-6">
+      <div className="bg-card border border-border rounded-xl p-8 flex flex-col items-center text-center space-y-6">
         <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center">
           <CheckCircle className="w-8 h-8 text-green-600" />
         </div>
         <div className="space-y-1">
-          <h3 className="text-xl font-bold text-gray-900">Challenge Questions Finalized</h3>
-          <p className="text-gray-500 text-sm max-w-sm">
+          <h3 className="text-xl font-bold text-foreground">Challenge Questions Finalized</h3>
+          <p className="text-muted-foreground text-sm max-w-sm">
             Your {selectedVersion?.challenge?.name ?? "challenge"} has {questionCount} question{questionCount !== 1 ? "s" : ""} configured and is ready for applicants.
           </p>
         </div>
 
-        <div className="w-full max-w-sm bg-gray-50 border border-gray-200 rounded-xl p-4 text-left space-y-3">
+        <div className="w-full max-w-sm bg-muted/50 border border-border rounded-xl p-4 text-left space-y-3">
           <div className="grid grid-cols-2 divide-x divide-gray-200">
             <div className="pr-4">
-              <p className="text-xs text-gray-500">Challenge Selected</p>
-              <p className="font-bold text-gray-900 mt-0.5">Yes</p>
+              <p className="text-xs text-muted-foreground">Challenge Selected</p>
+              <p className="font-bold text-foreground mt-0.5">Yes</p>
             </div>
             <div className="pl-4">
-              <p className="text-xs text-gray-500">Questions Configured</p>
-              <p className="font-bold text-gray-900 mt-0.5">{questionCount}</p>
+              <p className="text-xs text-muted-foreground">Questions Configured</p>
+              <p className="font-bold text-foreground mt-0.5">{questionCount}</p>
             </div>
           </div>
-          <div className="flex items-center gap-1.5 text-green-600 text-sm font-medium pt-1 border-t border-gray-200">
+          <div className="flex items-center gap-1.5 text-green-600 text-sm font-medium pt-1 border-t border-border">
             <CheckCircle className="w-4 h-4" />
             Ready for applications
           </div>
@@ -835,7 +835,7 @@ function DraftSection({ cycle, domainId, challengeVersionOptions, selectedChalle
           <input type="hidden" name="domainId" value={domainId} />
           <button
             type="submit"
-            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+            className="px-4 py-2 text-sm font-medium text-foreground/80 bg-card border border-gray-300 rounded-lg hover:bg-muted/50"
           >
             Edit Challenge
           </button>
@@ -892,10 +892,10 @@ function DraftSection({ cycle, domainId, challengeVersionOptions, selectedChalle
 
   // State 1: No challenge selected yet
   return (
-    <div className="bg-white border border-gray-200 rounded-lg p-6 space-y-4">
+    <div className="bg-card border border-border rounded-lg p-6 space-y-4">
       <div>
-        <h3 className="font-semibold text-gray-900">Configure Challenge</h3>
-        <p className="text-sm text-gray-500 mt-0.5">Select the challenge version applicants will complete for {cycle.name}.</p>
+        <h3 className="font-semibold text-foreground">Configure Challenge</h3>
+        <p className="text-sm text-muted-foreground mt-0.5">Select the challenge version applicants will complete for {cycle.name}.</p>
       </div>
       <ChallengeSelector
         cycleId={cycle.id}
@@ -924,14 +924,14 @@ function ChallengeSelector({ cycleId, domainId, options, selectedId }: {
         <input type="hidden" name="cycleId" value={cycleId} />
         <input type="hidden" name="domainId" value={domainId} />
         <div className="flex-1">
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-foreground/80 mb-1">
             Challenge
           </label>
           <select
             name="challengeVersionId"
             value={previewId}
             onChange={(e) => setPreviewId(e.target.value)}
-            className="w-full px-3 py-2 text-sm text-gray-900 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 text-sm text-foreground border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="" disabled>Select a challenge…</option>
             {options.map((cv: any) => (
@@ -951,11 +951,11 @@ function ChallengeSelector({ cycleId, domainId, options, selectedId }: {
       </Form>
 
       {questions.length > 0 && (
-        <div className="border border-gray-200 rounded-md divide-y divide-gray-100">
+        <div className="border border-border rounded-md divide-y divide-gray-100">
           {questions.map((q: any, i: number) => (
             <div key={q.key} className="px-4 py-3">
-              <span className="text-xs font-medium text-gray-400 uppercase tracking-wide mr-2">Q{i + 1}</span>
-              <span className="text-sm text-gray-700">{q.data.label}</span>
+              <span className="text-xs font-medium text-muted-foreground/70 uppercase tracking-wide mr-2">Q{i + 1}</span>
+              <span className="text-sm text-foreground/80">{q.data.label}</span>
               {q.required && <span className="ml-2 text-xs text-red-500">required</span>}
             </div>
           ))}
@@ -1007,14 +1007,14 @@ function ReviewerSection({ cycleId, domainId, initialReviewers }: {
   const availableMembers = members.filter(m => !existingMemberIds.has(m.id));
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-      <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
-        <h3 className="font-semibold text-gray-900">Reviewers for this Domain ({reviewers.length})</h3>
+    <div className="bg-card border border-border rounded-lg overflow-hidden">
+      <div className="px-6 py-4 border-b border-border bg-muted/50">
+        <h3 className="font-semibold text-foreground">Reviewers for this Domain ({reviewers.length})</h3>
       </div>
       <div className="p-4 space-y-3">
         <div className="flex gap-2 items-end">
           <div className="flex-1">
-            <label className="block text-xs font-medium text-gray-500 mb-1">Add Reviewer</label>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Add Reviewer</label>
             <select
               value={selectedMemberId}
               onChange={e => setSelectedMemberId(e.target.value)}
@@ -1040,7 +1040,7 @@ function ReviewerSection({ cycleId, domainId, initialReviewers }: {
           <div className="divide-y divide-gray-100">
             {reviewers.map((r: any) => (
               <div key={r.id} className="flex items-center justify-between py-2">
-                <span className="text-sm font-medium text-gray-900">
+                <span className="text-sm font-medium text-foreground">
                   {r.daliMember?.firstName && r.daliMember?.lastName ? `${r.daliMember.firstName} ${r.daliMember.lastName}` : r.daliMember?.daliEmail ?? r.daliMemberId}
                 </span>
                 <button onClick={() => removeReviewer(r.id)} className="text-red-500 hover:text-red-700">
@@ -1050,7 +1050,7 @@ function ReviewerSection({ cycleId, domainId, initialReviewers }: {
             ))}
           </div>
         ) : (
-          <p className="text-sm text-gray-400 text-center py-3">No reviewers assigned yet.</p>
+          <p className="text-sm text-muted-foreground/70 text-center py-3">No reviewers assigned yet.</p>
         )}
       </div>
     </div>
@@ -1066,16 +1066,16 @@ function RubricPicker({ cycleId, domainId, options, selectedId, locked }: {
 }) {
   const selectedLabel = options.find((rv: any) => rv.id === selectedId);
   return (
-    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-      <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
-        <h3 className="font-semibold text-gray-900">Domain Rubric</h3>
+    <div className="bg-card border border-border rounded-lg overflow-hidden">
+      <div className="px-6 py-4 border-b border-border bg-muted/50">
+        <h3 className="font-semibold text-foreground">Domain Rubric</h3>
       </div>
       <div className="p-4">
         {locked ? (
-          <div className="flex items-center gap-2 text-sm text-gray-600">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <CheckCircle className="w-4 h-4 text-green-600" />
             <span>{selectedLabel ? `${selectedLabel.rubric.name} — v${selectedLabel.versionNumber}` : 'Set'}</span>
-            <span className="text-xs text-gray-400 ml-2">(locked — reviewers have been assigned)</span>
+            <span className="text-xs text-muted-foreground/70 ml-2">(locked — reviewers have been assigned)</span>
           </div>
         ) : (
           <Form method="post" key={`rubric-${selectedId}`} className="flex items-end gap-3">
@@ -1083,7 +1083,7 @@ function RubricPicker({ cycleId, domainId, options, selectedId, locked }: {
             <input type="hidden" name="cycleId" value={cycleId} />
             <input type="hidden" name="domainId" value={domainId} />
             <div className="flex-1">
-              <label className="block text-xs font-medium text-gray-500 mb-1">Rubric Version</label>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Rubric Version</label>
               <select
                 name="rubricVersionId"
                 defaultValue={selectedId ?? ""}
@@ -1154,14 +1154,14 @@ function InterviewerSection({ cycleId, domainId, initialInterviewers }: {
   const availableMembers = members.filter(m => !existingMemberIds.has(m.id));
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-      <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
-        <h3 className="font-semibold text-gray-900">Interviewers for this Domain ({interviewers.length})</h3>
+    <div className="bg-card border border-border rounded-lg overflow-hidden">
+      <div className="px-6 py-4 border-b border-border bg-muted/50">
+        <h3 className="font-semibold text-foreground">Interviewers for this Domain ({interviewers.length})</h3>
       </div>
       <div className="p-4 space-y-3">
         <div className="flex gap-2 items-end">
           <div className="flex-1">
-            <label className="block text-xs font-medium text-gray-500 mb-1">Add Interviewer</label>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Add Interviewer</label>
             <select
               value={selectedMemberId}
               onChange={e => setSelectedMemberId(e.target.value)}
@@ -1197,14 +1197,14 @@ function InterviewerSection({ cycleId, domainId, initialInterviewers }: {
               return (
                 <div key={i.id} className="flex items-center justify-between py-2">
                   <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-sm font-medium text-gray-900 truncate">{name}</span>
+                    <span className="text-sm font-medium text-foreground truncate">{name}</span>
                     {hasAvailability ? (
                       <span className="flex items-center gap-1 text-xs font-medium text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
                         <CheckCircle className="w-3 h-3" />
                         {hoursLabel} available
                       </span>
                     ) : (
-                      <span className="flex items-center gap-1 text-xs font-medium text-gray-500 bg-gray-50 border border-gray-200 px-2 py-0.5 rounded-full">
+                      <span className="flex items-center gap-1 text-xs font-medium text-muted-foreground bg-muted/50 border border-border px-2 py-0.5 rounded-full">
                         <Clock className="w-3 h-3" />
                         No availability
                       </span>
@@ -1218,7 +1218,7 @@ function InterviewerSection({ cycleId, domainId, initialInterviewers }: {
             })}
           </div>
         ) : (
-          <p className="text-sm text-gray-400 text-center py-3">No interviewers assigned yet.</p>
+          <p className="text-sm text-muted-foreground/70 text-center py-3">No interviewers assigned yet.</p>
         )}
       </div>
     </div>
@@ -1289,22 +1289,22 @@ function DelibsSection({ cycleId, domainId, sessions, initialCount, finalCount }
   }
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-      <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
-        <h3 className="font-semibold text-gray-900">Deliberations</h3>
+    <div className="bg-card border border-border rounded-lg overflow-hidden">
+      <div className="px-6 py-4 border-b border-border bg-muted/50">
+        <h3 className="font-semibold text-foreground">Deliberations</h3>
       </div>
       <div className="p-4 space-y-3">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-sm font-medium text-gray-900">Initial Delibs</p>
-            <p className="text-xs text-gray-500">Review applications and decide who advances to interviews</p>
+            <p className="text-sm font-medium text-foreground">Initial Delibs</p>
+            <p className="text-xs text-muted-foreground">Review applications and decide who advances to interviews</p>
           </div>
           {renderButton("Initial", initialSession)}
         </div>
-        <div className="border-t border-gray-100 pt-3 flex items-center justify-between">
+        <div className="border-t border-border pt-3 flex items-center justify-between">
           <div>
-            <p className="text-sm font-medium text-gray-900">Final Delibs</p>
-            <p className="text-xs text-gray-500">Post-interview decisions: accept, waitlist, or reject</p>
+            <p className="text-sm font-medium text-foreground">Final Delibs</p>
+            <p className="text-xs text-muted-foreground">Post-interview decisions: accept, waitlist, or reject</p>
           </div>
           {renderButton("Final", finalSession)}
         </div>
@@ -1314,7 +1314,7 @@ function DelibsSection({ cycleId, domainId, sessions, initialCount, finalCount }
 }
 
 const STATUS_BADGE_COLORS: Record<string, string> = {
-  ApplicationOpen: "bg-gray-100 text-gray-700",
+  ApplicationOpen: "bg-muted text-foreground/80",
   Pending: "bg-blue-100 text-blue-700",
   Rejected: "bg-red-100 text-red-700",
   InvitedToInterview: "bg-purple-100 text-purple-700",
@@ -1351,7 +1351,7 @@ const DECISION_LABELS: Record<string, string> = {
 
 function DecisionBadge({ type }: { type: string }) {
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${DECISION_COLORS[type] ?? "bg-gray-100 text-gray-600"}`}>
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${DECISION_COLORS[type] ?? "bg-muted text-muted-foreground"}`}>
       {DECISION_LABELS[type] ?? type}
     </span>
   );
@@ -1359,7 +1359,7 @@ function DecisionBadge({ type }: { type: string }) {
 
 function StatusBadge({ status }: { status: string }) {
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${STATUS_BADGE_COLORS[status] ?? "bg-gray-100 text-gray-600"}`}>
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${STATUS_BADGE_COLORS[status] ?? "bg-muted text-muted-foreground"}`}>
       {STATUS_BADGE_LABELS[status] ?? status}
     </span>
   );
@@ -1405,15 +1405,15 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
   const displayedApps = filter === "finalize" ? finalizableApps : apps;
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-      <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
+    <div className="bg-card border border-border rounded-lg overflow-hidden">
+      <div className="px-6 py-4 border-b border-border bg-muted/50 flex items-center justify-between">
         <div className="flex items-center gap-1">
           {isUnderReview ? (
-            <div className="flex items-center gap-1 bg-gray-200 rounded-lg p-0.5">
+            <div className="flex items-center gap-1 bg-muted rounded-lg p-0.5">
               <button
                 onClick={() => setFilter("all")}
                 className={`px-3 py-1 text-xs font-medium rounded-md transition ${
-                  filter === "all" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+                  filter === "all" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground/80"
                 }`}
               >
                 All Applicants ({apps.length})
@@ -1421,14 +1421,14 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
               <button
                 onClick={() => setFilter("finalize")}
                 className={`px-3 py-1 text-xs font-medium rounded-md transition ${
-                  filter === "finalize" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+                  filter === "finalize" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground/80"
                 }`}
               >
                 Needs Finalization ({finalizableApps.length})
               </button>
             </div>
           ) : (
-            <h3 className="font-semibold text-gray-900">Applications ({apps.length})</h3>
+            <h3 className="font-semibold text-foreground">Applications ({apps.length})</h3>
           )}
         </div>
         <div className="flex items-center gap-2">
@@ -1478,7 +1478,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
         </div>
       </div>
       <table className="w-full text-sm">
-        <thead className="bg-gray-50 text-xs font-medium text-gray-500 uppercase tracking-wide">
+        <thead className="bg-muted/50 text-xs font-medium text-muted-foreground uppercase tracking-wide">
           <tr>
             <th className="px-6 py-3 text-left">Applicant</th>
             <th className="px-6 py-3 text-left">Status</th>
@@ -1497,8 +1497,8 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
             const latestDraft = decisions.find((d: any) => d.stage === "Draft");
             const latestFinal = decisions.find((d: any) => d.stage === "Final");
             return (
-              <tr key={app.id} className="hover:bg-gray-50">
-                <td className="px-6 py-4 font-medium text-gray-900">
+              <tr key={app.id} className="hover:bg-muted/50">
+                <td className="px-6 py-4 font-medium text-foreground">
                   {app.user.firstName} {app.user.lastName}
                 </td>
                 <td className="px-6 py-4">
@@ -1542,7 +1542,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
             );
           })}
           {displayedApps.length === 0 && (
-            <tr><td colSpan={6} className="px-6 py-8 text-center text-gray-400 text-sm">
+            <tr><td colSpan={6} className="px-6 py-8 text-center text-muted-foreground/70 text-sm">
               {filter === "finalize" ? "No applications need finalization." : "No applications."}
             </td></tr>
           )}
@@ -1632,14 +1632,14 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
             ? "border-green-300 bg-green-50 text-green-800 dark:border-green-700 dark:bg-green-900/30 dark:text-green-300"
             : status === "inProgress"
               ? "border-yellow-300 bg-yellow-50 text-yellow-800 dark:border-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300"
-              : "border-gray-300 bg-gray-50 text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400";
+              : "border-gray-300 bg-muted/50 text-muted-foreground dark:border-gray-700 dark:bg-gray-800 dark:text-muted-foreground/70";
         const icon =
           status === "submitted" ? (
             <Check className="w-3 h-3 text-green-600 dark:text-green-400" />
           ) : status === "inProgress" ? (
             <Clock className="w-3 h-3 text-yellow-600 dark:text-yellow-400" />
           ) : (
-            <CircleDashed className="w-3 h-3 text-gray-400" />
+            <CircleDashed className="w-3 h-3 text-muted-foreground/70" />
           );
         return (
           <span
@@ -1664,7 +1664,7 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
                   removeReview(r.id, status === "submitted");
                 }}
                 disabled={removing === r.id}
-                className="ml-0.5 text-gray-400 hover:text-red-500 transition"
+                className="ml-0.5 text-muted-foreground/70 hover:text-red-500 transition"
                 title={status === "submitted" ? "Remove reviewer (deletes submitted review)" : "Remove reviewer"}
               >
                 <Trash2 className="w-3 h-3" />
@@ -1698,7 +1698,7 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
           </button>
           <button
             onClick={() => { setAdding(false); setSelectedReviewerId(""); }}
-            className="text-gray-400 hover:text-gray-600"
+            className="text-muted-foreground/70 hover:text-muted-foreground"
           >
             <Trash2 className="w-3 h-3" />
           </button>
@@ -1706,7 +1706,7 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
       ) : editable ? (
         <button
           onClick={() => setAdding(true)}
-          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs border border-dashed border-gray-300 text-gray-400 hover:border-blue-400 hover:text-blue-600 transition"
+          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs border border-dashed border-gray-300 text-muted-foreground/70 hover:border-blue-400 hover:text-blue-600 transition"
           title="Add reviewer"
         >
           <Plus className="w-3 h-3" /> Add
@@ -1760,12 +1760,12 @@ function ReviewModal({ review, rubricCriteria, onClose }: {
       onClick={onClose}
     >
       <div
-        className="relative bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+        className="relative bg-card rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between px-6 py-4 border-b border-gray-200">
+        <div className="flex items-start justify-between px-6 py-4 border-b border-border">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">{reviewerName}</h2>
+            <h2 className="text-lg font-semibold text-foreground">{reviewerName}</h2>
             <div className="mt-1 flex items-center gap-2 text-xs">
               {isSubmitted ? (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-medium bg-green-50 text-green-700 border border-green-200">
@@ -1792,7 +1792,7 @@ function ReviewModal({ review, rubricCriteria, onClose }: {
           </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-700 transition"
+            className="text-muted-foreground/70 hover:text-foreground/80 transition"
             aria-label="Close"
           >
             <X className="w-5 h-5" />
@@ -1801,26 +1801,26 @@ function ReviewModal({ review, rubricCriteria, onClose }: {
 
         <div className="px-6 py-5 space-y-5">
           {!hasAnyContent ? (
-            <p className="text-sm text-gray-500 italic">
+            <p className="text-sm text-muted-foreground italic">
               This reviewer hasn&apos;t started their review yet.
             </p>
           ) : (
             <>
               {scoreEntries.length > 0 && (
                 <div>
-                  <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
+                  <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
                     Scores
                   </h3>
                   <div className="grid grid-cols-2 gap-2">
                     {scoreEntries.map(([key, score]) => (
                       <div
                         key={key}
-                        className="flex items-center justify-between text-sm bg-gray-50 rounded px-3 py-2"
+                        className="flex items-center justify-between text-sm bg-muted/50 rounded px-3 py-2"
                       >
-                        <span className="text-gray-700">
+                        <span className="text-foreground/80">
                           {criteriaByKey[key]?.label ?? key}
                         </span>
-                        <span className="font-semibold text-gray-900">{score}</span>
+                        <span className="font-semibold text-foreground">{score}</span>
                       </div>
                     ))}
                   </div>
@@ -1828,20 +1828,20 @@ function ReviewModal({ review, rubricCriteria, onClose }: {
               )}
               {review.feedback && review.feedback.trim() !== "" && (
                 <div>
-                  <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
+                  <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
                     Feedback
                   </h3>
-                  <p className="text-sm text-gray-800 whitespace-pre-wrap bg-gray-50 rounded p-3">
+                  <p className="text-sm text-foreground whitespace-pre-wrap bg-muted/50 rounded p-3">
                     {review.feedback}
                   </p>
                 </div>
               )}
               {review.rejectionRationale && review.rejectionRationale.trim() !== "" && (
                 <div>
-                  <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
+                  <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
                     Rejection rationale
                   </h3>
-                  <p className="text-sm text-gray-800 whitespace-pre-wrap bg-gray-50 rounded p-3">
+                  <p className="text-sm text-foreground whitespace-pre-wrap bg-muted/50 rounded p-3">
                     {review.rejectionRationale}
                   </p>
                 </div>

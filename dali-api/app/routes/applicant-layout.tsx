@@ -22,10 +22,10 @@ export default function ApplicantLayout() {
   return (
     <div className="min-h-screen bg-section-bg">
       {/* Navbar */}
-      <nav className="fixed top-0 inset-x-0 z-50 h-16 bg-white border-b border-gray-200 flex items-center px-6">
+      <nav className="fixed top-0 inset-x-0 z-50 h-16 bg-card border-b border-border flex items-center px-6">
         <Link to="/portal" className="flex items-center gap-2">
           <span className="font-heading text-lg font-bold text-dark-blue">DALI</span>
-          <span className="text-xs text-gray-400 font-medium">Applicant Portal</span>
+          <span className="text-xs text-muted-foreground/70 font-medium">Applicant Portal</span>
         </Link>
 
         <div className="ml-auto flex items-center gap-4">
@@ -39,7 +39,7 @@ export default function ApplicantLayout() {
           </div>
           <Link
             to="/logout"
-            className="text-xs text-gray-500 hover:text-accent-coral transition"
+            className="text-xs text-muted-foreground hover:text-accent-coral transition"
           >
             Sign out
           </Link>

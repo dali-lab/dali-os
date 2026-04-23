@@ -214,33 +214,33 @@ export default function CalendarGrid({
   }
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
+    <div className="bg-card rounded-xl border border-border shadow-sm">
       {/* Header: week navigation + import button */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 gap-4">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-border gap-4">
         <div className="flex items-center gap-2">
           <button
             onClick={() => setWeekStart(getMonday(addDays(weekStart, -7)))}
             disabled={!canGoPrev}
-            className="p-1.5 rounded-lg hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition"
+            className="p-1.5 rounded-lg hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed transition"
           >
-            <ChevronLeft className="w-5 h-5 text-gray-600" />
+            <ChevronLeft className="w-5 h-5 text-muted-foreground" />
           </button>
-          <span className="text-sm font-bold text-gray-900 min-w-[140px] text-center">
+          <span className="text-sm font-bold text-foreground min-w-[140px] text-center">
             {formatDate(weekStart)} — {formatDate(addDays(weekStart, 4))}
           </span>
           <button
             onClick={() => setWeekStart(getMonday(addDays(weekStart, 7)))}
             disabled={!canGoNext}
-            className="p-1.5 rounded-lg hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition"
+            className="p-1.5 rounded-lg hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed transition"
           >
-            <ChevronRight className="w-5 h-5 text-gray-600" />
+            <ChevronRight className="w-5 h-5 text-muted-foreground" />
           </button>
         </div>
         {onImportFromGoogle && (
           <button
             onClick={onImportFromGoogle}
             disabled={importing}
-            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-300 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition"
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-300 text-xs font-medium text-foreground/80 hover:bg-muted/50 disabled:opacity-50 transition"
           >
             <Calendar className="w-4 h-4" />
             {importing ? 'Importing...' : 'Import from Google Calendar'}
@@ -252,16 +252,16 @@ export default function CalendarGrid({
       <div className="overflow-x-auto">
         <div className="grid select-none" style={{ gridTemplateColumns: '60px repeat(5, 1fr)', minWidth: 600 }}>
           {/* Header row */}
-          <div className="p-2 text-center border-b border-r border-gray-200 text-[10px] font-medium text-gray-400 uppercase tracking-wider">
+          <div className="p-2 text-center border-b border-r border-border text-[10px] font-medium text-muted-foreground/70 uppercase tracking-wider">
             Time
           </div>
           {weekDays.map((d, i) => (
             <div
               key={i}
-              className="p-2 text-center border-b border-r last:border-r-0 border-gray-200"
+              className="p-2 text-center border-b border-r last:border-r-0 border-border"
             >
-              <div className="text-xs font-bold text-gray-900">{formatDay(d)}</div>
-              <div className="text-[10px] text-gray-500">{formatDate(d)}</div>
+              <div className="text-xs font-bold text-foreground">{formatDay(d)}</div>
+              <div className="text-[10px] text-muted-foreground">{formatDate(d)}</div>
             </div>
           ))}
 
@@ -276,7 +276,7 @@ export default function CalendarGrid({
               <React.Fragment key={rowIdx}>
                 {/* Time label */}
                 <div
-                  className={`flex items-center justify-center border-r border-gray-200 text-[10px] text-gray-400 ${isHourBoundary ? 'border-t border-gray-200' : ''}`}
+                  className={`flex items-center justify-center border-r border-border text-[10px] text-muted-foreground/70 ${isHourBoundary ? 'border-t border-border' : ''}`}
                   style={{ height: BLOCK_HEIGHT_PX }}
                 >
                   {isHourBoundary ? formatHour(hour) : ''}
@@ -291,9 +291,9 @@ export default function CalendarGrid({
                   const isInterview = interviewKeys.has(key)
                   const isPast = cellDate < new Date()
 
-                  let bg = 'bg-white hover:bg-green-50'
+                  let bg = 'bg-card hover:bg-green-50'
                   if (isInterview) bg = 'bg-red-100 cursor-not-allowed'
-                  else if (isPast) bg = 'bg-gray-50 cursor-not-allowed'
+                  else if (isPast) bg = 'bg-muted/50 cursor-not-allowed'
                   else if (isSelected) bg = 'bg-green-400 hover:bg-green-500'
 
                   return (
@@ -301,7 +301,7 @@ export default function CalendarGrid({
                       key={key}
                       onMouseDown={() => !isPast && handleMouseDown(key)}
                       onMouseEnter={() => !isPast && handleMouseEnter(key)}
-                      className={`border-r last:border-r-0 border-gray-100 transition-colors ${isHourBoundary ? 'border-t border-gray-200' : 'border-t border-gray-50'} ${bg}`}
+                      className={`border-r last:border-r-0 border-border transition-colors ${isHourBoundary ? 'border-t border-border' : 'border-t border-gray-50'} ${bg}`}
                       style={{ height: BLOCK_HEIGHT_PX }}
                     />
                   )
@@ -313,10 +313,10 @@ export default function CalendarGrid({
       </div>
 
       {/* Footer */}
-      <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200">
-        <div className="flex items-center gap-4 text-xs text-gray-500">
+      <div className="flex items-center justify-between px-6 py-4 border-t border-border">
+        <div className="flex items-center gap-4 text-xs text-muted-foreground">
           <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 bg-white border border-gray-300 rounded" /> Unavailable
+            <div className="w-3 h-3 bg-card border border-gray-300 rounded" /> Unavailable
           </div>
           <div className="flex items-center gap-1.5">
             <div className="w-3 h-3 bg-green-400 rounded" /> Available
