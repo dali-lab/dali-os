@@ -34,6 +34,7 @@ export function ChallengeDetail() {
   const [selectedDomainId, setSelectedDomainId] = useState<string>(defaultDomainId)
 
   const selectedVersion = challenge.versions.find((v) => v.id === selectedVersionId)
+  const isGeneralForm = challenge.versions.some((v) => v.domainId === null)
 
   const nextVersionNumber = challenge.versions.length + 1
 
@@ -75,7 +76,7 @@ export function ChallengeDetail() {
           {!isCreatingVersion && (
             <button
               onClick={() => {
-                if (selectedVersion) setSelectedDomainId(selectedVersion.domainId)
+                if (selectedVersion && selectedVersion.domainId) setSelectedDomainId(selectedVersion.domainId)
                 setIsCreatingVersion(true)
               }}
               className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 shadow-sm"
@@ -113,7 +114,7 @@ export function ChallengeDetail() {
                     <div className="flex items-center justify-between mb-2">
                       <div>
                         <span className="font-medium text-foreground">v{versionNumber}</span>
-                        <p className="text-xs text-muted-foreground">{version.domain.name}</p>
+                        <p className="text-xs text-muted-foreground">{version.domain?.name ?? 'General'}</p>
                         <p className="text-sm text-muted-foreground">
                           {(version.questions as unknown as Question[]).length} questions
                         </p>
@@ -158,6 +159,7 @@ export function ChallengeDetail() {
                 initialQuestions={(selectedVersion?.questions as unknown as Question[]) || []}
                 onSave={handleSaveNewVersion}
                 onCancel={() => setIsCreatingVersion(false)}
+                isGeneralForm={isGeneralForm}
               />
             </div>
           ) : selectedVersion ? (
@@ -168,14 +170,14 @@ export function ChallengeDetail() {
                     Version {challenge.versions.findIndex((v) => v.id === selectedVersionId) + 1} Preview
                   </h2>
                   <p className="text-sm text-muted-foreground mt-1">
-                    {selectedVersion.domain.name} · Created by{' '}
+                    {selectedVersion.domain?.name ?? 'General'} · Created by{' '}
                     {selectedVersion.createdBy.firstName} {selectedVersion.createdBy.lastName} on{' '}
                     {formatDateTime(selectedVersion.createdAt)}
                   </p>
                 </div>
                 <button
                   onClick={() => {
-                    setSelectedDomainId(selectedVersion.domainId)
+                    if (selectedVersion.domainId) setSelectedDomainId(selectedVersion.domainId)
                     setIsCreatingVersion(true)
                   }}
                   className="text-sm text-blue-600 hover:text-blue-700 font-medium"
@@ -203,6 +205,11 @@ export function ChallengeDetail() {
                         <span className="text-xs font-medium text-muted-foreground bg-muted px-2 py-0.5 rounded-full capitalize">
                           {q.type}
                         </span>
+                        {q.data.afterDomains && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-800">
+                            After Domains
+                          </span>
+                        )}
                       </div>
                       {q.data.description && (
                         <p className="text-sm text-muted-foreground mb-2">{q.data.description}</p>
