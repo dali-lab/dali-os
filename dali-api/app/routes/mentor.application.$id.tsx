@@ -59,11 +59,56 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!(await hasCycleAccess(auth.user.sub, application.applicationCycleId)))
     throw redirect('/login')
 
+  // If this reviewer is assigned to a domain on this application but no
+  // ApplicationReview row exists yet, create one so the collaborative editors
+  // for feedback/rejection rationale render editable. Without this, the page
+  // shows disabled textareas with a "Save the review first" placeholder — but
+  // there is no save button for these fields (they save via collab sync).
+  let review = existingReview
+  if (!review) {
+    const member = await prisma.dALIMember.findFirst({
+      where: { userId: auth.user.sub },
+      select: { id: true },
+    })
+    if (member) {
+      const appDomainIds = application.domainApplications.map(
+        (da: any) => da.challengeVersion.domainId,
+      )
+      const cycleReviewer = await prisma.cycleReviewer.findFirst({
+        where: {
+          daliMemberId: member.id,
+          applicationCycleId: application.applicationCycleId,
+          domainId: { in: appDomainIds },
+        },
+      })
+      const matchingDa = cycleReviewer
+        ? application.domainApplications.find(
+            (da: any) => da.challengeVersion.domainId === cycleReviewer.domainId,
+          )
+        : null
+      if (cycleReviewer && matchingDa) {
+        review = await prisma.applicationReview.upsert({
+          where: {
+            cycleReviewerId_domainApplicationId: {
+              cycleReviewerId: cycleReviewer.id,
+              domainApplicationId: matchingDa.id,
+            },
+          },
+          create: {
+            cycleReviewerId: cycleReviewer.id,
+            domainApplicationId: matchingDa.id,
+          },
+          update: {},
+        })
+      }
+    }
+  }
+
   // Pass JWT for WebSocket auth
   const collabToken = parseAccessToken(request)
   const userName = [mentor.firstName, mentor.lastName].filter(Boolean).join(' ') || auth.user.email
 
-  return { application, mentor, existingReview, collabToken, userName }
+  return { application, mentor, existingReview: review, collabToken, userName }
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -206,17 +251,17 @@ export default function MentorApplicationReview() {
     <div className="space-y-6 pb-12 relative">
       <div>
         <div className="flex items-center justify-between mb-4">
-          <Link to="/reviewer" className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700">
+          <Link to="/reviewer" className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground/80">
             <ArrowLeft className="w-4 h-4 mr-1" /> Back to Dashboard
           </Link>
           <PresenceBar />
         </div>
         <div className="flex justify-between items-end">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">
+            <h1 className="text-2xl font-bold text-foreground">
               Review: {application.user.firstName} {application.user.lastName}
             </h1>
-            <p className="mt-1 text-gray-500">{cycle.name}</p>
+            <p className="mt-1 text-muted-foreground">{cycle.name}</p>
           </div>
         </div>
       </div>
@@ -234,8 +279,8 @@ export default function MentorApplicationReview() {
 
         {/* Right: Review Form */}
         <div className="space-y-6">
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm sticky top-24">
-            <div className="px-6 py-4 border-b border-gray-200 bg-blue-50 flex items-center justify-between">
+          <div className="bg-card rounded-xl border border-border shadow-sm sticky top-24">
+            <div className="px-6 py-4 border-b border-border bg-blue-50 flex items-center justify-between">
               <h2 className="text-lg font-bold text-blue-900">Your Review</h2>
               {!isSubmitted && (
                 <SaveStatusIndicator saving={isSaving} lastSaved={lastSaved} />
@@ -245,35 +290,35 @@ export default function MentorApplicationReview() {
 
               {/* Scoring */}
               <div>
-                <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-4">Scoring</h3>
+                <h3 className="text-sm font-bold text-foreground uppercase tracking-wider mb-4">Scoring</h3>
                 {flatCriteria.length === 0 ? (
-                  <p className="text-sm text-gray-400 italic">No rubric attached to this application.</p>
+                  <p className="text-sm text-muted-foreground/70 italic">No rubric attached to this application.</p>
                 ) : (
                   <div className="space-y-6">
                     {allCriteria.map((section) => (
                       <div key={section.sectionLabel}>
                         {allCriteria.length > 1 && (
-                          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">{section.sectionLabel}</p>
+                          <p className="text-xs font-semibold text-muted-foreground/70 uppercase tracking-wider mb-3">{section.sectionLabel}</p>
                         )}
                         <div className="space-y-4">
                           {section.criteria.map((criterion) => (
                             <div key={criterion.key}>
                               <div className="flex justify-between items-center mb-1">
-                                <label className="text-sm font-medium text-gray-900">{criterion.label}</label>
+                                <label className="text-sm font-medium text-foreground">{criterion.label}</label>
                                 <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded">
                                   {scores[criterion.key] ?? 0} / {criterion.maxScore}
                                 </span>
                               </div>
                               {criterion.description && (
-                                <p className="text-xs text-gray-500 mb-1">{criterion.description}</p>
+                                <p className="text-xs text-muted-foreground mb-1">{criterion.description}</p>
                               )}
                               <input
                                 type="range" min="0" max={criterion.maxScore}
                                 value={scores[criterion.key] ?? 0}
                                 onChange={(e) => setScores((prev) => ({ ...prev, [criterion.key]: parseInt(e.target.value) }))}
-                                className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                                className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-blue-600"
                               />
-                              <div className="flex justify-between text-xs text-gray-400 mt-1"><span>0</span><span>{criterion.maxScore}</span></div>
+                              <div className="flex justify-between text-xs text-muted-foreground/70 mt-1"><span>0</span><span>{criterion.maxScore}</span></div>
                             </div>
                           ))}
                         </div>
@@ -285,8 +330,8 @@ export default function MentorApplicationReview() {
 
               {/* Feedback — collaborative editor */}
               <div>
-                <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-2">Internal Feedback</h3>
-                <p className="text-xs text-gray-500 mb-2">Notes for other reviewers. Not visible to applicant.</p>
+                <h3 className="text-sm font-bold text-foreground uppercase tracking-wider mb-2">Internal Feedback</h3>
+                <p className="text-xs text-muted-foreground mb-2">Notes for other reviewers. Not visible to applicant.</p>
                 {existingReview && collabToken ? (
                   <CollaborativeEditor
                     editorId="feedback"
@@ -300,7 +345,7 @@ export default function MentorApplicationReview() {
                   <textarea
                     rows={4}
                     disabled
-                    className="block w-full rounded-md border-gray-300 shadow-sm sm:text-sm border p-2 text-gray-900 bg-gray-50"
+                    className="block w-full rounded-md border-gray-300 shadow-sm sm:text-sm border p-2 text-foreground bg-muted/50"
                     placeholder="Save the review first to enable collaborative editing..."
                   />
                 )}
@@ -308,8 +353,8 @@ export default function MentorApplicationReview() {
 
               {/* Rejection Rationale — collaborative editor */}
               <div>
-                <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-2">
-                  Rejection Rationale <span className="text-xs font-normal text-gray-500 normal-case">(Optional)</span>
+                <h3 className="text-sm font-bold text-foreground uppercase tracking-wider mb-2">
+                  Rejection Rationale <span className="text-xs font-normal text-muted-foreground normal-case">(Optional)</span>
                 </h3>
                 {existingReview && collabToken ? (
                   <CollaborativeEditor
@@ -324,25 +369,25 @@ export default function MentorApplicationReview() {
                   <textarea
                     rows={3}
                     disabled
-                    className="block w-full rounded-md border-gray-300 shadow-sm sm:text-sm border p-2 text-gray-900 bg-gray-50"
+                    className="block w-full rounded-md border-gray-300 shadow-sm sm:text-sm border p-2 text-foreground bg-muted/50"
                     placeholder="Save the review first to enable collaborative editing..."
                   />
                 )}
               </div>
 
               {/* Overall Recommendation */}
-              <div className="pt-4 border-t border-gray-200">
-                <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-3">Overall Recommendation</h3>
+              <div className="pt-4 border-t border-border">
+                <h3 className="text-sm font-bold text-foreground uppercase tracking-wider mb-3">Overall Recommendation</h3>
                 <div className="space-y-2">
                   {RECOMMENDATIONS.map((rec) => (
-                    <label key={rec} className={`flex items-center p-3 border rounded-lg cursor-pointer transition-colors ${overallRecommendation === rec ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'}`}>
+                    <label key={rec} className={`flex items-center p-3 border rounded-lg cursor-pointer transition-colors ${overallRecommendation === rec ? 'border-blue-500 bg-blue-50' : 'border-border hover:bg-muted/50'}`}>
                       <input
                         type="radio" name="recommendation" value={rec}
                         checked={overallRecommendation === rec}
                         onChange={() => setOverallRecommendation(rec)}
                         className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"
                       />
-                      <span className="ml-3 text-sm font-medium text-gray-900">{rec}</span>
+                      <span className="ml-3 text-sm font-medium text-foreground">{rec}</span>
                     </label>
                   ))}
                 </div>
@@ -380,7 +425,7 @@ export default function MentorApplicationReview() {
                         })
                         if (res.ok) window.location.reload()
                       }}
-                      className="w-full flex justify-center items-center px-4 py-2 text-sm font-medium rounded-lg text-gray-700 bg-white border border-gray-300 hover:bg-gray-50"
+                      className="w-full flex justify-center items-center px-4 py-2 text-sm font-medium rounded-lg text-foreground/80 bg-card border border-gray-300 hover:bg-muted/50"
                     >
                       Unsubmit & Edit
                     </button>
@@ -396,7 +441,7 @@ export default function MentorApplicationReview() {
       <div className="fixed bottom-8 right-8 flex flex-col gap-4 z-50">
         <button
           onClick={() => setShowRubric(!showRubric)}
-          className={`w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all ${showRubric ? 'bg-blue-600 text-white' : 'bg-white text-blue-600 hover:bg-blue-50 border border-gray-200'}`}
+          className={`w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all ${showRubric ? 'bg-blue-600 text-white' : 'bg-card text-blue-600 hover:bg-blue-50 border border-border'}`}
           title="Scoring Guide"
         >
           {showRubric ? <X className="w-6 h-6" /> : <HelpCircle className="w-6 h-6" />}
@@ -404,20 +449,20 @@ export default function MentorApplicationReview() {
       </div>
 
       {showRubric && (
-        <div className="fixed bottom-24 right-8 w-80 bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden z-50">
+        <div className="fixed bottom-24 right-8 w-80 bg-card rounded-xl shadow-2xl border border-border overflow-hidden z-50">
           <div className="bg-blue-600 px-4 py-3 flex justify-between items-center">
             <h3 className="font-bold text-white flex items-center"><HelpCircle className="w-4 h-4 mr-2" />Scoring Guide</h3>
           </div>
           <ul className="divide-y divide-gray-100 max-h-[50vh] overflow-y-auto">
             {flatCriteria.length === 0 ? (
-              <li className="p-4 text-sm text-gray-400 italic">No rubric attached.</li>
+              <li className="p-4 text-sm text-muted-foreground/70 italic">No rubric attached.</li>
             ) : flatCriteria.map((c) => (
-              <li key={c.key} className="p-4 hover:bg-gray-50">
+              <li key={c.key} className="p-4 hover:bg-muted/50">
                 <div className="flex justify-between items-start mb-1">
-                  <h4 className="font-bold text-gray-900">{c.label}</h4>
+                  <h4 className="font-bold text-foreground">{c.label}</h4>
                   <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded">Max: {c.maxScore}</span>
                 </div>
-                {c.description && <p className="text-xs text-gray-500">{c.description}</p>}
+                {c.description && <p className="text-xs text-muted-foreground">{c.description}</p>}
               </li>
             ))}
           </ul>

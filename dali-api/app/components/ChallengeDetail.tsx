@@ -62,14 +62,14 @@ export function ChallengeDetail() {
       <div>
         <Link
           to="/challenges"
-          className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700 mb-4"
+          className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground/80 mb-4"
         >
           <ArrowLeft className="w-4 h-4 mr-1" /> Back to Challenges
         </Link>
         <div className="flex justify-between items-start">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">{challenge.name}</h1>
-            <p className="mt-1 text-gray-500">
+            <h1 className="text-2xl font-bold text-foreground">{challenge.name}</h1>
+            <p className="mt-1 text-muted-foreground">
               Created {new Date(challenge.createdAt).toLocaleDateString()}
             </p>
           </div>
@@ -91,9 +91,9 @@ export function ChallengeDetail() {
       <div className="flex flex-col lg:flex-row gap-8">
         {/* Left Sidebar: Versions List */}
         <div className="w-full lg:w-64 flex-shrink-0 space-y-4">
-          <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider">Versions</h3>
+          <h3 className="text-sm font-bold text-foreground uppercase tracking-wider">Versions</h3>
           {challenge.versions.length === 0 ? (
-            <p className="text-sm text-gray-500">No versions yet.</p>
+            <p className="text-sm text-muted-foreground">No versions yet.</p>
           ) : (
             <div className="space-y-2">
               {[...challenge.versions].reverse().map((version, i) => {
@@ -108,23 +108,23 @@ export function ChallengeDetail() {
                     className={`w-full text-left p-4 rounded-xl border transition-colors ${
                       selectedVersionId === version.id && !isCreatingVersion
                         ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-500'
-                        : 'border-gray-200 bg-white hover:bg-gray-50'
+                        : 'border-border bg-card hover:bg-muted/50'
                     }`}
                   >
                     <div className="flex items-center justify-between mb-2">
                       <div>
-                        <span className="font-medium text-gray-900">v{versionNumber}</span>
-                        <p className="text-xs text-gray-500">{version.domain?.name ?? 'General'}</p>
-                        <p className="text-sm text-gray-500">
+                        <span className="font-medium text-foreground">v{versionNumber}</span>
+                        <p className="text-xs text-muted-foreground">{version.domain?.name ?? 'General'}</p>
+                        <p className="text-sm text-muted-foreground">
                           {(version.questions as unknown as Question[]).length} questions
                         </p>
                       </div>
                       <div className="text-right">
-                        <div className="flex items-center justify-end text-xs text-gray-500 mb-0.5">
+                        <div className="flex items-center justify-end text-xs text-muted-foreground mb-0.5">
                           <Clock className="w-3 h-3 mr-1 flex-shrink-0" />
                           {formatDateTime(version.createdAt)}
                         </div>
-                        <div className="flex items-center justify-end text-xs text-gray-500">
+                        <div className="flex items-center justify-end text-xs text-muted-foreground">
                           <UserIcon className="w-3 h-3 mr-1 flex-shrink-0" />
                           {version.createdBy.firstName} {version.createdBy.lastName}
                         </div>
@@ -140,17 +140,17 @@ export function ChallengeDetail() {
         {/* Right Content: Form Builder or Preview */}
         <div className="flex-1">
           {isCreatingVersion ? (
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-              <div className="mb-6 pb-6 border-b border-gray-200 space-y-4">
+            <div className="bg-card rounded-xl border border-border shadow-sm p-6">
+              <div className="mb-6 pb-6 border-b border-border space-y-4">
                 <div>
-                  <h2 className="text-lg font-bold text-gray-900">Create New Version</h2>
-                  <p className="text-sm text-gray-500 mt-1">
+                  <h2 className="text-lg font-bold text-foreground">Create New Version</h2>
+                  <p className="text-sm text-muted-foreground mt-1">
                     Build your new challenge version below. It will be saved as v{nextVersionNumber}.
                   </p>
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-gray-700 mb-1">Domain</p>
-                  <p className="text-sm text-gray-900">
+                  <p className="text-sm font-medium text-foreground/80 mb-1">Domain</p>
+                  <p className="text-sm text-foreground">
                     {domains.find((d) => d.id === selectedDomainId)?.name ?? '—'}
                   </p>
                 </div>
@@ -163,13 +163,13 @@ export function ChallengeDetail() {
               />
             </div>
           ) : selectedVersion ? (
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-              <div className="px-6 py-5 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
+            <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
+              <div className="px-6 py-5 border-b border-border bg-muted/50 flex justify-between items-center">
                 <div>
-                  <h2 className="text-lg font-semibold text-gray-900">
+                  <h2 className="text-lg font-semibold text-foreground">
                     Version {challenge.versions.findIndex((v) => v.id === selectedVersionId) + 1} Preview
                   </h2>
-                  <p className="text-sm text-gray-500 mt-1">
+                  <p className="text-sm text-muted-foreground mt-1">
                     {selectedVersion.domain?.name ?? 'General'} · Created by{' '}
                     {selectedVersion.createdBy.firstName} {selectedVersion.createdBy.lastName} on{' '}
                     {formatDateTime(selectedVersion.createdAt)}
@@ -191,18 +191,18 @@ export function ChallengeDetail() {
                 {(selectedVersion.questions as unknown as Question[]).map((q, index) => (
                   <div
                     key={q.key}
-                    className="flex items-start gap-4 p-4 rounded-xl border border-gray-200 bg-white"
+                    className="flex items-start gap-4 p-4 rounded-xl border border-border bg-card"
                   >
                     <div className="flex-1">
                       <div className="flex items-center gap-3 mb-1">
-                        <span className="text-sm font-medium text-gray-500">Q{index + 1}</span>
-                        <h4 className="text-base font-medium text-gray-900">{q.data.label}</h4>
+                        <span className="text-sm font-medium text-muted-foreground">Q{index + 1}</span>
+                        <h4 className="text-base font-medium text-foreground">{q.data.label}</h4>
                         {q.required && (
                           <span className="text-xs font-medium text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
                             Required
                           </span>
                         )}
-                        <span className="text-xs font-medium text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full capitalize">
+                        <span className="text-xs font-medium text-muted-foreground bg-muted px-2 py-0.5 rounded-full capitalize">
                           {q.type}
                         </span>
                         {q.data.afterDomains && (
@@ -212,7 +212,7 @@ export function ChallengeDetail() {
                         )}
                       </div>
                       {q.data.description && (
-                        <p className="text-sm text-gray-500 mb-2">{q.data.description}</p>
+                        <p className="text-sm text-muted-foreground mb-2">{q.data.description}</p>
                       )}
                       {q.type === 'select' && q.data.options && (
                         <div className="mt-2 flex flex-wrap gap-2">
@@ -232,10 +232,10 @@ export function ChallengeDetail() {
               </div>
             </div>
           ) : (
-            <div className="text-center py-12 bg-white rounded-xl border border-gray-200 border-dashed">
-              <FileText className="mx-auto h-12 w-12 text-gray-400" />
-              <h3 className="mt-2 text-sm font-medium text-gray-900">No versions</h3>
-              <p className="mt-1 text-sm text-gray-500">Get started by creating a new version.</p>
+            <div className="text-center py-12 bg-card rounded-xl border border-border border-dashed">
+              <FileText className="mx-auto h-12 w-12 text-muted-foreground/70" />
+              <h3 className="mt-2 text-sm font-medium text-foreground">No versions</h3>
+              <p className="mt-1 text-sm text-muted-foreground">Get started by creating a new version.</p>
               <div className="mt-6">
                 <button
                   onClick={() => setIsCreatingVersion(true)}

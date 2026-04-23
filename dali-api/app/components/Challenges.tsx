@@ -23,7 +23,7 @@ export default function Challenges() {
     <div className="flex gap-8">
       {/* Side Navbar */}
       <nav className="w-48 flex-shrink-0">
-        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Domain</p>
+        <p className="text-xs font-semibold text-muted-foreground/70 uppercase tracking-wider mb-3">Domain</p>
         <ul className="space-y-1">
           <li>
             <button
@@ -31,7 +31,7 @@ export default function Challenges() {
               className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                 isGeneral
                   ? 'bg-blue-50 text-blue-700'
-                  : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
               }`}
             >
               General
@@ -44,7 +44,7 @@ export default function Challenges() {
                 className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                   activeTab === domain.id
                     ? 'bg-blue-50 text-blue-700'
-                    : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                    : 'text-muted-foreground hover:bg-muted hover:text-foreground'
                 }`}
               >
                 {domain.name}
@@ -58,8 +58,8 @@ export default function Challenges() {
       <div className="flex-1 space-y-8">
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">{activeDomainName} Challenges</h1>
-            <p className="mt-1 text-gray-500">
+            <h1 className="text-2xl font-bold text-foreground">{activeDomainName} Challenges</h1>
+            <p className="mt-1 text-muted-foreground">
               {isGeneral
                 ? 'Manage the general application form and its versions.'
                 : 'Manage domain challenges and their versions independently of hiring cycles.'}
@@ -83,7 +83,7 @@ export default function Challenges() {
               <Link
                 key={challenge.id}
                 to={`/challenges/${challenge.id}`}
-                className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm hover:shadow-md transition-shadow group block"
+                className="bg-card rounded-xl border border-border p-6 shadow-sm hover:shadow-md transition-shadow group block"
               >
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
@@ -91,10 +91,10 @@ export default function Challenges() {
                       <FileText className="w-6 h-6" />
                     </div>
                     <div>
-                      <h3 className="text-lg font-bold text-gray-900 group-hover:text-blue-600 transition-colors">
+                      <h3 className="text-lg font-bold text-foreground group-hover:text-blue-600 transition-colors">
                         {challenge.name}
                       </h3>
-                      <p className="text-sm text-gray-500 mt-1">
+                      <p className="text-sm text-muted-foreground mt-1">
                         {domainVersionCount} version{domainVersionCount !== 1 ? 's' : ''}
                       </p>
                     </div>
@@ -105,23 +105,23 @@ export default function Challenges() {
                       <input type="hidden" name="id" value={challenge.id} />
                       <button
                         type="submit"
-                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md opacity-0 group-hover:opacity-100 transition-opacity"
+                        className="p-1.5 text-muted-foreground/70 hover:text-red-600 hover:bg-red-50 rounded-md opacity-0 group-hover:opacity-100 transition-opacity"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </Form>
-                    <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-blue-500 transition-colors" />
+                    <ChevronRight className="w-5 h-5 text-muted-foreground/70 group-hover:text-blue-500 transition-colors" />
                   </div>
                 </div>
-                <div className="mt-6 pt-4 border-t border-gray-100 text-sm text-gray-500">
+                <div className="mt-6 pt-4 border-t border-border text-sm text-muted-foreground">
                   Created {new Date(challenge.createdAt).toLocaleDateString()}
                 </div>
               </Link>
             )
           })}
           {filtered.length === 0 && (
-            <div className="col-span-3 text-center py-12 text-gray-400 text-sm">
+            <div className="col-span-3 text-center py-12 text-muted-foreground/70 text-sm">
               No challenges for this domain yet.
             </div>
           )}
@@ -136,14 +136,14 @@ export default function Challenges() {
             onClick={() => setShowModal(false)}
           />
           <div
-            className="relative bg-white rounded-xl shadow-xl w-full max-w-md p-6 space-y-6"
+            className="relative bg-card rounded-xl shadow-xl w-full max-w-md p-6 space-y-6"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between">
-              <h2 className="text-xl font-bold text-gray-900">New Challenge</h2>
+              <h2 className="text-xl font-bold text-foreground">New Challenge</h2>
               <button
                 onClick={() => setShowModal(false)}
-                className="text-gray-400 hover:text-gray-600 p-1 rounded-md hover:bg-gray-100"
+                className="text-muted-foreground/70 hover:text-muted-foreground p-1 rounded-md hover:bg-muted"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -160,7 +160,7 @@ export default function Challenges() {
               <input type="hidden" name="intent" value="create" />
               {!isGeneral && <input type="hidden" name="domainId" value={activeTab} />}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-foreground/80 mb-1">
                   Challenge Name <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -172,15 +172,15 @@ export default function Challenges() {
                   required
                   autoFocus
                   autoComplete="off"
-                  className="block w-full rounded-lg border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2.5 text-gray-900 bg-white placeholder-gray-400"
+                  className="block w-full rounded-lg border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2.5 text-foreground bg-card placeholder-gray-400"
                 />
               </div>
 
-              <div className="flex justify-end gap-3 pt-2 border-t border-gray-200">
+              <div className="flex justify-end gap-3 pt-2 border-t border-border">
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
-                  className="px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50"
+                  className="px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-lg text-foreground/80 bg-card hover:bg-muted/50"
                 >
                   Cancel
                 </button>

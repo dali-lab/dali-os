@@ -203,7 +203,6 @@ jobs:
             DATABASE_URL="$DATABASE_URL" \
             ENABLE_DEV_LOGIN=true \
             JWT_SECRET="$JWT_SECRET" \
-            FRONTEND_URL="https://dali-web-dev.fly.dev" \
             API_BASE_URL="$URL" \
             GOOGLE_CLIENT_ID="preview-placeholder.apps.googleusercontent.com" \
             CAS_BASE_URL="https://login.dartmouth.edu/cas" \

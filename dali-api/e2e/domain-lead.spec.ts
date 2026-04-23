@@ -23,6 +23,7 @@ test.describe('domain lead workflow', () => {
     await page.goto('/domain-lead');
     await expect(page.getByText('Setup').first()).toBeVisible();
     await expect(page.getByText('Team').first()).toBeVisible();
+    await expect(page.getByText('Reviews').first()).toBeVisible();
     await expect(page.getByText('Applications').first()).toBeVisible();
   });
 

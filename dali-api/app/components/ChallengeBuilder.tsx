@@ -134,7 +134,7 @@ export function FormBuilderTab({
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-5 space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-foreground/80 mb-1">
               Question Label <span className="text-red-500">*</span>
             </label>
             <input
@@ -149,13 +149,13 @@ export function FormBuilderTab({
                   },
                 })
               }
-              className="block w-full rounded-md border border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
+              className="block w-full rounded-md border border-gray-300 bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
               placeholder="e.g. What is your major?"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-foreground/80 mb-1">
               Question Type
             </label>
             <select
@@ -166,7 +166,7 @@ export function FormBuilderTab({
                   type: e.target.value as any,
                 })
               }
-              className="block w-full rounded-md border border-gray-300 bg-white text-gray-900 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
+              className="block w-full rounded-md border border-gray-300 bg-card text-foreground shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
             >
               <option value="text">Short Text</option>
               <option value="textarea">Long Text</option>
@@ -191,7 +191,7 @@ export function FormBuilderTab({
                 }
                 className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
               />
-              <span className="ml-2 text-sm text-gray-700">Required field</span>
+              <span className="ml-2 text-sm text-foreground/80">Required field</span>
             </label>
             {isGeneralForm && (
               <label className="flex items-center cursor-pointer">
@@ -215,7 +215,7 @@ export function FormBuilderTab({
           </div>
 
           <div className="col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-foreground/80 mb-1">
               Description (Optional)
             </label>
             <input
@@ -230,21 +230,21 @@ export function FormBuilderTab({
                   },
                 })
               }
-              className="block w-full rounded-md border border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
+              className="block w-full rounded-md border border-gray-300 bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
               placeholder="e.g. Keep it under 200 words."
             />
           </div>
 
           {editForm.type === 'select' && (
             <div className="col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-foreground/80 mb-1">
                 Options (One per line)
               </label>
               <textarea
                 rows={4}
                 value={optionsText}
                 onChange={(e) => setOptionsText(e.target.value)}
-                className="block w-full rounded-md border border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
+                className="block w-full rounded-md border border-gray-300 bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
                 placeholder="Option 1&#10;Option 2&#10;Option 3"
               />
             </div>
@@ -294,7 +294,7 @@ export function FormBuilderTab({
         <div className="flex justify-end gap-3 pt-2">
           <button
             onClick={() => (isNew ? setIsAdding(false) : setEditingKey(null))}
-            className="px-3 py-1.5 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+            className="px-3 py-1.5 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-foreground/80 bg-card hover:bg-muted/50"
           >
             Cancel
           </button>
@@ -325,18 +325,18 @@ export function FormBuilderTab({
               renderEditForm(false)
             ) : (
               <div
-                className={`flex items-start gap-4 bg-white p-4 rounded-xl border shadow-sm group transition-colors duration-150 ${isDragging ? 'border-gray-300' : 'border-gray-200'}`}
+                className={`flex items-start gap-4 bg-card p-4 rounded-xl border shadow-sm group transition-colors duration-150 ${isDragging ? 'border-gray-300' : 'border-border'}`}
               >
-                <div className="mt-1 cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 select-none">
+                <div className="mt-1 cursor-grab active:cursor-grabbing text-muted-foreground/70 hover:text-muted-foreground select-none">
                   <GripVertical className="w-5 h-5" />
                 </div>
 
                 <div className="flex-1">
                   <div className="flex items-center gap-3 mb-1">
-                    <span className="text-sm font-medium text-gray-500">
+                    <span className="text-sm font-medium text-muted-foreground">
                       Q{index + 1}
                     </span>
-                    <h4 className="text-base font-medium text-gray-900">
+                    <h4 className="text-base font-medium text-foreground">
                       {q.data.label}
                     </h4>
                     {q.required && (
@@ -354,13 +354,13 @@ export function FormBuilderTab({
                         After Domains
                       </span>
                     )}
-                    <span className="text-xs font-medium text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full capitalize">
+                    <span className="text-xs font-medium text-muted-foreground bg-muted px-2 py-0.5 rounded-full capitalize">
                       {q.type}
                     </span>
                   </div>
 
                   {q.data.description && (
-                    <p className="text-sm text-gray-500 mb-2">
+                    <p className="text-sm text-muted-foreground mb-2">
                       {q.data.description}
                     </p>
                   )}
@@ -386,13 +386,13 @@ export function FormBuilderTab({
                 <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                   <button
                     onClick={() => handleEdit(q)}
-                    className="p-1.5 text-gray-400 hover:text-blue-600 rounded-md hover:bg-blue-50"
+                    className="p-1.5 text-muted-foreground/70 hover:text-blue-600 rounded-md hover:bg-blue-50"
                   >
                     <Pencil className="w-4 h-4" />
                   </button>
                   <button
                     onClick={() => handleDelete(q.key)}
-                    className="p-1.5 text-gray-400 hover:text-red-600 rounded-md hover:bg-red-50"
+                    className="p-1.5 text-muted-foreground/70 hover:text-red-600 rounded-md hover:bg-red-50"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -407,7 +407,7 @@ export function FormBuilderTab({
         ) : (
           <button
             onClick={handleAddQuestion}
-            className="w-full py-4 border-2 border-dashed border-gray-300 rounded-xl text-gray-500 hover:text-blue-600 hover:border-blue-400 hover:bg-blue-50 transition-colors flex items-center justify-center gap-2 font-medium"
+            className="w-full py-4 border-2 border-dashed border-gray-300 rounded-xl text-muted-foreground hover:text-blue-600 hover:border-blue-400 hover:bg-blue-50 transition-colors flex items-center justify-center gap-2 font-medium"
           >
             <Plus className="w-5 h-5" />
             Add Question
@@ -415,11 +415,11 @@ export function FormBuilderTab({
         )}
       </div>
 
-      <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
+      <div className="flex justify-end gap-3 pt-4 border-t border-border">
         {onCancel && (
           <button
             onClick={onCancel}
-            className="px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50"
+            className="px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-lg text-foreground/80 bg-card hover:bg-muted/50"
           >
             Cancel
           </button>

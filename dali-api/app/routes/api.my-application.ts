@@ -2,7 +2,7 @@ import type { Route } from "./+types/api.my-application";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { sendEmail, applicationReceivedEmail } from "~/lib/gmail";
+import { sendEmail } from "~/lib/gmail";
 
 const GMAIL_USER = "applications@dali.dartmouth.edu";
 
@@ -161,10 +161,19 @@ export async function action({ request }: Route.ActionArgs) {
     });
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (gmailUser?.googleRefreshToken && user) {
-      const { subject, html } = applicationReceivedEmail(user.firstName);
       const to = user.dartmouthEmail ?? user.daliEmail ?? "";
       if (to) {
-        await sendEmail({ refreshToken: gmailUser.googleRefreshToken, to, subject, html });
+        // Look up the current ApplicationReceived template from the DB
+        const template = await prisma.emailTemplate.findFirst({
+          where: { type: "ApplicationReceived" },
+          orderBy: { createdAt: "desc" },
+        });
+        if (template) {
+          const subject = template.subject.replace(/\{\{firstName\}\}/g, user.firstName);
+          const body = template.body.replace(/\{\{firstName\}\}/g, user.firstName);
+          const html = body.split("\n\n").map((p: string) => `<p>${p.replace(/\n/g, "<br/>")}</p>`).join("\n");
+          await sendEmail({ refreshToken: gmailUser.googleRefreshToken, to, subject, html });
+        }
       }
     }
   } catch (err) {
