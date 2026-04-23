@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { redirect, useLoaderData, useFetcher, useNavigate } from "react-router";
+import { redirect, useLoaderData, useFetcher } from "react-router";
 import type { Route } from "./+types/portal.apply";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
@@ -266,7 +266,7 @@ type UrlCheckState = {
 function UrlCheckIndicator({ state }: { state: UrlCheckState }) {
   if (state.status === "checking") {
     return (
-      <span className="text-xs text-gray-400 flex items-center gap-1 mt-1">
+      <span className="text-xs text-muted-foreground/70 flex items-center gap-1 mt-1">
         <span className="inline-block w-3 h-3 border-2 border-gray-300 border-t-accent-coral rounded-full animate-spin" />
         Checking URL...
       </span>
@@ -307,7 +307,7 @@ function QuestionField({
   onUrlBlur?: () => void;
 }) {
   const inputBase =
-    "w-full rounded-lg border border-gray-200 bg-white text-sm text-dark-blue placeholder:text-gray-400 focus:outline-none focus:border-accent-coral px-4 py-2";
+    "w-full rounded-lg border border-border bg-card text-sm text-dark-blue placeholder:text-muted-foreground/70 focus:outline-none focus:border-accent-coral px-4 py-2";
 
   if (question.type === "textarea") {
     return (
@@ -374,8 +374,6 @@ function QuestionField({
 export default function PortalApply() {
   const loaderData = useLoaderData<typeof loader>() as any;
   const { cycleId, cycleName, generalChallengeVersionId, formQuestions, domains } = loaderData;
-  const navigate = useNavigate();
-
   const [draft, setDraft] = useState(loaderData.draft);
   const [selectedDomainIds, setSelectedDomainIds] = useState<string[]>(
     loaderData.draft?.selectedDomainIds ?? [],
@@ -400,6 +398,7 @@ export default function PortalApply() {
   const [confirmedSubmit, setConfirmedSubmit] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const createFetcher = useFetcher();
+  const submitFetcher = useFetcher();
 
   // Auto-save debounce
   function scheduleSave() {
@@ -457,7 +456,19 @@ export default function PortalApply() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url, type }),
       });
-      const result = await res.json();
+      if (!res.ok) {
+        const errorBody = await res.json().catch(() => ({}));
+        const message =
+          res.status === 429
+            ? "Too many checks — please wait a moment and try again"
+            : errorBody.error ?? `Unexpected error (${res.status})`;
+        setUrlChecks(prev => ({
+          ...prev,
+          [key]: { status: "done", result: { status: "error" as const, url, message } },
+        }));
+        return;
+      }
+      const result: SubmissionCheckResult = await res.json();
       setUrlChecks(prev => ({ ...prev, [key]: { status: "done", result } }));
     } catch {
       setUrlChecks(prev => ({
@@ -488,7 +499,7 @@ export default function PortalApply() {
     }
   }, [createFetcher.data]);
 
-  async function handleSubmit(force = false) {
+  function handleSubmit(force = false) {
     setError(null);
     setUrlWarnings({});
     if (!draft) return;
@@ -533,45 +544,38 @@ export default function PortalApply() {
     }
 
     setSubmitting(true);
-    try {
-      const daPayload = (draft.domainApplications ?? []).map((da: any) => ({
-        domainApplicationId: da.id,
-        answers: domainAnswers[da.domainId] ?? {},
-      }));
 
-      const form = new URLSearchParams({
-        intent: "submit",
-        applicationId: draft.id,
-        answers: JSON.stringify(answers),
-        domainAnswers: JSON.stringify(daPayload),
-        urlQuestions: JSON.stringify(force ? [] : urlQuestions),
-      });
+    const daPayload = (draft.domainApplications ?? []).map((da: any) => ({
+      domainApplicationId: da.id,
+      answers: domainAnswers[da.domainId] ?? {},
+    }));
 
-      const res = await fetch("/portal/apply", {
-        method: "POST",
-        credentials: "include",
-        body: form,
-        redirect: "follow",
-      });
+    const form = new FormData();
+    form.set("intent", "submit");
+    form.set("applicationId", draft.id);
+    form.set("answers", JSON.stringify(answers));
+    form.set("domainAnswers", JSON.stringify(daPayload));
+    form.set("urlQuestions", JSON.stringify(force ? [] : urlQuestions));
 
-      if (res.redirected) {
-        navigate("/portal");
-        return;
-      }
+    submitFetcher.submit(form, { method: "post" });
+  }
 
-      const data = await res.json();
-      if (data.urlWarnings) {
+  // Handle submit response (urlWarnings) — redirects are handled automatically by React Router
+  useEffect(() => {
+    if (submitFetcher.state === "idle" && submitFetcher.data) {
+      setSubmitting(false);
+      if (submitFetcher.data.urlWarnings) {
         const warnings: Record<string, string> = {};
-        for (const [key, result] of Object.entries(data.urlWarnings) as [string, SubmissionCheckResult][]) {
+        for (const [key, result] of Object.entries(submitFetcher.data.urlWarnings) as [string, SubmissionCheckResult][]) {
           warnings[key] = result.message;
         }
         setUrlWarnings(warnings);
         setConfirmedSubmit(true);
       }
-    } finally {
+    } else if (submitFetcher.state === "idle") {
       setSubmitting(false);
     }
-  }
+  }, [submitFetcher.state, submitFetcher.data]);
 
   // Show domain selection if no draft yet
   if (!draft) {
@@ -579,14 +583,14 @@ export default function PortalApply() {
       <div className="max-w-3xl mx-auto px-6 py-10">
         <div className="mb-8">
           <h2 className="font-heading text-xl font-bold text-dark-blue">{cycleName} Application</h2>
-          <p className="text-sm text-gray-500 mt-1">Select the roles you'd like to apply for to get started.</p>
+          <p className="text-sm text-muted-foreground mt-1">Select the roles you'd like to apply for to get started.</p>
         </div>
 
         <div className="px-6 py-5 rounded-2xl bg-[#E8F4FA]">
           <h3 className="font-heading text-base font-bold text-dark-blue mb-1">
             Roles <span className="text-accent-coral">*</span>
           </h3>
-          <p className="text-xs text-gray-500 mb-3">Select every role you'd like to be considered for.</p>
+          <p className="text-xs text-muted-foreground mb-3">Select every role you'd like to be considered for.</p>
           <div className="flex flex-wrap gap-2">
             {(domains as any[]).map((d: any) => (
               <button
@@ -601,7 +605,7 @@ export default function PortalApply() {
                 className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
                   selectedDomainIds.includes(d.id)
                     ? "bg-accent-coral text-white border-accent-coral"
-                    : "bg-white text-dark-blue border-gray-200 hover:border-accent-coral"
+                    : "bg-card text-dark-blue border-border hover:border-accent-coral"
                 }`}
               >
                 {d.name}
@@ -631,7 +635,7 @@ export default function PortalApply() {
       <div className="flex items-center justify-between mb-8">
         <div>
           <h2 className="font-heading text-xl font-bold text-dark-blue">{cycleName} Application</h2>
-          <p className="text-sm text-gray-500 mt-1">Fill out the form below. Your progress is saved automatically.</p>
+          <p className="text-sm text-muted-foreground mt-1">Fill out the form below. Your progress is saved automatically.</p>
         </div>
         <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-blue-100 text-blue-700">Draft</span>
       </div>
@@ -644,7 +648,7 @@ export default function PortalApply() {
             {selectedDomainIds.map(id => {
               const domain = (domains as any[]).find((d: any) => d.id === id);
               return (
-                <span key={id} className="text-xs px-2 py-0.5 rounded-full bg-white text-dark-blue border border-gray-200">
+                <span key={id} className="text-xs px-2 py-0.5 rounded-full bg-card text-dark-blue border border-border">
                   {domain?.name ?? id}
                 </span>
               );
@@ -663,7 +667,7 @@ export default function PortalApply() {
                   {q.required && <span className="text-accent-coral ml-0.5">*</span>}
                 </label>
                 {q.data.description && (
-                  <p className="text-xs text-gray-500 mb-1">{q.data.description}</p>
+                  <p className="text-xs text-muted-foreground mb-1">{q.data.description}</p>
                 )}
                 <QuestionField
                   question={q}
@@ -696,7 +700,7 @@ export default function PortalApply() {
                       {q.required && <span className="text-accent-coral ml-0.5">*</span>}
                     </label>
                     {q.data.description && (
-                      <p className="text-xs text-gray-500 mb-1">{q.data.description}</p>
+                      <p className="text-xs text-muted-foreground mb-1">{q.data.description}</p>
                     )}
                     <QuestionField
                       question={q}
@@ -731,7 +735,7 @@ export default function PortalApply() {
           <button
             onClick={() => doSave()}
             disabled={saving}
-            className="px-5 py-2.5 rounded-full border-2 border-gray-200 text-sm font-semibold text-gray-600 hover:border-accent-coral hover:text-accent-coral transition disabled:opacity-50"
+            className="px-5 py-2.5 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-accent-coral hover:text-accent-coral transition disabled:opacity-50"
           >
             {saving ? "Saving..." : "Save Draft"}
           </button>
@@ -752,7 +756,7 @@ export default function PortalApply() {
               {submitting ? "Submitting..." : "Submit Application"}
             </button>
           )}
-          <span className="text-xs text-gray-400 ml-1">
+          <span className="text-xs text-muted-foreground/70 ml-1">
             {saving ? "Saving..." : "Auto-saved"}
           </span>
         </div>

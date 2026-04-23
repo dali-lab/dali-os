@@ -22,8 +22,11 @@ test.describe('reviewer workflow', () => {
     await page.goto('/reviewer');
     const reviewLink = page.getByRole('link', { name: /View Review|Continue Review|Start Review/ }).first();
     await reviewLink.waitFor({ state: 'visible' });
-    await reviewLink.click();
-    await expect(page).toHaveURL(/\/reviewer\/application\/.+/, { timeout: 15_000 });
+    await Promise.all([
+      page.waitForURL(/\/reviewer\/application\/.+/, { timeout: 15_000 }),
+      reviewLink.click(),
+    ]);
+    await expect(page).toHaveURL(/\/reviewer\/application\/.+/);
   });
 
   test('review detail shows scoring form', async ({ page }) => {

@@ -13,8 +13,8 @@ export default function RubricsList() {
     <div className="space-y-8">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Evaluation Rubrics</h1>
-          <p className="mt-1 text-gray-500">
+          <h1 className="text-2xl font-bold text-foreground">Evaluation Rubrics</h1>
+          <p className="mt-1 text-muted-foreground">
             Manage rubrics and their versions independently of hiring cycles.
           </p>
         </div>
@@ -32,7 +32,7 @@ export default function RubricsList() {
           <Link
             key={rubric.id}
             to={`/rubrics/${rubric.id}`}
-            className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm hover:shadow-md transition-shadow group block"
+            className="bg-card rounded-xl border border-border p-6 shadow-sm hover:shadow-md transition-shadow group block"
           >
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-3">
@@ -40,11 +40,11 @@ export default function RubricsList() {
                   <ListOrdered className="w-6 h-6" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-gray-900 group-hover:text-blue-600 transition-colors">
+                  <h3 className="font-bold text-foreground group-hover:text-blue-600 transition-colors">
                     {rubric.name}
                   </h3>
                   <div className="flex items-center gap-2 mt-1">
-                    <span className="text-xs text-gray-500">
+                    <span className="text-xs text-muted-foreground">
                       {rubric.versions.length} version{rubric.versions.length !== 1 ? 's' : ''}
                     </span>
                     {rubric.domain ? (
@@ -52,19 +52,19 @@ export default function RubricsList() {
                         {rubric.domain.name}
                       </span>
                     ) : (
-                      <span className="text-xs font-medium px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded">
+                      <span className="text-xs font-medium px-1.5 py-0.5 bg-muted text-muted-foreground rounded">
                         General
                       </span>
                     )}
                   </div>
                 </div>
               </div>
-              <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-blue-500" />
+              <ChevronRight className="w-5 h-5 text-muted-foreground/70 group-hover:text-blue-500" />
             </div>
           </Link>
         ))}
         {rubrics.length === 0 && (
-          <p className="text-gray-500 col-span-3 text-sm italic">No rubrics yet.</p>
+          <p className="text-muted-foreground col-span-3 text-sm italic">No rubrics yet.</p>
         )}
       </div>
 
@@ -75,14 +75,14 @@ export default function RubricsList() {
             onClick={() => setShowModal(false)}
           >
             <div
-              className="bg-white rounded-lg shadow-xl w-full max-w-sm p-6 space-y-4"
+              className="bg-card rounded-lg shadow-xl w-full max-w-sm p-6 space-y-4"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-gray-900">New Rubric</h2>
+                <h2 className="text-lg font-semibold text-foreground">New Rubric</h2>
                 <button
                   onClick={() => setShowModal(false)}
-                  className="text-gray-400 hover:text-gray-600"
+                  className="text-muted-foreground/70 hover:text-muted-foreground"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -90,7 +90,7 @@ export default function RubricsList() {
               <Form method="post" onSubmit={() => setShowModal(false)} className="space-y-4">
                 <input type="hidden" name="intent" value="create" />
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-foreground/80 mb-1">
                     Rubric name
                   </label>
                   <input
@@ -99,20 +99,20 @@ export default function RubricsList() {
                     value={newRubricName}
                     onChange={(e) => setNewRubricName(e.target.value)}
                     placeholder="e.g. Design Challenge Rubric"
-                    className="w-full px-3 py-2 text-sm text-gray-900 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 text-sm text-foreground border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     autoFocus
                     autoComplete="off"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-foreground/80 mb-1">
                     Domain
                   </label>
                   <select
                     name="domainId"
                     value={newRubricDomainId}
                     onChange={(e) => setNewRubricDomainId(e.target.value)}
-                    className="w-full px-3 py-2 text-sm text-gray-900 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    className="w-full px-3 py-2 text-sm text-foreground border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-card"
                   >
                     <option value="">General (all domains)</option>
                     {domains.filter((d) => d.name !== 'General').map((d) => (
@@ -126,7 +126,7 @@ export default function RubricsList() {
                   <button
                     type="button"
                     onClick={() => setShowModal(false)}
-                    className="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                    className="px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-gray-300 rounded-md hover:bg-muted/50"
                   >
                     Cancel
                   </button>
