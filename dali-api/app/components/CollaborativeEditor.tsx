@@ -165,26 +165,9 @@ function releaseDoc(documentName: string) {
   }, 500);
 }
 
-export function CollaborativeEditor({
-  documentName,
-  token,
-  userName,
-  userColor,
-  disabled = false,
-  placeholder = "Start typing...",
-  className,
-  editorId,
-}: CollaborativeEditorProps) {
+export function CollaborativeEditor(props: CollaborativeEditorProps) {
+  const { documentName, token, disabled = false, className } = props;
   const [entry, setEntry] = useState<DocEntry | null>(null);
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const color = userColor ?? nameToColor(userName);
-  // Read latest values inside the awareness effect without re-running it
-  // on rename — that would trigger a setUser write and idle-timer churn.
-  const userNameRef = useRef(userName);
-  const colorRef = useRef(color);
-  userNameRef.current = userName;
-  colorRef.current = color;
 
   useEffect(() => {
     const acquired = acquireDoc(documentName, token);
@@ -195,43 +178,80 @@ export function CollaborativeEditor({
     };
   }, [documentName, token]);
 
-  const editor = useEditor(
-    {
-      immediatelyRender: false,
-      extensions: entry
-        ? [
-            StarterKit.configure({
-              // Disable built-in undo/redo — yUndoPlugin provides collab-aware undo
-              undoRedo: false,
-            }),
-            Placeholder.configure({ placeholder }),
-            createCollabExtension(entry.fragment, entry.provider),
-          ]
-        : [
-            StarterKit.configure({ undoRedo: false }),
-            Placeholder.configure({ placeholder }),
-          ],
-      editable: !disabled && !!entry,
-      editorProps: {
-        attributes: {
-          class:
-            "prose prose-sm max-w-none focus:outline-none min-h-[6rem] px-3 py-2",
-        },
+  // Don't mount the tiptap editor until the Y.Doc is ready. Tiptap v3's
+  // `useEditor(options, deps)` with `immediatelyRender: false` does not
+  // reliably propagate an `editable` option change when deps flip, which
+  // leaves the editor stuck read-only even after the doc loads. Rendering an
+  // inner component only after entry is set means `useEditor` is called once
+  // with the final extensions + `editable: !disabled`, so the contenteditable
+  // binding is correct from the start.
+  if (!entry) {
+    return (
+      <div
+        className={`relative rounded-lg border bg-white ${
+          disabled
+            ? "border-gray-200 bg-gray-50 opacity-75"
+            : "border-gray-300"
+        } ${className ?? ""}`}
+      >
+        <div className="min-h-[6rem] px-3 py-2 text-sm text-gray-400 italic">
+          Loading editor…
+        </div>
+      </div>
+    );
+  }
+
+  return <CollaborativeEditorInner {...props} entry={entry} />;
+}
+
+function CollaborativeEditorInner({
+  documentName,
+  userName,
+  userColor,
+  disabled = false,
+  placeholder = "Start typing...",
+  className,
+  editorId,
+  entry,
+}: CollaborativeEditorProps & { entry: DocEntry }) {
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const color = userColor ?? nameToColor(userName);
+  // Read latest values inside the awareness effect without re-running it
+  // on rename — that would trigger a setUser write and idle-timer churn.
+  const userNameRef = useRef(userName);
+  const colorRef = useRef(color);
+  userNameRef.current = userName;
+  colorRef.current = color;
+
+  const editor = useEditor({
+    immediatelyRender: false,
+    extensions: [
+      StarterKit.configure({
+        // Disable built-in undo/redo — yUndoPlugin provides collab-aware undo
+        undoRedo: false,
+      }),
+      Placeholder.configure({ placeholder }),
+      createCollabExtension(entry.fragment, entry.provider),
+    ],
+    editable: !disabled,
+    editorProps: {
+      attributes: {
+        class:
+          "prose prose-sm max-w-none focus:outline-none min-h-[6rem] px-3 py-2",
       },
     },
-    [entry],
-  );
+  });
 
   useEffect(() => {
-    if (editor) editor.setEditable(!disabled && !!entry);
-  }, [editor, disabled, entry]);
+    if (editor) editor.setEditable(!disabled);
+  }, [editor, disabled]);
 
   // The editor's own awareness carries name/color/idle for inline cursor
   // labels. This is a separate awareness from the page-level presence (one
   // per content y-doc), so the idle timer here is not redundant with the
   // PresenceProvider's.
   useEffect(() => {
-    if (!entry) return;
     const aw = entry.provider.awareness!;
     const setUser = (patch: Partial<AwarenessUser> = {}) => {
       const cur = (aw.getLocalState()?.user ?? {}) as Partial<AwarenessUser>;
