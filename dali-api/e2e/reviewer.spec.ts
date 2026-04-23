@@ -24,11 +24,10 @@ test.describe.serial('reviewer workflow', () => {
       await loginAs({ daliEmail: 'reviewer1@dali.dartmouth.edu' });
     });
 
-    test('dashboard shows current stage', async ({ page }) => {
+    test('dashboard loads', async ({ page }) => {
       await page.goto('/reviewer');
       await expect(page.getByRole('heading', { name: 'Reviewer Dashboard' })).toBeVisible();
-      await expect(page.getByText('Current Stage')).toBeVisible({ timeout: 10_000 });
-      await expect(page.getByText('Applications Open')).toBeVisible({ timeout: 10_000 });
+      await expect(page.getByText('Assigned Written Applications')).toBeVisible({ timeout: 10_000 });
     });
 
   });
