@@ -14,8 +14,16 @@ export async function action({ request }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
 
+  const body = await request.json();
+  const { domainApplicationId } = body;
+
+  if (!domainApplicationId) {
+    return withCors(request, Response.json({ error: "domainApplicationId is required" }, { status: 400 }));
+  }
+
   const interview = await prisma.interview.findFirst({
     where: {
+      domainApplicationId,
       domainApplication: { application: { userId: auth.user.sub } },
       status: "Scheduled",
     },
