@@ -477,7 +477,12 @@ function InterviewScheduledView({
 
   async function handleCancel() {
     setCancelling(true);
-    const res = await fetch("/api/my-interview/cancel", { method: "POST", credentials: "include" });
+    const res = await fetch("/api/my-interview/cancel", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ domainApplicationId: domainApp.id }),
+    });
     if (res.ok) onCancelled();
     setCancelling(false);
   }
@@ -488,7 +493,7 @@ function InterviewScheduledView({
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ newStart: newSlot.isoStart, newEnd }),
+      body: JSON.stringify({ domainApplicationId: domainApp.id, newStart: newSlot.isoStart, newEnd }),
     });
     if (res.ok) {
       setRescheduling(false);
@@ -713,6 +718,53 @@ function WaitlistedView({ cycleName }: { cycleName: string }) {
   );
 }
 
+// ─── Per-Domain Card ────────────────────────────────────────────────────────
+
+function DomainApplicationCard({
+  da,
+  cycleId,
+  cycleName,
+  slotDurationMinutes,
+  onRevalidate,
+}: {
+  da: DomainAppData;
+  cycleId: string;
+  cycleName: string;
+  slotDurationMinutes: number;
+  onRevalidate: () => void;
+}) {
+  const stage = da.inferredStatus;
+
+  return (
+    <div className="rounded-2xl border border-gray-200 overflow-hidden">
+      <div className="bg-[#E8F4FA] px-6 py-4 flex items-center justify-between">
+        <h3 className="font-heading text-base font-bold text-dark-blue">{da.domainName}</h3>
+        <StageIndicator stage={stage} />
+      </div>
+      <div className="px-2">
+        {stage === "Pending" && <PendingView cycleName={cycleName} />}
+        {stage === "Rejected" && <RejectedView cycleName={cycleName} />}
+        {stage === "InvitedToInterview" && (
+          <InvitedToInterviewView domainApp={da} cycleId={cycleId} cycleName={cycleName} onBooked={onRevalidate} />
+        )}
+        {stage === "InterviewScheduled" && (
+          <InterviewScheduledView
+            domainApp={da}
+            cycleId={cycleId}
+            cycleName={cycleName}
+            slotDurationMinutes={slotDurationMinutes}
+            onCancelled={onRevalidate}
+            onRescheduled={onRevalidate}
+          />
+        )}
+        {stage === "PostInterviewPending" && <PostInterviewPendingView />}
+        {stage === "Accepted" && <AcceptedView cycleName={cycleName} />}
+        {stage === "Waitlisted" && <WaitlistedView cycleName={cycleName} />}
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export default function Portal() {
@@ -741,65 +793,34 @@ export default function Portal() {
     );
   }
 
-  // Determine the "primary" stage to display.
-  // If there are domain applications, use the highest-priority status.
-  // If no application exists yet, show ApplicationOpen.
   const das = domainApplications as DomainAppData[];
 
-  let primaryStage: DomainApplicationStatus | "ApplicationsClosed" = "ApplicationOpen";
-  let primaryDa: DomainAppData | null = null;
-
-  if (das.length > 0) {
-    // Priority order for display: show the most "advanced" status
-    const priority: DomainApplicationStatus[] = [
-      "Accepted",
-      "InterviewScheduled",
-      "PostInterviewPending",
-      "InvitedToInterview",
-      "Waitlisted",
-      "Pending",
-      "Rejected",
-      "ApplicationOpen",
-    ];
-
-    for (const stage of priority) {
-      const match = das.find(da => da.inferredStatus === stage);
-      if (match) {
-        primaryStage = stage;
-        primaryDa = match;
-        break;
-      }
+  // Determine top-level state when there are no domain applications yet
+  let topLevelStage: "ApplicationOpen" | "ApplicationsClosed" | "Pending" | null = null;
+  if (das.length === 0) {
+    if (applicationStatus === "Submitted") {
+      topLevelStage = "Pending";
+    } else if (!hasApplication && cycleStatus === "Open") {
+      topLevelStage = "ApplicationOpen";
+    } else if (!hasApplication) {
+      topLevelStage = "ApplicationsClosed";
     }
-  } else if (applicationStatus === "Submitted") {
-    primaryStage = "Pending";
-  } else if (!hasApplication && cycleStatus === "Open") {
-    primaryStage = "ApplicationOpen";
-  } else if (!hasApplication) {
-    primaryStage = "ApplicationsClosed";
   }
 
   return (
     <div>
       {/* Header */}
       <div className="bg-[#E8F4FA] px-6 md:px-16 lg:px-24 py-10">
-        <div className="max-w-3xl mx-auto flex items-center justify-between">
-          <div>
-            <h1 className="font-heading text-xl font-bold text-dark-blue">
-              {cycleName} Application Portal
-            </h1>
-          </div>
-          <div className="hidden sm:block">
-            <StageIndicator stage={primaryStage} />
-          </div>
-        </div>
-        <div className="sm:hidden max-w-3xl mx-auto mt-4">
-          <StageIndicator stage={primaryStage} />
+        <div className="max-w-3xl mx-auto">
+          <h1 className="font-heading text-xl font-bold text-dark-blue">
+            {cycleName} Application Portal
+          </h1>
         </div>
       </div>
 
       {/* Content */}
       <div className="px-6 md:px-16 lg:px-24 py-10">
-        {primaryStage === "ApplicationsClosed" && (
+        {topLevelStage === "ApplicationsClosed" && (
           <div className="max-w-2xl mx-auto text-center py-16">
             <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-muted flex items-center justify-center">
               <svg className="w-8 h-8 text-muted-foreground/70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -812,25 +833,23 @@ export default function Portal() {
             </p>
           </div>
         )}
-        {primaryStage === "ApplicationOpen" && <ApplicationOpenView cycleName={cycleName} />}
-        {primaryStage === "Pending" && <PendingView cycleName={cycleName} />}
-        {primaryStage === "Rejected" && <RejectedView cycleName={cycleName} />}
-        {primaryStage === "InvitedToInterview" && primaryDa && (
-          <InvitedToInterviewView domainApp={primaryDa} cycleId={cycleId} cycleName={cycleName} onBooked={handleRevalidate} />
+        {topLevelStage === "ApplicationOpen" && <ApplicationOpenView cycleName={cycleName} />}
+        {topLevelStage === "Pending" && <PendingView cycleName={cycleName} />}
+
+        {das.length > 0 && (
+          <div className="max-w-3xl mx-auto space-y-8">
+            {das.map(da => (
+              <DomainApplicationCard
+                key={da.id}
+                da={da}
+                cycleId={cycleId}
+                cycleName={cycleName}
+                slotDurationMinutes={slotDurationMinutes}
+                onRevalidate={handleRevalidate}
+              />
+            ))}
+          </div>
         )}
-        {primaryStage === "InterviewScheduled" && primaryDa && (
-          <InterviewScheduledView
-            domainApp={primaryDa}
-            cycleId={cycleId}
-            cycleName={cycleName}
-            slotDurationMinutes={slotDurationMinutes}
-            onCancelled={handleRevalidate}
-            onRescheduled={handleRevalidate}
-          />
-        )}
-        {primaryStage === "PostInterviewPending" && <PostInterviewPendingView />}
-        {primaryStage === "Accepted" && <AcceptedView cycleName={cycleName} />}
-        {primaryStage === "Waitlisted" && <WaitlistedView cycleName={cycleName} />}
       </div>
     </div>
   );

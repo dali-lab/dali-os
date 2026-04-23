@@ -16,7 +16,11 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   const body = await request.json();
-  const { newStart, newEnd } = body;
+  const { newStart, newEnd, domainApplicationId } = body;
+
+  if (!domainApplicationId) {
+    return withCors(request, Response.json({ error: "domainApplicationId is required" }, { status: 400 }));
+  }
 
   if (!newStart || !newEnd) {
     return withCors(request, Response.json({ error: "newStart and newEnd required" }, { status: 400 }));
@@ -30,6 +34,7 @@ export async function action({ request }: Route.ActionArgs) {
       async (tx) => {
         const current = await tx.interview.findFirst({
           where: {
+            domainApplicationId,
             domainApplication: { application: { userId: auth.user.sub } },
             status: "Scheduled",
           },
