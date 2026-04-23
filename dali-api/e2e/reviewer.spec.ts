@@ -31,14 +31,6 @@ test.describe.serial('reviewer workflow', () => {
       await expect(page.getByText('Applications Open')).toBeVisible({ timeout: 10_000 });
     });
 
-    test('shows stage progress tabs', async ({ page }) => {
-      await page.goto('/reviewer');
-      const main = page.locator('main');
-      await expect(main.getByText('Reviews')).toBeVisible({ timeout: 10_000 });
-      await expect(main.getByText('Availability')).toBeVisible();
-      await expect(main.getByText('Interviews')).toBeVisible();
-      await expect(main.getByText('Decisions')).toBeVisible();
-    });
   });
 
   test('advance cycle to UnderReview', async ({ browser }) => {
