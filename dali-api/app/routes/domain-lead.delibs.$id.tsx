@@ -5,6 +5,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isDomainLead } from "~/lib/roles";
 import { ArrowLeft, GripVertical, X, Check } from "lucide-react";
+import { INITIAL_COLUMNS, FINAL_COLUMNS } from "~/lib/delibs";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -77,9 +78,6 @@ type LoaderResult = {
   domainApplications: any[];
 };
 type DomainApp = any;
-
-const INITIAL_COLUMNS = ["No Decision", "Interview", "Reject"] as const;
-const FINAL_COLUMNS = ["Accept", "Waitlist", "Reject"] as const;
 
 export default function DelibsKanban() {
   const { session, domainApplications } = useLoaderData<typeof loader>() as any;

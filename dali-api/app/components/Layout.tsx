@@ -43,10 +43,7 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
       icon: MessageSquare,
       show: true,
       active: path.startsWith('/reviewer') || path.startsWith('/interviewer'),
-      sub: isInterviewer ? [
-        { label: 'Applications', to: '/reviewer', active: path.startsWith('/reviewer') },
-        { label: 'Interviews', to: '/interviewer', active: path.startsWith('/interviewer') },
-      ] : null,
+      sub: null,
     },
     {
       label: 'Cycles',
