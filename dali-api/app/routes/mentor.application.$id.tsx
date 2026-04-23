@@ -4,14 +4,7 @@ import { ArrowLeft, HelpCircle, X, Check } from 'lucide-react'
 import { prisma } from '~/lib/db'
 import { requireAuth } from '~/lib/auth'
 import { hasCycleAccess } from '~/lib/roles'
-function parseSessionToken(request: Request): string | null {
-  const header = request.headers.get("Cookie") ?? "";
-  for (const part of header.split(";")) {
-    const [k, ...rest] = part.split("=");
-    if (k?.trim() === "better-auth.session_token") return rest.join("=").trim();
-  }
-  return null;
-}
+import { parseAccessToken } from '~/lib/cookies'
 import type { Route } from './+types/mentor.application.$id'
 import { ApplicationViewer } from '~/components/ApplicationViewer'
 import { SaveStatusIndicator } from '~/components/SaveStatusIndicator'
