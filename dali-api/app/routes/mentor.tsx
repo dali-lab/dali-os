@@ -12,107 +12,24 @@ import {
   ListOrdered,
 } from 'lucide-react'
 import { getReviewStatus } from '~/lib/review-status'
-import { getActiveCycle } from '~/lib/cycles'
-type CycleStage =
-  | 'challengeSetup'
-  | 'challengesReady'
-  | 'applicationsOpen'
-  | 'readingApplications'
-  | 'writtenDelibs'
-  | 'collectingAvailability'
-  | 'interviews'
-  | 'finalDelibs'
+import { getActiveCycle, cycleStatusToStage, inferUnderReviewStage } from '~/lib/cycles'
+import { INITIAL_COLUMNS, FINAL_COLUMNS } from '~/lib/delibs'
 import CalendarGrid from '~/components/CalendarGrid'
 import { prisma } from '~/lib/db'
 import { requireAuth } from '~/lib/auth'
 import type { Route } from './+types/mentor'
 
-// Map DB cycle status → mentor-facing stage.
-// During UnderReview, infer the sub-stage from data.
-function cycleStatusToStage(status: string): CycleStage {
-  switch (status) {
-    case 'Open': return 'applicationsOpen'
-    case 'UnderReview': return 'readingApplications' // refined below in loader
-    default: return 'challengeSetup'
-  }
-}
-
-async function inferUnderReviewStage(cycleId: string, memberId: string): Promise<CycleStage> {
-  // Check if any Released InvitedToInterview decisions exist for this cycle
-  const invitedDecisions = await prisma.decision.count({
-    where: {
-      stage: "Released",
-      type: "InvitedToInterview",
-      domainApplication: { application: { applicationCycleId: cycleId } },
-    },
-  });
-
-  if (invitedDecisions === 0) {
-    return 'readingApplications';
-  }
-
-  // Even after some applicants are invited, reviewers with assigned reviews
-  // should still see the reviews stage so they can access their review work.
-  const myReviewerIds = await prisma.cycleReviewer.findMany({
-    where: { daliMemberId: memberId, applicationCycleId: cycleId },
-    select: { id: true },
-  });
-  if (myReviewerIds.length > 0) {
-    const reviewerIds = myReviewerIds.map(r => r.id);
-    const hasReviews = await prisma.applicationReview.count({
-      where: { cycleReviewerId: { in: reviewerIds } },
-    });
-    if (hasReviews > 0) return 'readingApplications';
-  }
-
-  // Check if any interviews have been completed (signals final delibs phase)
-  const completedInterviews = await prisma.interview.count({
-    where: { applicationCycleId: cycleId, status: "Completed" },
-  });
-
-  // Check if any Released Accepted/Rejected/Waitlisted decisions exist (post-final-delibs)
-  const terminalDecisions = await prisma.decision.count({
-    where: {
-      stage: "Released",
-      type: { in: ["Accepted", "Rejected", "Waitlisted"] },
-      domainApplication: { application: { applicationCycleId: cycleId } },
-    },
-  });
-
-  if (terminalDecisions > 0) {
-    return 'finalDelibs';
-  }
-
-  if (completedInterviews > 0) {
-    return 'finalDelibs';
-  }
-
-  // Check if this member is an interviewer with active assignments
-  const myInterviewerRecords = await prisma.cycleInterviewer.findMany({
-    where: { daliMemberId: memberId, applicationCycleId: cycleId },
-    select: { id: true },
-  });
-
-  if (myInterviewerRecords.length > 0) {
-    const interviewerIds = myInterviewerRecords.map(r => r.id);
-    const scheduledInterviews = await prisma.interviewAssignment.count({
-      where: { cycleInterviewerId: { in: interviewerIds }, status: "Active" },
-    });
-
-    if (scheduledInterviews > 0) {
-      return 'interviews';
-    }
-  }
-
-  return 'collectingAvailability';
-}
-
 export async function loader({ request }: Route.LoaderArgs) {
   const empty = {
     activeCycle: null as { id: string; name: string } | null,
-    currentStage: 'challengeSetup' as CycleStage,
+    currentStage: 'challengeSetup' as ReturnType<typeof cycleStatusToStage>,
     mentorUserId: null as string | null,
-    reviews: [] as any[],
+    memberId: null as string | null,
+    myReviews: [] as any[],
+    isCycleInterviewer: false,
+    needsAvailabilityPrompt: false,
+    delibsSessions: [] as any[],
+    delibsApplications: [] as any[],
   }
 
   const auth = await requireAuth(request)
@@ -158,7 +75,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Infer the sub-stage within UnderReview from actual data
   let currentStage = cycleStatusToStage(activeCycleStatus);
   if (activeCycleStatus === 'UnderReview') {
-    currentStage = await inferUnderReviewStage(active.id, member.id);
+    currentStage = await inferUnderReviewStage(active.id, member.id, reviewerIds);
   }
 
   // Check if this member is a cycle interviewer with no availability set yet
@@ -195,9 +112,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   // kanban does: read the saved columnOrder, then fill the default column with
   // every qualifying domain application that isn't already placed. Otherwise
   // apps that have never been dragged wouldn't appear in the reviewer mirror.
-  const INITIAL_COLUMNS = ["No Decision", "Interview", "Reject"] as const;
-  const FINAL_COLUMNS = ["Accept", "Waitlist", "Reject"] as const;
-
   const delibsSessions: any[] = [];
   const hydratedDaIds = new Set<string>();
   const daIdToSummary = new Map<string, any>();
@@ -281,7 +195,7 @@ export default function MentorDashboard() {
     needsAvailabilityPrompt,
     delibsSessions,
     delibsApplications,
-  } = useLoaderData<typeof loader>() as any
+  } = useLoaderData<typeof loader>()
 
   if (!activeCycle) {
     return (
@@ -296,15 +210,15 @@ export default function MentorDashboard() {
 
   // Bucket reviews via the shared status helper so this view and the
   // domain-lead pills agree on what counts as "in progress" vs "not started".
-  const reviews = (myReviews ?? []) as any[]
-  const submittedReviews = reviews.filter((r: any) => getReviewStatus(r) === 'submitted')
-  const inProgressReviews = reviews.filter((r: any) => getReviewStatus(r) === 'inProgress')
-  const pendingReviews = reviews.filter((r: any) => getReviewStatus(r) === 'notStarted')
+  const reviews = myReviews ?? []
+  const submittedReviews = reviews.filter(r => getReviewStatus(r) === 'submitted')
+  const inProgressReviews = reviews.filter(r => getReviewStatus(r) === 'inProgress')
+  const pendingReviews = reviews.filter(r => getReviewStatus(r) === 'notStarted')
 
   // Lookup table of every domainApplication referenced in an active delibs
   // session, so we can render per-column cards from columnOrder.
   const delibsAppMap = new Map<string, any>()
-  for (const da of (delibsApplications ?? []) as any[]) {
+  for (const da of delibsApplications ?? []) {
     delibsAppMap.set(da.id, da)
   }
 
@@ -344,29 +258,22 @@ export default function MentorDashboard() {
       .then(r => r.ok ? r.json() : [])
       .then(blocks => setSavedAvailability(blocks))
       .catch(() => {})
-    // Fetch booked interviews for overlay
-    fetch(`/api/cycles/${activeCycle.id}/my-interviews`, { credentials: 'include' })
-      .then(r => r.ok ? r.json() : [])
-      .then((assignments: any[]) => {
-        setInterviewBlocks(
-          assignments.map(a => ({
-            startTime: a.interview.startTime,
-            endTime: a.interview.endTime,
-          }))
-        )
-      })
-      .catch(() => {})
   }, [isCycleInterviewer, activeCycle?.id])
 
-  // Always fetch scheduled interviews — the Interviews section renders
-  // whenever the reviewer has any, regardless of the inferred stage.
+  // Fetch scheduled interviews (single call populates both the calendar overlay
+  // and the Assigned Interviews section).
   useEffect(() => {
     if (!activeCycle) return
     fetch(`/api/cycles/${activeCycle.id}/my-interviews`, { credentials: 'include' })
       .then(r => r.ok ? r.json() : [])
       .then((assignments: any[]) => {
         setScheduledInterviews(assignments)
-        // Pre-populate notes from existing data
+        setInterviewBlocks(
+          assignments.map((a: any) => ({
+            startTime: a.interview.startTime,
+            endTime: a.interview.endTime,
+          }))
+        )
         const notesMap: Record<string, string> = {}
         for (const a of assignments) {
           if (a.notes) notesMap[a.interview.id] = a.notes
@@ -374,7 +281,7 @@ export default function MentorDashboard() {
         setInterviewNotes(notesMap)
       })
       .catch(() => {})
-  }, [currentStage, activeCycle])
+  }, [activeCycle?.id])
 
   const handleSaveAvailability = useCallback(
     async (blocks: { startTime: string; endTime: string }[]) => {
@@ -799,9 +706,6 @@ const FINAL_COLUMN_STYLES: Record<string, { label: string; classes: string; head
   },
 }
 
-const INITIAL_ORDER = ['No Decision', 'Interview', 'Reject'] as const
-const FINAL_ORDER = ['Accept', 'Waitlist', 'Reject'] as const
-
 function DelibsSessionView({
   session,
   appMap,
@@ -811,7 +715,7 @@ function DelibsSessionView({
 }) {
   const isInitial = session.type === 'Initial'
   const columnOrder = (session.columnOrder ?? {}) as Record<string, string[]>
-  const columns = isInitial ? INITIAL_ORDER : FINAL_ORDER
+  const columns = isInitial ? INITIAL_COLUMNS : FINAL_COLUMNS
   const styles = isInitial ? INITIAL_COLUMN_STYLES : FINAL_COLUMN_STYLES
 
   return (
