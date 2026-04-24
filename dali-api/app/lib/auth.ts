@@ -25,14 +25,26 @@ export async function signAccessToken(payload: {
 
 export async function verifyAccessToken(token: string) {
   const { payload } = await jwtVerify(token, getSecret());
-  return payload as { sub: string; email: string; type: string };
+  return payload as {
+    sub: string;
+    email: string;
+    type: string;
+    firstName?: string;
+    lastName?: string;
+  };
 }
 
 // auth middleware
 
 type AuthSuccess = {
   ok: true;
-  user: { sub: string; email: string; type: string };
+  user: {
+    sub: string;
+    email: string;
+    type: string;
+    firstName?: string;
+    lastName?: string;
+  };
 };
 type AuthFailure = { ok: false; response: Response };
 export type AuthResult = AuthSuccess | AuthFailure;
