@@ -128,18 +128,21 @@ export async function action({ request }: Route.ActionArgs) {
   });
 
   if (existing) {
-    const status = existing.statusUpdates[0]?.newStatus;
-    if (status === "Submitted") {
-      return withCors(request, Response.json({ error: "Application already submitted" }, { status: 409 }));
-    }
-    // Update draft answers and submit
+    const alreadySubmitted = existing.statusUpdates[0]?.newStatus === "Submitted";
+    // Update answers; only create a new status update on first submission
     await prisma.application.update({
       where: { id: existing.id },
       data: {
         answers,
-        statusUpdates: { create: { newStatus: "Submitted", userId } },
+        ...(alreadySubmitted ? {} : {
+          statusUpdates: { create: { newStatus: "Submitted", userId } },
+        }),
       },
     });
+    // Only send confirmation email on first submission
+    if (alreadySubmitted) {
+      return withCors(request, Response.json({ ok: true }));
+    }
   } else {
     // Create new application as Submitted
     await prisma.application.create({
