@@ -28,6 +28,17 @@ export default [
     route("portal/apply", "routes/portal.apply.tsx"),
   ]),
 
+  // Account pages (own layout — serves both members and applicants)
+  layout("routes/account-layout.tsx", [
+    route("account", "routes/account.profile.tsx"),
+    route("account/integrations", "routes/account.integrations.tsx"),
+    route("account/roles", "routes/account.roles.tsx"),
+  ]),
+
+  // Calendar reconnect OAuth flow (no layout)
+  route("account/reconnect-calendar", "routes/account.reconnect-calendar.ts"),
+  route("account/reconnect-calendar/callback", "routes/account.reconnect-calendar.callback.ts"),
+
   // Login (no layout)
   route("login", "routes/login.tsx"),
   route("dev-login", "routes/dev-login.ts"),

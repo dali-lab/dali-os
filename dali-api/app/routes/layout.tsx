@@ -4,6 +4,7 @@ import { requireAuth } from '~/lib/auth'
 import { getUserRoles } from '~/lib/roles'
 import { getActiveCycle } from '~/lib/cycles'
 import { prisma } from '~/lib/db'
+import { getDownloadUrl } from '~/lib/s3'
 import type { Route } from './+types/layout'
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -23,14 +24,24 @@ export async function loader({ request }: Route.LoaderArgs) {
     }
   }
 
-  return { user: auth.user, isHiringLead: hiringLead, isAdmin: admin, isDomainLead: domainLead, isInterviewer }
+  // Fetch profile picture for nav avatar
+  let profilePictureUrl: string | null = null
+  const userRecord = await prisma.user.findUnique({
+    where: { id: auth.user.sub },
+    select: { profilePictureKey: true },
+  })
+  if (userRecord?.profilePictureKey) {
+    profilePictureUrl = await getDownloadUrl(userRecord.profilePictureKey)
+  }
+
+  return { user: auth.user, profilePictureUrl, isHiringLead: hiringLead, isAdmin: admin, isDomainLead: domainLead, isInterviewer }
 }
 
 export default function AppLayoutRoute() {
-  const { user, isHiringLead, isAdmin, isDomainLead, isInterviewer } = useLoaderData<typeof loader>()
+  const { user, profilePictureUrl, isHiringLead, isAdmin, isDomainLead, isInterviewer } = useLoaderData<typeof loader>()
 
   return (
-    <Layout user={user} isHiringLead={isHiringLead} isAdmin={isAdmin} isDomainLead={isDomainLead} isInterviewer={isInterviewer}>
+    <Layout user={user} profilePictureUrl={profilePictureUrl} isHiringLead={isHiringLead} isAdmin={isAdmin} isDomainLead={isDomainLead} isInterviewer={isInterviewer}>
       <Outlet />
     </Layout>
   )

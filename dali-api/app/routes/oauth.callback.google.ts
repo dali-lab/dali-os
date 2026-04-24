@@ -78,8 +78,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   const user = await prisma.user.upsert({
     where: { daliEmail: googleUser.email },
     update: {
-      firstName: googleUser.firstName,
-      lastName: googleUser.lastName,
       ...(googleUser.accessToken ? { googleAccessToken: googleUser.accessToken } : {}),
       ...(googleUser.refreshToken ? { googleRefreshToken: googleUser.refreshToken } : {}),
       ...(tokenExpiresAt ? { googleTokenExpiresAt: tokenExpiresAt } : {}),

@@ -13,17 +13,19 @@ import {
   FileText,
   MessageSquare,
 } from 'lucide-react'
+import { Avatar } from '~/components/Avatar'
 
 interface LayoutProps {
   children: React.ReactNode
   user: { email: string }
+  profilePictureUrl?: string | null
   isHiringLead?: boolean
   isAdmin?: boolean
   isDomainLead?: boolean
   isInterviewer?: boolean
 }
 
-export function Layout({ children, user, isHiringLead = false, isAdmin = false, isDomainLead = false, isInterviewer = false }: LayoutProps) {
+export function Layout({ children, user, profilePictureUrl, isHiringLead = false, isAdmin = false, isDomainLead = false, isInterviewer = false }: LayoutProps) {
   const location = useLocation()
   const path = location.pathname
 
@@ -90,9 +92,9 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
           </div>
           <div className="flex items-center gap-3">
             <span className="text-xs text-white/50 hidden sm:block">{user.email}</span>
-            <div className="w-8 h-8 rounded-full bg-accent-coral text-white flex items-center justify-center font-bold text-xs">
-              {initials}
-            </div>
+            <Link to="/account">
+              <Avatar src={profilePictureUrl} fallback={initials} size={32} />
+            </Link>
             <a href="/logout" className="text-white/40 hover:text-white/70 transition" title="Log out">
               <LogOut className="w-4 h-4" />
             </a>

@@ -86,7 +86,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     // DALI member flow
     user = await prisma.user.upsert({
       where: { daliEmail: googleUser.email },
-      update: { firstName: googleUser.firstName, lastName: googleUser.lastName },
+      update: {},
       create: {
         daliEmail: googleUser.email,
         firstName: googleUser.firstName,
@@ -117,7 +117,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     // Dartmouth student via Google (non-DALI email)
     user = await prisma.user.upsert({
       where: { dartmouthEmail: googleUser.email },
-      update: { firstName: googleUser.firstName, lastName: googleUser.lastName },
+      update: {},
       create: {
         dartmouthEmail: googleUser.email,
         firstName: googleUser.firstName,
@@ -133,10 +133,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       where: { dartmouthEmail: googleUser.email },
     });
     if (existing) {
-      user = await prisma.user.update({
-        where: { id: existing.id },
-        data: { firstName: googleUser.firstName, lastName: googleUser.lastName },
-      });
+      user = existing;
     } else {
       user = await prisma.user.create({
         data: {
