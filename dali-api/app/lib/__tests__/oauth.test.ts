@@ -1,6 +1,14 @@
 import { describe, it, expect, beforeAll, beforeEach, vi } from "vitest";
 
+const mockVerifyIdToken = vi.hoisted(() => vi.fn());
+const mockGetPayload = vi.hoisted(() => vi.fn());
+
 vi.mock("~/lib/db");
+vi.mock("google-auth-library", () => ({
+  OAuth2Client: vi.fn().mockImplementation(function () {
+    return { verifyIdToken: mockVerifyIdToken };
+  }),
+}));
 
 import { prisma } from "~/lib/db";
 import {
@@ -8,6 +16,7 @@ import {
   OAuthError,
   getAllowedRedirectUris,
   exchangeAuthorizationCode,
+  exchangeGoogleCode,
   refreshTokens,
   revokeToken,
 } from "~/lib/oauth";
@@ -290,5 +299,80 @@ describe("revokeToken", () => {
     mockPrisma.refreshToken.findUnique.mockResolvedValue(null);
     await revokeToken("unknown-token");
     expect(mockPrisma.refreshToken.updateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("exchangeGoogleCode", () => {
+  beforeEach(() => {
+    mockVerifyIdToken.mockResolvedValue({ getPayload: mockGetPayload });
+  });
+
+  function mockFetch(body: object, ok = true) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok,
+        text: () => Promise.resolve("error"),
+        json: () => Promise.resolve(body),
+      }),
+    );
+  }
+
+  it("throws OAuthError when Google token exchange fails", async () => {
+    mockFetch({}, false);
+    await expect(
+      exchangeGoogleCode("bad-code", "http://localhost/callback"),
+    ).rejects.toThrow("Google token exchange failed");
+  });
+
+  it("throws OAuthError when payload is null", async () => {
+    mockFetch({ id_token: "tok" });
+    mockGetPayload.mockReturnValue(null);
+    await expect(
+      exchangeGoogleCode("code", "http://localhost/callback"),
+    ).rejects.toThrow("Failed to verify Google ID token");
+  });
+
+  it("throws OAuthError when email_verified is false", async () => {
+    mockFetch({ id_token: "tok" });
+    mockGetPayload.mockReturnValue({
+      email: "user@example.com",
+      email_verified: false,
+    });
+    await expect(
+      exchangeGoogleCode("code", "http://localhost/callback"),
+    ).rejects.toThrow("Email not verified by Google");
+  });
+
+  it("throws OAuthError when email is missing", async () => {
+    mockFetch({ id_token: "tok" });
+    mockGetPayload.mockReturnValue({ email_verified: true });
+    await expect(
+      exchangeGoogleCode("code", "http://localhost/callback"),
+    ).rejects.toThrow("Email not verified by Google");
+  });
+
+  it("returns user info when email and email_verified are valid", async () => {
+    mockFetch({
+      id_token: "tok",
+      access_token: "acc",
+      refresh_token: "ref",
+      expires_in: 3600,
+    });
+    mockGetPayload.mockReturnValue({
+      email: "user@dali.dartmouth.edu",
+      email_verified: true,
+      given_name: "Jane",
+      family_name: "Doe",
+    });
+    const result = await exchangeGoogleCode("code", "http://localhost/callback");
+    expect(result).toEqual({
+      email: "user@dali.dartmouth.edu",
+      firstName: "Jane",
+      lastName: "Doe",
+      accessToken: "acc",
+      refreshToken: "ref",
+      expiresIn: 3600,
+    });
   });
 });
