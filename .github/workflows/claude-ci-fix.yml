@@ -1,0 +1,244 @@
+name: Claude CI Fix
+
+# Auto-fix CI failures on Claude-owned PRs (branches prefixed `claude/issue-`).
+#
+# Design notes:
+#   - Fires on any listed workflow completing, but the job debounces: it waits
+#     until EVERY check run on the PR head SHA has settled, then acts once on
+#     the full failure picture. This prevents multiple Claude invocations
+#     racing each other when CI jobs finish at different times.
+#   - Stale-SHA guard: if a newer commit exists on the PR (e.g. Claude already
+#     pushed a fix), we skip. No chasing the past.
+#   - First-mover lock via a sentinel PR comment keyed to the SHA, so
+#     multiple queued wake-ups don't both fire Claude.
+#   - 3-attempt retry cap tracked in another sentinel comment.
+#   - Prompt enforces: leave a writeup comment when fixing, or a handoff
+#     comment when the fix is ambiguous / forces a real tradeoff.
+
+on:
+  workflow_run:
+    workflows:
+      - "Test dali-api"
+      - "Build Check"
+      - "Migration Safety Check"
+      - "CodeQL Advanced"
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: read
+  id-token: write
+
+jobs:
+  fix:
+    if: >
+      github.event.workflow_run.event == 'pull_request' &&
+      startsWith(github.event.workflow_run.head_branch, 'claude/issue-')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    concurrency:
+      group: claude-ci-${{ github.event.workflow_run.head_sha }}
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+      HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+      PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+    steps:
+      - name: Stale-SHA guard
+        id: stale
+        run: |
+          if [ -z "$PR_NUMBER" ]; then
+            echo "No PR attached to this workflow_run; exiting." >&2
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          CURRENT_SHA=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json headRefOid --jq .headRefOid)
+          if [ "$CURRENT_SHA" != "$HEAD_SHA" ]; then
+            echo "PR #$PR_NUMBER head is now $CURRENT_SHA, event fired for $HEAD_SHA. Skipping." >&2
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for all checks on this SHA to settle
+        if: steps.stale.outputs.skip != 'true'
+        run: |
+          DEADLINE=$(( $(date +%s) + 1500 ))  # 25-minute soft cap (job timeout is 30)
+          while :; do
+            PENDING=$(gh api "repos/$GITHUB_REPOSITORY/commits/$HEAD_SHA/check-runs" \
+              --paginate \
+              --jq '.check_runs[] | select(.status != "completed") | .id' \
+              | wc -l | tr -d ' ')
+            if [ "$PENDING" = "0" ]; then
+              echo "All check runs completed for $HEAD_SHA."
+              break
+            fi
+            if [ "$(date +%s)" -ge "$DEADLINE" ]; then
+              echo "Timed out waiting for $PENDING check(s) to finish. Bailing." >&2
+              exit 0
+            fi
+            echo "$PENDING check(s) still running. Sleeping 20s..."
+            sleep 20
+          done
+
+      - name: Collect failure summary
+        if: steps.stale.outputs.skip != 'true'
+        id: summary
+        run: |
+          # Query workflow runs for this SHA directly (not check-runs) so we
+          # have run IDs to pull logs from. Filter to the workflows we care about.
+          WATCHED='["Test dali-api","Build Check","Migration Safety Check","CodeQL Advanced"]'
+          FAILED_JSON=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$HEAD_SHA&per_page=100" \
+            --paginate \
+            --jq ".workflow_runs[] | select(.conclusion == \"failure\") | select(.name as \$n | $WATCHED | index(\$n)) | {name, id, html_url}" \
+            | jq -s '.')
+          FAILED_COUNT=$(echo "$FAILED_JSON" | jq 'length')
+          echo "failed_count=$FAILED_COUNT" >> "$GITHUB_OUTPUT"
+          {
+            echo 'failed_json<<EOF'
+            echo "$FAILED_JSON"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+          echo "Failed workflow-run count: $FAILED_COUNT"
+          echo "$FAILED_JSON" | jq -r '.[] | "  - \(.name) (run \(.id))"'
+
+      - name: Exit if no failures
+        if: steps.stale.outputs.skip != 'true' && steps.summary.outputs.failed_count == '0'
+        run: |
+          echo "All checks passed on $HEAD_SHA. Nothing to fix."
+          exit 0
+
+      - name: First-mover lock (sentinel comment keyed to SHA)
+        if: steps.stale.outputs.skip != 'true' && steps.summary.outputs.failed_count != '0'
+        id: lock
+        run: |
+          # Look for an existing sentinel for this SHA. If present, another
+          # run already owns this SHA — skip to avoid duplicate Claude invocations.
+          EXISTING=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
+            --paginate \
+            --jq ".[] | select(.body | contains(\"<!-- claude-ci-sha: $HEAD_SHA -->\")) | .id" \
+            | wc -l | tr -d ' ')
+          if [ "$EXISTING" != "0" ]; then
+            echo "SHA $HEAD_SHA already claimed by a prior run. Skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          BODY=$(printf '<!-- claude-ci-sha: %s -->\nClaude is analyzing failed checks on commit `%s`...' "$HEAD_SHA" "${HEAD_SHA:0:7}")
+          gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" -f body="$BODY" > /dev/null
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: Retry-cap check
+        if: steps.stale.outputs.skip != 'true' && steps.lock.outputs.skip != 'true'
+        id: retry
+        run: |
+          # Count existing claude-ci-attempts sentinels on the PR.
+          ATTEMPTS=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
+            --paginate \
+            --jq '.[] | select(.body | contains("<!-- claude-ci-attempts -->")) | .id' \
+            | wc -l | tr -d ' ')
+          NEXT=$((ATTEMPTS + 1))
+          echo "Prior attempts: $ATTEMPTS. This is attempt $NEXT."
+          if [ "$ATTEMPTS" -ge 3 ]; then
+            BODY=$(printf '<!-- claude-ci-cap-hit -->\nHit the auto-fix retry cap (3 attempts). Handing back for human review.')
+            gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" -f body="$BODY" > /dev/null
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          BODY=$(printf '<!-- claude-ci-attempts -->\nAttempt %d of 3.' "$NEXT")
+          gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" -f body="$BODY" > /dev/null
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "attempt_num=$NEXT" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout PR branch
+        if: steps.stale.outputs.skip != 'true' && steps.lock.outputs.skip != 'true' && steps.retry.outputs.skip != 'true'
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.HEAD_BRANCH }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        if: steps.stale.outputs.skip != 'true' && steps.lock.outputs.skip != 'true' && steps.retry.outputs.skip != 'true'
+        run: |
+          git config --global user.email "claude[bot]@users.noreply.github.com"
+          git config --global user.name "claude[bot]"
+
+      - name: Gather failing logs
+        if: steps.stale.outputs.skip != 'true' && steps.lock.outputs.skip != 'true' && steps.retry.outputs.skip != 'true'
+        id: logs
+        run: |
+          mkdir -p /tmp/claude-logs
+          echo '${{ steps.summary.outputs.failed_json }}' | jq -c '.[]' | while read -r row; do
+            NAME=$(echo "$row" | jq -r '.name')
+            RUN_ID=$(echo "$row" | jq -r '.id')
+            SAFE_NAME=$(echo "$NAME" | tr -cd 'a-zA-Z0-9._-')
+            gh run view "$RUN_ID" --repo "$GITHUB_REPOSITORY" --log-failed > "/tmp/claude-logs/$SAFE_NAME.log" 2>&1 || true
+          done
+          # Cap each log to the last 20 KB so giant logs don't blow the prompt budget.
+          for f in /tmp/claude-logs/*.log; do
+            [ -f "$f" ] || continue
+            tail -c 20000 "$f" > "$f.trim"
+            mv "$f.trim" "$f"
+          done
+          ls -la /tmp/claude-logs/
+
+      - name: Build prompt
+        if: steps.stale.outputs.skip != 'true' && steps.lock.outputs.skip != 'true' && steps.retry.outputs.skip != 'true'
+        id: prompt
+        run: |
+          {
+            echo 'text<<PROMPT_EOF'
+            echo "CI failed on PR #$PR_NUMBER (branch \`$HEAD_BRANCH\`, commit ${HEAD_SHA:0:7})."
+            echo "Attempt ${{ steps.retry.outputs.attempt_num }} of 3."
+            echo ""
+            echo "Failing checks:"
+            echo '${{ steps.summary.outputs.failed_json }}' | jq -r '.[] | "  - \(.name): \(.html_url)"'
+            echo ""
+            echo "Failing logs (tail of each, up to 20 KB):"
+            echo ""
+            for f in /tmp/claude-logs/*.log; do
+              [ -f "$f" ] || continue
+              NAME=$(basename "$f" .log)
+              echo "### $NAME"
+              echo '```'
+              cat "$f"
+              echo '```'
+              echo ""
+            done
+            echo ""
+            echo "Task: read the code, fix the root causes of these failures in a single commit, and push to this branch."
+            echo ""
+            echo "Rules:"
+            echo "  - Read CLAUDE.md before making changes."
+            echo "  - Run \`npm run typecheck\` in dali-api/ before committing if you touched TS files."
+            echo "  - Do NOT use --no-verify, --no-gpg-sign, or any hook-bypass flag."
+            echo "  - Do NOT modify .github/workflows/*."
+            echo "  - Do NOT hand-edit or delete prisma migrations; if a migration is wrong, fix the schema and add a new migration."
+            echo "  - Do NOT force-push this branch unless absolutely required; if you do, explain why in the comment."
+            echo ""
+            echo "After your fix commit is pushed, leave a PR comment on #$PR_NUMBER that:"
+            echo "  - Lists each failing check by name."
+            echo "  - For each, says one or two sentences on what you changed and why."
+            echo "  - Notes any assumptions you made."
+            echo ""
+            echo "ESCAPE HATCH — do this instead of guessing when appropriate:"
+            echo "  If you are confused, unsure of the correct fix, or the failure forces a real tradeoff (two plausible fixes with different semantics, a test that looks intentionally wrong, a data-losing migration, an API contract change, etc.), do NOT push a fix. Instead, leave a PR comment that:"
+            echo "    - Names the failing check(s) in question."
+            echo "    - Describes what is ambiguous."
+            echo "    - Lists the options you considered and the tradeoffs."
+            echo "    - Explicitly hands the work back to the human reviewer."
+            echo "  This is a valid and preferred outcome when the right call isn't clear. Don't guess."
+            echo ""
+            echo "If a failure is environmental (flake, timeout, transient infra issue, CodeQL rule change), say so in the comment rather than committing code for that specific check."
+            echo "PROMPT_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: anthropics/claude-code-action@v1
+        if: steps.stale.outputs.skip != 'true' && steps.lock.outputs.skip != 'true' && steps.retry.outputs.skip != 'true'
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: ${{ steps.prompt.outputs.text }}
+          claude_args: --max-turns 40 --allowedTools "Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(gh:*),Bash(npm:*),Bash(npx:*)"
