@@ -253,6 +253,25 @@ function ApplicationOpenView({ cycleName }: { cycleName: string }) {
   );
 }
 
+function ApplicationDraftView({ cycleName }: { cycleName: string }) {
+  return (
+    <div className="max-w-2xl mx-auto text-center py-16">
+      <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-accent-green/30 flex items-center justify-center">
+        <svg className="w-8 h-8 text-accent-teal" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+      </div>
+      <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">Application In Progress</h2>
+      <p className="text-muted-foreground mb-8 leading-relaxed">
+        You have a draft application for {cycleName}. Complete and submit it to be considered!
+      </p>
+      <Link to="/portal/apply" className="px-8 py-3 rounded-full bg-accent-coral text-white font-semibold font-heading tracking-wider hover:bg-accent-coral/90 transition shadow-lg hover:shadow-xl">
+        Continue Application
+      </Link>
+    </div>
+  );
+}
+
 function PendingView({ cycleName }: { cycleName: string }) {
   return (
     <div className="max-w-2xl mx-auto py-12">
@@ -796,7 +815,7 @@ export default function Portal() {
   const das = domainApplications as DomainAppData[];
 
   // Determine top-level state when there are no domain applications yet
-  let topLevelStage: "ApplicationOpen" | "ApplicationsClosed" | "Pending" | null = null;
+  let topLevelStage: "ApplicationOpen" | "ApplicationsClosed" | "Pending" | "Draft" | null = null;
   if (das.length === 0) {
     if (applicationStatus === "Submitted") {
       topLevelStage = "Pending";
@@ -805,6 +824,8 @@ export default function Portal() {
     } else if (!hasApplication) {
       topLevelStage = "ApplicationsClosed";
     }
+  } else if (applicationStatus === "Draft") {
+    topLevelStage = "Draft";
   }
 
   return (
@@ -835,8 +856,9 @@ export default function Portal() {
         )}
         {topLevelStage === "ApplicationOpen" && <ApplicationOpenView cycleName={cycleName} />}
         {topLevelStage === "Pending" && <PendingView cycleName={cycleName} />}
+        {topLevelStage === "Draft" && <ApplicationDraftView cycleName={cycleName} />}
 
-        {das.length > 0 && (
+        {das.length > 0 && applicationStatus !== "Draft" && (
           <div className="max-w-3xl mx-auto space-y-8">
             {das.map(da => (
               <DomainApplicationCard
