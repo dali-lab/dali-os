@@ -319,6 +319,11 @@ function PendingView({ cycleName }: { cycleName: string }) {
           <PulsingDot color="bg-yellow-500" />
           Pending
         </div>
+        <div className="mt-4">
+          <Link to="/portal/application" className="text-sm text-accent-coral hover:underline">
+            View your submission →
+          </Link>
+        </div>
       </div>
     </div>
   );
@@ -929,6 +934,11 @@ export default function Portal() {
                 </Link>
               </div>
             )}
+            <div className="flex justify-end">
+              <Link to="/portal/application" className="text-sm text-accent-coral hover:underline">
+                View your submission →
+              </Link>
+            </div>
             {das.map(da => (
               <DomainApplicationCard
                 key={da.id}
