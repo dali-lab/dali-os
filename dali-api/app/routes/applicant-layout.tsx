@@ -1,6 +1,7 @@
 import { Outlet, redirect, useLoaderData, Link } from "react-router";
 import type { Route } from "./+types/applicant-layout";
 import { requireAuth } from "~/lib/auth";
+import { userInitials } from "~/lib/display";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -17,7 +18,7 @@ export default function ApplicantLayout() {
     ? `${user.firstName} ${user.lastName ?? ""}`.trim()
     : user.email;
 
-  const initial = (user.firstName ?? user.email)[0].toUpperCase();
+  const initial = userInitials(user);
 
   return (
     <div className="min-h-screen bg-section-bg">

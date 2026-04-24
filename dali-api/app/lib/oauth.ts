@@ -315,9 +315,12 @@ export async function exchangeGoogleCode(code: string, callbackUrl: string) {
   if (!payload) {
     throw new OAuthError("server_error", "Failed to verify Google ID token");
   }
+  if (!payload.email || !payload.email_verified) {
+    throw new OAuthError("server_error", "Email not verified by Google");
+  }
 
   return {
-    email: payload.email as string,
+    email: payload.email,
     firstName: (payload.given_name ?? "") as string,
     lastName: (payload.family_name ?? "") as string,
     accessToken: data.access_token as string | undefined,

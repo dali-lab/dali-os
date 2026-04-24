@@ -13,10 +13,11 @@ import {
   FileText,
   MessageSquare,
 } from 'lucide-react'
+import { userInitials } from '~/lib/display'
 
 interface LayoutProps {
   children: React.ReactNode
-  user: { email: string }
+  user: { email: string; firstName?: string; lastName?: string }
   isHiringLead?: boolean
   isAdmin?: boolean
   isDomainLead?: boolean
@@ -75,7 +76,7 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
   ].filter((s) => s.show)
 
   const activeSection = sections.find((s) => s.active)
-  const initials = user.email.slice(0, 2).toUpperCase()
+  const initials = userInitials(user)
 
   return (
     <div className="min-h-screen bg-section-bg flex flex-col">
