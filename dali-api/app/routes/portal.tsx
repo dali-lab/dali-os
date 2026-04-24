@@ -272,7 +272,7 @@ function ApplicationDraftView({ cycleName }: { cycleName: string }) {
   );
 }
 
-function PendingView({ cycleName }: { cycleName: string }) {
+function PendingView({ cycleName, showViewLink }: { cycleName: string; showViewLink?: boolean }) {
   return (
     <div className="max-w-2xl mx-auto py-12">
       <div className="text-center mb-10">
@@ -289,6 +289,13 @@ function PendingView({ cycleName }: { cycleName: string }) {
           <PulsingDot color="bg-yellow-500" />
           Pending
         </div>
+        {showViewLink && (
+          <div className="mt-4">
+            <Link to="/portal/application" className="text-sm text-accent-coral hover:underline">
+              View your submission →
+            </Link>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -855,11 +862,16 @@ export default function Portal() {
           </div>
         )}
         {topLevelStage === "ApplicationOpen" && <ApplicationOpenView cycleName={cycleName} />}
-        {topLevelStage === "Pending" && <PendingView cycleName={cycleName} />}
+        {topLevelStage === "Pending" && <PendingView cycleName={cycleName} showViewLink />}
         {topLevelStage === "Draft" && <ApplicationDraftView cycleName={cycleName} />}
 
         {das.length > 0 && applicationStatus !== "Draft" && (
           <div className="max-w-3xl mx-auto space-y-8">
+            <div className="flex justify-end">
+              <Link to="/portal/application" className="text-sm text-accent-coral hover:underline">
+                View your submission →
+              </Link>
+            </div>
             {das.map(da => (
               <DomainApplicationCard
                 key={da.id}
