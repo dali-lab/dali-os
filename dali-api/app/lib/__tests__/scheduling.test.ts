@@ -148,23 +148,16 @@ describe("isInterviewerFree", () => {
 // ─── generateCandidateSlots ─────────────────────────────────────────────────
 
 describe("generateCandidateSlots", () => {
-  // Use fake time set to well before the date range so "future" filter passes
-  beforeEach(() => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-01T00:00:00Z"));
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
+  // No fake timers — they break Intl.DateTimeFormat timezone handling.
+  // Use dates far in the future so the "slotStart > new Date()" filter passes.
 
   // NOTE: start/end dates use T04:00:00Z (midnight EDT) so that
   // toLocaleDateString("en-CA", { timeZone: "America/New_York" }) resolves
   // to the intended calendar day (midnight UTC is still the previous evening in ET).
 
   it("generates slots within business hours on weekdays", () => {
-    const start = new Date("2026-04-13T04:00:00Z"); // Monday midnight ET
-    const end = new Date("2026-04-14T03:59:59Z");
+    const start = new Date("2030-04-15T04:00:00Z"); // Monday midnight ET
+    const end = new Date("2030-04-16T03:59:59Z");
 
     const slots = generateCandidateSlots(start, end, 9, 10, 30, "America/New_York");
 
@@ -178,16 +171,16 @@ describe("generateCandidateSlots", () => {
   });
 
   it("skips weekends", () => {
-    const start = new Date("2026-04-18T04:00:00Z"); // Saturday midnight ET
-    const end = new Date("2026-04-20T03:59:59Z");   // through Sunday
+    const start = new Date("2030-04-20T04:00:00Z"); // Saturday midnight ET
+    const end = new Date("2030-04-22T03:59:59Z");   // through Sunday
 
     const slots = generateCandidateSlots(start, end, 9, 17, 30, "America/New_York");
     expect(slots).toHaveLength(0);
   });
 
   it("generates slots at 15-minute increments", () => {
-    const start = new Date("2026-04-13T04:00:00Z"); // Monday midnight ET
-    const end = new Date("2026-04-14T03:59:59Z");
+    const start = new Date("2030-04-15T04:00:00Z"); // Monday midnight ET
+    const end = new Date("2030-04-16T03:59:59Z");
 
     const slots = generateCandidateSlots(start, end, 9, 18, 30, "America/New_York");
     expect(slots.length).toBeGreaterThan(1);
@@ -199,8 +192,8 @@ describe("generateCandidateSlots", () => {
   });
 
   it("does not generate slots that end after dayEndHour", () => {
-    const start = new Date("2026-04-13T04:00:00Z"); // Monday midnight ET
-    const end = new Date("2026-04-14T03:59:59Z");
+    const start = new Date("2030-04-15T04:00:00Z"); // Monday midnight ET
+    const end = new Date("2030-04-16T03:59:59Z");
 
     const slots = generateCandidateSlots(start, end, 9, 18, 30, "America/New_York");
     expect(slots.length).toBeGreaterThan(0);
@@ -215,8 +208,8 @@ describe("generateCandidateSlots", () => {
   });
 
   it("spans multiple days", () => {
-    const start = new Date("2026-04-13T04:00:00Z"); // Monday midnight ET
-    const end = new Date("2026-04-15T03:59:59Z");   // through Tuesday
+    const start = new Date("2030-04-15T04:00:00Z"); // Monday midnight ET
+    const end = new Date("2030-04-17T03:59:59Z");   // through Tuesday
 
     const slots = generateCandidateSlots(start, end, 9, 18, 30, "America/New_York");
 
@@ -230,14 +223,9 @@ describe("generateCandidateSlots", () => {
 // ─── computeAvailableSlots ──────────────────────────────────────────────────
 
 describe("computeAvailableSlots", () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-01T00:00:00Z"));
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
+  // No fake timers — vi.useFakeTimers() breaks Intl.DateTimeFormat timezone
+  // handling which parseTzDateTime depends on. Use dates far in the future
+  // so the "slotStart > new Date()" filter always passes.
 
   it("returns empty when no interview config exists", async () => {
     mockPrisma.interviewConfig.findUnique.mockResolvedValue(null);
@@ -251,8 +239,8 @@ describe("computeAvailableSlots", () => {
       bufferMinutes: 0,
       dayStartHour: 9,
       dayEndHour: 10,
-      interviewStartDate: new Date("2026-04-13T04:00:00Z"), // Monday midnight ET
-      interviewEndDate: new Date("2026-04-14T03:59:59Z"),
+      interviewStartDate: new Date("2030-04-15T04:00:00Z"), // Monday midnight ET
+      interviewEndDate: new Date("2030-04-16T03:59:59Z"),
       timezone: "America/New_York",
     });
 
@@ -263,7 +251,7 @@ describe("computeAvailableSlots", () => {
         daliMemberId: "m1",
         domainId: "domain1",
         availabilityBlocks: [
-          { startTime: new Date("2026-04-13T00:00:00Z"), endTime: new Date("2026-04-13T23:59:59Z") },
+          { startTime: new Date("2030-04-15T00:00:00Z"), endTime: new Date("2030-04-15T23:59:59Z") },
         ],
         interviewAssignments: [],
       },
@@ -272,7 +260,7 @@ describe("computeAvailableSlots", () => {
         daliMemberId: "m2",
         domainId: "domain-other",
         availabilityBlocks: [
-          { startTime: new Date("2026-04-13T00:00:00Z"), endTime: new Date("2026-04-13T23:59:59Z") },
+          { startTime: new Date("2030-04-15T00:00:00Z"), endTime: new Date("2030-04-15T23:59:59Z") },
         ],
         interviewAssignments: [],
       },
@@ -294,8 +282,8 @@ describe("computeAvailableSlots", () => {
       bufferMinutes: 0,
       dayStartHour: 9,
       dayEndHour: 10,
-      interviewStartDate: new Date("2026-04-13T04:00:00Z"),
-      interviewEndDate: new Date("2026-04-14T03:59:59Z"),
+      interviewStartDate: new Date("2030-04-15T04:00:00Z"),
+      interviewEndDate: new Date("2030-04-16T03:59:59Z"),
       timezone: "America/New_York",
     });
 
@@ -306,7 +294,7 @@ describe("computeAvailableSlots", () => {
         daliMemberId: "m1",
         domainId: "domain1",
         availabilityBlocks: [
-          { startTime: new Date("2026-04-13T00:00:00Z"), endTime: new Date("2026-04-13T23:59:59Z") },
+          { startTime: new Date("2030-04-15T00:00:00Z"), endTime: new Date("2030-04-15T23:59:59Z") },
         ],
         interviewAssignments: [],
       },
@@ -322,8 +310,8 @@ describe("computeAvailableSlots", () => {
       bufferMinutes: 0,
       dayStartHour: 9,
       dayEndHour: 10,
-      interviewStartDate: new Date("2026-04-13T04:00:00Z"),
-      interviewEndDate: new Date("2026-04-14T03:59:59Z"),
+      interviewStartDate: new Date("2030-04-15T04:00:00Z"),
+      interviewEndDate: new Date("2030-04-16T03:59:59Z"),
       timezone: "America/New_York",
     });
 
@@ -338,13 +326,13 @@ describe("computeAvailableSlots", () => {
         daliMemberId: "mira",
         domainId: "domain1",
         availabilityBlocks: [
-          { startTime: new Date("2026-04-13T00:00:00Z"), endTime: new Date("2026-04-13T23:59:59Z") },
+          { startTime: new Date("2030-04-15T00:00:00Z"), endTime: new Date("2030-04-15T23:59:59Z") },
         ],
         interviewAssignments: [
           {
             interview: {
-              startTime: new Date("2026-04-13T13:00:00Z"), // 9:00 EDT
-              endTime: new Date("2026-04-13T13:30:00Z"),
+              startTime: new Date("2030-04-15T13:00:00Z"), // 9:00 EDT
+              endTime: new Date("2030-04-15T13:30:00Z"),
             },
           },
         ],
@@ -354,7 +342,7 @@ describe("computeAvailableSlots", () => {
         daliMemberId: "mira", // same member
         domainId: "domain-other",
         availabilityBlocks: [
-          { startTime: new Date("2026-04-13T00:00:00Z"), endTime: new Date("2026-04-13T23:59:59Z") },
+          { startTime: new Date("2030-04-15T00:00:00Z"), endTime: new Date("2030-04-15T23:59:59Z") },
         ],
         interviewAssignments: [], // empty at the row level
       },
@@ -363,7 +351,7 @@ describe("computeAvailableSlots", () => {
         daliMemberId: "bob",
         domainId: "domain1",
         availabilityBlocks: [
-          { startTime: new Date("2026-04-13T00:00:00Z"), endTime: new Date("2026-04-13T23:59:59Z") },
+          { startTime: new Date("2030-04-15T00:00:00Z"), endTime: new Date("2030-04-15T23:59:59Z") },
         ],
         interviewAssignments: [],
       },
@@ -374,10 +362,10 @@ describe("computeAvailableSlots", () => {
     // Mira is busy under her Eng row, and member-level aggregation should
     // propagate that to her Design row — no slot.
     const slots = await computeAvailableSlots("cycle1", ["domain1"]);
-    const at9 = slots.find((s) => s.startTime === new Date("2026-04-13T13:00:00Z").toISOString());
+    const at9 = slots.find((s) => s.startTime === new Date("2030-04-15T13:00:00Z").toISOString());
     expect(at9).toBeUndefined();
     // 9:30 should still work — Mira is free by then.
-    const at930 = slots.find((s) => s.startTime === new Date("2026-04-13T13:30:00Z").toISOString());
+    const at930 = slots.find((s) => s.startTime === new Date("2030-04-15T13:30:00Z").toISOString());
     expect(at930).toBeDefined();
   });
 });

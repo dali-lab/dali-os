@@ -17,24 +17,32 @@ const ALLOWED_TYPES = new Set([
 ])
 
 export async function action({ request }: { request: Request }) {
-  const auth = await requireAuth(request)
-  if (!auth.ok) return Response.json({ error: 'Unauthorized' }, { status: 401 })
+  try {
+    const auth = await requireAuth(request)
+    if (!auth.ok) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { key, contentType } = await request.json()
+    const { key, contentType } = await request.json()
 
-  if (!key || typeof key !== 'string') {
-    return Response.json({ error: 'key is required' }, { status: 400 })
-  }
-  if (!contentType || !ALLOWED_TYPES.has(contentType)) {
+    if (!key || typeof key !== 'string') {
+      return Response.json({ error: 'key is required' }, { status: 400 })
+    }
+    if (!contentType || !ALLOWED_TYPES.has(contentType)) {
+      return Response.json(
+        { error: `contentType must be one of: ${[...ALLOWED_TYPES].join(', ')}` },
+        { status: 400 },
+      )
+    }
+
+    // Scope all keys under uploads/ to avoid collisions with other bucket contents
+    const scopedKey = key.startsWith('uploads/') ? key : `uploads/${key}`
+
+    const uploadUrl = await getUploadUrl(scopedKey, contentType)
+    return Response.json({ uploadUrl, key: scopedKey })
+  } catch (err) {
+    console.error('Upload presign error:', err)
     return Response.json(
-      { error: `contentType must be one of: ${[...ALLOWED_TYPES].join(', ')}` },
-      { status: 400 },
+      { error: 'Failed to generate upload URL' },
+      { status: 500 },
     )
   }
-
-  // Scope all keys under uploads/ to avoid collisions with other bucket contents
-  const scopedKey = key.startsWith('uploads/') ? key : `uploads/${key}`
-
-  const uploadUrl = await getUploadUrl(scopedKey, contentType)
-  return Response.json({ uploadUrl, key: scopedKey })
 }
