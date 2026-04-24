@@ -80,10 +80,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   });
 
   const draftStatus = draft?.statusUpdates[0]?.newStatus ?? null;
-  // If already submitted, go back to portal
-  if (draftStatus === "Submitted") {
-    return redirect("/portal");
-  }
 
   return {
     cycleId: active.id,
@@ -91,6 +87,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     generalChallengeVersionId,
     formQuestions,
     domains,
+    isAlreadySubmitted: draftStatus === "Submitted",
     draft: draft
       ? {
           id: draft.id,
@@ -304,14 +301,19 @@ export async function action({ request }: Route.ActionArgs) {
       return { urlWarnings };
     }
 
-    // Create Submitted status update
-    await prisma.applicationStatusUpdate.create({
-      data: {
-        newStatus: "Submitted",
-        applicationId,
-        userId: auth.user.sub,
-      },
+    // Create Submitted status update only on first submission
+    const existingSubmitted = await prisma.applicationStatusUpdate.findFirst({
+      where: { applicationId, newStatus: "Submitted" },
     });
+    if (!existingSubmitted) {
+      await prisma.applicationStatusUpdate.create({
+        data: {
+          newStatus: "Submitted",
+          applicationId,
+          userId: auth.user.sub,
+        },
+      });
+    }
 
     return redirect("/portal");
   }
@@ -651,7 +653,7 @@ function getDomainColor(index: number) {
 
 export default function PortalApply() {
   const loaderData = useLoaderData<typeof loader>() as any;
-  const { cycleId, cycleName, generalChallengeVersionId, formQuestions, domains } = loaderData;
+  const { cycleId, cycleName, generalChallengeVersionId, formQuestions, domains, isAlreadySubmitted } = loaderData;
   const [draft, setDraft] = useState(loaderData.draft);
   const [selectedDomainIds, setSelectedDomainIds] = useState<string[]>(
     loaderData.draft?.selectedDomainIds ?? [],
@@ -957,7 +959,11 @@ export default function PortalApply() {
     <div className="max-w-3xl mx-auto px-6 py-10">
       <div className="flex items-center justify-between mb-2">
         <h2 className="font-heading text-xl font-bold text-dark-blue">{cycleName} Application</h2>
-        <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-blue-100 text-blue-700">Draft</span>
+        {isAlreadySubmitted ? (
+          <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-green-100 text-green-700">Submitted</span>
+        ) : (
+          <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-blue-100 text-blue-700">Draft</span>
+        )}
       </div>
       <p className="text-sm text-muted-foreground mb-8">
         Fill out the form below. Your progress is saved automatically.
@@ -1107,7 +1113,7 @@ export default function PortalApply() {
               disabled={submitting}
               className="px-6 py-2.5 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition disabled:opacity-50"
             >
-              {submitting ? "Submitting..." : "Submit Application"}
+              {submitting ? "Submitting..." : isAlreadySubmitted ? "Update Application" : "Submit Application"}
             </button>
           )}
           <span className="text-xs text-muted-foreground/70 flex items-center gap-1.5">
