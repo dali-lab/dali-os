@@ -52,7 +52,6 @@ export async function loader({ request }: Route.LoaderArgs) {
       domainApplications: {
         include: {
           challengeVersion: {
-            include: { domain: true },
             select: { questions: true, domain: true },
           },
         },
