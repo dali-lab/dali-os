@@ -894,11 +894,41 @@ export default function Portal() {
           </div>
         )}
         {topLevelStage === "ApplicationOpen" && <ApplicationOpenView cycleName={cycleName} />}
-        {topLevelStage === "Pending" && <PendingView cycleName={cycleName} />}
+        {topLevelStage === "Pending" && (
+          <>
+            <PendingView cycleName={cycleName} />
+            {cycleStatus === "Open" && (
+              <div className="max-w-2xl mx-auto mt-4 rounded-xl border border-blue-200 bg-blue-50 px-5 py-4 flex items-center justify-between gap-4">
+                <p className="text-sm text-blue-800">
+                  The cycle is still open — you can still update your application.
+                </p>
+                <Link
+                  to="/portal/apply"
+                  className="shrink-0 px-4 py-2 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition"
+                >
+                  Edit Application
+                </Link>
+              </div>
+            )}
+          </>
+        )}
         {topLevelStage === "Draft" && <ApplicationDraftView cycleName={cycleName} />}
 
         {das.length > 0 && applicationStatus !== "Draft" && (
           <div className="max-w-3xl mx-auto space-y-8">
+            {cycleStatus === "Open" && applicationStatus === "Submitted" && (
+              <div className="rounded-xl border border-blue-200 bg-blue-50 px-5 py-4 flex items-center justify-between gap-4">
+                <p className="text-sm text-blue-800">
+                  The cycle is still open — you can still update your application.
+                </p>
+                <Link
+                  to="/portal/apply"
+                  className="shrink-0 px-4 py-2 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition"
+                >
+                  Edit Application
+                </Link>
+              </div>
+            )}
             {das.map(da => (
               <DomainApplicationCard
                 key={da.id}
