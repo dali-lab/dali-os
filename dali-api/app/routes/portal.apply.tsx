@@ -646,11 +646,11 @@ function QuestionField({
 // ─── Domain Colors ──────────────────────────────────────────────────────────
 
 const DOMAIN_COLORS = [
-  { border: "border-l-accent-pink", text: "text-accent-pink", bg: "bg-accent-pink", pillText: "text-white" },
-  { border: "border-l-accent-teal", text: "text-accent-teal", bg: "bg-accent-teal", pillText: "text-white" },
-  { border: "border-l-accent-yellow", text: "text-yellow-700", bg: "bg-accent-yellow", pillText: "text-dark-blue" },
-  { border: "border-l-accent-coral", text: "text-accent-coral", bg: "bg-accent-coral", pillText: "text-white" },
-  { border: "border-l-accent-green", text: "text-green-700", bg: "bg-accent-green", pillText: "text-dark-blue" },
+  { border: "border-l-accent-pink", text: "text-accent-pink", bg: "bg-accent-pink", pillText: "text-white", cardBg: "bg-[hsl(350_70%_93%)]" },
+  { border: "border-l-accent-teal", text: "text-accent-teal", bg: "bg-accent-teal", pillText: "text-white", cardBg: "bg-accent-teal/20" },
+  { border: "border-l-accent-yellow", text: "text-yellow-700", bg: "bg-accent-yellow", pillText: "text-dark-blue", cardBg: "bg-accent-yellow/30" },
+  { border: "border-l-accent-coral", text: "text-accent-coral", bg: "bg-accent-coral", pillText: "text-white", cardBg: "bg-accent-coral/20" },
+  { border: "border-l-accent-green", text: "text-green-700", bg: "bg-accent-green", pillText: "text-dark-blue", cardBg: "bg-accent-green/30" },
 ];
 
 function getDomainColor(index: number) {
@@ -1029,7 +1029,7 @@ export default function PortalApply() {
           const color = getDomainColor(domainIndex);
 
           return (
-            <div key={domainId} className={`rounded-2xl bg-[#E8F4FA] border-l-4 ${color.border} px-6 py-5 space-y-6`}>
+            <div key={domainId} className={`rounded-2xl ${color.cardBg} px-6 py-5 space-y-6`}>
               <div className="flex items-center justify-between">
                 <h3 className={`font-heading text-sm font-bold uppercase tracking-wider ${color.text}`}>
                   {domain.name} Questions
