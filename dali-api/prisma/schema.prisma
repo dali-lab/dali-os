@@ -276,6 +276,9 @@ model InterviewConfig {
   interviewStartDate DateTime
   interviewEndDate   DateTime
 
+  rescheduleNoticeHours Int @default(12) // minimum hours before interview to allow reschedule
+  cancelNoticeHours     Int @default(0)  // minimum hours before interview to allow cancel (0 = up until start)
+
   timezone String @default("America/New_York")
 }
 
@@ -338,6 +341,12 @@ enum InterviewStatus {
   CancelledByAdmin
 }
 
+enum InterviewLocation {
+  PodAppa
+  PodMomo
+  Online
+}
+
 model Interview {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
@@ -356,6 +365,7 @@ model Interview {
   startTime DateTime
   endTime   DateTime
   status    InterviewStatus @default(Scheduled)
+  location  InterviewLocation @default(Online)
 
   // Joint outcome — set by either interviewer when marking complete.
   // recommendation values: 'Strong Hire' | 'Hire' | 'Lean Hire' | 'Lean No Hire' | 'No Hire'
