@@ -17,6 +17,7 @@ export type DomainApplicationStatus =
   | 'InvitedToInterview'    // Released InvitedToInterview, no interview scheduled
   | 'InterviewScheduled'    // interview exists with status Scheduled
   | 'PostInterviewPending'  // interview Completed, still on InvitedToInterview decision
+  | 'Withdrawn'             // applicant cancelled their interview (withdrawal)
   | 'Accepted'              // latest Released decision is Accepted
   | 'Waitlisted'            // latest Released decision is Waitlisted
 
