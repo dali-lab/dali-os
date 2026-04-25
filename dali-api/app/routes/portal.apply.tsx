@@ -80,10 +80,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   });
 
   const draftStatus = draft?.statusUpdates[0]?.newStatus ?? null;
-  // If already submitted, go back to portal
-  if (draftStatus === "Submitted") {
-    return redirect("/portal");
-  }
 
   return {
     cycleId: active.id,
@@ -91,6 +87,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     generalChallengeVersionId,
     formQuestions,
     domains,
+    isAlreadySubmitted: draftStatus === "Submitted",
     draft: draft
       ? {
           id: draft.id,
@@ -304,14 +301,19 @@ export async function action({ request }: Route.ActionArgs) {
       return { urlWarnings };
     }
 
-    // Create Submitted status update
-    await prisma.applicationStatusUpdate.create({
-      data: {
-        newStatus: "Submitted",
-        applicationId,
-        userId: auth.user.sub,
-      },
+    // Create Submitted status update only on first submission
+    const existingSubmitted = await prisma.applicationStatusUpdate.findFirst({
+      where: { applicationId, newStatus: "Submitted" },
     });
+    if (!existingSubmitted) {
+      await prisma.applicationStatusUpdate.create({
+        data: {
+          newStatus: "Submitted",
+          applicationId,
+          userId: auth.user.sub,
+        },
+      });
+    }
 
     return redirect("/portal");
   }
@@ -553,14 +555,22 @@ function QuestionField({
     "w-full rounded-lg border border-border bg-card text-sm text-dark-blue placeholder:text-muted-foreground/70 focus:outline-none focus:border-accent-coral px-4 py-2";
 
   if (question.type === "textarea") {
+    const wordCount = value.trim() ? value.trim().split(/\s+/).filter(Boolean).length : 0;
+    const maxWords = question.data.maxWords;
+    const overLimit = maxWords !== undefined && wordCount > maxWords;
     return (
-      <textarea
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        rows={4}
-        className={`${inputBase} resize-none`}
-        placeholder="Your answer"
-      />
+      <div>
+        <textarea
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          rows={4}
+          className={`${inputBase} resize-none`}
+          placeholder="Your answer"
+        />
+        <p className={`text-xs mt-1 ${overLimit ? "text-red-500" : "text-muted-foreground"}`}>
+          {maxWords !== undefined ? `${wordCount} / ${maxWords} words` : `${wordCount} words`}
+        </p>
+      </div>
     );
   }
 
@@ -636,11 +646,11 @@ function QuestionField({
 // ─── Domain Colors ──────────────────────────────────────────────────────────
 
 const DOMAIN_COLORS = [
-  { border: "border-l-accent-pink", text: "text-accent-pink", bg: "bg-accent-pink", pillText: "text-white" },
-  { border: "border-l-accent-teal", text: "text-accent-teal", bg: "bg-accent-teal", pillText: "text-white" },
-  { border: "border-l-accent-yellow", text: "text-yellow-700", bg: "bg-accent-yellow", pillText: "text-dark-blue" },
-  { border: "border-l-accent-coral", text: "text-accent-coral", bg: "bg-accent-coral", pillText: "text-white" },
-  { border: "border-l-accent-green", text: "text-green-700", bg: "bg-accent-green", pillText: "text-dark-blue" },
+  { border: "border-l-accent-pink", text: "text-accent-pink", bg: "bg-accent-pink", pillText: "text-white", cardBg: "bg-[hsl(350_70%_93%)]" },
+  { border: "border-l-accent-teal", text: "text-accent-teal", bg: "bg-accent-teal", pillText: "text-white", cardBg: "bg-accent-teal/20" },
+  { border: "border-l-accent-yellow", text: "text-yellow-700", bg: "bg-accent-yellow", pillText: "text-dark-blue", cardBg: "bg-accent-yellow/30" },
+  { border: "border-l-accent-coral", text: "text-accent-coral", bg: "bg-accent-coral", pillText: "text-white", cardBg: "bg-accent-coral/20" },
+  { border: "border-l-accent-green", text: "text-green-700", bg: "bg-accent-green", pillText: "text-dark-blue", cardBg: "bg-accent-green/30" },
 ];
 
 function getDomainColor(index: number) {
@@ -651,7 +661,7 @@ function getDomainColor(index: number) {
 
 export default function PortalApply() {
   const loaderData = useLoaderData<typeof loader>() as any;
-  const { cycleId, cycleName, generalChallengeVersionId, formQuestions, domains } = loaderData;
+  const { cycleId, cycleName, generalChallengeVersionId, formQuestions, domains, isAlreadySubmitted } = loaderData;
   const [draft, setDraft] = useState(loaderData.draft);
   const [selectedDomainIds, setSelectedDomainIds] = useState<string[]>(
     loaderData.draft?.selectedDomainIds ?? [],
@@ -673,8 +683,9 @@ export default function PortalApply() {
   const [error, setError] = useState<string | null>(null);
   const [urlWarnings, setUrlWarnings] = useState<Record<string, string>>({});
   const [urlChecks, setUrlChecks] = useState<Record<string, UrlCheckState>>({});
-  const [confirmedSubmit, setConfirmedSubmit] = useState(false);
+  const [showWarningModal, setShowWarningModal] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const warningBannerRef = useRef<HTMLDivElement | null>(null);
   const createFetcher = useFetcher();
   const submitFetcher = useFetcher();
 
@@ -882,7 +893,8 @@ export default function PortalApply() {
           warnings[key] = result.message;
         }
         setUrlWarnings(warnings);
-        setConfirmedSubmit(true);
+        setShowWarningModal(true);
+        setTimeout(() => warningBannerRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 50);
       }
     } else if (submitFetcher.state === "idle") {
       setSubmitting(false);
@@ -957,7 +969,18 @@ export default function PortalApply() {
     <div className="max-w-3xl mx-auto px-6 py-10">
       <div className="flex items-center justify-between mb-2">
         <h2 className="font-heading text-xl font-bold text-dark-blue">{cycleName} Application</h2>
-        <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-blue-100 text-blue-700">Draft</span>
+        {submitting ? (
+          <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-gray-100 text-gray-600 flex items-center gap-1">
+            <span className="inline-block w-3 h-3 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+            Submitting...
+          </span>
+        ) : Object.keys(urlWarnings).length > 0 ? (
+          <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-amber-100 text-amber-700">Action required</span>
+        ) : isAlreadySubmitted ? (
+          <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-green-100 text-green-700">Submitted</span>
+        ) : (
+          <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-blue-100 text-blue-700">Draft</span>
+        )}
       </div>
       <p className="text-sm text-muted-foreground mb-8">
         Fill out the form below. Your progress is saved automatically.
@@ -1006,7 +1029,7 @@ export default function PortalApply() {
           const color = getDomainColor(domainIndex);
 
           return (
-            <div key={domainId} className={`rounded-2xl bg-[#E8F4FA] border-l-4 ${color.border} px-6 py-5 space-y-6`}>
+            <div key={domainId} className={`rounded-2xl ${color.cardBg} px-6 py-5 space-y-6`}>
               <div className="flex items-center justify-between">
                 <h3 className={`font-heading text-sm font-bold uppercase tracking-wider ${color.text}`}>
                   {domain.name} Questions
@@ -1076,7 +1099,7 @@ export default function PortalApply() {
 
         {/* URL warnings banner */}
         {Object.keys(urlWarnings).length > 0 && (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4">
+          <div ref={warningBannerRef} className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4">
             <p className="text-sm font-semibold text-amber-800 mb-1">Some URLs may have issues</p>
             <p className="text-xs text-amber-700">
               One or more of your submitted links appear to be private or inaccessible. You can still submit, but reviewers may not be able to view them.
@@ -1093,23 +1116,13 @@ export default function PortalApply() {
           >
             {saving ? "Saving..." : "Save Draft"}
           </button>
-          {confirmedSubmit ? (
-            <button
-              onClick={() => handleSubmit(true)}
-              disabled={submitting}
-              className="px-6 py-2.5 rounded-full bg-amber-500 text-white text-sm font-semibold hover:bg-amber-600 transition disabled:opacity-50"
-            >
-              {submitting ? "Submitting..." : "Submit Anyway"}
-            </button>
-          ) : (
-            <button
-              onClick={() => handleSubmit()}
-              disabled={submitting}
-              className="px-6 py-2.5 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition disabled:opacity-50"
-            >
-              {submitting ? "Submitting..." : "Submit Application"}
-            </button>
-          )}
+          <button
+            onClick={() => handleSubmit()}
+            disabled={submitting}
+            className="px-6 py-2.5 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition disabled:opacity-50"
+          >
+            {submitting ? "Submitting..." : isAlreadySubmitted ? "Update Application" : "Submit Application"}
+          </button>
           <span className="text-xs text-muted-foreground/70 flex items-center gap-1.5">
             {saving ? (
               <>
@@ -1127,6 +1140,50 @@ export default function PortalApply() {
           </span>
         </div>
       </div>
+
+      {/* URL warning modal */}
+      {showWarningModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full mx-4 p-6">
+            <h3 className="font-heading text-base font-bold text-dark-blue mb-2">Some links may be inaccessible</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              One or more URLs appear to be private or inaccessible. Reviewers may not be able to view them.
+            </p>
+            <ul className="space-y-2 mb-5">
+              {Object.entries(urlWarnings).map(([key, message]) => {
+                const allQuestions = [
+                  ...(formQuestions as Question[]),
+                  ...(domains as any[]).flatMap((d: any) => d.challengeQuestions as Question[]),
+                ];
+                const q = allQuestions.find(q => q.key === key);
+                return (
+                  <li key={key} className="text-sm text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
+                    <span className="font-semibold">{q?.data.label ?? key}:</span> {message}
+                  </li>
+                );
+              })}
+            </ul>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => {
+                  setShowWarningModal(false);
+                  warningBannerRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+                }}
+                className="px-5 py-2 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-accent-coral hover:text-accent-coral transition"
+              >
+                Go Back and Fix
+              </button>
+              <button
+                onClick={() => { setShowWarningModal(false); handleSubmit(true); }}
+                disabled={submitting}
+                className="px-5 py-2 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition disabled:opacity-50"
+              >
+                Submit Anyway
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

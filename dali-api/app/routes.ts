@@ -26,6 +26,7 @@ export default [
   layout("routes/applicant-layout.tsx", [
     route("portal", "routes/portal.tsx"),
     route("portal/apply", "routes/portal.apply.tsx"),
+    route("portal/application", "routes/portal.application.tsx"),
   ]),
 
   // Login (no layout)
