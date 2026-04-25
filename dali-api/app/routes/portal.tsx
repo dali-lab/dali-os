@@ -189,7 +189,7 @@ function buildIcsContent(slot: TimeSlot, cycleName: string, location?: string): 
     `DTEND:${fmt(slot.isoEnd)}`,
     `SUMMARY:DALI Lab Interview — ${cycleName}`,
     "DESCRIPTION:Your interview with the DALI Lab team. Please arrive 5 minutes early.",
-    `LOCATION:${locStr.replace(/,/g, "\\,")}`,
+    `LOCATION:${locStr.replace(/\\/g, "\\\\").replace(/,/g, "\\,").replace(/;/g, "\\;")}`,
     "END:VEVENT",
     "END:VCALENDAR",
   ].join("\r\n");
