@@ -733,6 +733,7 @@ export default function DomainLeadDashboard() {
                                   <tr>
                                     <th className="px-4 py-2 text-left">Applicant</th>
                                     <th className="px-4 py-2 text-left">Time</th>
+                                    <th className="px-4 py-2 text-left">Location</th>
                                     <th className="px-4 py-2 text-left">Status</th>
                                     <th className="px-4 py-2 text-left">In-Domain</th>
                                     <th className="px-4 py-2 text-left">Cross-Domain</th>
@@ -765,6 +766,10 @@ export default function DomainLeadDashboard() {
                                           {start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}{' '}
                                           {start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} –{' '}
                                           {end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+                                        </td>
+                                        <td className="px-4 py-3 text-muted-foreground text-xs">
+                                          {interview.location === 'PodAppa' ? 'Pod Appa' :
+                                           interview.location === 'PodMomo' ? 'Pod Momo' : 'Online'}
                                         </td>
                                         <td className="px-4 py-3">
                                           <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${

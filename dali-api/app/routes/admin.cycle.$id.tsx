@@ -16,6 +16,8 @@ interface InterviewConfig {
   dayEndHour: number
   interviewStartDate: string
   interviewEndDate: string
+  rescheduleNoticeHours: number
+  cancelNoticeHours: number
   timezone: string
 }
 
@@ -30,6 +32,7 @@ interface InterviewRow {
   startTime: string
   endTime: string
   status: string
+  location: string
   domainApplication: {
     challengeVersion: { domain: { name: string } }
     application: { user: { firstName: string; lastName: string } }
@@ -281,6 +284,8 @@ export default function AdminCycleDetails() {
     dayEndHour: 18,
     interviewStartDate: '',
     interviewEndDate: '',
+    rescheduleNoticeHours: 12,
+    cancelNoticeHours: 0,
     timezone: 'America/New_York',
   })
   const [configSaved, setConfigSaved] = useState(false)
@@ -792,6 +797,26 @@ export default function AdminCycleDetails() {
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
               />
             </div>
+            <div>
+              <label className="block text-sm font-bold text-foreground/80 mb-1">Reschedule Notice</label>
+              <select
+                value={config.rescheduleNoticeHours}
+                onChange={e => setConfig(c => ({ ...c, rescheduleNoticeHours: Number(e.target.value) }))}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              >
+                {[0, 2, 4, 6, 8, 12, 24, 48].map(h => <option key={h} value={h}>{h === 0 ? 'No minimum' : `${h} hours before`}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-bold text-foreground/80 mb-1">Cancel Notice</label>
+              <select
+                value={config.cancelNoticeHours}
+                onChange={e => setConfig(c => ({ ...c, cancelNoticeHours: Number(e.target.value) }))}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              >
+                {[0, 2, 4, 6, 8, 12, 24, 48].map(h => <option key={h} value={h}>{h === 0 ? 'Up until start' : `${h} hours before`}</option>)}
+              </select>
+            </div>
           </div>
 
           <div className="flex items-center gap-3 pt-2">
@@ -976,6 +1001,7 @@ export default function AdminCycleDetails() {
                   <th className="text-left px-4 py-3 font-bold text-foreground/80">Domain</th>
                   <th className="text-left px-4 py-3 font-bold text-foreground/80">Time</th>
                   <th className="text-left px-4 py-3 font-bold text-foreground/80">Status</th>
+                  <th className="text-left px-4 py-3 font-bold text-foreground/80">Location</th>
                   <th className="text-left px-4 py-3 font-bold text-foreground/80">Interviewers</th>
                   <th className="text-right px-4 py-3 font-bold text-foreground/80">Actions</th>
                 </tr>
@@ -1006,6 +1032,40 @@ export default function AdminCycleDetails() {
                         }`}>
                           {interview.status}
                         </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        {isFuture && interview.status === 'Scheduled' ? (
+                          <select
+                            value={interview.location}
+                            onChange={async (e) => {
+                              const newLocation = e.target.value
+                              const res = await fetch(`/api/interviews/${interview.id}/location`, {
+                                method: 'PATCH',
+                                credentials: 'include',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ location: newLocation }),
+                              })
+                              if (res.ok) {
+                                setInterviews(prev => prev.map(i =>
+                                  i.id === interview.id ? { ...i, location: newLocation } : i
+                                ))
+                              } else {
+                                const body = await res.json().catch(() => ({}))
+                                alert(body.error ?? 'Failed to update location')
+                              }
+                            }}
+                            className="text-xs border border-border rounded px-1.5 py-0.5 bg-card"
+                          >
+                            <option value="PodAppa">Pod Appa</option>
+                            <option value="PodMomo">Pod Momo</option>
+                            <option value="Online">Online</option>
+                          </select>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">
+                            {interview.location === 'PodAppa' ? 'Pod Appa' :
+                             interview.location === 'PodMomo' ? 'Pod Momo' : 'Online'}
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-muted-foreground text-xs">
                         {interview.assignments
@@ -1057,7 +1117,7 @@ export default function AdminCycleDetails() {
                   )
                 })}
                 {interviews.length === 0 && (
-                  <tr><td colSpan={6} className="px-4 py-8 text-center text-muted-foreground/70">No interviews scheduled yet.</td></tr>
+                  <tr><td colSpan={7} className="px-4 py-8 text-center text-muted-foreground/70">No interviews scheduled yet.</td></tr>
                 )}
               </tbody>
             </table>
