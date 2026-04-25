@@ -2484,6 +2484,7 @@ async function main() {
     window: { startTime: Date; endTime: Date };
     inDomainCI: { id: string };
     crossDomainCI: { id: string };
+    location: "PodAppa" | "PodMomo" | "Online";
   }[] = [];
 
   if (availabilityWindows.length >= 2) {
@@ -2494,6 +2495,7 @@ async function main() {
         window: availabilityWindows[0],
         inDomainCI: rileyCI,
         crossDomainCI: samCI,
+        location: "PodAppa",
       },
       {
         id: "interview-diego",
@@ -2501,6 +2503,7 @@ async function main() {
         window: availabilityWindows[1],
         inDomainCI: rileyCI,
         crossDomainCI: patCI,
+        location: "PodMomo",
       },
     );
   }
@@ -2515,6 +2518,7 @@ async function main() {
         startTime: start,
         endTime: end,
         status: "Scheduled",
+        location: booking.location,
       },
       create: {
         id: booking.id,
@@ -2523,6 +2527,7 @@ async function main() {
         startTime: start,
         endTime: end,
         status: "Scheduled",
+        location: booking.location,
       },
     });
 
@@ -2594,7 +2599,7 @@ async function main() {
     {
       type: 'InvitedToInterview',
       subject: "You're invited to interview with DALI!",
-      body: `Hi {{firstName}},\n\nCongratulations — we were impressed by your application and would love to invite you to interview with DALI!\n\nPlease log in to your application portal to view available interview slots and confirm your availability. Interviews are typically 20–30 minutes and held in person at the DALI Lab (Sudikoff 007).\n\nIf you have any scheduling conflicts or questions, please don't hesitate to reach out to us at applications@dali.dartmouth.edu.\n\nWe look forward to meeting you!\n\nBest,\nThe DALI Team`,
+      body: `Hi {{firstName}},\n\nCongratulations — we were impressed by your application and would love to invite you to interview with DALI!\n\nPlease log in to your application portal to view available interview slots and confirm your availability. Interviews are typically 20–30 minutes and held in person at the DALI Lab.\n\nIf you have any scheduling conflicts or questions, please don't hesitate to reach out to us at applications@dali.dartmouth.edu.\n\nWe look forward to meeting you!\n\nBest,\nThe DALI Team`,
     },
     {
       type: 'InterviewInviteMentor',

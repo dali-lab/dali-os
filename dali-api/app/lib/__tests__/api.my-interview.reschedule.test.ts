@@ -24,6 +24,9 @@ const mockTx: any = {
     findFirst: vi.fn(),
     update: vi.fn(),
   },
+  interviewConfig: {
+    findUnique: vi.fn(),
+  },
 };
 
 const mockPrisma = prisma as unknown as {
@@ -35,6 +38,7 @@ beforeEach(() => {
 
   mockTx.interview.findFirst = vi.fn();
   mockTx.interview.update = vi.fn();
+  mockTx.interviewConfig.findUnique = vi.fn().mockResolvedValue({ rescheduleNoticeHours: 12 });
 
   // $transaction receives (callback, options); invoke the callback with mockTx
   (mockPrisma as any).$transaction = vi.fn(async (cb: any) => cb(mockTx));
@@ -72,6 +76,7 @@ describe("POST /api/my-interview/reschedule", () => {
       id: "int-1",
       applicationCycleId: CYCLE_ID,
       domainApplicationId: DA_ID_A,
+      startTime: new Date(Date.now() + 48 * 60 * 60_000),
       domainApplication: {
         application: {
           domainApplications: [
@@ -109,6 +114,7 @@ describe("POST /api/my-interview/reschedule", () => {
       id: "int-design",
       applicationCycleId: CYCLE_ID,
       domainApplicationId: DA_ID_A,
+      startTime: new Date(Date.now() + 48 * 60 * 60_000),
       domainApplication: {
         application: {
           domainApplications: [
@@ -146,6 +152,7 @@ describe("POST /api/my-interview/reschedule", () => {
       expect.any(Date),
       expect.any(Date),
       mockTx,
+      "online",
     );
   });
 
