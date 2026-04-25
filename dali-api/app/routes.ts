@@ -85,9 +85,10 @@ export default [
   route("api/decisions/:id/finalize", "routes/api.decisions.$id.finalize.ts"),
   route("api/decisions/:id/release", "routes/api.decisions.$id.release.ts"),
 
-  // Interview completion & reassignment
+  // Interview completion, reassignment & location
   route("api/interviews/:id/complete", "routes/api.interviews.$id.complete.ts"),
   route("api/interviews/:id/reassign", "routes/api.interviews.$id.reassign.ts"),
+  route("api/interviews/:id/location", "routes/api.interviews.$id.location.ts"),
 
   // Auto-assign reviewers
   route("api/cycles/:cycleId/domains/:domainId/auto-assign", "routes/api.cycles.$cycleId.domains.$domainId.auto-assign.ts"),

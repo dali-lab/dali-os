@@ -12,10 +12,11 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   const body = await request.json();
-  const { startTime } = body;
+  const { startTime, mode } = body;
   if (!startTime) {
     return Response.json({ error: "startTime is required" }, { status: 400 });
   }
+  const interviewMode = mode === "in-person" ? "in-person" as const : "online" as const;
 
   const da = await prisma.domainApplication.findUnique({
     where: { id: params.id },
@@ -73,6 +74,8 @@ export async function action({ request, params }: Route.ActionArgs) {
       [da.challengeVersion.domainId],
       slotStart,
       slotEnd,
+      undefined,
+      interviewMode,
     );
     return Response.json(interview, { status: 201 });
   } catch (err: any) {

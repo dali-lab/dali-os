@@ -23,9 +23,10 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
 
-  const body = await safeJson<{ slotStart: string; slotEnd: string; domainApplicationId: string }>(request);
+  const body = await safeJson<{ slotStart: string; slotEnd: string; domainApplicationId: string; mode?: string }>(request);
   if (body instanceof Response) return withCors(request, body);
-  const { slotStart, slotEnd, domainApplicationId } = body;
+  const { slotStart, slotEnd, domainApplicationId, mode } = body;
+  const interviewMode = mode === "in-person" ? "in-person" as const : "online" as const;
 
   if (!slotStart || !slotEnd || !domainApplicationId) {
     return withCors(request, Response.json({ error: "slotStart, slotEnd, and domainApplicationId required" }, { status: 400 }));
@@ -56,6 +57,8 @@ export async function action({ request, params }: Route.ActionArgs) {
       applicantDomainIds,
       new Date(slotStart),
       new Date(slotEnd),
+      undefined,
+      interviewMode,
     );
     return withCors(request, Response.json(interview, { status: 201 }));
   } catch (err: any) {

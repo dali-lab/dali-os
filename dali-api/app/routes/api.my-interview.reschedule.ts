@@ -16,7 +16,8 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   const body = await request.json();
-  const { newStart, newEnd, domainApplicationId } = body;
+  const { newStart, newEnd, domainApplicationId, mode } = body;
+  const interviewMode = mode === "in-person" ? "in-person" as const : "online" as const;
 
   if (!domainApplicationId) {
     return withCors(request, Response.json({ error: "domainApplicationId is required" }, { status: 400 }));
@@ -53,6 +54,15 @@ export async function action({ request }: Route.ActionArgs) {
           throw new Error("__NO_ACTIVE_INTERVIEW__");
         }
 
+        const config = await tx.interviewConfig.findUnique({
+          where: { applicationCycleId: current.applicationCycleId },
+        });
+        const rescheduleNoticeHours = config?.rescheduleNoticeHours ?? 12;
+        const cutoff = new Date(current.startTime.getTime() - rescheduleNoticeHours * 60 * 60_000);
+        if (new Date() > cutoff) {
+          throw new Error("__TOO_LATE_TO_RESCHEDULE__");
+        }
+
         // DomainApplications always attach to a domain-scoped challenge
         // version; filter out any (theoretically impossible) null domainIds.
         const applicantDomainIds = current.domainApplication.application.domainApplications
@@ -71,6 +81,7 @@ export async function action({ request }: Route.ActionArgs) {
           new Date(newStart),
           new Date(newEnd),
           tx,
+          interviewMode,
         );
       },
       { isolationLevel: "Serializable" },
@@ -80,6 +91,9 @@ export async function action({ request }: Route.ActionArgs) {
   } catch (err: any) {
     if (err?.message === "__NO_ACTIVE_INTERVIEW__") {
       return withCors(request, Response.json({ error: "No active interview found" }, { status: 404 }));
+    }
+    if (err?.message === "__TOO_LATE_TO_RESCHEDULE__") {
+      return withCors(request, Response.json({ error: "Too late to reschedule — please contact the DALI team" }, { status: 403 }));
     }
     return withCors(request, Response.json({ error: err?.message ?? "Failed to reschedule" }, { status: 409 }));
   }
