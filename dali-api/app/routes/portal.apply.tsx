@@ -555,14 +555,22 @@ function QuestionField({
     "w-full rounded-lg border border-border bg-card text-sm text-dark-blue placeholder:text-muted-foreground/70 focus:outline-none focus:border-accent-coral px-4 py-2";
 
   if (question.type === "textarea") {
+    const wordCount = value.trim() ? value.trim().split(/\s+/).filter(Boolean).length : 0;
+    const maxWords = question.data.maxWords;
+    const overLimit = maxWords !== undefined && wordCount > maxWords;
     return (
-      <textarea
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        rows={4}
-        className={`${inputBase} resize-none`}
-        placeholder="Your answer"
-      />
+      <div>
+        <textarea
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          rows={4}
+          className={`${inputBase} resize-none`}
+          placeholder="Your answer"
+        />
+        <p className={`text-xs mt-1 ${overLimit ? "text-red-500" : "text-muted-foreground"}`}>
+          {maxWords !== undefined ? `${wordCount} / ${maxWords} words` : `${wordCount} words`}
+        </p>
+      </div>
     );
   }
 
