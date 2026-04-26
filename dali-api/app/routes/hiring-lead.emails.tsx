@@ -166,8 +166,6 @@ type TemplateDef = {
   description: string
   defaultGroup: string
   compatibleGroups: string[]
-  defaultSubject: string
-  defaultBody: string
 }
 
 const TEMPLATE_DEFS: TemplateDef[] = [
@@ -177,15 +175,6 @@ const TEMPLATE_DEFS: TemplateDef[] = [
     description: 'Sent right after an applicant submits their application.',
     defaultGroup: 'submitted_applicants',
     compatibleGroups: ['submitted_applicants'],
-    defaultSubject: 'We received your DALI application!',
-    defaultBody: `Hi {{firstName}},
-
-Thank you for applying to DALI! We've received your application and our team will be reviewing it over the coming weeks.
-
-We'll reach out with updates as decisions are made. In the meantime, feel free to reach out to us at applications@dali.dartmouth.edu if you have any questions.
-
-Best,
-The DALI Team`,
   },
   {
     type: 'Rejected',
@@ -193,17 +182,6 @@ The DALI Team`,
     description: 'Sent to applicants rejected before the interview stage.',
     defaultGroup: 'rejected',
     compatibleGroups: ['rejected', 'submitted_applicants'],
-    defaultSubject: 'Your DALI Application',
-    defaultBody: `Hi {{firstName}},
-
-Thank you so much for applying to DALI and for the time and effort you put into your application. After careful consideration, we regret to inform you that we will not be moving forward with your application for this cycle.
-
-This was an incredibly competitive cycle, and this decision is not a reflection of your abilities or potential. We strongly encourage you to apply again in the future — many of our current members were not accepted on their first try.
-
-Thank you again for your interest in DALI. We wish you all the best.
-
-Warm regards,
-The DALI Team`,
   },
   {
     type: 'RejectedPostInterview',
@@ -211,19 +189,6 @@ The DALI Team`,
     description: 'Sent to applicants rejected after completing an interview.',
     defaultGroup: 'rejected',
     compatibleGroups: ['rejected', 'submitted_applicants'],
-    defaultSubject: 'Your DALI Application',
-    defaultBody: `Hi {{firstName}},
-
-Thank you for interviewing with DALI. We really enjoyed getting to know you, and we appreciate the time and effort you put into both your application and interview.
-
-After careful deliberation, we unfortunately will not be able to offer you a position for this cycle. This was an incredibly competitive cycle, and this decision does not reflect your abilities or potential.
-
-We strongly encourage you to apply again in the future — many of our current members were not accepted on their first try.
-
-Thank you again for your interest in DALI. We wish you all the best.
-
-Warm regards,
-The DALI Team`,
   },
   {
     type: 'InvitedToInterview',
@@ -231,19 +196,6 @@ The DALI Team`,
     description: 'Sent to applicants selected for an interview.',
     defaultGroup: 'interview_invited',
     compatibleGroups: ['interview_invited', 'submitted_applicants'],
-    defaultSubject: "You're invited to interview with DALI!",
-    defaultBody: `Hi {{firstName}},
-
-Congratulations — we were impressed by your application and would love to invite you to interview with DALI!
-
-Please log in to your application portal to view available interview slots and confirm your availability. Interviews are typically 20–30 minutes and held in person at the DALI Lab (Sudikoff 007).
-
-If you have any scheduling conflicts or questions, please don't hesitate to reach out to us at applications@dali.dartmouth.edu.
-
-We look forward to meeting you!
-
-Best,
-The DALI Team`,
   },
   {
     type: 'InterviewInviteMentor',
@@ -251,16 +203,6 @@ The DALI Team`,
     description: 'Sent to mentors/reviewers assigned to conduct interviews.',
     defaultGroup: 'cycle_reviewers',
     compatibleGroups: ['cycle_reviewers'],
-    defaultSubject: 'DALI interview assigned to you',
-    defaultBody: `Hi {{firstName}},
-
-You've been assigned to conduct an interview for the current DALI hiring cycle. Please log in to the reviewer dashboard to view your assigned applicant(s) and interview details.
-
-If you have any conflicts or questions, please reach out to the hiring lead as soon as possible.
-
-Thanks for your help making DALI hiring happen!
-
-— The DALI Team`,
   },
   {
     type: 'Waitlisted',
@@ -268,17 +210,6 @@ Thanks for your help making DALI hiring happen!
     description: 'Sent to applicants placed on the waitlist.',
     defaultGroup: 'waitlisted',
     compatibleGroups: ['waitlisted'],
-    defaultSubject: 'Update on your DALI application',
-    defaultBody: `Hi {{firstName}},
-
-Thank you for your patience as we reviewed applications for this cycle. We're excited to let you know that you've been placed on our waitlist!
-
-This means we were very impressed by your application and interview, and if a spot opens up, we'd love to have you join the team. We'll be in touch with any updates.
-
-Thank you again for your interest in DALI — we hope to work with you soon.
-
-Best,
-The DALI Team`,
   },
   {
     type: 'Accepted',
@@ -286,19 +217,6 @@ The DALI Team`,
     description: 'Sent to applicants accepted into DALI.',
     defaultGroup: 'accepted',
     compatibleGroups: ['accepted'],
-    defaultSubject: 'Welcome to DALI!',
-    defaultBody: `Hi {{firstName}},
-
-We are thrilled to offer you a spot in DALI!
-
-After a highly competitive review process, we believe you'll be a fantastic addition to our team. Please log in to your application portal to confirm your acceptance.
-
-Onboarding details and next steps will follow shortly. In the meantime, if you have any questions, feel free to reach out to us at applications@dali.dartmouth.edu.
-
-Welcome to the family — we can't wait to work with you!
-
-Warmly,
-The DALI Team`,
   },
 ]
 
@@ -356,15 +274,15 @@ export default function EmailsPage() {
   }
 
   function getSubject(def: TemplateDef) {
-    return subjects[def.type] ?? currentTemplate(def.type)?.subject ?? def.defaultSubject
+    return subjects[def.type] ?? currentTemplate(def.type)?.subject ?? ''
   }
   function getBody(def: TemplateDef) {
-    return bodies[def.type] ?? currentTemplate(def.type)?.body ?? def.defaultBody
+    return bodies[def.type] ?? currentTemplate(def.type)?.body ?? ''
   }
 
   function isModified(def: TemplateDef) {
-    const savedSubject = currentTemplate(def.type)?.subject ?? def.defaultSubject
-    const savedBody = currentTemplate(def.type)?.body ?? def.defaultBody
+    const savedSubject = currentTemplate(def.type)?.subject ?? ''
+    const savedBody = currentTemplate(def.type)?.body ?? ''
     return (subjects[def.type] !== undefined && subjects[def.type] !== savedSubject) ||
       (bodies[def.type] !== undefined && bodies[def.type] !== savedBody)
   }
