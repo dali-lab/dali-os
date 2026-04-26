@@ -4,7 +4,7 @@ import type { Route } from "./+types/admin.cycle.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isHiringLead } from "~/lib/roles";
-import { interpolate, bodyToHtml } from "~/lib/email";
+import { renderEmail } from "~/lib/email";
 import { Settings, Users, Calendar, AlertTriangle, Trash2, Plus, CheckCircle, ArrowRight, Circle, ChevronRight, X, LayoutDashboard, Eye } from 'lucide-react'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -134,11 +134,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   // Email-template options + current per-cycle decision bindings + which
   // DecisionTypes already have a Released decision (used to lock those slots).
+  // All versions are surfaced in the picker so a hiring lead can pin a specific
+  // (older) version per cycle, mirroring how RubricVersion options work.
   const emailTemplates = await prisma.emailTemplate.findMany({
     include: {
       versions: {
         orderBy: { versionNumber: "desc" },
-        take: 1,
       },
     },
     orderBy: { name: "asc" },
@@ -1309,8 +1310,7 @@ function DecisionEmailPreviewModal({ decision, binding, onClose }: {
   const firstName = decision.domainApplication.application.user.firstName ?? ''
   const domain = decision.domainApplication.challengeVersion.domain.name ?? ''
   const tmpl = binding?.emailTemplateVersion ?? null
-  const subject = tmpl ? interpolate(tmpl.subject, { firstName, domain }) : ''
-  const html = tmpl ? bodyToHtml(interpolate(tmpl.body, { firstName, domain })) : ''
+  const rendered = tmpl ? renderEmail(tmpl, { firstName, domain }) : null
 
   return (
     <div
@@ -1359,14 +1359,14 @@ function DecisionEmailPreviewModal({ decision, binding, onClose }: {
               </div>
               <div>
                 <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Subject</h3>
-                <p className="mt-1 text-sm text-foreground">{subject}</p>
+                <p className="mt-1 text-sm text-foreground">{rendered?.subject ?? ''}</p>
               </div>
               <div>
                 <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Body</h3>
                 <div
                   className="mt-1 prose prose-sm max-w-none text-foreground"
                   // eslint-disable-next-line react/no-danger
-                  dangerouslySetInnerHTML={{ __html: html }}
+                  dangerouslySetInnerHTML={{ __html: rendered?.html ?? '' }}
                 />
               </div>
               <p className="text-xs text-muted-foreground">
@@ -1742,11 +1742,13 @@ function DecisionEmailPicker({ slot, binding, emailTemplates, locked }: {
               <option value="">No template (skip email)</option>
               {emailTemplates
                 .filter((t: any) => t.versions.length > 0)
-                .map((t: any) => (
-                  <option key={t.versions[0].id} value={t.versions[0].id}>
-                    {t.name} — v{t.versions[0].versionNumber}
-                  </option>
-                ))}
+                .flatMap((t: any) =>
+                  t.versions.map((v: any) => (
+                    <option key={v.id} value={v.id}>
+                      {t.name} — v{v.versionNumber}
+                    </option>
+                  ))
+                )}
             </select>
           </div>
           <button

@@ -3,7 +3,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { sendEmail } from "~/lib/gmail";
-import { interpolate, bodyToHtml } from "~/lib/email";
+import { renderEmail } from "~/lib/email";
 
 const GMAIL_USER = "applications@dali.dartmouth.edu";
 
@@ -176,9 +176,7 @@ export async function action({ request }: Route.ActionArgs) {
         if (template) {
           // ApplicationReceived isn't tied to a single domain (an applicant
           // may apply to multiple), so {{domain}} resolves to empty here.
-          const vars = { firstName: user.firstName };
-          const subject = interpolate(template.subject, vars);
-          const html = bodyToHtml(interpolate(template.body, vars));
+          const { subject, html } = renderEmail(template, { firstName: user.firstName });
           await sendEmail({ refreshToken: gmailUser.googleRefreshToken, to, subject, html });
         }
       }

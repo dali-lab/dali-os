@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { interpolate, bodyToHtml } from "~/lib/email";
+import { interpolate, bodyToHtml, renderEmail } from "~/lib/email";
 
 describe("interpolate", () => {
   it("replaces every {{firstName}} occurrence", () => {
@@ -49,5 +49,24 @@ describe("bodyToHtml", () => {
 
   it("preserves empty paragraphs as empty <p> tags", () => {
     expect(bodyToHtml("a\n\n\n\nb")).toBe("<p>a</p>\n<p></p>\n<p>b</p>");
+  });
+});
+
+describe("renderEmail", () => {
+  it("returns interpolated subject and HTML body in one call", () => {
+    const out = renderEmail(
+      { subject: "Hi {{firstName}} re: {{domain}}", body: "Hi {{firstName}},\n\nDomain: {{domain}}." },
+      { firstName: "Ada", domain: "Engineering" },
+    );
+    expect(out.subject).toBe("Hi Ada re: Engineering");
+    expect(out.html).toBe("<p>Hi Ada,</p>\n<p>Domain: Engineering.</p>");
+  });
+
+  it("matches the composition of interpolate + bodyToHtml so preview and send stay in sync", () => {
+    const tmpl = { subject: "S {{firstName}}", body: "B\n{{domain}}\n\nC" };
+    const vars = { firstName: "X", domain: "Y" };
+    const out = renderEmail(tmpl, vars);
+    expect(out.subject).toBe(interpolate(tmpl.subject, vars));
+    expect(out.html).toBe(bodyToHtml(interpolate(tmpl.body, vars)));
   });
 });

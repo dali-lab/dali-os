@@ -20,3 +20,17 @@ export function bodyToHtml(body: string): string {
     .map((p) => `<p>${p.replace(/\n/g, "<br/>")}</p>`)
     .join("\n");
 }
+
+// Single render path shared by the actual send (api.decisions.$id.release,
+// api.my-application) and the cycle-admin Preview modal. Any future addition
+// to the pipeline — sanitization, footer/signature, locale handling — should
+// live here so the preview never drifts from what actually goes out.
+export function renderEmail(
+  template: { subject: string; body: string },
+  vars: InterpolationVars,
+): { subject: string; html: string } {
+  return {
+    subject: interpolate(template.subject, vars),
+    html: bodyToHtml(interpolate(template.body, vars)),
+  };
+}
