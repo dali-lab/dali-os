@@ -1,15 +1,15 @@
 -- Email-template refactor to rubric/RubricVersion pattern.
 -- See plan: dali-api EmailTemplate becomes a named, versioned object;
 -- per-cycle bindings live in CycleDecisionEmail keyed on (cycle, DecisionType).
--- The pre-existing single-table EmailTemplate is renamed to EmailTemplateLegacy
+-- The pre-existing single-table EmailTemplate is renamed to LegacyEmailTemplate
 -- and retained for ApplicationReceived / InterviewInviteMentor lookups, which
 -- have not been migrated to the new shape.
 
 -- ── 1. Rename the legacy table and its constraints ─────────────────────────────
-ALTER TABLE "EmailTemplate" RENAME TO "EmailTemplateLegacy";
-ALTER TABLE "EmailTemplateLegacy" RENAME CONSTRAINT "EmailTemplate_pkey" TO "EmailTemplateLegacy_pkey";
-ALTER TABLE "EmailTemplateLegacy" RENAME CONSTRAINT "EmailTemplate_createdById_fkey" TO "EmailTemplateLegacy_createdById_fkey";
-ALTER INDEX "EmailTemplate_type_createdAt_idx" RENAME TO "EmailTemplateLegacy_type_createdAt_idx";
+ALTER TABLE "EmailTemplate" RENAME TO "LegacyEmailTemplate";
+ALTER TABLE "LegacyEmailTemplate" RENAME CONSTRAINT "EmailTemplate_pkey" TO "LegacyEmailTemplate_pkey";
+ALTER TABLE "LegacyEmailTemplate" RENAME CONSTRAINT "EmailTemplate_createdById_fkey" TO "LegacyEmailTemplate_createdById_fkey";
+ALTER INDEX "EmailTemplate_type_createdAt_idx" RENAME TO "LegacyEmailTemplate_type_createdAt_idx";
 
 -- ── 2. New EmailTemplate (named parent, like Rubric) ──────────────────────────
 CREATE TABLE "EmailTemplate" (
@@ -75,7 +75,7 @@ SELECT DISTINCT
   CURRENT_TIMESTAMP,
   CURRENT_TIMESTAMP,
   type::text
-FROM "EmailTemplateLegacy"
+FROM "LegacyEmailTemplate"
 ON CONFLICT ("id") DO NOTHING;
 
 -- ── 7. Backfill: version rows ─────────────────────────────────────────────────
@@ -91,7 +91,7 @@ SELECT
   legacy."body",
   'tmpl_' || lower(legacy."type"::text),
   legacy."createdById"
-FROM "EmailTemplateLegacy" legacy
+FROM "LegacyEmailTemplate" legacy
 ON CONFLICT ("id") DO NOTHING;
 
 -- ── 8. Backfill: per-cycle bindings for currently-active cycles ───────────────
