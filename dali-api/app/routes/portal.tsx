@@ -62,6 +62,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     include: {
       statusUpdates: true,
       domainApplications: {
+        where: { selected: true },
         include: {
           ...domainApplicationStatusInclude,
           challengeVersion: { include: { domain: true } },

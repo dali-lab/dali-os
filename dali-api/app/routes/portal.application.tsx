@@ -51,6 +51,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       statusUpdates: { orderBy: { createdAt: "asc" } },
       generalChallengeVersion: { select: { questions: true } },
       domainApplications: {
+        where: { selected: true },
         include: {
           challengeVersion: {
             select: { questions: true, domain: true },

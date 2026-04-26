@@ -153,6 +153,11 @@ model DomainApplication {
   // answers: same shape as Application.answers, keyed by question UUID from the challenge version.
   answers Json
 
+  // Whether this domain is currently selected by the applicant.
+  // False means the applicant deselected the domain but the record is
+  // preserved so answers survive re-selection.
+  selected Boolean @default(true)
+
   applicationId      String
   application        Application      @relation(fields: [applicationId], references: [id])
   challengeVersionId String
