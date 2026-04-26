@@ -122,7 +122,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   // UnderReview → Completed: validate all interviews done and all decisions released
   if (newStatus === "Completed" && !force) {
     const pendingInterviews = await prisma.interview.count({
-      where: { applicationCycleId: params.cycleId!, status: { not: "Completed" } },
+      where: { applicationCycleId: params.cycleId!, status: "Scheduled" },
     });
     const undecided = await prisma.domainApplication.count({
       where: {
