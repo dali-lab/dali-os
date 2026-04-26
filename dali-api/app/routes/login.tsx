@@ -122,6 +122,7 @@ export default function Login() {
         </div>
 
         <div className="absolute bottom-16 right-8 w-32 h-32 rounded-full bg-accent-teal opacity-30 pointer-events-none" />
+        <div className="absolute bottom-32 right-24 w-16 h-16 rounded-full bg-accent-coral opacity-20 pointer-events-none" />
       </div>
 
       {/* Right form panel */}

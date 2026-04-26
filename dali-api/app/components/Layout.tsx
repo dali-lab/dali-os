@@ -15,7 +15,7 @@ import {
   X,
 } from 'lucide-react'
 import { userInitials } from '~/lib/display'
-import { bumpLogoClick, hydrateRetroClass } from '~/lib/party'
+import { bumpLogoClick, hydrateRetroClass, logConsoleBootBanner } from '~/lib/party'
 
 interface LayoutProps {
   children: React.ReactNode
@@ -37,20 +37,7 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
 
   React.useEffect(() => {
     hydrateRetroClass()
-    // Boot banner — only fires once per page load
-    const banner = [
-      '%c',
-      '    ██████╗  █████╗ ██╗     ██╗',
-      '    ██╔══██╗██╔══██╗██║     ██║',
-      '    ██║  ██║███████║██║     ██║',
-      '    ██║  ██║██╔══██║██║     ██║',
-      '    ██████╔╝██║  ██║███████╗██║',
-      '    ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝',
-      '',
-      '    Welcome, friend. Have you tried spamming our logo? It\'s weirdly satisfying.',
-      '',
-    ].join('\n')
-    console.log(banner, 'color: hsl(354 70% 61%); font-family: monospace; line-height: 1;')
+    logConsoleBootBanner()
 
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'd' || e.key === 'D')) {

@@ -82,3 +82,22 @@ export function hydrateRetroClass() {
   if (typeof window === "undefined") return;
   if (isRetroOn()) document.documentElement.classList.add("dali-retro");
 }
+
+/** ASCII DALI + nudge; runs once per call (layouts invoke on mount). */
+export function logConsoleBootBanner() {
+  if (typeof window === "undefined") return;
+  const banner = [
+    "%c",
+    "    ██████╗  █████╗ ██╗     ██╗",
+    "    ██╔══██╗██╔══██╗██║     ██║",
+    "    ██║  ██║███████║██║     ██║",
+    "    ██║  ██║██╔══██║██║     ██║",
+    "    ██████╔╝██║  ██║███████╗██║",
+    "    ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝",
+    "",
+    "    Welcome, friend. Have you tried spamming our logo? It's weirdly satisfying.",
+    "",
+  ].join("\n");
+  // eslint-disable-next-line no-console
+  console.log(banner, "color: hsl(354 70% 61%); font-family: monospace; line-height: 1;");
+}

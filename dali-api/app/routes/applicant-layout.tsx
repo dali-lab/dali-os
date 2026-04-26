@@ -3,7 +3,7 @@ import { Outlet, redirect, useLoaderData, Link, useNavigate } from "react-router
 import type { Route } from "./+types/applicant-layout";
 import { requireAuth } from "~/lib/auth";
 import { userInitials } from "~/lib/display";
-import { bumpLogoClick, hydrateRetroClass } from "~/lib/party";
+import { bumpLogoClick, hydrateRetroClass, logConsoleBootBanner } from "~/lib/party";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -26,6 +26,7 @@ export default function ApplicantLayout() {
 
   useEffect(() => {
     hydrateRetroClass();
+    logConsoleBootBanner();
   }, []);
 
   const handleLogoClick = () => {
