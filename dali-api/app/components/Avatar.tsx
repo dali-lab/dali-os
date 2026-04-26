@@ -5,8 +5,17 @@ interface AvatarProps {
   className?: string
 }
 
+function isSafeUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url, 'https://placeholder.invalid')
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:'
+  } catch {
+    return false
+  }
+}
+
 export function Avatar({ src, fallback, size = 32, className = '' }: AvatarProps) {
-  if (src) {
+  if (src && isSafeUrl(src)) {
     return (
       <img
         src={src}
