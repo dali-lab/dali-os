@@ -273,11 +273,12 @@ export default function AdminConsole() {
           </span>
         </div>
         <div className="flex items-center gap-3">
-          <div className="flex rounded-md border border-gray-300 overflow-hidden text-sm">
+          <div role="group" aria-label="Filter members by role" className="flex rounded-md border border-gray-300 overflow-hidden text-sm">
             {(["all", "admin", "hiringLead"] as RoleFilter[]).map((f) => (
               <button
                 key={f}
                 onClick={() => setRoleFilter(f)}
+                aria-pressed={roleFilter === f}
                 className={`px-3 py-1.5 font-medium transition-colors ${
                   roleFilter === f
                     ? "bg-gray-900 text-white"
@@ -288,7 +289,9 @@ export default function AdminConsole() {
               </button>
             ))}
           </div>
+          <label htmlFor="member-search" className="sr-only">Search members by name or email</label>
           <input
+            id="member-search"
             type="text"
             placeholder="Search by name or email…"
             value={search}
@@ -314,7 +317,7 @@ export default function AdminConsole() {
             {filtered.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground/70">
-                  No members found.
+                  <span className="sr-only">Table empty: </span>No members found.
                 </td>
               </tr>
             )}
