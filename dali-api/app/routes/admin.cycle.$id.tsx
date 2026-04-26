@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Form, Link, useParams, useLoaderData, redirect } from 'react-router'
 import type { Route } from "./+types/admin.cycle.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isHiringLead } from "~/lib/roles";
-import { Settings, Users, Calendar, AlertTriangle, Trash2, Plus, CheckCircle, ArrowRight, Circle, ChevronRight, X, LayoutDashboard } from 'lucide-react'
+import { renderEmail } from "~/lib/email";
+import { Settings, Users, Calendar, AlertTriangle, Trash2, Plus, CheckCircle, ArrowRight, Circle, ChevronRight, X, LayoutDashboard, Eye } from 'lucide-react'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -122,7 +123,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     include: {
       domainApplication: {
         include: {
-          application: { include: { user: { select: { firstName: true, lastName: true } } } },
+          application: { include: { user: { select: { firstName: true, lastName: true, dartmouthEmail: true, netId: true } } } },
           challengeVersion: { include: { domain: { select: { name: true } } } },
         },
       },
@@ -131,7 +132,49 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     orderBy: { createdAt: "desc" },
   });
 
-  return { cycle, allDomains, finalDecisions, rubricVersionOptions, cycleApplicationReviewCount, generalChallengeVersions };
+  // Email-template options + current per-cycle decision bindings + which
+  // DecisionTypes already have a Released decision (used to lock those slots).
+  // All versions are surfaced in the picker so a hiring lead can pin a specific
+  // (older) version per cycle, mirroring how RubricVersion options work.
+  const emailTemplates = await prisma.emailTemplate.findMany({
+    include: {
+      versions: {
+        orderBy: { versionNumber: "desc" },
+      },
+    },
+    orderBy: { name: "asc" },
+  });
+
+  const currentDecisionEmails = await prisma.cycleDecisionEmail.findMany({
+    where: { applicationCycleId: params.id },
+    include: {
+      emailTemplateVersion: { include: { template: { select: { name: true } } } },
+    },
+  });
+
+  const releasedDecisions = await prisma.decision.findMany({
+    where: {
+      stage: "Released",
+      domainApplication: {
+        application: { applicationCycleId: params.id },
+      },
+    },
+    select: { type: true },
+    distinct: ["type"],
+  });
+  const releasedDecisionTypes = releasedDecisions.map((d) => d.type);
+
+  return {
+    cycle,
+    allDomains,
+    finalDecisions,
+    rubricVersionOptions,
+    cycleApplicationReviewCount,
+    generalChallengeVersions,
+    emailTemplates,
+    currentDecisionEmails,
+    releasedDecisionTypes,
+  };
 }
 
 // ─── Action ──────────────────────────────────────────────────────────────────
@@ -172,6 +215,50 @@ export async function action({ request, params }: Route.ActionArgs) {
       where: { id: params.id },
       data: { generalRubricVersionId: rubricVersionId },
     });
+    return redirect(`/hiring-lead-admin/cycle/${params.id}`);
+  }
+
+  if (intent === "set-decision-email") {
+    const decisionType = formData.get("decisionType") as string;
+    const emailTemplateVersionId = (formData.get("emailTemplateVersionId") as string) || null;
+    const validTypes = ["Rejected", "InvitedToInterview", "Accepted", "Waitlisted"] as const;
+    if (!validTypes.includes(decisionType as (typeof validTypes)[number])) {
+      return new Response(JSON.stringify({ error: "Invalid decision type" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+    // Lock once a Released decision of this type exists for this cycle.
+    const alreadyReleased = await prisma.decision.count({
+      where: {
+        stage: "Released",
+        type: decisionType as (typeof validTypes)[number],
+        domainApplication: { application: { applicationCycleId: params.id } },
+      },
+    });
+    if (alreadyReleased > 0) {
+      return redirect(`/hiring-lead-admin/cycle/${params.id}`);
+    }
+    if (emailTemplateVersionId) {
+      await prisma.cycleDecisionEmail.upsert({
+        where: {
+          applicationCycleId_decisionType: {
+            applicationCycleId: params.id,
+            decisionType: decisionType as (typeof validTypes)[number],
+          },
+        },
+        update: { emailTemplateVersionId },
+        create: {
+          applicationCycleId: params.id,
+          decisionType: decisionType as (typeof validTypes)[number],
+          emailTemplateVersionId,
+        },
+      });
+    } else {
+      await prisma.cycleDecisionEmail.deleteMany({
+        where: {
+          applicationCycleId: params.id,
+          decisionType: decisionType as (typeof validTypes)[number],
+        },
+      });
+    }
     return redirect(`/hiring-lead-admin/cycle/${params.id}`);
   }
 
@@ -316,6 +403,79 @@ export default function AdminCycleDetails() {
     UnderReview: 'bg-yellow-100 text-yellow-700', Completed: 'bg-blue-100 text-blue-700',
   }
 
+  // ── Active tab ──
+  const [tab, setTab] = useState<'setup' | 'config' | 'reviewers' | 'dashboard' | 'decisions'>('setup')
+
+  // ── Decisions state ──
+  const [pendingDecisions, setPendingDecisions] = useState<any[]>(loaderData?.finalDecisions ?? [])
+  const [releasing, setReleasing] = useState<string | null>(null)
+  const [previewDecisionId, setPreviewDecisionId] = useState<string | null>(null)
+
+  // ── Loaders (extracted so handlers can refetch after mutations) ──
+  const loadStatus = useCallback(async () => {
+    if (!cycleId) return
+    try {
+      const r = await fetch(`/api/cycles/${cycleId}/status`, { credentials: 'include' })
+      if (!r.ok) return
+      const data = await r.json()
+      if (data) setCycleStatus(data.currentStatus)
+    } catch {}
+  }, [cycleId])
+
+  const loadConfig = useCallback(async () => {
+    if (!cycleId) return
+    try {
+      const r = await fetch(`/api/cycles/${cycleId}/interview-config`, { credentials: 'include' })
+      if (!r.ok) return
+      const data = await r.json()
+      if (data) {
+        setConfig({
+          ...data,
+          interviewStartDate: data.interviewStartDate?.slice(0, 10) ?? '',
+          interviewEndDate: data.interviewEndDate?.slice(0, 10) ?? '',
+        })
+      }
+    } catch {}
+  }, [cycleId])
+
+  const loadReviewers = useCallback(async () => {
+    if (!cycleId) return
+    try {
+      const r = await fetch(`/api/cycles/${cycleId}/reviewers`, { credentials: 'include' })
+      setReviewers(r.ok ? await r.json() : [])
+    } catch {}
+  }, [cycleId])
+
+  const loadMembers = useCallback(async () => {
+    try {
+      const r = await fetch('/api/members', { credentials: 'include' })
+      setAllMembers(r.ok ? await r.json() : [])
+    } catch {}
+  }, [])
+
+  const loadDomains = useCallback(async () => {
+    try {
+      const r = await fetch('/api/domains', { credentials: 'include' })
+      setAllDomains(r.ok ? await r.json() : [])
+    } catch {}
+  }, [])
+
+  const loadInterviewers = useCallback(async () => {
+    if (!cycleId) return
+    try {
+      const r = await fetch(`/api/cycles/${cycleId}/interviewers`, { credentials: 'include' })
+      setInterviewers(r.ok ? await r.json() : [])
+    } catch {}
+  }, [cycleId])
+
+  const loadInterviews = useCallback(async () => {
+    if (!cycleId) return
+    try {
+      const r = await fetch(`/api/cycles/${cycleId}/interviews`, { credentials: 'include' })
+      setInterviews(r.ok ? await r.json() : [])
+    } catch {}
+  }, [cycleId])
+
   async function advanceStatus(force = false) {
     if (!cycleId) return
     const idx = STATUS_FLOW.indexOf(cycleStatus as any)
@@ -331,6 +491,8 @@ export default function AdminCycleDetails() {
       })
       if (res.ok) {
         setCycleStatus(next)
+        // Status transitions can change which interview rows the server returns.
+        loadInterviews()
       } else {
         const body = await res.json().catch(() => ({}))
         setStatusError(
@@ -345,60 +507,17 @@ export default function AdminCycleDetails() {
     }
   }
 
-  // ── Active tab ──
-  const [tab, setTab] = useState<'setup' | 'config' | 'reviewers' | 'dashboard' | 'decisions'>('setup')
-
-  // ── Decisions state ──
-  const [pendingDecisions, setPendingDecisions] = useState<any[]>(loaderData?.finalDecisions ?? [])
-  const [releasing, setReleasing] = useState<string | null>(null)
-
   // ── Load data ──
   useEffect(() => {
     if (!cycleId) return
-
-    fetch(`/api/cycles/${cycleId}/status`, { credentials: 'include' })
-      .then(r => r.ok ? r.json() : null)
-      .then(data => { if (data) setCycleStatus(data.currentStatus) })
-      .catch(() => {})
-
-    fetch(`/api/cycles/${cycleId}/interview-config`, { credentials: 'include' })
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (data) {
-          setConfig({
-            ...data,
-            interviewStartDate: data.interviewStartDate?.slice(0, 10) ?? '',
-            interviewEndDate: data.interviewEndDate?.slice(0, 10) ?? '',
-          })
-        }
-      })
-      .catch(() => {})
-
-    fetch(`/api/cycles/${cycleId}/reviewers`, { credentials: 'include' })
-      .then(r => r.ok ? r.json() : [])
-      .then(setReviewers)
-      .catch(() => {})
-
-    fetch('/api/members', { credentials: 'include' })
-      .then(r => r.ok ? r.json() : [])
-      .then(setAllMembers)
-      .catch(() => {})
-
-    fetch('/api/domains', { credentials: 'include' })
-      .then(r => r.ok ? r.json() : [])
-      .then(setAllDomains)
-      .catch(() => {})
-
-    fetch(`/api/cycles/${cycleId}/interviewers`, { credentials: 'include' })
-      .then(r => r.ok ? r.json() : [])
-      .then(setInterviewers)
-      .catch(() => {})
-
-    fetch(`/api/cycles/${cycleId}/interviews`, { credentials: 'include' })
-      .then(r => r.ok ? r.json() : [])
-      .then(setInterviews)
-      .catch(() => {})
-  }, [cycleId])
+    loadStatus()
+    loadConfig()
+    loadReviewers()
+    loadMembers()
+    loadDomains()
+    loadInterviewers()
+    loadInterviews()
+  }, [cycleId, loadStatus, loadConfig, loadReviewers, loadMembers, loadDomains, loadInterviewers, loadInterviews])
 
   // ── Handlers ──
 
@@ -457,10 +576,9 @@ export default function AdminCycleDetails() {
       body: JSON.stringify({ daliMemberId: newInterviewerMemberId, domainId: newInterviewerDomainId }),
     })
     if (res.ok) {
-      const interviewer = await res.json()
-      const member = allMembers.find(m => m.id === newInterviewerMemberId)
-      const domain = allDomains.find(d => d.id === newInterviewerDomainId)
-      setInterviewers(prev => [...prev, { ...interviewer, daliMember: member, domain }])
+      // POST returns the bare cycleInterviewer row without daliMember/domain
+      // relations; refetch so the row matches the server shape exactly.
+      await loadInterviewers()
       setNewInterviewerMemberId('')
       setNewInterviewerDomainId('')
     }
@@ -521,7 +639,7 @@ export default function AdminCycleDetails() {
         <CompleteConfirmModal
           cycleId={cycleId!}
           onClose={() => setShowCompleteConfirm(false)}
-          onCompleted={(forced) => { setShowCompleteConfirm(false); setCycleStatus('Completed'); }}
+          onCompleted={(forced) => { setShowCompleteConfirm(false); setCycleStatus('Completed'); loadInterviews(); }}
           onError={(msg) => { setShowCompleteConfirm(false); setStatusError(msg); }}
         />
       )}
@@ -529,6 +647,8 @@ export default function AdminCycleDetails() {
       {statusError && (
         <div
           role="alert"
+          aria-live="polite"
+          aria-atomic="true"
           className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3"
         >
           <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
@@ -681,8 +801,9 @@ export default function AdminCycleDetails() {
               <Form method="post" className="flex items-end gap-3 pt-2 border-t border-border">
                 <input type="hidden" name="intent" value="add-domain" />
                 <div className="flex-1">
-                  <label className="block text-xs font-medium text-muted-foreground mb-1">Add Domain</label>
+                  <label htmlFor="add-domain-select" className="block text-xs font-medium text-muted-foreground mb-1">Add Domain</label>
                   <select
+                    id="add-domain-select"
                     name="domainId"
                     className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
                     defaultValue=""
@@ -725,6 +846,13 @@ export default function AdminCycleDetails() {
             rubricVersionOptions={loaderData?.rubricVersionOptions ?? []}
             locked={(loaderData?.cycleApplicationReviewCount ?? 0) > 0}
           />
+
+          {/* Decision-release email bindings */}
+          <DecisionEmailsSection
+            emailTemplates={loaderData?.emailTemplates ?? []}
+            currentDecisionEmails={loaderData?.currentDecisionEmails ?? []}
+            releasedDecisionTypes={loaderData?.releasedDecisionTypes ?? []}
+          />
         </div>
       )}
 
@@ -735,8 +863,9 @@ export default function AdminCycleDetails() {
           <div className="bg-card rounded-xl border border-border shadow-sm p-6 space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <label className="block text-sm font-bold text-foreground/80 mb-1">Slot Duration</label>
+              <label htmlFor="slot-duration" className="block text-sm font-bold text-foreground/80 mb-1">Slot Duration</label>
               <select
+                id="slot-duration"
                 value={config.slotDurationMinutes}
                 onChange={e => setConfig(c => ({ ...c, slotDurationMinutes: Number(e.target.value) }))}
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
@@ -745,8 +874,9 @@ export default function AdminCycleDetails() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-bold text-foreground/80 mb-1">Buffer Between Interviews</label>
+              <label htmlFor="buffer-minutes" className="block text-sm font-bold text-foreground/80 mb-1">Buffer Between Interviews</label>
               <select
+                id="buffer-minutes"
                 value={config.bufferMinutes}
                 onChange={e => setConfig(c => ({ ...c, bufferMinutes: Number(e.target.value) }))}
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
@@ -755,8 +885,9 @@ export default function AdminCycleDetails() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-bold text-foreground/80 mb-1">Day Start</label>
+              <label htmlFor="day-start-hour" className="block text-sm font-bold text-foreground/80 mb-1">Day Start</label>
               <select
+                id="day-start-hour"
                 value={config.dayStartHour}
                 onChange={e => setConfig(c => ({ ...c, dayStartHour: Number(e.target.value) }))}
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
@@ -765,8 +896,9 @@ export default function AdminCycleDetails() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-bold text-foreground/80 mb-1">Day End</label>
+              <label htmlFor="day-end-hour" className="block text-sm font-bold text-foreground/80 mb-1">Day End</label>
               <select
+                id="day-end-hour"
                 value={config.dayEndHour}
                 onChange={e => setConfig(c => ({ ...c, dayEndHour: Number(e.target.value) }))}
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
@@ -775,8 +907,9 @@ export default function AdminCycleDetails() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-bold text-foreground/80 mb-1">Interview Start Date</label>
+              <label htmlFor="interview-start-date" className="block text-sm font-bold text-foreground/80 mb-1">Interview Start Date</label>
               <input
+                id="interview-start-date"
                 type="date"
                 value={config.interviewStartDate}
                 onChange={e => setConfig(c => ({ ...c, interviewStartDate: e.target.value }))}
@@ -784,8 +917,9 @@ export default function AdminCycleDetails() {
               />
             </div>
             <div>
-              <label className="block text-sm font-bold text-foreground/80 mb-1">Interview End Date</label>
+              <label htmlFor="interview-end-date" className="block text-sm font-bold text-foreground/80 mb-1">Interview End Date</label>
               <input
+                id="interview-end-date"
                 type="date"
                 value={config.interviewEndDate}
                 onChange={e => setConfig(c => ({ ...c, interviewEndDate: e.target.value }))}
@@ -818,8 +952,9 @@ export default function AdminCycleDetails() {
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
               <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">DALI Member</label>
+                <label htmlFor="reviewer-member-select" className="block text-xs font-medium text-muted-foreground mb-1">DALI Member</label>
                 <select
+                  id="reviewer-member-select"
                   value={newMemberId}
                   onChange={e => setNewMemberId(e.target.value)}
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
@@ -833,8 +968,9 @@ export default function AdminCycleDetails() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">Domain</label>
+                <label htmlFor="reviewer-domain-select" className="block text-xs font-medium text-muted-foreground mb-1">Domain</label>
                 <select
+                  id="reviewer-domain-select"
                   value={newDomainId}
                   onChange={e => setNewDomainId(e.target.value)}
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
@@ -880,7 +1016,7 @@ export default function AdminCycleDetails() {
                   </tr>
                 ))}
                 {reviewers.length === 0 && (
-                  <tr><td colSpan={4} className="px-4 py-8 text-center text-muted-foreground/70">No reviewers assigned yet.</td></tr>
+                  <tr><td colSpan={4} className="px-4 py-8 text-center text-muted-foreground/70"><span className="sr-only">Table empty: </span>No reviewers assigned yet.</td></tr>
                 )}
               </tbody>
             </table>
@@ -893,8 +1029,9 @@ export default function AdminCycleDetails() {
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
               <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">DALI Member</label>
+                <label htmlFor="interviewer-member-select" className="block text-xs font-medium text-muted-foreground mb-1">DALI Member</label>
                 <select
+                  id="interviewer-member-select"
                   value={newInterviewerMemberId}
                   onChange={e => setNewInterviewerMemberId(e.target.value)}
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
@@ -908,8 +1045,9 @@ export default function AdminCycleDetails() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">Domain</label>
+                <label htmlFor="interviewer-domain-select" className="block text-xs font-medium text-muted-foreground mb-1">Domain</label>
                 <select
+                  id="interviewer-domain-select"
                   value={newInterviewerDomainId}
                   onChange={e => setNewInterviewerDomainId(e.target.value)}
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
@@ -957,7 +1095,7 @@ export default function AdminCycleDetails() {
                   )
                 })}
                 {interviewers.length === 0 && (
-                  <tr><td colSpan={3} className="px-4 py-8 text-center text-muted-foreground/70">No interviewers assigned yet.</td></tr>
+                  <tr><td colSpan={3} className="px-4 py-8 text-center text-muted-foreground/70"><span className="sr-only">Table empty: </span>No interviewers assigned yet.</td></tr>
                 )}
               </tbody>
             </table>
@@ -1057,7 +1195,7 @@ export default function AdminCycleDetails() {
                   )
                 })}
                 {interviews.length === 0 && (
-                  <tr><td colSpan={6} className="px-4 py-8 text-center text-muted-foreground/70">No interviews scheduled yet.</td></tr>
+                  <tr><td colSpan={6} className="px-4 py-8 text-center text-muted-foreground/70"><span className="sr-only">Table empty: </span>No interviews scheduled yet.</td></tr>
                 )}
               </tbody>
             </table>
@@ -1114,29 +1252,145 @@ export default function AdminCycleDetails() {
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">{d.madeBy.firstName} {d.madeBy.lastName}</td>
                     <td className="px-4 py-3 text-right">
-                      <button
-                        onClick={async () => {
-                          setReleasing(d.id)
-                          await fetch(`/api/decisions/${d.id}/release`, { method: 'POST', credentials: 'include' })
-                          setPendingDecisions(prev => prev.filter(p => p.id !== d.id))
-                          setReleasing(null)
-                        }}
-                        disabled={releasing === d.id}
-                        className="px-3 py-1 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition disabled:opacity-50"
-                      >
-                        {releasing === d.id ? 'Releasing...' : 'Release'}
-                      </button>
+                      <div className="inline-flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setPreviewDecisionId(d.id)}
+                          className="inline-flex items-center gap-1 px-3 py-1 text-sm font-medium rounded-lg border border-border bg-card hover:bg-muted/40 text-foreground transition"
+                          aria-label={`Preview email for ${d.domainApplication.application.user.firstName}`}
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          Preview
+                        </button>
+                        <button
+                          onClick={async () => {
+                            setReleasing(d.id)
+                            await fetch(`/api/decisions/${d.id}/release`, { method: 'POST', credentials: 'include' })
+                            setPendingDecisions(prev => prev.filter(p => p.id !== d.id))
+                            setReleasing(null)
+                          }}
+                          disabled={releasing === d.id}
+                          className="px-3 py-1 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition disabled:opacity-50"
+                        >
+                          {releasing === d.id ? 'Releasing...' : 'Release'}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
                 {pendingDecisions.length === 0 && (
-                  <tr><td colSpan={5} className="px-4 py-8 text-center text-muted-foreground/70">No Final decisions awaiting release.</td></tr>
+                  <tr><td colSpan={5} className="px-4 py-8 text-center text-muted-foreground/70"><span className="sr-only">Table empty: </span>No Final decisions awaiting release.</td></tr>
                 )}
               </tbody>
             </table>
           </div>
+          {previewDecisionId && (() => {
+            const d = pendingDecisions.find((x: any) => x.id === previewDecisionId)
+            if (!d) return null
+            const binding = (loaderData?.currentDecisionEmails ?? []).find((b: any) => b.decisionType === d.type)
+            return (
+              <DecisionEmailPreviewModal
+                decision={d}
+                binding={binding ?? null}
+                onClose={() => setPreviewDecisionId(null)}
+              />
+            )
+          })()}
         </div>
       )}
+    </div>
+  )
+}
+
+function DecisionEmailPreviewModal({ decision, binding, onClose }: {
+  decision: any;
+  binding: any | null;
+  onClose: () => void;
+}) {
+  const firstName = decision.domainApplication.application.user.firstName ?? ''
+  const domain = decision.domainApplication.challengeVersion.domain.name ?? ''
+  const tmpl = binding?.emailTemplateVersion ?? null
+  const rendered = tmpl ? renderEmail(tmpl, { firstName, domain }) : null
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-card rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+          <div>
+            <h2 className="text-lg font-bold text-foreground">Email preview</h2>
+            <p className="text-xs text-muted-foreground">
+              {decision.domainApplication.application.user.firstName} {decision.domainApplication.application.user.lastName}
+              {' · '}
+              {decision.domainApplication.challengeVersion.domain.name}
+              {' · '}
+              <span className="font-medium">{decision.type}</span>
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-muted-foreground/70 hover:text-foreground"
+            aria-label="Close preview"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="px-6 py-4 space-y-4">
+          {tmpl ? (
+            <>
+              <div>
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">From</h3>
+                <p className="mt-1 text-sm text-foreground">applications@dali.dartmouth.edu</p>
+              </div>
+              <div>
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">To</h3>
+                <p className="mt-1 text-sm text-foreground">
+                  {decision.domainApplication.application.user.dartmouthEmail
+                    ?? (decision.domainApplication.application.user.netId
+                      ? `${decision.domainApplication.application.user.netId}@dartmouth.edu`
+                      : '(no address on file)')}
+                </p>
+              </div>
+              <div>
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Subject</h3>
+                <p className="mt-1 text-sm text-foreground">{rendered?.subject ?? ''}</p>
+              </div>
+              <div>
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Body</h3>
+                <div
+                  className="mt-1 prose prose-sm max-w-none text-foreground"
+                  // eslint-disable-next-line react/no-danger
+                  dangerouslySetInnerHTML={{ __html: rendered?.html ?? '' }}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Template: <span className="font-medium">{binding?.emailTemplateVersion?.template?.name}</span>
+                {' '}— v{binding?.emailTemplateVersion?.versionNumber}
+              </p>
+            </>
+          ) : (
+            <div className="rounded-lg bg-orange-50 border border-orange-200 p-4 text-sm text-orange-800">
+              <p className="font-medium">No template assigned for {decision.type} in this cycle.</p>
+              <p className="mt-1">Releasing this decision will not send an email. Bind a template on the Setup tab under "Decision Emails".</p>
+            </div>
+          )}
+        </div>
+        <div className="px-6 py-3 border-t border-border bg-muted/30 flex justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-gray-300 rounded-md hover:bg-muted/50"
+          >
+            Close
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -1383,6 +1637,134 @@ function GeneralFormPicker({ currentCvId, currentCvName, options, locked }: {
         </Form>
       ) : (
         <p className="text-xs text-muted-foreground/70">No general forms available. Create a challenge with no domain on the Challenges page first.</p>
+      )}
+    </div>
+  );
+}
+
+const DECISION_EMAIL_SLOTS = [
+  { type: "Rejected", label: "Rejected", description: "Sent when a Rejected decision is released to the applicant." },
+  { type: "InvitedToInterview", label: "Invited to Interview", description: "Sent when an applicant is invited to interview." },
+  { type: "Waitlisted", label: "Waitlisted", description: "Sent when an applicant is placed on the waitlist." },
+  { type: "Accepted", label: "Accepted", description: "Sent when an applicant is offered a spot." },
+] as const;
+
+function DecisionEmailsSection({ emailTemplates, currentDecisionEmails, releasedDecisionTypes }: {
+  emailTemplates: any[];
+  currentDecisionEmails: any[];
+  releasedDecisionTypes: string[];
+}) {
+  return (
+    <div className="bg-card rounded-xl border border-border shadow-sm p-6 space-y-4">
+      <div>
+        <h3 className="text-sm font-bold text-foreground/80">Decision Emails</h3>
+        <p className="text-xs text-muted-foreground">
+          Pick which template fires when each decision type is released. Slots without a binding will not send an email.
+          Once a decision of a given type has been released, its slot locks for this cycle.
+        </p>
+      </div>
+      <div className="space-y-3">
+        {DECISION_EMAIL_SLOTS.map((slot) => {
+          const binding = currentDecisionEmails.find((b: any) => b.decisionType === slot.type);
+          const locked = releasedDecisionTypes.includes(slot.type);
+          return (
+            <DecisionEmailPicker
+              key={slot.type}
+              slot={slot}
+              binding={binding ?? null}
+              emailTemplates={emailTemplates}
+              locked={locked}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function DecisionEmailPicker({ slot, binding, emailTemplates, locked }: {
+  slot: { type: string; label: string; description: string };
+  binding: any | null;
+  emailTemplates: any[];
+  locked: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const currentVersionId: string | null = binding?.emailTemplateVersionId ?? null;
+  const currentLabel = binding
+    ? `${binding.emailTemplateVersion.template.name} — v${binding.emailTemplateVersion.versionNumber}`
+    : null;
+
+  return (
+    <div className="border border-border rounded-lg p-4 space-y-2">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h4 className="text-sm font-bold text-foreground">{slot.label}</h4>
+          <p className="text-xs text-muted-foreground">{slot.description}</p>
+        </div>
+        {!editing && !locked && (
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="text-xs text-blue-600 hover:text-blue-800 font-medium shrink-0"
+          >
+            {currentLabel ? "Change" : "Assign"}
+          </button>
+        )}
+      </div>
+
+      {locked ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <CheckCircle className="w-4 h-4 text-green-600" />
+          <span>{currentLabel ?? "No template assigned"}</span>
+          <span className="text-xs text-muted-foreground/70 ml-2">(locked — decisions of this type already released)</span>
+        </div>
+      ) : !editing ? (
+        currentLabel ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <CheckCircle className="w-4 h-4 text-green-600" />
+            <span>{currentLabel}</span>
+          </div>
+        ) : (
+          <div className="text-sm text-orange-700 bg-orange-50 border border-orange-200 rounded px-2 py-1">
+            No template assigned — releasing a {slot.label} decision will not send an email.
+          </div>
+        )
+      ) : (
+        <Form method="post" className="flex items-end gap-2 flex-wrap" onSubmit={() => setEditing(false)}>
+          <input type="hidden" name="intent" value="set-decision-email" />
+          <input type="hidden" name="decisionType" value={slot.type} />
+          <div className="flex-1 min-w-[14rem]">
+            <select
+              name="emailTemplateVersionId"
+              defaultValue={currentVersionId ?? ""}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            >
+              <option value="">No template (skip email)</option>
+              {emailTemplates
+                .filter((t: any) => t.versions.length > 0)
+                .flatMap((t: any) =>
+                  t.versions.map((v: any) => (
+                    <option key={v.id} value={v.id}>
+                      {t.name} — v{v.versionNumber}
+                    </option>
+                  ))
+                )}
+            </select>
+          </div>
+          <button
+            type="submit"
+            className="px-3 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition"
+          >
+            Save
+          </button>
+          <button
+            type="button"
+            onClick={() => setEditing(false)}
+            className="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground"
+          >
+            Cancel
+          </button>
+        </Form>
       )}
     </div>
   );

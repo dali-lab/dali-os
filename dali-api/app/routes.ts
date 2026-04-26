@@ -15,7 +15,8 @@ export default [
     route("challenges/:id", "routes/admin.challenges.$id.tsx"),
     route("rubrics", "routes/rubrics.tsx"),
     route("rubrics/:id", "routes/rubrics.$id.tsx"),
-    route("emails", "routes/hiring-lead.emails.tsx"),
+    route("emails", "routes/email-templates.tsx"),
+    route("emails/:id", "routes/email-templates.$id.tsx"),
     route("admin-console", "routes/admin-console.tsx"),
     route("interviewer", "routes/interviewer.tsx"),
     route("interviewer/interview/:interviewId", "routes/interviewer.interview.$interviewId.tsx"),
@@ -45,7 +46,6 @@ export default [
   route("oauth/revoke", "routes/oauth.revoke.ts"),
 
   // Authenticated API endpoints (no layout)
-  route("auth/link-member", "routes/auth.link-member.ts"),
   route("users/:id", "routes/users.$id.ts"),
 
   // Domain & member management API
@@ -113,10 +113,8 @@ export default [
   route("admin/authorize-gmail", "routes/admin.authorize-gmail.ts"),
   route("admin/authorize-gmail/callback", "routes/admin.authorize-gmail.callback.ts"),
 
-  // Email sending + template management
+  // Email sending
   route("api/email/send", "routes/api.email.send.ts"),
-  route("api/email-templates", "routes/api.email-templates.ts"),
-  route("api/email-templates/:type", "routes/api.email-templates.$type.ts"),
   // Submission URL checking
   route("api/check-url", "routes/api.check-url.ts"),
 
