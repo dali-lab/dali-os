@@ -5,20 +5,24 @@ interface AvatarProps {
   className?: string
 }
 
-function isSafeUrl(url: string): boolean {
+function sanitizeImageUrl(url: string): string | null {
   try {
-    const parsed = new URL(url, 'https://placeholder.invalid')
-    return parsed.protocol === 'https:' || parsed.protocol === 'http:'
+    const parsed = new URL(url)
+    if (parsed.protocol === 'https:' || parsed.protocol === 'http:' || parsed.protocol === 'blob:') {
+      return parsed.href
+    }
+    return null
   } catch {
-    return false
+    return null
   }
 }
 
 export function Avatar({ src, fallback, size = 32, className = '' }: AvatarProps) {
-  if (src && isSafeUrl(src)) {
+  const safeSrc = src ? sanitizeImageUrl(src) : null
+  if (safeSrc) {
     return (
       <img
-        src={src}
+        src={safeSrc}
         alt=""
         className={`rounded-full object-cover ${className}`}
         style={{ width: size, height: size }}
