@@ -4,14 +4,7 @@ import { ArrowLeft, HelpCircle, X, Check } from 'lucide-react'
 import { prisma } from '~/lib/db'
 import { requireAuth } from '~/lib/auth'
 import { hasCycleAccess } from '~/lib/roles'
-function parseSessionToken(request: Request): string | null {
-  const header = request.headers.get("Cookie") ?? "";
-  for (const part of header.split(";")) {
-    const [k, ...rest] = part.split("=");
-    if (k?.trim() === "better-auth.session_token") return rest.join("=").trim();
-  }
-  return null;
-}
+import { parseAccessToken } from '~/lib/cookies'
 import type { Route } from './+types/mentor.application.$id'
 import { ApplicationViewer } from '~/components/ApplicationViewer'
 import { SaveStatusIndicator } from '~/components/SaveStatusIndicator'
@@ -66,10 +59,56 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!(await hasCycleAccess(auth.user.sub, application.applicationCycleId)))
     throw redirect('/login')
 
-  const collabToken = parseSessionToken(request)
+  // If this reviewer is assigned to a domain on this application but no
+  // ApplicationReview row exists yet, create one so the collaborative editors
+  // for feedback/rejection rationale render editable. Without this, the page
+  // shows disabled textareas with a "Save the review first" placeholder — but
+  // there is no save button for these fields (they save via collab sync).
+  let review = existingReview
+  if (!review) {
+    const member = await prisma.dALIMember.findFirst({
+      where: { userId: auth.user.sub },
+      select: { id: true },
+    })
+    if (member) {
+      const appDomainIds = application.domainApplications.map(
+        (da: any) => da.challengeVersion.domainId,
+      )
+      const cycleReviewer = await prisma.cycleReviewer.findFirst({
+        where: {
+          daliMemberId: member.id,
+          applicationCycleId: application.applicationCycleId,
+          domainId: { in: appDomainIds },
+        },
+      })
+      const matchingDa = cycleReviewer
+        ? application.domainApplications.find(
+            (da: any) => da.challengeVersion.domainId === cycleReviewer.domainId,
+          )
+        : null
+      if (cycleReviewer && matchingDa) {
+        review = await prisma.applicationReview.upsert({
+          where: {
+            cycleReviewerId_domainApplicationId: {
+              cycleReviewerId: cycleReviewer.id,
+              domainApplicationId: matchingDa.id,
+            },
+          },
+          create: {
+            cycleReviewerId: cycleReviewer.id,
+            domainApplicationId: matchingDa.id,
+          },
+          update: {},
+        })
+      }
+    }
+  }
+
+  // Pass JWT for WebSocket auth
+  const collabToken = parseAccessToken(request)
   const userName = [mentor.firstName, mentor.lastName].filter(Boolean).join(' ') || auth.user.email
 
-  return { application, mentor, existingReview, collabToken, userName }
+  return { application, mentor, existingReview: review, collabToken, userName }
 }
 
 export async function action({ request, params }: Route.ActionArgs) {

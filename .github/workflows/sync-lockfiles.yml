@@ -4,11 +4,9 @@ on:
   push:
     paths:
       - "dali-api/package.json"
-      - "dali-web/package.json"
   pull_request:
     paths:
       - "dali-api/package.json"
-      - "dali-web/package.json"
 
 jobs:
   sync-lockfiles:
@@ -28,7 +26,7 @@ jobs:
         run: |
           changed=false
 
-          for dir in dali-api dali-web; do
+          for dir in dali-api; do
             cd "$dir"
             npm install --package-lock-only
             cd ..
@@ -46,6 +44,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add dali-api/package-lock.json dali-web/package-lock.json
+          git add dali-api/package-lock.json
           git commit -m "chore: regenerate lockfiles"
           git push

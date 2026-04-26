@@ -14,11 +14,12 @@ import {
   MessageSquare,
   X,
 } from 'lucide-react'
+import { userInitials } from '~/lib/display'
 import { bumpLogoClick, hydrateRetroClass } from '~/lib/party'
 
 interface LayoutProps {
   children: React.ReactNode
-  user: { email: string }
+  user: { email: string; firstName?: string; lastName?: string }
   isHiringLead?: boolean
   isAdmin?: boolean
   isDomainLead?: boolean
@@ -77,10 +78,7 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
       icon: MessageSquare,
       show: true,
       active: path.startsWith('/reviewer') || path.startsWith('/interviewer'),
-      sub: isInterviewer ? [
-        { label: 'Applications', to: '/reviewer', active: path.startsWith('/reviewer') },
-        { label: 'Interviews', to: '/interviewer', active: path.startsWith('/interviewer') },
-      ] : null,
+      sub: null,
     },
     {
       label: 'Cycles',
@@ -112,7 +110,7 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
   ].filter((s) => s.show)
 
   const activeSection = sections.find((s) => s.active)
-  const initials = user.email.slice(0, 2).toUpperCase()
+  const initials = userInitials(user)
 
   return (
     <div className="min-h-screen bg-section-bg flex flex-col">

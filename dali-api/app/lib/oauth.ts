@@ -33,7 +33,7 @@ const AUTH_CODE_TTL_MS = 60 * 1000; // 1 min for code→token exchange
 const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const ACCESS_TOKEN_EXPIRES_IN = 900; // 15 min
 
-export const VALID_CLIENT_IDS = ["dali-web"] as const;
+export const VALID_CLIENT_IDS = ["dali-api"] as const;
 
 const frontendUrl = () => process.env.FRONTEND_URL ?? "http://localhost:5173";
 
@@ -315,9 +315,12 @@ export async function exchangeGoogleCode(code: string, callbackUrl: string) {
   if (!payload) {
     throw new OAuthError("server_error", "Failed to verify Google ID token");
   }
+  if (!payload.email || !payload.email_verified) {
+    throw new OAuthError("server_error", "Email not verified by Google");
+  }
 
   return {
-    email: payload.email as string,
+    email: payload.email,
     firstName: (payload.given_name ?? "") as string,
     lastName: (payload.family_name ?? "") as string,
     accessToken: data.access_token as string | undefined,

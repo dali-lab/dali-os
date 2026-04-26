@@ -8,7 +8,6 @@
 | -------- | -------- | -------- | ----------- |
 | db | postgres:16-alpine | 5432 | PostgreSQL database |
 | api | ./dali-api | 3001, 5555 | Runs Prisma migrate, API, and Prisma Studio |
-| web | ./dali-web | 5173 | Frontend web server  |
 
 ## Environment Variables (with Docker Compose)
 | Variable | Description | Default Value |
