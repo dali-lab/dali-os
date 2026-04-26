@@ -128,7 +128,14 @@ export async function action({ request }: Route.ActionArgs) {
   });
 
   if (existing) {
-    const alreadySubmitted = existing.statusUpdates[0]?.newStatus === "Submitted";
+    const latestStatus = existing.statusUpdates[0]?.newStatus;
+    if (latestStatus === "Withdrawn") {
+      return withCors(
+        request,
+        Response.json({ error: "Application has been withdrawn" }, { status: 409 }),
+      );
+    }
+    const alreadySubmitted = latestStatus === "Submitted";
     // Update answers; only create a new status update on first submission
     await prisma.application.update({
       where: { id: existing.id },
