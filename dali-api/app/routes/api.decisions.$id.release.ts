@@ -3,34 +3,9 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isHiringLead } from "~/lib/roles";
 import { sendEmail } from "~/lib/gmail";
-import type { DecisionType, EmailTemplateType } from "~/generated/prisma/enums";
+import { interpolate, bodyToHtml } from "~/lib/email";
 
 const GMAIL_USER = "applications@dali.dartmouth.edu";
-
-/** Map a DecisionType to the corresponding EmailTemplateType. */
-function templateTypeForDecision(type: DecisionType): EmailTemplateType {
-  switch (type) {
-    case "Rejected":
-      return "Rejected";
-    case "InvitedToInterview":
-      return "InvitedToInterview";
-    case "Accepted":
-      return "Accepted";
-    case "Waitlisted":
-      return "Waitlisted";
-  }
-}
-
-function interpolate(text: string, firstName: string): string {
-  return text.replace(/\{\{firstName\}\}/g, firstName);
-}
-
-function bodyToHtml(body: string): string {
-  return body
-    .split("\n\n")
-    .map((p) => `<p>${p.replace(/\n/g, "<br/>")}</p>`)
-    .join("\n");
-}
 
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
@@ -78,9 +53,8 @@ export async function action({ request, params }: Route.ActionArgs) {
     },
   });
 
-  // ── Send notification email via template lookup ───────────────────────────
+  // ── Send notification email via per-cycle binding ────────────────────────────
   try {
-    // Look up applicant info through the relation chain
     const domainApp = await prisma.domainApplication.findUnique({
       where: { id: decision.domainApplicationId },
       include: {
@@ -103,26 +77,31 @@ export async function action({ request, params }: Route.ActionArgs) {
       user?.dartmouthEmail ??
       (user?.netId ? `${user.netId}@dartmouth.edu` : null);
 
-    if (email && user) {
-      // Look up the current template for this decision type
-      const templateType = templateTypeForDecision(decision.type);
-      const template = await prisma.emailTemplate.findFirst({
-        where: { type: templateType },
-        orderBy: { createdAt: "desc" },
+    if (email && user && domainApp) {
+      const binding = await prisma.cycleDecisionEmail.findUnique({
+        where: {
+          applicationCycleId_decisionType: {
+            applicationCycleId: domainApp.application.applicationCycleId,
+            decisionType: decision.type,
+          },
+        },
+        include: { emailTemplateVersion: true },
       });
 
-      if (template) {
-        // Get the Gmail refresh token
+      if (!binding) {
+        console.warn(
+          `No email template bound for cycle ${domainApp.application.applicationCycleId} / decision ${decision.type}; skipping send.`
+        );
+      } else {
         const gmailUser = await prisma.user.findUnique({
           where: { daliEmail: GMAIL_USER },
           select: { googleRefreshToken: true },
         });
 
         if (gmailUser?.googleRefreshToken) {
-          const subject = interpolate(template.subject, user.firstName);
-          const html = bodyToHtml(
-            interpolate(template.body, user.firstName)
-          );
+          const tmpl = binding.emailTemplateVersion;
+          const subject = interpolate(tmpl.subject, user.firstName);
+          const html = bodyToHtml(interpolate(tmpl.body, user.firstName));
 
           await sendEmail({
             refreshToken: gmailUser.googleRefreshToken,
@@ -134,7 +113,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       }
     }
   } catch (err) {
-    // Log but don't fail the release if email sending fails
+    // Log but don't fail the release if email sending fails.
     console.error("Failed to send release email:", err);
   }
 

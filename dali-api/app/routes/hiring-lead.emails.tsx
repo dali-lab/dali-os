@@ -1,14 +1,11 @@
 import { useState } from 'react'
-import { redirect, useLoaderData } from 'react-router'
-import { Mail, Send, ChevronDown, ChevronUp, RotateCcw, Users, CheckSquare, Square, Save, History, Clock } from 'lucide-react'
+import { Link, redirect, useLoaderData } from 'react-router'
+import { Mail, Send, Users, CheckSquare, Square, ExternalLink } from 'lucide-react'
 import { requireAuth } from '~/lib/auth'
 import { isHiringLead } from '~/lib/roles'
 import { prisma } from '~/lib/db'
 import { getActiveCycle } from '~/lib/cycles'
-import { parseAccessToken } from '~/lib/cookies'
-import { PresenceProvider } from '~/components/collab/PresenceProvider'
-import { PresenceBar } from '~/components/collab/PresenceBar'
-import type { EmailTemplateType } from '~/generated/prisma/enums'
+import { interpolate, bodyToHtml } from '~/lib/email'
 import type { Route } from './+types/hiring-lead.emails'
 
 // ── Loader ────────────────────────────────────────────────────────────────────
@@ -18,14 +15,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!auth.ok) return redirect('/login')
   if (!(await isHiringLead(auth.user.sub))) return redirect('/')
 
-  const collabToken = parseAccessToken(request)
-  const member = await prisma.dALIMember.findFirst({ where: { userId: auth.user.sub } })
-  const userName = member ? [member.firstName, member.lastName].filter(Boolean).join(' ') : 'Unknown'
-
   const cycle = await getActiveCycle()
-  if (!cycle) return { cycle: null, recipientGroups: [], templatesByType: {}, collabToken, userName }
+  if (!cycle) return { cycle: null, recipientGroups: [], templates: [] }
 
-  // ── Recipients ──────────────────────────────────────────────────────────────
   const [
     submittedApps,
     acceptedApps,
@@ -34,6 +26,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     interviewInvitedApps,
     interviewScheduledApps,
     cycleReviewers,
+    templates,
   ] = await Promise.all([
     prisma.application.findMany({
       where: { applicationCycleId: cycle.id, statusUpdates: { some: { newStatus: 'Submitted' } } },
@@ -78,6 +71,10 @@ export async function loader({ request }: Route.LoaderArgs) {
       where: { applicationCycleId: cycle.id },
       include: { daliMember: { select: { firstName: true, user: { select: { daliEmail: true, dartmouthEmail: true } } } } },
     }),
+    prisma.emailTemplate.findMany({
+      include: { versions: { orderBy: { versionNumber: 'desc' }, take: 1 } },
+      orderBy: { name: 'asc' },
+    }),
   ])
 
   function appToRecipient(a: { user: { firstName: string; dartmouthEmail: string | null; daliEmail: string | null } }) {
@@ -93,541 +90,250 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   const recipientGroups = [
-    {
-      id: 'submitted_applicants',
-      label: 'All Submitted Applicants',
-      recipients: submittedApps.map(appToRecipient).filter(Boolean) as { firstName: string; email: string }[],
-    },
-    {
-      id: 'accepted',
-      label: 'Accepted Applicants',
-      recipients: acceptedApps.map(appToRecipient).filter(Boolean) as { firstName: string; email: string }[],
-    },
-    {
-      id: 'rejected',
-      label: 'Rejected Applicants',
-      recipients: rejectedApps.map(appToRecipient).filter(Boolean) as { firstName: string; email: string }[],
-    },
-    {
-      id: 'waitlisted',
-      label: 'Waitlisted Applicants',
-      recipients: waitlistedApps.map(appToRecipient).filter(Boolean) as { firstName: string; email: string }[],
-    },
-    {
-      id: 'interview_invited',
-      label: 'Interview-Invited Applicants',
-      recipients: interviewInvitedApps.map(appToRecipient).filter(Boolean) as { firstName: string; email: string }[],
-    },
-    {
-      id: 'interview_scheduled',
-      label: 'Applicants with Interview Scheduled',
-      recipients: interviewScheduledApps.map(appToRecipient).filter(Boolean) as { firstName: string; email: string }[],
-    },
-    {
-      id: 'cycle_reviewers',
-      label: 'All Reviewers This Cycle',
-      recipients: cycleReviewers.map(reviewerToRecipient).filter(Boolean) as { firstName: string; email: string }[],
-    },
+    { id: 'submitted_applicants', label: 'All Submitted Applicants', recipients: submittedApps.map(appToRecipient).filter(Boolean) as Recipient[] },
+    { id: 'accepted', label: 'Accepted Applicants', recipients: acceptedApps.map(appToRecipient).filter(Boolean) as Recipient[] },
+    { id: 'rejected', label: 'Rejected Applicants', recipients: rejectedApps.map(appToRecipient).filter(Boolean) as Recipient[] },
+    { id: 'waitlisted', label: 'Waitlisted Applicants', recipients: waitlistedApps.map(appToRecipient).filter(Boolean) as Recipient[] },
+    { id: 'interview_invited', label: 'Interview-Invited Applicants', recipients: interviewInvitedApps.map(appToRecipient).filter(Boolean) as Recipient[] },
+    { id: 'interview_scheduled', label: 'Applicants with Interview Scheduled', recipients: interviewScheduledApps.map(appToRecipient).filter(Boolean) as Recipient[] },
+    { id: 'cycle_reviewers', label: 'All Reviewers This Cycle', recipients: cycleReviewers.map(reviewerToRecipient).filter(Boolean) as Recipient[] },
   ]
 
-  // ── Templates from DB (all versions, newest first) ─────────────────────────
-  const allTemplates = await prisma.emailTemplate.findMany({
-    orderBy: { createdAt: 'desc' },
-    include: { createdBy: { select: { id: true, firstName: true, lastName: true } } },
-  })
+  // Only surface templates that have at least one version (otherwise there's nothing to send).
+  const sendableTemplates = templates
+    .filter(t => t.versions.length > 0)
+    .map(t => ({
+      id: t.id,
+      name: t.name,
+      latest: {
+        id: t.versions[0].id,
+        versionNumber: t.versions[0].versionNumber,
+        subject: t.versions[0].subject,
+        body: t.versions[0].body,
+      },
+    }))
 
-  // Group by type
-  const templatesByType: Record<string, typeof allTemplates> = {}
-  for (const t of allTemplates) {
-    if (!templatesByType[t.type]) templatesByType[t.type] = []
-    templatesByType[t.type].push(t)
+  return {
+    cycle: { id: cycle.id, name: cycle.name },
+    recipientGroups,
+    templates: sendableTemplates,
   }
-
-  return { cycle: { id: cycle.id, name: cycle.name }, recipientGroups, templatesByType, collabToken, userName }
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type Recipient = { firstName: string; email: string }
-type RecipientGroup = { id: string; label: string; recipients: Recipient[] }
-type DbTemplate = {
+type SendableTemplate = {
   id: string
-  type: string
-  subject: string
-  body: string
-  version: number
-  createdAt: string
-  createdBy: { id: string; firstName: string | null; lastName: string | null }
-}
-
-type TemplateDef = {
-  type: EmailTemplateType
-  label: string
-  description: string
-  defaultGroup: string
-  compatibleGroups: string[]
-}
-
-const TEMPLATE_DEFS: TemplateDef[] = [
-  {
-    type: 'ApplicationReceived',
-    label: '1. Application Submitted',
-    description: 'Sent right after an applicant submits their application.',
-    defaultGroup: 'submitted_applicants',
-    compatibleGroups: ['submitted_applicants'],
-  },
-  {
-    type: 'Rejected',
-    label: '2. Rejection (Pre-Interview)',
-    description: 'Sent to applicants rejected before the interview stage.',
-    defaultGroup: 'rejected',
-    compatibleGroups: ['rejected', 'submitted_applicants'],
-  },
-  {
-    type: 'RejectedPostInterview',
-    label: '2b. Rejection (Post-Interview)',
-    description: 'Sent to applicants rejected after completing an interview.',
-    defaultGroup: 'rejected',
-    compatibleGroups: ['rejected', 'submitted_applicants'],
-  },
-  {
-    type: 'InvitedToInterview',
-    label: '3. Interview Invitation (Applicant)',
-    description: 'Sent to applicants selected for an interview.',
-    defaultGroup: 'interview_invited',
-    compatibleGroups: ['interview_invited', 'submitted_applicants'],
-  },
-  {
-    type: 'InterviewInviteMentor',
-    label: '4. Interview Assignment (Mentor)',
-    description: 'Sent to mentors/reviewers assigned to conduct interviews.',
-    defaultGroup: 'cycle_reviewers',
-    compatibleGroups: ['cycle_reviewers'],
-  },
-  {
-    type: 'Waitlisted',
-    label: '5. Waitlist',
-    description: 'Sent to applicants placed on the waitlist.',
-    defaultGroup: 'waitlisted',
-    compatibleGroups: ['waitlisted'],
-  },
-  {
-    type: 'Accepted',
-    label: '6. Acceptance',
-    description: 'Sent to applicants accepted into DALI.',
-    defaultGroup: 'accepted',
-    compatibleGroups: ['accepted'],
-  },
-]
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function interpolate(text: string, firstName: string): string {
-  return text.replace(/\{\{firstName\}\}/g, firstName)
-}
-
-function bodyToHtml(body: string): string {
-  return body.split('\n\n').map(p => `<p>${p.replace(/\n/g, '<br/>')}</p>`).join('\n')
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  })
+  name: string
+  latest: { id: string; versionNumber: number; subject: string; body: string }
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function EmailsPage() {
-  const { cycle, recipientGroups, templatesByType, collabToken, userName } = useLoaderData<typeof loader>() as {
+  const { cycle, recipientGroups, templates } = useLoaderData<typeof loader>() as {
     cycle: { id: string; name: string } | null
-    recipientGroups: RecipientGroup[]
-    templatesByType: Record<string, DbTemplate[]>
-    collabToken: string | null
-    userName: string
+    recipientGroups: { id: string; label: string; recipients: Recipient[] }[]
+    templates: SendableTemplate[]
   }
 
-  // Local edits to subject/body (keyed by EmailTemplateType)
-  const [subjects, setSubjects] = useState<Record<string, string>>({})
-  const [bodies, setBodies] = useState<Record<string, string>>({})
-  const [saveStatus, setSaveStatus] = useState<Record<string, 'idle' | 'saving' | 'saved' | 'error'>>({})
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>(templates[0]?.id ?? '')
+  const [selectedGroupId, setSelectedGroupId] = useState<string>(recipientGroups[0]?.id ?? '')
+  const [excluded, setExcluded] = useState<Set<string>>(new Set())
+  const [sending, setSending] = useState(false)
+  const [sendResult, setSendResult] = useState<{ sent: number; failed: number } | null>(null)
 
-  // Which recipient group is selected per template
-  const [selectedGroup, setSelectedGroup] = useState<Record<string, string>>({})
-  // Excluded recipient emails per template
-  const [excluded, setExcluded] = useState<Record<string, Set<string>>>({})
-
-  const [expanded, setExpanded] = useState<string | null>(null)
-  const [historyOpen, setHistoryOpen] = useState<Record<string, boolean>>({})
-  const [sending, setSending] = useState<Record<string, boolean>>({})
-  const [sendResults, setSendResults] = useState<Record<string, { sent: number; failed: number } | null>>({})
-
-  // After a save, we optimistically add the new version to the local state
-  const [localTemplates, setLocalTemplates] = useState<Record<string, DbTemplate[]>>(templatesByType)
-
-  function currentTemplate(type: string): DbTemplate | null {
-    return localTemplates[type]?.[0] ?? null
+  if (!cycle) {
+    return (
+      <div className="max-w-3xl mx-auto p-8">
+        <h1 className="text-2xl font-bold text-foreground">Send Batch Email</h1>
+        <p className="mt-4 text-muted-foreground">No active cycle found.</p>
+      </div>
+    )
   }
 
-  function getSubject(def: TemplateDef) {
-    return subjects[def.type] ?? currentTemplate(def.type)?.subject ?? ''
-  }
-  function getBody(def: TemplateDef) {
-    return bodies[def.type] ?? currentTemplate(def.type)?.body ?? ''
-  }
+  const selectedTemplate = templates.find(t => t.id === selectedTemplateId) ?? null
+  const selectedGroup = recipientGroups.find(g => g.id === selectedGroupId) ?? null
+  const recipients = (selectedGroup?.recipients ?? []).filter(r => !excluded.has(r.email))
 
-  function isModified(def: TemplateDef) {
-    const savedSubject = currentTemplate(def.type)?.subject ?? ''
-    const savedBody = currentTemplate(def.type)?.body ?? ''
-    return (subjects[def.type] !== undefined && subjects[def.type] !== savedSubject) ||
-      (bodies[def.type] !== undefined && bodies[def.type] !== savedBody)
-  }
+  const previewSubject = selectedTemplate
+    ? interpolate(selectedTemplate.latest.subject, recipients[0]?.firstName ?? 'Sample')
+    : ''
+  const previewHtml = selectedTemplate
+    ? bodyToHtml(interpolate(selectedTemplate.latest.body, recipients[0]?.firstName ?? 'Sample'))
+    : ''
 
-  function resetEdits(def: TemplateDef) {
-    setSubjects(prev => { const n = { ...prev }; delete n[def.type]; return n })
-    setBodies(prev => { const n = { ...prev }; delete n[def.type]; return n })
-  }
-
-  async function saveTemplate(def: TemplateDef) {
-    setSaveStatus(prev => ({ ...prev, [def.type]: 'saving' }))
-    try {
-      const res = await fetch(`/api/email-templates/${def.type}`, {
-        method: 'PUT',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subject: getSubject(def), body: getBody(def) }),
-      })
-      if (res.ok) {
-        const newTemplate = await res.json() as DbTemplate
-        // Prepend to local history
-        setLocalTemplates(prev => ({
-          ...prev,
-          [def.type]: [newTemplate, ...(prev[def.type] ?? [])],
-        }))
-        resetEdits(def)
-        setSaveStatus(prev => ({ ...prev, [def.type]: 'saved' }))
-        setTimeout(() => setSaveStatus(prev => ({ ...prev, [def.type]: 'idle' })), 2500)
-      } else {
-        setSaveStatus(prev => ({ ...prev, [def.type]: 'error' }))
-      }
-    } catch {
-      setSaveStatus(prev => ({ ...prev, [def.type]: 'error' }))
-    }
-  }
-
-  function getGroup(def: TemplateDef): RecipientGroup | null {
-    const gid = selectedGroup[def.type] ?? def.defaultGroup
-    return recipientGroups.find(g => g.id === gid) ?? null
-  }
-
-  function getRecipients(def: TemplateDef): Recipient[] {
-    const group = getGroup(def)
-    if (!group) return []
-    const ex = excluded[def.type] ?? new Set<string>()
-    return group.recipients.filter(r => !ex.has(r.email))
-  }
-
-  function toggleExclude(type: string, email: string) {
+  function toggleExcluded(email: string) {
     setExcluded(prev => {
-      const s = new Set(prev[type] ?? [])
-      s.has(email) ? s.delete(email) : s.add(email)
-      return { ...prev, [type]: s }
+      const next = new Set(prev)
+      if (next.has(email)) next.delete(email)
+      else next.add(email)
+      return next
     })
   }
 
-  async function sendBatch(def: TemplateDef) {
-    const recipients = getRecipients(def)
-    if (recipients.length === 0) return
-    setSending(prev => ({ ...prev, [def.type]: true }))
-    setSendResults(prev => ({ ...prev, [def.type]: null }))
-
-    let sent = 0, failed = 0
+  async function handleSend() {
+    if (!selectedTemplate || recipients.length === 0) return
+    setSending(true)
+    setSendResult(null)
+    let sent = 0
+    let failed = 0
     for (const r of recipients) {
-      const subject = interpolate(getSubject(def), r.firstName)
-      const html = bodyToHtml(interpolate(getBody(def), r.firstName))
+      const subject = interpolate(selectedTemplate.latest.subject, r.firstName)
+      const html = bodyToHtml(interpolate(selectedTemplate.latest.body, r.firstName))
       try {
         const res = await fetch('/api/email/send', {
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type: 'custom', to: r.email, subject, html }),
+          body: JSON.stringify({ to: r.email, subject, html }),
         })
-        res.ok ? sent++ : failed++
-      } catch { failed++ }
+        if (res.ok) sent++
+        else failed++
+      } catch {
+        failed++
+      }
     }
-
-    setSending(prev => ({ ...prev, [def.type]: false }))
-    setSendResults(prev => ({ ...prev, [def.type]: { sent, failed } }))
-  }
-
-  function restoreVersion(def: TemplateDef, version: DbTemplate) {
-    setSubjects(prev => ({ ...prev, [def.type]: version.subject }))
-    setBodies(prev => ({ ...prev, [def.type]: version.body }))
-  }
-
-  if (!cycle) {
-    return (
-      <PresenceProvider pageId="emails" token={collabToken} userName={userName}>
-        <div className="text-center py-16">
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Emails</h1>
-          <p className="text-gray-500">No active cycle found.</p>
-        </div>
-      </PresenceProvider>
-    )
+    setSendResult({ sent, failed })
+    setSending(false)
   }
 
   return (
-    <PresenceProvider pageId="emails" token={collabToken} userName={userName}>
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="max-w-5xl mx-auto p-6 space-y-6">
+      <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Emails</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Send batch emails for <span className="font-medium text-gray-700">{cycle.name}</span>. Templates are saved with version history.
+          <h1 className="text-2xl font-bold text-foreground inline-flex items-center gap-2">
+            <Mail className="w-6 h-6 text-blue-600" />
+            Send Batch Email
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Pick a template and a recipient group for <span className="font-medium text-foreground">{cycle.name}</span>.
           </p>
         </div>
-        <PresenceBar />
+        <Link
+          to="/email-templates"
+          className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 font-medium"
+        >
+          Manage templates <ExternalLink className="w-3 h-3" />
+        </Link>
       </div>
 
-      <div className="space-y-3">
-        {TEMPLATE_DEFS.map(def => {
-          const isOpen = expanded === def.type
-          const group = getGroup(def)
-          const recipients = getRecipients(def)
-          const ex = excluded[def.type] ?? new Set<string>()
-          const isSending = sending[def.type] ?? false
-          const sendResult = sendResults[def.type]
-          const modified = isModified(def)
-          const ss = saveStatus[def.type] ?? 'idle'
-          const current = currentTemplate(def.type)
-          const history = localTemplates[def.type] ?? []
-          const showHistory = historyOpen[def.type] ?? false
-
-          return (
-            <div key={def.type} className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-              {/* Header */}
-              <button
-                onClick={() => setExpanded(isOpen ? null : def.type)}
-                className="w-full flex items-center justify-between px-6 py-4 text-left hover:bg-gray-50 transition"
+      {templates.length === 0 ? (
+        <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 text-sm text-orange-800">
+          No email templates yet. <Link to="/email-templates" className="underline font-medium">Create one</Link> first.
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="space-y-4">
+            <div className="bg-card rounded-xl border border-border shadow-sm p-5 space-y-3">
+              <h2 className="text-sm font-bold text-foreground/80">Template</h2>
+              <select
+                value={selectedTemplateId}
+                onChange={e => { setSelectedTemplateId(e.target.value); setSendResult(null) }}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
               >
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
-                    <Mail className="w-4 h-4 text-blue-600" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-semibold text-gray-900">{def.label}</p>
-                      {current && (
-                        <span className="text-xs text-gray-400">v{current.version}</span>
-                      )}
-                      {modified && <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-700">unsaved changes</span>}
-                    </div>
-                    <p className="text-xs text-muted-foreground">{def.description}</p>
-                  </div>
-                </div>
-                {isOpen ? <ChevronUp className="w-4 h-4 text-muted-foreground/70 shrink-0" /> : <ChevronDown className="w-4 h-4 text-muted-foreground/70 shrink-0" />}
-              </button>
-
-              {isOpen && (
-                <div className="border-t border-border divide-y divide-gray-100">
-                  {/* Template editor */}
-                  <div className="px-6 py-5 space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Template</p>
-                        {current && (
-                          <span className="text-xs text-gray-400">
-                            Last edited by {current.createdBy.firstName ?? 'Unknown'} {current.createdBy.lastName ?? ''} on {formatDate(current.createdAt)}
-                          </span>
-                        )}
-                      </div>
-                      {modified && (
-                        <button
-                          onClick={() => resetEdits(def)}
-                          className="inline-flex items-center gap-1 text-xs text-muted-foreground/70 hover:text-muted-foreground transition"
-                        >
-                          <RotateCcw className="w-3 h-3" /> Discard changes
-                        </button>
-                      )}
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-medium text-muted-foreground mb-1">Subject</label>
-                      <input
-                        type="text"
-                        value={getSubject(def)}
-                        onChange={e => setSubjects(prev => ({ ...prev, [def.type]: e.target.value }))}
-                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-medium text-muted-foreground mb-1">Body</label>
-                      <textarea
-                        rows={7}
-                        value={getBody(def)}
-                        onChange={e => setBodies(prev => ({ ...prev, [def.type]: e.target.value }))}
-                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono resize-y"
-                      />
-                      <p className="text-xs text-muted-foreground/70 mt-1">
-                        Use <code className="bg-muted px-1 rounded">{'{{firstName}}'}</code> to personalize per recipient.
-                      </p>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                      <button
-                        onClick={() => saveTemplate(def)}
-                        disabled={!modified || ss === 'saving'}
-                        className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg bg-gray-900 hover:bg-gray-700 text-white transition disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        <Save className="w-3.5 h-3.5" />
-                        {ss === 'saving' ? 'Saving...' : 'Save template'}
-                      </button>
-                      {ss === 'saved' && <span className="text-sm text-green-600 font-medium">Saved!</span>}
-                      {ss === 'error' && <span className="text-sm text-red-600 font-medium">Save failed.</span>}
-                    </div>
-                  </div>
-
-                  {/* Version history */}
-                  {history.length > 0 && (
-                    <div className="px-6 py-4">
-                      <button
-                        onClick={() => setHistoryOpen(prev => ({ ...prev, [def.type]: !showHistory }))}
-                        className="inline-flex items-center gap-2 text-xs font-semibold text-gray-500 uppercase tracking-wide hover:text-gray-700 transition"
-                      >
-                        <History className="w-3.5 h-3.5" />
-                        Version history ({history.length})
-                        {showHistory ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                      </button>
-                      {showHistory && (
-                        <div className="mt-3 space-y-2 max-h-64 overflow-y-auto">
-                          {history.map(v => (
-                            <div
-                              key={v.id}
-                              className="flex items-center justify-between px-4 py-3 bg-gray-50 rounded-lg text-sm"
-                            >
-                              <div className="flex items-center gap-3">
-                                <span className="text-xs font-mono text-gray-400">v{v.version}</span>
-                                <div>
-                                  <p className="text-gray-900 font-medium">{v.subject}</p>
-                                  <p className="text-xs text-gray-400 flex items-center gap-1">
-                                    <Clock className="w-3 h-3" />
-                                    {formatDate(v.createdAt)} by {v.createdBy.firstName ?? 'Unknown'} {v.createdBy.lastName ?? ''}
-                                  </p>
-                                </div>
-                              </div>
-                              {v.id !== current?.id && (
-                                <button
-                                  onClick={() => restoreVersion(def, v)}
-                                  className="text-xs text-blue-600 hover:text-blue-800 font-medium transition"
-                                >
-                                  Edit
-                                </button>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Recipient group + checklist */}
-                  <div className="px-6 py-5 space-y-4">
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Recipients</p>
-
-                    {def.compatibleGroups.length > 1 && (
-                      <div className="flex gap-2 flex-wrap">
-                        {def.compatibleGroups.map(gid => {
-                          const g = recipientGroups.find(rg => rg.id === gid)
-                          if (!g) return null
-                          const active = (selectedGroup[def.type] ?? def.defaultGroup) === gid
-                          return (
-                            <button
-                              key={gid}
-                              onClick={() => setSelectedGroup(prev => ({ ...prev, [def.type]: gid }))}
-                              className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition ${active ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400'}`}
-                            >
-                              {g.label} ({g.recipients.length})
-                            </button>
-                          )
-                        })}
-                      </div>
-                    )}
-
-                    {group && (
-                      <div className="border border-border rounded-lg overflow-hidden">
-                        <div className="px-4 py-3 bg-muted/50 border-b border-border flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <Users className="w-4 h-4 text-muted-foreground/70" />
-                            <span className="text-sm font-medium text-foreground/80">{group.label}</span>
-                            <span className="text-xs text-muted-foreground/70">({recipients.length} of {group.recipients.length})</span>
-                          </div>
-                          {ex.size > 0 && (
-                            <button
-                              onClick={() => setExcluded(prev => ({ ...prev, [def.type]: new Set() }))}
-                              className="text-xs text-blue-600 hover:text-blue-800 transition"
-                            >
-                              Select all
-                            </button>
-                          )}
-                        </div>
-                        <div className="max-h-52 overflow-y-auto divide-y divide-gray-100">
-                          {group.recipients.length === 0 ? (
-                            <p className="px-4 py-6 text-sm text-muted-foreground/70 text-center">No recipients in this group yet.</p>
-                          ) : (
-                            group.recipients.map(r => {
-                              const isExcluded = ex.has(r.email)
-                              return (
-                                <button
-                                  key={r.email}
-                                  onClick={() => toggleExclude(def.type, r.email)}
-                                  className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 transition text-left"
-                                >
-                                  {isExcluded
-                                    ? <Square className="w-4 h-4 text-muted-foreground/50 shrink-0" />
-                                    : <CheckSquare className="w-4 h-4 text-blue-600 shrink-0" />}
-                                  <span className={`text-sm ${isExcluded ? 'text-muted-foreground/70 line-through' : 'text-foreground'}`}>
-                                    {r.firstName}
-                                  </span>
-                                  <span className={`text-xs ml-auto ${isExcluded ? 'text-muted-foreground/50' : 'text-muted-foreground/70'}`}>
-                                    {r.email}
-                                  </span>
-                                </button>
-                              )
-                            })
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Send */}
-                  <div className="px-6 py-4 flex items-center gap-4">
-                    <button
-                      onClick={() => sendBatch(def)}
-                      disabled={recipients.length === 0 || isSending}
-                      className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <Send className="w-4 h-4" />
-                      {isSending ? 'Sending...' : `Send to ${recipients.length} recipient${recipients.length !== 1 ? 's' : ''}`}
-                    </button>
-                    {sendResult && (
-                      <span className={`text-sm font-medium ${sendResult.failed > 0 ? 'text-yellow-600' : 'text-green-600'}`}>
-                        {sendResult.sent} sent{sendResult.failed > 0 ? `, ${sendResult.failed} failed` : ''}
-                      </span>
-                    )}
-                  </div>
-                </div>
+                {templates.map(t => (
+                  <option key={t.id} value={t.id}>
+                    {t.name} — v{t.latest.versionNumber}
+                  </option>
+                ))}
+              </select>
+              {selectedTemplate && (
+                <Link
+                  to={`/email-templates/${selectedTemplate.id}`}
+                  className="text-xs text-blue-600 hover:text-blue-800 inline-flex items-center gap-1"
+                >
+                  Edit this template <ExternalLink className="w-3 h-3" />
+                </Link>
               )}
             </div>
-          )
-        })}
-      </div>
+
+            <div className="bg-card rounded-xl border border-border shadow-sm p-5 space-y-3">
+              <h2 className="text-sm font-bold text-foreground/80 inline-flex items-center gap-2">
+                <Users className="w-4 h-4" />
+                Recipients
+              </h2>
+              <select
+                value={selectedGroupId}
+                onChange={e => { setSelectedGroupId(e.target.value); setExcluded(new Set()); setSendResult(null) }}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              >
+                {recipientGroups.map(g => (
+                  <option key={g.id} value={g.id}>
+                    {g.label} ({g.recipients.length})
+                  </option>
+                ))}
+              </select>
+              <div className="max-h-72 overflow-y-auto border border-border rounded-lg divide-y divide-border">
+                {(selectedGroup?.recipients ?? []).length === 0 ? (
+                  <p className="p-3 text-sm text-muted-foreground italic">No recipients in this group.</p>
+                ) : (
+                  (selectedGroup?.recipients ?? []).map(r => {
+                    const isExcluded = excluded.has(r.email)
+                    return (
+                      <button
+                        key={r.email}
+                        type="button"
+                        onClick={() => toggleExcluded(r.email)}
+                        className="w-full flex items-center gap-2 p-2 text-left text-sm hover:bg-muted/40"
+                      >
+                        {isExcluded ? (
+                          <Square className="w-4 h-4 text-muted-foreground/70" />
+                        ) : (
+                          <CheckSquare className="w-4 h-4 text-blue-600" />
+                        )}
+                        <span className={isExcluded ? 'text-muted-foreground/70 line-through' : ''}>
+                          {r.firstName} — {r.email}
+                        </span>
+                      </button>
+                    )
+                  })
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">{recipients.length} recipient{recipients.length !== 1 ? 's' : ''} selected</p>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleSend}
+              disabled={sending || !selectedTemplate || recipients.length === 0}
+              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Send className="w-4 h-4" />
+              {sending ? 'Sending…' : `Send to ${recipients.length} recipient${recipients.length !== 1 ? 's' : ''}`}
+            </button>
+
+            {sendResult && (
+              <div className={`rounded-lg p-3 text-sm ${sendResult.failed > 0 ? 'bg-orange-50 border border-orange-200 text-orange-800' : 'bg-green-50 border border-green-200 text-green-800'}`}>
+                Sent {sendResult.sent}{sendResult.failed > 0 ? ` — ${sendResult.failed} failed` : ''}
+              </div>
+            )}
+          </div>
+
+          <div className="bg-card rounded-xl border border-border shadow-sm p-5 space-y-3 sticky top-4 self-start">
+            <h2 className="text-sm font-bold text-foreground/80">Preview (first recipient)</h2>
+            {selectedTemplate ? (
+              <>
+                <div>
+                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Subject</h3>
+                  <p className="mt-1 text-sm text-foreground">{previewSubject}</p>
+                </div>
+                <div>
+                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Body</h3>
+                  <div
+                    className="mt-1 prose prose-sm max-w-none text-foreground"
+                    // eslint-disable-next-line react/no-danger
+                    dangerouslySetInnerHTML={{ __html: previewHtml }}
+                  />
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground italic">Pick a template to preview.</p>
+            )}
+          </div>
+        </div>
+      )}
     </div>
-    </PresenceProvider>
   )
 }

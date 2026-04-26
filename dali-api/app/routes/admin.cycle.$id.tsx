@@ -131,7 +131,48 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     orderBy: { createdAt: "desc" },
   });
 
-  return { cycle, allDomains, finalDecisions, rubricVersionOptions, cycleApplicationReviewCount, generalChallengeVersions };
+  // Email-template options + current per-cycle decision bindings + which
+  // DecisionTypes already have a Released decision (used to lock those slots).
+  const emailTemplates = await prisma.emailTemplate.findMany({
+    include: {
+      versions: {
+        orderBy: { versionNumber: "desc" },
+        take: 1,
+      },
+    },
+    orderBy: { name: "asc" },
+  });
+
+  const currentDecisionEmails = await prisma.cycleDecisionEmail.findMany({
+    where: { applicationCycleId: params.id },
+    include: {
+      emailTemplateVersion: { include: { template: { select: { name: true } } } },
+    },
+  });
+
+  const releasedDecisions = await prisma.decision.findMany({
+    where: {
+      stage: "Released",
+      domainApplication: {
+        application: { applicationCycleId: params.id },
+      },
+    },
+    select: { type: true },
+    distinct: ["type"],
+  });
+  const releasedDecisionTypes = releasedDecisions.map((d) => d.type);
+
+  return {
+    cycle,
+    allDomains,
+    finalDecisions,
+    rubricVersionOptions,
+    cycleApplicationReviewCount,
+    generalChallengeVersions,
+    emailTemplates,
+    currentDecisionEmails,
+    releasedDecisionTypes,
+  };
 }
 
 // ─── Action ──────────────────────────────────────────────────────────────────
@@ -172,6 +213,50 @@ export async function action({ request, params }: Route.ActionArgs) {
       where: { id: params.id },
       data: { generalRubricVersionId: rubricVersionId },
     });
+    return redirect(`/hiring-lead-admin/cycle/${params.id}`);
+  }
+
+  if (intent === "set-decision-email") {
+    const decisionType = formData.get("decisionType") as string;
+    const emailTemplateVersionId = (formData.get("emailTemplateVersionId") as string) || null;
+    const validTypes = ["Rejected", "InvitedToInterview", "Accepted", "Waitlisted"] as const;
+    if (!validTypes.includes(decisionType as (typeof validTypes)[number])) {
+      return new Response(JSON.stringify({ error: "Invalid decision type" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+    // Lock once a Released decision of this type exists for this cycle.
+    const alreadyReleased = await prisma.decision.count({
+      where: {
+        stage: "Released",
+        type: decisionType as (typeof validTypes)[number],
+        domainApplication: { application: { applicationCycleId: params.id } },
+      },
+    });
+    if (alreadyReleased > 0) {
+      return redirect(`/hiring-lead-admin/cycle/${params.id}`);
+    }
+    if (emailTemplateVersionId) {
+      await prisma.cycleDecisionEmail.upsert({
+        where: {
+          applicationCycleId_decisionType: {
+            applicationCycleId: params.id,
+            decisionType: decisionType as (typeof validTypes)[number],
+          },
+        },
+        update: { emailTemplateVersionId },
+        create: {
+          applicationCycleId: params.id,
+          decisionType: decisionType as (typeof validTypes)[number],
+          emailTemplateVersionId,
+        },
+      });
+    } else {
+      await prisma.cycleDecisionEmail.deleteMany({
+        where: {
+          applicationCycleId: params.id,
+          decisionType: decisionType as (typeof validTypes)[number],
+        },
+      });
+    }
     return redirect(`/hiring-lead-admin/cycle/${params.id}`);
   }
 
@@ -757,6 +842,13 @@ export default function AdminCycleDetails() {
             currentRubricVersionId={cycle?.generalRubricVersionId}
             rubricVersionOptions={loaderData?.rubricVersionOptions ?? []}
             locked={(loaderData?.cycleApplicationReviewCount ?? 0) > 0}
+          />
+
+          {/* Decision-release email bindings */}
+          <DecisionEmailsSection
+            emailTemplates={loaderData?.emailTemplates ?? []}
+            currentDecisionEmails={loaderData?.currentDecisionEmails ?? []}
+            releasedDecisionTypes={loaderData?.releasedDecisionTypes ?? []}
           />
         </div>
       )}
@@ -1426,6 +1518,132 @@ function GeneralFormPicker({ currentCvId, currentCvName, options, locked }: {
         </Form>
       ) : (
         <p className="text-xs text-muted-foreground/70">No general forms available. Create a challenge with no domain on the Challenges page first.</p>
+      )}
+    </div>
+  );
+}
+
+const DECISION_EMAIL_SLOTS = [
+  { type: "Rejected", label: "Rejected", description: "Sent when a Rejected decision is released to the applicant." },
+  { type: "InvitedToInterview", label: "Invited to Interview", description: "Sent when an applicant is invited to interview." },
+  { type: "Waitlisted", label: "Waitlisted", description: "Sent when an applicant is placed on the waitlist." },
+  { type: "Accepted", label: "Accepted", description: "Sent when an applicant is offered a spot." },
+] as const;
+
+function DecisionEmailsSection({ emailTemplates, currentDecisionEmails, releasedDecisionTypes }: {
+  emailTemplates: any[];
+  currentDecisionEmails: any[];
+  releasedDecisionTypes: string[];
+}) {
+  return (
+    <div className="bg-card rounded-xl border border-border shadow-sm p-6 space-y-4">
+      <div>
+        <h3 className="text-sm font-bold text-foreground/80">Decision Emails</h3>
+        <p className="text-xs text-muted-foreground">
+          Pick which template fires when each decision type is released. Slots without a binding will not send an email.
+          Once a decision of a given type has been released, its slot locks for this cycle.
+        </p>
+      </div>
+      <div className="space-y-3">
+        {DECISION_EMAIL_SLOTS.map((slot) => {
+          const binding = currentDecisionEmails.find((b: any) => b.decisionType === slot.type);
+          const locked = releasedDecisionTypes.includes(slot.type);
+          return (
+            <DecisionEmailPicker
+              key={slot.type}
+              slot={slot}
+              binding={binding ?? null}
+              emailTemplates={emailTemplates}
+              locked={locked}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function DecisionEmailPicker({ slot, binding, emailTemplates, locked }: {
+  slot: { type: string; label: string; description: string };
+  binding: any | null;
+  emailTemplates: any[];
+  locked: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const currentVersionId: string | null = binding?.emailTemplateVersionId ?? null;
+  const currentLabel = binding
+    ? `${binding.emailTemplateVersion.template.name} — v${binding.emailTemplateVersion.versionNumber}`
+    : null;
+
+  return (
+    <div className="border border-border rounded-lg p-4 space-y-2">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h4 className="text-sm font-bold text-foreground">{slot.label}</h4>
+          <p className="text-xs text-muted-foreground">{slot.description}</p>
+        </div>
+        {!editing && !locked && (
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="text-xs text-blue-600 hover:text-blue-800 font-medium shrink-0"
+          >
+            {currentLabel ? "Change" : "Assign"}
+          </button>
+        )}
+      </div>
+
+      {locked ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <CheckCircle className="w-4 h-4 text-green-600" />
+          <span>{currentLabel ?? "No template assigned"}</span>
+          <span className="text-xs text-muted-foreground/70 ml-2">(locked — decisions of this type already released)</span>
+        </div>
+      ) : !editing ? (
+        currentLabel ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <CheckCircle className="w-4 h-4 text-green-600" />
+            <span>{currentLabel}</span>
+          </div>
+        ) : (
+          <div className="text-sm text-orange-700 bg-orange-50 border border-orange-200 rounded px-2 py-1">
+            No template assigned — releasing a {slot.label} decision will not send an email.
+          </div>
+        )
+      ) : (
+        <Form method="post" className="flex items-end gap-2 flex-wrap" onSubmit={() => setEditing(false)}>
+          <input type="hidden" name="intent" value="set-decision-email" />
+          <input type="hidden" name="decisionType" value={slot.type} />
+          <div className="flex-1 min-w-[14rem]">
+            <select
+              name="emailTemplateVersionId"
+              defaultValue={currentVersionId ?? ""}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            >
+              <option value="">No template (skip email)</option>
+              {emailTemplates
+                .filter((t: any) => t.versions.length > 0)
+                .map((t: any) => (
+                  <option key={t.versions[0].id} value={t.versions[0].id}>
+                    {t.name} — v{t.versions[0].versionNumber}
+                  </option>
+                ))}
+            </select>
+          </div>
+          <button
+            type="submit"
+            className="px-3 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition"
+          >
+            Save
+          </button>
+          <button
+            type="button"
+            onClick={() => setEditing(false)}
+            className="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground"
+          >
+            Cancel
+          </button>
+        </Form>
       )}
     </div>
   );
