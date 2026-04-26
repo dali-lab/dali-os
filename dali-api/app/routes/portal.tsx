@@ -98,7 +98,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       domainId: da.challengeVersion?.domainId,
       inferredStatus,
       interview: activeInterview
-        ? { id: activeInterview.id, startTime: activeInterview.startTime, endTime: activeInterview.endTime, status: activeInterview.status, location: activeInterview.location }
+        ? { id: activeInterview.id, startTime: activeInterview.startTime, endTime: activeInterview.endTime, status: activeInterview.status, location: activeInterview.location, zoomJoinUrl: activeInterview.zoomJoinUrl }
         : null,
     };
   });
@@ -121,7 +121,7 @@ interface DomainAppData {
   domainName: string;
   domainId: string;
   inferredStatus: DomainApplicationStatus;
-  interview: { id: string; startTime: string; endTime: string; status: string; location?: string } | null;
+  interview: { id: string; startTime: string; endTime: string; status: string; location?: string; zoomJoinUrl?: string | null } | null;
 }
 
 interface TimeSlot {
@@ -162,23 +162,27 @@ function formatInterviewLocation(location?: string): string {
   return "Online";
 }
 
-function buildGoogleCalendarUrl(slot: TimeSlot, cycleName: string, location?: string): string {
+function buildGoogleCalendarUrl(slot: TimeSlot, cycleName: string, location?: string, zoomJoinUrl?: string | null): string {
   const fmt = (d: string | Date) => new Date(d).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
   const locStr = formatInterviewLocation(location);
+  let details = "Your interview with the DALI Lab team. Please arrive 5 minutes early.";
+  if (zoomJoinUrl) details += `\n\nJoin Zoom: ${zoomJoinUrl}`;
   const params = new URLSearchParams({
     action: "TEMPLATE",
     text: `DALI Lab Interview — ${cycleName}`,
     dates: `${fmt(slot.isoStart)}/${fmt(slot.isoEnd)}`,
-    details: "Your interview with the DALI Lab team. Please arrive 5 minutes early.",
-    location: locStr,
+    details,
+    location: zoomJoinUrl ? zoomJoinUrl : locStr,
   });
   return `https://calendar.google.com/calendar/render?${params.toString()}`;
 }
 
-function buildIcsContent(slot: TimeSlot, cycleName: string, location?: string): string {
+function buildIcsContent(slot: TimeSlot, cycleName: string, location?: string, zoomJoinUrl?: string | null): string {
   const fmt = (d: string | Date) => new Date(d).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
-  const locStr = formatInterviewLocation(location);
+  const locStr = zoomJoinUrl ? zoomJoinUrl : formatInterviewLocation(location);
   const uid = `dali-interview-${new Date(slot.isoStart).getTime()}@dali.dartmouth.edu`;
+  let description = "Your interview with the DALI Lab team. Please arrive 5 minutes early.";
+  if (zoomJoinUrl) description += `\\nJoin Zoom: ${zoomJoinUrl}`;
   return [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
@@ -188,15 +192,15 @@ function buildIcsContent(slot: TimeSlot, cycleName: string, location?: string): 
     `DTSTART:${fmt(slot.isoStart)}`,
     `DTEND:${fmt(slot.isoEnd)}`,
     `SUMMARY:DALI Lab Interview — ${cycleName}`,
-    "DESCRIPTION:Your interview with the DALI Lab team. Please arrive 5 minutes early.",
+    `DESCRIPTION:${description}`,
     `LOCATION:${locStr.replace(/\\/g, "\\\\").replace(/,/g, "\\,").replace(/;/g, "\\;")}`,
     "END:VEVENT",
     "END:VCALENDAR",
   ].join("\r\n");
 }
 
-function downloadIcs(slot: TimeSlot, cycleName: string, location?: string): void {
-  const content = buildIcsContent(slot, cycleName, location);
+function downloadIcs(slot: TimeSlot, cycleName: string, location?: string, zoomJoinUrl?: string | null): void {
+  const content = buildIcsContent(slot, cycleName, location, zoomJoinUrl);
   const blob = new Blob([content], { type: "text/calendar" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -729,11 +733,23 @@ function InterviewScheduledView({
           <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Location</span>
           <p className="text-sm text-dark-blue mt-1">{formatInterviewLocation(interview.location)}</p>
         </div>
+        {interview.location === "Online" && interview.zoomJoinUrl && (
+          <div className="pt-4 border-t border-border/60">
+            <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Meeting Link</span>
+            <a href={interview.zoomJoinUrl} target="_blank" rel="noopener noreferrer"
+               className="flex items-center gap-1.5 text-sm text-accent-coral hover:underline mt-1">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+              Join Zoom Meeting
+            </a>
+          </div>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
         <a
-          href={buildGoogleCalendarUrl(slot, cycleName, interview.location)}
+          href={buildGoogleCalendarUrl(slot, cycleName, interview.location, interview.zoomJoinUrl)}
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition"
@@ -744,7 +760,7 @@ function InterviewScheduledView({
           Add to Google Calendar
         </a>
         <button
-          onClick={() => downloadIcs(slot, cycleName, interview.location)}
+          onClick={() => downloadIcs(slot, cycleName, interview.location, interview.zoomJoinUrl)}
           className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-accent-coral hover:text-accent-coral transition"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

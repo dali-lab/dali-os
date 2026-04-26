@@ -2,6 +2,7 @@ import type { Route } from "./+types/api.my-interview.cancel";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
+import { deprovisionZoomMeeting } from "~/lib/zoom";
 
 export async function action({ request }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
@@ -51,6 +52,9 @@ export async function action({ request }: Route.ActionArgs) {
     where: { id: interview.id },
     data: { status: "CancelledByApplicant" },
   });
+
+  try { await deprovisionZoomMeeting(interview); }
+  catch (err) { console.error("Failed to delete Zoom meeting on cancel:", err); }
 
   return withCors(request, Response.json(updated));
 }

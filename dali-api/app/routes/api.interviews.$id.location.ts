@@ -2,6 +2,7 @@ import type { Route } from "./+types/api.interviews.$id.location";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { hasCycleAccess } from "~/lib/roles";
+import { provisionZoomMeeting, deprovisionZoomMeeting } from "~/lib/zoom";
 
 const VALID_LOCATIONS = ["PodAppa", "PodMomo", "Online"] as const;
 
@@ -68,6 +69,21 @@ export async function action({ request, params }: Route.ActionArgs) {
         data: { location },
       });
     }, { isolationLevel: "Serializable" });
+
+    // Handle Zoom provisioning/deprovisioning on location transitions
+    const wasOnline = interview.location === "Online";
+    const isNowOnline = location === "Online";
+    if (!wasOnline && isNowOnline) {
+      try {
+        const config = await prisma.interviewConfig.findUnique({ where: { applicationCycleId: interview.applicationCycleId } });
+        await provisionZoomMeeting(interview.id, "DALI Lab Interview", interview.startTime, config?.slotDurationMinutes ?? 30);
+      } catch (err) { console.error("Failed to provision Zoom meeting on location change:", err); }
+    } else if (wasOnline && !isNowOnline) {
+      try {
+        await deprovisionZoomMeeting(interview);
+        await prisma.interview.update({ where: { id: interview.id }, data: { zoomMeetingId: null, zoomJoinUrl: null } });
+      } catch (err) { console.error("Failed to delete Zoom meeting on location change:", err); }
+    }
 
     return Response.json(updated);
   } catch (err: any) {

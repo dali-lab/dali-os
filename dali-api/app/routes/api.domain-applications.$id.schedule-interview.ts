@@ -2,6 +2,7 @@ import type { Route } from "./+types/api.domain-applications.$id.schedule-interv
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { assignInterviewers } from "~/lib/scheduling";
+import { provisionZoomMeeting } from "~/lib/zoom";
 
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
@@ -77,6 +78,15 @@ export async function action({ request, params }: Route.ActionArgs) {
       undefined,
       interviewMode,
     );
+
+    if (interview.location === "Online") {
+      try {
+        await provisionZoomMeeting(interview.id, "DALI Lab Interview", slotStart, config.slotDurationMinutes);
+      } catch (err) {
+        console.error("Failed to provision Zoom meeting:", err);
+      }
+    }
+
     return Response.json(interview, { status: 201 });
   } catch (err: any) {
     return Response.json({ error: err.message }, { status: 409 });

@@ -33,6 +33,7 @@ interface InterviewRow {
   endTime: string
   status: string
   location: string
+  zoomJoinUrl: string | null
   domainApplication: {
     challengeVersion: { domain: { name: string } }
     application: { user: { firstName: string; lastName: string } }
@@ -1065,6 +1066,10 @@ export default function AdminCycleDetails() {
                             {interview.location === 'PodAppa' ? 'Pod Appa' :
                              interview.location === 'PodMomo' ? 'Pod Momo' : 'Online'}
                           </span>
+                        )}
+                        {interview.location === 'Online' && interview.zoomJoinUrl && (
+                          <a href={interview.zoomJoinUrl} target="_blank" rel="noopener noreferrer"
+                             className="block text-xs text-blue-600 hover:underline mt-0.5">Zoom</a>
                         )}
                       </td>
                       <td className="px-4 py-3 text-muted-foreground text-xs">

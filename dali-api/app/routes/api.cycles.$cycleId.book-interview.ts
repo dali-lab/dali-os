@@ -3,6 +3,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { assignInterviewers } from "~/lib/scheduling";
+import { provisionZoomMeeting } from "~/lib/zoom";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { safeJson } from "~/lib/safe-json";
 
@@ -60,6 +61,16 @@ export async function action({ request, params }: Route.ActionArgs) {
       undefined,
       interviewMode,
     );
+
+    if (interview.location === "Online") {
+      try {
+        const duration = Math.round((new Date(slotEnd).getTime() - new Date(slotStart).getTime()) / 60_000);
+        await provisionZoomMeeting(interview.id, "DALI Lab Interview", new Date(slotStart), duration);
+      } catch (err) {
+        console.error("Failed to provision Zoom meeting:", err);
+      }
+    }
+
     return withCors(request, Response.json(interview, { status: 201 }));
   } catch (err: any) {
     return withCors(request, Response.json({ error: err.message }, { status: 409 }));

@@ -367,6 +367,9 @@ model Interview {
   status    InterviewStatus @default(Scheduled)
   location  InterviewLocation @default(Online)
 
+  zoomMeetingId String?
+  zoomJoinUrl   String?
+
   // Joint outcome — set by either interviewer when marking complete.
   // recommendation values: 'Strong Hire' | 'Hire' | 'Lean Hire' | 'Lean No Hire' | 'No Hire'
   recommendation      String?

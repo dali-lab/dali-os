@@ -3,6 +3,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { assignInterviewers } from "~/lib/scheduling";
+import { provisionZoomMeeting, deprovisionZoomMeeting } from "~/lib/zoom";
 
 export async function action({ request }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
@@ -31,7 +32,7 @@ export async function action({ request }: Route.ActionArgs) {
   // If assignInterviewers throws (no free interviewers at the new slot), the
   // whole transaction rolls back and the old interview stays Scheduled.
   try {
-    const newInterview = await prisma.$transaction(
+    const { newInterview, oldZoomMeetingId, durationMinutes } = await prisma.$transaction(
       async (tx) => {
         const current = await tx.interview.findFirst({
           where: {
@@ -74,7 +75,7 @@ export async function action({ request }: Route.ActionArgs) {
           data: { status: "CancelledByApplicant" },
         });
 
-        return assignInterviewers(
+        const created = await assignInterviewers(
           current.applicationCycleId,
           current.domainApplicationId,
           applicantDomainIds,
@@ -83,9 +84,24 @@ export async function action({ request }: Route.ActionArgs) {
           tx,
           interviewMode,
         );
+
+        return {
+          newInterview: created,
+          oldZoomMeetingId: current.zoomMeetingId,
+          durationMinutes: config?.slotDurationMinutes ?? 30,
+        };
       },
       { isolationLevel: "Serializable" },
     );
+
+    // Zoom cleanup + provisioning after transaction commits (best-effort)
+    try { await deprovisionZoomMeeting({ zoomMeetingId: oldZoomMeetingId }); }
+    catch (err) { console.error("Failed to delete old Zoom meeting:", err); }
+
+    if (newInterview.location === "Online") {
+      try { await provisionZoomMeeting(newInterview.id, "DALI Lab Interview", new Date(newStart), durationMinutes); }
+      catch (err) { console.error("Failed to provision Zoom meeting:", err); }
+    }
 
     return withCors(request, Response.json(newInterview, { status: 201 }));
   } catch (err: any) {
