@@ -14,6 +14,7 @@ import {
   MessageSquare,
 } from 'lucide-react'
 import { Avatar } from '~/components/Avatar'
+import { userInitials } from '~/lib/display'
 
 interface LayoutProps {
   children: React.ReactNode
@@ -77,7 +78,7 @@ export function Layout({ children, user, profilePictureUrl, isHiringLead = false
   ].filter((s) => s.show)
 
   const activeSection = sections.find((s) => s.active)
-  const initials = user.email.slice(0, 2).toUpperCase()
+  const initials = userInitials(user)
 
   return (
     <div className="min-h-screen bg-section-bg flex flex-col">

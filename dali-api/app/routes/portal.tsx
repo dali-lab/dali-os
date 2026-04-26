@@ -168,6 +168,36 @@ function buildGoogleCalendarUrl(slot: TimeSlot, cycleName: string): string {
   return `https://calendar.google.com/calendar/render?${params.toString()}`;
 }
 
+function buildIcsContent(slot: TimeSlot, cycleName: string): string {
+  const fmt = (d: string | Date) => new Date(d).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+  const uid = `dali-interview-${new Date(slot.isoStart).getTime()}@dali.dartmouth.edu`;
+  return [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//DALI Lab//Interview Scheduler//EN",
+    "BEGIN:VEVENT",
+    `UID:${uid}`,
+    `DTSTART:${fmt(slot.isoStart)}`,
+    `DTEND:${fmt(slot.isoEnd)}`,
+    `SUMMARY:DALI Lab Interview — ${cycleName}`,
+    "DESCRIPTION:Your interview with the DALI Lab team. Please arrive 5 minutes early.",
+    "LOCATION:DALI Lab\\, 3rd Floor Sudikoff\\, Dartmouth College",
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ].join("\r\n");
+}
+
+function downloadIcs(slot: TimeSlot, cycleName: string): void {
+  const content = buildIcsContent(slot, cycleName);
+  const blob = new Blob([content], { type: "text/calendar" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "dali-interview.ics";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 // ─── Shared UI ───────────────────────────────────────────────────────────────
 
 const cardBg = "bg-[#E8F4FA]";
@@ -288,6 +318,11 @@ function PendingView({ cycleName }: { cycleName: string }) {
         <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-yellow-50 text-sm text-yellow-700">
           <PulsingDot color="bg-yellow-500" />
           Pending
+        </div>
+        <div className="mt-4">
+          <Link to="/portal/application" className="text-sm text-accent-coral hover:underline">
+            View your submission →
+          </Link>
         </div>
       </div>
     </div>
@@ -594,6 +629,15 @@ function InterviewScheduledView({
           </svg>
           Add to Google Calendar
         </a>
+        <button
+          onClick={() => downloadIcs(slot, cycleName)}
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-accent-coral hover:text-accent-coral transition"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+          Add to Calendar (.ics)
+        </button>
         <button onClick={() => setRescheduling(true)} className="px-5 py-2.5 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-accent-coral hover:text-accent-coral transition">
           Reschedule
         </button>
@@ -855,11 +899,46 @@ export default function Portal() {
           </div>
         )}
         {topLevelStage === "ApplicationOpen" && <ApplicationOpenView cycleName={cycleName} />}
-        {topLevelStage === "Pending" && <PendingView cycleName={cycleName} />}
+        {topLevelStage === "Pending" && (
+          <>
+            <PendingView cycleName={cycleName} />
+            {cycleStatus === "Open" && (
+              <div className="max-w-2xl mx-auto mt-4 rounded-xl border border-blue-200 bg-blue-50 px-5 py-4 flex items-center justify-between gap-4">
+                <p className="text-sm text-blue-800">
+                  The cycle is still open — you can still update your application.
+                </p>
+                <Link
+                  to="/portal/apply"
+                  className="shrink-0 px-4 py-2 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition"
+                >
+                  Edit Application
+                </Link>
+              </div>
+            )}
+          </>
+        )}
         {topLevelStage === "Draft" && <ApplicationDraftView cycleName={cycleName} />}
 
         {das.length > 0 && applicationStatus !== "Draft" && (
           <div className="max-w-3xl mx-auto space-y-8">
+            {cycleStatus === "Open" && applicationStatus === "Submitted" && (
+              <div className="rounded-xl border border-blue-200 bg-blue-50 px-5 py-4 flex items-center justify-between gap-4">
+                <p className="text-sm text-blue-800">
+                  The cycle is still open — you can still update your application.
+                </p>
+                <Link
+                  to="/portal/apply"
+                  className="shrink-0 px-4 py-2 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition"
+                >
+                  Edit Application
+                </Link>
+              </div>
+            )}
+            <div className="flex justify-end">
+              <Link to="/portal/application" className="text-sm text-accent-coral hover:underline">
+                View your submission →
+              </Link>
+            </div>
             {das.map(da => (
               <DomainApplicationCard
                 key={da.id}

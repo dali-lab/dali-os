@@ -425,9 +425,6 @@ export function isInterviewerFree(
   return !conflict;
 }
 
-/** @deprecated Use isInterviewerFree instead */
-export const isReviewerFree = isInterviewerFree;
-
 export function generateCandidateSlots(
   startDate: Date,
   endDate: Date,

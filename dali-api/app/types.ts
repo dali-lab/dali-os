@@ -102,6 +102,7 @@ export interface Question {
     showForRoles?: string[]
     afterDomains?: boolean
     accept?: string
+    maxWords?: number
   }
 }
 

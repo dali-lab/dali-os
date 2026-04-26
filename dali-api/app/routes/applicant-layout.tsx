@@ -4,6 +4,7 @@ import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { getDownloadUrl } from "~/lib/s3";
 import { Avatar } from "~/components/Avatar";
+import { userInitials } from "~/lib/display";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -31,7 +32,7 @@ export default function ApplicantLayout() {
     ? `${user.firstName} ${user.lastName ?? ""}`.trim()
     : user.email;
 
-  const initial = (user.firstName ?? user.email)[0].toUpperCase();
+  const initial = userInitials(user);
 
   return (
     <div className="min-h-screen bg-section-bg">
