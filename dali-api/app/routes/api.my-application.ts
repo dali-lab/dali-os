@@ -174,8 +174,11 @@ export async function action({ request }: Route.ActionArgs) {
           orderBy: { createdAt: "desc" },
         });
         if (template) {
-          const subject = interpolate(template.subject, user.firstName);
-          const html = bodyToHtml(interpolate(template.body, user.firstName));
+          // ApplicationReceived isn't tied to a single domain (an applicant
+          // may apply to multiple), so {{domain}} resolves to empty here.
+          const vars = { firstName: user.firstName };
+          const subject = interpolate(template.subject, vars);
+          const html = bodyToHtml(interpolate(template.body, vars));
           await sendEmail({ refreshToken: gmailUser.googleRefreshToken, to, subject, html });
         }
       }

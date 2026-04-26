@@ -41,7 +41,7 @@ export function EmailTemplateDetail() {
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
       <div>
-        <Link to="/email-templates" className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground">
+        <Link to="/emails" className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground">
           <ArrowLeft className="w-4 h-4 mr-1" />
           Back to email templates
         </Link>
@@ -166,7 +166,7 @@ export function EmailTemplateDetail() {
                 <label className="block text-sm font-medium text-foreground/80 mb-1">
                   Body
                   <span className="ml-2 text-xs text-muted-foreground font-normal">
-                    Use {'{{firstName}}'} to insert the applicant's first name. Double newlines split paragraphs.
+                    Use {'{{firstName}}'} or {'{{domain}}'} to insert the applicant's first name or the domain they applied to. Double newlines split paragraphs.
                   </span>
                 </label>
                 <textarea

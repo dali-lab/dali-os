@@ -4,7 +4,8 @@ import type { Route } from "./+types/admin.cycle.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isHiringLead } from "~/lib/roles";
-import { Settings, Users, Calendar, AlertTriangle, Trash2, Plus, CheckCircle, ArrowRight, Circle, ChevronRight, X, LayoutDashboard } from 'lucide-react'
+import { interpolate, bodyToHtml } from "~/lib/email";
+import { Settings, Users, Calendar, AlertTriangle, Trash2, Plus, CheckCircle, ArrowRight, Circle, ChevronRight, X, LayoutDashboard, Eye } from 'lucide-react'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -122,7 +123,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     include: {
       domainApplication: {
         include: {
-          application: { include: { user: { select: { firstName: true, lastName: true } } } },
+          application: { include: { user: { select: { firstName: true, lastName: true, dartmouthEmail: true, netId: true } } } },
           challengeVersion: { include: { domain: { select: { name: true } } } },
         },
       },
@@ -407,6 +408,7 @@ export default function AdminCycleDetails() {
   // ── Decisions state ──
   const [pendingDecisions, setPendingDecisions] = useState<any[]>(loaderData?.finalDecisions ?? [])
   const [releasing, setReleasing] = useState<string | null>(null)
+  const [previewDecisionId, setPreviewDecisionId] = useState<string | null>(null)
 
   // ── Loaders (extracted so handlers can refetch after mutations) ──
   const loadStatus = useCallback(async () => {
@@ -1249,18 +1251,29 @@ export default function AdminCycleDetails() {
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">{d.madeBy.firstName} {d.madeBy.lastName}</td>
                     <td className="px-4 py-3 text-right">
-                      <button
-                        onClick={async () => {
-                          setReleasing(d.id)
-                          await fetch(`/api/decisions/${d.id}/release`, { method: 'POST', credentials: 'include' })
-                          setPendingDecisions(prev => prev.filter(p => p.id !== d.id))
-                          setReleasing(null)
-                        }}
-                        disabled={releasing === d.id}
-                        className="px-3 py-1 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition disabled:opacity-50"
-                      >
-                        {releasing === d.id ? 'Releasing...' : 'Release'}
-                      </button>
+                      <div className="inline-flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setPreviewDecisionId(d.id)}
+                          className="inline-flex items-center gap-1 px-3 py-1 text-sm font-medium rounded-lg border border-border bg-card hover:bg-muted/40 text-foreground transition"
+                          aria-label={`Preview email for ${d.domainApplication.application.user.firstName}`}
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          Preview
+                        </button>
+                        <button
+                          onClick={async () => {
+                            setReleasing(d.id)
+                            await fetch(`/api/decisions/${d.id}/release`, { method: 'POST', credentials: 'include' })
+                            setPendingDecisions(prev => prev.filter(p => p.id !== d.id))
+                            setReleasing(null)
+                          }}
+                          disabled={releasing === d.id}
+                          className="px-3 py-1 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition disabled:opacity-50"
+                        >
+                          {releasing === d.id ? 'Releasing...' : 'Release'}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -1270,8 +1283,114 @@ export default function AdminCycleDetails() {
               </tbody>
             </table>
           </div>
+          {previewDecisionId && (() => {
+            const d = pendingDecisions.find((x: any) => x.id === previewDecisionId)
+            if (!d) return null
+            const binding = (loaderData?.currentDecisionEmails ?? []).find((b: any) => b.decisionType === d.type)
+            return (
+              <DecisionEmailPreviewModal
+                decision={d}
+                binding={binding ?? null}
+                onClose={() => setPreviewDecisionId(null)}
+              />
+            )
+          })()}
         </div>
       )}
+    </div>
+  )
+}
+
+function DecisionEmailPreviewModal({ decision, binding, onClose }: {
+  decision: any;
+  binding: any | null;
+  onClose: () => void;
+}) {
+  const firstName = decision.domainApplication.application.user.firstName ?? ''
+  const domain = decision.domainApplication.challengeVersion.domain.name ?? ''
+  const tmpl = binding?.emailTemplateVersion ?? null
+  const subject = tmpl ? interpolate(tmpl.subject, { firstName, domain }) : ''
+  const html = tmpl ? bodyToHtml(interpolate(tmpl.body, { firstName, domain })) : ''
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-card rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+          <div>
+            <h2 className="text-lg font-bold text-foreground">Email preview</h2>
+            <p className="text-xs text-muted-foreground">
+              {decision.domainApplication.application.user.firstName} {decision.domainApplication.application.user.lastName}
+              {' · '}
+              {decision.domainApplication.challengeVersion.domain.name}
+              {' · '}
+              <span className="font-medium">{decision.type}</span>
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-muted-foreground/70 hover:text-foreground"
+            aria-label="Close preview"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="px-6 py-4 space-y-4">
+          {tmpl ? (
+            <>
+              <div>
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">From</h3>
+                <p className="mt-1 text-sm text-foreground">applications@dali.dartmouth.edu</p>
+              </div>
+              <div>
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">To</h3>
+                <p className="mt-1 text-sm text-foreground">
+                  {decision.domainApplication.application.user.dartmouthEmail
+                    ?? (decision.domainApplication.application.user.netId
+                      ? `${decision.domainApplication.application.user.netId}@dartmouth.edu`
+                      : '(no address on file)')}
+                </p>
+              </div>
+              <div>
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Subject</h3>
+                <p className="mt-1 text-sm text-foreground">{subject}</p>
+              </div>
+              <div>
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Body</h3>
+                <div
+                  className="mt-1 prose prose-sm max-w-none text-foreground"
+                  // eslint-disable-next-line react/no-danger
+                  dangerouslySetInnerHTML={{ __html: html }}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Template: <span className="font-medium">{binding?.emailTemplateVersion?.template?.name}</span>
+                {' '}— v{binding?.emailTemplateVersion?.versionNumber}
+              </p>
+            </>
+          ) : (
+            <div className="rounded-lg bg-orange-50 border border-orange-200 p-4 text-sm text-orange-800">
+              <p className="font-medium">No template assigned for {decision.type} in this cycle.</p>
+              <p className="mt-1">Releasing this decision will not send an email. Bind a template on the Setup tab under "Decision Emails".</p>
+            </div>
+          )}
+        </div>
+        <div className="px-6 py-3 border-t border-border bg-muted/30 flex justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-gray-300 rounded-md hover:bg-muted/50"
+          >
+            Close
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

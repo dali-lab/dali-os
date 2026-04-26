@@ -34,7 +34,7 @@ export async function action({ request }: Route.ActionArgs) {
     const name = (formData.get('name') as string)?.trim()
     if (!name) return { error: 'Name is required' }
     const template = await prisma.emailTemplate.create({ data: { name } })
-    return redirect(`/email-templates/${template.id}`)
+    return redirect(`/emails/${template.id}`)
   }
 
   return null

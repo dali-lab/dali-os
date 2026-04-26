@@ -57,7 +57,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       },
     })
 
-    return redirect(`/email-templates/${params.id}`)
+    return redirect(`/emails/${params.id}`)
   }
 
   if (intent === 'rename') {
@@ -67,7 +67,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       where: { id: params.id },
       data: { name },
     })
-    return redirect(`/email-templates/${params.id}`)
+    return redirect(`/emails/${params.id}`)
   }
 
   return null

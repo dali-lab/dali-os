@@ -33,7 +33,7 @@ export default function EmailTemplatesList() {
           return (
             <Link
               key={template.id}
-              to={`/email-templates/${template.id}`}
+              to={`/emails/${template.id}`}
               className="bg-card rounded-xl border border-border p-6 shadow-sm hover:shadow-md transition-shadow group block"
             >
               <div className="flex items-start justify-between">

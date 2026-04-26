@@ -3,17 +3,34 @@ import { interpolate, bodyToHtml } from "~/lib/email";
 
 describe("interpolate", () => {
   it("replaces every {{firstName}} occurrence", () => {
-    expect(interpolate("Hi {{firstName}}, welcome {{firstName}}!", "Ada")).toBe(
+    expect(interpolate("Hi {{firstName}}, welcome {{firstName}}!", { firstName: "Ada" })).toBe(
       "Hi Ada, welcome Ada!",
     );
   });
 
-  it("returns the input unchanged when there are no placeholders", () => {
-    expect(interpolate("plain text", "Ada")).toBe("plain text");
+  it("replaces {{domain}} when provided", () => {
+    expect(
+      interpolate("Hi {{firstName}}, you applied to {{domain}}.", {
+        firstName: "Ada",
+        domain: "Engineering",
+      }),
+    ).toBe("Hi Ada, you applied to Engineering.");
   });
 
-  it("does not interpret regex characters in the firstName as a pattern", () => {
-    expect(interpolate("Hi {{firstName}}", "$&")).toBe("Hi $&");
+  it("substitutes {{domain}} with empty string when not provided", () => {
+    expect(interpolate("Hi {{firstName}} ({{domain}})", { firstName: "Ada" })).toBe("Hi Ada ()");
+  });
+
+  it("returns the input unchanged when there are no placeholders", () => {
+    expect(interpolate("plain text", { firstName: "Ada" })).toBe("plain text");
+  });
+
+  it("does not interpret regex characters in firstName as a pattern", () => {
+    expect(interpolate("Hi {{firstName}}", { firstName: "$&" })).toBe("Hi $&");
+  });
+
+  it("does not interpret regex characters in domain as a pattern", () => {
+    expect(interpolate("Domain: {{domain}}", { firstName: "x", domain: "$1" })).toBe("Domain: $1");
   });
 });
 

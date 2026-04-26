@@ -58,6 +58,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     const domainApp = await prisma.domainApplication.findUnique({
       where: { id: decision.domainApplicationId },
       include: {
+        challengeVersion: {
+          include: { domain: { select: { name: true } } },
+        },
         application: {
           include: {
             user: {
@@ -76,6 +79,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     const email =
       user?.dartmouthEmail ??
       (user?.netId ? `${user.netId}@dartmouth.edu` : null);
+    const domainName = domainApp?.challengeVersion.domain?.name ?? "";
 
     if (email && user && domainApp) {
       const binding = await prisma.cycleDecisionEmail.findUnique({
@@ -100,8 +104,9 @@ export async function action({ request, params }: Route.ActionArgs) {
 
         if (gmailUser?.googleRefreshToken) {
           const tmpl = binding.emailTemplateVersion;
-          const subject = interpolate(tmpl.subject, user.firstName);
-          const html = bodyToHtml(interpolate(tmpl.body, user.firstName));
+          const vars = { firstName: user.firstName, domain: domainName };
+          const subject = interpolate(tmpl.subject, vars);
+          const html = bodyToHtml(interpolate(tmpl.body, vars));
 
           await sendEmail({
             refreshToken: gmailUser.googleRefreshToken,

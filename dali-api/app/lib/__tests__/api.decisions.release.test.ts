@@ -49,9 +49,11 @@ function setupFinalDecision(type: "Rejected" | "InvitedToInterview" | "Accepted"
   });
 }
 
-function setupApplicantContext() {
+function setupApplicantContext(opts: { domainName?: string | null } = {}) {
+  const domainName = opts.domainName === undefined ? "Engineering" : opts.domainName;
   mockPrisma.domainApplication.findUnique.mockResolvedValue({
     id: "da-1",
+    challengeVersion: { domain: domainName ? { name: domainName } : null },
     application: {
       applicationCycleId: CYCLE_ID,
       user: {
@@ -114,6 +116,50 @@ describe("POST /api/decisions/:id/release", () => {
     expect(args.refreshToken).toBe("gmail-rt");
   });
 
+  it("interpolates {{domain}} from domainApplication.challengeVersion.domain.name", async () => {
+    setupAuth();
+    setupFinalDecision("Rejected");
+    setupApplicantContext({ domainName: "Design" });
+    mockPrisma.cycleDecisionEmail.findUnique.mockResolvedValue({
+      applicationCycleId: CYCLE_ID,
+      decisionType: "Rejected",
+      emailTemplateVersionId: "etv-rej",
+      emailTemplateVersion: {
+        id: "etv-rej",
+        subject: "Your {{domain}} application",
+        body: "Hi {{firstName}}, regarding {{domain}}.",
+      },
+    });
+
+    const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
+    expect(res.status).toBe(201);
+    const args = vi.mocked(sendEmail).mock.calls[0][0];
+    expect(args.subject).toBe("Your Design application");
+    expect(args.html).toContain("Hi Ada, regarding Design.");
+  });
+
+  it("substitutes {{domain}} with empty string when the challenge version has no domain", async () => {
+    setupAuth();
+    setupFinalDecision("Rejected");
+    setupApplicantContext({ domainName: null });
+    mockPrisma.cycleDecisionEmail.findUnique.mockResolvedValue({
+      applicationCycleId: CYCLE_ID,
+      decisionType: "Rejected",
+      emailTemplateVersionId: "etv-rej",
+      emailTemplateVersion: {
+        id: "etv-rej",
+        subject: "About {{domain}}",
+        body: "{{firstName}} / {{domain}}",
+      },
+    });
+
+    const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
+    expect(res.status).toBe(201);
+    const args = vi.mocked(sendEmail).mock.calls[0][0];
+    expect(args.subject).toBe("About ");
+    expect(args.html).toContain("Ada / ");
+  });
+
   it("releases the decision but skips the email send when no binding exists", async () => {
     setupAuth();
     setupFinalDecision("Rejected");
@@ -164,6 +210,7 @@ describe("POST /api/decisions/:id/release", () => {
     setupFinalDecision("InvitedToInterview");
     mockPrisma.domainApplication.findUnique.mockResolvedValue({
       id: "da-1",
+      challengeVersion: { domain: { name: "Engineering" } },
       application: {
         applicationCycleId: CYCLE_ID,
         user: {
