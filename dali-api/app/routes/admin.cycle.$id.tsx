@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Form, Link, useParams, useLoaderData, redirect } from 'react-router'
 import type { Route } from "./+types/admin.cycle.$id";
 import { prisma } from "~/lib/db";
@@ -316,6 +316,78 @@ export default function AdminCycleDetails() {
     UnderReview: 'bg-yellow-100 text-yellow-700', Completed: 'bg-blue-100 text-blue-700',
   }
 
+  // ── Active tab ──
+  const [tab, setTab] = useState<'setup' | 'config' | 'reviewers' | 'dashboard' | 'decisions'>('setup')
+
+  // ── Decisions state ──
+  const [pendingDecisions, setPendingDecisions] = useState<any[]>(loaderData?.finalDecisions ?? [])
+  const [releasing, setReleasing] = useState<string | null>(null)
+
+  // ── Loaders (extracted so handlers can refetch after mutations) ──
+  const loadStatus = useCallback(async () => {
+    if (!cycleId) return
+    try {
+      const r = await fetch(`/api/cycles/${cycleId}/status`, { credentials: 'include' })
+      if (!r.ok) return
+      const data = await r.json()
+      if (data) setCycleStatus(data.currentStatus)
+    } catch {}
+  }, [cycleId])
+
+  const loadConfig = useCallback(async () => {
+    if (!cycleId) return
+    try {
+      const r = await fetch(`/api/cycles/${cycleId}/interview-config`, { credentials: 'include' })
+      if (!r.ok) return
+      const data = await r.json()
+      if (data) {
+        setConfig({
+          ...data,
+          interviewStartDate: data.interviewStartDate?.slice(0, 10) ?? '',
+          interviewEndDate: data.interviewEndDate?.slice(0, 10) ?? '',
+        })
+      }
+    } catch {}
+  }, [cycleId])
+
+  const loadReviewers = useCallback(async () => {
+    if (!cycleId) return
+    try {
+      const r = await fetch(`/api/cycles/${cycleId}/reviewers`, { credentials: 'include' })
+      setReviewers(r.ok ? await r.json() : [])
+    } catch {}
+  }, [cycleId])
+
+  const loadMembers = useCallback(async () => {
+    try {
+      const r = await fetch('/api/members', { credentials: 'include' })
+      setAllMembers(r.ok ? await r.json() : [])
+    } catch {}
+  }, [])
+
+  const loadDomains = useCallback(async () => {
+    try {
+      const r = await fetch('/api/domains', { credentials: 'include' })
+      setAllDomains(r.ok ? await r.json() : [])
+    } catch {}
+  }, [])
+
+  const loadInterviewers = useCallback(async () => {
+    if (!cycleId) return
+    try {
+      const r = await fetch(`/api/cycles/${cycleId}/interviewers`, { credentials: 'include' })
+      setInterviewers(r.ok ? await r.json() : [])
+    } catch {}
+  }, [cycleId])
+
+  const loadInterviews = useCallback(async () => {
+    if (!cycleId) return
+    try {
+      const r = await fetch(`/api/cycles/${cycleId}/interviews`, { credentials: 'include' })
+      setInterviews(r.ok ? await r.json() : [])
+    } catch {}
+  }, [cycleId])
+
   async function advanceStatus(force = false) {
     if (!cycleId) return
     const idx = STATUS_FLOW.indexOf(cycleStatus as any)
@@ -331,6 +403,8 @@ export default function AdminCycleDetails() {
       })
       if (res.ok) {
         setCycleStatus(next)
+        // Status transitions can change which interview rows the server returns.
+        loadInterviews()
       } else {
         const body = await res.json().catch(() => ({}))
         setStatusError(
@@ -345,60 +419,17 @@ export default function AdminCycleDetails() {
     }
   }
 
-  // ── Active tab ──
-  const [tab, setTab] = useState<'setup' | 'config' | 'reviewers' | 'dashboard' | 'decisions'>('setup')
-
-  // ── Decisions state ──
-  const [pendingDecisions, setPendingDecisions] = useState<any[]>(loaderData?.finalDecisions ?? [])
-  const [releasing, setReleasing] = useState<string | null>(null)
-
   // ── Load data ──
   useEffect(() => {
     if (!cycleId) return
-
-    fetch(`/api/cycles/${cycleId}/status`, { credentials: 'include' })
-      .then(r => r.ok ? r.json() : null)
-      .then(data => { if (data) setCycleStatus(data.currentStatus) })
-      .catch(() => {})
-
-    fetch(`/api/cycles/${cycleId}/interview-config`, { credentials: 'include' })
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (data) {
-          setConfig({
-            ...data,
-            interviewStartDate: data.interviewStartDate?.slice(0, 10) ?? '',
-            interviewEndDate: data.interviewEndDate?.slice(0, 10) ?? '',
-          })
-        }
-      })
-      .catch(() => {})
-
-    fetch(`/api/cycles/${cycleId}/reviewers`, { credentials: 'include' })
-      .then(r => r.ok ? r.json() : [])
-      .then(setReviewers)
-      .catch(() => {})
-
-    fetch('/api/members', { credentials: 'include' })
-      .then(r => r.ok ? r.json() : [])
-      .then(setAllMembers)
-      .catch(() => {})
-
-    fetch('/api/domains', { credentials: 'include' })
-      .then(r => r.ok ? r.json() : [])
-      .then(setAllDomains)
-      .catch(() => {})
-
-    fetch(`/api/cycles/${cycleId}/interviewers`, { credentials: 'include' })
-      .then(r => r.ok ? r.json() : [])
-      .then(setInterviewers)
-      .catch(() => {})
-
-    fetch(`/api/cycles/${cycleId}/interviews`, { credentials: 'include' })
-      .then(r => r.ok ? r.json() : [])
-      .then(setInterviews)
-      .catch(() => {})
-  }, [cycleId])
+    loadStatus()
+    loadConfig()
+    loadReviewers()
+    loadMembers()
+    loadDomains()
+    loadInterviewers()
+    loadInterviews()
+  }, [cycleId, loadStatus, loadConfig, loadReviewers, loadMembers, loadDomains, loadInterviewers, loadInterviews])
 
   // ── Handlers ──
 
@@ -457,10 +488,9 @@ export default function AdminCycleDetails() {
       body: JSON.stringify({ daliMemberId: newInterviewerMemberId, domainId: newInterviewerDomainId }),
     })
     if (res.ok) {
-      const interviewer = await res.json()
-      const member = allMembers.find(m => m.id === newInterviewerMemberId)
-      const domain = allDomains.find(d => d.id === newInterviewerDomainId)
-      setInterviewers(prev => [...prev, { ...interviewer, daliMember: member, domain }])
+      // POST returns the bare cycleInterviewer row without daliMember/domain
+      // relations; refetch so the row matches the server shape exactly.
+      await loadInterviewers()
       setNewInterviewerMemberId('')
       setNewInterviewerDomainId('')
     }
@@ -521,7 +551,7 @@ export default function AdminCycleDetails() {
         <CompleteConfirmModal
           cycleId={cycleId!}
           onClose={() => setShowCompleteConfirm(false)}
-          onCompleted={(forced) => { setShowCompleteConfirm(false); setCycleStatus('Completed'); }}
+          onCompleted={(forced) => { setShowCompleteConfirm(false); setCycleStatus('Completed'); loadInterviews(); }}
           onError={(msg) => { setShowCompleteConfirm(false); setStatusError(msg); }}
         />
       )}
