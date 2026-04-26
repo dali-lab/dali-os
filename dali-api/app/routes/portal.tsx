@@ -74,11 +74,18 @@ export async function loader({ request }: Route.LoaderArgs) {
     where: { applicationCycleId: cycleId },
   });
 
-  const appStatus = application?.statusUpdates.some(u => u.newStatus === "Submitted")
-    ? "Submitted"
-    : application
-      ? "Draft"
-      : null;
+  // Use the most recent status update so Withdrawn (which always follows Submitted)
+  // takes precedence over the earlier Submitted/Draft entries.
+  const latestStatus = application?.statusUpdates
+    .slice()
+    .sort((a: any, b: any) => b.createdAt.getTime() - a.createdAt.getTime())[0]?.newStatus;
+  const appStatus = latestStatus === "Withdrawn"
+    ? "Withdrawn"
+    : application?.statusUpdates.some((u: any) => u.newStatus === "Submitted")
+      ? "Submitted"
+      : application
+        ? "Draft"
+        : null;
 
   // Compute per-domain-application status using inferDomainApplicationStatus
   const domainApplications = (application?.domainApplications ?? []).map((da: any) => {
@@ -298,6 +305,29 @@ function ApplicationDraftView({ cycleName }: { cycleName: string }) {
       <Link to="/portal/apply" className="px-8 py-3 rounded-full bg-accent-coral text-white font-semibold font-heading tracking-wider hover:bg-accent-coral/90 transition shadow-lg hover:shadow-xl">
         Continue Application
       </Link>
+    </div>
+  );
+}
+
+function WithdrawnView({ cycleName }: { cycleName: string }) {
+  return (
+    <div className="max-w-2xl mx-auto py-12">
+      <div className="text-center mb-6">
+        <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-muted flex items-center justify-center">
+          <svg className="w-8 h-8 text-muted-foreground/70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </div>
+        <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">Application Withdrawn</h2>
+        <p className="text-muted-foreground leading-relaxed">
+          You withdrew your application for {cycleName}. If you change your mind, contact the DALI team.
+        </p>
+        <div className="mt-4">
+          <Link to="/portal/application" className="text-sm text-accent-coral hover:underline">
+            View your submission →
+          </Link>
+        </div>
+      </div>
     </div>
   );
 }
@@ -859,8 +889,12 @@ export default function Portal() {
   const das = domainApplications as DomainAppData[];
 
   // Determine top-level state when there are no domain applications yet
-  let topLevelStage: "ApplicationOpen" | "ApplicationsClosed" | "Pending" | "Draft" | null = null;
-  if (das.length === 0) {
+  let topLevelStage: "ApplicationOpen" | "ApplicationsClosed" | "Pending" | "Draft" | "Withdrawn" | null = null;
+  if (applicationStatus === "Withdrawn") {
+    // Withdrawal is terminal at the application level — short-circuit per-domain
+    // cards regardless of how many DAs the applicant created.
+    topLevelStage = "Withdrawn";
+  } else if (das.length === 0) {
     if (applicationStatus === "Submitted") {
       topLevelStage = "Pending";
     } else if (!hasApplication && cycleStatus === "Open") {
@@ -918,8 +952,9 @@ export default function Portal() {
           </>
         )}
         {topLevelStage === "Draft" && <ApplicationDraftView cycleName={cycleName} />}
+        {topLevelStage === "Withdrawn" && <WithdrawnView cycleName={cycleName} />}
 
-        {das.length > 0 && applicationStatus !== "Draft" && (
+        {das.length > 0 && applicationStatus !== "Draft" && applicationStatus !== "Withdrawn" && (
           <div className="max-w-3xl mx-auto space-y-8">
             {cycleStatus === "Open" && applicationStatus === "Submitted" && (
               <div className="rounded-xl border border-blue-200 bg-blue-50 px-5 py-4 flex items-center justify-between gap-4">

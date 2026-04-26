@@ -46,7 +46,6 @@ export default [
   route("oauth/revoke", "routes/oauth.revoke.ts"),
 
   // Authenticated API endpoints (no layout)
-  route("auth/link-member", "routes/auth.link-member.ts"),
   route("users/:id", "routes/users.$id.ts"),
 
   // Domain & member management API
