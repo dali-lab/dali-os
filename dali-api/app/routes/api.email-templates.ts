@@ -1,6 +1,7 @@
 import { requireAuth } from '~/lib/auth'
 import { isHiringLead } from '~/lib/roles'
 import { prisma } from '~/lib/db'
+import { findManyEmailTemplatesWithCreatedBy } from '~/lib/email-template-authors'
 import type { EmailTemplateType } from '~/generated/prisma/enums'
 import type { Route } from './+types/api.email-templates'
 
@@ -23,9 +24,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     return Response.json({ error: 'Forbidden' }, { status: 403 })
 
   // Fetch all templates ordered by newest first, then pick the latest per type
-  const all = await prisma.emailTemplate.findMany({
+  const all = await findManyEmailTemplatesWithCreatedBy({
     orderBy: { createdAt: 'desc' },
-    include: { createdBy: { select: { id: true, firstName: true, lastName: true } } },
   })
 
   const currentByType: Record<string, typeof all[number] | null> = {}

@@ -1,6 +1,10 @@
 import { requireAuth } from '~/lib/auth'
 import { isHiringLead } from '~/lib/roles'
 import { prisma } from '~/lib/db'
+import {
+  createEmailTemplateWithCreatedBy,
+  findManyEmailTemplatesWithCreatedBy,
+} from '~/lib/email-template-authors'
 import type { EmailTemplateType } from '~/generated/prisma/enums'
 import type { Route } from './+types/api.email-templates.$type'
 
@@ -27,10 +31,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const type = params.type as EmailTemplateType
 
-  const versions = await prisma.emailTemplate.findMany({
+  const versions = await findManyEmailTemplatesWithCreatedBy({
     where: { type },
     orderBy: { createdAt: 'desc' },
-    include: { createdBy: { select: { id: true, firstName: true, lastName: true } } },
   })
 
   const current = versions[0] ?? null
@@ -68,15 +71,12 @@ export async function action({ request, params }: Route.ActionArgs) {
   })
   const nextVersion = (latest?.version ?? 0) + 1
 
-  const template = await prisma.emailTemplate.create({
-    data: {
-      type,
-      subject,
-      body,
-      version: nextVersion,
-      createdById: member.id,
-    },
-    include: { createdBy: { select: { id: true, firstName: true, lastName: true } } },
+  const template = await createEmailTemplateWithCreatedBy({
+    type,
+    subject,
+    body,
+    version: nextVersion,
+    createdById: member.id,
   })
 
   return Response.json(template, { status: 201 })

@@ -5,6 +5,7 @@ import { requireAuth } from '~/lib/auth'
 import { isHiringLead } from '~/lib/roles'
 import { prisma } from '~/lib/db'
 import { getActiveCycle } from '~/lib/cycles'
+import { findManyEmailTemplatesWithCreatedBy } from '~/lib/email-template-authors'
 import { parseAccessToken } from '~/lib/cookies'
 import { PresenceProvider } from '~/components/collab/PresenceProvider'
 import { PresenceBar } from '~/components/collab/PresenceBar'
@@ -131,9 +132,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   ]
 
   // ── Templates from DB (all versions, newest first) ─────────────────────────
-  const allTemplates = await prisma.emailTemplate.findMany({
+  const allTemplates = await findManyEmailTemplatesWithCreatedBy({
     orderBy: { createdAt: 'desc' },
-    include: { createdBy: { select: { id: true, firstName: true, lastName: true } } },
   })
 
   // Group by type

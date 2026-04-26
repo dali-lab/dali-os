@@ -311,7 +311,7 @@ html.dali-retro body::before {
   );
 }
 
-/* Sepia wash — toggled via ?lab=1999 on the login page */
+/* Sepia wash — toggled via ?lab=2013 on the login page */
 html.dali-sepia body {
   filter: sepia(0.7) contrast(1.05);
 }

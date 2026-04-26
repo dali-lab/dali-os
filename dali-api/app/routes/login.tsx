@@ -90,7 +90,7 @@ export default function Login() {
   const labYear = searchParams.get("lab");
 
   useEffect(() => {
-    if (labYear === "1999") {
+    if (labYear === "2013") {
       document.documentElement.classList.add("dali-sepia");
       return () => document.documentElement.classList.remove("dali-sepia");
     }
