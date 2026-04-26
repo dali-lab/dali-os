@@ -148,6 +148,14 @@
   .text-indigo-600, .text-indigo-700 { color: hsl(235 80% 75%) !important; }
   .text-indigo-800, .text-indigo-900 { color: hsl(235 80% 82%) !important; }
 
+  /* purple-50/100 → dark violet surface (domain lead chips, e.g. Engineering) */
+  .bg-purple-50  { background-color: hsl(270 28% 14%) !important; }
+  .bg-purple-100 { background-color: hsl(270 28% 20%) !important; }
+  .text-purple-600, .text-purple-700 { color: hsl(270 58% 72%) !important; }
+  .text-purple-800, .text-purple-900 { color: hsl(270 55% 82%) !important; }
+  .border-purple-200 { border-color: hsl(270 25% 30%) !important; }
+  .hover\:text-purple-600:hover { color: hsl(270 58% 78%) !important; }
+
   /* border-gray-300 → use border token */
   .border-gray-300 { border-color: hsl(215 25% 28%) !important; }
   .border-gray-400 { border-color: hsl(215 20% 35%) !important; }
