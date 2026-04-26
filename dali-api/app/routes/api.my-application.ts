@@ -3,6 +3,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { sendEmail } from "~/lib/gmail";
+import { renderEmail } from "~/lib/email";
 
 const GMAIL_USER = "applications@dali.dartmouth.edu";
 
@@ -173,15 +174,16 @@ export async function action({ request }: Route.ActionArgs) {
     if (gmailUser?.googleRefreshToken && user) {
       const to = user.dartmouthEmail ?? user.daliEmail ?? "";
       if (to) {
-        // Look up the current ApplicationReceived template from the DB
-        const template = await prisma.emailTemplate.findFirst({
+        // ApplicationReceived still uses the legacy global-by-type lookup —
+        // out of scope for the rubric-pattern refactor (decision emails only).
+        const template = await prisma.legacyEmailTemplate.findFirst({
           where: { type: "ApplicationReceived" },
           orderBy: { createdAt: "desc" },
         });
         if (template) {
-          const subject = template.subject.replace(/\{\{firstName\}\}/g, user.firstName);
-          const body = template.body.replace(/\{\{firstName\}\}/g, user.firstName);
-          const html = body.split("\n\n").map((p: string) => `<p>${p.replace(/\n/g, "<br/>")}</p>`).join("\n");
+          // ApplicationReceived isn't tied to a single domain (an applicant
+          // may apply to multiple), so {{domain}} resolves to empty here.
+          const { subject, html } = renderEmail(template, { firstName: user.firstName });
           await sendEmail({ refreshToken: gmailUser.googleRefreshToken, to, subject, html });
         }
       }
