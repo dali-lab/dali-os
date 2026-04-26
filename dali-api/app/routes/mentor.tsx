@@ -363,10 +363,17 @@ export default function MentorDashboard() {
       setImporting(false)
     }
   }, [interviewConfig])
+
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-foreground">Reviewer Dashboard</h1>
+        <h1 className="text-2xl font-bold text-foreground">
+          Reviewer Dashboard
+          <span className="group ml-1 inline-block cursor-help align-middle">
+            <span className="text-xs text-muted-foreground/30 group-hover:hidden">·</span>
+            <span className="hidden text-xs font-mono text-accent-coral group-hover:inline">2 = 101 (binary)</span>
+          </span>
+        </h1>
         <p className="mt-1 text-muted-foreground">
           Manage your hiring responsibilities.
         </p>
@@ -630,6 +637,7 @@ export default function MentorDashboard() {
           </div>
         )}
       </Section>
+      <p className="text-center text-xs text-section-bg select-all font-mono">1Hex0x43</p>
     </div>
   )
 }

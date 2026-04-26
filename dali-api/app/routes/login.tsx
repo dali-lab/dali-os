@@ -129,6 +129,10 @@ export default function Login() {
         <div className="w-full max-w-sm">
           <h1 className="font-heading text-3xl font-bold text-dark-blue mb-2">
             Sign in
+            <span className="group ml-1 inline-block cursor-help align-middle">
+              <span className="text-xs text-muted-foreground/30 group-hover:hidden">·</span>
+              <span className="hidden text-xs font-mono text-accent-coral group-hover:inline">3Roman50</span>
+            </span>
           </h1>
           <p className="text-muted-foreground mb-10">
             Select how you'd like to continue

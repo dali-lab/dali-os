@@ -3,11 +3,14 @@ import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/party";
 import { requireAuth } from "~/lib/auth";
 import {
+  DINO_REWARD_THRESHOLD,
   EXTERNAL_CODE,
   INTERNAL_CODE,
   hydrateRetroClass,
+  isDinoRewardEarned,
   isExternalCodeUnlocked,
   isInternalCodeUnlocked,
+  setDinoRewardEarned,
   setExternalCodeUnlocked,
   setInternalCodeUnlocked,
 } from "~/lib/party";
@@ -40,6 +43,8 @@ export default function Party() {
 
   const codeLabel = isMember ? "Lab code" : "Party code";
   const codeTarget = isMember ? INTERNAL_CODE : EXTERNAL_CODE;
+  const dinoReward = isMember ? "E" : "I";
+  const dinoSlot = isMember ? 4 : 4;
 
   return (
     <div className="min-h-screen bg-section-bg relative overflow-hidden flex flex-col items-center justify-center px-6 py-16">
@@ -53,6 +58,8 @@ export default function Party() {
           Welcome, {handle}.
         </h1>
 
+        <DinoGame rewardLetter={dinoReward} rewardSlot={dinoSlot} />
+
         <CodeRow
           label={codeLabel}
           target={codeTarget}
@@ -64,6 +71,9 @@ export default function Party() {
             setCelebrate(true);
           }}
         />
+        <p className="mt-3 text-[0.65rem] tracking-[0.4em] font-mono text-muted-foreground/40 select-all">
+          {isMember ? "C5DE" : "D4LI"}
+        </p>
       </div>
 
       {celebrate && (
@@ -148,9 +158,10 @@ function CodeRow({
             autoCapitalize="characters"
             maxLength={1}
             value={chars[i]}
+            placeholder={String(i + 1)}
             aria-label={`${label} code character ${i + 1}`}
             onChange={(e) => {
-              const v = e.target.value.replace(/[^a-zA-Z]/g, "").slice(-1);
+              const v = e.target.value.replace(/[^a-zA-Z0-9]/g, "").slice(-1);
               setAt(i, v.toUpperCase());
               if (v && i < n - 1) inputsRef.current[i + 1]?.focus();
             }}
@@ -162,7 +173,7 @@ function CodeRow({
             }}
             onPaste={(e) => {
               e.preventDefault();
-              const t = e.clipboardData.getData("text").replace(/[^a-zA-Z]/g, "").toUpperCase().slice(0, n);
+              const t = e.clipboardData.getData("text").replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(0, n);
               const arr = t.split("");
               setChars((prev) => {
                 const next = [...prev];
@@ -172,7 +183,7 @@ function CodeRow({
               const focusIdx = Math.min(arr.length, n - 1);
               window.requestAnimationFrame(() => inputsRef.current[focusIdx]?.focus());
             }}
-            className="w-11 h-12 text-center font-mono text-lg font-semibold uppercase rounded-lg border border-border bg-background text-dark-blue focus:outline-none focus:ring-2 focus:ring-accent-coral/60"
+            className="w-11 h-12 text-center font-mono text-lg font-semibold uppercase rounded-lg border border-border bg-background text-dark-blue placeholder:!text-[#888888] placeholder:!font-light placeholder:!text-xs focus:outline-none focus:ring-2 focus:ring-accent-coral/60"
           />
         ))}
       </div>
@@ -221,6 +232,188 @@ function PayoffOverlay({
           Close
         </button>
       </div>
+    </div>
+  );
+}
+
+function DinoGame({
+  rewardLetter,
+  rewardSlot,
+}: {
+  rewardLetter: string;
+  rewardSlot: number;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [running, setRunning] = useState(false);
+  const [score, setScore] = useState(0);
+  const [hiScore, setHiScore] = useState(0);
+  const [earned, setEarned] = useState(false);
+
+  useEffect(() => {
+    setEarned(isDinoRewardEarned());
+  }, []);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const W = canvas.width;
+    const H = canvas.height;
+    const GROUND_Y = H - 20;
+    const DINO_X = 30;
+    const DINO_W = 18;
+    const DINO_H = 22;
+    const GRAVITY = 0.6;
+    const JUMP_V = -10;
+
+    let dinoY = GROUND_Y - DINO_H;
+    let velY = 0;
+    let cacti: { x: number; w: number; h: number }[] = [];
+    let frame = 0;
+    let localScore = 0;
+    let speed = 4;
+    let alive = true;
+    let raf = 0;
+
+    const jump = () => {
+      if (!running || !alive) return;
+      if (dinoY >= GROUND_Y - DINO_H - 1) {
+        velY = JUMP_V;
+      }
+    };
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code === "Space" || e.code === "ArrowUp") {
+        e.preventDefault();
+        jump();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    canvas.addEventListener("pointerdown", jump);
+
+    const loop = () => {
+      frame++;
+      ctx.clearRect(0, 0, W, H);
+      // ground
+      ctx.fillStyle = "#999";
+      ctx.fillRect(0, GROUND_Y, W, 1);
+
+      if (running && alive) {
+        // dino physics
+        velY += GRAVITY;
+        dinoY += velY;
+        if (dinoY > GROUND_Y - DINO_H) {
+          dinoY = GROUND_Y - DINO_H;
+          velY = 0;
+        }
+
+        // spawn cacti
+        if (frame % 90 === 0 || (cacti.length === 0 && frame > 60)) {
+          if (Math.random() > 0.3) {
+            const h = 14 + Math.floor(Math.random() * 14);
+            cacti.push({ x: W + 10, w: 8, h });
+          }
+        }
+
+        // move cacti
+        for (const c of cacti) c.x -= speed;
+        // remove offscreen + score
+        const before = cacti.length;
+        cacti = cacti.filter((c) => c.x + c.w > 0);
+        localScore += before - cacti.length;
+        if (frame % 6 === 0) localScore += 0; // pace
+        if (frame % 10 === 0) localScore += 1; // distance score
+
+        // collision
+        for (const c of cacti) {
+          const cy = GROUND_Y - c.h;
+          if (
+            DINO_X < c.x + c.w &&
+            DINO_X + DINO_W > c.x &&
+            dinoY < cy + c.h &&
+            dinoY + DINO_H > cy
+          ) {
+            alive = false;
+          }
+        }
+
+        // speed-up
+        if (frame % 600 === 0) speed += 0.5;
+
+        setScore(localScore);
+      }
+
+      // draw dino
+      ctx.fillStyle = alive ? "#535353" : "#c33";
+      ctx.fillRect(DINO_X, dinoY, DINO_W, DINO_H);
+      // draw cacti
+      ctx.fillStyle = "#3b8a3b";
+      for (const c of cacti) {
+        ctx.fillRect(c.x, GROUND_Y - c.h, c.w, c.h);
+      }
+      // score
+      ctx.fillStyle = "#666";
+      ctx.font = "12px monospace";
+      ctx.fillText(`HI ${hiScore.toString().padStart(5, "0")}  ${localScore.toString().padStart(5, "0")}`, W - 130, 14);
+
+      if (!alive) {
+        ctx.fillStyle = "#c33";
+        ctx.font = "bold 14px monospace";
+        ctx.fillText("GAME OVER — click to restart", W / 2 - 110, H / 2);
+        setRunning(false);
+        if (localScore > hiScore) setHiScore(localScore);
+        if (localScore >= DINO_REWARD_THRESHOLD && !isDinoRewardEarned()) {
+          setDinoRewardEarned(true);
+          setEarned(true);
+        }
+      }
+
+      raf = window.requestAnimationFrame(loop);
+    };
+    raf = window.requestAnimationFrame(loop);
+
+    return () => {
+      window.cancelAnimationFrame(raf);
+      window.removeEventListener("keydown", onKey);
+      canvas.removeEventListener("pointerdown", jump);
+    };
+  }, [running, hiScore]);
+
+  const start = () => {
+    setScore(0);
+    setRunning(true);
+  };
+
+  return (
+    <div className="mb-6 rounded-2xl border border-border bg-card/80 backdrop-blur-sm px-4 py-4">
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-xs uppercase tracking-wider text-muted-foreground">
+          Jump game
+        </p>
+        {earned && (
+          <span className="text-xs font-mono text-accent-coral">
+            {rewardSlot}
+            {rewardLetter === "I" ? "i = √-1" : "mc²"}
+          </span>
+        )}
+      </div>
+      <canvas
+        ref={canvasRef}
+        width={400}
+        height={120}
+        className="w-full bg-background rounded-lg border border-border cursor-pointer"
+      />
+      {!running && (
+        <button
+          type="button"
+          onClick={start}
+          className="mt-2 w-full rounded-lg bg-accent-teal/20 text-dark-blue text-xs font-semibold py-1.5 hover:bg-accent-teal/30 transition"
+        >
+          {score === 0 ? "start (space / click to jump)" : "restart"}
+        </button>
+      )}
     </div>
   );
 }

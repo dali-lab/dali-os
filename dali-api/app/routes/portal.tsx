@@ -953,7 +953,8 @@ export default function Portal() {
         )}
       </div>
       <div className="px-6 md:px-16 lg:px-24 py-6 text-center text-xs text-muted-foreground/70">
-        Made with care at DALI Lab.
+        Made with care at DALI Lab.{" "}
+        <span className="text-section-bg select-all font-mono">1Roman500</span>
       </div>
     </div>
   );

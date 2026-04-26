@@ -126,7 +126,10 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
             <div className="w-7 h-7 bg-accent-coral rounded-md flex items-center justify-center">
               <span className="text-white font-bold text-base leading-none font-heading">D</span>
             </div>
-            <span className="font-heading font-bold text-lg text-white tracking-tight">DALI Hiring</span>
+            <span className="font-heading font-bold text-lg text-white tracking-tight">
+              <span className="text-accent-coral/80">D</span>
+              <sup className="text-accent-coral/80 text-[0.5em]">3</sup>ALI Hiring
+            </span>
           </button>
           <div className="flex items-center gap-3">
             <span className="text-xs text-white/50 hidden sm:block">{user.email}</span>

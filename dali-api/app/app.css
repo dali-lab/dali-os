@@ -102,7 +102,7 @@
 
   /* blue-50/100 backgrounds → subtle dark blue surface */
   .bg-blue-50  { background-color: hsl(215 40% 16%) !important; }
-  .bg-blue-100 { background-color: hsl(215 40% 20%) !important; }
+  .bg-blue-100 { background-color: hsl(213 75% 32%) !important; }
   .bg-blue-50\/50 { background-color: hsl(215 40% 16% / 0.5) !important; }
 
   /* blue text → lighter/brighter for dark bg */
@@ -130,8 +130,8 @@
   .bg-green-600, .bg-green-700 { background-color: hsl(145 50% 32%) !important; }
 
   /* red-50/100 → dark red surface */
-  .bg-red-50  { background-color: hsl(0 30% 14%) !important; }
-  .bg-red-100 { background-color: hsl(0 30% 18%) !important; }
+  .bg-red-50  { background-color: hsl(0 45% 18%) !important; }
+  .bg-red-100 { background-color: hsl(0 50% 24%) !important; }
   .text-red-500, .text-red-600, .text-red-700 { color: hsl(0 80% 70%) !important; }
   .text-red-800, .text-red-900 { color: hsl(0 80% 78%) !important; }
   .border-red-200 { border-color: hsl(0 30% 28%) !important; }
@@ -152,6 +152,22 @@
   .border-gray-300 { border-color: hsl(215 25% 28%) !important; }
   .border-gray-400 { border-color: hsl(215 20% 35%) !important; }
   .border-gray-700 { border-color: hsl(215 20% 30%) !important; }
+
+  /* white/light-gray surfaces → card / muted surfaces */
+  .bg-white { background-color: var(--color-card) !important; }
+  .bg-white\/50 { background-color: hsl(215 32% 15% / 0.5) !important; }
+  .bg-gray-50 { background-color: var(--color-muted) !important; }
+  .bg-gray-100, .hover\:bg-gray-100:hover { background-color: hsl(215 28% 22%) !important; }
+  .bg-gray-200 { background-color: hsl(215 28% 25%) !important; }
+
+  /* light-gray borders → border token */
+  .border-gray-100, .border-gray-200 { border-color: var(--color-border) !important; }
+
+  /* dark gray text → foreground-ish */
+  .text-gray-900 { color: var(--color-foreground) !important; }
+  .text-gray-800, .text-gray-700 { color: hsl(210 18% 88%) !important; }
+  .text-gray-600 { color: hsl(210 15% 75%) !important; }
+  .text-gray-500, .text-gray-400 { color: var(--color-muted-foreground) !important; }
 
   /* Brand pale-blue tint → elevated dark surface (login hero, applicant portal cards) */
   .bg-\[\#E8F4FA\] { background-color: hsl(215 32% 15%) !important; }
@@ -262,6 +278,12 @@ html.dali-retro {
   --font-heading: var(--font-mono);
   --color-accent-coral: hsl(177 45% 51%);
   --color-accent-teal: hsl(354 70% 61%);
+}
+@media (prefers-color-scheme: dark) {
+  html.dali-retro {
+    --color-accent-coral: hsl(177 50% 58%);
+    --color-accent-teal: hsl(354 70% 65%);
+  }
 }
 html.dali-retro body {
   filter: contrast(1.05) saturate(1.15);
