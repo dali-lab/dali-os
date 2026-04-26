@@ -10,6 +10,7 @@ import {
 } from "~/lib/domain-application-status";
 import type { DomainApplicationStatus } from "~/types";
 import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
+import { InterviewSlotPicker } from "~/components/InterviewSlotPicker";
 
 // ─── Loader ──────────────────────────────────────────────────────────────────
 
@@ -459,27 +460,13 @@ function InvitedToInterviewView({
         </div>
       ) : (
         <>
-          <div className="space-y-6 mb-8">
-            {grouped.map(({ date, slots: dateSlots }) => (
-              <div key={date}>
-                <h4 className="text-sm font-bold text-dark-blue mb-2">{date}</h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {dateSlots.map(s => (
-                    <button
-                      key={s.id}
-                      onClick={() => setSelectedSlot(s.id)}
-                      className={`px-4 py-3 rounded-xl text-sm font-medium border-2 transition-all text-left ${
-                        selectedSlot === s.id
-                          ? "border-accent-coral bg-accent-coral/5 text-accent-coral"
-                          : "border-border text-dark-blue hover:border-accent-coral/50"
-                      }`}
-                    >
-                      {s.time}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
+          <div className="mb-8">
+            <InterviewSlotPicker
+              groups={grouped}
+              variant="selectable"
+              selectedSlotId={selectedSlot}
+              onSelect={(s) => setSelectedSlot(s.id)}
+            />
           </div>
 
           <button
@@ -563,23 +550,12 @@ function InterviewScheduledView({
         <p className="text-sm text-muted-foreground mb-6">
           Currently scheduled: <strong>{slot.date}, {slot.time}</strong>. Pick a new time below.
         </p>
-        <div className="space-y-6 mb-8">
-          {grouped.map(({ date, slots: dateSlots }) => (
-            <div key={date}>
-              <h4 className="text-sm font-bold text-dark-blue mb-2">{date}</h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {dateSlots.map(s => (
-                  <button
-                    key={s.id}
-                    onClick={() => handleReschedule(s)}
-                    className="px-4 py-3 rounded-xl text-sm font-medium border-2 border-border text-dark-blue hover:border-accent-coral/50 transition-all text-left"
-                  >
-                    {s.time}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))}
+        <div className="mb-8">
+          <InterviewSlotPicker
+            groups={grouped}
+            variant="reschedule"
+            onSelect={(s) => handleReschedule(s as any)}
+          />
         </div>
         <button onClick={() => setRescheduling(false)} className="text-sm font-semibold text-muted-foreground hover:underline">
           Cancel
