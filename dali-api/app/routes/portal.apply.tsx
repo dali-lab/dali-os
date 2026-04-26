@@ -1110,13 +1110,6 @@ export default function PortalApply() {
         {/* Actions */}
         <div className="flex items-center gap-3 pt-2">
           <button
-            onClick={() => doSave()}
-            disabled={saving}
-            className="px-5 py-2.5 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-accent-coral hover:text-accent-coral transition disabled:opacity-50"
-          >
-            {saving ? "Saving..." : "Save Draft"}
-          </button>
-          <button
             onClick={() => handleSubmit()}
             disabled={submitting}
             className="px-6 py-2.5 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition disabled:opacity-50"
