@@ -880,7 +880,7 @@ export default function AdminCycleDetails() {
                   </tr>
                 ))}
                 {reviewers.length === 0 && (
-                  <tr><td colSpan={4} className="px-4 py-8 text-center text-muted-foreground/70">No reviewers assigned yet.</td></tr>
+                  <tr><td colSpan={3} className="px-4 py-8 text-center text-muted-foreground/70">No reviewers assigned yet.</td></tr>
                 )}
               </tbody>
             </table>
