@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.cycles.$cycleId.reviewers";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead, hasCycleAccess } from "~/lib/roles";
+import { isHiringLead, isDomainLead, hasCycleAccess } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
