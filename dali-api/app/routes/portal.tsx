@@ -832,6 +832,9 @@ export default function Portal() {
         {primaryStage === "Accepted" && <AcceptedView cycleName={cycleName} />}
         {primaryStage === "Waitlisted" && <WaitlistedView cycleName={cycleName} />}
       </div>
+      <div className="px-6 md:px-16 lg:px-24 py-6 text-center text-xs text-muted-foreground/70">
+        Made with care at DALI Lab.
+      </div>
     </div>
   );
 }

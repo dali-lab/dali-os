@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { useEffect } from "react";
 import { Form, redirect, useSearchParams } from "react-router";
 import type { Route } from "./+types/login";
 import { requireAuth } from "~/lib/auth";
@@ -85,6 +86,15 @@ export async function action({ request }: Route.ActionArgs) {
 export default function Login() {
   const [searchParams] = useSearchParams();
   const error = searchParams.get("error");
+  const partyOn = searchParams.get("party") === "true";
+  const labYear = searchParams.get("lab");
+
+  useEffect(() => {
+    if (labYear === "1999") {
+      document.documentElement.classList.add("dali-sepia");
+      return () => document.documentElement.classList.remove("dali-sepia");
+    }
+  }, [labYear]);
 
   const errorMessages: Record<string, string> = {
     access_denied: "Only @dali.dartmouth.edu accounts are allowed for member login.",
@@ -96,6 +106,7 @@ export default function Login() {
 
   return (
     <div className="min-h-screen bg-section-bg flex relative overflow-hidden">
+      {partyOn && <Confetti />}
       {/* Left decorative panel */}
       <div className="hidden md:flex w-1/2 min-h-screen bg-[#E8F4FA] flex-col justify-center px-12 lg:px-16 relative">
         <div className="relative z-10">
@@ -111,7 +122,6 @@ export default function Login() {
         </div>
 
         <div className="absolute bottom-16 right-8 w-32 h-32 rounded-full bg-accent-teal opacity-30 pointer-events-none" />
-        <div className="absolute bottom-32 right-24 w-16 h-16 rounded-full bg-accent-coral opacity-20 pointer-events-none" />
       </div>
 
       {/* Right form panel */}
@@ -191,4 +201,33 @@ export default function Login() {
       </div>
     </div>
   );
+}
+
+function Confetti() {
+  const pieces = Array.from({ length: 60 }).map((_, i) => {
+    const left = Math.random() * 100;
+    const delay = Math.random() * 2;
+    const duration = 3 + Math.random() * 3;
+    const colors = [
+      "hsl(354 70% 61%)", // coral
+      "hsl(177 45% 51%)", // teal
+      "hsl(51 100% 75%)", // yellow
+      "hsl(344 64% 79%)", // pink
+      "hsl(97 49% 67%)",  // green
+    ];
+    const bg = colors[i % colors.length];
+    return (
+      <span
+        key={i}
+        className="dali-confetti-piece"
+        style={{
+          left: `${left}%`,
+          backgroundColor: bg,
+          animationDelay: `${delay}s`,
+          animationDuration: `${duration}s`,
+        }}
+      />
+    );
+  });
+  return <>{pieces}</>;
 }

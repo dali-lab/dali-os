@@ -28,6 +28,9 @@ export default [
     route("portal/apply", "routes/portal.apply.tsx"),
   ]),
 
+  // Party route (authed, no layout — full-page easter egg)
+  route("party", "routes/party.tsx"),
+
   // Login (no layout)
   route("login", "routes/login.tsx"),
   route("dev-login", "routes/dev-login.ts"),
