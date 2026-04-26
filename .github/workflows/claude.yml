@@ -75,7 +75,7 @@ jobs:
             Rules:
               - Do NOT open a PR, push a branch, or modify any files. Comment only.
               - Do NOT modify `.github/workflows/*`.
-          claude_args: --model opus --max-turns 15 --allowedTools "Read,Glob,Grep,LS,Bash(gh:*)"
+          claude_args: --model opus --max-turns 30 --allowedTools "Read,Glob,Grep,LS,Bash(gh:*)"
 
   refine:
     if: >
@@ -171,7 +171,7 @@ jobs:
                 a real tradeoff, STOP. Do NOT open a PR. Instead comment on
                 issue #${{ github.event.issue.number }} explaining what's
                 blocking you and what options you considered.
-          claude_args: --model opus --max-turns 50 --allowedTools "Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(gh:*),Bash(npm:*),Bash(npx:*)"
+          claude_args: --model opus --max-turns 100 --allowedTools "Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(gh:*),Bash(npm:*),Bash(npx:*)"
 
   respond_review:
     if: >
