@@ -559,6 +559,8 @@ export default function AdminCycleDetails() {
       {statusError && (
         <div
           role="alert"
+          aria-live="polite"
+          aria-atomic="true"
           className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3"
         >
           <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
@@ -711,8 +713,9 @@ export default function AdminCycleDetails() {
               <Form method="post" className="flex items-end gap-3 pt-2 border-t border-border">
                 <input type="hidden" name="intent" value="add-domain" />
                 <div className="flex-1">
-                  <label className="block text-xs font-medium text-muted-foreground mb-1">Add Domain</label>
+                  <label htmlFor="add-domain-select" className="block text-xs font-medium text-muted-foreground mb-1">Add Domain</label>
                   <select
+                    id="add-domain-select"
                     name="domainId"
                     className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
                     defaultValue=""
@@ -765,8 +768,9 @@ export default function AdminCycleDetails() {
           <div className="bg-card rounded-xl border border-border shadow-sm p-6 space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <label className="block text-sm font-bold text-foreground/80 mb-1">Slot Duration</label>
+              <label htmlFor="slot-duration" className="block text-sm font-bold text-foreground/80 mb-1">Slot Duration</label>
               <select
+                id="slot-duration"
                 value={config.slotDurationMinutes}
                 onChange={e => setConfig(c => ({ ...c, slotDurationMinutes: Number(e.target.value) }))}
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
@@ -775,8 +779,9 @@ export default function AdminCycleDetails() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-bold text-foreground/80 mb-1">Buffer Between Interviews</label>
+              <label htmlFor="buffer-minutes" className="block text-sm font-bold text-foreground/80 mb-1">Buffer Between Interviews</label>
               <select
+                id="buffer-minutes"
                 value={config.bufferMinutes}
                 onChange={e => setConfig(c => ({ ...c, bufferMinutes: Number(e.target.value) }))}
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
@@ -785,8 +790,9 @@ export default function AdminCycleDetails() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-bold text-foreground/80 mb-1">Day Start</label>
+              <label htmlFor="day-start-hour" className="block text-sm font-bold text-foreground/80 mb-1">Day Start</label>
               <select
+                id="day-start-hour"
                 value={config.dayStartHour}
                 onChange={e => setConfig(c => ({ ...c, dayStartHour: Number(e.target.value) }))}
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
@@ -795,8 +801,9 @@ export default function AdminCycleDetails() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-bold text-foreground/80 mb-1">Day End</label>
+              <label htmlFor="day-end-hour" className="block text-sm font-bold text-foreground/80 mb-1">Day End</label>
               <select
+                id="day-end-hour"
                 value={config.dayEndHour}
                 onChange={e => setConfig(c => ({ ...c, dayEndHour: Number(e.target.value) }))}
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
@@ -805,8 +812,9 @@ export default function AdminCycleDetails() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-bold text-foreground/80 mb-1">Interview Start Date</label>
+              <label htmlFor="interview-start-date" className="block text-sm font-bold text-foreground/80 mb-1">Interview Start Date</label>
               <input
+                id="interview-start-date"
                 type="date"
                 value={config.interviewStartDate}
                 onChange={e => setConfig(c => ({ ...c, interviewStartDate: e.target.value }))}
@@ -814,8 +822,9 @@ export default function AdminCycleDetails() {
               />
             </div>
             <div>
-              <label className="block text-sm font-bold text-foreground/80 mb-1">Interview End Date</label>
+              <label htmlFor="interview-end-date" className="block text-sm font-bold text-foreground/80 mb-1">Interview End Date</label>
               <input
+                id="interview-end-date"
                 type="date"
                 value={config.interviewEndDate}
                 onChange={e => setConfig(c => ({ ...c, interviewEndDate: e.target.value }))}
@@ -848,8 +857,9 @@ export default function AdminCycleDetails() {
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
               <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">DALI Member</label>
+                <label htmlFor="reviewer-member-select" className="block text-xs font-medium text-muted-foreground mb-1">DALI Member</label>
                 <select
+                  id="reviewer-member-select"
                   value={newMemberId}
                   onChange={e => setNewMemberId(e.target.value)}
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
@@ -863,8 +873,9 @@ export default function AdminCycleDetails() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">Domain</label>
+                <label htmlFor="reviewer-domain-select" className="block text-xs font-medium text-muted-foreground mb-1">Domain</label>
                 <select
+                  id="reviewer-domain-select"
                   value={newDomainId}
                   onChange={e => setNewDomainId(e.target.value)}
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
@@ -910,7 +921,7 @@ export default function AdminCycleDetails() {
                   </tr>
                 ))}
                 {reviewers.length === 0 && (
-                  <tr><td colSpan={4} className="px-4 py-8 text-center text-muted-foreground/70">No reviewers assigned yet.</td></tr>
+                  <tr><td colSpan={4} className="px-4 py-8 text-center text-muted-foreground/70"><span className="sr-only">Table empty: </span>No reviewers assigned yet.</td></tr>
                 )}
               </tbody>
             </table>
@@ -923,8 +934,9 @@ export default function AdminCycleDetails() {
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
               <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">DALI Member</label>
+                <label htmlFor="interviewer-member-select" className="block text-xs font-medium text-muted-foreground mb-1">DALI Member</label>
                 <select
+                  id="interviewer-member-select"
                   value={newInterviewerMemberId}
                   onChange={e => setNewInterviewerMemberId(e.target.value)}
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
@@ -938,8 +950,9 @@ export default function AdminCycleDetails() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">Domain</label>
+                <label htmlFor="interviewer-domain-select" className="block text-xs font-medium text-muted-foreground mb-1">Domain</label>
                 <select
+                  id="interviewer-domain-select"
                   value={newInterviewerDomainId}
                   onChange={e => setNewInterviewerDomainId(e.target.value)}
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
@@ -987,7 +1000,7 @@ export default function AdminCycleDetails() {
                   )
                 })}
                 {interviewers.length === 0 && (
-                  <tr><td colSpan={3} className="px-4 py-8 text-center text-muted-foreground/70">No interviewers assigned yet.</td></tr>
+                  <tr><td colSpan={3} className="px-4 py-8 text-center text-muted-foreground/70"><span className="sr-only">Table empty: </span>No interviewers assigned yet.</td></tr>
                 )}
               </tbody>
             </table>
@@ -1087,7 +1100,7 @@ export default function AdminCycleDetails() {
                   )
                 })}
                 {interviews.length === 0 && (
-                  <tr><td colSpan={6} className="px-4 py-8 text-center text-muted-foreground/70">No interviews scheduled yet.</td></tr>
+                  <tr><td colSpan={6} className="px-4 py-8 text-center text-muted-foreground/70"><span className="sr-only">Table empty: </span>No interviews scheduled yet.</td></tr>
                 )}
               </tbody>
             </table>
@@ -1160,7 +1173,7 @@ export default function AdminCycleDetails() {
                   </tr>
                 ))}
                 {pendingDecisions.length === 0 && (
-                  <tr><td colSpan={5} className="px-4 py-8 text-center text-muted-foreground/70">No Final decisions awaiting release.</td></tr>
+                  <tr><td colSpan={5} className="px-4 py-8 text-center text-muted-foreground/70"><span className="sr-only">Table empty: </span>No Final decisions awaiting release.</td></tr>
                 )}
               </tbody>
             </table>
