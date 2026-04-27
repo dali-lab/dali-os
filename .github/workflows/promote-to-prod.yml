@@ -45,12 +45,14 @@ jobs:
       - name: Verify base=prod head=staging
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
           PR: ${{ github.event.issue.number }}
           BASE: ${{ steps.context.outputs.base }}
           HEAD: ${{ steps.context.outputs.head }}
         run: |
           if [ "$BASE" != "prod" ] || [ "$HEAD" != "staging" ]; then
-            gh pr comment "$PR" --body "❌ \`/push\` here would promote \`$HEAD\` → \`$BASE\`. This workflow only handles \`staging\` → \`prod\`."
+            gh pr comment "$PR" --repo "$OWNER/$REPO" --body "❌ \`/push\` here would promote \`$HEAD\` → \`$BASE\`. This workflow only handles \`staging\` → \`prod\`."
             exit 1
           fi
 
@@ -67,7 +69,7 @@ jobs:
           case "$PERM" in
             admin|write|maintain) echo "$USER has $PERM access" ;;
             *)
-              gh pr comment "$PR" --body "❌ \`/push\` from @$USER ignored — write access required (got: \`$PERM\`)."
+              gh pr comment "$PR" --repo "$OWNER/$REPO" --body "❌ \`/push\` from @$USER ignored — write access required (got: \`$PERM\`)."
               exit 1
               ;;
           esac
@@ -98,7 +100,7 @@ jobs:
           done
 
           if [ "$COUNT" -lt "$REQUIRED" ]; then
-            gh pr comment "$PR" --body "❌ \`/push\` ignored — need $REQUIRED approving review(s) from write-access users (got $COUNT)."
+            gh pr comment "$PR" --repo "$OWNER/$REPO" --body "❌ \`/push\` ignored — need $REQUIRED approving review(s) from write-access users (got $COUNT)."
             exit 1
           fi
           echo "$COUNT approving review(s) from write-access users"
