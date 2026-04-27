@@ -721,15 +721,13 @@ function getDomainColor(index: number) {
 }
 
 function formatDeadline(iso: string): string {
-  return new Date(iso).toLocaleString("en-US", {
+  return new Date(iso).toLocaleDateString("en-US", {
     timeZone: "America/New_York",
     weekday: "long",
     month: "long",
     day: "numeric",
     year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }) + " ET";
+  });
 }
 
 // ─── Main Component ──────────────────────────────────────────────────────────

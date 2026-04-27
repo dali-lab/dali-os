@@ -212,15 +212,13 @@ function downloadIcs(slot: TimeSlot, cycleName: string): void {
 }
 
 function formatDeadline(iso: string): string {
-  return new Date(iso).toLocaleString("en-US", {
+  return new Date(iso).toLocaleDateString("en-US", {
     timeZone: "America/New_York",
     weekday: "long",
     month: "long",
     day: "numeric",
     year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }) + " ET";
+  });
 }
 
 function formatRemaining(iso: string): { label: string; tone: "urgent" | "warn" | "ok" } | null {
