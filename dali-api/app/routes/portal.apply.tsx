@@ -937,6 +937,16 @@ export default function PortalApply() {
     submitFetcher.submit(form, { method: "post" });
   }
 
+  function scrollToFirstWarning() {
+    const firstKey = Object.keys(urlWarnings)[0];
+    if (!firstKey) return;
+    const el = document.getElementById(`question-${firstKey}`);
+    if (el) {
+      // Small delay to let the modal close before scrolling
+      setTimeout(() => el.scrollIntoView({ behavior: "smooth", block: "center" }), 50);
+    }
+  }
+
   // Handle submit response (urlWarnings) — redirects are handled automatically by React Router
   useEffect(() => {
     if (submitFetcher.state === "idle" && submitFetcher.data) {
@@ -1051,7 +1061,7 @@ export default function PortalApply() {
             <div className="rounded-2xl bg-[#E8F4FA] px-6 py-5 space-y-6">
               <h3 className="font-heading text-sm font-bold text-dark-blue uppercase tracking-wider">General Questions</h3>
               {beforeQuestions.map(q => (
-                <div key={q.key}>
+                <div key={q.key} id={`question-${q.key}`}>
                   <label className="block text-sm font-semibold text-dark-blue mb-1">
                     {q.data.label}
                     {q.required && <span className="text-accent-coral ml-0.5">*</span>}
@@ -1099,7 +1109,7 @@ export default function PortalApply() {
                 </button>
               </div>
               {(domain.challengeQuestions as Question[]).map((q: Question) => (
-                <div key={q.key}>
+                <div key={q.key} id={`question-${q.key}`}>
                   <label className="block text-sm font-semibold text-dark-blue mb-1">
                     {q.data.label}
                     {q.required && <span className="text-accent-coral ml-0.5">*</span>}
@@ -1130,7 +1140,7 @@ export default function PortalApply() {
             <div className="rounded-2xl bg-[#E8F4FA] px-6 py-5 space-y-6">
               <h3 className="font-heading text-sm font-bold text-dark-blue uppercase tracking-wider">Anything Else</h3>
               {afterQuestions.map(q => (
-                <div key={q.key}>
+                <div key={q.key} id={`question-${q.key}`}>
                   <label className="block text-sm font-semibold text-dark-blue mb-1">
                     {q.data.label}
                     {q.required && <span className="text-accent-coral ml-0.5">*</span>}
@@ -1195,7 +1205,7 @@ export default function PortalApply() {
         open={showWarningModal}
         onClose={() => {
           setShowWarningModal(false);
-          warningBannerRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          scrollToFirstWarning();
         }}
         labelledBy="url-warning-modal-title"
       >
@@ -1221,7 +1231,7 @@ export default function PortalApply() {
           <button
             onClick={() => {
               setShowWarningModal(false);
-              warningBannerRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+              scrollToFirstWarning();
             }}
             className="px-5 py-2 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-accent-coral hover:text-accent-coral transition"
           >
