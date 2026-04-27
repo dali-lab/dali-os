@@ -212,14 +212,15 @@ function downloadIcs(slot: TimeSlot, cycleName: string): void {
 }
 
 function formatDeadline(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, {
+  return new Date(iso).toLocaleString("en-US", {
+    timeZone: "America/New_York",
     weekday: "long",
     month: "long",
     day: "numeric",
     year: "numeric",
     hour: "numeric",
     minute: "2-digit",
-  });
+  }) + " ET";
 }
 
 function formatRemaining(iso: string): { label: string; tone: "urgent" | "warn" | "ok" } | null {
@@ -239,19 +240,6 @@ function formatRemaining(iso: string): { label: string; tone: "urgent" | "warn" 
 // browser's locale/timezone without producing an SSR/CSR text mismatch.
 function DeadlineLine({ closeDate }: { closeDate: string }) {
   const [label, setLabel] = useState<string>("");
-  useEffect(() => {
-    setLabel(formatDeadline(closeDate));
-  }, [closeDate]);
-  if (!label) return null;
-  return (
-    <p className="text-sm text-muted-foreground mt-2">
-      Applications close on {label}
-    </p>
-  );
-}
-
-function DeadlineWithCountdown({ closeDate }: { closeDate: string }) {
-  const [label, setLabel] = useState<string>("");
   const [remaining, setRemaining] = useState<{ label: string; tone: "urgent" | "warn" | "ok" } | null>(null);
   useEffect(() => {
     setLabel(formatDeadline(closeDate));
@@ -262,15 +250,19 @@ function DeadlineWithCountdown({ closeDate }: { closeDate: string }) {
   }, [closeDate]);
   if (!label) return null;
   const toneStyles: Record<"urgent" | "warn" | "ok", string> = {
-    urgent: "bg-red-100 text-red-700",
-    warn: "bg-yellow-100 text-yellow-800",
-    ok: "bg-blue-100 text-blue-700",
+    urgent: "text-red-700",
+    warn: "text-yellow-800",
+    ok: "text-muted-foreground",
   };
   return (
-    <div className="mb-6 flex items-center justify-center gap-2 flex-wrap text-sm text-muted-foreground">
-      <span>Applications close on <span className="font-medium text-dark-blue">{label}</span></span>
+    <div className={`text-sm mt-2 flex items-center gap-2 flex-wrap ${remaining ? toneStyles[remaining.tone] : "text-muted-foreground"}`}>
+      <span>Applications close on {label}</span>
       {remaining && (
-        <span className={`text-xs px-2.5 py-0.5 rounded-full font-semibold ${toneStyles[remaining.tone]}`}>
+        <span className={`text-xs px-2.5 py-0.5 rounded-full font-semibold ${
+          remaining.tone === "urgent" ? "bg-red-100 text-red-700" :
+          remaining.tone === "warn" ? "bg-yellow-100 text-yellow-800" :
+          "bg-blue-100 text-blue-700"
+        }`}>
           {remaining.label}
         </span>
       )}
@@ -356,7 +348,6 @@ function ApplicationOpenView({ cycleName, closeDate }: { cycleName: string; clos
       <p className="text-muted-foreground mb-8 leading-relaxed">
         The {cycleName} application cycle is now accepting applications. Start yours to join the DALI Lab!
       </p>
-      {closeDate && <DeadlineWithCountdown closeDate={closeDate} />}
       <Link to="/portal/apply" className="px-8 py-3 rounded-full bg-accent-coral text-white font-semibold font-heading tracking-wider hover:bg-accent-coral/90 transition shadow-lg hover:shadow-xl">
         Start Application
       </Link>
@@ -376,7 +367,6 @@ function ApplicationDraftView({ cycleName, closeDate }: { cycleName: string; clo
       <p className="text-muted-foreground mb-8 leading-relaxed">
         You have a draft application for {cycleName}. Complete and submit it to be considered!
       </p>
-      {closeDate && <DeadlineWithCountdown closeDate={closeDate} />}
       <Link to="/portal/apply" className="px-8 py-3 rounded-full bg-accent-coral text-white font-semibold font-heading tracking-wider hover:bg-accent-coral/90 transition shadow-lg hover:shadow-xl">
         Continue Application
       </Link>
