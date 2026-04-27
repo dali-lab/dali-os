@@ -6,6 +6,11 @@ import { requireAuth } from "~/lib/auth";
 import { getActiveCycle } from "~/lib/cycles";
 import { checkGitHubUrl, checkFigmaUrl } from "~/lib/submission-check";
 import type { SubmissionCheckResult } from "~/lib/submission-check";
+import {
+  MAX_UPLOAD_BYTES,
+  MAX_UPLOAD_LABEL,
+  fileMatchesAccept,
+} from "~/lib/file-validation";
 import type { Question } from "~/types";
 
 // ─── Loader ──────────────────────────────────────────────────────────────────
@@ -469,6 +474,22 @@ function FileUploadField({
 
   async function handleFile(file: File) {
     setError(null);
+
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setError(`File too large (max ${MAX_UPLOAD_LABEL})`);
+      if (fileRef.current) fileRef.current.value = "";
+      return;
+    }
+    if (!fileMatchesAccept(file.name, file.type, accept)) {
+      setError(
+        accept
+          ? `File type not allowed. Accepted: ${accept}`
+          : "File type not allowed",
+      );
+      if (fileRef.current) fileRef.current.value = "";
+      return;
+    }
+
     setUploading(true);
     try {
       // 1. Get presigned upload URL
@@ -479,6 +500,7 @@ function FileUploadField({
         body: JSON.stringify({
           key: `applications/${questionKey}/${crypto.randomUUID()}-${file.name}`,
           contentType: file.type,
+          contentLength: file.size,
         }),
       });
       if (!presignRes.ok) {
