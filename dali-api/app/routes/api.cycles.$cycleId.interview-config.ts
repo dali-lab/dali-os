@@ -3,6 +3,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isHiringLead, hasCycleAccess } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
+import { isValidTimezone } from "~/lib/timezone";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const preflight = handlePreflight(request);
@@ -34,6 +35,11 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   const body = await request.json();
+
+  if (body.timezone !== undefined && !isValidTimezone(body.timezone)) {
+    return withCors(request, Response.json({ error: "Invalid timezone" }, { status: 400 }));
+  }
+
   const config = await prisma.interviewConfig.upsert({
     where: { applicationCycleId: params.cycleId },
     update: {
