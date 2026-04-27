@@ -21,7 +21,9 @@ test.describe('portal: withdraw application', () => {
     await expect(page.getByRole('button', { name: /withdraw application/i })).toHaveCount(0);
 
     // Dashboard should show the withdrawn state too.
-    await page.goto('/portal');
+    // Use the client-side link instead of page.goto() to avoid racing with
+    // React Router's post-fetcher revalidation (which can abort full navigations).
+    await page.getByRole('link', { name: /back to portal/i }).click();
     await expect(page.getByText(/application withdrawn/i)).toBeVisible();
   });
 });
