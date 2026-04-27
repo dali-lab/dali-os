@@ -14,14 +14,7 @@ import {
 } from 'lucide-react'
 import { prisma } from '~/lib/db'
 import { requireAuth } from '~/lib/auth'
-function parseSessionToken(request: Request): string | null {
-  const header = request.headers.get("Cookie") ?? "";
-  for (const part of header.split(";")) {
-    const [k, ...rest] = part.split("=");
-    if (k?.trim() === "better-auth.session_token") return rest.join("=").trim();
-  }
-  return null;
-}
+import { parseAccessToken } from '~/lib/cookies'
 import { CollaborativeEditor } from '~/components/CollaborativeEditor'
 import { PresenceProvider } from '~/components/collab/PresenceProvider'
 import { PresenceBar } from '~/components/collab/PresenceBar'
@@ -110,7 +103,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     }
   }
 
-  const collabToken = parseSessionToken(request)
+  const collabToken = parseAccessToken(request)
 
   // Build user display name for cursors
   const userName = [member.firstName, member.lastName].filter(Boolean).join(' ') || auth.user.email
