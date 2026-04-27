@@ -6,6 +6,7 @@ import { requireAuth } from "~/lib/auth";
 import { getActiveCycle } from "~/lib/cycles";
 import { getDownloadUrl } from "~/lib/s3";
 import type { Question } from "~/types";
+import { Modal } from "~/components/Modal";
 
 // ─── Loader ──────────────────────────────────────────────────────────────────
 
@@ -401,41 +402,37 @@ export default function PortalApplication() {
       </div>
 
       {/* Withdraw confirmation modal */}
-      {showWithdrawModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="withdraw-modal-title"
-        >
-          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full mx-4 p-6">
-            <h3 id="withdraw-modal-title" className="font-heading text-base font-bold text-dark-blue mb-2">
-              Withdraw your application?
-            </h3>
-            <p className="text-sm text-gray-600 mb-5">
-              Your application will be removed from review. You can't undo this from the portal — you'd need to contact the DALI team to reverse it.
-            </p>
-            <div className="flex gap-3 justify-end">
-              <button
-                type="button"
-                onClick={() => setShowWithdrawModal(false)}
-                disabled={submittingWithdraw}
-                className="px-5 py-2 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-accent-coral hover:text-accent-coral transition disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={confirmWithdraw}
-                disabled={submittingWithdraw}
-                className="px-5 py-2 rounded-full bg-red-500 text-white text-sm font-semibold hover:bg-red-500/90 transition disabled:opacity-50"
-              >
-                {submittingWithdraw ? "Withdrawing..." : "Withdraw"}
-              </button>
-            </div>
-          </div>
+      <Modal
+        open={showWithdrawModal}
+        onClose={() => setShowWithdrawModal(false)}
+        labelledBy="withdraw-modal-title"
+        disableEscape={submittingWithdraw}
+      >
+        <h3 id="withdraw-modal-title" className="font-heading text-base font-bold text-dark-blue mb-2">
+          Withdraw your application?
+        </h3>
+        <p className="text-sm text-gray-600 mb-5">
+          Your application will be removed from review. You can't undo this from the portal — you'd need to contact the DALI team to reverse it.
+        </p>
+        <div className="flex gap-3 justify-end">
+          <button
+            type="button"
+            onClick={() => setShowWithdrawModal(false)}
+            disabled={submittingWithdraw}
+            className="px-5 py-2 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-accent-coral hover:text-accent-coral transition disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={confirmWithdraw}
+            disabled={submittingWithdraw}
+            className="px-5 py-2 rounded-full bg-red-500 text-white text-sm font-semibold hover:bg-red-500/90 transition disabled:opacity-50"
+          >
+            {submittingWithdraw ? "Withdrawing..." : "Withdraw"}
+          </button>
         </div>
-      )}
+      </Modal>
     </div>
   );
 }

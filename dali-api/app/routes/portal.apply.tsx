@@ -7,6 +7,7 @@ import { getActiveCycle } from "~/lib/cycles";
 import { checkGitHubUrl, checkFigmaUrl } from "~/lib/submission-check";
 import type { SubmissionCheckResult } from "~/lib/submission-check";
 import type { Question } from "~/types";
+import { Modal } from "~/components/Modal";
 
 // ─── Loader ──────────────────────────────────────────────────────────────────
 
@@ -1190,48 +1191,51 @@ export default function PortalApply() {
       </div>
 
       {/* URL warning modal */}
-      {showWarningModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full mx-4 p-6">
-            <h3 className="font-heading text-base font-bold text-dark-blue mb-2">Some links may be inaccessible</h3>
-            <p className="text-sm text-gray-600 mb-4">
-              One or more URLs appear to be private or inaccessible. Reviewers may not be able to view them.
-            </p>
-            <ul className="space-y-2 mb-5">
-              {Object.entries(urlWarnings).map(([key, message]) => {
-                const allQuestions = [
-                  ...(formQuestions as Question[]),
-                  ...(domains as any[]).flatMap((d: any) => d.challengeQuestions as Question[]),
-                ];
-                const q = allQuestions.find(q => q.key === key);
-                return (
-                  <li key={key} className="text-sm text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
-                    <span className="font-semibold">{q?.data.label ?? key}:</span> {message}
-                  </li>
-                );
-              })}
-            </ul>
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={() => {
-                  setShowWarningModal(false);
-                  warningBannerRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-                }}
-                className="px-5 py-2 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-accent-coral hover:text-accent-coral transition"
-              >
-                Go Back and Fix
-              </button>
-              <button
-                onClick={() => { setShowWarningModal(false); handleSubmit(true); }}
-                disabled={submitting}
-                className="px-5 py-2 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition disabled:opacity-50"
-              >
-                Submit Anyway
-              </button>
-            </div>
-          </div>
+      <Modal
+        open={showWarningModal}
+        onClose={() => {
+          setShowWarningModal(false);
+          warningBannerRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }}
+        labelledBy="url-warning-modal-title"
+      >
+        <h3 id="url-warning-modal-title" className="font-heading text-base font-bold text-dark-blue mb-2">Some links may be inaccessible</h3>
+        <p className="text-sm text-gray-600 mb-4">
+          One or more URLs appear to be private or inaccessible. Reviewers may not be able to view them.
+        </p>
+        <ul className="space-y-2 mb-5">
+          {Object.entries(urlWarnings).map(([key, message]) => {
+            const allQuestions = [
+              ...(formQuestions as Question[]),
+              ...(domains as any[]).flatMap((d: any) => d.challengeQuestions as Question[]),
+            ];
+            const q = allQuestions.find(q => q.key === key);
+            return (
+              <li key={key} className="text-sm text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
+                <span className="font-semibold">{q?.data.label ?? key}:</span> {message}
+              </li>
+            );
+          })}
+        </ul>
+        <div className="flex gap-3 justify-end">
+          <button
+            onClick={() => {
+              setShowWarningModal(false);
+              warningBannerRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+            }}
+            className="px-5 py-2 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-accent-coral hover:text-accent-coral transition"
+          >
+            Go Back and Fix
+          </button>
+          <button
+            onClick={() => { setShowWarningModal(false); handleSubmit(true); }}
+            disabled={submitting}
+            className="px-5 py-2 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition disabled:opacity-50"
+          >
+            Submit Anyway
+          </button>
         </div>
-      )}
+      </Modal>
     </div>
   );
 }
