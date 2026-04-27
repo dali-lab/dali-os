@@ -48,7 +48,7 @@ export function InterviewSlotPicker({
               className={`text-sm font-bold mb-2 sticky top-0 z-10 py-1 ${
                 variant === "schedule"
                   ? "text-foreground/80 uppercase tracking-wider mb-3 bg-background"
-                  : "text-dark-blue bg-white"
+                  : "text-dark-blue bg-background"
               }`}
             >
               {date}
