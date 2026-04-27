@@ -29,6 +29,14 @@ export async function loader({ request }: Route.LoaderArgs) {
     prisma.domain.findMany({
       orderBy: { name: "asc" },
       include: {
+        domainLeadAssignments: {
+          include: {
+            member: {
+              select: { id: true, firstName: true, lastName: true, daliEmail: true },
+            },
+          },
+          orderBy: [{ member: { lastName: "asc" } }, { member: { firstName: "asc" } }],
+        },
         _count: {
           select: {
             challengeVersions: true,
@@ -176,7 +184,18 @@ interface Member {
 
 type Domain = DomainRow;
 
+interface DomainLeadAssignmentWithMember {
+  id: string;
+  member: {
+    id: string;
+    firstName: string | null;
+    lastName: string | null;
+    daliEmail: string | null;
+  };
+}
+
 interface DomainWithCounts extends DomainRow {
+  domainLeadAssignments: DomainLeadAssignmentWithMember[];
   _count: {
     challengeVersions: number;
     applicationCycles: number;
@@ -188,7 +207,7 @@ interface DomainWithCounts extends DomainRow {
   };
 }
 
-function DomainsSection({ domains }: { domains: DomainWithCounts[] }) {
+function DomainsSection({ domains, members }: { domains: DomainWithCounts[]; members: Member[] }) {
   const createFetcher = useFetcher<{ error?: string } | null>();
   const [name, setName] = useState("");
   const isCreating = createFetcher.state !== "idle";
@@ -239,14 +258,14 @@ function DomainsSection({ domains }: { domains: DomainWithCounts[] }) {
           <li className="px-4 py-6 text-center text-sm text-muted-foreground/70">No domains yet.</li>
         )}
         {domains.map((d) => (
-          <DomainRowItem key={d.id} domain={d} />
+          <DomainRowItem key={d.id} domain={d} members={members} />
         ))}
       </ul>
     </div>
   );
 }
 
-function DomainRowItem({ domain }: { domain: DomainWithCounts }) {
+function DomainRowItem({ domain, members }: { domain: DomainWithCounts; members: Member[] }) {
   const fetcher = useFetcher<{ error?: string }>();
   const inUseBy = describeDomainUsage(domain._count);
   const inUse = inUseBy.length > 0;
@@ -254,13 +273,14 @@ function DomainRowItem({ domain }: { domain: DomainWithCounts }) {
 
   return (
     <li className="px-4 py-3 flex items-center justify-between gap-3">
-      <div className="flex flex-col gap-0.5 min-w-0">
+      <div className="flex flex-col gap-1 min-w-0 flex-1">
         <span className="text-sm font-medium text-foreground">{domain.name}</span>
         {inUse ? (
           <span className="text-xs text-muted-foreground">In use by {inUseBy.join(", ")}</span>
         ) : (
           <span className="text-xs text-muted-foreground/70">Not in use</span>
         )}
+        <DomainLeadsForDomain domain={domain} members={members} />
         {fetcher.data?.error && (
           <span className="text-xs text-red-700">{fetcher.data.error}</span>
         )}
@@ -279,6 +299,98 @@ function DomainRowItem({ domain }: { domain: DomainWithCounts }) {
         </button>
       </fetcher.Form>
     </li>
+  );
+}
+
+function memberLabel(member: { firstName: string | null; lastName: string | null; daliEmail: string | null }) {
+  const name = `${member.firstName ?? ""} ${member.lastName ?? ""}`.trim();
+  return name || member.daliEmail || "Unnamed member";
+}
+
+function AddDomainLeadForMemberButton({ domainId, member, onAdded }: { domainId: string; member: Member; onAdded: () => void }) {
+  const fetcher = useFetcher();
+  return (
+    <fetcher.Form method="post" onSubmit={onAdded}>
+      <input type="hidden" name="intent" value="add-domain-lead" />
+      <input type="hidden" name="memberId" value={member.id} />
+      <input type="hidden" name="domainId" value={domainId} />
+      <button type="submit" className="w-full text-left px-4 py-2 text-sm text-foreground/80 hover:bg-muted/50">
+        {memberLabel(member)}
+      </button>
+    </fetcher.Form>
+  );
+}
+
+function DomainLeadsForDomain({ domain, members }: { domain: DomainWithCounts; members: Member[] }) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const assignedMemberIds = new Set(domain.domainLeadAssignments.map((a) => a.member.id));
+  const available = members.filter((m) => !assignedMemberIds.has(m.id));
+  const q = search.trim().toLowerCase();
+  const filtered = q
+    ? available.filter((m) => memberLabel(m).toLowerCase().includes(q) || (m.daliEmail ?? "").toLowerCase().includes(q))
+    : available;
+
+  return (
+    <div className="flex flex-wrap gap-1.5 items-center">
+      <span className="text-xs text-muted-foreground/70 mr-1">Leads:</span>
+      {domain.domainLeadAssignments.length === 0 && (
+        <span className="text-xs text-muted-foreground/70 italic">none</span>
+      )}
+      {domain.domainLeadAssignments.map((assignment) => (
+        <span
+          key={assignment.id}
+          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800"
+        >
+          {memberLabel(assignment.member)}
+          <RemoveDomainLeadButton assignmentId={assignment.id} />
+        </span>
+      ))}
+
+      {available.length > 0 && (
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setOpen(!open)}
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground hover:bg-muted"
+          >
+            + Lead
+            <ChevronDown className="w-3 h-3" />
+          </button>
+          {open && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => { setOpen(false); setSearch(""); }} />
+              <div className="absolute left-0 z-20 mt-1 w-64 rounded-md shadow-lg bg-card ring-1 ring-black ring-opacity-5">
+                <div className="p-2 border-b border-border">
+                  <input
+                    type="text"
+                    autoFocus
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Search members…"
+                    className="w-full px-2 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div className="py-1 max-h-64 overflow-y-auto">
+                  {filtered.length === 0 ? (
+                    <div className="px-4 py-2 text-sm text-muted-foreground/70">No matching members.</div>
+                  ) : (
+                    filtered.map((member) => (
+                      <AddDomainLeadForMemberButton
+                        key={member.id}
+                        domainId={domain.id}
+                        member={member}
+                        onAdded={() => { setOpen(false); setSearch(""); }}
+                      />
+                    ))
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -477,7 +589,7 @@ export default function AdminConsole() {
         </div>
       </div>
 
-      {isAdminMember && <DomainsSection domains={domains} />}
+      {isAdminMember && <DomainsSection domains={domains} members={members} />}
 
       <div className="bg-card border border-border rounded-lg overflow-hidden">
         <table className="w-full text-sm">
