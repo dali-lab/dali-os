@@ -6,7 +6,8 @@ name: Promote to staging
 # blocked by branch-protection push restrictions on `staging`).
 #
 # Companion of `promote-to-prod.yml`. See PR description for setup steps
-# (PROMOTE_TOKEN secret + branch protection on `staging`).
+# (PROMOTE_APP_ID + PROMOTE_APP_PRIVATE_KEY secrets, App installed on
+# this repo, App listed as bypass actor on the `staging` ruleset).
 
 on:
   issue_comment:
@@ -109,11 +110,18 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - name: Checkout with PROMOTE_TOKEN
+      - name: Mint installation token from PROMOTE App
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.PROMOTE_APP_ID }}
+          private-key: ${{ secrets.PROMOTE_APP_PRIVATE_KEY }}
+
+      - name: Checkout with App token
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.PROMOTE_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Verify fast-forward feasibility
         env:
