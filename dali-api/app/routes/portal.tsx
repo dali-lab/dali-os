@@ -11,6 +11,7 @@ import {
 import type { DomainApplicationStatus } from "~/types";
 import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
 import { InterviewSlotPicker } from "~/components/InterviewSlotPicker";
+import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 
 // ─── Loader ──────────────────────────────────────────────────────────────────
 
@@ -983,4 +984,8 @@ export default function Portal() {
       </div>
     </div>
   );
+}
+
+export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
+  return <ApplicantErrorBoundary error={error} secondaryAction={{ kind: "reload" }} />;
 }

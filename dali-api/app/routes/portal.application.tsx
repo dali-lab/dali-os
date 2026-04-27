@@ -6,6 +6,7 @@ import { requireAuth } from "~/lib/auth";
 import { getActiveCycle } from "~/lib/cycles";
 import { getDownloadUrl } from "~/lib/s3";
 import type { Question } from "~/types";
+import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 
 // ─── Loader ──────────────────────────────────────────────────────────────────
 
@@ -438,4 +439,8 @@ export default function PortalApplication() {
       )}
     </div>
   );
+}
+
+export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
+  return <ApplicantErrorBoundary error={error} />;
 }

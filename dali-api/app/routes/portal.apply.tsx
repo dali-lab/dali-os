@@ -7,6 +7,7 @@ import { getActiveCycle } from "~/lib/cycles";
 import { checkGitHubUrl, checkFigmaUrl } from "~/lib/submission-check";
 import type { SubmissionCheckResult } from "~/lib/submission-check";
 import type { Question } from "~/types";
+import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 
 // ─── Loader ──────────────────────────────────────────────────────────────────
 
@@ -1222,4 +1223,8 @@ export default function PortalApply() {
       )}
     </div>
   );
+}
+
+export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
+  return <ApplicantErrorBoundary error={error} />;
 }
