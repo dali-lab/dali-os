@@ -192,9 +192,14 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   if (intent === "set-close-date") {
     const closeDate = formData.get("closeDate") as string;
+    let parsedClose: Date | null = null;
+    if (closeDate) {
+      // Store as end-of-day UTC so the deadline covers the entire selected date
+      parsedClose = new Date(closeDate + "T23:59:59Z");
+    }
     await prisma.applicationCycle.update({
       where: { id: params.id },
-      data: { closeDate: closeDate ? new Date(closeDate) : null },
+      data: { closeDate: parsedClose },
     });
     return redirect(`/hiring-lead-admin/cycle/${params.id}`);
   }

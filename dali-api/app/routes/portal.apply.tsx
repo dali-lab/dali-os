@@ -90,6 +90,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   return {
     cycleId: active.id,
     cycleName: active.name,
+    closeDate: active.closeDate ? active.closeDate.toISOString() : null,
     generalChallengeVersionId,
     formQuestions,
     domains,
@@ -720,11 +721,21 @@ function getDomainColor(index: number) {
   return DOMAIN_COLORS[index % DOMAIN_COLORS.length];
 }
 
+function formatDeadline(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-US", {
+    timeZone: "UTC",
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export default function PortalApply() {
   const loaderData = useLoaderData<typeof loader>() as any;
-  const { cycleId, cycleName, generalChallengeVersionId, formQuestions, domains, isAlreadySubmitted } = loaderData;
+  const { cycleId, cycleName, closeDate, generalChallengeVersionId, formQuestions, domains, isAlreadySubmitted } = loaderData;
   const [draft, setDraft] = useState(loaderData.draft);
   const [selectedDomainIds, setSelectedDomainIds] = useState<string[]>(
     loaderData.draft?.selectedDomainIds ?? [],
@@ -756,6 +767,12 @@ export default function PortalApply() {
   const [urlWarnings, setUrlWarnings] = useState<Record<string, string>>({});
   const [urlChecks, setUrlChecks] = useState<Record<string, UrlCheckState>>({});
   const [showWarningModal, setShowWarningModal] = useState(false);
+  // Format the deadline after hydration so toLocaleString uses browser
+  // locale/timezone without producing an SSR/CSR text mismatch.
+  const [deadlineLabel, setDeadlineLabel] = useState<string>("");
+  useEffect(() => {
+    if (closeDate) setDeadlineLabel(formatDeadline(closeDate));
+  }, [closeDate]);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const warningBannerRef = useRef<HTMLDivElement | null>(null);
   const createFetcher = useFetcher();
@@ -1027,6 +1044,11 @@ export default function PortalApply() {
         <div className="flex items-center justify-between mb-2">
           <h2 className="font-heading text-xl font-bold text-dark-blue">{cycleName} Application</h2>
         </div>
+        {deadlineLabel && (
+          <p className="text-sm text-accent-coral font-medium mb-1">
+            Applications close on {deadlineLabel}
+          </p>
+        )}
         <p className="text-sm text-gray-500 mb-8">
           Select the domains you'd like to apply for, then start your application.
         </p>
@@ -1068,6 +1090,11 @@ export default function PortalApply() {
           <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-blue-100 text-blue-700">Draft</span>
         )}
       </div>
+      {deadlineLabel && (
+        <p className="text-sm text-accent-coral font-medium mb-1">
+          Applications close on {deadlineLabel}
+        </p>
+      )}
       <p className="text-sm text-muted-foreground mb-8">
         Fill out the form below. Your progress is saved automatically.
       </p>
