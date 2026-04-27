@@ -75,6 +75,7 @@ export default [
   // Domain application management
   route("api/domain-applications/:id/decisions", "routes/api.domain-applications.$id.decisions.ts"),
   route("api/domain-applications/:id/reviews", "routes/api.domain-applications.$id.reviews.ts"),
+  route("api/domain-applications/:id/full-context", "routes/api.domain-applications.$id.full-context.ts"),
 
   // Review CRUD + submit/unsubmit
   route("api/reviews/:id", "routes/api.reviews.$id.ts"),
