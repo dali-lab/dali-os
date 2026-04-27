@@ -21,7 +21,9 @@ test.describe('portal: withdraw application', () => {
     await expect(page.getByRole('button', { name: /withdraw application/i })).toHaveCount(0);
 
     // Dashboard should show the withdrawn state too.
-    await page.goto('/portal');
+    // Use client-side nav to avoid racing with React Router's post-fetcher
+    // revalidation, which can abort a concurrent full-page goto in CI.
+    await page.getByRole('link', { name: /back to portal/i }).click();
     await expect(page.getByText(/application withdrawn/i)).toBeVisible();
   });
 });
