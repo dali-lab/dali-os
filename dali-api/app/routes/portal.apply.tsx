@@ -719,6 +719,15 @@ export default function PortalApply() {
     },
   );
   const [saving, setSaving] = useState(false);
+  const [hasSavedOnce, setHasSavedOnce] = useState(() => {
+    const initialAnswers = (loaderData.draft?.answers as Record<string, string> | undefined) ?? {};
+    if (Object.values(initialAnswers).some(v => typeof v === "string" && v.trim() !== "")) return true;
+    for (const da of loaderData.draft?.domainApplications ?? []) {
+      const daAnswers = (da.answers as Record<string, string> | undefined) ?? {};
+      if (Object.values(daAnswers).some(v => typeof v === "string" && v.trim() !== "")) return true;
+    }
+    return false;
+  });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [urlWarnings, setUrlWarnings] = useState<Record<string, string>>({});
@@ -769,6 +778,7 @@ export default function PortalApply() {
           domainAnswers: JSON.stringify(daPayload),
         }),
       });
+      setHasSavedOnce(true);
     } finally {
       setSaving(false);
     }
@@ -1165,13 +1175,15 @@ export default function PortalApply() {
                 <span className="inline-block w-3 h-3 border-2 border-gray-300 border-t-accent-coral rounded-full animate-spin" />
                 Saving...
               </>
-            ) : (
+            ) : hasSavedOnce ? (
               <>
                 <svg className="w-3.5 h-3.5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                 </svg>
                 Draft auto-saved
               </>
+            ) : (
+              <>Changes will be saved automatically</>
             )}
           </span>
         </div>
