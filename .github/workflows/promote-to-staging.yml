@@ -1,0 +1,149 @@
+name: Promote to staging
+
+# Fast-forward push of `dev` onto `staging` when an authorized reviewer leaves
+# a `/push` comment on a dev → staging PR. The PR exists for review/CI; the
+# actual promotion happens here, not via the GitHub merge button (which is
+# blocked by branch-protection push restrictions on `staging`).
+#
+# Companion of `promote-to-prod.yml`. See PR description for setup steps
+# (PROMOTE_APP_ID + PROMOTE_APP_PRIVATE_KEY secrets, App installed on
+# this repo, App listed as bypass actor on the `staging` ruleset).
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  check:
+    if: |
+      github.event.issue.pull_request != null &&
+      startsWith(github.event.comment.body, '/push')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    outputs:
+      head_sha: ${{ steps.context.outputs.head_sha }}
+    steps:
+      - name: Read PR context
+        id: context
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+          PR: ${{ github.event.issue.number }}
+        run: |
+          set -euo pipefail
+          PR_JSON=$(gh api "repos/$OWNER/$REPO/pulls/$PR")
+          BASE=$(jq -r '.base.ref' <<<"$PR_JSON")
+          HEAD=$(jq -r '.head.ref' <<<"$PR_JSON")
+          HEAD_SHA=$(jq -r '.head.sha' <<<"$PR_JSON")
+          echo "base=$BASE" >>"$GITHUB_OUTPUT"
+          echo "head=$HEAD" >>"$GITHUB_OUTPUT"
+          echo "head_sha=$HEAD_SHA" >>"$GITHUB_OUTPUT"
+
+      - name: Verify base=staging head=dev
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.issue.number }}
+          BASE: ${{ steps.context.outputs.base }}
+          HEAD: ${{ steps.context.outputs.head }}
+        run: |
+          if [ "$BASE" != "staging" ] || [ "$HEAD" != "dev" ]; then
+            gh pr comment "$PR" --body "❌ \`/push\` here would promote \`$HEAD\` → \`$BASE\`. This workflow only handles \`dev\` → \`staging\`."
+            exit 1
+          fi
+
+      - name: Verify commenter has write access
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+          PR: ${{ github.event.issue.number }}
+          USER: ${{ github.event.comment.user.login }}
+        run: |
+          set -euo pipefail
+          PERM=$(gh api "repos/$OWNER/$REPO/collaborators/$USER/permission" --jq '.permission' 2>/dev/null || echo "none")
+          case "$PERM" in
+            admin|write|maintain) echo "$USER has $PERM access" ;;
+            *)
+              gh pr comment "$PR" --body "❌ \`/push\` from @$USER ignored — write access required (got: \`$PERM\`)."
+              exit 1
+              ;;
+          esac
+
+      - name: Verify ≥1 approving review from a write-access user
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+          PR: ${{ github.event.issue.number }}
+          REQUIRED: 1
+        run: |
+          set -euo pipefail
+          REVIEWS=$(gh api --paginate "repos/$OWNER/$REPO/pulls/$PR/reviews")
+          # Take each reviewer's latest review, keep APPROVED ones.
+          LATEST_APPROVERS=$(jq -r '
+            group_by(.user.login)
+            | map(max_by(.submitted_at // ""))
+            | .[]
+            | select(.state == "APPROVED")
+            | .user.login
+          ' <<<"$REVIEWS" | sort -u)
+
+          COUNT=0
+          for U in $LATEST_APPROVERS; do
+            P=$(gh api "repos/$OWNER/$REPO/collaborators/$U/permission" --jq '.permission' 2>/dev/null || echo "none")
+            case "$P" in admin|write|maintain) COUNT=$((COUNT+1)) ;; esac
+          done
+
+          if [ "$COUNT" -lt "$REQUIRED" ]; then
+            gh pr comment "$PR" --body "❌ \`/push\` ignored — need $REQUIRED approving review(s) from write-access users (got $COUNT)."
+            exit 1
+          fi
+          echo "$COUNT approving review(s) from write-access users"
+
+  promote:
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Mint installation token from PROMOTE App
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.PROMOTE_APP_ID }}
+          private-key: ${{ secrets.PROMOTE_APP_PRIVATE_KEY }}
+
+      - name: Checkout with App token
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Verify fast-forward feasibility
+        env:
+          HEAD_SHA: ${{ needs.check.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+          git fetch origin staging dev
+          if ! git merge-base --is-ancestor origin/staging "$HEAD_SHA"; then
+            echo "::error::staging is not an ancestor of $HEAD_SHA — fast-forward not possible. Did someone push to staging directly, or did dev get rebased?"
+            exit 1
+          fi
+
+      - name: Fast-forward push staging
+        env:
+          HEAD_SHA: ${{ needs.check.outputs.head_sha }}
+        run: git push origin "$HEAD_SHA:refs/heads/staging"
+
+      - name: Comment + close PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.issue.number }}
+          HEAD_SHA: ${{ needs.check.outputs.head_sha }}
+        run: |
+          gh pr comment "$PR" --body "✅ Fast-forwarded \`staging\` to \`$HEAD_SHA\`."
+          gh pr close "$PR"
