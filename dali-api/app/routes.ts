@@ -50,6 +50,7 @@ export default [
 
   // Domain & member management API
   route("api/domains", "routes/api.domains.ts"),
+  route("api/domains/:domainId", "routes/api.domains.$domainId.ts"),
   route("api/domains/:domainId/leads", "routes/api.domains.$domainId.leads.ts"),
   route("api/members", "routes/api.members.ts"),
   route("api/members/:memberId/roles", "routes/api.members.$memberId.roles.ts"),
