@@ -722,7 +722,7 @@ function getDomainColor(index: number) {
 
 function formatDeadline(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", {
-    timeZone: "America/New_York",
+    timeZone: "UTC",
     weekday: "long",
     month: "long",
     day: "numeric",
