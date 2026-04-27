@@ -1334,8 +1334,6 @@ export default function PortalApply() {
   // Application form (single screen with inline domain management)
   return (
     <div className="lg:max-w-6xl max-w-3xl mx-auto px-6 py-10">
-      {/* Sticky header: progress bar + (mobile) section chip strip */}
-      <div className="sticky top-0 z-30 -mx-6 px-6 pt-1 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 mb-2">
         <SectionNavMobile sections={sections} activeSection={activeSection} />
       </div>
       {deadlineLabel && (
