@@ -20,10 +20,14 @@ test.describe('portal: withdraw application', () => {
     await expect(page.getByText(/you withdrew this application/i)).toBeVisible();
     await expect(page.getByRole('button', { name: /withdraw application/i })).toHaveCount(0);
 
+    // Wait for React Router's post-fetcher revalidation to fully settle before
+    // navigating away — otherwise the in-flight revalidation can hijack the
+    // link navigation and bounce us back to /portal/application.
+    await page.waitForLoadState('networkidle');
+
     // Dashboard should show the withdrawn state too.
-    // Use the client-side link instead of page.goto() to avoid racing with
-    // React Router's post-fetcher revalidation (which can abort full navigations).
     await page.getByRole('link', { name: /back to portal/i }).click();
+    await page.waitForURL(/\/portal$/);
     await expect(page.getByText(/application withdrawn/i)).toBeVisible();
   });
 });
