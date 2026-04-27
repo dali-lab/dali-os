@@ -11,6 +11,7 @@ import {
 import type { DomainApplicationStatus } from "~/types";
 import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
 import { InterviewSlotPicker } from "~/components/InterviewSlotPicker";
+import { formatInterviewDate, formatInterviewTimeRange } from "~/lib/interview-time";
 
 // ─── Loader ──────────────────────────────────────────────────────────────────
 
@@ -144,12 +145,10 @@ interface TimeSlot {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function apiSlotToTimeSlot(slot: { startTime: string; endTime: string }, index: number): TimeSlot {
-  const start = new Date(slot.startTime);
-  const end = new Date(slot.endTime);
   return {
     id: `slot-${index}`,
-    date: start.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }),
-    time: `${start.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })} - ${end.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`,
+    date: formatInterviewDate(slot.startTime),
+    time: formatInterviewTimeRange(slot.startTime, slot.endTime),
     isoStart: slot.startTime,
     isoEnd: slot.endTime,
   };

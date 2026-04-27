@@ -10,6 +10,11 @@ import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
 import { Calendar, Check, Clock } from "lucide-react";
 import { InterviewSlotPicker } from "~/components/InterviewSlotPicker";
 import type { Slot } from "~/components/InterviewSlotPicker";
+import {
+  formatInterviewDate,
+  formatInterviewTime,
+  formatInterviewTimeRange,
+} from "~/lib/interview-time";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -94,7 +99,6 @@ export default function ScheduleInterview() {
   }
 
   if (booked) {
-    const bookedDate = new Date(booked);
     return (
       <div className="max-w-2xl mx-auto py-16 text-center">
         <div className="w-12 h-12 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -104,11 +108,11 @@ export default function ScheduleInterview() {
         <p className="text-muted-foreground">
           Your interview is booked for{" "}
           <span className="font-medium text-foreground">
-            {bookedDate.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}
+            {formatInterviewDate(booked)}
           </span>{" "}
           at{" "}
           <span className="font-medium text-foreground">
-            {bookedDate.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
+            {formatInterviewTime(booked)}
           </span>
           .
         </p>
@@ -117,15 +121,11 @@ export default function ScheduleInterview() {
   }
 
   // Convert raw API slots into picker-compatible shape and group by date
-  const pickerSlots: Slot[] = slots.map((s: any, i: number) => {
-    const start = new Date(s.startTime);
-    const end = new Date(s.endTime);
-    return {
-      id: s.startTime,
-      date: start.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }),
-      time: `${start.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })} – ${end.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`,
-    };
-  });
+  const pickerSlots: Slot[] = slots.map((s: any) => ({
+    id: s.startTime,
+    date: formatInterviewDate(s.startTime),
+    time: formatInterviewTimeRange(s.startTime, s.endTime, " – "),
+  }));
 
   const groupMap = new Map<string, Slot[]>();
   for (const s of pickerSlots) {
