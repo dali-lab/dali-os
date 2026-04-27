@@ -8,6 +8,8 @@ import { computeAvailableSlots } from "~/lib/scheduling";
 import { inferDomainApplicationStatus } from "~/lib/domain-application-status";
 import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
 import { Calendar, Check, Clock } from "lucide-react";
+import { InterviewSlotPicker } from "~/components/InterviewSlotPicker";
+import type { Slot } from "~/components/InterviewSlotPicker";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -114,17 +116,24 @@ export default function ScheduleInterview() {
     );
   }
 
-  // Group slots by date
-  const slotsByDate = new Map<string, typeof slots>();
-  for (const slot of slots) {
-    const dateKey = new Date(slot.startTime).toLocaleDateString(undefined, {
-      weekday: "long",
-      month: "long",
-      day: "numeric",
-    });
-    if (!slotsByDate.has(dateKey)) slotsByDate.set(dateKey, []);
-    slotsByDate.get(dateKey)!.push(slot);
+  // Convert raw API slots into picker-compatible shape and group by date
+  const pickerSlots: Slot[] = slots.map((s: any, i: number) => {
+    const start = new Date(s.startTime);
+    const end = new Date(s.endTime);
+    return {
+      id: s.startTime,
+      date: start.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }),
+      time: `${start.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })} – ${end.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`,
+    };
+  });
+
+  const groupMap = new Map<string, Slot[]>();
+  for (const s of pickerSlots) {
+    const group = groupMap.get(s.date) ?? [];
+    group.push(s);
+    groupMap.set(s.date, group);
   }
+  const groups = Array.from(groupMap.entries()).map(([date, slots]) => ({ date, slots }));
 
   const domainApp = domainAppsToSchedule[0];
 
@@ -151,38 +160,13 @@ export default function ScheduleInterview() {
           <p className="text-muted-foreground">No available interview slots right now. Please check back later.</p>
         </div>
       ) : (
-        <div className="space-y-6">
-          {Array.from(slotsByDate.entries()).map(([dateLabel, dateSlots]) => (
-            <div key={dateLabel}>
-              <h3 className="text-sm font-bold text-foreground/80 uppercase tracking-wider mb-3">{dateLabel}</h3>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-                {dateSlots.map((slot: any) => {
-                  const start = new Date(slot.startTime);
-                  const end = new Date(slot.endTime);
-                  const isBooking = booking === slot.startTime;
-                  return (
-                    <button
-                      key={slot.startTime}
-                      onClick={() => bookSlot(domainApp.id, slot.startTime)}
-                      disabled={!!booking}
-                      className="px-3 py-3 text-sm font-medium rounded-lg border border-border bg-card hover:border-blue-400 hover:bg-blue-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {isBooking ? (
-                        "Booking..."
-                      ) : (
-                        <>
-                          {start.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
-                          {" – "}
-                          {end.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
-                        </>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
+        <InterviewSlotPicker
+          groups={groups}
+          variant="schedule"
+          onSelect={(slot) => bookSlot(domainApp.id, slot.id)}
+          loadingSlotId={booking}
+          disabled={!!booking}
+        />
       )}
     </div>
   );

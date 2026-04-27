@@ -10,6 +10,7 @@ import {
 } from "~/lib/domain-application-status";
 import type { DomainApplicationStatus } from "~/types";
 import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
+import { InterviewSlotPicker } from "~/components/InterviewSlotPicker";
 
 // ─── Loader ──────────────────────────────────────────────────────────────────
 
@@ -62,6 +63,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     include: {
       statusUpdates: true,
       domainApplications: {
+        where: { selected: true },
         include: {
           ...domainApplicationStatusInclude,
           challengeVersion: { include: { domain: true } },
@@ -489,27 +491,13 @@ function InvitedToInterviewView({
         </div>
       ) : (
         <>
-          <div className="space-y-6 mb-8">
-            {grouped.map(({ date, slots: dateSlots }) => (
-              <div key={date}>
-                <h4 className="text-sm font-bold text-dark-blue mb-2">{date}</h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {dateSlots.map(s => (
-                    <button
-                      key={s.id}
-                      onClick={() => setSelectedSlot(s.id)}
-                      className={`px-4 py-3 rounded-xl text-sm font-medium border-2 transition-all text-left ${
-                        selectedSlot === s.id
-                          ? "border-accent-coral bg-accent-coral/5 text-accent-coral"
-                          : "border-border text-dark-blue hover:border-accent-coral/50"
-                      }`}
-                    >
-                      {s.time}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
+          <div className="mb-8">
+            <InterviewSlotPicker
+              groups={grouped}
+              variant="selectable"
+              selectedSlotId={selectedSlot}
+              onSelect={(s) => setSelectedSlot(s.id)}
+            />
           </div>
 
           <button
@@ -593,23 +581,12 @@ function InterviewScheduledView({
         <p className="text-sm text-muted-foreground mb-6">
           Currently scheduled: <strong>{slot.date}, {slot.time}</strong>. Pick a new time below.
         </p>
-        <div className="space-y-6 mb-8">
-          {grouped.map(({ date, slots: dateSlots }) => (
-            <div key={date}>
-              <h4 className="text-sm font-bold text-dark-blue mb-2">{date}</h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {dateSlots.map(s => (
-                  <button
-                    key={s.id}
-                    onClick={() => handleReschedule(s)}
-                    className="px-4 py-3 rounded-xl text-sm font-medium border-2 border-border text-dark-blue hover:border-accent-coral/50 transition-all text-left"
-                  >
-                    {s.time}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))}
+        <div className="mb-8">
+          <InterviewSlotPicker
+            groups={grouped}
+            variant="reschedule"
+            onSelect={(s) => handleReschedule(s as any)}
+          />
         </div>
         <button onClick={() => setRescheduling(false)} className="text-sm font-semibold text-muted-foreground hover:underline">
           Cancel
@@ -827,33 +804,50 @@ function DomainApplicationCard({
   onRevalidate: () => void;
 }) {
   const stage = da.inferredStatus;
+  const [isExpanded, setIsExpanded] = useState(false);
 
   return (
     <div className="rounded-2xl border border-gray-200 overflow-hidden">
-      <div className="bg-[#E8F4FA] px-6 py-4 flex items-center justify-between">
+      <button
+        type="button"
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full bg-[#E8F4FA] px-6 py-4 flex items-center justify-between cursor-pointer"
+      >
         <h3 className="font-heading text-base font-bold text-dark-blue">{da.domainName}</h3>
-        <StageIndicator stage={stage} />
-      </div>
-      <div className="px-2">
-        {stage === "Pending" && <PendingView cycleName={cycleName} />}
-        {stage === "Rejected" && <RejectedView cycleName={cycleName} />}
-        {stage === "InvitedToInterview" && (
-          <InvitedToInterviewView domainApp={da} cycleId={cycleId} cycleName={cycleName} onBooked={onRevalidate} />
-        )}
-        {stage === "InterviewScheduled" && (
-          <InterviewScheduledView
-            domainApp={da}
-            cycleId={cycleId}
-            cycleName={cycleName}
-            slotDurationMinutes={slotDurationMinutes}
-            onCancelled={onRevalidate}
-            onRescheduled={onRevalidate}
-          />
-        )}
-        {stage === "PostInterviewPending" && <PostInterviewPendingView />}
-        {stage === "Accepted" && <AcceptedView cycleName={cycleName} />}
-        {stage === "Waitlisted" && <WaitlistedView cycleName={cycleName} />}
-      </div>
+        <div className="flex items-center gap-3">
+          <StageIndicator stage={stage} />
+          <svg
+            className={`w-5 h-5 text-gray-500 transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`}
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </div>
+      </button>
+      {isExpanded && (
+        <div className="px-2">
+          {stage === "Pending" && <PendingView cycleName={cycleName} />}
+          {stage === "Rejected" && <RejectedView cycleName={cycleName} />}
+          {stage === "InvitedToInterview" && (
+            <InvitedToInterviewView domainApp={da} cycleId={cycleId} cycleName={cycleName} onBooked={onRevalidate} />
+          )}
+          {stage === "InterviewScheduled" && (
+            <InterviewScheduledView
+              domainApp={da}
+              cycleId={cycleId}
+              cycleName={cycleName}
+              slotDurationMinutes={slotDurationMinutes}
+              onCancelled={onRevalidate}
+              onRescheduled={onRevalidate}
+            />
+          )}
+          {stage === "PostInterviewPending" && <PostInterviewPendingView />}
+          {stage === "Accepted" && <AcceptedView cycleName={cycleName} />}
+          {stage === "Waitlisted" && <WaitlistedView cycleName={cycleName} />}
+        </div>
+      )}
     </div>
   );
 }
