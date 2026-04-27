@@ -815,20 +815,6 @@ function buildSections(
   return sections;
 }
 
-// ─── ProgressBar Component ──────────────────────────────────────────────────
-
-function ProgressBar({ answered, total }: { answered: number; total: number }) {
-  const pct = total === 0 ? 0 : Math.min(100, Math.round((answered / total) * 100));
-  return (
-    <div className="h-1 bg-gray-200/70" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
-      <div
-        className="h-full bg-accent-coral transition-all duration-300"
-        style={{ width: `${pct}%` }}
-      />
-    </div>
-  );
-}
-
 // ─── SectionNav Component ───────────────────────────────────────────────────
 
 function scrollToSection(id: string) {
@@ -1350,7 +1336,6 @@ export default function PortalApply() {
     <div className="lg:max-w-6xl max-w-3xl mx-auto px-6 py-10">
       {/* Sticky header: progress bar + (mobile) section chip strip */}
       <div className="sticky top-0 z-30 -mx-6 px-6 pt-1 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 mb-2">
-        <ProgressBar answered={totalAnswered} total={totalRequired} />
         <SectionNavMobile sections={sections} activeSection={activeSection} />
       </div>
       {deadlineLabel && (
