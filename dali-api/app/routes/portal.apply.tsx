@@ -721,6 +721,232 @@ function getDomainColor(index: number) {
   return DOMAIN_COLORS[index % DOMAIN_COLORS.length];
 }
 
+// ─── Section Progress Helpers ───────────────────────────────────────────────
+
+type DomainColor = ReturnType<typeof getDomainColor>;
+
+type Section = {
+  id: string;
+  label: string;
+  color?: DomainColor;
+  requiredCount: number;
+  answeredRequiredCount: number;
+};
+
+function isAnswered(value: string | undefined) {
+  return typeof value === "string" && value.trim() !== "";
+}
+
+function computeRequiredProgress(
+  formQuestions: Question[],
+  domains: { id: string; challengeQuestions: Question[] }[],
+  selectedDomainIds: string[],
+  answers: Record<string, string>,
+  domainAnswers: Record<string, Record<string, string>>,
+) {
+  let totalRequired = 0;
+  let totalAnswered = 0;
+
+  const requiredGeneral = formQuestions.filter(q => q.required);
+  totalRequired += requiredGeneral.length;
+  totalAnswered += requiredGeneral.filter(q => isAnswered(answers[q.key])).length;
+
+  for (const domainId of selectedDomainIds) {
+    const domain = domains.find(d => d.id === domainId);
+    if (!domain) continue;
+    const requiredDomain = domain.challengeQuestions.filter(q => q.required);
+    totalRequired += requiredDomain.length;
+    totalAnswered += requiredDomain.filter(q =>
+      isAnswered(domainAnswers[domainId]?.[q.key]),
+    ).length;
+  }
+
+  return { totalRequired, totalAnswered };
+}
+
+function buildSections(
+  formQuestions: Question[],
+  domains: { id: string; name: string; challengeQuestions: Question[] }[],
+  selectedDomainIds: string[],
+  answers: Record<string, string>,
+  domainAnswers: Record<string, Record<string, string>>,
+): Section[] {
+  const sections: Section[] = [];
+
+  const beforeQuestions = formQuestions.filter(q => !q.data.afterDomains);
+  if (beforeQuestions.length > 0) {
+    const required = beforeQuestions.filter(q => q.required);
+    sections.push({
+      id: "general-before",
+      label: "General",
+      requiredCount: required.length,
+      answeredRequiredCount: required.filter(q => isAnswered(answers[q.key])).length,
+    });
+  }
+
+  for (const domainId of selectedDomainIds) {
+    const idx = domains.findIndex(d => d.id === domainId);
+    if (idx < 0) continue;
+    const domain = domains[idx];
+    if (domain.challengeQuestions.length === 0) continue;
+    const required = domain.challengeQuestions.filter(q => q.required);
+    sections.push({
+      id: `domain-${domainId}`,
+      label: domain.name,
+      color: getDomainColor(idx),
+      requiredCount: required.length,
+      answeredRequiredCount: required.filter(q =>
+        isAnswered(domainAnswers[domainId]?.[q.key]),
+      ).length,
+    });
+  }
+
+  const afterQuestions = formQuestions.filter(q => q.data.afterDomains);
+  if (afterQuestions.length > 0) {
+    const required = afterQuestions.filter(q => q.required);
+    sections.push({
+      id: "general-after",
+      label: "Anything Else",
+      requiredCount: required.length,
+      answeredRequiredCount: required.filter(q => isAnswered(answers[q.key])).length,
+    });
+  }
+
+  return sections;
+}
+
+// ─── SectionNav Component ───────────────────────────────────────────────────
+
+function scrollToSection(id: string) {
+  const el = document.getElementById(`section-${id}`);
+  if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function SectionNavMobile({
+  sections,
+  activeSection,
+}: {
+  sections: Section[];
+  activeSection: string | null;
+}) {
+  if (sections.length === 0) return null;
+  return (
+    <div className="lg:hidden flex gap-2 overflow-x-auto pb-2">
+      {sections.map(s => {
+        const isActive = s.id === activeSection;
+        const isComplete = s.requiredCount > 0 && s.answeredRequiredCount === s.requiredCount;
+        const dotColor = s.color?.bg ?? "bg-dark-blue";
+        return (
+          <button
+            key={s.id}
+            type="button"
+            onClick={() => scrollToSection(s.id)}
+            className={`shrink-0 flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+              isActive
+                ? "bg-dark-blue text-white border-dark-blue"
+                : "bg-card text-dark-blue border-border hover:border-accent-coral"
+            }`}
+          >
+            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor}`} />
+            <span>{s.label}</span>
+            {s.requiredCount > 0 && (
+              isComplete ? (
+                <svg className="w-3.5 h-3.5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              ) : (
+                <span className={isActive ? "text-white/80" : "text-muted-foreground"}>
+                  {s.answeredRequiredCount}/{s.requiredCount}
+                </span>
+              )
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function SectionNavDesktop({
+  sections,
+  activeSection,
+}: {
+  sections: Section[];
+  activeSection: string | null;
+}) {
+  if (sections.length === 0) return null;
+  return (
+    <aside className="hidden lg:block">
+      <div className="sticky top-24 space-y-1">
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 px-2">
+          Sections
+        </p>
+        {sections.map(s => {
+          const isActive = s.id === activeSection;
+          const isComplete = s.requiredCount > 0 && s.answeredRequiredCount === s.requiredCount;
+          const dotColor = s.color?.bg ?? "bg-dark-blue";
+          return (
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => scrollToSection(s.id)}
+              className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm transition text-left ${
+                isActive
+                  ? "bg-dark-blue/5 text-dark-blue font-semibold"
+                  : "text-muted-foreground hover:bg-gray-50 hover:text-dark-blue"
+              }`}
+            >
+              <span className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`} />
+              <span className="flex-1 truncate">{s.label}</span>
+              {s.requiredCount > 0 && (
+                isComplete ? (
+                  <svg className="w-4 h-4 text-green-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                ) : (
+                  <span className="text-xs text-muted-foreground shrink-0 tabular-nums">
+                    {s.answeredRequiredCount}/{s.requiredCount}
+                  </span>
+                )
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </aside>
+  );
+}
+
+// ─── BackToTopButton Component ──────────────────────────────────────────────
+
+function BackToTopButton() {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    function onScroll() {
+      setVisible(window.scrollY > 600);
+    }
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  if (!visible) return null;
+
+  return (
+    <button
+      type="button"
+      onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+      aria-label="Back to top"
+      className="fixed bottom-6 right-6 z-30 w-11 h-11 rounded-full bg-dark-blue text-white shadow-lg hover:bg-dark-blue/90 transition flex items-center justify-center"
+    >
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
+      </svg>
+    </button>
+  );
+}
+
 function formatDeadline(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", {
     timeZone: "UTC",
@@ -919,20 +1145,14 @@ export default function PortalApply() {
     }
 
     // Validate all required questions across general + selected domains
-    let totalRequired = 0;
-    let totalMissing = 0;
-
-    const requiredGeneral = (formQuestions as Question[]).filter(q => q.required);
-    totalRequired += requiredGeneral.length;
-    totalMissing += requiredGeneral.filter(q => !answers[q.key]?.trim()).length;
-
-    for (const domainId of selectedDomainIds) {
-      const domain = domains.find((d: any) => d.id === domainId);
-      if (!domain) continue;
-      const requiredDomain = (domain.challengeQuestions as Question[]).filter((q: Question) => q.required);
-      totalRequired += requiredDomain.length;
-      totalMissing += requiredDomain.filter((q: Question) => !(domainAnswers[domainId]?.[q.key]?.trim())).length;
-    }
+    const { totalRequired, totalAnswered } = computeRequiredProgress(
+      formQuestions as Question[],
+      domains as { id: string; name: string; challengeQuestions: Question[] }[],
+      selectedDomainIds,
+      answers,
+      domainAnswers,
+    );
+    const totalMissing = totalRequired - totalAnswered;
 
     if (totalMissing > 0) {
       setError(`Please answer all required questions (${totalMissing} of ${totalRequired} unanswered).`);
@@ -1004,6 +1224,45 @@ export default function PortalApply() {
     }
   }, [submitFetcher.state, submitFetcher.data]);
 
+  // Derive sections + progress from current answers
+  const sections = buildSections(
+    formQuestions as Question[],
+    domains as { id: string; name: string; challengeQuestions: Question[] }[],
+    selectedDomainIds,
+    answers,
+    domainAnswers,
+  );
+  const { totalRequired, totalAnswered } = computeRequiredProgress(
+    formQuestions as Question[],
+    domains as { id: string; name: string; challengeQuestions: Question[] }[],
+    selectedDomainIds,
+    answers,
+    domainAnswers,
+  );
+  const [activeSection, setActiveSection] = useState<string | null>(null);
+  const sectionIdsKey = sections.map(s => s.id).join(",");
+
+  useEffect(() => {
+    if (!draft || sections.length === 0) return;
+    const observer = new IntersectionObserver(
+      entries => {
+        const visible = entries.filter(e => e.isIntersecting);
+        if (visible.length === 0) return;
+        const top = visible.reduce((a, b) =>
+          a.boundingClientRect.top < b.boundingClientRect.top ? a : b,
+        );
+        const id = top.target.id.replace(/^section-/, "");
+        setActiveSection(id);
+      },
+      { rootMargin: "-120px 0px -55% 0px", threshold: 0 },
+    );
+    for (const s of sections) {
+      const el = document.getElementById(`section-${s.id}`);
+      if (el) observer.observe(el);
+    }
+    return () => observer.disconnect();
+  }, [draft, sectionIdsKey]);
+
   // Render domain pill selector (shared between both states)
   function renderDomainSelector() {
     return (
@@ -1074,21 +1333,10 @@ export default function PortalApply() {
 
   // Application form (single screen with inline domain management)
   return (
-    <div className="max-w-3xl mx-auto px-6 py-10">
-      <div className="flex items-center justify-between mb-2">
-        <h2 className="font-heading text-xl font-bold text-dark-blue">{cycleName} Application</h2>
-        {submitting ? (
-          <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-gray-100 text-gray-600 flex items-center gap-1">
-            <span className="inline-block w-3 h-3 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
-            Submitting...
-          </span>
-        ) : Object.keys(urlWarnings).length > 0 ? (
-          <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-amber-100 text-amber-700">Action required</span>
-        ) : isAlreadySubmitted ? (
-          <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-green-100 text-green-700">Submitted</span>
-        ) : (
-          <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-blue-100 text-blue-700">Draft</span>
-        )}
+    <div className="lg:max-w-6xl max-w-3xl mx-auto px-6 py-10">
+      {/* Sticky header: (mobile) section chip strip */}
+      <div className="sticky top-0 z-30 -mx-6 px-6 pt-1 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 mb-2">
+        <SectionNavMobile sections={sections} activeSection={activeSection} />
       </div>
       {deadlineLabel && (
         <p className="text-sm text-accent-coral font-medium mb-1">
@@ -1099,15 +1347,36 @@ export default function PortalApply() {
         Fill out the form below. Your progress is saved automatically.
       </p>
 
-      <div className="space-y-8">
-        {/* Domain selector (interactive) */}
-        {renderDomainSelector()}
+      <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_220px] lg:gap-10">
+        <div className="max-w-3xl">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="font-heading text-xl font-bold text-dark-blue">{cycleName} Application</h2>
+            {submitting ? (
+              <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-gray-100 text-gray-600 flex items-center gap-1">
+                <span className="inline-block w-3 h-3 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+                Submitting...
+              </span>
+            ) : Object.keys(urlWarnings).length > 0 ? (
+              <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-amber-100 text-amber-700">Action required</span>
+            ) : isAlreadySubmitted ? (
+              <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-green-100 text-green-700">Submitted</span>
+            ) : (
+              <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-blue-100 text-blue-700">Draft</span>
+            )}
+          </div>
+          <p className="text-sm text-muted-foreground mb-8">
+            Fill out the form below. Your progress is saved automatically.
+          </p>
+
+          <div className="space-y-8">
+            {/* Domain selector (interactive) */}
+            {renderDomainSelector()}
 
         {/* General questions (before domains) */}
         {(() => {
           const beforeQuestions = (formQuestions as Question[]).filter(q => !q.data.afterDomains);
           return beforeQuestions.length > 0 ? (
-            <div className="rounded-2xl bg-[#E8F4FA] px-6 py-5 space-y-6">
+            <div id="section-general-before" className="rounded-2xl bg-[#E8F4FA] px-6 py-5 space-y-6 scroll-mt-24">
               <h3 className="font-heading text-sm font-bold text-dark-blue uppercase tracking-wider">General Questions</h3>
               {beforeQuestions.map(q => (
                 <div key={q.key} id={`question-${q.key}`}>
@@ -1142,7 +1411,7 @@ export default function PortalApply() {
           const color = getDomainColor(domainIndex);
 
           return (
-            <div key={domainId} className={`rounded-2xl ${color.cardBg} px-6 py-5 space-y-6`}>
+            <div key={domainId} id={`section-domain-${domainId}`} className={`rounded-2xl ${color.cardBg} px-6 py-5 space-y-6 scroll-mt-24`}>
               <div className="flex items-center justify-between">
                 <h3 className={`font-heading text-sm font-bold uppercase tracking-wider ${color.text}`}>
                   {domain.name} Questions
@@ -1186,7 +1455,7 @@ export default function PortalApply() {
         {(() => {
           const afterQuestions = (formQuestions as Question[]).filter(q => q.data.afterDomains);
           return afterQuestions.length > 0 ? (
-            <div className="rounded-2xl bg-[#E8F4FA] px-6 py-5 space-y-6">
+            <div id="section-general-after" className="rounded-2xl bg-[#E8F4FA] px-6 py-5 space-y-6 scroll-mt-24">
               <h3 className="font-heading text-sm font-bold text-dark-blue uppercase tracking-wider">Anything Else</h3>
               {afterQuestions.map(q => (
                 <div key={q.key} id={`question-${q.key}`}>
@@ -1248,6 +1517,12 @@ export default function PortalApply() {
           </span>
         </div>
       </div>
+        </div>
+
+        <SectionNavDesktop sections={sections} activeSection={activeSection} />
+      </div>
+
+      <BackToTopButton />
 
       {/* URL warning modal */}
       <Modal
