@@ -92,7 +92,9 @@ export async function loader({ request }: Route.LoaderArgs) {
       ? {
           id: draft.id,
           answers: draft.answers as Record<string, string>,
-          selectedDomainIds: draft.domainApplications.map(da => da.challengeVersion.domainId),
+          selectedDomainIds: draft.domainApplications
+            .filter(da => da.selected)
+            .map(da => da.challengeVersion.domainId),
           domainApplications: draft.domainApplications.map(da => ({
             id: da.id,
             domainId: da.challengeVersion.domainId,
@@ -204,8 +206,25 @@ export async function action({ request }: Route.ActionArgs) {
       }
     }
 
-    // Don't delete removed domains — keep answers intact for re-adding.
-    // Frontend tracks selectedDomainIds locally and only renders selected ones.
+    // Mark deselected domains as not selected (keep records for answer preservation)
+    const toDeselect = existing.filter(da => !newDomainIds.includes(da.challengeVersion.domainId!));
+    if (toDeselect.length > 0) {
+      await prisma.domainApplication.updateMany({
+        where: { id: { in: toDeselect.map(da => da.id) } },
+        data: { selected: false },
+      });
+    }
+
+    // Mark re-selected domains as selected
+    const toReselect = existing.filter(
+      da => newDomainIds.includes(da.challengeVersion.domainId!) && !da.selected,
+    );
+    if (toReselect.length > 0) {
+      await prisma.domainApplication.updateMany({
+        where: { id: { in: toReselect.map(da => da.id) } },
+        data: { selected: true },
+      });
+    }
 
     // Return full updated draft
     const updatedApp = await prisma.application.findUnique({
@@ -278,6 +297,27 @@ export async function action({ request }: Route.ActionArgs) {
       await prisma.domainApplication.update({
         where: { id: da.domainApplicationId },
         data: { answers: da.answers },
+      });
+    }
+
+    // Persist final domain selection state
+    const selectedDomainIds = JSON.parse(formData.get("selectedDomainIds") as string) as string[];
+    const allDas = await prisma.domainApplication.findMany({
+      where: { applicationId },
+      include: { challengeVersion: { select: { domainId: true } } },
+    });
+    const toSelect = allDas.filter(da => selectedDomainIds.includes(da.challengeVersion.domainId!) && !da.selected);
+    const toDeselect = allDas.filter(da => !selectedDomainIds.includes(da.challengeVersion.domainId!) && da.selected);
+    if (toSelect.length > 0) {
+      await prisma.domainApplication.updateMany({
+        where: { id: { in: toSelect.map(da => da.id) } },
+        data: { selected: true },
+      });
+    }
+    if (toDeselect.length > 0) {
+      await prisma.domainApplication.updateMany({
+        where: { id: { in: toDeselect.map(da => da.id) } },
+        data: { selected: false },
       });
     }
 
@@ -712,10 +752,12 @@ export default function PortalApply() {
     if (!draft) return;
     setSaving(true);
     try {
-      const daPayload = (draft.domainApplications ?? []).map((da: any) => ({
-        domainApplicationId: da.id,
-        answers: domainAnswers[da.domainId] ?? {},
-      }));
+      const daPayload = (draft.domainApplications ?? [])
+        .filter((da: any) => selectedDomainIds.includes(da.domainId))
+        .map((da: any) => ({
+          domainApplicationId: da.id,
+          answers: domainAnswers[da.domainId] ?? {},
+        }));
 
       await fetch(`/portal/apply`, {
         method: "POST",
@@ -878,6 +920,7 @@ export default function PortalApply() {
     form.set("applicationId", draft.id);
     form.set("answers", JSON.stringify(answers));
     form.set("domainAnswers", JSON.stringify(daPayload));
+    form.set("selectedDomainIds", JSON.stringify(selectedDomainIds));
     form.set("urlQuestions", JSON.stringify(force ? [] : urlQuestions));
 
     submitFetcher.submit(form, { method: "post" });
