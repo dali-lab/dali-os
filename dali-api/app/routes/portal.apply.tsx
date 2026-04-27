@@ -959,6 +959,8 @@ function BackToTopButton() {
       </svg>
     </button>
   );
+}
+
 function formatDeadline(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", {
     timeZone: "UTC",
