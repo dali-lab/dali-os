@@ -12,6 +12,7 @@ import {
   fileMatchesAccept,
 } from "~/lib/file-validation";
 import type { Question } from "~/types";
+import { Modal } from "~/components/Modal";
 
 // ─── Loader ──────────────────────────────────────────────────────────────────
 
@@ -958,6 +959,16 @@ export default function PortalApply() {
     submitFetcher.submit(form, { method: "post" });
   }
 
+  function scrollToFirstWarning() {
+    const firstKey = Object.keys(urlWarnings)[0];
+    if (!firstKey) return;
+    const el = document.getElementById(`question-${firstKey}`);
+    if (el) {
+      // Small delay to let the modal close before scrolling
+      setTimeout(() => el.scrollIntoView({ behavior: "smooth", block: "center" }), 50);
+    }
+  }
+
   // Handle submit response (urlWarnings) — redirects are handled automatically by React Router
   useEffect(() => {
     if (submitFetcher.state === "idle" && submitFetcher.data) {
@@ -1072,7 +1083,7 @@ export default function PortalApply() {
             <div className="rounded-2xl bg-[#E8F4FA] px-6 py-5 space-y-6">
               <h3 className="font-heading text-sm font-bold text-dark-blue uppercase tracking-wider">General Questions</h3>
               {beforeQuestions.map(q => (
-                <div key={q.key}>
+                <div key={q.key} id={`question-${q.key}`}>
                   <label className="block text-sm font-semibold text-dark-blue mb-1">
                     {q.data.label}
                     {q.required && <span className="text-accent-coral ml-0.5">*</span>}
@@ -1120,7 +1131,7 @@ export default function PortalApply() {
                 </button>
               </div>
               {(domain.challengeQuestions as Question[]).map((q: Question) => (
-                <div key={q.key}>
+                <div key={q.key} id={`question-${q.key}`}>
                   <label className="block text-sm font-semibold text-dark-blue mb-1">
                     {q.data.label}
                     {q.required && <span className="text-accent-coral ml-0.5">*</span>}
@@ -1151,7 +1162,7 @@ export default function PortalApply() {
             <div className="rounded-2xl bg-[#E8F4FA] px-6 py-5 space-y-6">
               <h3 className="font-heading text-sm font-bold text-dark-blue uppercase tracking-wider">Anything Else</h3>
               {afterQuestions.map(q => (
-                <div key={q.key}>
+                <div key={q.key} id={`question-${q.key}`}>
                   <label className="block text-sm font-semibold text-dark-blue mb-1">
                     {q.data.label}
                     {q.required && <span className="text-accent-coral ml-0.5">*</span>}
@@ -1212,48 +1223,51 @@ export default function PortalApply() {
       </div>
 
       {/* URL warning modal */}
-      {showWarningModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full mx-4 p-6">
-            <h3 className="font-heading text-base font-bold text-dark-blue mb-2">Some links may be inaccessible</h3>
-            <p className="text-sm text-gray-600 mb-4">
-              One or more URLs appear to be private or inaccessible. Reviewers may not be able to view them.
-            </p>
-            <ul className="space-y-2 mb-5">
-              {Object.entries(urlWarnings).map(([key, message]) => {
-                const allQuestions = [
-                  ...(formQuestions as Question[]),
-                  ...(domains as any[]).flatMap((d: any) => d.challengeQuestions as Question[]),
-                ];
-                const q = allQuestions.find(q => q.key === key);
-                return (
-                  <li key={key} className="text-sm text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
-                    <span className="font-semibold">{q?.data.label ?? key}:</span> {message}
-                  </li>
-                );
-              })}
-            </ul>
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={() => {
-                  setShowWarningModal(false);
-                  warningBannerRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-                }}
-                className="px-5 py-2 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-accent-coral hover:text-accent-coral transition"
-              >
-                Go Back and Fix
-              </button>
-              <button
-                onClick={() => { setShowWarningModal(false); handleSubmit(true); }}
-                disabled={submitting}
-                className="px-5 py-2 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition disabled:opacity-50"
-              >
-                Submit Anyway
-              </button>
-            </div>
-          </div>
+      <Modal
+        open={showWarningModal}
+        onClose={() => {
+          setShowWarningModal(false);
+          scrollToFirstWarning();
+        }}
+        labelledBy="url-warning-modal-title"
+      >
+        <h3 id="url-warning-modal-title" className="font-heading text-base font-bold text-dark-blue mb-2">Some links may be inaccessible</h3>
+        <p className="text-sm text-gray-600 mb-4">
+          One or more URLs appear to be private or inaccessible. Reviewers may not be able to view them.
+        </p>
+        <ul className="space-y-2 mb-5">
+          {Object.entries(urlWarnings).map(([key, message]) => {
+            const allQuestions = [
+              ...(formQuestions as Question[]),
+              ...(domains as any[]).flatMap((d: any) => d.challengeQuestions as Question[]),
+            ];
+            const q = allQuestions.find(q => q.key === key);
+            return (
+              <li key={key} className="text-sm text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
+                <span className="font-semibold">{q?.data.label ?? key}:</span> {message}
+              </li>
+            );
+          })}
+        </ul>
+        <div className="flex gap-3 justify-end">
+          <button
+            onClick={() => {
+              setShowWarningModal(false);
+              scrollToFirstWarning();
+            }}
+            className="px-5 py-2 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-accent-coral hover:text-accent-coral transition"
+          >
+            Go Back and Fix
+          </button>
+          <button
+            onClick={() => { setShowWarningModal(false); handleSubmit(true); }}
+            disabled={submitting}
+            className="px-5 py-2 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition disabled:opacity-50"
+          >
+            Submit Anyway
+          </button>
         </div>
-      )}
+      </Modal>
     </div>
   );
 }
