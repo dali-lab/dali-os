@@ -27,19 +27,6 @@ model User {
   firstName String
   lastName  String
 
-  profilePictureKey String? // S3 object key for profile photo
-  graduationYear    Int?
-  major             String? // e.g. "Math+CS", "Computer Science"
-  githubUrl         String?
-  linkedinUrl       String?
-  portfolioUrl      String?
-
-  // Google API tokens (for calendar integration etc.) — populated when user
-  // signs in via Google with appropriate scopes
-  googleAccessToken    String?
-  googleRefreshToken   String?
-  googleTokenExpiresAt DateTime?
-
   daliMember                    DALIMember?
   applicationCycleStatusUpdates ApplicationCycleStatusUpdate[]
   challengeVersions             ChallengeVersion[]
@@ -67,6 +54,19 @@ model DALIMember {
   did            String? @unique // Dartmouth D-number e.g. "F00709M"
 
   roles MemberRole[] @default([])
+
+  // profile (editable via /account)
+  profilePictureKey String?
+  graduationYear    Int?
+  major             String?
+  githubUrl         String?
+  linkedinUrl       String?
+  portfolioUrl      String?
+
+  // Google API tokens (for calendar integration etc.)
+  googleAccessToken    String?
+  googleRefreshToken   String?
+  googleTokenExpiresAt DateTime?
 
   domainLeadAssignments DomainLeadAssignment[]
   cycleReviewers        CycleReviewer[]

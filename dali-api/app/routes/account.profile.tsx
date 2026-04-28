@@ -1,58 +1,71 @@
-import { redirect, useLoaderData, Form, useNavigation } from 'react-router'
+import { redirect, useLoaderData, useActionData, useSearchParams, Form, useNavigation } from 'react-router'
 import { useState, useRef } from 'react'
 import type { Route } from './+types/account.profile'
 import { requireAuth } from '~/lib/auth'
 import { prisma } from '~/lib/db'
 import { getDownloadUrl } from '~/lib/s3'
+import { getUserRolesDetailed } from '~/lib/roles'
 import { Avatar } from '~/components/Avatar'
-import { Camera } from 'lucide-react'
+import { Camera, X, CheckCircle, AlertCircle, XCircle, Calendar } from 'lucide-react'
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request)
   if (!auth.ok) return redirect('/login')
 
-  const user = await prisma.user.findUnique({
-    where: { id: auth.user.sub },
+  const member = await prisma.dALIMember.findFirst({
+    where: { userId: auth.user.sub },
     select: {
-      id: true,
-      firstName: true,
-      lastName: true,
       profilePictureKey: true,
       graduationYear: true,
       major: true,
       githubUrl: true,
       linkedinUrl: true,
       portfolioUrl: true,
+      daliEmail: true,
+      dartmouthEmail: true,
+      did: true,
+      googleRefreshToken: true,
+      googleTokenExpiresAt: true,
     },
   })
+  if (!member) return redirect('/login')
 
+  const user = await prisma.user.findUnique({
+    where: { id: auth.user.sub },
+    select: { firstName: true, lastName: true, dartmouthEmail: true },
+  })
   if (!user) return redirect('/login')
 
   let profilePictureUrl: string | null = null
-  if (user.profilePictureKey) {
-    profilePictureUrl = await getDownloadUrl(user.profilePictureKey)
+  if (member.profilePictureKey) {
+    profilePictureUrl = await getDownloadUrl(member.profilePictureKey)
   }
 
-  // Fetch member identifiers (read-only display)
-  const member = await prisma.dALIMember.findFirst({
-    where: { userId: auth.user.sub },
-    select: { daliEmail: true, dartmouthEmail: true, did: true },
-  })
+  const roles = await getUserRolesDetailed(auth.user.sub)
+
+  const hasRefreshToken = !!member.googleRefreshToken
+  const tokenExpired = member.googleTokenExpiresAt ? member.googleTokenExpiresAt < new Date() : true
 
   return {
     user: {
-      id: user.id,
       firstName: user.firstName,
       lastName: user.lastName,
-      profilePictureKey: user.profilePictureKey,
-      graduationYear: user.graduationYear,
-      major: user.major,
-      githubUrl: user.githubUrl,
-      linkedinUrl: user.linkedinUrl,
-      portfolioUrl: user.portfolioUrl,
+      profilePictureKey: member.profilePictureKey,
+      graduationYear: member.graduationYear,
+      major: member.major,
+      githubUrl: member.githubUrl,
+      linkedinUrl: member.linkedinUrl,
+      portfolioUrl: member.portfolioUrl,
     },
     profilePictureUrl,
-    member,
+    member: {
+      daliEmail: member.daliEmail,
+      dartmouthEmail: member.dartmouthEmail ?? user.dartmouthEmail,
+      did: member.did,
+    },
+    roles,
+    calendarConnected: hasRefreshToken,
+    calendarTokenExpired: hasRefreshToken && tokenExpired,
   }
 }
 
@@ -93,8 +106,14 @@ export async function action({ request }: Route.ActionArgs) {
     }
   }
 
+  // Sync names on both User and DALIMember
   await prisma.user.update({
     where: { id: auth.user.sub },
+    data: { firstName, lastName },
+  })
+
+  await prisma.dALIMember.update({
+    where: { userId: auth.user.sub },
     data: {
       firstName,
       lastName,
@@ -107,13 +126,20 @@ export async function action({ request }: Route.ActionArgs) {
     },
   })
 
-  return redirect('/account')
+  return redirect('/account?saved=1')
 }
 
-export default function ProfileTab() {
-  const { user, profilePictureUrl, member } = useLoaderData<typeof loader>()
+const inputClass = 'w-full px-3 py-2 bg-card border border-input rounded-lg text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring'
+const disabledInputClass = 'w-full px-3 py-2 bg-muted border border-input rounded-lg text-sm text-muted-foreground cursor-not-allowed'
+
+export default function AccountPage() {
+  const { user, profilePictureUrl, member, roles, calendarConnected, calendarTokenExpired } = useLoaderData<typeof loader>()
+  const actionData = useActionData<typeof action>()
+  const [searchParams] = useSearchParams()
   const navigation = useNavigation()
   const saving = navigation.state === 'submitting'
+  const justSaved = searchParams.get('saved') === '1'
+  const calendarStatus = searchParams.get('calendar')
 
   const [avatarPreview, setAvatarPreview] = useState<string | null>(profilePictureUrl)
   const [pictureKey, setPictureKey] = useState<string | null>(user.profilePictureKey)
@@ -121,7 +147,13 @@ export default function ProfileTab() {
   const [uploadError, setUploadError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  const hasPhoto = avatarPreview !== null
   const initials = `${user.firstName[0] ?? ''}${user.lastName[0] ?? ''}`.toUpperCase() || '?'
+
+  let calStatus: 'connected' | 'expired' | 'disconnected'
+  if (!calendarConnected) calStatus = 'disconnected'
+  else if (calendarTokenExpired) calStatus = 'expired'
+  else calStatus = 'connected'
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -171,20 +203,43 @@ export default function ProfileTab() {
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="font-heading font-bold text-xl text-foreground">Profile</h2>
-        <p className="text-sm text-muted-foreground mt-1">Manage your personal information.</p>
-      </div>
+    <div className="space-y-8">
+      {/* Banners */}
+      {justSaved && (
+        <div className="flex items-center gap-2 px-4 py-3 bg-accent-green/20 border border-accent-green/30 rounded-lg text-sm text-foreground">
+          <CheckCircle className="w-4 h-4 text-accent-green flex-shrink-0" />
+          Profile saved.
+        </div>
+      )}
+
+      {calendarStatus === 'connected' && (
+        <div className="flex items-center gap-2 px-4 py-3 bg-accent-green/20 border border-accent-green/30 rounded-lg text-sm text-foreground">
+          <CheckCircle className="w-4 h-4 text-accent-green flex-shrink-0" />
+          Google Calendar connected successfully.
+        </div>
+      )}
+
+      {calendarStatus === 'error' && (
+        <div className="flex items-center gap-2 px-4 py-3 bg-destructive/10 border border-destructive/30 rounded-lg text-sm text-destructive">
+          <AlertCircle className="w-4 h-4 flex-shrink-0" />
+          Failed to connect Google Calendar. Please try again.
+        </div>
+      )}
+
+      {actionData?.error && (
+        <div className="px-4 py-3 bg-destructive/10 border border-destructive/30 rounded-lg text-sm text-destructive">
+          {actionData.error}
+        </div>
+      )}
 
       <Form method="post" className="space-y-6">
         {pictureKey !== undefined && (
           <input type="hidden" name="profilePictureKey" value={pictureKey ?? ''} />
         )}
 
-        {/* Profile picture */}
-        <div className="flex items-center gap-4">
-          <div className="relative">
+        {/* Profile picture + name + roles */}
+        <div className="flex items-start gap-5">
+          <div className="relative flex-shrink-0">
             <Avatar src={avatarPreview} fallback={initials} size={80} />
             <button
               type="button"
@@ -195,78 +250,83 @@ export default function ProfileTab() {
               <Camera className="w-3.5 h-3.5" />
             </button>
           </div>
-          <div>
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
-              className="text-sm font-medium text-accent-coral hover:text-accent-coral/80 transition"
-            >
-              {uploading ? 'Uploading...' : 'Change photo'}
-            </button>
-            {uploadError && <p className="text-xs text-destructive mt-1">{uploadError}</p>}
+          <div className="flex-1 min-w-0 space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label htmlFor="firstName" className="block text-sm font-medium text-foreground mb-1">First name</label>
+                <input id="firstName" name="firstName" type="text" required defaultValue={user.firstName} className={inputClass} />
+              </div>
+              <div>
+                <label htmlFor="lastName" className="block text-sm font-medium text-foreground mb-1">Last name</label>
+                <input id="lastName" name="lastName" type="text" required defaultValue={user.lastName} className={inputClass} />
+              </div>
+            </div>
+            {roles.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {roles.map((role) => (
+                  <span key={role} className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-accent-coral/10 text-accent-coral">
+                    {role}
+                  </span>
+                ))}
+              </div>
+            )}
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+                className="text-sm font-medium text-accent-coral hover:text-accent-coral/80 transition"
+              >
+                {uploading ? 'Uploading...' : 'Change photo'}
+              </button>
+              {hasPhoto && (
+                <button
+                  type="button"
+                  onClick={() => { setPictureKey(null); setAvatarPreview(null) }}
+                  className="flex items-center gap-1 text-sm text-muted-foreground hover:text-destructive transition"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  Remove
+                </button>
+              )}
+            </div>
+            {uploadError && <p className="text-xs text-destructive">{uploadError}</p>}
           </div>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            onChange={handleFileChange}
-            className="hidden"
-          />
+          <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
         </div>
 
-        {/* Name fields */}
+        {/* Details */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label htmlFor="firstName" className="block text-sm font-medium text-foreground mb-1">First name</label>
-            <input
-              id="firstName"
-              name="firstName"
-              type="text"
-              required
-              defaultValue={user.firstName}
-              className="w-full px-3 py-2 bg-card border border-input rounded-lg text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-            />
+            <label htmlFor="graduationYear" className="block text-sm font-medium text-foreground mb-1">Graduation year</label>
+            <input id="graduationYear" name="graduationYear" type="number" min={2000} max={2040} defaultValue={user.graduationYear ?? ''} placeholder="e.g. 2027" className={inputClass} />
           </div>
           <div>
-            <label htmlFor="lastName" className="block text-sm font-medium text-foreground mb-1">Last name</label>
-            <input
-              id="lastName"
-              name="lastName"
-              type="text"
-              required
-              defaultValue={user.lastName}
-              className="w-full px-3 py-2 bg-card border border-input rounded-lg text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-            />
+            <label htmlFor="major" className="block text-sm font-medium text-foreground mb-1">Major / Minor</label>
+            <input id="major" name="major" type="text" defaultValue={user.major ?? ''} placeholder="e.g. Math+CS" className={inputClass} />
           </div>
         </div>
 
-        {/* Graduation year */}
-        <div className="max-w-xs">
-          <label htmlFor="graduationYear" className="block text-sm font-medium text-foreground mb-1">Graduation year</label>
-          <input
-            id="graduationYear"
-            name="graduationYear"
-            type="number"
-            min={2000}
-            max={2040}
-            defaultValue={user.graduationYear ?? ''}
-            placeholder="e.g. 2027"
-            className="w-full px-3 py-2 bg-card border border-input rounded-lg text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-          />
-        </div>
-
-        {/* Major */}
-        <div className="max-w-xs">
-          <label htmlFor="major" className="block text-sm font-medium text-foreground mb-1">Major / Minor</label>
-          <input
-            id="major"
-            name="major"
-            type="text"
-            defaultValue={user.major ?? ''}
-            placeholder="e.g. Math+CS"
-            className="w-full px-3 py-2 bg-card border border-input rounded-lg text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-          />
+        {/* Emails (read-only) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {member.daliEmail && (
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1">DALI email</label>
+              <input type="text" value={member.daliEmail} disabled className={disabledInputClass} />
+            </div>
+          )}
+          {member.dartmouthEmail && (
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1">Dartmouth email</label>
+              <input type="text" value={member.dartmouthEmail} disabled className={disabledInputClass} />
+            </div>
+          )}
+          {member.did && (
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1">DID</label>
+              <input type="text" value={member.did} disabled className={`${disabledInputClass} font-mono`} />
+            </div>
+          )}
         </div>
 
         {/* Links */}
@@ -274,36 +334,15 @@ export default function ProfileTab() {
           <h3 className="text-sm font-medium text-foreground">Links</h3>
           <div>
             <label htmlFor="githubUrl" className="block text-xs text-muted-foreground mb-1">GitHub</label>
-            <input
-              id="githubUrl"
-              name="githubUrl"
-              type="url"
-              defaultValue={user.githubUrl ?? ''}
-              placeholder="https://github.com/username"
-              className="w-full px-3 py-2 bg-card border border-input rounded-lg text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-            />
+            <input id="githubUrl" name="githubUrl" type="url" defaultValue={user.githubUrl ?? ''} placeholder="https://github.com/username" className={inputClass} />
           </div>
           <div>
             <label htmlFor="linkedinUrl" className="block text-xs text-muted-foreground mb-1">LinkedIn</label>
-            <input
-              id="linkedinUrl"
-              name="linkedinUrl"
-              type="url"
-              defaultValue={user.linkedinUrl ?? ''}
-              placeholder="https://linkedin.com/in/username"
-              className="w-full px-3 py-2 bg-card border border-input rounded-lg text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-            />
+            <input id="linkedinUrl" name="linkedinUrl" type="url" defaultValue={user.linkedinUrl ?? ''} placeholder="https://linkedin.com/in/username" className={inputClass} />
           </div>
           <div>
             <label htmlFor="portfolioUrl" className="block text-xs text-muted-foreground mb-1">Portfolio</label>
-            <input
-              id="portfolioUrl"
-              name="portfolioUrl"
-              type="url"
-              defaultValue={user.portfolioUrl ?? ''}
-              placeholder="https://yoursite.com"
-              className="w-full px-3 py-2 bg-card border border-input rounded-lg text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-            />
+            <input id="portfolioUrl" name="portfolioUrl" type="url" defaultValue={user.portfolioUrl ?? ''} placeholder="https://yoursite.com" className={inputClass} />
           </div>
         </div>
 
@@ -319,35 +358,48 @@ export default function ProfileTab() {
         </div>
       </Form>
 
-      {/* Member identifiers (read-only) */}
-      {member && (
-        <div className="space-y-4 pt-2">
-          <div>
-            <h3 className="text-sm font-medium text-foreground">Identifiers</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">These are managed by DALI and cannot be edited here.</p>
+      {/* Google Calendar */}
+      <div className="bg-card border border-border rounded-lg p-4">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
+              <Calendar className="w-4.5 h-4.5 text-muted-foreground" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-foreground">Google Calendar</h3>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                {calStatus === 'connected' && (
+                  <>
+                    <CheckCircle className="w-3 h-3 text-accent-green" />
+                    <span className="text-xs text-accent-green font-medium">Connected</span>
+                  </>
+                )}
+                {calStatus === 'expired' && (
+                  <>
+                    <AlertCircle className="w-3 h-3 text-accent-coral" />
+                    <span className="text-xs text-accent-coral font-medium">Token expired</span>
+                  </>
+                )}
+                {calStatus === 'disconnected' && (
+                  <>
+                    <XCircle className="w-3 h-3 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground font-medium">Not connected</span>
+                  </>
+                )}
+              </div>
+            </div>
           </div>
-          <div className="bg-card border border-border rounded-lg divide-y divide-border">
-            {member.daliEmail && (
-              <div className="flex items-center justify-between px-4 py-3">
-                <span className="text-xs text-muted-foreground">DALI Email</span>
-                <span className="text-sm text-foreground">{member.daliEmail}</span>
-              </div>
-            )}
-            {member.dartmouthEmail && (
-              <div className="flex items-center justify-between px-4 py-3">
-                <span className="text-xs text-muted-foreground">Dartmouth Email</span>
-                <span className="text-sm text-foreground">{member.dartmouthEmail}</span>
-              </div>
-            )}
-            {member.did && (
-              <div className="flex items-center justify-between px-4 py-3">
-                <span className="text-xs text-muted-foreground">DID</span>
-                <span className="text-sm font-mono text-foreground">{member.did}</span>
-              </div>
-            )}
-          </div>
+
+          <Form method="post" action="/account/reconnect-calendar">
+            <button
+              type="submit"
+              className="px-3 py-1.5 text-xs font-medium rounded-lg border border-border text-foreground hover:bg-muted transition"
+            >
+              {calStatus === 'connected' ? 'Reconnect' : 'Connect'}
+            </button>
+          </Form>
         </div>
-      )}
+      </div>
     </div>
   )
 }

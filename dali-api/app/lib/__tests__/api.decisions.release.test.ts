@@ -12,14 +12,13 @@ import { sendEmail } from "~/lib/gmail";
 import { action } from "~/routes/api.decisions.$id.release";
 
 const mockPrisma = prisma as unknown as {
-  dALIMember: { findFirst: ReturnType<typeof vi.fn> };
+  dALIMember: { findFirst: ReturnType<typeof vi.fn>; findUnique: ReturnType<typeof vi.fn> };
   decision: {
     findUnique: ReturnType<typeof vi.fn>;
     create: ReturnType<typeof vi.fn>;
   };
   domainApplication: { findUnique: ReturnType<typeof vi.fn> };
   cycleDecisionEmail: { findUnique: ReturnType<typeof vi.fn> };
-  user: { findUnique: ReturnType<typeof vi.fn> };
 };
 
 const USER_ID = "user-hl";
@@ -63,16 +62,15 @@ function setupApplicantContext(opts: { domainName?: string | null } = {}) {
       },
     },
   });
-  mockPrisma.user.findUnique.mockResolvedValue({ googleRefreshToken: "gmail-rt" });
+  mockPrisma.dALIMember.findUnique.mockResolvedValue({ googleRefreshToken: "gmail-rt" });
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
-  (mockPrisma as any).dALIMember = { findFirst: vi.fn() };
+  (mockPrisma as any).dALIMember = { findFirst: vi.fn(), findUnique: vi.fn() };
   (mockPrisma as any).decision = { findUnique: vi.fn(), create: vi.fn() };
   (mockPrisma as any).domainApplication = { findUnique: vi.fn() };
   (mockPrisma as any).cycleDecisionEmail = { findUnique: vi.fn() };
-  (mockPrisma as any).user = { findUnique: vi.fn() };
   vi.mocked(sendEmail).mockResolvedValue(undefined as any);
 });
 
@@ -220,7 +218,7 @@ describe("POST /api/decisions/:id/release", () => {
         },
       },
     });
-    mockPrisma.user.findUnique.mockResolvedValue({ googleRefreshToken: "gmail-rt" });
+    mockPrisma.dALIMember.findUnique.mockResolvedValue({ googleRefreshToken: "gmail-rt" });
     mockPrisma.cycleDecisionEmail.findUnique.mockResolvedValue({
       applicationCycleId: CYCLE_ID,
       decisionType: "InvitedToInterview",

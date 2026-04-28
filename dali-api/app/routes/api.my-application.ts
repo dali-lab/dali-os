@@ -166,12 +166,12 @@ export async function action({ request }: Route.ActionArgs) {
 
   // Send confirmation email (best-effort — don't fail the submission if email fails)
   try {
-    const gmailUser = await prisma.user.findUnique({
+    const gmailMember = await prisma.dALIMember.findUnique({
       where: { daliEmail: GMAIL_USER },
       select: { googleRefreshToken: true },
     });
     const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (gmailUser?.googleRefreshToken && user) {
+    if (gmailMember?.googleRefreshToken && user) {
       const to = user.dartmouthEmail ?? user.daliEmail ?? "";
       if (to) {
         // ApplicationReceived still uses the legacy global-by-type lookup —
@@ -184,7 +184,7 @@ export async function action({ request }: Route.ActionArgs) {
           // ApplicationReceived isn't tied to a single domain (an applicant
           // may apply to multiple), so {{domain}} resolves to empty here.
           const { subject, html } = renderEmail(template, { firstName: user.firstName });
-          await sendEmail({ refreshToken: gmailUser.googleRefreshToken, to, subject, html });
+          await sendEmail({ refreshToken: gmailMember.googleRefreshToken, to, subject, html });
         }
       }
     }

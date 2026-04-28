@@ -87,8 +87,8 @@ export async function loader({ request }: { request: Request }) {
     })
   }
 
-  // Store the refresh token on the applications@ user row (upsert in case it doesn't exist yet)
-  await prisma.user.upsert({
+  // Store the refresh token on the applications@ DALIMember row
+  await prisma.dALIMember.upsert({
     where: { daliEmail: GMAIL_USER },
     update: {
       googleRefreshToken: refreshToken,

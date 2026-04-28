@@ -24,14 +24,14 @@ export async function loader({ request }: Route.LoaderArgs) {
     }
   }
 
-  // Fetch profile picture for nav avatar
+  // Fetch profile picture for nav avatar (from DALIMember)
   let profilePictureUrl: string | null = null
-  const userRecord = await prisma.user.findUnique({
-    where: { id: auth.user.sub },
+  const memberRecord = await prisma.dALIMember.findFirst({
+    where: { userId: auth.user.sub },
     select: { profilePictureKey: true },
   })
-  if (userRecord?.profilePictureKey) {
-    profilePictureUrl = await getDownloadUrl(userRecord.profilePictureKey)
+  if (memberRecord?.profilePictureKey) {
+    profilePictureUrl = await getDownloadUrl(memberRecord.profilePictureKey)
   }
 
   return { user: auth.user, profilePictureUrl, isHiringLead: hiringLead, isAdmin: admin, isDomainLead: domainLead, isInterviewer }

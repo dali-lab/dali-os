@@ -13,14 +13,14 @@ import { sendEmail } from '~/lib/gmail'
 const GMAIL_USER = 'applications@dali.dartmouth.edu'
 
 async function getGmailRefreshToken(): Promise<string> {
-  const user = await prisma.user.findUnique({
+  const member = await prisma.dALIMember.findUnique({
     where: { daliEmail: GMAIL_USER },
     select: { googleRefreshToken: true },
   })
-  if (!user?.googleRefreshToken) {
+  if (!member?.googleRefreshToken) {
     throw new Error('Gmail not authorized. Visit /admin/authorize-gmail first.')
   }
-  return user.googleRefreshToken
+  return member.googleRefreshToken
 }
 
 export async function action({ request }: { request: Request }) {

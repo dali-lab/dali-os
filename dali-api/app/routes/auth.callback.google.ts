@@ -82,6 +82,10 @@ export async function loader({ request }: Route.LoaderArgs) {
   let authType: string;
   let redirectTo: string;
 
+  const tokenExpiresAt = googleUser.expiresIn
+    ? new Date(Date.now() + googleUser.expiresIn * 1000)
+    : null;
+
   if (googleUser.email.endsWith("@dali.dartmouth.edu")) {
     // DALI member flow
     user = await prisma.user.upsert({
@@ -94,20 +98,24 @@ export async function loader({ request }: Route.LoaderArgs) {
       },
     });
 
-    // Ensure a DALIMember record exists for this DALI user.
+    // Ensure a DALIMember record exists and store Google tokens on it
+    const tokenData = {
+      ...(googleUser.accessToken ? { googleAccessToken: googleUser.accessToken } : {}),
+      ...(googleUser.refreshToken ? { googleRefreshToken: googleUser.refreshToken } : {}),
+      ...(tokenExpiresAt ? { googleTokenExpiresAt: tokenExpiresAt } : {}),
+    };
+
     const existingMember = await prisma.dALIMember.findFirst({
       where: { OR: [{ userId: user.id }, { daliEmail: googleUser.email }] },
     });
     if (existingMember) {
-      if (!existingMember.userId) {
-        await prisma.dALIMember.update({
-          where: { id: existingMember.id },
-          data: { userId: user.id },
-        });
-      }
+      await prisma.dALIMember.update({
+        where: { id: existingMember.id },
+        data: { ...(!existingMember.userId ? { userId: user.id } : {}), ...tokenData },
+      });
     } else {
       await prisma.dALIMember.create({
-        data: { userId: user.id, daliEmail: googleUser.email },
+        data: { userId: user.id, daliEmail: googleUser.email, ...tokenData },
       });
     }
 

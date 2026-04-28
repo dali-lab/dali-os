@@ -97,19 +97,19 @@ export async function action({ request, params }: Route.ActionArgs) {
           `No email template bound for cycle ${domainApp.application.applicationCycleId} / decision ${decision.type}; skipping send.`
         );
       } else {
-        const gmailUser = await prisma.user.findUnique({
+        const gmailMember = await prisma.dALIMember.findUnique({
           where: { daliEmail: GMAIL_USER },
           select: { googleRefreshToken: true },
         });
 
-        if (gmailUser?.googleRefreshToken) {
+        if (gmailMember?.googleRefreshToken) {
           const { subject, html } = renderEmail(binding.emailTemplateVersion, {
             firstName: user.firstName,
             domain: domainName,
           });
 
           await sendEmail({
-            refreshToken: gmailUser.googleRefreshToken,
+            refreshToken: gmailMember.googleRefreshToken,
             to: email,
             subject,
             html,

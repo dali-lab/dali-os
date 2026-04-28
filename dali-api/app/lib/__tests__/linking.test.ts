@@ -53,6 +53,7 @@ describe("linkCasToGoogleUser", () => {
     mockPrisma.$transaction.mockImplementation(async (fn: any) => {
       // provide a mock tx with the same methods
       const tx = {
+        dALIMember: { updateMany: vi.fn().mockResolvedValue({}) },
         refreshToken: { updateMany: vi.fn().mockResolvedValue({}) },
         oAuthSession: { updateMany: vi.fn().mockResolvedValue({}) },
         user: {

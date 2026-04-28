@@ -30,8 +30,8 @@ async function refreshGoogleToken(userId: string, refreshToken: string): Promise
   const expiresIn = data.expires_in as number;
   const newExpiresAt = new Date(Date.now() + expiresIn * 1000);
 
-  await prisma.user.update({
-    where: { id: userId },
+  await prisma.dALIMember.update({
+    where: { userId },
     data: {
       googleAccessToken: newAccessToken,
       googleTokenExpiresAt: newExpiresAt,
@@ -46,8 +46,8 @@ async function refreshGoogleToken(userId: string, refreshToken: string): Promise
  * Returns null if user has no Google tokens.
  */
 async function getValidAccessToken(userId: string): Promise<string | null> {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
+  const member = await prisma.dALIMember.findFirst({
+    where: { userId },
     select: {
       googleAccessToken: true,
       googleRefreshToken: true,
@@ -55,16 +55,16 @@ async function getValidAccessToken(userId: string): Promise<string | null> {
     },
   });
 
-  if (!user?.googleAccessToken) return null;
+  if (!member?.googleAccessToken) return null;
 
   // If still valid (with 1min buffer), return as-is
-  if (user.googleTokenExpiresAt && user.googleTokenExpiresAt.getTime() > Date.now() + 60_000) {
-    return user.googleAccessToken;
+  if (member.googleTokenExpiresAt && member.googleTokenExpiresAt.getTime() > Date.now() + 60_000) {
+    return member.googleAccessToken;
   }
 
   // Expired — refresh
-  if (!user.googleRefreshToken) return user.googleAccessToken; // try anyway
-  return refreshGoogleToken(userId, user.googleRefreshToken);
+  if (!member.googleRefreshToken) return member.googleAccessToken; // try anyway
+  return refreshGoogleToken(userId, member.googleRefreshToken);
 }
 
 /**

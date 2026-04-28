@@ -28,7 +28,7 @@ export async function loader({ request }: { request: Request }) {
       status: 302,
       headers: {
         'Set-Cookie': clearCookie,
-        Location: '/account/integrations?calendar=error',
+        Location: '/account?calendar=error',
       },
     })
   }
@@ -41,7 +41,7 @@ export async function loader({ request }: { request: Request }) {
       status: 302,
       headers: {
         'Set-Cookie': clearCookie,
-        Location: '/account/integrations?calendar=error',
+        Location: '/account?calendar=error',
       },
     })
   }
@@ -57,7 +57,7 @@ export async function loader({ request }: { request: Request }) {
       status: 302,
       headers: {
         'Set-Cookie': clearCookie,
-        Location: '/account/integrations?calendar=error',
+        Location: '/account?calendar=error',
       },
     })
   }
@@ -67,7 +67,7 @@ export async function loader({ request }: { request: Request }) {
       status: 302,
       headers: {
         'Set-Cookie': clearCookie,
-        Location: '/account/integrations?calendar=error',
+        Location: '/account?calendar=error',
       },
     })
   }
@@ -80,8 +80,8 @@ export async function loader({ request }: { request: Request }) {
       ? new Date(Date.now() + googleUser.expiresIn * 1000)
       : null
 
-    await prisma.user.update({
-      where: { id: userId },
+    await prisma.dALIMember.update({
+      where: { userId },
       data: {
         ...(googleUser.accessToken ? { googleAccessToken: googleUser.accessToken } : {}),
         ...(googleUser.refreshToken ? { googleRefreshToken: googleUser.refreshToken } : {}),
@@ -93,7 +93,7 @@ export async function loader({ request }: { request: Request }) {
       status: 302,
       headers: {
         'Set-Cookie': clearCookie,
-        Location: '/account/integrations?calendar=error',
+        Location: '/account?calendar=error',
       },
     })
   }
@@ -102,7 +102,7 @@ export async function loader({ request }: { request: Request }) {
     status: 302,
     headers: {
       'Set-Cookie': clearCookie,
-      Location: '/account/integrations?calendar=connected',
+      Location: '/account?calendar=connected',
     },
   })
 }

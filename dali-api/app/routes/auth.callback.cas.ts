@@ -3,6 +3,7 @@ import { prisma } from "~/lib/db";
 import { validateCasTicket } from "~/lib/auth";
 import { issueTokens } from "~/lib/oauth";
 import { setTokenCookies } from "~/lib/cookies";
+import { linkCasUserToMember } from "~/lib/linking";
 
 export async function action() {
   return new Response("Method not allowed", { status: 405 });
@@ -48,6 +49,16 @@ export async function loader({ request }: Route.LoaderArgs) {
       dartmouthEmail,
     },
   });
+
+  // If this CAS user is a DALI member, merge accounts if needed and redirect to /reviewer
+  const member = await linkCasUserToMember(user.id, dartmouthEmail);
+  if (member) {
+    const tokens = await issueTokens(user.id, "member");
+    const headers = new Headers();
+    setTokenCookies(headers, tokens.access_token, tokens.refresh_token);
+    headers.set("Location", "/reviewer");
+    return new Response(null, { status: 302, headers });
+  }
 
   // Issue tokens and set cookies
   const tokens = await issueTokens(user.id, "dartmouth");

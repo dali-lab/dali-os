@@ -32,11 +32,9 @@ export default [
     route("portal/application", "routes/portal.application.tsx"),
   ]),
 
-  // Account pages (own layout — serves both members and applicants)
+  // Account page (own layout — members only)
   layout("routes/account-layout.tsx", [
     route("account", "routes/account.profile.tsx"),
-    route("account/integrations", "routes/account.integrations.tsx"),
-    route("account/roles", "routes/account.roles.tsx"),
   ]),
 
   // Calendar reconnect OAuth flow (no layout)
