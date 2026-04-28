@@ -190,7 +190,6 @@ model Domain {
   domainLeadAssignments DomainLeadAssignment[]
   cycleReviewers        CycleReviewer[]
   cycleInterviewers     CycleInterviewer[]
-  rubrics               Rubric[]
   delibsSessions        DelibsSession[]
 }
 
@@ -537,9 +536,7 @@ model Rubric {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  name     String
-  domainId String?
-  domain   Domain? @relation(fields: [domainId], references: [id])
+  name String
 
   versions RubricVersion[]
 }

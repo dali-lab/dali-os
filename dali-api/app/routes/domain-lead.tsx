@@ -243,9 +243,8 @@ export async function loader({ request }: Route.LoaderArgs) {
           })
         : [];
 
-      // Rubric options for this domain
+      // Rubric options — rubrics are not domain-specific, so all rubric versions are eligible.
       const rubricVersionOptions = await prisma.rubricVersion.findMany({
-        where: { rubric: { domainId: assignment.domainId } },
         include: { rubric: { select: { name: true } } },
         orderBy: { createdAt: "desc" },
       });
