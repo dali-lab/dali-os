@@ -457,7 +457,14 @@ model Decision {
   notes        String?
   waitlistRank Int? // set when type == Waitlisted; current rank = latest record's value
 
+  // Lineage pointer for stage transitions (Draft → Final → Released).
+  // Null when the row has no predecessor (e.g. delibs close, direct creation).
+  parentDecisionId String?
+  parent           Decision?  @relation("DecisionLineage", fields: [parentDecisionId], references: [id])
+  children         Decision[] @relation("DecisionLineage")
+
   @@index([domainApplicationId, createdAt])
+  @@index([parentDecisionId])
 }
 
 // ─── Application Reviews ─────────────────────────────────────────────────────
