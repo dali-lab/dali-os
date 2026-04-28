@@ -37,12 +37,15 @@ export async function action({ request }: Route.ActionArgs) {
   if (intent === "create") {
     const name = (formData.get("name") as string)?.trim();
     const domainId = formData.get("domainId") as string | null;
+    const isGeneral = formData.get("general") === "1";
     if (!name) return { error: "Name is required" };
 
     const challenge = await prisma.challenge.create({ data: { name } });
-    const dest = domainId
-      ? `/challenges/${challenge.id}?domainId=${domainId}`
-      : `/challenges/${challenge.id}`;
+    const dest = isGeneral
+      ? `/challenges/${challenge.id}?general=1`
+      : domainId
+        ? `/challenges/${challenge.id}?domainId=${domainId}`
+        : `/challenges/${challenge.id}`;
     return redirect(dest);
   }
 
