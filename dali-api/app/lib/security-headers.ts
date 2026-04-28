@@ -56,15 +56,19 @@ export function contentSecurityPolicy(): string {
 }
 
 /**
- * In production we ship `Content-Security-Policy-Report-Only` first so a
- * missed source doesn't break the page silently. Set `CSP_ENFORCE=1` in
- * the environment to flip to enforcing mode. Dev/test always enforce.
+ * Report-Only by default in all environments so that a missed source doesn't
+ * break the page silently. Set `CSP_ENFORCE=1` in production to flip to
+ * enforcing mode.
+ *
+ * Dev/test use Report-Only because React Router injects inline bootstrap
+ * scripts that are blocked by `script-src 'self'` without nonce support,
+ * which would prevent client hydration and break interactive behaviour.
  */
 function cspHeaderName(): string {
-  if (!isProduction) return "Content-Security-Policy";
-  return process.env.CSP_ENFORCE === "1"
-    ? "Content-Security-Policy"
-    : "Content-Security-Policy-Report-Only";
+  if (isProduction && process.env.CSP_ENFORCE === "1") {
+    return "Content-Security-Policy";
+  }
+  return "Content-Security-Policy-Report-Only";
 }
 
 export function securityHeaders(): Record<string, string> {

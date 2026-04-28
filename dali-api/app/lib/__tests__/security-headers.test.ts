@@ -20,11 +20,11 @@ async function loadHeaders(env: Record<string, string | undefined>) {
 }
 
 describe("securityHeaders / contentSecurityPolicy", () => {
-  it("emits a Content-Security-Policy header in non-production", async () => {
+  it("emits a Content-Security-Policy-Report-Only header in non-production", async () => {
     const { securityHeaders } = await loadHeaders({ NODE_ENV: "test" });
     const h = securityHeaders();
-    expect(h["Content-Security-Policy"]).toBeTruthy();
-    expect(h["Content-Security-Policy-Report-Only"]).toBeUndefined();
+    expect(h["Content-Security-Policy-Report-Only"]).toBeTruthy();
+    expect(h["Content-Security-Policy"]).toBeUndefined();
   });
 
   it("includes the expected core directives", async () => {
