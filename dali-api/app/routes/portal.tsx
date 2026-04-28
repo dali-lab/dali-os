@@ -11,6 +11,8 @@ import {
 import type { DomainApplicationStatus } from "~/types";
 import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
 import { InterviewSlotPicker } from "~/components/InterviewSlotPicker";
+import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
+import { formatInterviewDate, formatInterviewTimeRange } from "~/lib/interview-time";
 
 // ─── Loader ──────────────────────────────────────────────────────────────────
 
@@ -22,6 +24,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     cycleName: null as string | null,
     cycleId: null as string | null,
     cycleStatus: null as string | null,
+    closeDate: null as string | null,
     domainApplications: [] as any[],
     slotDurationMinutes: 30,
     hasApplication: false,
@@ -35,11 +38,13 @@ export async function loader({ request }: Route.LoaderArgs) {
   let cycleId: string;
   let cycleName: string;
   let cycleStatus: ApplicationCycleStatus;
+  let closeDate: string | null = null;
 
   if (active) {
     cycleId = active.id;
     cycleName = active.name;
     cycleStatus = active.currentStatus as ApplicationCycleStatus;
+    closeDate = active.closeDate ? active.closeDate.toISOString() : null;
   } else {
     const recentApp = await prisma.application.findFirst({
       where: { userId: auth.user.sub },
@@ -56,6 +61,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     cycleId = recentApp.applicationCycleId;
     cycleName = recentApp.applicationCycle.name;
     cycleStatus = (recentApp.applicationCycle.statusUpdates[0]?.newStatus ?? "Draft") as ApplicationCycleStatus;
+    closeDate = recentApp.applicationCycle.closeDate ? recentApp.applicationCycle.closeDate.toISOString() : null;
   }
 
   const application = await prisma.application.findFirst({
@@ -116,6 +122,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     cycleName,
     cycleId,
     cycleStatus,
+    closeDate,
     domainApplications,
     slotDurationMinutes: config?.slotDurationMinutes ?? 30,
     hasApplication: !!application,
@@ -144,12 +151,10 @@ interface TimeSlot {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function apiSlotToTimeSlot(slot: { startTime: string; endTime: string }, index: number): TimeSlot {
-  const start = new Date(slot.startTime);
-  const end = new Date(slot.endTime);
   return {
     id: `slot-${index}`,
-    date: start.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }),
-    time: `${start.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })} - ${end.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`,
+    date: formatInterviewDate(slot.startTime),
+    time: formatInterviewTimeRange(slot.startTime, slot.endTime),
     isoStart: slot.startTime,
     isoEnd: slot.endTime,
   };
@@ -205,6 +210,63 @@ function downloadIcs(slot: TimeSlot, cycleName: string): void {
   a.download = "dali-interview.ics";
   a.click();
   URL.revokeObjectURL(url);
+}
+
+function formatDeadline(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-US", {
+    timeZone: "UTC",
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function formatRemaining(iso: string): { label: string; tone: "urgent" | "warn" | "ok" } | null {
+  const ms = new Date(iso).getTime() - Date.now();
+  if (ms <= 0) return null;
+  if (ms > 7 * 86_400_000) return null;
+  const days = Math.floor(ms / 86_400_000);
+  const hours = Math.floor(ms / 3_600_000);
+  if (days >= 2) return { label: `${days} days remaining`, tone: "ok" };
+  if (hours >= 24) return { label: "1 day remaining", tone: "warn" };
+  if (hours >= 1) return { label: `Closes in ${hours} hour${hours === 1 ? "" : "s"}`, tone: "urgent" };
+  const mins = Math.max(1, Math.floor(ms / 60_000));
+  return { label: `Closes in ${mins} minute${mins === 1 ? "" : "s"}`, tone: "urgent" };
+}
+
+// Deadline rendering happens after hydration so toLocaleString uses the
+// browser's locale/timezone without producing an SSR/CSR text mismatch.
+function DeadlineLine({ closeDate }: { closeDate: string }) {
+  const [label, setLabel] = useState<string>("");
+  const [remaining, setRemaining] = useState<{ label: string; tone: "urgent" | "warn" | "ok" } | null>(null);
+  useEffect(() => {
+    setLabel(formatDeadline(closeDate));
+    const tick = () => setRemaining(formatRemaining(closeDate));
+    tick();
+    const id = setInterval(tick, 60_000);
+    return () => clearInterval(id);
+  }, [closeDate]);
+  if (!label) return null;
+  const toneStyles: Record<"urgent" | "warn" | "ok", string> = {
+    urgent: "text-red-700",
+    warn: "text-yellow-800",
+    ok: "text-muted-foreground",
+  };
+  return (
+    <div className={`text-sm mt-2 flex items-center gap-2 flex-wrap ${remaining ? toneStyles[remaining.tone] : "text-muted-foreground"}`}>
+      <span>Applications close on {label}</span>
+      {remaining && (
+        <span className={`text-xs px-2.5 py-0.5 rounded-full font-semibold ${
+          remaining.tone === "urgent" ? "bg-red-100 text-red-700" :
+          remaining.tone === "warn" ? "bg-yellow-100 text-yellow-800" :
+          "bg-blue-100 text-blue-700"
+        }`}>
+          {remaining.label}
+        </span>
+      )}
+    </div>
+  );
 }
 
 // ─── Shared UI ───────────────────────────────────────────────────────────────
@@ -273,7 +335,7 @@ function StageIndicator({ stage }: { stage: DomainApplicationStatus | "Applicati
 
 // ─── Stage Views ─────────────────────────────────────────────────────────────
 
-function ApplicationOpenView({ cycleName }: { cycleName: string }) {
+function ApplicationOpenView({ cycleName, closeDate }: { cycleName: string; closeDate: string | null }) {
   return (
     <div className="max-w-2xl mx-auto text-center py-16">
       <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-accent-green/30 flex items-center justify-center">
@@ -292,7 +354,7 @@ function ApplicationOpenView({ cycleName }: { cycleName: string }) {
   );
 }
 
-function ApplicationDraftView({ cycleName }: { cycleName: string }) {
+function ApplicationDraftView({ cycleName, closeDate }: { cycleName: string; closeDate: string | null }) {
   return (
     <div className="max-w-2xl mx-auto text-center py-16">
       <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-accent-green/30 flex items-center justify-center">
@@ -860,6 +922,7 @@ export default function Portal() {
     cycleName,
     cycleId,
     cycleStatus,
+    closeDate,
     domainApplications,
     slotDurationMinutes,
     hasApplication,
@@ -908,6 +971,7 @@ export default function Portal() {
           <h1 className="font-heading text-xl font-bold text-dark-blue">
             {cycleName} Application Portal
           </h1>
+          {cycleStatus === "Open" && closeDate && <DeadlineLine closeDate={closeDate} />}
         </div>
       </div>
 
@@ -926,7 +990,7 @@ export default function Portal() {
             </p>
           </div>
         )}
-        {topLevelStage === "ApplicationOpen" && <ApplicationOpenView cycleName={cycleName} />}
+        {topLevelStage === "ApplicationOpen" && <ApplicationOpenView cycleName={cycleName} closeDate={closeDate} />}
         {topLevelStage === "Pending" && (
           <>
             <PendingView cycleName={cycleName} />
@@ -945,7 +1009,7 @@ export default function Portal() {
             )}
           </>
         )}
-        {topLevelStage === "Draft" && <ApplicationDraftView cycleName={cycleName} />}
+        {topLevelStage === "Draft" && <ApplicationDraftView cycleName={cycleName} closeDate={cycleStatus === "Open" ? closeDate : null} />}
         {topLevelStage === "Withdrawn" && <WithdrawnView cycleName={cycleName} />}
 
         {das.length > 0 && applicationStatus !== "Draft" && applicationStatus !== "Withdrawn" && (
@@ -983,4 +1047,8 @@ export default function Portal() {
       </div>
     </div>
   );
+}
+
+export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
+  return <ApplicantErrorBoundary error={error} secondaryAction={{ kind: "reload" }} />;
 }

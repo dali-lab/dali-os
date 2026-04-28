@@ -51,9 +51,16 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
       to: '/hiring-lead-admin',
       icon: Calendar,
       show: isHiringLead,
-      active: path.startsWith('/hiring-lead-admin') || path.startsWith('/challenges') || path.startsWith('/rubrics'),
+      active: path.startsWith('/hiring-lead-admin'),
+      sub: null,
+    },
+    {
+      label: 'Library',
+      to: '/challenges',
+      icon: FileText,
+      show: isHiringLead || isDomainLead,
+      active: path.startsWith('/challenges') || path.startsWith('/rubrics'),
       sub: [
-        { label: 'Overview', to: '/hiring-lead-admin', active: path.startsWith('/hiring-lead-admin') },
         { label: 'Challenges', to: '/challenges', active: path.startsWith('/challenges') },
         { label: 'Rubrics', to: '/rubrics', active: path.startsWith('/rubrics') },
       ],
@@ -66,12 +73,17 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
       active: location.pathname.startsWith('/emails'),
     },
     {
-      label: 'Members',
+      label: 'Admin',
       to: '/admin-console',
       icon: Users,
-      show: isAdmin || isHiringLead,
+      show: isAdmin,
       active: path.startsWith('/admin-console'),
-      sub: null,
+      sub: [
+        { label: 'Members', to: '/admin-console/members', active: path.startsWith('/admin-console/members') },
+        ...(isAdmin
+          ? [{ label: 'Domains', to: '/admin-console/domains', active: path.startsWith('/admin-console/domains') }]
+          : []),
+      ],
     },
   ].filter((s) => s.show)
 

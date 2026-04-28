@@ -1,4 +1,5 @@
 import { prisma } from "~/lib/db";
+import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
 
 // A cycle is "active" when its latest status is Open or UnderReview — those are
 // the stages where applicants are submitting and reviewers are reading/interviewing.
@@ -10,36 +11,68 @@ export type ActiveStatus = (typeof ACTIVE_STATUSES)[number];
 /**
  * Find the single currently-active cycle, or null if none.
  *
+ * Pure read — does not write. If an Open cycle is past its `closeDate`, the
+ * returned `currentStatus` is derived as `UnderReview`; the DB row is
+ * materialized separately via `autoCloseIfExpired`.
+ *
  * If the invariant is somehow violated (multiple cycles active at once),
- * returns the most recently created one and the caller can ignore the rest.
+ * returns the most recently-active one.
  */
 export async function getActiveCycle() {
-  const cycles = await prisma.applicationCycle.findMany({
-    include: {
-      statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
-    },
+  const recentActiveUpdate = await prisma.applicationCycleStatusUpdate.findFirst({
+    where: { newStatus: { in: ACTIVE_STATUSES as unknown as ApplicationCycleStatus[] } },
     orderBy: { createdAt: "desc" },
+    include: {
+      applicationCycle: {
+        include: {
+          statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
+        },
+      },
+    },
   });
+  if (!recentActiveUpdate) return null;
 
-  for (const cycle of cycles) {
-    const latest = cycle.statusUpdates[0]?.newStatus;
-    if (latest && (ACTIVE_STATUSES as readonly string[]).includes(latest)) {
-      // Auto-close: if cycle is Open and past its close date, transition to UnderReview
-      if (latest === "Open" && cycle.closeDate && new Date() > cycle.closeDate) {
-        const alreadyClosed = await prisma.applicationCycleStatusUpdate.findFirst({
-          where: { applicationCycleId: cycle.id, newStatus: "UnderReview" },
-        });
-        if (!alreadyClosed) {
-          await prisma.applicationCycleStatusUpdate.create({
-            data: { applicationCycleId: cycle.id, newStatus: "UnderReview" },
-          });
-        }
-        return { ...cycle, currentStatus: "UnderReview" as ActiveStatus };
-      }
-      return { ...cycle, currentStatus: latest as ActiveStatus };
-    }
+  const cycle = recentActiveUpdate.applicationCycle;
+  const latest = cycle.statusUpdates[0]?.newStatus;
+  // Defend against a later non-active update (e.g. Completed) on the same cycle.
+  if (!latest || !(ACTIVE_STATUSES as readonly string[]).includes(latest)) {
+    return null;
   }
-  return null;
+
+  // Derive UnderReview when an Open cycle is past its close date. The DB write
+  // is materialized lazily by autoCloseIfExpired (called from the status loader).
+  if (latest === "Open" && cycle.closeDate && new Date() > cycle.closeDate) {
+    return { ...cycle, currentStatus: "UnderReview" as ActiveStatus };
+  }
+  return { ...cycle, currentStatus: latest as ActiveStatus };
+}
+
+/**
+ * Materialize the auto-close transition for a cycle whose `closeDate` has
+ * passed while it was still `Open`. Idempotent — safe to call repeatedly. Uses
+ * a transaction so concurrent callers can't insert duplicate UnderReview rows.
+ */
+export async function autoCloseIfExpired(cycleId: string): Promise<void> {
+  const cycle = await prisma.applicationCycle.findUnique({
+    where: { id: cycleId },
+    include: { statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 } },
+  });
+  if (!cycle) return;
+
+  const currentStatus = cycle.statusUpdates[0]?.newStatus ?? "Draft";
+  if (currentStatus !== "Open") return;
+  if (!cycle.closeDate || new Date() <= cycle.closeDate) return;
+
+  await prisma.$transaction(async (tx) => {
+    const alreadyClosed = await tx.applicationCycleStatusUpdate.findFirst({
+      where: { applicationCycleId: cycleId, newStatus: "UnderReview" },
+    });
+    if (!alreadyClosed) {
+      await tx.applicationCycleStatusUpdate.create({
+        data: { applicationCycleId: cycleId, newStatus: "UnderReview", userId: null },
+      });
+    }
+  });
 }
 
 export type CycleStage =
