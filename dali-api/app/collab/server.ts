@@ -1,4 +1,6 @@
 import { Server } from "@hocuspocus/server";
+import { Redis as HocuspocusRedis } from "@hocuspocus/extension-redis";
+import IORedis from "ioredis";
 import { verifyCollabToken } from "./auth";
 import { loadDocument, maybeSnapshot, storeDocument } from "./persistence";
 import { isPresenceRoom } from "./roomName";
@@ -39,11 +41,26 @@ export function startCollabServer() {
 
   const port = parseInt(process.env.COLLAB_PORT ?? "3002", 10);
 
+  const extensions: any[] = [];
+  const redisUrl = process.env.REDIS_URL;
+  if (redisUrl) {
+    // Pass an ioredis instance built from the URL so deployment configs can
+    // ship a single REDIS_URL secret instead of host/port/password fields.
+    const redisClient = new IORedis(redisUrl, { maxRetriesPerRequest: null });
+    extensions.push(new HocuspocusRedis({ redis: redisClient }));
+    console.log("[collab:server] redis fan-out enabled");
+  } else {
+    console.warn(
+      "[collab:server] REDIS_URL not set — collab will not sync across machines",
+    );
+  }
+
   server = new Server({
     port,
     // Debounce writes — Hocuspocus buffers onChange calls and flushes
     // to onStoreDocument every `debounce` ms.
     debounce: 2000,
+    extensions,
 
     async onConnect() {
       // No-op: connection counting is deferred to onAuthenticate so that

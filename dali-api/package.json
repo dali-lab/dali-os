@@ -20,6 +20,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1030.0",
     "@aws-sdk/s3-request-presigner": "^3.1030.0",
+    "@hocuspocus/extension-redis": "^3.4.4",
     "@hocuspocus/provider": "^3.4.4",
     "@hocuspocus/server": "^3.4.4",
     "@neondatabase/serverless": "^1.0.2",
@@ -36,6 +37,7 @@
     "@tiptap/react": "^3.22.3",
     "@tiptap/starter-kit": "^3.22.3",
     "google-auth-library": "^10.6.2",
+    "ioredis": "^5.10.1",
     "isbot": "^5.1.36",
     "jose": "^6.2.2",
     "lucide-react": "^0.544.0",
