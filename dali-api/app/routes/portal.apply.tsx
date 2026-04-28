@@ -12,7 +12,9 @@ import {
   fileMatchesAccept,
 } from "~/lib/file-validation";
 import type { Question } from "~/types";
+import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 import { Modal } from "~/components/Modal";
+import { QuestionList } from "~/components/ApplicationAnswers";
 
 // ─── Loader ──────────────────────────────────────────────────────────────────
 
@@ -993,6 +995,7 @@ export default function PortalApply() {
   const [urlWarnings, setUrlWarnings] = useState<Record<string, string>>({});
   const [urlChecks, setUrlChecks] = useState<Record<string, UrlCheckState>>({});
   const [showWarningModal, setShowWarningModal] = useState(false);
+  const [showReviewModal, setShowReviewModal] = useState(false);
   // Format the deadline after hydration so toLocaleString uses browser
   // locale/timezone without producing an SSR/CSR text mismatch.
   const [deadlineLabel, setDeadlineLabel] = useState<string>("");
@@ -1134,17 +1137,13 @@ export default function PortalApply() {
     }
   }, [createFetcher.data]);
 
-  function handleSubmit(force = false) {
-    setError(null);
-    setUrlWarnings({});
-    if (!draft) return;
-
+  // Validation gate: runs before opening the review modal. Returns null on
+  // success, or an error string to surface to the user.
+  function validateForReview(): string | null {
+    if (!draft) return null;
     if (selectedDomainIds.length === 0) {
-      setError("Please select at least one domain.");
-      return;
+      return "Please select at least one domain.";
     }
-
-    // Validate all required questions across general + selected domains
     const { totalRequired, totalAnswered } = computeRequiredProgress(
       formQuestions as Question[],
       domains as { id: string; name: string; challengeQuestions: Question[] }[],
@@ -1153,11 +1152,28 @@ export default function PortalApply() {
       domainAnswers,
     );
     const totalMissing = totalRequired - totalAnswered;
-
     if (totalMissing > 0) {
-      setError(`Please answer all required questions (${totalMissing} of ${totalRequired} unanswered).`);
+      return `Please answer all required questions (${totalMissing} of ${totalRequired} unanswered).`;
+    }
+    return null;
+  }
+
+  function openReviewIfValid() {
+    setError(null);
+    setUrlWarnings({});
+    if (!draft) return;
+    const validationError = validateForReview();
+    if (validationError) {
+      setError(validationError);
       return;
     }
+    setShowReviewModal(true);
+  }
+
+  function doSubmit(force = false) {
+    setError(null);
+    setUrlWarnings({});
+    if (!draft) return;
 
     // Collect URL questions from general and domain-specific forms
     const urlQuestions: { key: string; url: string; type: "github_url" | "figma_url" }[] = [];
@@ -1492,11 +1508,11 @@ export default function PortalApply() {
         {/* Actions */}
         <div className="flex items-center gap-3 pt-2">
           <button
-            onClick={() => handleSubmit()}
+            onClick={() => openReviewIfValid()}
             disabled={submitting}
             className="px-6 py-2.5 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition disabled:opacity-50"
           >
-            {submitting ? "Submitting..." : isAlreadySubmitted ? "Update Application" : "Submit Application"}
+            {submitting ? "Submitting..." : isAlreadySubmitted ? "Review Updates" : "Review Application"}
           </button>
           <span className="text-xs text-muted-foreground/70 flex items-center gap-1.5">
             {saving ? (
@@ -1523,6 +1539,87 @@ export default function PortalApply() {
       </div>
 
       <BackToTopButton />
+
+      {/* Pre-submit review modal */}
+      <Modal
+        open={showReviewModal}
+        onClose={() => setShowReviewModal(false)}
+        labelledBy="review-modal-title"
+        disableEscape={submitting}
+        containerClassName="bg-white rounded-2xl shadow-xl max-w-2xl w-full mx-4 max-h-[85vh] overflow-y-auto p-6"
+      >
+        <h3 id="review-modal-title" className="font-heading text-base font-bold text-dark-blue mb-1">
+          {isAlreadySubmitted ? "Review your changes" : "Review your application"}
+        </h3>
+        <p className="text-sm text-muted-foreground mb-5">
+          Take one last look at your answers before {isAlreadySubmitted ? "updating" : "submitting"}. You can still go back to edit.
+        </p>
+
+        <div className="space-y-5">
+          {(() => {
+            const beforeQuestions = (formQuestions as Question[]).filter(q => !q.data.afterDomains);
+            return beforeQuestions.length > 0 ? (
+              <div className="rounded-2xl bg-[#E8F4FA] px-5 py-4">
+                <h4 className="font-heading text-xs font-bold text-dark-blue uppercase tracking-wider mb-4">
+                  General Questions
+                </h4>
+                {/* Apply page only has S3 keys, not presigned URLs — show filenames only */}
+                <QuestionList questions={beforeQuestions} answers={answers} presigned={false} />
+              </div>
+            ) : null;
+          })()}
+
+          {selectedDomainIds.map(domainId => {
+            const domainIndex = (domains as any[]).findIndex((d: any) => d.id === domainId);
+            const domain = (domains as any[])[domainIndex];
+            if (!domain || domain.challengeQuestions.length === 0) return null;
+            const color = getDomainColor(domainIndex);
+            return (
+              <div key={domainId} className={`rounded-2xl ${color.cardBg} px-5 py-4`}>
+                <h4 className={`font-heading text-xs font-bold uppercase tracking-wider mb-4 ${color.text}`}>
+                  {domain.name}
+                </h4>
+                <QuestionList
+                  questions={domain.challengeQuestions as Question[]}
+                  answers={domainAnswers[domainId] ?? {}}
+                  presigned={false}
+                />
+              </div>
+            );
+          })}
+
+          {(() => {
+            const afterQuestions = (formQuestions as Question[]).filter(q => q.data.afterDomains);
+            return afterQuestions.length > 0 ? (
+              <div className="rounded-2xl bg-[#E8F4FA] px-5 py-4">
+                <h4 className="font-heading text-xs font-bold text-dark-blue uppercase tracking-wider mb-4">
+                  Anything Else
+                </h4>
+                <QuestionList questions={afterQuestions} answers={answers} presigned={false} />
+              </div>
+            ) : null;
+          })()}
+        </div>
+
+        <div className="flex gap-3 justify-end pt-5 mt-5 border-t border-border">
+          <button
+            type="button"
+            onClick={() => setShowReviewModal(false)}
+            disabled={submitting}
+            className="px-5 py-2 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-accent-coral hover:text-accent-coral transition disabled:opacity-50"
+          >
+            Go Back and Edit
+          </button>
+          <button
+            type="button"
+            onClick={() => { setShowReviewModal(false); doSubmit(false); }}
+            disabled={submitting}
+            className="px-5 py-2 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition disabled:opacity-50"
+          >
+            {submitting ? "Submitting..." : "Confirm Submission"}
+          </button>
+        </div>
+      </Modal>
 
       {/* URL warning modal */}
       <Modal
@@ -1562,7 +1659,7 @@ export default function PortalApply() {
             Go Back and Fix
           </button>
           <button
-            onClick={() => { setShowWarningModal(false); handleSubmit(true); }}
+            onClick={() => { setShowWarningModal(false); doSubmit(true); }}
             disabled={submitting}
             className="px-5 py-2 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition disabled:opacity-50"
           >
@@ -1572,4 +1669,8 @@ export default function PortalApply() {
       </Modal>
     </div>
   );
+}
+
+export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
+  return <ApplicantErrorBoundary error={error} />;
 }
