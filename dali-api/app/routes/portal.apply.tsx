@@ -140,8 +140,20 @@ export async function action({ request }: Route.ActionArgs) {
       include: { challengeVersion: true },
     });
 
-    const application = await prisma.application.create({
-      data: {
+    // Upsert keyed on the (userId, applicationCycleId) unique constraint so
+    // that two concurrent "Start Application" clicks (e.g. from two open tabs)
+    // converge on a single draft instead of creating duplicates. For an
+    // existing row the update is a no-op — domain selection is reconciled
+    // separately via the `update-domains` intent.
+    const application = await prisma.application.upsert({
+      where: {
+        userId_applicationCycleId: {
+          userId: auth.user.sub,
+          applicationCycleId: cycleId,
+        },
+      },
+      update: {},
+      create: {
         userId: auth.user.sub,
         applicationCycleId: cycleId,
         generalChallengeVersionId,
