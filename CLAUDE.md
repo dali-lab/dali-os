@@ -9,7 +9,7 @@ Project conventions for Claude when running inside `anthropics/claude-code-actio
 - **Realtime collab**: Hocuspocus server + Yjs CRDT + Tiptap editor.
 - **Auth**: Google OAuth, Dartmouth CAS, JWT via `jose`.
 - **Styling**: Tailwind CSS 4.
-- **Deploy**: Fly.io. Branches: `dev` → `staging` → `prod`.
+- **Deploy**: Fly.io. Branches: `dev` → `staging` → `prod`. Migrations require `DIRECT_URL` (non-pooled Neon endpoint) in addition to pooled `DATABASE_URL` — see `dali-api/prisma/MIGRATIONS.md`.
 - **Package manager**: npm. Node 22.
 
 ## Commands (run from `dali-api/`)
