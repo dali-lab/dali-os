@@ -7,6 +7,12 @@ import { requireAuth } from "~/lib/auth";
 import { CheckCircle, Plus, Trash2, Check, Clock, X, CircleDashed, ChevronDown } from "lucide-react";
 import { inferDomainApplicationStatus } from "~/lib/domain-application-status";
 import { getReviewStatus } from "~/lib/review-status";
+import {
+  summarizeDecisionPills,
+  synthesizePrePipelinePill,
+  type DecisionPill,
+  type PrePipelinePill,
+} from "~/lib/decision-pills";
 import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
 
 const STATUS_LABELS: Record<string, string> = {
@@ -77,9 +83,10 @@ export async function loader({ request }: Route.LoaderArgs) {
                     },
                   },
                   decisions: { orderBy: { createdAt: "desc" } },
-                  // Only active interviews (Scheduled). Historical rows
-                  // don't contribute to status inference here.
-                  interviews: { where: { status: "Scheduled" } },
+                  // Scheduled drives status inference; Completed feeds the
+                  // pre-decision "Post-interview" pill in the table.
+                  // Cancelled rows stay filtered out (audit-only).
+                  interviews: { where: { status: { in: ["Scheduled", "Completed"] } } },
                 },
               },
             },
@@ -1316,28 +1323,6 @@ function DelibsSection({ cycleId, domainId, sessions, initialCount, finalCount }
   );
 }
 
-const STATUS_BADGE_COLORS: Record<string, string> = {
-  ApplicationOpen: "bg-muted text-foreground/80",
-  Pending: "bg-blue-100 text-blue-700",
-  Rejected: "bg-red-100 text-red-700",
-  InvitedToInterview: "bg-purple-100 text-purple-700",
-  InterviewScheduled: "bg-indigo-100 text-indigo-700",
-  PostInterviewPending: "bg-yellow-100 text-yellow-700",
-  Accepted: "bg-green-100 text-green-700",
-  Waitlisted: "bg-orange-100 text-orange-700",
-};
-
-const STATUS_BADGE_LABELS: Record<string, string> = {
-  ApplicationOpen: "Open",
-  Pending: "Pending",
-  Rejected: "Rejected",
-  InvitedToInterview: "Interview Invited",
-  InterviewScheduled: "Interview Scheduled",
-  PostInterviewPending: "Post-Interview",
-  Accepted: "Accepted",
-  Waitlisted: "Waitlisted",
-};
-
 const DECISION_COLORS: Record<string, string> = {
   Rejected: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
   InvitedToInterview: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
@@ -1352,18 +1337,38 @@ const DECISION_LABELS: Record<string, string> = {
   Waitlisted: "Waitlist",
 };
 
-function DecisionBadge({ type }: { type: string }) {
+// Draft pills are rendered with reduced opacity + dashed border to read as
+// "tentative", Final pills get a solid border, Released pills are full strength.
+const STAGE_TREATMENT: Record<DecisionPill["stage"], string> = {
+  Draft: "opacity-60 border border-dashed border-current/40",
+  Final: "border border-current/30",
+  Released: "",
+};
+
+function DecisionPillBadge({ pill }: { pill: DecisionPill }) {
+  const baseLabel = DECISION_LABELS[pill.type] ?? pill.type;
+  const rankSuffix =
+    pill.type === "Waitlisted" && pill.waitlistRank != null
+      ? ` #${pill.waitlistRank}`
+      : "";
+  const stageSuffix = ` (${pill.stage.toLowerCase()})`;
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${DECISION_COLORS[type] ?? "bg-muted text-muted-foreground"}`}>
-      {DECISION_LABELS[type] ?? type}
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${DECISION_COLORS[pill.type] ?? "bg-muted text-muted-foreground"} ${STAGE_TREATMENT[pill.stage]}`}>
+      {baseLabel}{rankSuffix}{stageSuffix}
     </span>
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
+const PRE_PIPELINE_LABELS: Record<PrePipelinePill, string> = {
+  Reviewing: "Reviewing",
+  InterviewScheduled: "Interview scheduled",
+  PostInterview: "Post-interview",
+};
+
+function PrePipelinePillBadge({ pill }: { pill: PrePipelinePill }) {
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${STATUS_BADGE_COLORS[status] ?? "bg-muted text-muted-foreground"}`}>
-      {STATUS_BADGE_LABELS[status] ?? status}
+    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground">
+      {PRE_PIPELINE_LABELS[pill]}
     </span>
   );
 }
@@ -1400,9 +1405,12 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
     const da = app.domainApplications[0];
     if (!da) return false;
     const decisions = da.decisions ?? [];
-    const latestDraft = decisions.find((d: any) => d.stage === "Draft");
-    const latestFinal = decisions.find((d: any) => d.stage === "Final");
-    return latestDraft && !latestFinal;
+    return decisions.some((d: any) => {
+      if (d.stage !== "Draft") return false;
+      return !decisions.some(
+        (other: any) => other.type === d.type && (other.stage === "Final" || other.stage === "Released")
+      );
+    });
   });
 
   const displayedApps = filter === "finalize" ? finalizableApps : apps;
@@ -1440,7 +1448,13 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
               onClick={async () => {
                 for (const app of finalizableApps) {
                   const da = app.domainApplications[0];
-                  const draft = (da?.decisions ?? []).find((d: any) => d.stage === "Draft");
+                  const allDecisions = da?.decisions ?? [];
+                  const draft = allDecisions.find((d: any) => {
+                    if (d.stage !== "Draft") return false;
+                    return !allDecisions.some(
+                      (other: any) => other.type === d.type && (other.stage === "Final" || other.stage === "Released")
+                    );
+                  });
                   if (draft) {
                     await fetch(`/api/decisions/${draft.id}/finalize`, { method: "POST", credentials: "include" });
                   }
@@ -1484,28 +1498,36 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
         <thead className="bg-muted/50 text-xs font-medium text-muted-foreground uppercase tracking-wide">
           <tr>
             <th className="px-6 py-3 text-left">Applicant</th>
-            <th className="px-6 py-3 text-left">Status</th>
             <th className="px-6 py-3 text-left">Reviewers</th>
-            <th className="px-6 py-3 text-left">Draft Decision</th>
-            <th className="px-6 py-3 text-left">Final Decision</th>
+            <th className="px-6 py-3 text-left">Decisions</th>
             <th className="px-6 py-3 text-right">Actions</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
           {displayedApps.map((app: any) => {
             const da = app.domainApplications[0];
-            const status = da?.inferredStatus ?? "Pending";
             const reviews = da?.reviews ?? [];
             const decisions = da?.decisions ?? [];
-            const latestDraft = decisions.find((d: any) => d.stage === "Draft");
-            const latestFinal = decisions.find((d: any) => d.stage === "Final");
+            const draftToFinalize = decisions.find((d: any) => {
+              if (d.stage !== "Draft") return false;
+              return !decisions.some(
+                (other: any) => other.type === d.type && (other.stage === "Final" || other.stage === "Released")
+              );
+            });
+            const pills = da
+              ? summarizeDecisionPills({ decisions })
+              : [];
+            const prePill = da && pills.length === 0
+              ? synthesizePrePipelinePill({
+                  application: { statusUpdates: app.statusUpdates ?? [] },
+                  interviews: da.interviews ?? [],
+                  decisions,
+                })
+              : null;
             return (
               <tr key={app.id} className="hover:bg-muted/50">
                 <td className="px-6 py-4 font-medium text-foreground">
                   {app.user.firstName} {app.user.lastName}
-                </td>
-                <td className="px-6 py-4">
-                  <StatusBadge status={status} />
                 </td>
                 <td className="px-6 py-4">
                   <ReviewerAssignmentCell
@@ -1517,16 +1539,23 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                   />
                 </td>
                 <td className="px-6 py-4">
-                  {latestDraft ? <DecisionBadge type={latestDraft.type} /> : <span className="text-xs text-muted-foreground">—</span>}
-                </td>
-                <td className="px-6 py-4">
-                  {latestFinal ? <DecisionBadge type={latestFinal.type} /> : <span className="text-xs text-muted-foreground">—</span>}
+                  {pills.length > 0 ? (
+                    <div className="flex flex-wrap gap-1">
+                      {pills.map((pill, i) => (
+                        <DecisionPillBadge key={i} pill={pill} />
+                      ))}
+                    </div>
+                  ) : prePill ? (
+                    <PrePipelinePillBadge pill={prePill} />
+                  ) : (
+                    <span className="text-xs text-muted-foreground">—</span>
+                  )}
                 </td>
                 <td className="px-6 py-4 text-right flex items-center justify-end gap-2">
-                  {isUnderReview && latestDraft && !latestFinal && (
+                  {isUnderReview && draftToFinalize && (
                     <button
                       onClick={async () => {
-                        await fetch(`/api/decisions/${latestDraft.id}/finalize`, { method: "POST", credentials: "include" });
+                        await fetch(`/api/decisions/${draftToFinalize.id}/finalize`, { method: "POST", credentials: "include" });
                         window.location.reload();
                       }}
                       className="px-2 py-1 text-xs font-medium rounded bg-green-600 hover:bg-green-700 text-white transition"
@@ -1545,7 +1574,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
             );
           })}
           {displayedApps.length === 0 && (
-            <tr><td colSpan={6} className="px-6 py-8 text-center text-muted-foreground/70 text-sm">
+            <tr><td colSpan={4} className="px-6 py-8 text-center text-muted-foreground/70 text-sm">
               {filter === "finalize" ? "No applications need finalization." : "No applications."}
             </td></tr>
           )}

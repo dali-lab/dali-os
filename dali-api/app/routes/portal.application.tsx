@@ -315,7 +315,7 @@ export default function PortalApplication() {
         <h3 id="withdraw-modal-title" className="font-heading text-base font-bold text-dark-blue mb-2">
           Withdraw your application?
         </h3>
-        <p className="text-sm text-gray-600 mb-5">
+        <p className="text-sm text-muted-foreground mb-5">
           Your application will be removed from review. You can't undo this from the portal — you'd need to contact the DALI team to reverse it.
         </p>
         <div className="flex gap-3 justify-end">
