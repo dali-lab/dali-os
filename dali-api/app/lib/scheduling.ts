@@ -183,10 +183,11 @@ async function assignInterviewersWithTx(
     where: { applicationCycleId: cycleId },
     select: { id: true },
   });
-  if (cycleInterviewers.length > 0) {
-    const ids = cycleInterviewers.map((i) => i.id);
-    await tx.$executeRaw`SELECT id FROM "CycleInterviewer" WHERE id = ANY(${ids}::text[]) FOR UPDATE`;
+  if (cycleInterviewers.length === 0) {
+    throw new Error("No interviewers have been configured for this cycle. Contact the hiring lead.");
   }
+  const ids = cycleInterviewers.map((i) => i.id);
+  await tx.$executeRaw`SELECT id FROM "CycleInterviewer" WHERE id = ANY(${ids}::text[]) FOR UPDATE`;
 
   const interviewers = await tx.cycleInterviewer.findMany({
     where: { applicationCycleId: cycleId },
