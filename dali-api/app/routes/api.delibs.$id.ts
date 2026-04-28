@@ -33,20 +33,6 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const body = await request.json();
 
-  if (request.method === "PATCH") {
-    const { columnOrder } = body;
-    if (!columnOrder) {
-      return Response.json({ error: "columnOrder is required" }, { status: 400 });
-    }
-
-    const updated = await prisma.delibsSession.update({
-      where: { id: params.id },
-      data: { columnOrder },
-    });
-
-    return Response.json(updated);
-  }
-
   if (request.method === "POST") {
     const { intent } = body;
 
