@@ -15,6 +15,26 @@ function formatDateTime(iso: string | Date) {
   )
 }
 
+export function resolveChallengeFormDefaults({
+  domains,
+  versions,
+  generalParam,
+  domainIdParam,
+}: {
+  domains: { id: string; name: string }[]
+  versions: { domainId: string | null }[]
+  generalParam: string | null
+  domainIdParam: string | null
+}): { defaultDomainId: string; isGeneralForm: boolean } {
+  const isGeneralIntent = generalParam === '1'
+  const lastVersion = versions.length ? versions[versions.length - 1] : null
+  const defaultDomainId = isGeneralIntent
+    ? ''
+    : (domainIdParam ?? lastVersion?.domainId ?? domains.find((d) => d.name !== 'General')?.id ?? domains[0]?.id ?? '')
+  const isGeneralForm = isGeneralIntent || versions.some((v) => v.domainId === null)
+  return { defaultDomainId, isGeneralForm }
+}
+
 export function ChallengeDetail() {
   const { challenge, domains: rawDomains } = useLoaderData<typeof loader>()
   const submit = useSubmit()
@@ -28,14 +48,18 @@ export function ChallengeDetail() {
   ]
 
   const lastVersion = challenge.versions.length ? challenge.versions[challenge.versions.length - 1] : null
-  const defaultDomainId = searchParams.get('domainId') ?? lastVersion?.domainId ?? domains.find((d) => d.name !== 'General')?.id ?? domains[0]?.id ?? ''
+  const { defaultDomainId, isGeneralForm } = resolveChallengeFormDefaults({
+    domains,
+    versions: challenge.versions,
+    generalParam: searchParams.get('general'),
+    domainIdParam: searchParams.get('domainId'),
+  })
 
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(lastVersion?.id ?? null)
   const [isCreatingVersion, setIsCreatingVersion] = useState(false)
   const [selectedDomainId, setSelectedDomainId] = useState<string>(defaultDomainId)
 
   const selectedVersion = challenge.versions.find((v) => v.id === selectedVersionId)
-  const isGeneralForm = challenge.versions.some((v) => v.domainId === null)
 
   const nextVersionNumber = challenge.versions.length + 1
 
@@ -153,7 +177,7 @@ export function ChallengeDetail() {
                 <div>
                   <p className="text-sm font-medium text-foreground/80 mb-1">Domain</p>
                   <p className="text-sm text-foreground">
-                    {domains.find((d) => d.id === selectedDomainId)?.name ?? '—'}
+                    {domains.find((d) => d.id === selectedDomainId)?.name ?? (isGeneralForm ? 'General' : '—')}
                   </p>
                 </div>
               </div>
