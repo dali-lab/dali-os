@@ -36,9 +36,9 @@ model User {
 
   // Google API tokens (for calendar integration etc.) — populated when user
   // signs in via Google with appropriate scopes
-  googleAccessToken       String?
-  googleRefreshToken      String?
-  googleTokenExpiresAt    DateTime?
+  googleAccessToken    String?
+  googleRefreshToken   String?
+  googleTokenExpiresAt DateTime?
 
   daliMember                    DALIMember?
   applicationCycleStatusUpdates ApplicationCycleStatusUpdate[]
@@ -74,7 +74,8 @@ model DALIMember {
   decisions             Decision[]
   applicationReviews    ApplicationReview[]    @relation("SubmittedBy")
   delibSessions         DelibsSession[]
-  emailTemplates        EmailTemplate[]
+  legacyEmailTemplates  LegacyEmailTemplate[]
+  emailTemplateVersions EmailTemplateVersion[]
 }
 
 model ApplicationCycle {
@@ -105,6 +106,7 @@ model ApplicationCycle {
   cycleInterviewers CycleInterviewer[]
   interviews        Interview[]
   delibsSessions    DelibsSession[]
+  decisionEmails    CycleDecisionEmail[]
 }
 
 // Applicant-initiated status changes only. DALI-initiated outcomes (interview,
@@ -136,10 +138,10 @@ model Application {
   // as the applicant fills out the form; finalized on submission.
   answers Json
 
-  userId                   String
-  user                     User                   @relation(fields: [userId], references: [id])
-  applicationCycleId       String
-  applicationCycle         ApplicationCycle       @relation(fields: [applicationCycleId], references: [id])
+  userId                    String
+  user                      User             @relation(fields: [userId], references: [id])
+  applicationCycleId        String
+  applicationCycle          ApplicationCycle @relation(fields: [applicationCycleId], references: [id])
   // Pinned at application creation time so that form updates do not affect in-progress drafts.
   generalChallengeVersionId String
   generalChallengeVersion   ChallengeVersion @relation("ApplicationGeneralChallenge", fields: [generalChallengeVersionId], references: [id])
@@ -157,6 +159,11 @@ model DomainApplication {
 
   // answers: same shape as Application.answers, keyed by question UUID from the challenge version.
   answers Json
+
+  // Whether this domain is currently selected by the applicant.
+  // False means the applicant deselected the domain but the record is
+  // preserved so answers survive re-selection.
+  selected Boolean @default(true)
 
   applicationId      String
   application        Application      @relation(fields: [applicationId], references: [id])
@@ -210,7 +217,7 @@ model ChallengeVersion {
 
   domainApplications    DomainApplication[]
   applicationCycles     ChallengeVersionApplicationCycle[]
-  applicationsAsGeneral Application[] @relation("ApplicationGeneralChallenge")
+  applicationsAsGeneral Application[]                      @relation("ApplicationGeneralChallenge")
 }
 
 // Lifecycle of an application cycle from the DALI side:
@@ -247,10 +254,10 @@ model DomainApplicationCycle {
   isReady Boolean @default(false)
 
   // Rubric assigned for this domain in this cycle (shared across all challenge versions for the domain)
-  rubricVersionId     String?
-  rubricVersion       RubricVersion? @relation(fields: [rubricVersionId], references: [id])
+  rubricVersionId         String?
+  rubricVersion           RubricVersion? @relation(fields: [rubricVersionId], references: [id])
   // Target number of reviewers assigned to each application in this domain
-  reviewersPerApplication Int @default(2)
+  reviewersPerApplication Int            @default(2)
 
   @@id([domainId, applicationCycleId])
 }
@@ -277,7 +284,7 @@ model InterviewConfig {
 
   slotDurationMinutes Int @default(30)
   bufferMinutes       Int @default(15)
-  dayStartHour        Int @default(9)  // 9 AM
+  dayStartHour        Int @default(9) // 9 AM
   dayEndHour          Int @default(18) // 6 PM
 
   interviewStartDate DateTime
@@ -431,8 +438,8 @@ enum DecisionType {
 }
 
 enum DecisionStage {
-  Draft    // visible only to domain lead / hiring lead
-  Final    // locked, ready to release (domain lead marks final)
+  Draft // visible only to domain lead / hiring lead
+  Final // locked, ready to release (domain lead marks final)
   Released // visible to applicant; triggers notification hook (hiring lead releases)
 }
 
@@ -455,7 +462,7 @@ model Decision {
   madeBy   DALIMember @relation(fields: [madeById], references: [id])
 
   notes        String?
-  waitlistRank Int?    // set when type == Waitlisted; current rank = latest record's value
+  waitlistRank Int? // set when type == Waitlisted; current rank = latest record's value
 
   @@index([domainApplicationId, createdAt])
 }
@@ -474,14 +481,14 @@ model ApplicationReview {
   cycleReviewerId String
   cycleReviewer   CycleReviewer @relation(fields: [cycleReviewerId], references: [id])
 
-  scores                Json    @default("{}")  // { [criterionKey]: number }
+  scores                Json    @default("{}") // { [criterionKey]: number }
   feedback              String  @default("")
   rejectionRationale    String  @default("")
   overallRecommendation String? // 'Strong Hire' | 'Hire' | 'Lean Hire' | 'Lean No Hire' | 'No Hire'
-  annotations           Json    @default("[]")  // [{id, fieldKey, start, end, comment, color}]
+  annotations           Json    @default("[]") // [{id, fieldKey, start, end, comment, color}]
 
-  submittedAt   DateTime?  // null = in progress; non-null = read-only while set
-  submittedById String?    // records who authored the final review (set on submit, cleared on unsubmit)
+  submittedAt   DateTime? // null = in progress; non-null = read-only while set
+  submittedById String? // records who authored the final review (set on submit, cleared on unsubmit)
   submittedBy   DALIMember? @relation("SubmittedBy", fields: [submittedById], references: [id])
 
   @@unique([cycleReviewerId, domainApplicationId])
@@ -491,7 +498,7 @@ model ApplicationReview {
 
 enum DelibsType {
   Initial // deliberating on applications with completed reviews, no decision yet
-  Final   // deliberating after interviews; produces Accept/Waitlist/Reject decisions
+  Final // deliberating after interviews; produces Accept/Waitlist/Reject decisions
 }
 
 enum DelibsStatus {
@@ -558,7 +565,7 @@ model RubricVersion {
   // Back-ref: domain+cycle pairs that use this rubric version
   domainApplicationCycles DomainApplicationCycle[]
   // Back-ref: cycles using this as the general form rubric
-  cyclesAsGeneralRubric ApplicationCycle[] @relation("CycleGeneralRubric")
+  cyclesAsGeneralRubric   ApplicationCycle[]       @relation("CycleGeneralRubric")
 }
 
 // ─── Collaborative Editing ───────────────────────────────────────────────────
@@ -575,7 +582,7 @@ model CollabDocument {
   state     Bytes
   updatedAt DateTime @updatedAt
 
-  versions  CollabDocumentVersion[]
+  versions CollabDocumentVersion[]
 }
 
 // Periodic snapshots of a CollabDocument's Y.Doc state. One row written per
@@ -640,26 +647,28 @@ model RefreshToken {
 // Each value maps to one email template. Decision-related values mirror
 // DecisionType so releasing a Decision can look up its template directly.
 enum EmailTemplateType {
-  ApplicationReceived     // confirmation after submission
-  Rejected                // generic rejection (pre-interview)
-  RejectedPostInterview   // rejection after interview stage
-  InvitedToInterview      // applicant interview invite
-  InterviewInviteMentor   // internal: reviewer/mentor interview assignment
+  ApplicationReceived // confirmation after submission
+  Rejected // generic rejection (pre-interview)
+  RejectedPostInterview // rejection after interview stage
+  InvitedToInterview // applicant interview invite
+  InterviewInviteMentor // internal: reviewer/mentor interview assignment
   Waitlisted
   Accepted
 }
 
-// Append-only, immutable template versions. Never updated — only created.
-// Current template = latest record by createdAt for a given type.
-// Full version history is preserved for audit.
-model EmailTemplate {
+// Legacy single-table email templates (PR #112). Retained while
+// ApplicationReceived and InterviewInviteMentor still use the global
+// type-keyed lookup. Decision-related types have moved to the new
+// EmailTemplate / EmailTemplateVersion / CycleDecisionEmail trio below.
+// To be dropped in a follow-up PR after legacy callers are migrated.
+model LegacyEmailTemplate {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
 
   type    EmailTemplateType
   subject String
-  body    String   // plain text with {{firstName}} interpolation
-  version Int      // monotonically increasing per type, starting at 1
+  body    String
+  version Int
 
   createdById String
   createdBy   DALIMember @relation(fields: [createdById], references: [id])
@@ -667,13 +676,62 @@ model EmailTemplate {
   @@index([type, createdAt])
 }
 
+// Named, versioned email template — independent of any cycle. Mirrors
+// Rubric/RubricVersion. The "slot" a template fills (e.g. which DecisionType
+// it sends for) is determined by the cycle binding row that points at it.
+model EmailTemplate {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  name String
+
+  versions EmailTemplateVersion[]
+}
+
+// Immutable snapshot of an EmailTemplate. Never update — append a new version.
+// Subject and body use {{firstName}} interpolation.
+model EmailTemplateVersion {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  versionNumber Int
+  subject       String
+  body          String
+
+  templateId String
+  template   EmailTemplate @relation(fields: [templateId], references: [id])
+
+  createdById String
+  createdBy   DALIMember @relation(fields: [createdById], references: [id])
+
+  cycleDecisionEmails CycleDecisionEmail[]
+
+  @@index([templateId, versionNumber])
+}
+
+// Per-cycle binding: which EmailTemplateVersion fires when a Decision of the
+// given DecisionType is released in this cycle. One row per (cycle, decisionType).
+// No row = no email fires (surfaced explicitly in the picker UI).
+model CycleDecisionEmail {
+  applicationCycleId String
+  applicationCycle   ApplicationCycle @relation(fields: [applicationCycleId], references: [id])
+
+  decisionType DecisionType
+
+  emailTemplateVersionId String
+  emailTemplateVersion   EmailTemplateVersion @relation(fields: [emailTemplateVersionId], references: [id])
+
+  @@id([applicationCycleId, decisionType])
+}
+
 // Which domains a DALIMember leads (permanent assignment, not cycle-scoped)
 model DomainLeadAssignment {
-  id        String     @id @default(cuid())
-  createdAt DateTime   @default(now())
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
 
-  memberId  String
-  member    DALIMember @relation(fields: [memberId], references: [id])
-  domainId  String
-  domain    Domain     @relation(fields: [domainId], references: [id])
+  memberId String
+  member   DALIMember @relation(fields: [memberId], references: [id])
+  domainId String
+  domain   Domain     @relation(fields: [domainId], references: [id])
 }

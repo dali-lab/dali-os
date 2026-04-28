@@ -1,10 +1,14 @@
-import { redirect, useLoaderData, Link } from "react-router";
+import { useState } from "react";
+import { redirect, useLoaderData, useFetcher, Link } from "react-router";
 import type { Route } from "./+types/portal.application";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { getActiveCycle } from "~/lib/cycles";
 import { getDownloadUrl } from "~/lib/s3";
 import type { Question } from "~/types";
+import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
+import { Modal } from "~/components/Modal";
+import { QuestionList } from "~/components/ApplicationAnswers";
 
 // ─── Loader ──────────────────────────────────────────────────────────────────
 
@@ -47,9 +51,10 @@ export async function loader({ request }: Route.LoaderArgs) {
   const application = await prisma.application.findFirst({
     where: { userId: auth.user.sub, applicationCycleId: cycleId },
     include: {
-      statusUpdates: true,
+      statusUpdates: { orderBy: { createdAt: "asc" } },
       generalChallengeVersion: { select: { questions: true } },
       domainApplications: {
+        where: { selected: true },
         include: {
           challengeVersion: {
             select: { questions: true, domain: true },
@@ -59,8 +64,15 @@ export async function loader({ request }: Route.LoaderArgs) {
     },
   });
 
+  // Need at least one Submitted update to render this page. Withdrawn is allowed
+  // (and renders the withdrawn-state view); Draft alone redirects back to /portal.
   const submittedUpdate = application?.statusUpdates.find((u: any) => u.newStatus === "Submitted");
   if (!application || !submittedUpdate) return redirect("/portal");
+
+  const latestUpdate = application.statusUpdates[application.statusUpdates.length - 1];
+  const isWithdrawn = latestUpdate?.newStatus === "Withdrawn";
+  const withdrawnUpdate = isWithdrawn ? latestUpdate : null;
+  const canWithdraw = !!active && !isWithdrawn;
 
   const generalQuestions = application.generalChallengeVersion.questions as unknown as Question[];
   const rawGeneralAnswers = application.answers as Record<string, string>;
@@ -82,108 +94,58 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   return {
     submittedAt: submittedUpdate.createdAt.toISOString(),
+    withdrawnAt: withdrawnUpdate?.createdAt.toISOString() ?? null,
+    canWithdraw,
     generalQuestions,
     generalAnswers,
     domains,
   };
 }
 
-// ─── Answer renderers ────────────────────────────────────────────────────────
+// ─── Action ──────────────────────────────────────────────────────────────────
 
-function renderSkillsRating(value: string): React.ReactNode {
-  const ratings: { skill: string; rating: string }[] = [];
-  if (value) {
-    for (const line of value.split("\n")) {
-      const idx = line.lastIndexOf(":");
-      if (idx > 0) {
-        ratings.push({ skill: line.slice(0, idx).trim(), rating: line.slice(idx + 1).trim() });
-      }
-    }
-  }
-  if (ratings.length === 0) return <span className="text-muted-foreground italic">—</span>;
-  return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1.5">
-      {ratings.map(({ skill, rating }) => (
-        <div key={skill} className="flex items-center justify-between gap-2">
-          <span className="text-sm text-dark-blue truncate">{skill}</span>
-          <span className="shrink-0 w-8 text-center text-sm font-semibold text-dark-blue bg-white rounded border border-border py-0.5">
-            {rating}
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-}
+export async function action({ request }: Route.ActionArgs) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
 
-function AnswerDisplay({ question, answer }: { question: Question; answer: string }) {
-  if (!answer?.trim()) {
-    return <span className="text-muted-foreground italic">—</span>;
+  const formData = await request.formData();
+  const intent = formData.get("intent");
+
+  if (intent !== "withdraw") {
+    return Response.json({ error: "Unknown intent" }, { status: 400 });
   }
 
-  if (question.type === "github_url" || question.type === "figma_url") {
-    return (
-      <a
-        href={answer}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="text-sm text-accent-coral underline underline-offset-2 hover:text-accent-coral/80 break-all"
-      >
-        {answer}
-      </a>
+  const active = await getActiveCycle();
+  if (!active) {
+    return Response.json({ error: "No active cycle" }, { status: 400 });
+  }
+
+  const application = await prisma.application.findFirst({
+    where: { userId: auth.user.sub, applicationCycleId: active.id },
+    include: { statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 } },
+  });
+
+  if (!application) {
+    return Response.json({ error: "No application found" }, { status: 404 });
+  }
+
+  const latest = application.statusUpdates[0]?.newStatus;
+  if (latest !== "Submitted") {
+    return Response.json(
+      { error: latest === "Withdrawn" ? "Already withdrawn" : "Application is not submitted" },
+      { status: 400 },
     );
   }
 
-  if (question.type === "file") {
-    const filename = answer.includes("?")
-      ? answer.split("?")[0].split("/").pop()
-      : answer.split("/").pop();
-    return (
-      <a
-        href={answer}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="inline-flex items-center gap-1.5 text-sm text-accent-coral underline underline-offset-2 hover:text-accent-coral/80"
-      >
-        <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-        </svg>
-        {filename ?? "Download file"}
-      </a>
-    );
-  }
+  await prisma.applicationStatusUpdate.create({
+    data: {
+      applicationId: application.id,
+      userId: auth.user.sub,
+      newStatus: "Withdrawn",
+    },
+  });
 
-  if (question.type === "skills_rating") {
-    return <>{renderSkillsRating(answer)}</>;
-  }
-
-  // text / textarea / select
-  return <p className="text-sm text-dark-blue whitespace-pre-wrap">{answer}</p>;
-}
-
-// ─── Question list ────────────────────────────────────────────────────────────
-
-function QuestionList({
-  questions,
-  answers,
-}: {
-  questions: Question[];
-  answers: Record<string, string>;
-}) {
-  if (questions.length === 0) {
-    return <p className="text-sm text-muted-foreground italic">No questions in this section.</p>;
-  }
-  return (
-    <div className="space-y-5">
-      {questions.map(q => (
-        <div key={q.key}>
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">
-            {q.data.label}
-          </p>
-          <AnswerDisplay question={q} answer={answers[q.key] ?? ""} />
-        </div>
-      ))}
-    </div>
-  );
+  return Response.json({ ok: true });
 }
 
 // ─── Domain section (collapsible) ────────────────────────────────────────────
@@ -220,19 +182,40 @@ function DomainSection({
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function PortalApplication() {
-  const { submittedAt, generalQuestions, generalAnswers, domains } =
+  const { submittedAt, withdrawnAt, canWithdraw, generalQuestions, generalAnswers, domains } =
     useLoaderData<typeof loader>() as {
       submittedAt: string;
+      withdrawnAt: string | null;
+      canWithdraw: boolean;
       generalQuestions: Question[];
       generalAnswers: Record<string, string>;
       domains: { id: string; name: string; questions: Question[]; answers: Record<string, string> }[];
     };
+
+  const isWithdrawn = withdrawnAt !== null;
+  const [showWithdrawModal, setShowWithdrawModal] = useState(false);
+  const withdrawFetcher = useFetcher();
+  const submittingWithdraw = withdrawFetcher.state !== "idle";
 
   const submittedDate = new Date(submittedAt).toLocaleDateString(undefined, {
     year: "numeric",
     month: "long",
     day: "numeric",
   });
+  const withdrawnDate = withdrawnAt
+    ? new Date(withdrawnAt).toLocaleDateString(undefined, {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      })
+    : null;
+
+  function confirmWithdraw() {
+    const form = new FormData();
+    form.set("intent", "withdraw");
+    withdrawFetcher.submit(form, { method: "post" });
+    setShowWithdrawModal(false);
+  }
 
   return (
     <div>
@@ -258,6 +241,43 @@ export default function PortalApplication() {
       {/* Content */}
       <div className="px-6 md:px-16 lg:px-24 py-10">
         <div className="max-w-3xl mx-auto space-y-8">
+          {/* Withdrawn notice OR withdraw action */}
+          {isWithdrawn ? (
+            <div
+              role="status"
+              className="rounded-2xl border border-border bg-muted/30 px-6 py-5 flex items-start gap-3"
+            >
+              <svg className="w-5 h-5 text-muted-foreground mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <div>
+                <p className="text-sm font-semibold text-dark-blue">
+                  You withdrew this application on {withdrawnDate}.
+                </p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Your answers are preserved below for reference. If you change your mind, contact the DALI team.
+                </p>
+              </div>
+            </div>
+          ) : canWithdraw ? (
+            <div className="rounded-2xl border border-border px-6 py-5 flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-semibold text-dark-blue">No longer want to be considered?</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Withdrawing removes your application from review. This cannot be undone from the portal.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowWithdrawModal(true)}
+                disabled={submittingWithdraw}
+                className="shrink-0 px-5 py-2 rounded-full border-2 border-red-500 text-red-500 text-sm font-semibold hover:bg-red-500 hover:text-white transition disabled:opacity-50"
+              >
+                Withdraw Application
+              </button>
+            </div>
+          ) : null}
+
           {/* General questions */}
           <div className="rounded-2xl bg-[#E8F4FA] px-6 py-5">
             <h2 className="font-heading text-sm font-bold text-dark-blue uppercase tracking-wider mb-5">
@@ -284,6 +304,43 @@ export default function PortalApplication() {
           )}
         </div>
       </div>
+
+      {/* Withdraw confirmation modal */}
+      <Modal
+        open={showWithdrawModal}
+        onClose={() => setShowWithdrawModal(false)}
+        labelledBy="withdraw-modal-title"
+        disableEscape={submittingWithdraw}
+      >
+        <h3 id="withdraw-modal-title" className="font-heading text-base font-bold text-dark-blue mb-2">
+          Withdraw your application?
+        </h3>
+        <p className="text-sm text-gray-600 mb-5">
+          Your application will be removed from review. You can't undo this from the portal — you'd need to contact the DALI team to reverse it.
+        </p>
+        <div className="flex gap-3 justify-end">
+          <button
+            type="button"
+            onClick={() => setShowWithdrawModal(false)}
+            disabled={submittingWithdraw}
+            className="px-5 py-2 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-accent-coral hover:text-accent-coral transition disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={confirmWithdraw}
+            disabled={submittingWithdraw}
+            className="px-5 py-2 rounded-full bg-red-500 text-white text-sm font-semibold hover:bg-red-500/90 transition disabled:opacity-50"
+          >
+            {submittingWithdraw ? "Withdrawing..." : "Withdraw"}
+          </button>
+        </div>
+      </Modal>
     </div>
   );
+}
+
+export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
+  return <ApplicantErrorBoundary error={error} />;
 }
