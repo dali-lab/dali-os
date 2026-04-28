@@ -52,7 +52,7 @@ function makeCloseRequest() {
 }
 
 describe("POST /api/delibs/:id (intent=close)", () => {
-  it("creates Draft decisions and assigns waitlist ranks starting at 1 even when Accepts precede them", async () => {
+  it("creates Final decisions and assigns waitlist ranks starting at 1 even when Accepts precede them", async () => {
     mockPrisma.delibsSession.findUnique.mockResolvedValue({
       id: SESSION_ID,
       type: "Final",
@@ -77,9 +77,9 @@ describe("POST /api/delibs/:id (intent=close)", () => {
     const wait1 = calls.find((d: any) => d.domainApplicationId === "da-wait-1");
     const wait2 = calls.find((d: any) => d.domainApplicationId === "da-wait-2");
 
-    expect(accept).toMatchObject({ type: "Accepted", stage: "Draft", waitlistRank: null });
-    expect(wait1).toMatchObject({ type: "Waitlisted", stage: "Draft", waitlistRank: 1 });
-    expect(wait2).toMatchObject({ type: "Waitlisted", stage: "Draft", waitlistRank: 2 });
+    expect(accept).toMatchObject({ type: "Accepted", stage: "Final", waitlistRank: null });
+    expect(wait1).toMatchObject({ type: "Waitlisted", stage: "Final", waitlistRank: 1 });
+    expect(wait2).toMatchObject({ type: "Waitlisted", stage: "Final", waitlistRank: 2 });
 
     expect(mockTx.delibsSession.update).toHaveBeenCalledWith({
       where: { id: SESSION_ID },
