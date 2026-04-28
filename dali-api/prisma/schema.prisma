@@ -199,6 +199,9 @@ model ChallengeVersion {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
 
+  // Optional ProseMirror JSON document shown to applicants and reviewers above
+  // the questions for this challenge version. Null = no description.
+  description Json?
   questions   Json
   challengeId String
   challenge   Challenge @relation(fields: [challengeId], references: [id])
