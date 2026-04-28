@@ -73,12 +73,17 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
       active: location.pathname.startsWith('/emails'),
     },
     {
-      label: 'Members',
+      label: 'Admin',
       to: '/admin-console',
       icon: Users,
-      show: isAdmin || isHiringLead,
+      show: isAdmin,
       active: path.startsWith('/admin-console'),
-      sub: null,
+      sub: [
+        { label: 'Members', to: '/admin-console/members', active: path.startsWith('/admin-console/members') },
+        ...(isAdmin
+          ? [{ label: 'Domains', to: '/admin-console/domains', active: path.startsWith('/admin-console/domains') }]
+          : []),
+      ],
     },
   ].filter((s) => s.show)
 
