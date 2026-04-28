@@ -251,6 +251,51 @@ jobs:
         run: |
           git config --global user.email "claude[bot]@users.noreply.github.com"
           git config --global user.name "claude[bot]"
+
+      - name: Convert PR to draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NODE_ID: ${{ github.event.pull_request.node_id }}
+        run: |
+          gh api graphql \
+            -f query='mutation($id: ID!) { convertPullRequestToDraft(input: {pullRequestId: $id}) { pullRequest { isDraft } } }' \
+            -F id="$PR_NODE_ID" >/dev/null
+
+      - name: Mark issue claude-implementing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          # Issue number is encoded in the head ref `claude/issue-N`. Inline
+          # the label-set logic so it doesn't depend on the composite action
+          # being on the PR's branch.
+          ISSUE="${HEAD_REF#claude/issue-}"
+          if ! [[ "$ISSUE" =~ ^[0-9]+$ ]]; then
+            echo "::error::Could not parse issue number from branch '$HEAD_REF'"
+            exit 1
+          fi
+          gh label create claude-implementing \
+            --repo "$GITHUB_REPOSITORY" \
+            --color "1D76DB" \
+            --description "Claude is actively implementing" 2>/dev/null || true
+          for L in claude claude-plan-needs-review claude-pr-needs-review claude-failed; do
+            gh issue edit "$ISSUE" --repo "$GITHUB_REPOSITORY" --remove-label "$L" 2>/dev/null || true
+          done
+          gh issue edit "$ISSUE" --repo "$GITHUB_REPOSITORY" --add-label claude-implementing
+          echo "ISSUE_NUMBER=$ISSUE" >> "$GITHUB_ENV"
+
+      - name: Post working comment
+        id: working
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+          REVIEWER: ${{ github.event.sender.login }}
+        run: |
+          BODY=$(printf '<!-- claude-respond-review -->\n🤖 Working on changes for the latest review feedback from @%s…' "$REVIEWER")
+          ID=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" \
+            -f body="$BODY" --jq '.id')
+          echo "comment_id=$ID" >> "$GITHUB_OUTPUT"
+
       - uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -260,6 +305,13 @@ jobs:
             (branch `${{ github.event.pull_request.head.ref }}`).
 
             Event: ${{ github.event_name }}
+
+            The workflow has already:
+              - Converted the PR to draft.
+              - Set the linked issue to `claude-implementing`.
+              - Posted a placeholder PR comment (id `${{ steps.working.outputs.comment_id }}`)
+                with body "Working on changes…". You will EDIT that comment at the end
+                instead of posting a new summary comment.
 
             Step 1 — read context:
               - Read `CLAUDE.md`.
@@ -273,14 +325,70 @@ jobs:
 
             Step 2 — respond. For each distinct review point, choose ONE:
               (a) Make the requested change. Run `cd dali-api && npm run typecheck` if you touched TS files. Commit. Push.
-                  Then leave a PR comment that lists each point and what you changed for it.
-              (b) Leave a PR comment explaining why you didn't change it: either the feedback is
+              (b) Note in the final summary why you didn't change it: either the feedback is
                   ambiguous, forces a real tradeoff, or you disagree for a principled reason.
                   Do NOT push a guess.
 
+            Step 3 — finish by EDITING the placeholder comment to be your summary.
+              Run:
+                gh api -X PATCH /repos/${{ github.repository }}/issues/comments/${{ steps.working.outputs.comment_id }} \
+                  -f body="<!-- claude-respond-review -->
+            ✅ Done.
+
+            <bulleted summary: for each review point, one line on what you changed (or why you didn't)>
+            "
+              Keep the leading sentinel comment so the workflow can find this comment later.
+              Do NOT post a new summary comment — only edit the existing one.
+
             Rules:
               - Do NOT mark conversations resolved.
-              - Do NOT force-push unless rebasing on `dev` is genuinely necessary; if so, explain in the comment.
+              - Do NOT force-push unless rebasing on `dev` is genuinely necessary; if so, explain in the summary.
               - Do NOT modify `.github/workflows/*`.
               - Do NOT use `--no-verify`.
+              - Do NOT mark the PR ready for review yourself; the workflow does that after you finish.
           claude_args: --model sonnet --max-turns 100 --allowedTools "Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(gh:*),Bash(npm:*),Bash(npx:*)"
+
+      - name: Mark PR ready for review
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NODE_ID: ${{ github.event.pull_request.node_id }}
+        run: |
+          gh api graphql \
+            -f query='mutation($id: ID!) { markPullRequestReadyForReview(input: {pullRequestId: $id}) { pullRequest { isDraft } } }' \
+            -F id="$PR_NODE_ID" >/dev/null
+
+      - name: Mark issue claude-pr-needs-review (success)
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh label create claude-pr-needs-review \
+            --repo "$GITHUB_REPOSITORY" \
+            --color "0E8A16" \
+            --description "Claude opened a PR; awaiting reviewer" 2>/dev/null || true
+          for L in claude claude-plan-needs-review claude-implementing claude-failed; do
+            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label "$L" 2>/dev/null || true
+          done
+          gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --add-label claude-pr-needs-review
+
+      - name: Mark issue claude-failed and patch comment (failure)
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+          COMMENT_ID: ${{ steps.working.outputs.comment_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh label create claude-failed \
+            --repo "$GITHUB_REPOSITORY" \
+            --color "B60205" \
+            --description "Claude implementation or CI auto-fix failed" 2>/dev/null || true
+          for L in claude claude-plan-needs-review claude-implementing claude-pr-needs-review; do
+            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label "$L" 2>/dev/null || true
+          done
+          gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --add-label claude-failed
+          if [ -n "$COMMENT_ID" ]; then
+            BODY=$(printf '<!-- claude-respond-review -->\n❌ Did not finish responding to the review. See [workflow run](%s) for details.' "$RUN_URL")
+            gh api -X PATCH "/repos/$GITHUB_REPOSITORY/issues/comments/$COMMENT_ID" -f body="$BODY" >/dev/null || true
+          fi
