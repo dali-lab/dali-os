@@ -7,6 +7,7 @@ import { requireAuth } from "~/lib/auth";
 import { CheckCircle, Plus, Trash2, Check, Clock, X, CircleDashed, ChevronDown } from "lucide-react";
 import { inferDomainApplicationStatus } from "~/lib/domain-application-status";
 import { getReviewStatus } from "~/lib/review-status";
+import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
 import {
   summarizeDecisionPills,
   synthesizePrePipelinePill,
@@ -958,6 +959,12 @@ function ChallengeSelector({ cycleId, domainId, options, selectedId }: {
           Save
         </button>
       </Form>
+
+      {!isEmptyDoc(previewVersion?.description) && (
+        <div className="border border-border rounded-md bg-muted/30 px-4 py-3">
+          <RichTextViewer content={previewVersion.description} />
+        </div>
+      )}
 
       {questions.length > 0 && (
         <div className="border border-border rounded-md divide-y divide-gray-100">
