@@ -4,6 +4,7 @@
 // After Google redirects back, /admin/authorize-gmail/callback stores the refresh token.
 
 import { requireAuth } from '~/lib/auth'
+import { isHiringLead } from '~/lib/roles'
 import { randomBytes } from 'node:crypto'
 
 const GMAIL_STATE_COOKIE = '__dali_gmail_oauth_state'
@@ -19,6 +20,10 @@ export async function loader({ request }: { request: Request }) {
   const auth = await requireAuth(request)
   if (!auth.ok) {
     return new Response(null, { status: 302, headers: { Location: '/login' } })
+  }
+
+  if (!(await isHiringLead(auth.user.sub))) {
+    return new Response(null, { status: 302, headers: { Location: '/' } })
   }
 
   const apiBase = process.env.API_BASE_URL ?? 'http://localhost:3001'
