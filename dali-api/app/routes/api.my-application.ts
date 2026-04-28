@@ -104,16 +104,21 @@ export async function action({ request }: Route.ActionArgs) {
 
   const answers = body.answers ?? {};
 
-  // Get the latest cycle and its form version
+  // Get the latest cycle and its general challenge version (the form). The
+  // general form is the ChallengeVersion linked to the cycle with domainId: null.
   const cycle = await prisma.applicationCycle.findFirst({
     orderBy: { createdAt: "desc" },
     include: {
-      formVersion: true,
+      challengeVersions: { include: { challengeVersion: true } },
       statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
     },
   });
 
-  if (!cycle || !cycle.formVersion) {
+  const generalCvac = cycle?.challengeVersions.find(
+    (cvc) => cvc.challengeVersion.domainId === null,
+  );
+
+  if (!cycle || !generalCvac) {
     return withCors(request, Response.json({ error: "No active application cycle" }, { status: 400 }));
   }
 
@@ -122,46 +127,50 @@ export async function action({ request }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Applications are not open" }, { status: 400 }));
   }
 
-  // Check for existing application
-  const existing = await prisma.application.findFirst({
-    where: { userId, applicationCycleId: cycle.id },
+  // Withdrawn is sticky: bail before the upsert so we never resurrect a
+  // withdrawn application with new answers.
+  const existingForWithdrawnCheck = await prisma.application.findUnique({
+    where: { userId_applicationCycleId: { userId, applicationCycleId: cycle.id } },
     include: { statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 } },
   });
+  if (existingForWithdrawnCheck?.statusUpdates[0]?.newStatus === "Withdrawn") {
+    return withCors(
+      request,
+      Response.json({ error: "Application has been withdrawn" }, { status: 409 }),
+    );
+  }
 
-  if (existing) {
-    const latestStatus = existing.statusUpdates[0]?.newStatus;
-    if (latestStatus === "Withdrawn") {
-      return withCors(
-        request,
-        Response.json({ error: "Application has been withdrawn" }, { status: 409 }),
-      );
-    }
-    const alreadySubmitted = latestStatus === "Submitted";
-    // Update answers; only create a new status update on first submission
-    await prisma.application.update({
-      where: { id: existing.id },
-      data: {
-        answers,
-        ...(alreadySubmitted ? {} : {
-          statusUpdates: { create: { newStatus: "Submitted", userId } },
-        }),
-      },
-    });
-    // Only send confirmation email on first submission
-    if (alreadySubmitted) {
-      return withCors(request, Response.json({ ok: true }));
-    }
-  } else {
-    // Create new application as Submitted
-    await prisma.application.create({
-      data: {
+  // Atomic upsert keyed on the (userId, applicationCycleId) unique constraint.
+  // Combined with a status-update insert in the same transaction so concurrent
+  // POSTs converge on a single Application row and at most one Submitted
+  // status-update fires the confirmation email path.
+  const { firstSubmission } = await prisma.$transaction(async (tx) => {
+    const app = await tx.application.upsert({
+      where: { userId_applicationCycleId: { userId, applicationCycleId: cycle.id } },
+      update: { answers },
+      create: {
         userId,
         applicationCycleId: cycle.id,
-        applicationFormVersionId: cycle.formVersion.id,
+        generalChallengeVersionId: generalCvac.challengeVersionId,
         answers,
-        statusUpdates: { create: { newStatus: "Submitted", userId } },
       },
     });
+    const latestStatus = await tx.applicationStatusUpdate.findFirst({
+      where: { applicationId: app.id },
+      orderBy: { createdAt: "desc" },
+    });
+    if (latestStatus?.newStatus === "Submitted") {
+      return { firstSubmission: false };
+    }
+    await tx.applicationStatusUpdate.create({
+      data: { newStatus: "Submitted", applicationId: app.id, userId },
+    });
+    return { firstSubmission: true };
+  });
+
+  // Only send confirmation email on first submission
+  if (!firstSubmission) {
+    return withCors(request, Response.json({ ok: true }));
   }
 
   // Send confirmation email (best-effort — don't fail the submission if email fails)
