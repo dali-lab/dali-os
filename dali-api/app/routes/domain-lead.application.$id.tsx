@@ -43,6 +43,12 @@ const STAGE_LABELS: Record<string, string> = {
   Released: "Released",
 };
 
+export const meta: Route.MetaFunction = ({ data }) => {
+  const user = (data as any)?.application?.user;
+  const name = [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim();
+  return [{ title: `${name || "Application"} · Domain lead · DALI OS` }];
+};
+
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");

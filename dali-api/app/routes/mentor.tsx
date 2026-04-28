@@ -18,6 +18,8 @@ import { prisma } from '~/lib/db'
 import { requireAuth } from '~/lib/auth'
 import type { Route } from './+types/mentor'
 
+export const meta: Route.MetaFunction = () => [{ title: "Reviewer · DALI OS" }]
+
 export async function loader({ request }: Route.LoaderArgs) {
   const empty = {
     activeCycle: null as { id: string; name: string } | null,
