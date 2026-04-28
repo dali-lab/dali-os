@@ -6,6 +6,8 @@ import { requireAuth } from "~/lib/auth";
 import { getActiveCycle } from "~/lib/cycles";
 import { checkGitHubUrl, checkFigmaUrl } from "~/lib/submission-check";
 import type { SubmissionCheckResult } from "~/lib/submission-check";
+import { countWords, validateWordLimits } from "~/lib/word-count";
+import type { WordCountViolation } from "~/lib/word-count";
 import {
   MAX_UPLOAD_BYTES,
   MAX_UPLOAD_LABEL,
@@ -295,6 +297,43 @@ export async function action({ request }: Route.ActionArgs) {
       url: string;
       type: "github_url" | "figma_url";
     }[];
+
+    // Validate word limits server-side before any writes. Trust the questions
+    // from the ChallengeVersion record, not anything in the request payload.
+    const application = await prisma.application.findUnique({
+      where: { id: applicationId },
+      select: {
+        generalChallengeVersion: { select: { questions: true } },
+      },
+    });
+    if (!application) {
+      return Response.json({ error: "Application not found" }, { status: 404 });
+    }
+    const generalQuestions =
+      (application.generalChallengeVersion.questions as unknown as Question[]) ?? [];
+
+    const domainApps = domainAnswers.length
+      ? await prisma.domainApplication.findMany({
+          where: { id: { in: domainAnswers.map(da => da.domainApplicationId) } },
+          select: {
+            id: true,
+            challengeVersion: { select: { questions: true } },
+          },
+        })
+      : [];
+
+    const wordCountErrors: Record<string, WordCountViolation> = {
+      ...validateWordLimits(generalQuestions, answers),
+    };
+    for (const da of domainAnswers) {
+      const dbDa = domainApps.find(d => d.id === da.domainApplicationId);
+      if (!dbDa) continue;
+      const questions = (dbDa.challengeVersion.questions as unknown as Question[]) ?? [];
+      Object.assign(wordCountErrors, validateWordLimits(questions, da.answers));
+    }
+    if (Object.keys(wordCountErrors).length > 0) {
+      return { wordCountErrors };
+    }
 
     // Save final answers
     await prisma.application.update({
@@ -621,7 +660,7 @@ function QuestionField({
     "w-full rounded-lg border border-border bg-card text-sm text-dark-blue placeholder:text-muted-foreground/70 focus:outline-none focus:border-accent-coral px-4 py-2";
 
   if (question.type === "textarea") {
-    const wordCount = value.trim() ? value.trim().split(/\s+/).filter(Boolean).length : 0;
+    const wordCount = countWords(value);
     const maxWords = question.data.maxWords;
     const overLimit = maxWords !== undefined && wordCount > maxWords;
     return (
@@ -983,6 +1022,7 @@ export default function PortalApply() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [urlWarnings, setUrlWarnings] = useState<Record<string, string>>({});
+  const [wordCountErrors, setWordCountErrors] = useState<Record<string, WordCountViolation>>({});
   const [urlChecks, setUrlChecks] = useState<Record<string, UrlCheckState>>({});
   const [showWarningModal, setShowWarningModal] = useState(false);
   const [showReviewModal, setShowReviewModal] = useState(false);
@@ -1145,6 +1185,7 @@ export default function PortalApply() {
   function openReviewIfValid() {
     setError(null);
     setUrlWarnings({});
+    setWordCountErrors({});
     if (!draft) return;
     const validationError = validateForReview();
     if (validationError) {
@@ -1157,6 +1198,7 @@ export default function PortalApply() {
   function doSubmit(force = false) {
     setError(null);
     setUrlWarnings({});
+    setWordCountErrors({});
     if (!draft) return;
 
     // Collect URL questions from general and domain-specific forms
@@ -1206,10 +1248,15 @@ export default function PortalApply() {
     }
   }
 
-  // Handle submit response (urlWarnings) — redirects are handled automatically by React Router
+  // Handle submit response (urlWarnings, wordCountErrors) — redirects are handled automatically by React Router
   useEffect(() => {
     if (submitFetcher.state === "idle" && submitFetcher.data) {
       setSubmitting(false);
+      if (submitFetcher.data.wordCountErrors) {
+        setWordCountErrors(submitFetcher.data.wordCountErrors);
+        setTimeout(() => warningBannerRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 50);
+        return;
+      }
       if (submitFetcher.data.urlWarnings) {
         const warnings: Record<string, string> = {};
         for (const [key, result] of Object.entries(submitFetcher.data.urlWarnings) as [string, SubmissionCheckResult][]) {
@@ -1343,6 +1390,8 @@ export default function PortalApply() {
                 <span className="inline-block w-3 h-3 border-2 border-border border-t-muted-foreground rounded-full animate-spin" />
                 Submitting...
               </span>
+            ) : Object.keys(wordCountErrors).length > 0 ? (
+              <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-red-100 text-red-700">Action required</span>
             ) : Object.keys(urlWarnings).length > 0 ? (
               <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-amber-100 text-amber-700">Action required</span>
             ) : isAlreadySubmitted ? (
@@ -1383,6 +1432,11 @@ export default function PortalApply() {
                   />
                   {urlWarnings[q.key] && (
                     <p className="text-xs text-amber-600 mt-1">{urlWarnings[q.key]}</p>
+                  )}
+                  {wordCountErrors[q.key] && (
+                    <p className="text-xs text-red-500 mt-1">
+                      Over the {wordCountErrors[q.key].maxWords}-word limit ({wordCountErrors[q.key].wordCount} words).
+                    </p>
                   )}
                 </div>
               ))}
@@ -1432,6 +1486,11 @@ export default function PortalApply() {
                   {urlWarnings[q.key] && (
                     <p className="text-xs text-amber-600 mt-1">{urlWarnings[q.key]}</p>
                   )}
+                  {wordCountErrors[q.key] && (
+                    <p className="text-xs text-red-500 mt-1">
+                      Over the {wordCountErrors[q.key].maxWords}-word limit ({wordCountErrors[q.key].wordCount} words).
+                    </p>
+                  )}
                 </div>
               ))}
             </div>
@@ -1458,6 +1517,11 @@ export default function PortalApply() {
                     value={answers[q.key] ?? ""}
                     onChange={v => setAnswer(q.key, v)}
                   />
+                  {wordCountErrors[q.key] && (
+                    <p className="text-xs text-red-500 mt-1">
+                      Over the {wordCountErrors[q.key].maxWords}-word limit ({wordCountErrors[q.key].wordCount} words).
+                    </p>
+                  )}
                 </div>
               ))}
             </div>
@@ -1466,9 +1530,26 @@ export default function PortalApply() {
 
         {error && <p className="text-sm text-red-500">{error}</p>}
 
+        {/* Word-count errors banner — hard error, blocks submission */}
+        {Object.keys(wordCountErrors).length > 0 && (
+          <div ref={warningBannerRef} className="rounded-xl border border-red-200 bg-red-50 px-5 py-4">
+            <p className="text-sm font-semibold text-red-800 mb-1">Some answers exceed the word limit</p>
+            <p className="text-xs text-red-700">
+              The following answers are over the allowed word count. Trim them down before submitting.
+            </p>
+            <ul className="text-xs text-red-700 mt-2 list-disc list-inside space-y-0.5">
+              {Object.entries(wordCountErrors).map(([key, v]) => (
+                <li key={key}>
+                  <span className="font-semibold">{v.label}:</span> {v.wordCount} / {v.maxWords} words
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {/* URL warnings banner */}
         {Object.keys(urlWarnings).length > 0 && (
-          <div ref={warningBannerRef} className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4">
+          <div ref={Object.keys(wordCountErrors).length > 0 ? undefined : warningBannerRef} className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4">
             <p className="text-sm font-semibold text-amber-800 mb-1">Some URLs may have issues</p>
             <p className="text-xs text-amber-700">
               One or more of your submitted links appear to be private or inaccessible. You can still submit, but reviewers may not be able to view them.
