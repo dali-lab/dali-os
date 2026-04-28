@@ -10,7 +10,6 @@ const RELATION_LABELS: Record<string, string> = {
   domainLeadAssignments: "domain lead assignments",
   cycleReviewers: "cycle reviewers",
   cycleInterviewers: "cycle interviewers",
-  rubrics: "rubrics",
   delibsSessions: "delibs sessions",
 };
 
@@ -20,7 +19,6 @@ export type DomainUsageCounts = {
   domainLeadAssignments: number;
   cycleReviewers: number;
   cycleInterviewers: number;
-  rubrics: number;
   delibsSessions: number;
 };
 
@@ -56,7 +54,6 @@ export async function action({ request, params }: Route.ActionArgs) {
             domainLeadAssignments: true,
             cycleReviewers: true,
             cycleInterviewers: true,
-            rubrics: true,
             delibsSessions: true,
           },
         },

@@ -10,20 +10,16 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!auth.ok) return redirect('/login')
   if (!(await isHiringLead(auth.user.sub)) && !(await isDomainLead(auth.user.sub))) return redirect('/')
 
-  const [rubrics, domains] = await Promise.all([
-    prisma.rubric.findMany({
-      include: {
-        domain: true,
-        versions: {
-          include: { createdBy: true },
-          orderBy: { versionNumber: 'asc' },
-        },
+  const rubrics = await prisma.rubric.findMany({
+    include: {
+      versions: {
+        include: { createdBy: true },
+        orderBy: { versionNumber: 'asc' },
       },
-      orderBy: { createdAt: 'desc' },
-    }),
-    prisma.domain.findMany({ orderBy: { name: 'asc' } }),
-  ])
-  return { rubrics, domains }
+    },
+    orderBy: { createdAt: 'desc' },
+  })
+  return { rubrics }
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -36,10 +32,9 @@ export async function action({ request }: Route.ActionArgs) {
 
   if (intent === 'create') {
     const name = (formData.get('name') as string)?.trim()
-    const domainId = (formData.get('domainId') as string) || null
     if (!name) return { error: 'Name is required' }
     const rubric = await prisma.rubric.create({
-      data: { name, domainId },
+      data: { name },
     })
     return redirect(`/rubrics/${rubric.id}`)
   }

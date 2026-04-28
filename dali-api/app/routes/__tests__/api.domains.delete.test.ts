@@ -26,7 +26,6 @@ const ZERO_COUNTS = {
   domainLeadAssignments: 0,
   cycleReviewers: 0,
   cycleInterviewers: 0,
-  rubrics: 0,
   delibsSessions: 0,
 };
 
@@ -55,9 +54,9 @@ describe("describeDomainUsage", () => {
     const out = describeDomainUsage({
       ...ZERO_COUNTS,
       applicationCycles: 2,
-      rubrics: 3,
+      cycleReviewers: 3,
     });
-    expect(out).toEqual(["2 application cycles", "3 rubrics"]);
+    expect(out).toEqual(["2 application cycles", "3 cycle reviewers"]);
   });
 });
 
@@ -85,13 +84,13 @@ describe("DELETE /api/domains/:domainId", () => {
     mockPrisma.domain.findUnique.mockResolvedValue({
       id: DOMAIN_ID,
       name: "Engineering",
-      _count: { ...ZERO_COUNTS, applicationCycles: 1, rubrics: 2 },
+      _count: { ...ZERO_COUNTS, applicationCycles: 1, cycleReviewers: 2 },
     });
     const res = await action({ request: makeRequest(), params: { domainId: DOMAIN_ID }, context: {} } as any);
     expect(res.status).toBe(409);
     const json = await res.json();
     expect(json.error).toMatch(/application cycles/);
-    expect(json.error).toMatch(/rubrics/);
+    expect(json.error).toMatch(/cycle reviewers/);
     expect(mockPrisma.domain.delete).not.toHaveBeenCalled();
   });
 

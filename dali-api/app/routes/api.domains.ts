@@ -32,7 +32,6 @@ export async function loader({ request }: Route.LoaderArgs) {
           domainLeadAssignments: true,
           cycleReviewers: true,
           cycleInterviewers: true,
-          rubrics: true,
           delibsSessions: true,
         },
       },
