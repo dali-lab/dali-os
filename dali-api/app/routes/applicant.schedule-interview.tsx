@@ -18,6 +18,8 @@ import {
 
 type RawSlot = { startTime: string; endTime: string };
 
+export const meta: Route.MetaFunction = () => [{ title: "Schedule interview · DALI OS" }];
+
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
