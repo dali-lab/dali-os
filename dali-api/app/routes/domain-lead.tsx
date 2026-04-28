@@ -337,6 +337,17 @@ export async function action({ request }: Route.ActionArgs) {
       return redirect("/domain-lead");
     }
 
+    // Prevent linking two versions of the same underlying challenge in one cycle.
+    const sameChallenge = await prisma.challengeVersionApplicationCycle.findFirst({
+      where: {
+        applicationCycleId: cycleId,
+        challengeVersion: { challengeId: cv.challengeId, domainId },
+      },
+    });
+    if (sameChallenge) {
+      return redirect("/domain-lead");
+    }
+
     // Idempotent: skip if already linked.
     const existing = await prisma.challengeVersionApplicationCycle.findUnique({
       where: { challengeVersionId_applicationCycleId: { challengeVersionId: newVersionId, applicationCycleId: cycleId } },
@@ -942,7 +953,8 @@ function ChallengeSelector({ cycleId, domainId, options, linkedChallengeVersions
   linkedChallengeVersions: any[];
 }) {
   const linkedIds = new Set(linkedChallengeVersions.map((cv: any) => cv.id));
-  const availableOptions = options.filter((cv: any) => !linkedIds.has(cv.id));
+  const linkedChallengeIds = new Set(linkedChallengeVersions.map((cv: any) => cv.challengeId));
+  const availableOptions = options.filter((cv: any) => !linkedIds.has(cv.id) && !linkedChallengeIds.has(cv.challengeId));
   const [pickerId, setPickerId] = useState<string>("");
 
   return (

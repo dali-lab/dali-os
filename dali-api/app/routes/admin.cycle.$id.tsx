@@ -345,6 +345,16 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (!cv || cv.domainId !== domainId) {
       return redirect(`/hiring-lead-admin/cycle/${params.id}`);
     }
+    // Prevent linking two versions of the same underlying challenge in one cycle.
+    const sameChallenge = await prisma.challengeVersionApplicationCycle.findFirst({
+      where: {
+        applicationCycleId: params.id!,
+        challengeVersion: { challengeId: cv.challengeId, domainId },
+      },
+    });
+    if (sameChallenge) {
+      return redirect(`/hiring-lead-admin/cycle/${params.id}`);
+    }
     const existing = await prisma.challengeVersionApplicationCycle.findUnique({
       where: { challengeVersionId_applicationCycleId: { challengeVersionId, applicationCycleId: params.id! } },
     });
@@ -1756,6 +1766,7 @@ function DomainOverridePanel({
   const isReady: boolean = !!domain.isReady;
   const linkedCvs: any[] = linkedCvLinks.map((l: any) => l.challengeVersion).filter(Boolean);
   const linkedCvIds = new Set<string>(linkedCvs.map((cv: any) => cv.id));
+  const linkedChallengeIds = new Set<string>(linkedCvs.map((cv: any) => cv.challengeId));
   const hasLinkedChallenge = linkedCvs.length > 0;
   const summaryLabel = !hasLinkedChallenge
     ? null
@@ -1763,8 +1774,8 @@ function DomainOverridePanel({
       ? `${linkedCvs[0].challenge?.name ?? 'Untitled'} — created ${new Date(linkedCvs[0].createdAt).toLocaleDateString()}`
       : `${linkedCvs.length} challenges linked`;
 
-  // Picker for adding a new CV (filtered to those not yet linked)
-  const addableOptions = challengeOptions.filter((cv: any) => !linkedCvIds.has(cv.id));
+  // Picker for adding a new CV (filtered to those not yet linked, and not a duplicate challenge)
+  const addableOptions = challengeOptions.filter((cv: any) => !linkedCvIds.has(cv.id) && !linkedChallengeIds.has(cv.challengeId));
   const [pickerCvId, setPickerCvId] = useState('');
   // Reset picker when the linked set changes (after a redirect re-render)
   useEffect(() => { setPickerCvId(''); }, [linkedCvIds.size]);
