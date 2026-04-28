@@ -36,6 +36,12 @@ const STATUS_COLORS: Record<string, string> = {
   CancelledByAdmin: 'bg-muted text-foreground/80',
 }
 
+export const meta: Route.MetaFunction = ({ data }) => {
+  const user = (data as any)?.interview?.domainApplication?.application?.user
+  const name = [user?.firstName, user?.lastName].filter(Boolean).join(' ').trim()
+  return [{ title: `${name ? `${name} interview` : 'Interview'} · DALI OS` }]
+}
+
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request)
   if (!auth.ok) throw redirect('/login')

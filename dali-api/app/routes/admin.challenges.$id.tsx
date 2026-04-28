@@ -5,6 +5,11 @@ import { requireAuth } from "~/lib/auth";
 import { isHiringLead, isDomainLead } from "~/lib/roles";
 import { ChallengeDetail } from "~/components/ChallengeDetail";
 
+export const meta: Route.MetaFunction = ({ data }) => {
+  const name = (data as any)?.challenge?.name;
+  return [{ title: `${name || "Challenge"} · DALI OS` }];
+};
+
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");

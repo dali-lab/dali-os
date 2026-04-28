@@ -5,6 +5,11 @@ import { requireAuth } from '~/lib/auth'
 import { isHiringLead, isDomainLead } from '~/lib/roles'
 import { RubricDetail } from '~/components/RubricDetail'
 
+export const meta: Route.MetaFunction = ({ data }) => {
+  const name = (data as any)?.rubric?.name
+  return [{ title: `${name || 'Rubric'} · DALI OS` }]
+}
+
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request)
   if (!auth.ok) return redirect('/login')

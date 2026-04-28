@@ -19,6 +19,8 @@ import { Modal } from "~/components/Modal";
 import { QuestionList } from "~/components/ApplicationAnswers";
 import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
 
+export const meta: Route.MetaFunction = () => [{ title: "Apply · DALI OS" }];
+
 // ─── Loader ──────────────────────────────────────────────────────────────────
 
 export async function loader({ request }: Route.LoaderArgs) {

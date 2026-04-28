@@ -10,6 +10,8 @@ import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 import { Modal } from "~/components/Modal";
 import { QuestionList } from "~/components/ApplicationAnswers";
 
+export const meta: Route.MetaFunction = () => [{ title: "My application · DALI OS" }];
+
 // ─── Loader ──────────────────────────────────────────────────────────────────
 
 async function presignAnswers(
