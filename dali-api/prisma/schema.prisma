@@ -141,6 +141,8 @@ model Application {
 
   statusUpdates      ApplicationStatusUpdate[]
   domainApplications DomainApplication[]
+
+  @@unique([userId, applicationCycleId])
 }
 
 // Domain is not stored directly — it is derivable via challengeVersion.domain.
