@@ -1,0 +1,63 @@
+name: Set Claude state label
+description: >
+  Apply exactly one Claude state label to an issue, removing the others.
+  Idempotent: creates the target label if it doesn't exist yet.
+
+inputs:
+  issue:
+    description: Issue number to label
+    required: true
+  label:
+    description: >
+      Target label. One of:
+      claude-plan-needs-review, claude-implementing,
+      claude-pr-needs-review, claude-failed.
+    required: true
+  github-token:
+    description: Token with issues:write
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        ISSUE: ${{ inputs.issue }}
+        TARGET: ${{ inputs.label }}
+      run: |
+        set -euo pipefail
+
+        # Ensure target label exists in the repo. gh label create exits non-zero
+        # if the label already exists; the `|| true` makes this idempotent.
+        case "$TARGET" in
+          claude-plan-needs-review)
+            COLOR="FBCA04"; DESC="Claude has posted a plan; awaiting /implement or @claude refinement" ;;
+          claude-implementing)
+            COLOR="1D76DB"; DESC="Claude is actively implementing" ;;
+          claude-pr-needs-review)
+            COLOR="0E8A16"; DESC="Claude opened a PR; awaiting reviewer" ;;
+          claude-failed)
+            COLOR="B60205"; DESC="Claude implementation or CI auto-fix failed" ;;
+          *)
+            echo "::error::Unknown target label: $TARGET" >&2
+            exit 1 ;;
+        esac
+        gh label create "$TARGET" \
+          --repo "$GITHUB_REPOSITORY" \
+          --color "$COLOR" \
+          --description "$DESC" 2>/dev/null || true
+
+        # Remove every other claude state label from the issue.
+        for L in claude claude-plan-needs-review claude-implementing claude-pr-needs-review claude-failed; do
+          if [ "$L" != "$TARGET" ]; then
+            gh issue edit "$ISSUE" \
+              --repo "$GITHUB_REPOSITORY" \
+              --remove-label "$L" 2>/dev/null || true
+          fi
+        done
+
+        # Add the target.
+        gh issue edit "$ISSUE" \
+          --repo "$GITHUB_REPOSITORY" \
+          --add-label "$TARGET"
