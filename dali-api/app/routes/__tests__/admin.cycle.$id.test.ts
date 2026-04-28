@@ -26,6 +26,7 @@ beforeEach(() => {
     deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
     create: vi.fn().mockResolvedValue({}),
     findUnique: vi.fn().mockResolvedValue(null),
+    findFirst: vi.fn().mockResolvedValue(null),
     count: vi.fn(),
   };
   mockPrisma.domainApplication = { count: vi.fn().mockResolvedValue(0) };
@@ -114,6 +115,19 @@ describe("admin.cycle.$id action — hiring lead overrides", () => {
     it("rejects a challenge version that does not belong to the named domain", async () => {
       mockPrisma.applicationCycleStatusUpdate.findFirst.mockResolvedValue({ newStatus: "Draft" });
       mockPrisma.challengeVersion.findUnique.mockResolvedValue({ id: CV_ID, domainId: "other-domain" });
+
+      await callAction({ intent: "hl-add-domain-challenge", domainId: DOMAIN_ID, challengeVersionId: CV_ID });
+
+      expect(mockPrisma.challengeVersionApplicationCycle.create).not.toHaveBeenCalled();
+    });
+
+    it("refuses to link a second version of the same underlying challenge", async () => {
+      mockPrisma.applicationCycleStatusUpdate.findFirst.mockResolvedValue({ newStatus: "Draft" });
+      mockPrisma.challengeVersion.findUnique.mockResolvedValue({ id: CV_ID, domainId: DOMAIN_ID, challengeId: "challenge-1" });
+      mockPrisma.challengeVersionApplicationCycle.findFirst.mockResolvedValue({
+        challengeVersionId: "cv-other-version",
+        applicationCycleId: CYCLE_ID,
+      });
 
       await callAction({ intent: "hl-add-domain-challenge", domainId: DOMAIN_ID, challengeVersionId: CV_ID });
 

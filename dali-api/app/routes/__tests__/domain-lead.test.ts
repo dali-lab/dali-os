@@ -20,6 +20,7 @@ beforeEach(() => {
   mockPrisma.challengeVersion = { findUnique: vi.fn() };
   mockPrisma.challengeVersionApplicationCycle = {
     findUnique: vi.fn().mockResolvedValue(null),
+    findFirst: vi.fn().mockResolvedValue(null),
     create: vi.fn().mockResolvedValue({}),
     deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
   };
@@ -96,6 +97,25 @@ describe("domain-lead action — add-challenge", () => {
   it("rejects a CV whose domain does not match", async () => {
     mockPrisma.applicationCycleStatusUpdate.findFirst.mockResolvedValue({ newStatus: "Draft" });
     mockPrisma.challengeVersion.findUnique.mockResolvedValue({ id: CV_ID, domainId: "other-domain" });
+
+    await callAction({
+      intent: "add-challenge",
+      cycleId: CYCLE_ID,
+      challengeVersionId: CV_ID,
+      domainId: DOMAIN_ID,
+    });
+
+    expect(mockPrisma.challengeVersionApplicationCycle.create).not.toHaveBeenCalled();
+  });
+
+  it("refuses to link a second version of the same underlying challenge", async () => {
+    mockPrisma.applicationCycleStatusUpdate.findFirst.mockResolvedValue({ newStatus: "Draft" });
+    mockPrisma.challengeVersion.findUnique.mockResolvedValue({ id: CV_ID, domainId: DOMAIN_ID, challengeId: "challenge-1" });
+    // Sibling version of the same Challenge already linked.
+    mockPrisma.challengeVersionApplicationCycle.findFirst.mockResolvedValue({
+      challengeVersionId: "cv-other-version",
+      applicationCycleId: CYCLE_ID,
+    });
 
     await callAction({
       intent: "add-challenge",
