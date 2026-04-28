@@ -1405,9 +1405,12 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
     const da = app.domainApplications[0];
     if (!da) return false;
     const decisions = da.decisions ?? [];
-    const latestDraft = decisions.find((d: any) => d.stage === "Draft");
-    const latestFinal = decisions.find((d: any) => d.stage === "Final");
-    return latestDraft && !latestFinal;
+    return decisions.some((d: any) => {
+      if (d.stage !== "Draft") return false;
+      return !decisions.some(
+        (other: any) => other.type === d.type && (other.stage === "Final" || other.stage === "Released")
+      );
+    });
   });
 
   const displayedApps = filter === "finalize" ? finalizableApps : apps;
@@ -1445,7 +1448,13 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
               onClick={async () => {
                 for (const app of finalizableApps) {
                   const da = app.domainApplications[0];
-                  const draft = (da?.decisions ?? []).find((d: any) => d.stage === "Draft");
+                  const allDecisions = da?.decisions ?? [];
+                  const draft = allDecisions.find((d: any) => {
+                    if (d.stage !== "Draft") return false;
+                    return !allDecisions.some(
+                      (other: any) => other.type === d.type && (other.stage === "Final" || other.stage === "Released")
+                    );
+                  });
                   if (draft) {
                     await fetch(`/api/decisions/${draft.id}/finalize`, { method: "POST", credentials: "include" });
                   }
@@ -1499,8 +1508,12 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
             const da = app.domainApplications[0];
             const reviews = da?.reviews ?? [];
             const decisions = da?.decisions ?? [];
-            const latestDraft = decisions.find((d: any) => d.stage === "Draft");
-            const latestFinal = decisions.find((d: any) => d.stage === "Final");
+            const draftToFinalize = decisions.find((d: any) => {
+              if (d.stage !== "Draft") return false;
+              return !decisions.some(
+                (other: any) => other.type === d.type && (other.stage === "Final" || other.stage === "Released")
+              );
+            });
             const pills = da
               ? summarizeDecisionPills({ decisions })
               : [];
@@ -1539,10 +1552,10 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                   )}
                 </td>
                 <td className="px-6 py-4 text-right flex items-center justify-end gap-2">
-                  {isUnderReview && latestDraft && !latestFinal && (
+                  {isUnderReview && draftToFinalize && (
                     <button
                       onClick={async () => {
-                        await fetch(`/api/decisions/${latestDraft.id}/finalize`, { method: "POST", credentials: "include" });
+                        await fetch(`/api/decisions/${draftToFinalize.id}/finalize`, { method: "POST", credentials: "include" });
                         window.location.reload();
                       }}
                       className="px-2 py-1 text-xs font-medium rounded bg-green-600 hover:bg-green-700 text-white transition"
