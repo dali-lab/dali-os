@@ -381,7 +381,7 @@ function UrlCheckIndicator({ state }: { state: UrlCheckState }) {
   if (state.status === "checking") {
     return (
       <span className="text-xs text-muted-foreground/70 flex items-center gap-1 mt-1">
-        <span className="inline-block w-3 h-3 border-2 border-gray-300 border-t-accent-coral rounded-full animate-spin" />
+        <span className="inline-block w-3 h-3 border-2 border-border border-t-accent-coral rounded-full animate-spin" />
         Checking URL...
       </span>
     );
@@ -445,7 +445,7 @@ function SkillsRatingField({
           <select
             value={ratings[skill] ?? "0"}
             onChange={e => setRating(skill, e.target.value)}
-            className="w-14 shrink-0 rounded-md border border-gray-200 bg-white text-sm text-center text-dark-blue py-1 focus:outline-none focus:border-accent-coral"
+            className="w-14 shrink-0 rounded-md border border-border bg-card text-sm text-center text-dark-blue py-1 focus:outline-none focus:border-accent-coral"
           >
             {["0", "1", "2", "3", "4", "5"].map(n => (
               <option key={n} value={n}>{n}</option>
@@ -539,8 +539,8 @@ function FileUploadField({
 
   if (uploading) {
     return (
-      <div className="flex items-center gap-2 px-4 py-3 rounded-lg border border-gray-200 bg-white text-sm text-gray-500">
-        <span className="inline-block w-4 h-4 border-2 border-gray-300 border-t-accent-coral rounded-full animate-spin" />
+      <div className="flex items-center gap-2 px-4 py-3 rounded-lg border border-border bg-card text-sm text-muted-foreground">
+        <span className="inline-block w-4 h-4 border-2 border-border border-t-accent-coral rounded-full animate-spin" />
         Uploading...
       </div>
     );
@@ -548,7 +548,7 @@ function FileUploadField({
 
   if (fileName) {
     return (
-      <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-gray-200 bg-white">
+      <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border bg-card">
         <svg className="w-5 h-5 text-accent-coral shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
         </svg>
@@ -556,7 +556,7 @@ function FileUploadField({
         <button
           type="button"
           onClick={() => { onChange(""); if (fileRef.current) fileRef.current.value = ""; }}
-          className="text-xs text-gray-400 hover:text-red-500 transition"
+          className="text-xs text-muted-foreground hover:text-red-500 transition"
         >
           Remove
         </button>
@@ -583,7 +583,7 @@ function FileUploadField({
       <button
         type="button"
         onClick={() => fileRef.current?.click()}
-        className="flex items-center gap-2 px-4 py-3 rounded-lg border-2 border-dashed border-gray-200 bg-white text-sm text-gray-500 hover:border-accent-coral hover:text-accent-coral transition w-full"
+        className="flex items-center gap-2 px-4 py-3 rounded-lg border-2 border-dashed border-border bg-card text-sm text-muted-foreground hover:border-accent-coral hover:text-accent-coral transition w-full"
       >
         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
@@ -895,7 +895,7 @@ function SectionNavDesktop({
               className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm transition text-left ${
                 isActive
                   ? "bg-dark-blue/5 text-dark-blue font-semibold"
-                  : "text-muted-foreground hover:bg-gray-50 hover:text-dark-blue"
+                  : "text-muted-foreground hover:bg-muted hover:text-dark-blue"
               }`}
             >
               <span className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`} />
@@ -1303,7 +1303,7 @@ export default function PortalApply() {
         <div className="flex items-center justify-between mb-2">
           <h2 className="font-heading text-xl font-bold text-dark-blue">{cycleName} Application</h2>
         </div>
-        <p className="text-sm text-gray-500 mb-8">
+        <p className="text-sm text-muted-foreground mb-8">
           Select the domains you'd like to apply for, then start your application.
         </p>
 
@@ -1339,8 +1339,8 @@ export default function PortalApply() {
           <div className="flex items-center justify-between mb-2">
             <h2 className="font-heading text-xl font-bold text-dark-blue">{cycleName} Application</h2>
             {submitting ? (
-              <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-gray-100 text-gray-600 flex items-center gap-1">
-                <span className="inline-block w-3 h-3 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+              <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-muted text-muted-foreground flex items-center gap-1">
+                <span className="inline-block w-3 h-3 border-2 border-border border-t-muted-foreground rounded-full animate-spin" />
                 Submitting...
               </span>
             ) : Object.keys(urlWarnings).length > 0 ? (
@@ -1406,7 +1406,7 @@ export default function PortalApply() {
                 <button
                   onClick={() => toggleDomain(domainId)}
                   aria-label={`Remove ${domain.name}`}
-                  className="w-6 h-6 rounded-full flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 transition"
+                  className="w-6 h-6 rounded-full flex items-center justify-center text-muted-foreground hover:text-red-500 hover:bg-red-50 transition"
                 >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -1420,7 +1420,7 @@ export default function PortalApply() {
                     {q.required && <span className="text-accent-coral ml-0.5">*</span>}
                   </label>
                   {q.data.description && (
-                    <p className="text-xs text-gray-500 mb-1">{q.data.description}</p>
+                    <p className="text-xs text-muted-foreground mb-1">{q.data.description}</p>
                   )}
                   <QuestionField
                     question={q}
@@ -1451,7 +1451,7 @@ export default function PortalApply() {
                     {q.required && <span className="text-accent-coral ml-0.5">*</span>}
                   </label>
                   {q.data.description && (
-                    <p className="text-xs text-gray-500 mb-1">{q.data.description}</p>
+                    <p className="text-xs text-muted-foreground mb-1">{q.data.description}</p>
                   )}
                   <QuestionField
                     question={q}
@@ -1488,7 +1488,7 @@ export default function PortalApply() {
           <span className="text-xs text-muted-foreground/70 flex items-center gap-1.5">
             {saving ? (
               <>
-                <span className="inline-block w-3 h-3 border-2 border-gray-300 border-t-accent-coral rounded-full animate-spin" />
+                <span className="inline-block w-3 h-3 border-2 border-border border-t-accent-coral rounded-full animate-spin" />
                 Saving...
               </>
             ) : hasSavedOnce ? (
@@ -1517,7 +1517,7 @@ export default function PortalApply() {
         onClose={() => setShowReviewModal(false)}
         labelledBy="review-modal-title"
         disableEscape={submitting}
-        containerClassName="bg-white rounded-2xl shadow-xl max-w-2xl w-full mx-4 max-h-[85vh] overflow-y-auto p-6"
+        containerClassName="bg-card rounded-2xl shadow-xl max-w-2xl w-full mx-4 max-h-[85vh] overflow-y-auto p-6"
       >
         <h3 id="review-modal-title" className="font-heading text-base font-bold text-dark-blue mb-1">
           {isAlreadySubmitted ? "Review your changes" : "Review your application"}
@@ -1602,7 +1602,7 @@ export default function PortalApply() {
         labelledBy="url-warning-modal-title"
       >
         <h3 id="url-warning-modal-title" className="font-heading text-base font-bold text-dark-blue mb-2">Some links may be inaccessible</h3>
-        <p className="text-sm text-gray-600 mb-4">
+        <p className="text-sm text-muted-foreground mb-4">
           One or more URLs appear to be private or inaccessible. Reviewers may not be able to view them.
         </p>
         <ul className="space-y-2 mb-5">
