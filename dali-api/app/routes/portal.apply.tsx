@@ -12,6 +12,7 @@ import {
   fileMatchesAccept,
 } from "~/lib/file-validation";
 import type { Question } from "~/types";
+import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 import { Modal } from "~/components/Modal";
 import { QuestionList } from "~/components/ApplicationAnswers";
 
@@ -1668,4 +1669,8 @@ export default function PortalApply() {
       </Modal>
     </div>
   );
+}
+
+export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
+  return <ApplicantErrorBoundary error={error} />;
 }

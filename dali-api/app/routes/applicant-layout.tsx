@@ -2,6 +2,7 @@ import { Outlet, redirect, useLoaderData, Link } from "react-router";
 import type { Route } from "./+types/applicant-layout";
 import { requireAuth } from "~/lib/auth";
 import { userInitials } from "~/lib/display";
+import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -50,6 +51,25 @@ export default function ApplicantLayout() {
       {/* Content */}
       <div className="pt-16">
         <Outlet />
+      </div>
+    </div>
+  );
+}
+
+export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
+  // Layout-level boundary catches errors from this route's own loader
+  // (e.g. requireAuth). Auth state is unknown here, so render a minimal
+  // shell without the user-identity navbar to avoid misrepresenting it.
+  return (
+    <div className="min-h-screen bg-section-bg">
+      <nav className="fixed top-0 inset-x-0 z-50 h-16 bg-card border-b border-border flex items-center px-6">
+        <Link to="/portal" className="flex items-center gap-2">
+          <span className="font-heading text-lg font-bold text-dark-blue">DALI</span>
+          <span className="text-xs text-muted-foreground/70 font-medium">Applicant Portal</span>
+        </Link>
+      </nav>
+      <div className="pt-16">
+        <ApplicantErrorBoundary error={error} secondaryAction={{ kind: "reload" }} />
       </div>
     </div>
   );
