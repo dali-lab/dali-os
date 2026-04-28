@@ -1725,6 +1725,10 @@ function DomainOverridePanel({
   rubricLocked: boolean;
 }) {
   const [showReadyModal, setShowReadyModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showChallengePreview, setShowChallengePreview] = useState(false);
+  const [showRubricPreview, setShowRubricPreview] = useState(false);
+
   const challengeLocked = cycleStatus !== 'Draft';
   const readyLocked = cycleStatus !== 'Draft';
   const isReady: boolean = !!domain.isReady;
@@ -1733,8 +1737,19 @@ function DomainOverridePanel({
   const selectedCvLabel = selectedCv
     ? `${selectedCv.challenge?.name ?? 'Untitled'} — created ${new Date(selectedCv.createdAt).toLocaleDateString()}`
     : null;
-  const currentRubric = rubricOptions.find((rv) => rv.id === domain.rubricVersionId);
+
+  // Controlled selects so the displayed value always reflects the saved state
+  // after React Router re-renders (same-URL redirect may not remount the component).
+  const [selectedChallengeId, setSelectedChallengeId] = useState(selectedCvId ?? '');
+  useEffect(() => { setSelectedChallengeId(selectedCvId ?? ''); }, [selectedCvId]);
+
+  const [selectedRubricId, setSelectedRubricId] = useState(domain.rubricVersionId ?? '');
+  useEffect(() => { setSelectedRubricId(domain.rubricVersionId ?? ''); }, [domain.rubricVersionId]);
+
+  const currentRubric = rubricOptions.find((rv: any) => rv.id === selectedRubricId);
   const currentRubricLabel = currentRubric ? `${currentRubric.rubric.name} — v${currentRubric.versionNumber}` : null;
+
+  const previewCv = challengeOptions.find((cv: any) => cv.id === selectedChallengeId) ?? selectedCv;
 
   return (
     <div className="border border-border rounded-lg p-4 space-y-3">
@@ -1761,13 +1776,14 @@ function DomainOverridePanel({
           )}
         </div>
         {cycleStatus === 'Draft' && (
-          <Form method="post">
-            <input type="hidden" name="intent" value="remove-domain" />
-            <input type="hidden" name="domainId" value={domain.domainId} />
-            <button type="submit" className="text-red-500 hover:text-red-700 transition" aria-label={`Remove ${domain.domain?.name ?? domain.domainId}`}>
-              <Trash2 className="w-4 h-4" />
-            </button>
-          </Form>
+          <button
+            type="button"
+            onClick={() => setShowDeleteModal(true)}
+            className="text-red-500 hover:text-red-700 transition"
+            aria-label={`Remove ${domain.domain?.name ?? domain.domainId}`}
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
         )}
       </div>
 
@@ -1777,8 +1793,19 @@ function DomainOverridePanel({
             Challenge version {challengeLocked && <span className="text-muted-foreground/70">(locked — cycle is past Draft)</span>}
           </label>
           {challengeLocked ? (
-            <div className="text-sm text-foreground/80 px-3 py-2 bg-muted/40 rounded-lg">
-              {selectedCvLabel ?? 'No challenge linked'}
+            <div className="flex items-center gap-2">
+              <div className="flex-1 text-sm text-foreground/80 px-3 py-2 bg-muted/40 rounded-lg">
+                {selectedCvLabel ?? 'No challenge linked'}
+              </div>
+              {selectedCv && (
+                <button
+                  type="button"
+                  onClick={() => setShowChallengePreview(true)}
+                  className="flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-lg border border-border hover:bg-muted/50 text-foreground/70 transition"
+                >
+                  <Eye className="w-3 h-3" /> Preview
+                </button>
+              )}
             </div>
           ) : challengeOptions.length === 0 ? (
             <p className="text-xs text-muted-foreground/70 px-3 py-2 bg-muted/30 rounded-lg">
@@ -1791,7 +1818,8 @@ function DomainOverridePanel({
               <div className="flex-1 min-w-0">
                 <select
                   name="challengeVersionId"
-                  defaultValue={selectedCvId ?? ''}
+                  value={selectedChallengeId}
+                  onChange={(e) => setSelectedChallengeId(e.target.value)}
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
                   aria-label={`Select challenge version for ${domain.domain?.name ?? domain.domainId}`}
                 >
@@ -1803,6 +1831,15 @@ function DomainOverridePanel({
                   ))}
                 </select>
               </div>
+              {selectedChallengeId && (
+                <button
+                  type="button"
+                  onClick={() => setShowChallengePreview(true)}
+                  className="flex items-center gap-1 px-2 py-2 text-xs font-medium rounded-lg border border-border hover:bg-muted/50 text-foreground/70 transition"
+                >
+                  <Eye className="w-3 h-3" /> Preview
+                </button>
+              )}
               <button
                 type="submit"
                 className="px-3 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition"
@@ -1818,8 +1855,19 @@ function DomainOverridePanel({
             Rubric version {rubricLocked && <span className="text-muted-foreground/70">(locked — reviews assigned)</span>}
           </label>
           {rubricLocked ? (
-            <div className="text-sm text-foreground/80 px-3 py-2 bg-muted/40 rounded-lg">
-              {currentRubricLabel ?? 'No rubric set'}
+            <div className="flex items-center gap-2">
+              <div className="flex-1 text-sm text-foreground/80 px-3 py-2 bg-muted/40 rounded-lg">
+                {currentRubricLabel ?? 'No rubric set'}
+              </div>
+              {currentRubric && (
+                <button
+                  type="button"
+                  onClick={() => setShowRubricPreview(true)}
+                  className="flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-lg border border-border hover:bg-muted/50 text-foreground/70 transition"
+                >
+                  <Eye className="w-3 h-3" /> Preview
+                </button>
+              )}
             </div>
           ) : rubricOptions.length === 0 ? (
             <p className="text-xs text-muted-foreground/70 px-3 py-2 bg-muted/30 rounded-lg">
@@ -1832,7 +1880,8 @@ function DomainOverridePanel({
               <div className="flex-1 min-w-0">
                 <select
                   name="rubricVersionId"
-                  defaultValue={domain.rubricVersionId ?? ''}
+                  value={selectedRubricId}
+                  onChange={(e) => setSelectedRubricId(e.target.value)}
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
                   aria-label={`Select rubric version for ${domain.domain?.name ?? domain.domainId}`}
                 >
@@ -1844,6 +1893,15 @@ function DomainOverridePanel({
                   ))}
                 </select>
               </div>
+              {selectedRubricId && (
+                <button
+                  type="button"
+                  onClick={() => setShowRubricPreview(true)}
+                  className="flex items-center gap-1 px-2 py-2 text-xs font-medium rounded-lg border border-border hover:bg-muted/50 text-foreground/70 transition"
+                >
+                  <Eye className="w-3 h-3" /> Preview
+                </button>
+              )}
               <button
                 type="submit"
                 className="px-3 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition"
@@ -1876,13 +1934,33 @@ function DomainOverridePanel({
         </div>
       )}
 
+      {showDeleteModal && (
+        <DeleteDomainModal
+          domain={domain}
+          onClose={() => setShowDeleteModal(false)}
+        />
+      )}
+
       {showReadyModal && (
         <ForceReadyModal
           domain={domain}
           isReady={isReady}
           selectedCvLabel={selectedCvLabel}
-          currentRubricLabel={currentRubricLabel}
           onClose={() => setShowReadyModal(false)}
+        />
+      )}
+
+      {showChallengePreview && previewCv && (
+        <ChallengePreviewModal
+          cv={previewCv}
+          onClose={() => setShowChallengePreview(false)}
+        />
+      )}
+
+      {showRubricPreview && currentRubric && (
+        <RubricPreviewModal
+          rv={currentRubric}
+          onClose={() => setShowRubricPreview(false)}
         />
       )}
     </div>
@@ -1893,13 +1971,11 @@ function ForceReadyModal({
   domain,
   isReady,
   selectedCvLabel,
-  currentRubricLabel,
   onClose,
 }: {
   domain: any;
   isReady: boolean;
   selectedCvLabel: string | null;
-  currentRubricLabel: string | null;
   onClose: () => void;
 }) {
   const intent = isReady ? 'hl-force-unmark-ready' : 'hl-force-mark-ready';
@@ -1914,15 +1990,9 @@ function ForceReadyModal({
           <p>
             Domain: <span className="font-semibold text-foreground">{domain.domain?.name ?? domain.domainId}</span>
           </p>
-          <div className="bg-muted/40 rounded-lg p-3 space-y-1 text-xs">
-            <div>
-              <span className="font-medium text-foreground/80">Challenge: </span>
-              {selectedCvLabel ?? <span className="text-amber-700">none</span>}
-            </div>
-            <div>
-              <span className="font-medium text-foreground/80">Rubric: </span>
-              {currentRubricLabel ?? <span className="text-amber-700">none</span>}
-            </div>
+          <div className="bg-muted/40 rounded-lg p-3 text-xs">
+            <span className="font-medium text-foreground/80">Challenge: </span>
+            {selectedCvLabel ?? <span className="text-amber-700">none</span>}
           </div>
           {isReady ? (
             <p>This will revert the domain back to "not ready" until the domain lead (or a hiring lead) marks it ready again.</p>
@@ -1943,11 +2013,113 @@ function ForceReadyModal({
           </button>
           <button
             type="submit"
+            onClick={onClose}
             className={`px-3 py-2 text-sm font-medium rounded-md text-white ${isReady ? 'bg-red-600 hover:bg-red-700' : 'bg-amber-600 hover:bg-amber-700'}`}
           >
             {isReady ? 'Yes, unmark ready' : 'Yes, override domain lead'}
           </button>
         </Form>
+      </div>
+    </Modal>
+  );
+}
+
+function DeleteDomainModal({ domain, onClose }: { domain: any; onClose: () => void }) {
+  const headingId = `delete-domain-heading-${domain.domainId}`;
+  return (
+    <Modal open onClose={onClose} labelledBy={headingId} containerClassName="bg-card rounded-2xl shadow-xl max-w-sm w-full mx-4 p-6">
+      <div className="space-y-4">
+        <h2 id={headingId} className="text-lg font-bold text-foreground">Remove domain from cycle?</h2>
+        <p className="text-sm text-muted-foreground">
+          Remove <span className="font-semibold text-foreground">{domain.domain?.name ?? domain.domainId}</span> from this cycle? Any linked challenge version for this domain will be unlinked.
+        </p>
+        <Form method="post" className="flex justify-end gap-2 pt-2">
+          <input type="hidden" name="intent" value="remove-domain" />
+          <input type="hidden" name="domainId" value={domain.domainId} />
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-border rounded-md hover:bg-muted/50"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            onClick={onClose}
+            className="px-3 py-2 text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700"
+          >
+            Remove
+          </button>
+        </Form>
+      </div>
+    </Modal>
+  );
+}
+
+function ChallengePreviewModal({ cv, onClose }: { cv: any; onClose: () => void }) {
+  const headingId = `challenge-preview-heading-${cv.id}`;
+  const questions: any[] = (cv.questions as any[]) ?? [];
+  return (
+    <Modal open onClose={onClose} labelledBy={headingId} containerClassName="bg-card rounded-2xl shadow-xl max-w-lg w-full mx-4 p-6 max-h-[80vh] overflow-y-auto">
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 id={headingId} className="text-lg font-bold text-foreground">
+            {cv.challenge?.name ?? 'Challenge'} — preview
+          </h2>
+          <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <p className="text-xs text-muted-foreground">Created {new Date(cv.createdAt).toLocaleDateString()}</p>
+        {questions.length === 0 ? (
+          <p className="text-sm text-muted-foreground/70 italic">No questions in this version.</p>
+        ) : (
+          <div className="border border-border rounded-lg divide-y divide-border">
+            {questions.map((q: any, i: number) => (
+              <div key={q.key ?? i} className="px-4 py-3">
+                <span className="text-xs font-medium text-muted-foreground/70 uppercase tracking-wide mr-2">Q{i + 1}</span>
+                <span className="text-sm text-foreground/80">{q.data?.label ?? q.label}</span>
+                {q.required && <span className="ml-2 text-xs text-red-500">required</span>}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+function RubricPreviewModal({ rv, onClose }: { rv: any; onClose: () => void }) {
+  const headingId = `rubric-preview-heading-${rv.id}`;
+  const criteria: any[] = (rv.criteria as any[]) ?? [];
+  return (
+    <Modal open onClose={onClose} labelledBy={headingId} containerClassName="bg-card rounded-2xl shadow-xl max-w-lg w-full mx-4 p-6 max-h-[80vh] overflow-y-auto">
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 id={headingId} className="text-lg font-bold text-foreground">
+            {rv.rubric?.name ?? 'Rubric'} — v{rv.versionNumber}
+          </h2>
+          <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        {criteria.length === 0 ? (
+          <p className="text-sm text-muted-foreground/70 italic">No criteria in this version.</p>
+        ) : (
+          <div className="space-y-3">
+            {criteria.map((c: any) => (
+              <div key={c.key} className="border border-border rounded-lg p-3">
+                <div className="flex items-center justify-between mb-1">
+                  <h4 className="text-sm font-semibold text-foreground">{c.label}</h4>
+                  <span className="text-xs text-muted-foreground">Max: {c.maxScore}</span>
+                </div>
+                {c.description && (
+                  <p className="text-xs text-muted-foreground">{c.description}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </Modal>
   );
