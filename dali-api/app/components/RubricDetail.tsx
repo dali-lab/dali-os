@@ -78,17 +78,6 @@ export function RubricDetail() {
         <div className="flex justify-between items-start">
           <div>
             <h1 className="text-2xl font-bold text-foreground">{rubric.name}</h1>
-            <p className="mt-1 text-muted-foreground">
-              {rubric.domain ? (
-                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-700">
-                  {rubric.domain.name}
-                </span>
-              ) : (
-                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-muted text-muted-foreground">
-                  General
-                </span>
-              )}
-            </p>
           </div>
           {!isCreatingVersion && (
             <button
