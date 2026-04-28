@@ -190,7 +190,6 @@ model Domain {
   domainLeadAssignments DomainLeadAssignment[]
   cycleReviewers        CycleReviewer[]
   cycleInterviewers     CycleInterviewer[]
-  rubrics               Rubric[]
   delibsSessions        DelibsSession[]
 }
 
@@ -200,6 +199,9 @@ model ChallengeVersion {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
 
+  // Optional ProseMirror JSON document shown to applicants and reviewers above
+  // the questions for this challenge version. Null = no description.
+  description Json?
   questions   Json
   challengeId String
   challenge   Challenge @relation(fields: [challengeId], references: [id])
@@ -541,9 +543,7 @@ model Rubric {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  name     String
-  domainId String?
-  domain   Domain? @relation(fields: [domainId], references: [id])
+  name String
 
   versions RubricVersion[]
 }
