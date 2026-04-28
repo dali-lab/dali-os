@@ -33,4 +33,13 @@ test.describe('domain lead workflow', () => {
     await expect(page.getByText('General Application')).toBeVisible();
     await expect(page.getByText('Engineering Challenge')).toBeVisible();
   });
+
+  test('Library nav links domain lead to challenges and rubrics', async ({ page }) => {
+    await page.goto('/domain-lead');
+    await page.getByRole('link', { name: 'Library' }).click();
+    await expect(page).toHaveURL(/\/challenges/);
+    await page.getByRole('link', { name: 'Rubrics' }).click();
+    await expect(page).toHaveURL(/\/rubrics/);
+    await expect(page.getByRole('heading', { name: 'Evaluation Rubrics' })).toBeVisible();
+  });
 });
