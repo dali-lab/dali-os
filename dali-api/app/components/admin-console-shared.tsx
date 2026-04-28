@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useFetcher } from "react-router";
 import { Shield, ChevronDown, X, Check } from "lucide-react";
 
@@ -87,8 +88,29 @@ export function DomainLeadPicker({
   existingAssignments: Member["domainLeadAssignments"];
 }) {
   const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
   const assignedDomainIds = new Set(existingAssignments.map((a) => a.domain.id));
   const available = domains.filter((d) => !assignedDomainIds.has(d.id));
+
+  useEffect(() => {
+    if (!open) return;
+    const updatePosition = () => {
+      const rect = triggerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setMenuPos({
+        top: rect.bottom + 4,
+        right: Math.max(8, window.innerWidth - rect.right),
+      });
+    };
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [open]);
 
   return (
     <div className="flex flex-wrap gap-1.5 items-center">
@@ -103,32 +125,38 @@ export function DomainLeadPicker({
       ))}
 
       {available.length > 0 && (
-        <div className="relative">
+        <>
           <button
+            ref={triggerRef}
             onClick={() => setOpen(!open)}
             className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground hover:bg-muted"
           >
             + Domain
             <ChevronDown className="w-3 h-3" />
           </button>
-          {open && (
-            <>
-              <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-              <div className="absolute left-0 z-20 mt-1 w-40 rounded-md shadow-lg bg-card ring-1 ring-black ring-opacity-5">
-                <div className="py-1">
-                  {available.map((domain) => (
-                    <AddDomainLeadButton
-                      key={domain.id}
-                      memberId={member.id}
-                      domain={domain}
-                      onAdded={() => setOpen(false)}
-                    />
-                  ))}
+          {open && menuPos && typeof document !== "undefined" &&
+            createPortal(
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+                <div
+                  className="fixed z-50 w-40 rounded-md shadow-lg bg-card ring-1 ring-black ring-opacity-5"
+                  style={{ top: menuPos.top, right: menuPos.right }}
+                >
+                  <div className="py-1">
+                    {available.map((domain) => (
+                      <AddDomainLeadButton
+                        key={domain.id}
+                        memberId={member.id}
+                        domain={domain}
+                        onAdded={() => setOpen(false)}
+                      />
+                    ))}
+                  </div>
                 </div>
-              </div>
-            </>
-          )}
-        </div>
+              </>,
+              document.body,
+            )}
+        </>
       )}
     </div>
   );
