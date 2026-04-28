@@ -122,18 +122,27 @@ export default function DelibsKanban() {
   const [closing, setClosing] = useState(false);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
 
-  const saveColumnOrder = useCallback(
-    async (order: Record<string, string[]>) => {
+  const sendMove = useCallback(
+    async (cardId: string, toColumn: string) => {
       setSaving(true);
-      await fetch(`/api/delibs/${session.id}`, {
-        method: "PATCH",
+      const res = await fetch(`/api/delibs/${session.id}/moves`, {
+        method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ columnOrder: order }),
+        body: JSON.stringify({ cardId, toColumn }),
       });
+      if (res.ok) {
+        const updated = await res.json();
+        const serverOrder = (updated.columnOrder ?? {}) as Record<string, string[]>;
+        // Reconcile from server's authoritative order so concurrent moves by
+        // other reviewers surface without a page reload.
+        const reconciled: Record<string, string[]> = {};
+        for (const col of columns) reconciled[col] = serverOrder[col] ?? [];
+        setColumnOrder(reconciled);
+      }
       setSaving(false);
     },
-    [session.id]
+    [session.id, columns]
   );
 
   function handleDragStart(id: string) {
@@ -148,18 +157,18 @@ export default function DelibsKanban() {
   function handleDrop(targetCol: string) {
     if (!dragItem) return;
 
+    const cardId = dragItem;
     const newOrder = { ...columnOrder };
-    // Remove from current column
+    // Optimistic local update
     for (const col of columns) {
-      newOrder[col] = newOrder[col].filter((id) => id !== dragItem);
+      newOrder[col] = newOrder[col].filter((id) => id !== cardId);
     }
-    // Add to target column
-    newOrder[targetCol] = [...(newOrder[targetCol] ?? []), dragItem];
+    newOrder[targetCol] = [...(newOrder[targetCol] ?? []), cardId];
 
     setColumnOrder(newOrder);
     setDragItem(null);
     setDragOverCol(null);
-    saveColumnOrder(newOrder);
+    sendMove(cardId, targetCol);
   }
 
   function handleDragEnd() {
