@@ -326,7 +326,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     return redirect(`/hiring-lead-admin/cycle/${params.id}`);
   }
 
-  if (intent === "hl-set-domain-challenge") {
+  if (intent === "hl-add-domain-challenge") {
     const domainId = formData.get("domainId") as string;
     const challengeVersionId = formData.get("challengeVersionId") as string;
     if (!domainId || !challengeVersionId) {
@@ -347,14 +347,41 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (!cv || cv.domainId !== domainId) {
       return redirect(`/hiring-lead-admin/cycle/${params.id}`);
     }
-    await prisma.challengeVersionApplicationCycle.deleteMany({
+    const existing = await prisma.challengeVersionApplicationCycle.findUnique({
+      where: { challengeVersionId_applicationCycleId: { challengeVersionId, applicationCycleId: params.id! } },
+    });
+    if (!existing) {
+      await prisma.challengeVersionApplicationCycle.create({
+        data: { challengeVersionId, applicationCycleId: params.id! },
+      });
+    }
+    return redirect(`/hiring-lead-admin/cycle/${params.id}`);
+  }
+
+  if (intent === "hl-remove-domain-challenge") {
+    const challengeVersionId = formData.get("challengeVersionId") as string;
+    if (!challengeVersionId) {
+      return redirect(`/hiring-lead-admin/cycle/${params.id}`);
+    }
+    const latestUpdate = await prisma.applicationCycleStatusUpdate.findFirst({
+      where: { applicationCycleId: params.id },
+      orderBy: { createdAt: "desc" },
+    });
+    if ((latestUpdate?.newStatus ?? "Draft") !== "Draft") {
+      return redirect(`/hiring-lead-admin/cycle/${params.id}`);
+    }
+    // Refuse to remove if any DomainApplication in this cycle picked this CV.
+    const inUse = await prisma.domainApplication.count({
       where: {
-        applicationCycleId: params.id,
-        challengeVersion: { domainId },
+        challengeVersionId,
+        application: { applicationCycleId: params.id! },
       },
     });
-    await prisma.challengeVersionApplicationCycle.create({
-      data: { challengeVersionId, applicationCycleId: params.id },
+    if (inUse > 0) {
+      return redirect(`/hiring-lead-admin/cycle/${params.id}`);
+    }
+    await prisma.challengeVersionApplicationCycle.deleteMany({
+      where: { challengeVersionId, applicationCycleId: params.id! },
     });
     return redirect(`/hiring-lead-admin/cycle/${params.id}`);
   }
@@ -912,7 +939,7 @@ export default function AdminCycleDetails() {
             {(cycle?.domains ?? []).length > 0 ? (
               <div className="space-y-3">
                 {(cycle?.domains ?? []).map((d: any) => {
-                  const selectedCvLink = (cycle?.challengeVersions ?? []).find(
+                  const linkedCvLinks = (cycle?.challengeVersions ?? []).filter(
                     (cv: any) => cv.challengeVersion?.domainId === d.domainId
                   );
                   const challengeOptions = (loaderData?.domainChallengeVersions ?? []).filter(
@@ -928,7 +955,7 @@ export default function AdminCycleDetails() {
                       key={d.domainId}
                       domain={d}
                       cycleStatus={cycleStatus}
-                      selectedCvLink={selectedCvLink}
+                      linkedCvLinks={linkedCvLinks}
                       challengeOptions={challengeOptions}
                       rubricOptions={rubricOptions}
                       rubricLocked={rubricLocked}
@@ -1712,36 +1739,40 @@ function GeneralRubricPicker({ currentRubricVersionId, rubricVersionOptions, loc
 function DomainOverridePanel({
   domain,
   cycleStatus,
-  selectedCvLink,
+  linkedCvLinks,
   challengeOptions,
   rubricOptions,
   rubricLocked,
 }: {
   domain: any;
   cycleStatus: string;
-  selectedCvLink: any | undefined;
+  linkedCvLinks: any[];
   challengeOptions: any[];
   rubricOptions: any[];
   rubricLocked: boolean;
 }) {
   const [showReadyModal, setShowReadyModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [showChallengePreview, setShowChallengePreview] = useState(false);
+  const [previewCvId, setPreviewCvId] = useState<string | null>(null);
   const [showRubricPreview, setShowRubricPreview] = useState(false);
 
   const challengeLocked = cycleStatus !== 'Draft';
   const readyLocked = cycleStatus !== 'Draft';
   const isReady: boolean = !!domain.isReady;
-  const selectedCvId: string | null = selectedCvLink?.challengeVersionId ?? null;
-  const selectedCv = selectedCvLink?.challengeVersion;
-  const selectedCvLabel = selectedCv
-    ? `${selectedCv.challenge?.name ?? 'Untitled'} — created ${new Date(selectedCv.createdAt).toLocaleDateString()}`
-    : null;
+  const linkedCvs: any[] = linkedCvLinks.map((l: any) => l.challengeVersion).filter(Boolean);
+  const linkedCvIds = new Set<string>(linkedCvs.map((cv: any) => cv.id));
+  const hasLinkedChallenge = linkedCvs.length > 0;
+  const summaryLabel = !hasLinkedChallenge
+    ? null
+    : linkedCvs.length === 1
+      ? `${linkedCvs[0].challenge?.name ?? 'Untitled'} — created ${new Date(linkedCvs[0].createdAt).toLocaleDateString()}`
+      : `${linkedCvs.length} challenges linked`;
 
-  // Controlled selects so the displayed value always reflects the saved state
-  // after React Router re-renders (same-URL redirect may not remount the component).
-  const [selectedChallengeId, setSelectedChallengeId] = useState(selectedCvId ?? '');
-  useEffect(() => { setSelectedChallengeId(selectedCvId ?? ''); }, [selectedCvId]);
+  // Picker for adding a new CV (filtered to those not yet linked)
+  const addableOptions = challengeOptions.filter((cv: any) => !linkedCvIds.has(cv.id));
+  const [pickerCvId, setPickerCvId] = useState('');
+  // Reset picker when the linked set changes (after a redirect re-render)
+  useEffect(() => { setPickerCvId(''); }, [linkedCvIds.size]);
 
   // Close the ready modal when isReady flips — same-URL redirects don't remount
   // the component so the modal state survives the round-trip without this.
@@ -1753,16 +1784,18 @@ function DomainOverridePanel({
   const currentRubric = rubricOptions.find((rv: any) => rv.id === selectedRubricId);
   const currentRubricLabel = currentRubric ? `${currentRubric.rubric.name} — v${currentRubric.versionNumber}` : null;
 
-  const previewCv = challengeOptions.find((cv: any) => cv.id === selectedChallengeId) ?? selectedCv;
+  const previewCv = previewCvId
+    ? (challengeOptions.find((cv: any) => cv.id === previewCvId) ?? linkedCvs.find((cv: any) => cv.id === previewCvId))
+    : null;
 
   return (
     <div className="border border-border rounded-lg p-4 space-y-3">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-sm font-semibold text-foreground">{domain.domain?.name ?? domain.domainId}</span>
-          {selectedCv ? (
+          {hasLinkedChallenge ? (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700">
-              <CheckCircle className="w-3 h-3" /> Challenge linked
+              <CheckCircle className="w-3 h-3" /> {linkedCvs.length === 1 ? 'Challenge linked' : `${linkedCvs.length} challenges linked`}
             </span>
           ) : (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-yellow-100 text-yellow-700">
@@ -1792,53 +1825,79 @@ function DomainOverridePanel({
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div>
-          <label className="block text-xs font-medium text-muted-foreground mb-1">
-            Challenge version {challengeLocked && <span className="text-muted-foreground/70">(locked — cycle is past Draft)</span>}
+        <div className="space-y-2">
+          <label className="block text-xs font-medium text-muted-foreground">
+            Challenge versions {challengeLocked && <span className="text-muted-foreground/70">(locked — cycle is past Draft)</span>}
           </label>
+          {linkedCvs.length > 0 && (
+            <ul className="border border-border rounded-lg divide-y divide-border bg-card">
+              {linkedCvs.map((cv: any) => (
+                <li key={cv.id} className="flex items-center justify-between px-3 py-2 text-sm">
+                  <span className="text-foreground/80 truncate">
+                    {cv.challenge?.name ?? 'Untitled'} — {new Date(cv.createdAt).toLocaleDateString()}
+                  </span>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setPreviewCvId(cv.id)}
+                      className="flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-lg border border-border hover:bg-muted/50 text-foreground/70 transition"
+                    >
+                      <Eye className="w-3 h-3" /> Preview
+                    </button>
+                    {!challengeLocked && (
+                      <Form method="post">
+                        <input type="hidden" name="intent" value="hl-remove-domain-challenge" />
+                        <input type="hidden" name="challengeVersionId" value={cv.id} />
+                        <button
+                          type="submit"
+                          aria-label={`Remove ${cv.challenge?.name ?? 'challenge'}`}
+                          className="text-muted-foreground hover:text-red-600 transition px-1"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </Form>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
           {challengeLocked ? (
-            <div className="flex items-center gap-2">
-              <div className="flex-1 text-sm text-foreground/80 px-3 py-2 bg-muted/40 rounded-lg">
-                {selectedCvLabel ?? 'No challenge linked'}
+            !hasLinkedChallenge && (
+              <div className="text-sm text-foreground/80 px-3 py-2 bg-muted/40 rounded-lg">
+                No challenge linked
               </div>
-              {selectedCv && (
-                <button
-                  type="button"
-                  onClick={() => setShowChallengePreview(true)}
-                  className="flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-lg border border-border hover:bg-muted/50 text-foreground/70 transition"
-                >
-                  <Eye className="w-3 h-3" /> Preview
-                </button>
-              )}
-            </div>
-          ) : challengeOptions.length === 0 ? (
-            <p className="text-xs text-muted-foreground/70 px-3 py-2 bg-muted/30 rounded-lg">
-              No challenge versions exist for this domain. Create one on the Challenges page.
-            </p>
+            )
+          ) : addableOptions.length === 0 ? (
+            !hasLinkedChallenge && (
+              <p className="text-xs text-muted-foreground/70 px-3 py-2 bg-muted/30 rounded-lg">
+                No challenge versions exist for this domain. Create one on the Challenges page.
+              </p>
+            )
           ) : (
             <Form method="post" className="flex items-end gap-2">
-              <input type="hidden" name="intent" value="hl-set-domain-challenge" />
+              <input type="hidden" name="intent" value="hl-add-domain-challenge" />
               <input type="hidden" name="domainId" value={domain.domainId} />
               <div className="flex-1 min-w-0">
                 <select
                   name="challengeVersionId"
-                  value={selectedChallengeId}
-                  onChange={(e) => setSelectedChallengeId(e.target.value)}
+                  value={pickerCvId}
+                  onChange={(e) => setPickerCvId(e.target.value)}
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                  aria-label={`Select challenge version for ${domain.domain?.name ?? domain.domainId}`}
+                  aria-label={`Add challenge version for ${domain.domain?.name ?? domain.domainId}`}
                 >
-                  <option value="" disabled>Select a challenge version...</option>
-                  {challengeOptions.map((cv: any) => (
+                  <option value="" disabled>Add a challenge version...</option>
+                  {addableOptions.map((cv: any) => (
                     <option key={cv.id} value={cv.id}>
                       {cv.challenge?.name ?? 'Untitled'} — {new Date(cv.createdAt).toLocaleDateString()}
                     </option>
                   ))}
                 </select>
               </div>
-              {selectedChallengeId && (
+              {pickerCvId && (
                 <button
                   type="button"
-                  onClick={() => setShowChallengePreview(true)}
+                  onClick={() => setPreviewCvId(pickerCvId)}
                   className="flex items-center gap-1 px-2 py-2 text-xs font-medium rounded-lg border border-border hover:bg-muted/50 text-foreground/70 transition"
                 >
                   <Eye className="w-3 h-3" /> Preview
@@ -1846,9 +1905,10 @@ function DomainOverridePanel({
               )}
               <button
                 type="submit"
-                className="px-3 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition"
+                disabled={!pickerCvId}
+                className="px-3 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition disabled:opacity-50"
               >
-                Save
+                Add
               </button>
             </Form>
           )}
@@ -1925,8 +1985,8 @@ function DomainOverridePanel({
           <button
             type="button"
             onClick={() => setShowReadyModal(true)}
-            disabled={!isReady && !selectedCv}
-            title={!isReady && !selectedCv ? 'Link a challenge before marking ready' : undefined}
+            disabled={!isReady && !hasLinkedChallenge}
+            title={!isReady && !hasLinkedChallenge ? 'Link a challenge before marking ready' : undefined}
             className={`px-3 py-1.5 text-sm font-medium rounded-lg transition disabled:opacity-50 ${
               isReady
                 ? 'bg-card border border-border hover:bg-muted/50 text-foreground/80'
@@ -1949,15 +2009,15 @@ function DomainOverridePanel({
         <ForceReadyModal
           domain={domain}
           isReady={isReady}
-          selectedCvLabel={selectedCvLabel}
+          selectedCvLabel={summaryLabel}
           onClose={() => setShowReadyModal(false)}
         />
       )}
 
-      {showChallengePreview && previewCv && (
+      {previewCv && (
         <ChallengePreviewModal
           cv={previewCv}
-          onClose={() => setShowChallengePreview(false)}
+          onClose={() => setPreviewCvId(null)}
         />
       )}
 
