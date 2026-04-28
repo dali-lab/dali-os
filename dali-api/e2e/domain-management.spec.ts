@@ -35,10 +35,9 @@ test.describe('admin domain management', () => {
 });
 
 test.describe('non-admin domain management', () => {
-  test('hiring lead does not see the Domains section', async ({ loginAs, page }) => {
+  test('hiring lead cannot access admin console', async ({ loginAs, page }) => {
     await loginAs({ daliEmail: 'jordan.taylor@dali.dartmouth.edu' });
-    await page.goto('/admin-console/domains');
-    await expect(page.getByRole('heading', { name: 'DALI Members' })).toBeVisible();
-    await expect(page.getByText(/^Domains \(/)).toHaveCount(0);
+    await page.goto('/admin-console/members');
+    await expect(page).not.toHaveURL(/admin-console/);
   });
 });

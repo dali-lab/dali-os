@@ -76,7 +76,7 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
       label: 'Admin',
       to: '/admin-console',
       icon: Users,
-      show: isAdmin || isHiringLead,
+      show: isAdmin,
       active: path.startsWith('/admin-console'),
       sub: [
         { label: 'Members', to: '/admin-console/members', active: path.startsWith('/admin-console/members') },

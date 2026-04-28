@@ -3,7 +3,7 @@ import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/admin-console.members";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isAdmin, isHiringLead } from "~/lib/roles";
+import { isAdmin } from "~/lib/roles";
 import { Users, Check } from "lucide-react";
 import {
   AdminToggle,
@@ -14,11 +14,8 @@ import {
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
-  const [admin, hiringLead] = await Promise.all([
-    isAdmin(auth.user.sub),
-    isHiringLead(auth.user.sub),
-  ]);
-  if (!admin && !hiringLead) return redirect("/");
+  const admin = await isAdmin(auth.user.sub);
+  if (!admin) return redirect("/");
 
   const [members, domains] = await Promise.all([
     prisma.dALIMember.findMany({
@@ -41,8 +38,8 @@ export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
   const admin = await isAdmin(auth.user.sub);
-  if (!admin && !(await isHiringLead(auth.user.sub)))
-    return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 });
+  if (!admin)
+    return Response.json({ error: "Forbidden" }, { status: 403 });
 
   const formData = await request.formData();
   const intent = formData.get("intent") as string;
