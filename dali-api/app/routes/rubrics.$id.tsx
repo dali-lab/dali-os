@@ -13,7 +13,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const rubric = await prisma.rubric.findUniqueOrThrow({
     where: { id: params.id },
     include: {
-      domain: true,
       versions: {
         include: { createdBy: true },
         orderBy: { versionNumber: 'asc' },

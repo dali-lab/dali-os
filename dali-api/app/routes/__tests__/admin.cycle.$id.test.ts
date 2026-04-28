@@ -103,12 +103,9 @@ describe("admin.cycle.$id action — hiring lead overrides", () => {
   });
 
   describe("hl-set-domain-rubric", () => {
-    it("upserts rubric when no reviews are assigned and rubric belongs to domain", async () => {
+    it("upserts rubric when no reviews are assigned", async () => {
       mockPrisma.applicationReview.count.mockResolvedValue(0);
-      mockPrisma.rubricVersion.findUnique.mockResolvedValue({
-        id: RV_ID,
-        rubric: { domainId: DOMAIN_ID },
-      });
+      mockPrisma.rubricVersion.findUnique.mockResolvedValue({ id: RV_ID });
 
       await callAction({ intent: "hl-set-domain-rubric", domainId: DOMAIN_ID, rubricVersionId: RV_ID });
 
@@ -121,18 +118,6 @@ describe("admin.cycle.$id action — hiring lead overrides", () => {
 
     it("is a no-op when reviews already exist for this domain", async () => {
       mockPrisma.applicationReview.count.mockResolvedValue(3);
-
-      await callAction({ intent: "hl-set-domain-rubric", domainId: DOMAIN_ID, rubricVersionId: RV_ID });
-
-      expect(mockPrisma.domainApplicationCycle.upsert).not.toHaveBeenCalled();
-    });
-
-    it("rejects a rubric whose domain does not match", async () => {
-      mockPrisma.applicationReview.count.mockResolvedValue(0);
-      mockPrisma.rubricVersion.findUnique.mockResolvedValue({
-        id: RV_ID,
-        rubric: { domainId: "other-domain" },
-      });
 
       await callAction({ intent: "hl-set-domain-rubric", domainId: DOMAIN_ID, rubricVersionId: RV_ID });
 
