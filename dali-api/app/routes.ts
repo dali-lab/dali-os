@@ -101,6 +101,7 @@ export default [
   // Delibs
   route("api/cycles/:cycleId/delibs", "routes/api.cycles.$cycleId.delibs.ts"),
   route("api/delibs/:id", "routes/api.delibs.$id.ts"),
+  route("api/delibs/:id/moves", "routes/api.delibs.$id.moves.ts"),
 
   // Cycle interviewers
   route("api/cycles/:cycleId/interviewers", "routes/api.cycles.$cycleId.interviewers.ts"),
