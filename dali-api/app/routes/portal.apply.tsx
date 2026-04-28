@@ -552,15 +552,24 @@ function FileUploadField({
         try { message = JSON.parse(text).error ?? message; } catch {}
         throw new Error(message);
       }
-      const { uploadUrl, key } = await presignRes.json();
+      const { url, fields, key } = await presignRes.json();
 
-      // 2. Upload directly to S3
-      const uploadRes = await fetch(uploadUrl, {
-        method: "PUT",
-        body: file,
-        headers: { "Content-Type": file.type },
-      });
-      if (!uploadRes.ok) throw new Error("Upload failed");
+      // 2. Upload directly to S3 via multipart POST. S3 requires every
+      // policy field to come before the file part in the form body.
+      const formData = new FormData();
+      for (const [name, value] of Object.entries(fields as Record<string, string>)) {
+        formData.append(name, value);
+      }
+      formData.append("file", file);
+      const uploadRes = await fetch(url, { method: "POST", body: formData });
+      if (!uploadRes.ok) {
+        // S3 returns 403 with EntityTooLarge when the size policy fails.
+        const body = await uploadRes.text().catch(() => "");
+        if (uploadRes.status === 403 && /EntityTooLarge/i.test(body)) {
+          throw new Error(`File too large (max ${MAX_UPLOAD_LABEL})`);
+        }
+        throw new Error("Upload failed");
+      }
 
       // 3. Store the S3 key as the answer
       onChange(key);
