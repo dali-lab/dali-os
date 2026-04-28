@@ -16,7 +16,7 @@ export function renderSkillsRating(value: string): React.ReactNode {
       {ratings.map(({ skill, rating }) => (
         <div key={skill} className="flex items-center justify-between gap-2">
           <span className="text-sm text-dark-blue truncate">{skill}</span>
-          <span className="shrink-0 w-8 text-center text-sm font-semibold text-dark-blue bg-white rounded border border-border py-0.5">
+          <span className="shrink-0 w-8 text-center text-sm font-semibold text-dark-blue bg-card rounded border border-border py-0.5">
             {rating}
           </span>
         </div>
