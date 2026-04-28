@@ -10,8 +10,8 @@ test.describe('admin domain management', () => {
   test('admin can create a new domain and then delete it', async ({ page }) => {
     const name = `E2E Domain ${Date.now()}`;
 
-    await page.goto('/admin-console');
-    await expect(page.getByRole('heading', { name: 'DALI Members' })).toBeVisible();
+    await page.goto('/admin-console/domains');
+    await expect(page.getByText(/^Domains \(/)).toBeVisible();
 
     await page.getByLabel('New domain name').fill(name);
     await page.getByRole('button', { name: 'Create' }).click();
@@ -25,7 +25,7 @@ test.describe('admin domain management', () => {
   });
 
   test('delete is disabled for a seeded domain that is in use', async ({ page }) => {
-    await page.goto('/admin-console');
+    await page.goto('/admin-console/domains');
 
     const engRow = page.getByRole('listitem').filter({ hasText: /^Engineering/ });
     await expect(engRow).toBeVisible();
@@ -35,10 +35,9 @@ test.describe('admin domain management', () => {
 });
 
 test.describe('non-admin domain management', () => {
-  test('hiring lead does not see the Domains section', async ({ loginAs, page }) => {
+  test('hiring lead cannot access admin console', async ({ loginAs, page }) => {
     await loginAs({ daliEmail: 'jordan.taylor@dali.dartmouth.edu' });
-    await page.goto('/admin-console');
-    await expect(page.getByRole('heading', { name: 'DALI Members' })).toBeVisible();
-    await expect(page.getByText(/^Domains \(/)).toHaveCount(0);
+    await page.goto('/admin-console/members');
+    await expect(page).not.toHaveURL(/admin-console/);
   });
 });
