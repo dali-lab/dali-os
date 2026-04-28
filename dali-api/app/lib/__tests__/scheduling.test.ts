@@ -462,6 +462,29 @@ describe("assignInterviewers", () => {
     ).rejects.toThrow("No interview config for this cycle");
   });
 
+  it("throws a clear error when the cycle has no interviewers configured", async () => {
+    mockPrisma.$transaction.mockImplementation(async (fn: any) => {
+      const tx = {
+        interviewConfig: { findUnique: vi.fn().mockResolvedValue({ bufferMinutes: 15 }) },
+        cycleInterviewer: {
+          findMany: vi.fn().mockResolvedValueOnce([]),
+        },
+        $executeRaw: vi.fn().mockResolvedValue(0),
+      };
+      return fn(tx);
+    });
+
+    await expect(
+      assignInterviewers(
+        "cycle1",
+        "app1",
+        ["domain1"],
+        new Date("2026-04-13T14:00:00Z"),
+        new Date("2026-04-13T14:30:00Z"),
+      ),
+    ).rejects.toThrow("No interviewers have been configured for this cycle. Contact the hiring lead.");
+  });
+
   it("throws when no in-domain reviewer is available", async () => {
     const onlyCrossDomain = [
       {

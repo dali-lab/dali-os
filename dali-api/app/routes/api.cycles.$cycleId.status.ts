@@ -1,35 +1,10 @@
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isHiringLead, hasCycleAccess } from "~/lib/roles";
-import { findOtherActiveCycleId } from "~/lib/cycles";
+import { autoCloseIfExpired, findOtherActiveCycleId } from "~/lib/cycles";
 import type { Route } from "./+types/api.cycles.$cycleId.status";
 
 const STATUS_ORDER = ["Draft", "Open", "UnderReview", "Completed"] as const;
-
-// Lazily auto-close a cycle that has passed its closeDate.
-async function maybeAutoClose(cycleId: string) {
-  const cycle = await prisma.applicationCycle.findUnique({
-    where: { id: cycleId },
-    include: { statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 } },
-  });
-  if (!cycle) return;
-
-  const currentStatus = cycle.statusUpdates[0]?.newStatus ?? "Draft";
-  if (currentStatus !== "Open") return;
-  if (!cycle.closeDate || new Date() <= cycle.closeDate) return;
-
-  // Check+insert inside a transaction to avoid duplicate auto-close rows
-  await prisma.$transaction(async (tx) => {
-    const alreadyClosed = await tx.applicationCycleStatusUpdate.findFirst({
-      where: { applicationCycleId: cycleId, newStatus: "UnderReview" },
-    });
-    if (!alreadyClosed) {
-      await tx.applicationCycleStatusUpdate.create({
-        data: { applicationCycleId: cycleId, newStatus: "UnderReview", userId: null },
-      });
-    }
-  });
-}
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -38,7 +13,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!(await hasCycleAccess(auth.user.sub, params.cycleId!)))
     return Response.json({ error: "Forbidden" }, { status: 403 });
 
-  await maybeAutoClose(params.cycleId!);
+  await autoCloseIfExpired(params.cycleId!);
 
   const updates = await prisma.applicationCycleStatusUpdate.findMany({
     where: { applicationCycleId: params.cycleId },

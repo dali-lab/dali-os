@@ -8,6 +8,7 @@
 import { requireAuth } from '~/lib/auth'
 import { getUploadUrl } from '~/lib/s3'
 import { MAX_UPLOAD_BYTES, MAX_UPLOAD_LABEL } from '~/lib/file-validation'
+import { checkRateLimit } from '~/lib/rate-limit'
 
 const ALLOWED_TYPES = new Set([
   'image/jpeg',
@@ -17,10 +18,20 @@ const ALLOWED_TYPES = new Set([
   'application/pdf',
 ])
 
+const RATE_LIMIT_MAX = 20
+const RATE_LIMIT_WINDOW_MS = 60_000
+
 export async function action({ request }: { request: Request }) {
   try {
     const auth = await requireAuth(request)
     if (!auth.ok) return Response.json({ error: 'Unauthorized' }, { status: 401 })
+
+    const rateLimited = checkRateLimit(
+      request,
+      { max: RATE_LIMIT_MAX, windowMs: RATE_LIMIT_WINDOW_MS },
+      auth.user.sub,
+    )
+    if (rateLimited) return rateLimited
 
     const { key, contentType, contentLength } = await request.json()
 
