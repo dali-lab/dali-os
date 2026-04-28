@@ -2013,7 +2013,6 @@ function ForceReadyModal({
           </button>
           <button
             type="submit"
-            onClick={onClose}
             className={`px-3 py-2 text-sm font-medium rounded-md text-white ${isReady ? 'bg-red-600 hover:bg-red-700' : 'bg-amber-600 hover:bg-amber-700'}`}
           >
             {isReady ? 'Yes, unmark ready' : 'Yes, override domain lead'}
@@ -2045,7 +2044,6 @@ function DeleteDomainModal({ domain, onClose }: { domain: any; onClose: () => vo
           </button>
           <button
             type="submit"
-            onClick={onClose}
             className="px-3 py-2 text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700"
           >
             Remove
