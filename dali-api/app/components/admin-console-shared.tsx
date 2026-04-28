@@ -41,7 +41,6 @@ export interface DomainWithCounts extends DomainRow {
     domainLeadAssignments: number;
     cycleReviewers: number;
     cycleInterviewers: number;
-    rubrics: number;
     delibsSessions: number;
   };
 }

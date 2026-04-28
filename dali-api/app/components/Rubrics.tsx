@@ -4,10 +4,9 @@ import { Plus, ListOrdered, ChevronRight, X } from 'lucide-react'
 import type { loader } from '~/routes/rubrics'
 
 export default function RubricsList() {
-  const { rubrics, domains } = useLoaderData<typeof loader>()
+  const { rubrics } = useLoaderData<typeof loader>()
   const [showModal, setShowModal] = useState(false)
   const [newRubricName, setNewRubricName] = useState('')
-  const [newRubricDomainId, setNewRubricDomainId] = useState('')
 
   return (
     <div className="space-y-8">
@@ -47,15 +46,6 @@ export default function RubricsList() {
                     <span className="text-xs text-muted-foreground">
                       {rubric.versions.length} version{rubric.versions.length !== 1 ? 's' : ''}
                     </span>
-                    {rubric.domain ? (
-                      <span className="text-xs font-medium px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded">
-                        {rubric.domain.name}
-                      </span>
-                    ) : (
-                      <span className="text-xs font-medium px-1.5 py-0.5 bg-muted text-muted-foreground rounded">
-                        General
-                      </span>
-                    )}
                   </div>
                 </div>
               </div>
@@ -103,24 +93,6 @@ export default function RubricsList() {
                     autoFocus
                     autoComplete="off"
                   />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-foreground/80 mb-1">
-                    Domain
-                  </label>
-                  <select
-                    name="domainId"
-                    value={newRubricDomainId}
-                    onChange={(e) => setNewRubricDomainId(e.target.value)}
-                    className="w-full px-3 py-2 text-sm text-foreground border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-card"
-                  >
-                    <option value="">General (all domains)</option>
-                    {domains.filter((d) => d.name !== 'General').map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.name}
-                      </option>
-                    ))}
-                  </select>
                 </div>
                 <div className="flex justify-end gap-2">
                   <button
