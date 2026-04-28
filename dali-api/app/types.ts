@@ -115,6 +115,9 @@ export interface ChallengeVersion {
   createdAt: string
   createdById: string
   questions: Question[]
+  // ProseMirror JSON document (Tiptap StarterKit). Null/undefined for versions
+  // created before #273.
+  description?: unknown
 }
 
 export interface Challenge {
