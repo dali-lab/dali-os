@@ -7,14 +7,7 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  // Used by `prisma migrate` only. Must be a non-pooled (session-stable)
-  // connection: Neon's pooler reuses backend sessions across transactions,
-  // so Prisma's pg_advisory_lock can land on a different session than its
-  // unlock and time out (P1002). Runtime keeps using the pooled DATABASE_URL.
-  // See issue #101.
-  directUrl = env("DIRECT_URL")
+  provider = "postgresql"
 }
 
 model User {
