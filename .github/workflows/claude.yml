@@ -75,7 +75,14 @@ jobs:
             Rules:
               - Do NOT open a PR, push a branch, or modify any files. Comment only.
               - Do NOT modify `.github/workflows/*`.
-          claude_args: --model opus --max-turns 30 --allowedTools "Read,Glob,Grep,LS,Bash(gh:*)"
+          claude_args: --model opus --max-turns 100 --allowedTools "Read,Glob,Grep,LS,Bash(gh:*)"
+      - name: Mark issue claude-plan-needs-review
+        if: success()
+        uses: ./.github/actions/set-claude-label
+        with:
+          issue: ${{ github.event.issue.number }}
+          label: claude-plan-needs-review
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
   refine:
     if: >
@@ -114,7 +121,14 @@ jobs:
             Rules:
               - Do NOT open a PR, push a branch, or modify any files. Comment only.
               - Do NOT modify `.github/workflows/*`.
-          claude_args: --model opus --max-turns 10 --allowedTools "Read,Glob,Grep,LS,Bash(gh:*)"
+          claude_args: --model opus --max-turns 100 --allowedTools "Read,Glob,Grep,LS,Bash(gh:*)"
+      - name: Mark issue claude-plan-needs-review
+        if: success()
+        uses: ./.github/actions/set-claude-label
+        with:
+          issue: ${{ github.event.issue.number }}
+          label: claude-plan-needs-review
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
   implement:
     if: >
@@ -135,6 +149,12 @@ jobs:
           git config --global user.name "claude[bot]"
       - name: Create branch
         run: git checkout -b "claude/issue-${{ github.event.issue.number }}"
+      - name: Mark issue claude-implementing
+        uses: ./.github/actions/set-claude-label
+        with:
+          issue: ${{ github.event.issue.number }}
+          label: claude-implementing
+          github-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -161,7 +181,7 @@ jobs:
               - Target base branch: `dev`.
               - Title: `Fix #${{ github.event.issue.number }}: <short description>`.
               - Body must include `Closes #${{ github.event.issue.number }}` and a link back to your plan comment.
-              - Apply the `claude` label to the PR: `gh pr edit <N> --add-label claude`.
+              - Do NOT add labels to the PR. Issue-level state labels are managed by the workflow.
 
             Rules:
               - Do NOT modify `.github/workflows/*`.
@@ -172,6 +192,39 @@ jobs:
                 issue #${{ github.event.issue.number }} explaining what's
                 blocking you and what options you considered.
           claude_args: --model opus --max-turns 100 --allowedTools "Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(gh:*),Bash(npm:*),Bash(npx:*)"
+      - name: Determine implement outcome
+        id: outcome
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: |
+          PR_COUNT=$(gh pr list \
+            --repo "$GITHUB_REPOSITORY" \
+            --head "claude/issue-$ISSUE" \
+            --state open \
+            --json number --jq 'length')
+          if [ "$PR_COUNT" -gt 0 ]; then
+            echo "label=claude-pr-needs-review" >> "$GITHUB_OUTPUT"
+          else
+            # Claude exited cleanly without opening a PR (escape-hatch handoff).
+            # Treat as failure so a human knows to look.
+            echo "label=claude-failed" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Mark issue per implement outcome
+        if: success()
+        uses: ./.github/actions/set-claude-label
+        with:
+          issue: ${{ github.event.issue.number }}
+          label: ${{ steps.outcome.outputs.label }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Mark issue claude-failed (any prior step failed)
+        if: failure()
+        uses: ./.github/actions/set-claude-label
+        with:
+          issue: ${{ github.event.issue.number }}
+          label: claude-failed
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
   respond_review:
     if: >
@@ -180,14 +233,20 @@ jobs:
         (github.event_name == 'pull_request_review_comment' && github.event.action == 'created')
       ) &&
       startsWith(github.event.pull_request.head.ref, 'claude/issue-') &&
-      contains(github.event.pull_request.labels.*.name, 'claude') &&
       github.event.sender.type != 'Bot'
     runs-on: ubuntu-latest
     steps:
+      - name: Mint App token (so pushes trigger downstream workflows)
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.PROMOTE_APP_ID }}
+          private-key: ${{ secrets.PROMOTE_APP_PRIVATE_KEY }}
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.ref }}
+          token: ${{ steps.app-token.outputs.token }}
       - name: Configure git
         run: |
           git config --global user.email "claude[bot]@users.noreply.github.com"
@@ -224,4 +283,4 @@ jobs:
               - Do NOT force-push unless rebasing on `dev` is genuinely necessary; if so, explain in the comment.
               - Do NOT modify `.github/workflows/*`.
               - Do NOT use `--no-verify`.
-          claude_args: --model sonnet --max-turns 30 --allowedTools "Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(gh:*),Bash(npm:*),Bash(npx:*)"
+          claude_args: --model sonnet --max-turns 100 --allowedTools "Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(gh:*),Bash(npm:*),Bash(npx:*)"

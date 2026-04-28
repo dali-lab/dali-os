@@ -47,6 +47,17 @@ jobs:
       HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
       PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
     steps:
+      - name: Derive issue number from branch
+        id: issue
+        run: |
+          # HEAD_BRANCH is `claude/issue-N`. Extract N for label management.
+          NUM="${HEAD_BRANCH#claude/issue-}"
+          if ! [[ "$NUM" =~ ^[0-9]+$ ]]; then
+            echo "::error::Could not parse issue number from branch '$HEAD_BRANCH'"
+            exit 1
+          fi
+          echo "number=$NUM" >> "$GITHUB_OUTPUT"
+
       - name: Stale-SHA guard
         id: stale
         run: |
@@ -131,7 +142,7 @@ jobs:
           echo "skip=false" >> "$GITHUB_OUTPUT"
 
       - name: Retry-cap check
-        if: steps.stale.outputs.skip != 'true' && steps.lock.outputs.skip != 'true'
+        if: steps.stale.outputs.skip != 'true' && steps.summary.outputs.failed_count != '0' && steps.lock.outputs.skip != 'true'
         id: retry
         run: |
           # Count existing claude-ci-attempts sentinels on the PR.
@@ -145,6 +156,7 @@ jobs:
             BODY=$(printf '<!-- claude-ci-cap-hit -->\nHit the auto-fix retry cap (3 attempts). Handing back for human review.')
             gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" -f body="$BODY" > /dev/null
             echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "cap_hit=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           BODY=$(printf '<!-- claude-ci-attempts -->\nAttempt %d of 3.' "$NEXT")
@@ -152,22 +164,48 @@ jobs:
           echo "skip=false" >> "$GITHUB_OUTPUT"
           echo "attempt_num=$NEXT" >> "$GITHUB_OUTPUT"
 
+      - name: Mark issue claude-failed (retry cap hit)
+        if: steps.retry.outputs.cap_hit == 'true'
+        env:
+          ISSUE: ${{ steps.issue.outputs.number }}
+        run: |
+          set -euo pipefail
+          # Inline (not via composite action) because this step can fire
+          # before the Checkout PR branch step, so the workspace may not
+          # contain the action.yml. Mirrors composite action's behavior.
+          gh label create claude-failed \
+            --repo "$GITHUB_REPOSITORY" \
+            --color "B60205" \
+            --description "Claude implementation or CI auto-fix failed" 2>/dev/null || true
+          for L in claude claude-plan-needs-review claude-implementing claude-pr-needs-review; do
+            gh issue edit "$ISSUE" --repo "$GITHUB_REPOSITORY" --remove-label "$L" 2>/dev/null || true
+          done
+          gh issue edit "$ISSUE" --repo "$GITHUB_REPOSITORY" --add-label claude-failed
+
+      - name: Mint App token (so pushes trigger downstream workflows)
+        if: steps.stale.outputs.skip != 'true' && steps.summary.outputs.failed_count != '0' && steps.lock.outputs.skip != 'true' && steps.retry.outputs.skip != 'true'
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.PROMOTE_APP_ID }}
+          private-key: ${{ secrets.PROMOTE_APP_PRIVATE_KEY }}
+
       - name: Checkout PR branch
-        if: steps.stale.outputs.skip != 'true' && steps.lock.outputs.skip != 'true' && steps.retry.outputs.skip != 'true'
+        if: steps.stale.outputs.skip != 'true' && steps.summary.outputs.failed_count != '0' && steps.lock.outputs.skip != 'true' && steps.retry.outputs.skip != 'true'
         uses: actions/checkout@v6
         with:
           ref: ${{ env.HEAD_BRANCH }}
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Configure git
-        if: steps.stale.outputs.skip != 'true' && steps.lock.outputs.skip != 'true' && steps.retry.outputs.skip != 'true'
+        if: steps.stale.outputs.skip != 'true' && steps.summary.outputs.failed_count != '0' && steps.lock.outputs.skip != 'true' && steps.retry.outputs.skip != 'true'
         run: |
           git config --global user.email "claude[bot]@users.noreply.github.com"
           git config --global user.name "claude[bot]"
 
       - name: Gather failing logs
-        if: steps.stale.outputs.skip != 'true' && steps.lock.outputs.skip != 'true' && steps.retry.outputs.skip != 'true'
+        if: steps.stale.outputs.skip != 'true' && steps.summary.outputs.failed_count != '0' && steps.lock.outputs.skip != 'true' && steps.retry.outputs.skip != 'true'
         id: logs
         run: |
           mkdir -p /tmp/claude-logs
@@ -186,7 +224,7 @@ jobs:
           ls -la /tmp/claude-logs/
 
       - name: Build prompt
-        if: steps.stale.outputs.skip != 'true' && steps.lock.outputs.skip != 'true' && steps.retry.outputs.skip != 'true'
+        if: steps.stale.outputs.skip != 'true' && steps.summary.outputs.failed_count != '0' && steps.lock.outputs.skip != 'true' && steps.retry.outputs.skip != 'true'
         id: prompt
         run: |
           {
@@ -237,8 +275,23 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - uses: anthropics/claude-code-action@v1
-        if: steps.stale.outputs.skip != 'true' && steps.lock.outputs.skip != 'true' && steps.retry.outputs.skip != 'true'
+        if: steps.stale.outputs.skip != 'true' && steps.summary.outputs.failed_count != '0' && steps.lock.outputs.skip != 'true' && steps.retry.outputs.skip != 'true'
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: ${{ steps.prompt.outputs.text }}
-          claude_args: --model sonnet --max-turns 40 --allowedTools "Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(gh:*),Bash(npm:*),Bash(npx:*)"
+          claude_args: --model sonnet --max-turns 100 --allowedTools "Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(git:*),Bash(gh:*),Bash(npm:*),Bash(npx:*)"
+
+      - name: Mark issue claude-failed (job step failure)
+        if: failure()
+        env:
+          ISSUE: ${{ steps.issue.outputs.number }}
+        run: |
+          set -euo pipefail
+          gh label create claude-failed \
+            --repo "$GITHUB_REPOSITORY" \
+            --color "B60205" \
+            --description "Claude implementation or CI auto-fix failed" 2>/dev/null || true
+          for L in claude claude-plan-needs-review claude-implementing claude-pr-needs-review; do
+            gh issue edit "$ISSUE" --repo "$GITHUB_REPOSITORY" --remove-label "$L" 2>/dev/null || true
+          done
+          gh issue edit "$ISSUE" --repo "$GITHUB_REPOSITORY" --add-label claude-failed
