@@ -42,14 +42,17 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (intent === "create-version") {
     const domainId = (formData.get("domainId") as string) || null;
     const questionsJson = formData.get("questions") as string;
+    const descriptionJson = (formData.get("description") as string) ?? "";
 
     const questions = JSON.parse(questionsJson || "[]");
+    const description = descriptionJson ? JSON.parse(descriptionJson) : null;
 
     await prisma.challengeVersion.create({
       data: {
         challengeId: params.id,
         domainId,
         questions,
+        ...(description ? { description } : {}),
         createdById: user.id,
       },
     });

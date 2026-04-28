@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Link, useLoaderData, useSubmit, useSearchParams, useNavigation, Form } from 'react-router'
 import { ArrowLeft, Plus, FileText, Clock, UserIcon } from 'lucide-react'
 import { FormBuilderTab } from '~/components/ChallengeBuilder'
+import { RichTextViewer, isEmptyDoc } from '~/components/RichTextViewer'
 import type { Question } from '~/types'
 import type { loader } from '~/routes/admin.challenges.$id'
 
@@ -49,11 +50,12 @@ export function ChallengeDetail() {
     prevVersionCount.current = challenge.versions.length
   }, [challenge.versions.length])
 
-  const handleSaveNewVersion = (questions: Question[]) => {
+  const handleSaveNewVersion = ({ questions, description }: { questions: Question[]; description: unknown }) => {
     const formData = new FormData()
     formData.set('intent', 'create-version')
     formData.set('domainId', selectedDomainId)
     formData.set('questions', JSON.stringify(questions))
+    formData.set('description', description ? JSON.stringify(description) : '')
     submit(formData, { method: 'post' })
   }
 
@@ -157,6 +159,7 @@ export function ChallengeDetail() {
               </div>
               <FormBuilderTab
                 initialQuestions={(selectedVersion?.questions as unknown as Question[]) || []}
+                initialDescription={selectedVersion?.description ?? null}
                 onSave={handleSaveNewVersion}
                 onCancel={() => setIsCreatingVersion(false)}
                 isGeneralForm={isGeneralForm}
@@ -188,6 +191,11 @@ export function ChallengeDetail() {
               {/* Rubrics are now assigned at the domain+cycle level, not per challenge version */}
 
               <div className="p-6 space-y-4">
+                {!isEmptyDoc(selectedVersion.description) && (
+                  <div className="px-4 py-3 rounded-lg border border-border bg-muted/30">
+                    <RichTextViewer content={selectedVersion.description} />
+                  </div>
+                )}
                 {(selectedVersion.questions as unknown as Question[]).map((q, index) => (
                   <div
                     key={q.key}

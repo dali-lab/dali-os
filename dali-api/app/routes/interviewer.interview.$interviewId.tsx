@@ -18,6 +18,7 @@ import { parseAccessToken } from '~/lib/cookies'
 import { CollaborativeEditor } from '~/components/CollaborativeEditor'
 import { PresenceProvider } from '~/components/collab/PresenceProvider'
 import { PresenceBar } from '~/components/collab/PresenceBar'
+import { RichTextViewer, isEmptyDoc } from '~/components/RichTextViewer'
 import type { Route } from './+types/interviewer.interview.$interviewId'
 
 const RECOMMENDATION_OPTIONS = [
@@ -350,6 +351,11 @@ export default function InterviewDetailPage() {
                 <h3 className="text-sm font-semibold text-foreground/80 uppercase tracking-wide">
                   General Application
                 </h3>
+                {!isEmptyDoc(application?.generalChallengeVersion?.description) && (
+                  <div className="border border-border rounded-md bg-muted/30 px-4 py-3">
+                    <RichTextViewer content={application.generalChallengeVersion.description} />
+                  </div>
+                )}
                 {generalQuestions.map((q: any) => {
                   const answer = application?.answers?.[q.key]
                   return (
@@ -374,6 +380,11 @@ export default function InterviewDetailPage() {
                 <h3 className="text-sm font-semibold text-foreground/80 uppercase tracking-wide">
                   {domain} Challenge
                 </h3>
+                {!isEmptyDoc(interview.domainApplication?.challengeVersion?.description) && (
+                  <div className="border border-border rounded-md bg-muted/30 px-4 py-3">
+                    <RichTextViewer content={interview.domainApplication.challengeVersion.description} />
+                  </div>
+                )}
                 {domainQuestions.map((q: any) => {
                   const answer = interview.domainApplication?.answers?.[q.key]
                   return (
