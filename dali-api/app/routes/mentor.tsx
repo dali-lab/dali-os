@@ -14,6 +14,16 @@ import { getReviewStatus } from '~/lib/review-status'
 import { getActiveCycle, cycleStatusToStage, inferUnderReviewStage } from '~/lib/cycles'
 import { INITIAL_COLUMNS, FINAL_COLUMNS } from '~/lib/delibs'
 import CalendarGrid from '~/components/CalendarGrid'
+import { getZonedYMD } from '~/lib/timezone'
+
+/** Convert a UTC ISO timestamp to a local-time Date at midnight on the calendar
+ * day that the timestamp falls on in `timezone`. The CalendarGrid's date math
+ * runs in the browser's local time, so feeding it raw UTC midnight pushes the
+ * grid back a day in any timezone west of UTC. */
+function isoToLocalMidnightInTz(iso: string, timezone: string): Date {
+  const { year, month, day } = getZonedYMD(new Date(iso), timezone)
+  return new Date(year, month - 1, day)
+}
 import { prisma } from '~/lib/db'
 import { requireAuth } from '~/lib/auth'
 import type { Route } from './+types/mentor'
@@ -232,6 +242,7 @@ export default function MentorDashboard() {
   const [interviewConfig, setInterviewConfig] = useState<{
     dayStartHour: number; dayEndHour: number;
     interviewStartDate: string; interviewEndDate: string;
+    timezone: string;
   } | null>(null)
 
   useEffect(() => {
@@ -455,8 +466,8 @@ export default function MentorDashboard() {
                 interviews. 15-minute blocks.
               </p>
               <CalendarGrid
-                rangeStart={new Date(interviewConfig.interviewStartDate)}
-                rangeEnd={new Date(interviewConfig.interviewEndDate)}
+                rangeStart={isoToLocalMidnightInTz(interviewConfig.interviewStartDate, interviewConfig.timezone)}
+                rangeEnd={isoToLocalMidnightInTz(interviewConfig.interviewEndDate, interviewConfig.timezone)}
                 dayStartHour={interviewConfig.dayStartHour}
                 dayEndHour={interviewConfig.dayEndHour}
                 savedBlocks={savedAvailability}
