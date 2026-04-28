@@ -1743,6 +1743,10 @@ function DomainOverridePanel({
   const [selectedChallengeId, setSelectedChallengeId] = useState(selectedCvId ?? '');
   useEffect(() => { setSelectedChallengeId(selectedCvId ?? ''); }, [selectedCvId]);
 
+  // Close the ready modal when isReady flips — same-URL redirects don't remount
+  // the component so the modal state survives the round-trip without this.
+  useEffect(() => { setShowReadyModal(false); }, [isReady]);
+
   const [selectedRubricId, setSelectedRubricId] = useState(domain.rubricVersionId ?? '');
   useEffect(() => { setSelectedRubricId(domain.rubricVersionId ?? ''); }, [domain.rubricVersionId]);
 
