@@ -13,6 +13,8 @@ import {
   RemoveDomainLeadButton,
 } from "~/components/admin-console-shared";
 
+export const meta: Route.MetaFunction = () => [{ title: "Domains · Admin console · DALI OS" }];
+
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");

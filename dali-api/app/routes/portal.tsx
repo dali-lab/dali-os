@@ -14,6 +14,8 @@ import { InterviewSlotPicker } from "~/components/InterviewSlotPicker";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 import { formatInterviewDate, formatInterviewTimeRange } from "~/lib/interview-time";
 
+export const meta: Route.MetaFunction = () => [{ title: "Applicant portal · DALI OS" }];
+
 // ─── Loader ──────────────────────────────────────────────────────────────────
 
 export async function loader({ request }: Route.LoaderArgs) {

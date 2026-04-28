@@ -65,6 +65,11 @@ function nextStatus(current: CycleStatus): CycleStatus | null {
 
 // ─── Loader ──────────────────────────────────────────────────────────────────
 
+export const meta: Route.MetaFunction = ({ data }) => {
+  const name = (data as any)?.cycle?.name;
+  return [{ title: `${name || "Cycle"} · Hiring lead · DALI OS` }];
+};
+
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
