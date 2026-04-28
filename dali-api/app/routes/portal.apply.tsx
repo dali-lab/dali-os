@@ -17,6 +17,7 @@ import type { Question } from "~/types";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 import { Modal } from "~/components/Modal";
 import { QuestionList } from "~/components/ApplicationAnswers";
+import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
 
 // ─── Loader ──────────────────────────────────────────────────────────────────
 
@@ -57,6 +58,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const generalChallengeVersionId = generalCvac.challengeVersionId;
   const formQuestions = (generalCvac.challengeVersion.questions as unknown as Question[]) ?? [];
+  const generalDescription = generalCvac.challengeVersion.description ?? null;
 
   // Build domain info with challenge questions (only domain-specific ones)
   const domains = cycle.domains.map(dac => {
@@ -70,6 +72,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       challengeQuestions: cv
         ? (cv.challengeVersion.questions as unknown as Question[]) ?? []
         : [],
+      challengeDescription: cv?.challengeVersion.description ?? null,
     };
   });
 
@@ -97,6 +100,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     closeDate: active.closeDate ? active.closeDate.toISOString() : null,
     generalChallengeVersionId,
     formQuestions,
+    generalDescription,
     domains,
     isAlreadySubmitted: draftStatus === "Submitted",
     draft: draft
@@ -1004,7 +1008,7 @@ function BackToTopButton() {
 
 export default function PortalApply() {
   const loaderData = useLoaderData<typeof loader>() as any;
-  const { cycleId, cycleName, generalChallengeVersionId, formQuestions, domains, isAlreadySubmitted } = loaderData;
+  const { cycleId, cycleName, generalChallengeVersionId, formQuestions, generalDescription, domains, isAlreadySubmitted } = loaderData;
   const [draft, setDraft] = useState(loaderData.draft);
   const [selectedDomainIds, setSelectedDomainIds] = useState<string[]>(
     loaderData.draft?.selectedDomainIds ?? [],
@@ -1426,6 +1430,11 @@ export default function PortalApply() {
           return beforeQuestions.length > 0 ? (
             <div id="section-general-before" className="rounded-2xl bg-[#E8F4FA] px-6 py-5 space-y-6 scroll-mt-24">
               <h3 className="font-heading text-sm font-bold text-dark-blue uppercase tracking-wider">General Questions</h3>
+              {!isEmptyDoc(generalDescription) && (
+                <div className="text-dark-blue">
+                  <RichTextViewer content={generalDescription} />
+                </div>
+              )}
               {beforeQuestions.map(q => (
                 <div key={q.key} id={`question-${q.key}`}>
                   <label className="block text-sm font-semibold text-dark-blue mb-1">
@@ -1479,6 +1488,11 @@ export default function PortalApply() {
                   </svg>
                 </button>
               </div>
+              {!isEmptyDoc(domain.challengeDescription) && (
+                <div className="text-dark-blue">
+                  <RichTextViewer content={domain.challengeDescription} />
+                </div>
+              )}
               {(domain.challengeQuestions as Question[]).map((q: Question) => (
                 <div key={q.key} id={`question-${q.key}`}>
                   <label className="block text-sm font-semibold text-dark-blue mb-1">
