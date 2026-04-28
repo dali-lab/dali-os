@@ -37,6 +37,8 @@ const STATUS_MESSAGES: Record<string, string> = {
   Completed: "Decisions have been released to applicants.",
 };
 
+export const meta: Route.MetaFunction = () => [{ title: "Domain lead · DALI OS" }];
+
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return { domainData: [] };
