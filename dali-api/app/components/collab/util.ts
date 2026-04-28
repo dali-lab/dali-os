@@ -17,10 +17,12 @@ export function nameToColor(name: string): string {
   return `hsl(${hue}, 70%, 50%)`;
 }
 
-/** Resolve the collab WebSocket URL injected into window by root.tsx. */
+/** Resolve the collab WebSocket URL from the <meta> tag emitted by root.tsx. */
 export function getCollabUrl(): string {
   if (typeof window === "undefined") return "";
-  const url = (window as any).__COLLAB_URL;
+  const url = document
+    .querySelector('meta[name="collab-url"]')
+    ?.getAttribute("content");
   return url && url.length > 0 ? url : "ws://localhost:3002";
 }
 
