@@ -100,7 +100,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
 
   const rubricVersionOptions = await prisma.rubricVersion.findMany({
-    where: { rubric: { domainId: null } },
     include: { rubric: { select: { name: true } } },
     orderBy: { createdAt: "desc" },
   });
@@ -123,8 +122,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     orderBy: { createdAt: "desc" },
   });
   const domainRubricVersions = await prisma.rubricVersion.findMany({
-    where: { rubric: { domainId: { in: domainIds } } },
-    include: { rubric: { select: { name: true, domainId: true } } },
+    include: { rubric: { select: { name: true } } },
     orderBy: { createdAt: "desc" },
   });
   const reviewsForCycle = await prisma.applicationReview.findMany({
@@ -408,9 +406,8 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (rubricVersionId) {
       const rv = await prisma.rubricVersion.findUnique({
         where: { id: rubricVersionId },
-        include: { rubric: true },
       });
-      if (!rv || rv.rubric.domainId !== domainId) {
+      if (!rv) {
         return redirect(`/hiring-lead-admin/cycle/${params.id}`);
       }
     }
@@ -945,9 +942,7 @@ export default function AdminCycleDetails() {
                   const challengeOptions = (loaderData?.domainChallengeVersions ?? []).filter(
                     (cv: any) => cv.domainId === d.domainId,
                   );
-                  const rubricOptions = (loaderData?.domainRubricVersions ?? []).filter(
-                    (rv: any) => rv.rubric?.domainId === d.domainId,
-                  );
+                  const rubricOptions = loaderData?.domainRubricVersions ?? [];
                   const reviewedDomainIds: string[] = loaderData?.reviewedDomainIds ?? [];
                   const rubricLocked = reviewedDomainIds.includes(d.domainId);
                   return (
@@ -1935,7 +1930,7 @@ function DomainOverridePanel({
             </div>
           ) : rubricOptions.length === 0 ? (
             <p className="text-xs text-muted-foreground/70 px-3 py-2 bg-muted/30 rounded-lg">
-              No rubric versions exist for this domain. Create one on the Rubrics page.
+              No rubric versions exist. Create one on the Rubrics page.
             </p>
           ) : (
             <Form method="post" className="flex items-end gap-2">
