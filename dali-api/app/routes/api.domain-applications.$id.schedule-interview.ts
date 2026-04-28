@@ -2,6 +2,7 @@ import type { Route } from "./+types/api.domain-applications.$id.schedule-interv
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { assignInterviewers } from "~/lib/scheduling";
+import { safeJson } from "~/lib/safe-json";
 
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
@@ -11,7 +12,8 @@ export async function action({ request, params }: Route.ActionArgs) {
     return Response.json({ error: "Method not allowed" }, { status: 405 });
   }
 
-  const body = await request.json();
+  const body = await safeJson<{ startTime?: string }>(request);
+  if (body instanceof Response) return body;
   const { startTime } = body;
   if (!startTime) {
     return Response.json({ error: "startTime is required" }, { status: 400 });

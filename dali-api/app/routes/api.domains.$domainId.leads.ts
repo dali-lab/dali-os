@@ -3,6 +3,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
+import { safeJson } from "~/lib/safe-json";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const preflight = handlePreflight(request);
@@ -29,7 +30,9 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!(await isAdmin(auth.user.sub))) return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
 
   if (request.method === "POST") {
-    const { memberId } = await request.json();
+    const postBody = await safeJson<{ memberId?: string }>(request);
+    if (postBody instanceof Response) return withCors(request, postBody);
+    const { memberId } = postBody;
     if (!memberId) {
       return withCors(request, Response.json({ error: "memberId is required" }, { status: 400 }));
     }
@@ -42,7 +45,9 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   if (request.method === "DELETE") {
-    const { assignmentId } = await request.json();
+    const delBody = await safeJson<{ assignmentId?: string }>(request);
+    if (delBody instanceof Response) return withCors(request, delBody);
+    const { assignmentId } = delBody;
     if (!assignmentId) {
       return withCors(request, Response.json({ error: "assignmentId is required" }, { status: 400 }));
     }

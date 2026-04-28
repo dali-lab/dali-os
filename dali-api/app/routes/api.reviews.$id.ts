@@ -2,6 +2,7 @@ import type { Route } from "./+types/api.reviews.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isHiringLead, isDomainLead } from "~/lib/roles";
+import { safeJson } from "~/lib/safe-json";
 
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
@@ -28,7 +29,8 @@ export async function action({ request, params }: Route.ActionArgs) {
       return Response.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const body = await request.json();
+    const body = await safeJson<Record<string, unknown>>(request);
+    if (body instanceof Response) return body;
     const data: Record<string, unknown> = {};
     if (body.scores !== undefined) data.scores = body.scores;
     if (body.feedback !== undefined) data.feedback = body.feedback;
