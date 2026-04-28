@@ -18,6 +18,8 @@ export default [
     route("emails", "routes/email-templates.tsx"),
     route("emails/:id", "routes/email-templates.$id.tsx"),
     route("admin-console", "routes/admin-console.tsx"),
+    route("admin-console/members", "routes/admin-console.members.tsx"),
+    route("admin-console/domains", "routes/admin-console.domains.tsx"),
     route("interviewer", "routes/interviewer.tsx"),
     route("interviewer/interview/:interviewId", "routes/interviewer.interview.$interviewId.tsx"),
     route("schedule-interview", "routes/applicant.schedule-interview.tsx"),
