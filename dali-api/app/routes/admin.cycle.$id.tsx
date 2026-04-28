@@ -5,6 +5,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isHiringLead } from "~/lib/roles";
 import { renderEmail } from "~/lib/email";
+import { Modal } from "~/components/Modal";
 import { Settings, Users, Calendar, AlertTriangle, Trash2, Plus, CheckCircle, ArrowRight, Circle, ChevronRight, X, LayoutDashboard, Eye } from 'lucide-react'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -112,6 +113,37 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
   });
 
+  // Per-domain options + which domains already have reviews assigned (used to
+  // gate rubric edits — once any domain application has a review, changing
+  // the rubric out from under it would invalidate scoring).
+  const domainIds: string[] = cycle.domains.map((d: any) => d.domainId);
+  const domainChallengeVersions = await prisma.challengeVersion.findMany({
+    where: { domainId: { in: domainIds } },
+    include: { challenge: true },
+    orderBy: { createdAt: "desc" },
+  });
+  const domainRubricVersions = await prisma.rubricVersion.findMany({
+    where: { rubric: { domainId: { in: domainIds } } },
+    include: { rubric: { select: { name: true, domainId: true } } },
+    orderBy: { createdAt: "desc" },
+  });
+  const reviewsForCycle = await prisma.applicationReview.findMany({
+    where: {
+      domainApplication: { application: { applicationCycleId: params.id } },
+    },
+    select: {
+      domainApplication: {
+        select: { challengeVersion: { select: { domainId: true } } },
+      },
+    },
+  });
+  const reviewedDomainIdSet = new Set<string>();
+  for (const r of reviewsForCycle) {
+    const did = r.domainApplication.challengeVersion.domainId;
+    if (did) reviewedDomainIdSet.add(did);
+  }
+  const reviewedDomainIds = Array.from(reviewedDomainIdSet);
+
   // Final decisions ready for release (HiringLead decisions panel)
   const finalDecisions = await prisma.decision.findMany({
     where: {
@@ -174,6 +206,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     emailTemplates,
     currentDecisionEmails,
     releasedDecisionTypes,
+    domainChallengeVersions,
+    domainRubricVersions,
+    reviewedDomainIds,
   };
 }
 
@@ -287,6 +322,111 @@ export async function action({ request, params }: Route.ActionArgs) {
     // Link the new one
     await prisma.challengeVersionApplicationCycle.create({
       data: { challengeVersionId, applicationCycleId: params.id },
+    });
+    return redirect(`/hiring-lead-admin/cycle/${params.id}`);
+  }
+
+  if (intent === "hl-set-domain-challenge") {
+    const domainId = formData.get("domainId") as string;
+    const challengeVersionId = formData.get("challengeVersionId") as string;
+    if (!domainId || !challengeVersionId) {
+      return redirect(`/hiring-lead-admin/cycle/${params.id}`);
+    }
+    // Hiring lead override mirrors domain lead's window: challenge edits are
+    // Draft-only because applicants see the form once the cycle is Open.
+    const latestUpdate = await prisma.applicationCycleStatusUpdate.findFirst({
+      where: { applicationCycleId: params.id },
+      orderBy: { createdAt: "desc" },
+    });
+    if ((latestUpdate?.newStatus ?? "Draft") !== "Draft") {
+      return redirect(`/hiring-lead-admin/cycle/${params.id}`);
+    }
+    // Confirm the chosen version belongs to the named domain — guard against
+    // form tampering linking a different domain's challenge.
+    const cv = await prisma.challengeVersion.findUnique({ where: { id: challengeVersionId } });
+    if (!cv || cv.domainId !== domainId) {
+      return redirect(`/hiring-lead-admin/cycle/${params.id}`);
+    }
+    await prisma.challengeVersionApplicationCycle.deleteMany({
+      where: {
+        applicationCycleId: params.id,
+        challengeVersion: { domainId },
+      },
+    });
+    await prisma.challengeVersionApplicationCycle.create({
+      data: { challengeVersionId, applicationCycleId: params.id },
+    });
+    return redirect(`/hiring-lead-admin/cycle/${params.id}`);
+  }
+
+  if (intent === "hl-set-domain-rubric") {
+    const domainId = formData.get("domainId") as string;
+    const rubricVersionId = (formData.get("rubricVersionId") as string) || null;
+    if (!domainId) {
+      return redirect(`/hiring-lead-admin/cycle/${params.id}`);
+    }
+    // Once any review is assigned for this domain in this cycle, the rubric
+    // is locked: changing it would silently invalidate prior scores.
+    const hasAssignedReviews = await prisma.applicationReview.count({
+      where: {
+        domainApplication: {
+          challengeVersion: { domainId },
+          application: { applicationCycleId: params.id },
+        },
+      },
+    });
+    if (hasAssignedReviews > 0) {
+      return redirect(`/hiring-lead-admin/cycle/${params.id}`);
+    }
+    if (rubricVersionId) {
+      const rv = await prisma.rubricVersion.findUnique({
+        where: { id: rubricVersionId },
+        include: { rubric: true },
+      });
+      if (!rv || rv.rubric.domainId !== domainId) {
+        return redirect(`/hiring-lead-admin/cycle/${params.id}`);
+      }
+    }
+    await prisma.domainApplicationCycle.upsert({
+      where: { domainId_applicationCycleId: { domainId, applicationCycleId: params.id } },
+      update: { rubricVersionId },
+      create: { domainId, applicationCycleId: params.id, rubricVersionId },
+    });
+    return redirect(`/hiring-lead-admin/cycle/${params.id}`);
+  }
+
+  if (intent === "hl-force-mark-ready" || intent === "hl-force-unmark-ready") {
+    const domainId = formData.get("domainId") as string;
+    const confirm = formData.get("confirm");
+    if (!domainId || confirm !== "true") {
+      return redirect(`/hiring-lead-admin/cycle/${params.id}`);
+    }
+    const latestUpdate = await prisma.applicationCycleStatusUpdate.findFirst({
+      where: { applicationCycleId: params.id },
+      orderBy: { createdAt: "desc" },
+    });
+    if ((latestUpdate?.newStatus ?? "Draft") !== "Draft") {
+      return redirect(`/hiring-lead-admin/cycle/${params.id}`);
+    }
+    const isReady = intent === "hl-force-mark-ready";
+    if (isReady) {
+      // Marking ready without a challenge linked would let the cycle pretend
+      // it's configured when advance-status would still block — surface that
+      // by refusing the override here.
+      const hasChallenge = await prisma.challengeVersionApplicationCycle.count({
+        where: {
+          applicationCycleId: params.id,
+          challengeVersion: { domainId },
+        },
+      });
+      if (hasChallenge === 0) {
+        return redirect(`/hiring-lead-admin/cycle/${params.id}`);
+      }
+    }
+    await prisma.domainApplicationCycle.upsert({
+      where: { domainId_applicationCycleId: { domainId, applicationCycleId: params.id } },
+      update: { isReady },
+      create: { domainId, applicationCycleId: params.id, isReady },
     });
     return redirect(`/hiring-lead-admin/cycle/${params.id}`);
   }
@@ -766,36 +906,33 @@ export default function AdminCycleDetails() {
           {/* Domains */}
           <div className="bg-card rounded-xl border border-border shadow-sm p-6 space-y-4">
             <h3 className="text-sm font-bold text-foreground/80">Domains in this Cycle</h3>
+            <p className="text-xs text-muted-foreground">
+              Hiring leads can override per-domain challenge, rubric, and ready-state selections set by domain leads.
+            </p>
             {(cycle?.domains ?? []).length > 0 ? (
-              <div className="divide-y divide-border">
+              <div className="space-y-3">
                 {(cycle?.domains ?? []).map((d: any) => {
-                  const hasChallengeVersion = (cycle?.challengeVersions ?? []).some(
+                  const selectedCvLink = (cycle?.challengeVersions ?? []).find(
                     (cv: any) => cv.challengeVersion?.domainId === d.domainId
                   );
+                  const challengeOptions = (loaderData?.domainChallengeVersions ?? []).filter(
+                    (cv: any) => cv.domainId === d.domainId,
+                  );
+                  const rubricOptions = (loaderData?.domainRubricVersions ?? []).filter(
+                    (rv: any) => rv.rubric?.domainId === d.domainId,
+                  );
+                  const reviewedDomainIds: string[] = loaderData?.reviewedDomainIds ?? [];
+                  const rubricLocked = reviewedDomainIds.includes(d.domainId);
                   return (
-                    <div key={d.domainId} className="flex items-center justify-between py-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-foreground">{d.domain?.name ?? d.domainId}</span>
-                        {hasChallengeVersion ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700">
-                            <CheckCircle className="w-3 h-3" /> Challenge linked
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-yellow-100 text-yellow-700">
-                            <AlertTriangle className="w-3 h-3" /> No challenge
-                          </span>
-                        )}
-                      </div>
-                      {cycleStatus === 'Draft' && (
-                        <Form method="post">
-                          <input type="hidden" name="intent" value="remove-domain" />
-                          <input type="hidden" name="domainId" value={d.domainId} />
-                          <button type="submit" className="text-red-500 hover:text-red-700 transition">
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </Form>
-                      )}
-                    </div>
+                    <DomainOverridePanel
+                      key={d.domainId}
+                      domain={d}
+                      cycleStatus={cycleStatus}
+                      selectedCvLink={selectedCvLink}
+                      challengeOptions={challengeOptions}
+                      rubricOptions={rubricOptions}
+                      rubricLocked={rubricLocked}
+                    />
                   );
                 })}
               </div>
@@ -1569,6 +1706,250 @@ function GeneralRubricPicker({ currentRubricVersionId, rubricVersionOptions, loc
         </Form>
       )}
     </div>
+  );
+}
+
+function DomainOverridePanel({
+  domain,
+  cycleStatus,
+  selectedCvLink,
+  challengeOptions,
+  rubricOptions,
+  rubricLocked,
+}: {
+  domain: any;
+  cycleStatus: string;
+  selectedCvLink: any | undefined;
+  challengeOptions: any[];
+  rubricOptions: any[];
+  rubricLocked: boolean;
+}) {
+  const [showReadyModal, setShowReadyModal] = useState(false);
+  const challengeLocked = cycleStatus !== 'Draft';
+  const readyLocked = cycleStatus !== 'Draft';
+  const isReady: boolean = !!domain.isReady;
+  const selectedCvId: string | null = selectedCvLink?.challengeVersionId ?? null;
+  const selectedCv = selectedCvLink?.challengeVersion;
+  const selectedCvLabel = selectedCv
+    ? `${selectedCv.challenge?.name ?? 'Untitled'} — created ${new Date(selectedCv.createdAt).toLocaleDateString()}`
+    : null;
+  const currentRubric = rubricOptions.find((rv) => rv.id === domain.rubricVersionId);
+  const currentRubricLabel = currentRubric ? `${currentRubric.rubric.name} — v${currentRubric.versionNumber}` : null;
+
+  return (
+    <div className="border border-border rounded-lg p-4 space-y-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm font-semibold text-foreground">{domain.domain?.name ?? domain.domainId}</span>
+          {selectedCv ? (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700">
+              <CheckCircle className="w-3 h-3" /> Challenge linked
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-yellow-100 text-yellow-700">
+              <AlertTriangle className="w-3 h-3" /> No challenge
+            </span>
+          )}
+          {isReady ? (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700">
+              <CheckCircle className="w-3 h-3" /> Domain marked ready
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-muted text-muted-foreground">
+              <Circle className="w-3 h-3" /> Not ready
+            </span>
+          )}
+        </div>
+        {cycleStatus === 'Draft' && (
+          <Form method="post">
+            <input type="hidden" name="intent" value="remove-domain" />
+            <input type="hidden" name="domainId" value={domain.domainId} />
+            <button type="submit" className="text-red-500 hover:text-red-700 transition" aria-label={`Remove ${domain.domain?.name ?? domain.domainId}`}>
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </Form>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs font-medium text-muted-foreground mb-1">
+            Challenge version {challengeLocked && <span className="text-muted-foreground/70">(locked — cycle is past Draft)</span>}
+          </label>
+          {challengeLocked ? (
+            <div className="text-sm text-foreground/80 px-3 py-2 bg-muted/40 rounded-lg">
+              {selectedCvLabel ?? 'No challenge linked'}
+            </div>
+          ) : challengeOptions.length === 0 ? (
+            <p className="text-xs text-muted-foreground/70 px-3 py-2 bg-muted/30 rounded-lg">
+              No challenge versions exist for this domain. Create one on the Challenges page.
+            </p>
+          ) : (
+            <Form method="post" className="flex items-end gap-2">
+              <input type="hidden" name="intent" value="hl-set-domain-challenge" />
+              <input type="hidden" name="domainId" value={domain.domainId} />
+              <div className="flex-1 min-w-0">
+                <select
+                  name="challengeVersionId"
+                  defaultValue={selectedCvId ?? ''}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  aria-label={`Select challenge version for ${domain.domain?.name ?? domain.domainId}`}
+                >
+                  <option value="" disabled>Select a challenge version...</option>
+                  {challengeOptions.map((cv: any) => (
+                    <option key={cv.id} value={cv.id}>
+                      {cv.challenge?.name ?? 'Untitled'} — {new Date(cv.createdAt).toLocaleDateString()}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button
+                type="submit"
+                className="px-3 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition"
+              >
+                Save
+              </button>
+            </Form>
+          )}
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-muted-foreground mb-1">
+            Rubric version {rubricLocked && <span className="text-muted-foreground/70">(locked — reviews assigned)</span>}
+          </label>
+          {rubricLocked ? (
+            <div className="text-sm text-foreground/80 px-3 py-2 bg-muted/40 rounded-lg">
+              {currentRubricLabel ?? 'No rubric set'}
+            </div>
+          ) : rubricOptions.length === 0 ? (
+            <p className="text-xs text-muted-foreground/70 px-3 py-2 bg-muted/30 rounded-lg">
+              No rubric versions exist for this domain. Create one on the Rubrics page.
+            </p>
+          ) : (
+            <Form method="post" className="flex items-end gap-2">
+              <input type="hidden" name="intent" value="hl-set-domain-rubric" />
+              <input type="hidden" name="domainId" value={domain.domainId} />
+              <div className="flex-1 min-w-0">
+                <select
+                  name="rubricVersionId"
+                  defaultValue={domain.rubricVersionId ?? ''}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  aria-label={`Select rubric version for ${domain.domain?.name ?? domain.domainId}`}
+                >
+                  <option value="">No rubric assigned</option>
+                  {rubricOptions.map((rv: any) => (
+                    <option key={rv.id} value={rv.id}>
+                      {rv.rubric.name} — v{rv.versionNumber}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button
+                type="submit"
+                className="px-3 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition"
+              >
+                Save
+              </button>
+            </Form>
+          )}
+        </div>
+      </div>
+
+      {!readyLocked && (
+        <div className="pt-2 border-t border-border flex items-center justify-between gap-3">
+          <p className="text-xs text-muted-foreground">
+            Force-mark this domain ready to unblock cycle advancement when the domain lead is unavailable.
+          </p>
+          <button
+            type="button"
+            onClick={() => setShowReadyModal(true)}
+            disabled={!isReady && !selectedCv}
+            title={!isReady && !selectedCv ? 'Link a challenge before marking ready' : undefined}
+            className={`px-3 py-1.5 text-sm font-medium rounded-lg transition disabled:opacity-50 ${
+              isReady
+                ? 'bg-card border border-border hover:bg-muted/50 text-foreground/80'
+                : 'bg-amber-600 hover:bg-amber-700 text-white'
+            }`}
+          >
+            {isReady ? 'Unmark Ready' : 'Force Mark Ready'}
+          </button>
+        </div>
+      )}
+
+      {showReadyModal && (
+        <ForceReadyModal
+          domain={domain}
+          isReady={isReady}
+          selectedCvLabel={selectedCvLabel}
+          currentRubricLabel={currentRubricLabel}
+          onClose={() => setShowReadyModal(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function ForceReadyModal({
+  domain,
+  isReady,
+  selectedCvLabel,
+  currentRubricLabel,
+  onClose,
+}: {
+  domain: any;
+  isReady: boolean;
+  selectedCvLabel: string | null;
+  currentRubricLabel: string | null;
+  onClose: () => void;
+}) {
+  const intent = isReady ? 'hl-force-unmark-ready' : 'hl-force-mark-ready';
+  const headingId = `force-ready-heading-${domain.domainId}`;
+  return (
+    <Modal open onClose={onClose} labelledBy={headingId} containerClassName="bg-card rounded-2xl shadow-xl max-w-md w-full mx-4 p-6">
+      <div className="space-y-4">
+        <h2 id={headingId} className="text-lg font-bold text-foreground">
+          {isReady ? 'Unmark domain as ready?' : 'Override domain lead?'}
+        </h2>
+        <div className="text-sm text-muted-foreground space-y-2">
+          <p>
+            Domain: <span className="font-semibold text-foreground">{domain.domain?.name ?? domain.domainId}</span>
+          </p>
+          <div className="bg-muted/40 rounded-lg p-3 space-y-1 text-xs">
+            <div>
+              <span className="font-medium text-foreground/80">Challenge: </span>
+              {selectedCvLabel ?? <span className="text-amber-700">none</span>}
+            </div>
+            <div>
+              <span className="font-medium text-foreground/80">Rubric: </span>
+              {currentRubricLabel ?? <span className="text-amber-700">none</span>}
+            </div>
+          </div>
+          {isReady ? (
+            <p>This will revert the domain back to "not ready" until the domain lead (or a hiring lead) marks it ready again.</p>
+          ) : (
+            <p>This will mark the domain as ready on behalf of the domain lead. Use this when the domain lead is unavailable and the cycle needs to advance.</p>
+          )}
+        </div>
+        <Form method="post" className="flex justify-end gap-2 pt-2">
+          <input type="hidden" name="intent" value={intent} />
+          <input type="hidden" name="domainId" value={domain.domainId} />
+          <input type="hidden" name="confirm" value="true" />
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-border rounded-md hover:bg-muted/50"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className={`px-3 py-2 text-sm font-medium rounded-md text-white ${isReady ? 'bg-red-600 hover:bg-red-700' : 'bg-amber-600 hover:bg-amber-700'}`}
+          >
+            {isReady ? 'Yes, unmark ready' : 'Yes, override domain lead'}
+          </button>
+        </Form>
+      </div>
+    </Modal>
   );
 }
 
