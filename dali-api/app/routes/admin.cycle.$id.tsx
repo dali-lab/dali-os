@@ -807,8 +807,7 @@ export default function AdminCycleDetails() {
             const challengeVersions = cycle?.challengeVersions ?? [];
             const coveredDomainIds = new Set(challengeVersions.map((cv: any) => cv.challengeVersion?.domainId));
             const hasGeneralForm = challengeVersions.some((cv: any) => cv.challengeVersion?.domainId === null);
-            const hasGeneralRubric = !!cycle?.generalRubricVersionId;
-            return hasCloseDate && domains.length > 0 && domains.every((d: any) => coveredDomainIds.has(d.domainId)) && hasGeneralForm && hasGeneralRubric;
+            return hasCloseDate && domains.length > 0 && domains.every((d: any) => coveredDomainIds.has(d.domainId)) && hasGeneralForm;
           })();
           return (
             <button
@@ -862,7 +861,7 @@ export default function AdminCycleDetails() {
         const allDomainsCovered = domains.length > 0 && domains.every((d: any) => coveredDomainIds.has(d.domainId));
         const hasGeneralForm = challengeVersions.some((cv: any) => cv.challengeVersion?.domainId === null);
         const hasGeneralRubric = !!cycle?.generalRubricVersionId;
-        const ready = hasCloseDate && allDomainsCovered && hasGeneralForm && hasGeneralRubric;
+        const ready = hasCloseDate && allDomainsCovered && hasGeneralForm;
         return (
           <div className={`rounded-xl border p-4 space-y-3 ${ready ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200'}`}>
             <h3 className="text-sm font-bold text-foreground">Checklist to Open Applications</h3>
@@ -888,16 +887,26 @@ export default function AdminCycleDetails() {
                   : <Circle className="w-4 h-4 text-muted-foreground/70" />}
                 <span className={hasGeneralForm ? 'text-green-800' : 'text-muted-foreground'}>General application form is linked</span>
               </div>
-              <div className="flex items-center gap-2 text-sm">
-                {hasGeneralRubric
-                  ? <CheckCircle className="w-4 h-4 text-green-600" />
-                  : <Circle className="w-4 h-4 text-muted-foreground/70" />}
-                <span className={hasGeneralRubric ? 'text-green-800' : 'text-muted-foreground'}>General application rubric is set</span>
-              </div>
             </div>
+            {!hasGeneralRubric && (
+              <p className="text-xs text-muted-foreground border-t border-yellow-200 pt-2">
+                Heads up: the general application rubric isn't set yet. You can open applications without it, but reviewers can't be assigned until a rubric is in place.
+              </p>
+            )}
           </div>
         );
       })()}
+
+      {/* Reminder while Open: rubric still needed before reviewer assignment */}
+      {cycleStatus === 'Open' && !cycle?.generalRubricVersionId && (
+        <div className="rounded-xl border border-yellow-200 bg-yellow-50 p-4 flex items-start gap-3">
+          <AlertTriangle className="w-5 h-5 text-yellow-700 flex-shrink-0 mt-0.5" />
+          <div className="flex-1 space-y-0.5">
+            <p className="text-sm font-bold text-yellow-900">General application rubric not set</p>
+            <p className="text-sm text-yellow-800">Set the general rubric before review begins — reviewer assignment is blocked without it.</p>
+          </div>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex gap-1 bg-muted rounded-lg p-1 overflow-x-auto">
