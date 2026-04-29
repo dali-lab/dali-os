@@ -3,6 +3,42 @@ import { GripVertical, Plus, Pencil, Trash2, Save } from 'lucide-react'
 import type { Question } from '~/types'
 import { RichTextEditor } from '~/components/RichTextEditor'
 
+const ACCEPT_PRESETS = [
+  { label: 'PDF', value: 'application/pdf' },
+  { label: 'Images', value: 'image/*' },
+  { label: 'Word', value: '.doc,.docx' },
+  { label: 'Excel', value: '.xls,.xlsx' },
+  { label: 'CSV', value: 'text/csv,.csv' },
+  { label: 'ZIP', value: 'application/zip,.zip' },
+  { label: 'Video', value: 'video/*' },
+  { label: 'CAD / 3D', value: '.f3z,.f3d' },
+] as const
+
+function buildAcceptFromPresets(presets: Set<string>, custom: string): string {
+  const parts: string[] = []
+  for (const { value } of ACCEPT_PRESETS) {
+    if (presets.has(value)) parts.push(...value.split(',').map((s) => s.trim()))
+  }
+  if (custom.trim()) {
+    parts.push(...custom.split(',').map((s) => s.trim()).filter(Boolean))
+  }
+  return [...new Set(parts)].join(', ')
+}
+
+function parseAcceptIntoPresets(accept: string): { presets: Set<string>; custom: string } {
+  const tokens = new Set(accept.split(',').map((s) => s.trim()).filter(Boolean))
+  const selected = new Set<string>()
+  const remaining = new Set(tokens)
+  for (const { value } of ACCEPT_PRESETS) {
+    const pts = value.split(',').map((s) => s.trim())
+    if (pts.every((t) => tokens.has(t))) {
+      selected.add(value)
+      pts.forEach((t) => remaining.delete(t))
+    }
+  }
+  return { presets: selected, custom: [...remaining].join(', ') }
+}
+
 export interface BuildQuestionInput {
   key: string
   type: Question['type']
@@ -82,6 +118,8 @@ export function FormBuilderTab({
   const [optionsText, setOptionsText] = useState('')
   const [maxWordsEnabled, setMaxWordsEnabled] = useState(false)
   const [maxWordsValue, setMaxWordsValue] = useState<string>('')
+  const [acceptPresets, setAcceptPresets] = useState<Set<string>>(new Set())
+  const [acceptCustom, setAcceptCustom] = useState('')
   // Drag and drop state
   const dragItemRef = useRef<number | null>(null)
   const dragOverItemRef = useRef<number | null>(null)
@@ -129,6 +167,8 @@ export function FormBuilderTab({
     setOptionsText('')
     setMaxWordsEnabled(false)
     setMaxWordsValue('')
+    setAcceptPresets(new Set())
+    setAcceptCustom('')
   }
   const handleEdit = (q: Question) => {
     setEditingKey(q.key)
@@ -137,6 +177,14 @@ export function FormBuilderTab({
     setMaxWordsEnabled(q.data.maxWords !== undefined)
     setMaxWordsValue(q.data.maxWords !== undefined ? String(q.data.maxWords) : '')
     setIsAdding(false)
+    if (q.type === 'file' && q.data.accept) {
+      const { presets, custom } = parseAcceptIntoPresets(q.data.accept)
+      setAcceptPresets(presets)
+      setAcceptCustom(custom)
+    } else {
+      setAcceptPresets(new Set())
+      setAcceptCustom('')
+    }
   }
   const handleDelete = (key: string) => {
     setQuestions(questions.filter((q) => q.key !== key))
@@ -150,7 +198,7 @@ export function FormBuilderTab({
       label: editForm.data.label,
       description: editForm.data.description,
       optionsText,
-      accept: editForm.data.accept,
+      accept: buildAcceptFromPresets(acceptPresets, acceptCustom),
       afterDomains: editForm.data.afterDomains,
       isGeneralForm,
       maxWordsEnabled,
@@ -182,6 +230,8 @@ export function FormBuilderTab({
     setOptionsText('')
     setMaxWordsEnabled(false)
     setMaxWordsValue('')
+    setAcceptPresets(new Set())
+    setAcceptCustom('')
   }
   const renderEditForm = (isNew: boolean) => {
     return (
@@ -347,25 +397,42 @@ export function FormBuilderTab({
 
           {editForm.type === 'file' && (
             <div className="col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Accepted File Types
               </label>
+              <div className="flex flex-wrap gap-2 mb-3">
+                {ACCEPT_PRESETS.map(({ label, value }) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() =>
+                      setAcceptPresets((prev) => {
+                        const next = new Set(prev)
+                        if (next.has(value)) next.delete(value)
+                        else next.add(value)
+                        return next
+                      })
+                    }
+                    className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+                      acceptPresets.has(value)
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-white text-gray-700 border-gray-300 hover:border-blue-400'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
               <input
                 type="text"
-                value={editForm.data?.accept || ''}
-                onChange={(e) =>
-                  setEditForm({
-                    ...editForm,
-                    data: {
-                      ...editForm.data!,
-                      accept: e.target.value,
-                    },
-                  })
-                }
+                value={acceptCustom}
+                onChange={(e) => setAcceptCustom(e.target.value)}
                 className="block w-full rounded-md border border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
-                placeholder="e.g. application/pdf"
+                placeholder="Additional types, e.g. .f3z, text/plain"
               />
-              <p className="text-xs text-gray-500 mt-1">MIME types, comma-separated (e.g. application/pdf, image/png)</p>
+              <p className="text-xs text-gray-500 mt-1">
+                Toggle common presets above, or enter extra MIME types / extensions below (comma-separated).
+              </p>
             </div>
           )}
         </div>
