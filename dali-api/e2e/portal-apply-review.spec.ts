@@ -130,4 +130,51 @@ test.describe('portal: pre-submit review modal', () => {
     });
     expect(result).toBeGreaterThan(0);
   });
+
+  test('flags inaccessible links before opening the review modal; Submit Anyway advances to preview', async ({
+    page,
+    loginAs,
+  }) => {
+    // Add a github_url answer so the pre-review check has something to flag.
+    // eq-…01 is the FULLSTACK github_url challenge question on the engineering form.
+    await setCarolAnswers(CAROL_FULL_GENERAL_ANSWERS, {
+      ...CAROL_ENG_ANSWERS,
+      'eq-00000000-0000-0000-0000-000000000001': 'https://github.com/example/private-repo',
+    });
+
+    await loginAs({ netId: 'f007ca3' });
+
+    // Mock the URL-check endpoint so the test does not depend on real GitHub
+    // network calls. Force a non-`valid` result so the pre-review gate fires.
+    await page.route('**/api/check-url', async route => {
+      const body = route.request().postDataJSON() as { url?: string };
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          status: 'private',
+          url: body.url ?? '',
+          message: 'Repository appears to be private or does not exist',
+        }),
+      });
+    });
+
+    await page.goto('/portal/apply');
+
+    const reviewButton = page.getByRole('button', { name: /^Review Application$/ });
+    await expect(reviewButton).toBeVisible();
+    await reviewButton.click();
+
+    // Warning modal must appear *before* the review modal — this is the
+    // regression we're guarding against (#320).
+    const warningHeading = page.getByRole('heading', { name: /some links may be inaccessible/i });
+    await expect(warningHeading).toBeVisible();
+    // Review modal should NOT be visible yet.
+    await expect(page.getByRole('heading', { name: /review your application/i })).toBeHidden();
+
+    // Submit Anyway closes the warning modal and opens the review/preview modal.
+    await page.getByRole('button', { name: /submit anyway/i }).click();
+    await expect(warningHeading).toBeHidden();
+    await expect(page.getByRole('heading', { name: /review your application/i })).toBeVisible();
+  });
 });

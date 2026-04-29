@@ -1115,6 +1115,8 @@ export default function PortalApply() {
     return false;
   });
   const [submitting, setSubmitting] = useState(false);
+  const [checkingUrls, setCheckingUrls] = useState(false);
+  const [acceptedUrlWarnings, setAcceptedUrlWarnings] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [urlWarnings, setUrlWarnings] = useState<Record<string, string>>({});
   const [wordCountErrors, setWordCountErrors] = useState<Record<string, WordCountViolation>>({});
@@ -1357,26 +1359,10 @@ export default function PortalApply() {
     return null;
   }
 
-  function openReviewIfValid() {
-    setError(null);
-    setUrlWarnings({});
-    setWordCountErrors({});
-    if (!draft) return;
-    const validationError = validateForReview();
-    if (validationError) {
-      setError(validationError);
-      return;
-    }
-    setShowReviewModal(true);
-  }
-
-  function doSubmit(force = false) {
-    setError(null);
-    setUrlWarnings({});
-    setWordCountErrors({});
-    if (!draft) return;
-
-    // Collect URL questions from general and domain-specific forms
+  // Collect every non-empty github_url / figma_url answer across the general
+  // form and each picked domain challenge. Used by both the pre-review check
+  // and the final submit payload.
+  function collectUrlQuestions(): { key: string; url: string; type: "github_url" | "figma_url" }[] {
     const urlQuestions: { key: string; url: string; type: "github_url" | "figma_url" }[] = [];
     for (const q of formQuestions as Question[]) {
       if ((q.type === "github_url" || q.type === "figma_url") && answers[q.key]?.trim()) {
@@ -1393,6 +1379,97 @@ export default function PortalApply() {
         }
       }
     }
+    return urlQuestions;
+  }
+
+  // Re-check every URL answer before opening the review modal so the applicant
+  // can react to a private/empty link *before* the "last look" preview rather
+  // than after they've already clicked Confirm. Reuses cached `urlChecks`
+  // results when the value hasn't changed since the on-blur check.
+  async function runUrlChecksForReview(): Promise<Record<string, string>> {
+    const urlQuestions = collectUrlQuestions();
+    if (urlQuestions.length === 0) return {};
+
+    const results = await Promise.all(
+      urlQuestions.map(async q => {
+        const cached = urlChecks[q.key];
+        if (cached?.status === "done" && cached.result && cached.result.url === q.url) {
+          return { key: q.key, result: cached.result };
+        }
+        try {
+          const res = await fetch("/api/check-url", {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url: q.url, type: q.type }),
+          });
+          if (!res.ok) {
+            const errorBody = await res.json().catch(() => ({}));
+            const message =
+              res.status === 429
+                ? "Too many checks — please wait a moment and try again"
+                : errorBody.error ?? `Unexpected error (${res.status})`;
+            return { key: q.key, result: { status: "error" as const, url: q.url, message } };
+          }
+          const result: SubmissionCheckResult = await res.json();
+          return { key: q.key, result };
+        } catch {
+          return {
+            key: q.key,
+            result: { status: "error" as const, url: q.url, message: "Failed to check URL" },
+          };
+        }
+      }),
+    );
+
+    setUrlChecks(prev => {
+      const next = { ...prev };
+      for (const { key, result } of results) {
+        next[key] = { status: "done", result };
+      }
+      return next;
+    });
+
+    const warnings: Record<string, string> = {};
+    for (const { key, result } of results) {
+      if (result.status !== "valid") warnings[key] = result.message;
+    }
+    return warnings;
+  }
+
+  async function openReviewIfValid() {
+    setError(null);
+    setUrlWarnings({});
+    setWordCountErrors({});
+    setAcceptedUrlWarnings(false);
+    if (!draft) return;
+    const validationError = validateForReview();
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+    setCheckingUrls(true);
+    try {
+      const warnings = await runUrlChecksForReview();
+      if (Object.keys(warnings).length > 0) {
+        setUrlWarnings(warnings);
+        setShowWarningModal(true);
+        setTimeout(() => warningBannerRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 50);
+        return;
+      }
+      setShowReviewModal(true);
+    } finally {
+      setCheckingUrls(false);
+    }
+  }
+
+  function doSubmit(force = false) {
+    setError(null);
+    setUrlWarnings({});
+    setWordCountErrors({});
+    if (!draft) return;
+
+    const urlQuestions = collectUrlQuestions();
 
     setSubmitting(true);
 
@@ -1792,10 +1869,19 @@ export default function PortalApply() {
         <div className="flex items-center gap-3 pt-2">
           <button
             onClick={() => openReviewIfValid()}
-            disabled={submitting}
-            className="px-6 py-2.5 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition disabled:opacity-50"
+            disabled={submitting || checkingUrls}
+            className="px-6 py-2.5 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition disabled:opacity-50 flex items-center gap-2"
           >
-            {submitting ? "Submitting..." : isAlreadySubmitted ? "Review Updates" : "Review Application"}
+            {checkingUrls && (
+              <span className="inline-block w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+            )}
+            {submitting
+              ? "Submitting..."
+              : checkingUrls
+                ? "Checking links..."
+                : isAlreadySubmitted
+                  ? "Review Updates"
+                  : "Review Application"}
           </button>
           <span className="text-xs text-muted-foreground/70 flex items-center gap-1.5">
             {saving ? (
@@ -1902,7 +1988,7 @@ export default function PortalApply() {
           </button>
           <button
             type="button"
-            onClick={() => { setShowReviewModal(false); doSubmit(false); }}
+            onClick={() => { setShowReviewModal(false); doSubmit(acceptedUrlWarnings); }}
             disabled={submitting}
             className="px-5 py-2 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition disabled:opacity-50"
           >
@@ -1951,7 +2037,11 @@ export default function PortalApply() {
             Go Back and Fix
           </button>
           <button
-            onClick={() => { setShowWarningModal(false); doSubmit(true); }}
+            onClick={() => {
+              setAcceptedUrlWarnings(true);
+              setShowWarningModal(false);
+              setShowReviewModal(true);
+            }}
             disabled={submitting}
             className="px-5 py-2 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition disabled:opacity-50"
           >
