@@ -1,11 +1,17 @@
 import type { Route } from "./+types/api.members.$memberId.roles";
+import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { safeJson } from "~/lib/safe-json";
+import { parseJson } from "~/lib/validate";
 import { logAuditEvent } from "~/lib/audit";
-import type { MemberRole } from "~/generated/prisma/enums";
+
+const MEMBER_ROLES = ["Admin", "HiringLead"] as const;
+
+const RolesPatchSchema = z.object({
+  roles: z.array(z.enum(MEMBER_ROLES)).max(MEMBER_ROLES.length),
+});
 
 export async function action({ request, params }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
@@ -19,13 +25,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
 
-  const body = await safeJson<Record<string, unknown>>(request);
+  const body = await parseJson(request, RolesPatchSchema);
   if (body instanceof Response) return withCors(request, body);
-  const roles: MemberRole[] = body.roles as MemberRole[];
-
-  if (!Array.isArray(roles)) {
-    return withCors(request, Response.json({ error: "roles must be an array" }, { status: 400 }));
-  }
+  const { roles } = body;
 
   const before = await prisma.dALIMember.findUnique({
     where: { id: params.memberId },

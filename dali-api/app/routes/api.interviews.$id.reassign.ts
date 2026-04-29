@@ -1,8 +1,14 @@
 import type { Route } from "./+types/api.interviews.$id.reassign";
+import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isHiringLead } from "~/lib/roles";
-import { safeJson } from "~/lib/safe-json";
+import { parseJson } from "~/lib/validate";
+
+const ReassignSchema = z.object({
+  assignmentId: z.string().min(1).max(100),
+  newCycleInterviewerId: z.string().min(1).max(100),
+});
 
 export async function action({ request, params }: Route.ActionArgs) {
   if (request.method !== "POST") {
@@ -15,12 +21,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const body = await safeJson<{ assignmentId?: string; newCycleInterviewerId?: string }>(request);
+  const body = await parseJson(request, ReassignSchema);
   if (body instanceof Response) return body;
   const { assignmentId, newCycleInterviewerId } = body;
-  if (!assignmentId || !newCycleInterviewerId) {
-    return Response.json({ error: "assignmentId and newCycleInterviewerId are required" }, { status: 400 });
-  }
 
   const assignment = await prisma.interviewAssignment.findUnique({
     where: { id: assignmentId },

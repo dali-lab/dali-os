@@ -1,11 +1,29 @@
 import type { Route } from "./+types/api.my-application";
+import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { sendEmail } from "~/lib/gmail";
 import { renderEmail } from "~/lib/email";
+import { parseJson } from "~/lib/validate";
 
 const GMAIL_USER = "applications@dali.dartmouth.edu";
+
+const MAX_ANSWER_KEYS = 100;
+const MAX_ANSWER_KEY_LENGTH = 200;
+const MAX_ANSWER_VALUE_LENGTH = 50_000;
+
+const ApplicationSchema = z.object({
+  answers: z
+    .record(
+      z.string().max(MAX_ANSWER_KEY_LENGTH),
+      z.string().max(MAX_ANSWER_VALUE_LENGTH),
+    )
+    .refine((v) => Object.keys(v).length <= MAX_ANSWER_KEYS, {
+      message: `answers may have at most ${MAX_ANSWER_KEYS} keys`,
+    })
+    .optional(),
+});
 
 export async function loader({ request }: Route.LoaderArgs) {
   const preflight = handlePreflight(request);
@@ -95,12 +113,8 @@ export async function action({ request }: Route.ActionArgs) {
 
   const userId = auth.user.sub;
 
-  let body: { answers?: Record<string, string> } = {};
-  try {
-    body = await request.json();
-  } catch {
-    return withCors(request, Response.json({ error: "Invalid JSON" }, { status: 400 }));
-  }
+  const body = await parseJson(request, ApplicationSchema);
+  if (body instanceof Response) return withCors(request, body);
 
   const answers = body.answers ?? {};
 

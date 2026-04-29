@@ -1,11 +1,17 @@
+import { z } from "zod";
 import { prisma } from "~/lib/db";
-import { safeJson } from "~/lib/safe-json";
+import { parseJson } from "~/lib/validate";
 import { requireAuth } from "~/lib/auth";
 import { isHiringLead, hasCycleAccess } from "~/lib/roles";
 import { autoCloseIfExpired, findOtherActiveCycleId } from "~/lib/cycles";
 import type { Route } from "./+types/api.cycles.$cycleId.status";
 
 const STATUS_ORDER = ["Draft", "Open", "UnderReview", "Completed"] as const;
+
+const StatusUpdateSchema = z.object({
+  newStatus: z.enum(STATUS_ORDER),
+  force: z.boolean().optional(),
+});
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -33,12 +39,9 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!auth.ok) return auth.response;
   if (!(await isHiringLead(auth.user.sub))) return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
 
-  const body = await safeJson<{ newStatus?: string; force?: boolean }>(request);
+  const body = await parseJson(request, StatusUpdateSchema);
   if (body instanceof Response) return body;
   const { newStatus, force } = body;
-  if (!STATUS_ORDER.includes(newStatus)) {
-    return Response.json({ error: "Invalid status" }, { status: 400 });
-  }
 
   // Single-active-cycle invariant: only one cycle can be Open or UnderReview at a time.
   if (newStatus === "Open" || newStatus === "UnderReview") {

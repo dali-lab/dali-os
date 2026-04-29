@@ -1,9 +1,15 @@
 import type { Route } from "./+types/api.collab.versions.$id";
+import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { authorizeCollabDoc, hydrateAuthors } from "~/lib/collabAuth";
 import { getCollabServer } from "~/collab/server";
 import { restoreVersion } from "~/collab/persistence";
+import { parseJson } from "~/lib/validate";
+
+const RestoreSchema = z.object({
+  intent: z.literal("restore"),
+});
 
 // GET /api/collab/versions/{id}
 // Returns the full plain-text content of a single snapshot for preview.
@@ -45,10 +51,8 @@ export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
 
-  const body = (await request.json().catch(() => ({}))) as { intent?: string };
-  if (body.intent !== "restore") {
-    return Response.json({ error: "Unknown intent" }, { status: 400 });
-  }
+  const body = await parseJson(request, RestoreSchema);
+  if (body instanceof Response) return body;
 
   const version = await prisma.collabDocumentVersion.findUnique({
     where: { id: params.id },

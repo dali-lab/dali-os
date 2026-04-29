@@ -1,8 +1,16 @@
 import type { Route } from "./+types/api.domain-applications.$id.decisions";
+import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isHiringLead, isDomainLead, hasCycleAccess } from "~/lib/roles";
-import { safeJson } from "~/lib/safe-json";
+import { parseJson } from "~/lib/validate";
+
+const DecisionSchema = z.object({
+  type: z.enum(["Rejected", "InvitedToInterview", "Accepted", "Waitlisted"]),
+  stage: z.enum(["Draft", "Final", "Released"]),
+  notes: z.string().max(5_000).optional(),
+  waitlistRank: z.number().int().min(0).max(10_000).optional(),
+});
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -38,13 +46,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     return Response.json({ error: "Method not allowed" }, { status: 405 });
   }
 
-  const body = await safeJson<{ type?: string; stage?: string; notes?: string; waitlistRank?: number }>(request);
+  const body = await parseJson(request, DecisionSchema);
   if (body instanceof Response) return body;
   const { type, stage, notes, waitlistRank } = body;
-
-  if (!type || !stage) {
-    return Response.json({ error: "type and stage are required" }, { status: 400 });
-  }
 
   const member = await prisma.dALIMember.findFirst({
     where: { userId: auth.user.sub },

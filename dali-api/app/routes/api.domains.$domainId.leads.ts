@@ -1,9 +1,18 @@
 import type { Route } from "./+types/api.domains.$domainId.leads";
+import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { safeJson } from "~/lib/safe-json";
+import { parseJson } from "~/lib/validate";
+
+const AddLeadSchema = z.object({
+  memberId: z.string().min(1).max(100),
+});
+
+const RemoveLeadSchema = z.object({
+  assignmentId: z.string().min(1).max(100),
+});
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const preflight = handlePreflight(request);
@@ -30,12 +39,9 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!(await isAdmin(auth.user.sub))) return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
 
   if (request.method === "POST") {
-    const postBody = await safeJson<{ memberId?: string }>(request);
+    const postBody = await parseJson(request, AddLeadSchema);
     if (postBody instanceof Response) return withCors(request, postBody);
     const { memberId } = postBody;
-    if (!memberId) {
-      return withCors(request, Response.json({ error: "memberId is required" }, { status: 400 }));
-    }
 
     const assignment = await prisma.domainLeadAssignment.create({
       data: { memberId, domainId: params.domainId! },
@@ -45,12 +51,9 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   if (request.method === "DELETE") {
-    const delBody = await safeJson<{ assignmentId?: string }>(request);
+    const delBody = await parseJson(request, RemoveLeadSchema);
     if (delBody instanceof Response) return withCors(request, delBody);
     const { assignmentId } = delBody;
-    if (!assignmentId) {
-      return withCors(request, Response.json({ error: "assignmentId is required" }, { status: 400 }));
-    }
     await prisma.domainLeadAssignment.delete({ where: { id: assignmentId } });
     return withCors(request, Response.json({ ok: true }));
   }

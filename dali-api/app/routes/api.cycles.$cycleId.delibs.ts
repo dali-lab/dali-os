@@ -1,8 +1,14 @@
 import type { Route } from "./+types/api.cycles.$cycleId.delibs";
+import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isHiringLead, isDomainLead, hasCycleAccess } from "~/lib/roles";
-import { safeJson } from "~/lib/safe-json";
+import { parseJson } from "~/lib/validate";
+
+const CreateDelibsSchema = z.object({
+  domainId: z.string().min(1).max(100),
+  type: z.enum(["Initial", "Final"]),
+});
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -40,13 +46,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     return Response.json({ error: "Not a DALI member" }, { status: 403 });
   }
 
-  const body = await safeJson<{ domainId?: string; type?: string }>(request);
+  const body = await parseJson(request, CreateDelibsSchema);
   if (body instanceof Response) return body;
   const { domainId, type } = body;
-
-  if (!domainId || !type) {
-    return Response.json({ error: "domainId and type are required" }, { status: 400 });
-  }
 
   // Upsert: reopen if previously closed, create if new
   const session = await prisma.delibsSession.upsert({
