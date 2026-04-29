@@ -1001,13 +1001,18 @@ function ChallengeSelector({ cycleId, domainId, options, linkedChallengeVersions
               <div key={cv.id} className="px-4 py-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1">
-                    <div className="text-sm font-medium text-foreground">
-                      {formatVersionLabel({
-                        name: cv.challenge?.name ?? "Untitled",
-                        versionNumber: cv.versionNumber,
-                        createdAt: cv.createdAt,
-                        createdBy: cv.createdBy,
-                      })}
+                    <div className="text-sm font-medium">
+                      <Link
+                        to={`/challenges/${cv.challengeId}?versionId=${cv.id}`}
+                        className="text-blue-600 hover:text-blue-800"
+                      >
+                        {formatVersionLabel({
+                          name: cv.challenge?.name ?? "Untitled",
+                          versionNumber: cv.versionNumber,
+                          createdAt: cv.createdAt,
+                          createdBy: cv.createdBy,
+                        })}
+                      </Link>
                     </div>
                     <div className="text-xs text-muted-foreground mt-0.5">
                       {questions.length} question{questions.length !== 1 ? "s" : ""}
