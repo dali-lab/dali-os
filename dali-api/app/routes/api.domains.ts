@@ -3,6 +3,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isHiringLead, isDomainLead, isAdmin } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
+import { safeJson } from "~/lib/safe-json";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const preflight = handlePreflight(request);
@@ -53,7 +54,9 @@ export async function action({ request }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
 
-  const { name } = await request.json();
+  const body = await safeJson<{ name?: string }>(request);
+  if (body instanceof Response) return withCors(request, body);
+  const { name } = body;
   if (!name?.trim()) {
     return withCors(request, Response.json({ error: "Name is required" }, { status: 400 }));
   }

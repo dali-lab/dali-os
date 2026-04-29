@@ -1,6 +1,7 @@
 import type { Route } from "./+types/api.interviews.$id.complete";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
+import { safeJson } from "~/lib/safe-json";
 
 const VALID_RECOMMENDATIONS = ["Strong Hire", "Hire", "Lean Hire", "Lean No Hire", "No Hire"];
 
@@ -49,7 +50,8 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   // POST = mark the interview complete.
-  const body = await request.json();
+  const body = await safeJson<{ recommendation?: string; recommendationNotes?: string }>(request);
+  if (body instanceof Response) return body;
   const { recommendation, recommendationNotes } = body;
 
   if (!recommendation || !VALID_RECOMMENDATIONS.includes(recommendation)) {
