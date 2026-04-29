@@ -39,5 +39,9 @@ export const prisma = {
   auditLog: {
     create: vi.fn(),
   },
+  partyEvent: {
+    create: vi.fn(),
+    findFirst: vi.fn(),
+  },
   $transaction: vi.fn(),
 };

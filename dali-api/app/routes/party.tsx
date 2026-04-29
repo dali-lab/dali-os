@@ -13,6 +13,7 @@ import {
   setDinoRewardEarned,
   setExternalCodeUnlocked,
   setInternalCodeUnlocked,
+  trackPartyEvent,
   useRetro,
 } from "~/lib/party";
 import {
@@ -36,6 +37,14 @@ export default function Party() {
   useEffect(() => {
     hydrateRetroClass();
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const VISIT_KEY = "dali:party:visit-tracked";
+    if (window.sessionStorage.getItem(VISIT_KEY) === "1") return;
+    window.sessionStorage.setItem(VISIT_KEY, "1");
+    trackPartyEvent("PARTY_VISIT", { audience: partyAudience });
+  }, [partyAudience]);
 
   const [unlocked, setUnlocked] = useState(false);
   const [celebrate, setCelebrate] = useState(false);
@@ -91,6 +100,7 @@ export default function Party() {
           label={codeLabel}
           target={codeTarget}
           unlocked={unlocked}
+          audience={partyAudience}
           onSuccess={() => {
             if (isMember) setInternalCodeUnlocked(true);
             else setExternalCodeUnlocked(true);
@@ -120,11 +130,13 @@ function CodeRow({
   label,
   target,
   unlocked,
+  audience,
   onSuccess,
 }: {
   label: string;
   target: string;
   unlocked: boolean;
+  audience: "member" | "applicant";
   onSuccess: () => void;
 }) {
   const n = target.length;
@@ -143,12 +155,14 @@ function CodeRow({
   const tryUnlock = useCallback(() => {
     const got = chars.join("").toUpperCase();
     if (got === target) {
+      trackPartyEvent("CODE_UNLOCK_SUCCESS", { audience });
       onSuccess();
       return;
     }
+    trackPartyEvent("CODE_UNLOCK_FAILURE", { audience });
     setShake(true);
     window.setTimeout(() => setShake(false), 450);
-  }, [chars, onSuccess, target]);
+  }, [chars, onSuccess, target, audience]);
 
   if (unlocked) {
     return (
@@ -383,6 +397,7 @@ function DinoGame({ isMember, rewardSlot }: { isMember: boolean; rewardSlot: num
         if (localScore >= DINO_REWARD_THRESHOLD && !isDinoRewardEarned()) {
           setDinoRewardEarned(true);
           setEarned(true);
+          trackPartyEvent("DINO_REWARD_EARNED", { score: localScore });
         }
       }
 
