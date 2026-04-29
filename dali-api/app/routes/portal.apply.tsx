@@ -593,6 +593,7 @@ function FileUploadField({
           key: `applications/${questionKey}/${crypto.randomUUID()}-${file.name}`,
           contentType: file.type,
           contentLength: file.size,
+          accept,
         }),
       });
       if (!presignRes.ok) {
