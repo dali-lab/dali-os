@@ -98,6 +98,14 @@ export async function action({ request, params }: Route.ActionArgs) {
         }
       }
     }
+
+    // Every domain must be marked ready by its domain lead (or hiring lead override)
+    if (cycle.domains.length === 0 || !cycle.domains.every((d) => d.isReady)) {
+      return Response.json(
+        { error: "Every domain must be marked ready before opening" },
+        { status: 400 },
+      );
+    }
   }
 
   // UnderReview → Completed: validate all interviews done and all decisions released
