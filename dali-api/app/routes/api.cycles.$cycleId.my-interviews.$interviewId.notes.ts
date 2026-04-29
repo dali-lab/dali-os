@@ -1,8 +1,13 @@
 import type { Route } from "./+types/api.cycles.$cycleId.my-interviews.$interviewId.notes";
+import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { safeJson } from "~/lib/safe-json";
+import { parseJson } from "~/lib/validate";
+
+const NoteVersionSchema = z.object({
+  content: z.string().max(100_000),
+});
 
 async function getAssignment(userId: string, cycleId: string, interviewId: string) {
   const member = await prisma.dALIMember.findFirst({ where: { userId } });
@@ -56,12 +61,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Assignment not found" }, { status: 404 }));
   }
 
-  const body = await safeJson<{ content?: unknown }>(request);
+  const body = await parseJson(request, NoteVersionSchema);
   if (body instanceof Response) return withCors(request, body);
   const { content } = body;
-  if (typeof content !== "string") {
-    return withCors(request, Response.json({ error: "content required" }, { status: 400 }));
-  }
 
   const version = await prisma.interviewNoteVersion.create({
     data: { interviewAssignmentId: assignment.id, content },

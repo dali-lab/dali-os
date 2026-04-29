@@ -1,8 +1,18 @@
 import type { Route } from "./+types/api.cycles.$cycleId.interviewers";
+import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isHiringLead, isDomainLead, hasCycleAccess } from "~/lib/roles";
-import { safeJson } from "~/lib/safe-json";
+import { parseJson } from "~/lib/validate";
+
+const CreateInterviewerSchema = z.object({
+  daliMemberId: z.string().min(1).max(100),
+  domainId: z.string().min(1).max(100),
+});
+
+const DeleteInterviewerSchema = z.object({
+  interviewerId: z.string().min(1).max(100),
+});
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -34,13 +44,9 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   if (request.method === "POST") {
-    const body = await safeJson<{ daliMemberId?: string; domainId?: string }>(request);
+    const body = await parseJson(request, CreateInterviewerSchema);
     if (body instanceof Response) return body;
     const { daliMemberId, domainId } = body;
-
-    if (!daliMemberId || !domainId) {
-      return Response.json({ error: "daliMemberId and domainId are required" }, { status: 400 });
-    }
 
     const interviewer = await prisma.cycleInterviewer.create({
       data: {
@@ -54,13 +60,9 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   if (request.method === "DELETE") {
-    const body = await safeJson<{ interviewerId?: string }>(request);
+    const body = await parseJson(request, DeleteInterviewerSchema);
     if (body instanceof Response) return body;
     const { interviewerId } = body;
-
-    if (!interviewerId) {
-      return Response.json({ error: "interviewerId is required" }, { status: 400 });
-    }
 
     await prisma.cycleInterviewer.delete({
       where: { id: interviewerId },

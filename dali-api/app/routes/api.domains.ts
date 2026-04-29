@@ -1,9 +1,14 @@
 import type { Route } from "./+types/api.domains";
+import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isHiringLead, isDomainLead, isAdmin } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { safeJson } from "~/lib/safe-json";
+import { parseJson } from "~/lib/validate";
+
+const CreateDomainSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+});
 
 export async function loader({ request }: Route.LoaderArgs) {
   const preflight = handlePreflight(request);
@@ -54,13 +59,10 @@ export async function action({ request }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
 
-  const body = await safeJson<{ name?: string }>(request);
+  const body = await parseJson(request, CreateDomainSchema);
   if (body instanceof Response) return withCors(request, body);
   const { name } = body;
-  if (!name?.trim()) {
-    return withCors(request, Response.json({ error: "Name is required" }, { status: 400 }));
-  }
 
-  const domain = await prisma.domain.create({ data: { name: name.trim() } });
+  const domain = await prisma.domain.create({ data: { name } });
   return withCors(request, Response.json(domain, { status: 201 }));
 }

@@ -1,8 +1,16 @@
 import type { Route } from "./+types/api.delibs.$id.moves";
+import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isHiringLead, isDomainLead, hasCycleAccess } from "~/lib/roles";
 import { INITIAL_COLUMNS, FINAL_COLUMNS } from "~/lib/delibs";
+import { parseJson } from "~/lib/validate";
+
+const MoveSchema = z.object({
+  cardId: z.string().min(1).max(100),
+  toColumn: z.string().min(1).max(100),
+  position: z.number().int().min(0).max(10_000).optional(),
+});
 
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
@@ -18,6 +26,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 
+
   const sessionForAuth = await prisma.delibsSession.findUnique({
     where: { id: params.id },
     select: { applicationCycleId: true },
@@ -29,12 +38,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const body = await request.json();
-  const { cardId, toColumn, position } = body as {
-    cardId?: string;
-    toColumn?: string;
-    position?: number;
-  };
+  const body = await parseJson(request, MoveSchema);
+  if (body instanceof Response) return body;
+  const { cardId, toColumn, position } = body;
 
   if (!cardId || typeof cardId !== "string") {
     return Response.json({ error: "cardId is required" }, { status: 400 });
