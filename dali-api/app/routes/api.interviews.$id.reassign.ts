@@ -4,6 +4,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isHiringLead } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
+import { requireApiSignedOrForbidden } from "~/lib/confidentiality";
 
 const ReassignSchema = z.object({
   assignmentId: z.string().min(1).max(100),
@@ -32,6 +33,12 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!assignment || assignment.interview.id !== params.id) {
     return Response.json({ error: "Assignment not found" }, { status: 404 });
   }
+
+  const gate = await requireApiSignedOrForbidden(
+    auth.user.sub,
+    assignment.interview.applicationCycleId,
+  );
+  if (gate) return gate;
 
   await prisma.$transaction(async (tx) => {
     await tx.interviewAssignment.update({

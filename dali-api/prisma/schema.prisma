@@ -42,6 +42,7 @@ model User {
   refreshTokens                 RefreshToken[]
   rubricVersions                RubricVersion[]
   partyEvents                   PartyEvent[]
+  confidentialitySignatures     ConfidentialityAgreementSignature[]
 }
 
 // A DALI lab member. userId is optional because a member may be known (e.g. via daliEmail)
@@ -70,6 +71,7 @@ model DALIMember {
   delibSessions         DelibsSession[]
   legacyEmailTemplates  LegacyEmailTemplate[]
   emailTemplateVersions EmailTemplateVersion[]
+  confidentialityAgreementVersions ConfidentialityAgreementVersion[]
 }
 
 model ApplicationCycle {
@@ -101,6 +103,9 @@ model ApplicationCycle {
   interviews        Interview[]
   delibsSessions    DelibsSession[]
   decisionEmails    CycleDecisionEmail[]
+
+  confidentialityBinding   CycleConfidentialityAgreement?
+  confidentialitySignatures ConfidentialityAgreementSignature[]
 }
 
 // Applicant-initiated status changes only. DALI-initiated outcomes (interview,
@@ -790,4 +795,72 @@ model DomainLeadAssignment {
   member   DALIMember @relation(fields: [memberId], references: [id])
   domainId String
   domain   Domain     @relation(fields: [domainId], references: [id])
+}
+
+// ─── Confidentiality Agreements ──────────────────────────────────────────────
+
+// Named, versioned confidentiality agreement — independent of any cycle.
+// Mirrors EmailTemplate / Rubric. The hiring lead binds a specific version
+// to a cycle via CycleConfidentialityAgreement.
+model ConfidentialityAgreement {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  name String
+
+  versions ConfidentialityAgreementVersion[]
+}
+
+// Immutable snapshot of a ConfidentialityAgreement. Never update — append
+// a new version. body is ProseMirror JSON.
+model ConfidentialityAgreementVersion {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  versionNumber Int
+  body          Json
+
+  agreementId String
+  agreement   ConfidentialityAgreement @relation(fields: [agreementId], references: [id])
+
+  createdById String
+  createdBy   DALIMember @relation(fields: [createdById], references: [id])
+
+  cycleBindings CycleConfidentialityAgreement[]
+  signatures    ConfidentialityAgreementSignature[]
+
+  @@index([agreementId, versionNumber])
+}
+
+// Per-cycle binding: at most one agreement version may be in force per cycle.
+// No row = unbound; in that state nobody (including the hiring lead) can
+// view sensitive cycle data.
+model CycleConfidentialityAgreement {
+  applicationCycleId String           @unique
+  applicationCycle   ApplicationCycle @relation(fields: [applicationCycleId], references: [id])
+
+  confidentialityAgreementVersionId String
+  confidentialityAgreementVersion   ConfidentialityAgreementVersion @relation(fields: [confidentialityAgreementVersionId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Per-user-per-cycle signature. Pinned to the version that was active when
+// the user signed — re-binding the cycle to a new version forces re-signing.
+model ConfidentialityAgreementSignature {
+  id        String   @id @default(cuid())
+  signedAt  DateTime @default(now())
+
+  userId             String
+  user               User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  applicationCycleId String
+  applicationCycle   ApplicationCycle @relation(fields: [applicationCycleId], references: [id])
+
+  confidentialityAgreementVersionId String
+  confidentialityAgreementVersion   ConfidentialityAgreementVersion @relation(fields: [confidentialityAgreementVersionId], references: [id])
+
+  @@unique([userId, applicationCycleId])
+  @@index([applicationCycleId])
 }

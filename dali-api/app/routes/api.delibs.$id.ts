@@ -4,6 +4,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isHiringLead, isDomainLead, hasCycleAccess } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
+import { requireApiSignedOrForbidden } from "~/lib/confidentiality";
 
 const DelibsActionSchema = z.object({
   intent: z.enum(["close"]),
@@ -24,6 +25,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!(await hasCycleAccess(auth.user.sub, session.applicationCycleId)))
     return Response.json({ error: "Forbidden" }, { status: 403 });
 
+  const gate = await requireApiSignedOrForbidden(
+    auth.user.sub,
+    session.applicationCycleId,
+  );
+  if (gate) return gate;
+
   return Response.json(session);
 }
 
@@ -36,6 +43,19 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!hiringLead && !domainLead) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
+
+  const sessionForGate = await prisma.delibsSession.findUnique({
+    where: { id: params.id },
+    select: { applicationCycleId: true },
+  });
+  if (!sessionForGate) {
+    return Response.json({ error: "Not found" }, { status: 404 });
+  }
+  const gate = await requireApiSignedOrForbidden(
+    auth.user.sub,
+    sessionForGate.applicationCycleId,
+  );
+  if (gate) return gate;
 
   if (request.method === "POST") {
     const body = await parseJson(request, DelibsActionSchema);

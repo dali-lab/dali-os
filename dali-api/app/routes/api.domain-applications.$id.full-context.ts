@@ -2,6 +2,7 @@ import type { Route } from "./+types/api.domain-applications.$id.full-context";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { hasCycleAccess } from "~/lib/roles";
+import { requireApiSignedOrForbidden } from "~/lib/confidentiality";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -44,6 +45,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!(await hasCycleAccess(auth.user.sub, da.application.applicationCycleId))) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
+
+  const gate = await requireApiSignedOrForbidden(
+    auth.user.sub,
+    da.application.applicationCycleId,
+  );
+  if (gate) return gate;
 
   const domainId = da.challengeVersion.domain?.id ?? null;
   const [domainCycle, generalRubric] = await Promise.all([

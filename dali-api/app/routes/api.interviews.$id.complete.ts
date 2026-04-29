@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { parseJson } from "~/lib/validate";
+import { requireApiSignedOrForbidden } from "~/lib/confidentiality";
 
 const VALID_RECOMMENDATIONS = ["Strong Hire", "Hire", "Lean Hire", "Lean No Hire", "No Hire"] as const;
 
@@ -40,6 +41,12 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!interview) {
     return Response.json({ error: "Interview not found" }, { status: 404 });
   }
+
+  const gate = await requireApiSignedOrForbidden(
+    auth.user.sub,
+    interview.applicationCycleId,
+  );
+  if (gate) return gate;
 
   // DELETE = reopen a completed interview (flip status back to Scheduled).
   // Preserves recommendation + recommendationNotes so the interviewer can

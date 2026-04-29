@@ -15,6 +15,7 @@ import {
 import { prisma } from '~/lib/db'
 import { requireAuth } from '~/lib/auth'
 import { parseAccessToken } from '~/lib/cookies'
+import { requirePageSignedOrRedirect } from '~/lib/confidentiality'
 import { CollaborativeEditor } from '~/components/CollaborativeEditor'
 import { PresenceProvider } from '~/components/collab/PresenceProvider'
 import { PresenceBar } from '~/components/collab/PresenceBar'
@@ -89,6 +90,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   )
 
   if (!myAssignment) throw redirect('/interviewer')
+
+  const confRedirect = await requirePageSignedOrRedirect(
+    auth.user.sub,
+    interview.applicationCycleId,
+    request,
+  )
+  if (confRedirect) throw confRedirect
 
   // Rubric criteria for the applicant's domain
   const domainId = interview.domainApplication.challengeVersion.domainId

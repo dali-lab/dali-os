@@ -3,6 +3,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isHiringLead, isDomainLead } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
+import { requireApiSignedOrForbidden } from "~/lib/confidentiality";
 
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
@@ -23,13 +24,22 @@ export async function action({ request, params }: Route.ActionArgs) {
     return Response.json({ error: "Not a DALI member" }, { status: 403 });
   }
 
-  const decision = await prisma.decision.findUnique({ where: { id: params.id } });
+  const decision = await prisma.decision.findUnique({
+    where: { id: params.id },
+    include: { domainApplication: { select: { application: { select: { applicationCycleId: true } } } } },
+  });
   if (!decision) {
     return Response.json({ error: "Decision not found" }, { status: 404 });
   }
   if (decision.stage !== "Draft") {
     return Response.json({ error: "Only Draft decisions can be finalized" }, { status: 409 });
   }
+
+  const gate = await requireApiSignedOrForbidden(
+    auth.user.sub,
+    decision.domainApplication.application.applicationCycleId,
+  );
+  if (gate) return gate;
 
   const finalized = await prisma.decision.create({
     data: {

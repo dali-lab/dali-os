@@ -2,6 +2,7 @@ import type { Route } from "./+types/api.cycles.$cycleId.my-interviews";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
+import { requireApiSignedOrForbidden } from "~/lib/confidentiality";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const preflight = handlePreflight(request);
@@ -17,6 +18,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     where: { daliMemberId: member.id, applicationCycleId: params.cycleId },
   });
   if (!interviewer) return withCors(request, Response.json([]));
+
+  const gate = await requireApiSignedOrForbidden(auth.user.sub, params.cycleId!);
+  if (gate) return withCors(request, gate);
 
   const assignments = await prisma.interviewAssignment.findMany({
     where: { cycleInterviewerId: interviewer.id, status: "Active" },

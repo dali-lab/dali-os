@@ -4,6 +4,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
+import { requireApiSignedOrForbidden } from "~/lib/confidentiality";
 
 const NoteVersionSchema = z.object({
   content: z.string().max(100_000),
@@ -36,6 +37,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     return withCors(request, Response.json({ error: "Assignment not found" }, { status: 404 }));
   }
 
+  const gate = await requireApiSignedOrForbidden(auth.user.sub, params.cycleId!);
+  if (gate) return withCors(request, gate);
+
   const versions = await prisma.interviewNoteVersion.findMany({
     where: { interviewAssignmentId: assignment.id },
     orderBy: { createdAt: "desc" },
@@ -60,6 +64,9 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!assignment) {
     return withCors(request, Response.json({ error: "Assignment not found" }, { status: 404 }));
   }
+
+  const gate = await requireApiSignedOrForbidden(auth.user.sub, params.cycleId!);
+  if (gate) return withCors(request, gate);
 
   const body = await parseJson(request, NoteVersionSchema);
   if (body instanceof Response) return withCors(request, body);

@@ -3,6 +3,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isHiringLead, isDomainLead } from "~/lib/roles";
 import { safeJson } from "~/lib/safe-json";
+import { requireApiSignedOrForbidden } from "~/lib/confidentiality";
 
 const VALID_RECOMMENDATIONS = ["Strong Hire", "Hire", "Lean Hire", "Lean No Hire", "No Hire"];
 
@@ -154,6 +155,12 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!review) {
     return Response.json({ error: "Review not found" }, { status: 404 });
   }
+
+  const gate = await requireApiSignedOrForbidden(
+    auth.user.sub,
+    review.cycleReviewer.applicationCycleId,
+  );
+  if (gate) return gate;
 
   if (request.method === "PATCH") {
     if (review.submittedAt) {

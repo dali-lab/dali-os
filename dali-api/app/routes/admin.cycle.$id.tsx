@@ -109,6 +109,22 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     orderBy: { createdAt: "desc" },
   });
 
+  const confidentialityAgreementOptions = await prisma.confidentialityAgreement.findMany({
+    include: { versions: { orderBy: { versionNumber: "desc" } } },
+    orderBy: { name: "asc" },
+  });
+  const currentConfidentialityBinding = await prisma.cycleConfidentialityAgreement.findUnique({
+    where: { applicationCycleId: params.id },
+    include: {
+      confidentialityAgreementVersion: {
+        include: { agreement: { select: { name: true } } },
+      },
+    },
+  });
+  const confidentialitySignatureCount = await prisma.confidentialityAgreementSignature.count({
+    where: { applicationCycleId: params.id },
+  });
+
   const cycleApplicationReviewCount = await prisma.applicationReview.count({
     where: {
       domainApplication: {
@@ -216,6 +232,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     domainChallengeVersions,
     domainRubricVersions,
     reviewedDomainIds,
+    confidentialityAgreementOptions,
+    currentConfidentialityBinding,
+    confidentialitySignatureCount,
   };
 }
 
@@ -262,6 +281,26 @@ export async function action({ request, params }: Route.ActionArgs) {
       where: { id: params.id },
       data: { generalRubricVersionId: rubricVersionId },
     });
+    return redirect(`/hiring-lead-admin/cycle/${params.id}`);
+  }
+
+  if (intent === "set-confidentiality-agreement") {
+    const versionId =
+      (formData.get("confidentialityAgreementVersionId") as string) || null;
+    if (versionId) {
+      await prisma.cycleConfidentialityAgreement.upsert({
+        where: { applicationCycleId: params.id },
+        update: { confidentialityAgreementVersionId: versionId },
+        create: {
+          applicationCycleId: params.id,
+          confidentialityAgreementVersionId: versionId,
+        },
+      });
+    } else {
+      await prisma.cycleConfidentialityAgreement.deleteMany({
+        where: { applicationCycleId: params.id },
+      });
+    }
     return redirect(`/hiring-lead-admin/cycle/${params.id}`);
   }
 
@@ -1037,6 +1076,13 @@ export default function AdminCycleDetails() {
             currentRubricVersionId={cycle?.generalRubricVersionId}
             rubricVersionOptions={loaderData?.rubricVersionOptions ?? []}
             locked={(loaderData?.cycleApplicationReviewCount ?? 0) > 0}
+          />
+
+          {/* Confidentiality Agreement */}
+          <ConfidentialityAgreementPicker
+            currentBinding={loaderData?.currentConfidentialityBinding ?? null}
+            agreementOptions={loaderData?.confidentialityAgreementOptions ?? []}
+            signatureCount={loaderData?.confidentialitySignatureCount ?? 0}
           />
 
           {/* Decision-release email bindings */}
@@ -2441,6 +2487,105 @@ function DecisionEmailPicker({ slot, binding, emailTemplates, locked }: {
           >
             Cancel
           </button>
+        </Form>
+      )}
+    </div>
+  );
+}
+
+function ConfidentialityAgreementPicker({
+  currentBinding,
+  agreementOptions,
+  signatureCount,
+}: {
+  currentBinding: any | null;
+  agreementOptions: any[];
+  signatureCount: number;
+}) {
+  const [editing, setEditing] = useState(!currentBinding);
+  const currentName =
+    currentBinding?.confidentialityAgreementVersion?.agreement?.name ?? null;
+  const currentVersion =
+    currentBinding?.confidentialityAgreementVersion?.versionNumber ?? null;
+
+  return (
+    <div className="bg-card rounded-xl border border-border shadow-sm p-6 space-y-3">
+      <h3 className="text-sm font-bold text-foreground/80">
+        Confidentiality Agreement
+      </h3>
+      <p className="text-xs text-muted-foreground">
+        Reviewers, interviewers, domain leads, and admins must sign this
+        agreement before viewing sensitive data for the cycle. If unset, nobody
+        — including you — can see submitted applications, reviews, interviews,
+        notes, or decisions.
+      </p>
+      {!currentBinding && !editing && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          No agreement bound — sensitive cycle data is hidden from everyone.
+        </div>
+      )}
+      {currentBinding && !editing ? (
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <CheckCircle className="w-4 h-4 text-green-600" />
+            <span>
+              {currentName ?? "Set"} — v{currentVersion}
+            </span>
+            <span className="text-xs text-muted-foreground/70 ml-2">
+              ({signatureCount} signature{signatureCount === 1 ? "" : "s"})
+            </span>
+          </div>
+          <button
+            onClick={() => setEditing(true)}
+            className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+          >
+            Change
+          </button>
+        </div>
+      ) : (
+        <Form
+          method="post"
+          className="flex items-end gap-3"
+          onSubmit={() => setEditing(false)}
+        >
+          <input
+            type="hidden"
+            name="intent"
+            value="set-confidentiality-agreement"
+          />
+          <div className="flex-1">
+            <select
+              name="confidentialityAgreementVersionId"
+              defaultValue={
+                currentBinding?.confidentialityAgreementVersionId ?? ""
+              }
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            >
+              <option value="">No agreement bound</option>
+              {agreementOptions.map((a: any) =>
+                (a.versions ?? []).map((v: any) => (
+                  <option key={v.id} value={v.id}>
+                    {a.name} — v{v.versionNumber}
+                  </option>
+                )),
+              )}
+            </select>
+          </div>
+          <button
+            type="submit"
+            className="px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition"
+          >
+            Save
+          </button>
+          {currentBinding && (
+            <button
+              type="button"
+              onClick={() => setEditing(false)}
+              className="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground"
+            >
+              Cancel
+            </button>
+          )}
         </Form>
       )}
     </div>

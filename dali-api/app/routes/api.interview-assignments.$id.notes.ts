@@ -4,6 +4,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { hasCycleAccess } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
+import { requireApiSignedOrForbidden } from "~/lib/confidentiality";
 
 const NoteVersionSchema = z.object({
   content: z.string().max(100_000),
@@ -20,6 +21,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!assignment) return Response.json({ error: "Not found" }, { status: 404 });
   if (!(await hasCycleAccess(auth.user.sub, assignment.interview.applicationCycleId)))
     return Response.json({ error: "Forbidden" }, { status: 403 });
+
+  const gate = await requireApiSignedOrForbidden(
+    auth.user.sub,
+    assignment.interview.applicationCycleId,
+  );
+  if (gate) return gate;
 
   const versions = await prisma.interviewNoteVersion.findMany({
     where: { interviewAssignmentId: params.id },
@@ -44,6 +51,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       cycleInterviewer: {
         include: { daliMember: true },
       },
+      interview: { select: { applicationCycleId: true } },
     },
   });
 
@@ -54,6 +62,12 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (assignment.cycleInterviewer.daliMember.userId !== auth.user.sub) {
     return Response.json({ error: "Not your assignment" }, { status: 403 });
   }
+
+  const gate = await requireApiSignedOrForbidden(
+    auth.user.sub,
+    assignment.interview.applicationCycleId,
+  );
+  if (gate) return gate;
 
   const body = await parseJson(request, NoteVersionSchema);
   if (body instanceof Response) return body;

@@ -5,6 +5,7 @@ import { isHiringLead } from "~/lib/roles";
 import { sendEmail } from "~/lib/gmail";
 import { renderEmail } from "~/lib/email";
 import { logAuditEvent } from "~/lib/audit";
+import { requireApiSignedOrForbidden } from "~/lib/confidentiality";
 
 const GMAIL_USER = "applications@dali.dartmouth.edu";
 
@@ -68,6 +69,12 @@ export async function action({ request, params }: Route.ActionArgs) {
       { status: 404 }
     );
   }
+
+  const gate = await requireApiSignedOrForbidden(
+    auth.user.sub,
+    domainApp.application.applicationCycleId,
+  );
+  if (gate) return gate;
 
   const binding = await prisma.cycleDecisionEmail.findUnique({
     where: {

@@ -5,6 +5,7 @@ import { prisma } from '~/lib/db'
 import { requireAuth } from '~/lib/auth'
 import { hasCycleAccess } from '~/lib/roles'
 import { parseAccessToken } from '~/lib/cookies'
+import { requirePageSignedOrRedirect } from '~/lib/confidentiality'
 import type { Route } from './+types/mentor.application.$id'
 import { ApplicationViewer } from '~/components/ApplicationViewer'
 import { SaveStatusIndicator } from '~/components/SaveStatusIndicator'
@@ -64,6 +65,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   if (!(await hasCycleAccess(auth.user.sub, application.applicationCycleId)))
     throw redirect('/login')
+
+  const confRedirect = await requirePageSignedOrRedirect(
+    auth.user.sub,
+    application.applicationCycleId,
+    request,
+  )
+  if (confRedirect) return confRedirect
 
   // If this reviewer is assigned to a domain on this application but no
   // ApplicationReview row exists yet, create one so the collaborative editors

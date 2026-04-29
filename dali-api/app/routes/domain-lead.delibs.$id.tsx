@@ -4,6 +4,7 @@ import type { Route } from "./+types/domain-lead.delibs.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isDomainLead } from "~/lib/roles";
+import { requirePageSignedOrRedirect } from "~/lib/confidentiality";
 import { ArrowLeft, GripVertical, X, Check } from "lucide-react";
 import { INITIAL_COLUMNS, FINAL_COLUMNS } from "~/lib/delibs";
 import { ApplicantContextModal } from "~/components/delibs/ApplicantContextModal";
@@ -29,6 +30,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       },
     },
   });
+
+  const confRedirect = await requirePageSignedOrRedirect(
+    auth.user.sub,
+    session.applicationCycleId,
+    request,
+  );
+  if (confRedirect) return confRedirect;
 
   // Load domain applications that qualify for this delibs type.
   // Initial: all reviews submitted, at least one review, no Final/Released decision.

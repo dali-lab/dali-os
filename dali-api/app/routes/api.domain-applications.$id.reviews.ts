@@ -4,6 +4,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isHiringLead, hasCycleAccess } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
+import { requireApiSignedOrForbidden } from "~/lib/confidentiality";
 
 const CreateReviewSchema = z.object({
   cycleReviewerId: z.string().min(1).max(100),
@@ -20,6 +21,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!domainApp) return Response.json({ error: "Not found" }, { status: 404 });
   if (!(await hasCycleAccess(auth.user.sub, domainApp.application.applicationCycleId)))
     return Response.json({ error: "Forbidden" }, { status: 403 });
+
+  const gate = await requireApiSignedOrForbidden(
+    auth.user.sub,
+    domainApp.application.applicationCycleId,
+  );
+  if (gate) return gate;
 
   const reviews = await prisma.applicationReview.findMany({
     where: { domainApplicationId: params.id },
@@ -55,6 +62,12 @@ export async function action({ request, params }: Route.ActionArgs) {
       challengeVersion: { select: { domainId: true } },
     },
   });
+
+  const gate = await requireApiSignedOrForbidden(
+    auth.user.sub,
+    domainApp.application.applicationCycleId,
+  );
+  if (gate) return gate;
 
   if (!(await isHiringLead(auth.user.sub))) {
     const domainLeadForThisDomain = await prisma.dALIMember.findFirst({
