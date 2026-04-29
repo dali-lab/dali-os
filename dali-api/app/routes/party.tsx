@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { redirect, useLoaderData } from "react-router";
+import { Link, redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/party";
 import { requireAuth } from "~/lib/auth";
 import {
@@ -54,6 +54,13 @@ export default function Party() {
   return (
     <div className="min-h-screen bg-section-bg relative overflow-hidden flex flex-col items-center justify-center px-6 py-16">
       <Confetti />
+
+      <Link
+        to="/"
+        className="absolute top-4 left-4 z-10 text-xs text-muted-foreground hover:text-foreground transition"
+      >
+        ← back
+      </Link>
 
       <div className="relative z-10 text-center max-w-md w-full">
         <p className="text-xs uppercase tracking-widest text-accent-coral font-semibold mb-3">
