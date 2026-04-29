@@ -39,8 +39,8 @@ describe("bodyToHtml", () => {
     expect(bodyToHtml("para 1\n\npara 2")).toBe("<p>para 1</p>\n<p>para 2</p>");
   });
 
-  it("converts single newlines inside a paragraph to <br/>", () => {
-    expect(bodyToHtml("line 1\nline 2")).toBe("<p>line 1<br/>line 2</p>");
+  it("converts single newlines inside a paragraph to <br>", () => {
+    expect(bodyToHtml("line 1\nline 2")).toBe("<p>line 1<br>line 2</p>");
   });
 
   it("handles a single paragraph with no newlines", () => {
@@ -49,6 +49,38 @@ describe("bodyToHtml", () => {
 
   it("preserves empty paragraphs as empty <p> tags", () => {
     expect(bodyToHtml("a\n\n\n\nb")).toBe("<p>a</p>\n<p></p>\n<p>b</p>");
+  });
+
+  it("strips <script> tags injected into a template body", () => {
+    const out = bodyToHtml("hello<script>alert(1)</script>world");
+    expect(out).not.toContain("<script");
+    expect(out).not.toContain("alert(1)");
+  });
+
+  it("strips event-handler attributes on injected tags", () => {
+    const out = bodyToHtml('before<img src=x onerror="alert(1)">after');
+    expect(out).not.toContain("<img");
+    expect(out).not.toContain("onerror");
+    expect(out).not.toContain("alert(1)");
+  });
+
+  it("strips <iframe> tags", () => {
+    const out = bodyToHtml('<iframe src="javascript:alert(1)"></iframe>');
+    expect(out).not.toContain("<iframe");
+    expect(out).not.toContain("javascript:");
+  });
+
+  it("strips attributes on allowed tags", () => {
+    const out = bodyToHtml('<p onclick="alert(1)" class="x">hi</p>');
+    expect(out).not.toContain("onclick");
+    expect(out).not.toContain("class=");
+    expect(out).not.toContain("alert(1)");
+  });
+
+  it("does not preserve javascript: URLs through anchor injection", () => {
+    const out = bodyToHtml('<a href="javascript:alert(1)">click</a>');
+    expect(out).not.toContain("javascript:");
+    expect(out).not.toContain("<a ");
   });
 });
 
@@ -68,5 +100,19 @@ describe("renderEmail", () => {
     const out = renderEmail(tmpl, vars);
     expect(out.subject).toBe(interpolate(tmpl.subject, vars));
     expect(out.html).toBe(bodyToHtml(interpolate(tmpl.body, vars)));
+  });
+
+  it("sanitizes XSS payloads end-to-end so the preview render is safe", () => {
+    const out = renderEmail(
+      {
+        subject: "Hi {{firstName}}",
+        body: 'Hi {{firstName}},<script>alert(1)</script>\n\n<img src=x onerror="alert(2)">',
+      },
+      { firstName: "Ada" },
+    );
+    expect(out.html).not.toContain("<script");
+    expect(out.html).not.toContain("<img");
+    expect(out.html).not.toContain("onerror");
+    expect(out.html).not.toContain("alert(");
   });
 });

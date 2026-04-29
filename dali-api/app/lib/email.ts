@@ -2,6 +2,8 @@
 // and {{domain}} placeholders. Body becomes HTML by wrapping double-newline-
 // separated paragraphs in <p> tags and converting single newlines to <br/>.
 
+import DOMPurify from "isomorphic-dompurify";
+
 export type InterpolationVars = {
   firstName: string;
   domain?: string;
@@ -14,11 +16,16 @@ export function interpolate(text: string, vars: InterpolationVars): string {
     .replace(/\{\{domain\}\}/g, () => vars.domain ?? "");
 }
 
+// Sanitization is part of the contract: template bodies are user-authored
+// (hiring leads) and rendered with dangerouslySetInnerHTML in the admin
+// preview modal, so any HTML beyond the <p>/<br> shape this helper emits
+// must be stripped to neutralize stored XSS.
 export function bodyToHtml(body: string): string {
-  return body
+  const raw = body
     .split("\n\n")
     .map((p) => `<p>${p.replace(/\n/g, "<br/>")}</p>`)
     .join("\n");
+  return DOMPurify.sanitize(raw, { ALLOWED_TAGS: ["p", "br"], ALLOWED_ATTR: [] });
 }
 
 // Single render path shared by the actual send (api.decisions.$id.release,
