@@ -7,6 +7,13 @@ import { requireAuth } from "~/lib/auth";
 import { CheckCircle, Plus, Trash2, Check, Clock, X, CircleDashed, ChevronDown } from "lucide-react";
 import { inferDomainApplicationStatus } from "~/lib/domain-application-status";
 import { getReviewStatus } from "~/lib/review-status";
+import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
+import {
+  summarizeDecisionPills,
+  synthesizePrePipelinePill,
+  type DecisionPill,
+  type PrePipelinePill,
+} from "~/lib/decision-pills";
 import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
 
 const STATUS_LABELS: Record<string, string> = {
@@ -29,6 +36,8 @@ const STATUS_MESSAGES: Record<string, string> = {
   UnderReview: "Submissions are closed. Review applications below.",
   Completed: "Decisions have been released to applicants.",
 };
+
+export const meta: Route.MetaFunction = () => [{ title: "Domain lead · DALI OS" }];
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -77,9 +86,10 @@ export async function loader({ request }: Route.LoaderArgs) {
                     },
                   },
                   decisions: { orderBy: { createdAt: "desc" } },
-                  // Only active interviews (Scheduled). Historical rows
-                  // don't contribute to status inference here.
-                  interviews: { where: { status: "Scheduled" } },
+                  // Scheduled drives status inference; Completed feeds the
+                  // pre-decision "Post-interview" pill in the table.
+                  // Cancelled rows stay filtered out (audit-only).
+                  interviews: { where: { status: { in: ["Scheduled", "Completed"] } } },
                 },
               },
             },
@@ -235,9 +245,8 @@ export async function loader({ request }: Route.LoaderArgs) {
           })
         : [];
 
-      // Rubric options for this domain
+      // Rubric options — rubrics are not domain-specific, so all rubric versions are eligible.
       const rubricVersionOptions = await prisma.rubricVersion.findMany({
-        where: { rubric: { domainId: assignment.domainId } },
         include: { rubric: { select: { name: true } } },
         orderBy: { createdAt: "desc" },
       });
@@ -451,11 +460,11 @@ export default function DomainLeadDashboard() {
             ) : (
               <>
                 {/* Domain header */}
-                <div className="px-6 py-4 border-b border-border bg-card">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
+                <div className="px-4 sm:px-6 py-4 border-b border-border bg-card">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                       <h2 className="text-xl font-semibold text-foreground">{assignment.domain.name}</h2>
-                      <span className="text-muted-foreground/70">·</span>
+                      <span className="text-muted-foreground/70 hidden sm:inline">·</span>
                       <span className="text-lg text-muted-foreground">{cycle.name}</span>
                       {currentStatus && (
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[currentStatus]}`}>
@@ -464,7 +473,7 @@ export default function DomainLeadDashboard() {
                       )}
                     </div>
                     {currentStatus !== "Draft" && (
-                      <div className="flex items-center gap-4">
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
                         <StatPill label="submitted" value={apps.length} />
                         {fullyReviewed > 0 && <StatPill label="reviewed" value={fullyReviewed} color="text-green-700" />}
                         {withDecisions > 0 && <StatPill label="decided" value={withDecisions} color="text-blue-700" />}
@@ -474,7 +483,7 @@ export default function DomainLeadDashboard() {
                   <p className="text-sm text-muted-foreground mt-1">{STATUS_MESSAGES[currentStatus]}</p>
                 </div>
 
-                <div className="p-6 space-y-4">
+                <div className="p-4 sm:p-6 space-y-4">
                   {/* Setup — Draft only */}
                   {currentStatus === "Draft" && (
                     <Section
@@ -578,7 +587,7 @@ export default function DomainLeadDashboard() {
                   <Section
                     title="Reviews"
                     badge={
-                      <div className="flex items-center gap-3 text-xs text-gray-600">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600">
                         <span>{cycleReviewers.length} reviewers, {(interviewers ?? []).length} interviewers</span>
                         {currentRubricVersionId
                           ? <span className="text-green-700">· rubric set</span>
@@ -627,7 +636,7 @@ export default function DomainLeadDashboard() {
                     <Section
                       title="Applications"
                       badge={
-                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                           <span>{apps.length} submitted</span>
                           <span>·</span>
                           <span>{fullyReviewed} reviewed</span>
@@ -660,7 +669,7 @@ export default function DomainLeadDashboard() {
                     <Section
                       title="Deliberations"
                       badge={
-                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                           <span>{initialDelibsCount ?? 0} ready for initial</span>
                           <span>·</span>
                           <span>{finalDelibsCount ?? 0} ready for final</span>
@@ -688,7 +697,7 @@ export default function DomainLeadDashboard() {
                       <Section
                         title="Interviews"
                         badge={
-                          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                             {awaitingBooking.length > 0 && <span className="text-yellow-700">{awaitingBooking.length} awaiting booking</span>}
                             {scheduledInterviews > 0 && <><span>·</span><span>{scheduledInterviews} scheduled</span></>}
                             {completedInterviews > 0 && <><span>·</span><span className="text-green-700">{completedInterviews} completed</span></>}
@@ -728,7 +737,8 @@ export default function DomainLeadDashboard() {
                           {interviews.length > 0 && (
                             <div>
                               <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">Booked Interviews</h4>
-                              <table className="w-full text-sm border border-border rounded-lg overflow-hidden">
+                              <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+                              <table className="w-full text-sm border border-border rounded-lg overflow-hidden min-w-[640px]">
                                 <thead className="bg-muted/50 text-xs font-medium text-muted-foreground uppercase tracking-wide">
                                   <tr>
                                     <th className="px-4 py-2 text-left">Applicant</th>
@@ -780,6 +790,7 @@ export default function DomainLeadDashboard() {
                                   })}
                                 </tbody>
                               </table>
+                              </div>
                             </div>
                           )}
                         </div>
@@ -922,7 +933,7 @@ function ChallengeSelector({ cycleId, domainId, options, selectedId }: {
 
   return (
     <div className="space-y-3 pt-1">
-      <Form method="post" className="flex items-end gap-3">
+      <Form method="post" className="flex flex-col sm:flex-row sm:items-end gap-3">
         <input type="hidden" name="intent" value="select-challenge" />
         <input type="hidden" name="cycleId" value={cycleId} />
         <input type="hidden" name="domainId" value={domainId} />
@@ -952,6 +963,12 @@ function ChallengeSelector({ cycleId, domainId, options, selectedId }: {
           Save
         </button>
       </Form>
+
+      {!isEmptyDoc(previewVersion?.description) && (
+        <div className="border border-border rounded-md bg-muted/30 px-4 py-3">
+          <RichTextViewer content={previewVersion.description} />
+        </div>
+      )}
 
       {questions.length > 0 && (
         <div className="border border-border rounded-md divide-y divide-gray-100">
@@ -1015,7 +1032,7 @@ function ReviewerSection({ cycleId, domainId, initialReviewers }: {
         <h3 className="font-semibold text-foreground">Reviewers for this Domain ({reviewers.length})</h3>
       </div>
       <div className="p-4 space-y-3">
-        <div className="flex gap-2 items-end">
+        <div className="flex flex-col sm:flex-row sm:items-end gap-2">
           <div className="flex-1">
             <label className="block text-xs font-medium text-muted-foreground mb-1">Add Reviewer</label>
             <select
@@ -1081,7 +1098,7 @@ function RubricPicker({ cycleId, domainId, options, selectedId, locked }: {
             <span className="text-xs text-muted-foreground/70 ml-2">(locked — reviewers have been assigned)</span>
           </div>
         ) : (
-          <Form method="post" key={`rubric-${selectedId}`} className="flex items-end gap-3">
+          <Form method="post" key={`rubric-${selectedId}`} className="flex flex-col sm:flex-row sm:items-end gap-3">
             <input type="hidden" name="intent" value="set-rubric" />
             <input type="hidden" name="cycleId" value={cycleId} />
             <input type="hidden" name="domainId" value={domainId} />
@@ -1162,7 +1179,7 @@ function InterviewerSection({ cycleId, domainId, initialInterviewers }: {
         <h3 className="font-semibold text-foreground">Interviewers for this Domain ({interviewers.length})</h3>
       </div>
       <div className="p-4 space-y-3">
-        <div className="flex gap-2 items-end">
+        <div className="flex flex-col sm:flex-row sm:items-end gap-2">
           <div className="flex-1">
             <label className="block text-xs font-medium text-muted-foreground mb-1">Add Interviewer</label>
             <select
@@ -1316,28 +1333,6 @@ function DelibsSection({ cycleId, domainId, sessions, initialCount, finalCount }
   );
 }
 
-const STATUS_BADGE_COLORS: Record<string, string> = {
-  ApplicationOpen: "bg-muted text-foreground/80",
-  Pending: "bg-blue-100 text-blue-700",
-  Rejected: "bg-red-100 text-red-700",
-  InvitedToInterview: "bg-purple-100 text-purple-700",
-  InterviewScheduled: "bg-indigo-100 text-indigo-700",
-  PostInterviewPending: "bg-yellow-100 text-yellow-700",
-  Accepted: "bg-green-100 text-green-700",
-  Waitlisted: "bg-orange-100 text-orange-700",
-};
-
-const STATUS_BADGE_LABELS: Record<string, string> = {
-  ApplicationOpen: "Open",
-  Pending: "Pending",
-  Rejected: "Rejected",
-  InvitedToInterview: "Interview Invited",
-  InterviewScheduled: "Interview Scheduled",
-  PostInterviewPending: "Post-Interview",
-  Accepted: "Accepted",
-  Waitlisted: "Waitlisted",
-};
-
 const DECISION_COLORS: Record<string, string> = {
   Rejected: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
   InvitedToInterview: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
@@ -1352,18 +1347,38 @@ const DECISION_LABELS: Record<string, string> = {
   Waitlisted: "Waitlist",
 };
 
-function DecisionBadge({ type }: { type: string }) {
+// Draft pills are rendered with reduced opacity + dashed border to read as
+// "tentative", Final pills get a solid border, Released pills are full strength.
+const STAGE_TREATMENT: Record<DecisionPill["stage"], string> = {
+  Draft: "opacity-60 border border-dashed border-current/40",
+  Final: "border border-current/30",
+  Released: "",
+};
+
+function DecisionPillBadge({ pill }: { pill: DecisionPill }) {
+  const baseLabel = DECISION_LABELS[pill.type] ?? pill.type;
+  const rankSuffix =
+    pill.type === "Waitlisted" && pill.waitlistRank != null
+      ? ` #${pill.waitlistRank}`
+      : "";
+  const stageSuffix = ` (${pill.stage.toLowerCase()})`;
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${DECISION_COLORS[type] ?? "bg-muted text-muted-foreground"}`}>
-      {DECISION_LABELS[type] ?? type}
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${DECISION_COLORS[pill.type] ?? "bg-muted text-muted-foreground"} ${STAGE_TREATMENT[pill.stage]}`}>
+      {baseLabel}{rankSuffix}{stageSuffix}
     </span>
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
+const PRE_PIPELINE_LABELS: Record<PrePipelinePill, string> = {
+  Reviewing: "Reviewing",
+  InterviewScheduled: "Interview scheduled",
+  PostInterview: "Post-interview",
+};
+
+function PrePipelinePillBadge({ pill }: { pill: PrePipelinePill }) {
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${STATUS_BADGE_COLORS[status] ?? "bg-muted text-muted-foreground"}`}>
-      {STATUS_BADGE_LABELS[status] ?? status}
+    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground">
+      {PRE_PIPELINE_LABELS[pill]}
     </span>
   );
 }
@@ -1400,16 +1415,19 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
     const da = app.domainApplications[0];
     if (!da) return false;
     const decisions = da.decisions ?? [];
-    const latestDraft = decisions.find((d: any) => d.stage === "Draft");
-    const latestFinal = decisions.find((d: any) => d.stage === "Final");
-    return latestDraft && !latestFinal;
+    return decisions.some((d: any) => {
+      if (d.stage !== "Draft") return false;
+      return !decisions.some(
+        (other: any) => other.type === d.type && (other.stage === "Final" || other.stage === "Released")
+      );
+    });
   });
 
   const displayedApps = filter === "finalize" ? finalizableApps : apps;
 
   return (
     <div className="bg-card border border-border rounded-lg overflow-hidden">
-      <div className="px-6 py-4 border-b border-border bg-muted/50 flex items-center justify-between">
+      <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-border bg-muted/50 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-1">
           {isUnderReview ? (
             <div className="flex items-center gap-1 bg-muted rounded-lg p-0.5">
@@ -1440,7 +1458,13 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
               onClick={async () => {
                 for (const app of finalizableApps) {
                   const da = app.domainApplications[0];
-                  const draft = (da?.decisions ?? []).find((d: any) => d.stage === "Draft");
+                  const allDecisions = da?.decisions ?? [];
+                  const draft = allDecisions.find((d: any) => {
+                    if (d.stage !== "Draft") return false;
+                    return !allDecisions.some(
+                      (other: any) => other.type === d.type && (other.stage === "Final" || other.stage === "Released")
+                    );
+                  });
                   if (draft) {
                     await fetch(`/api/decisions/${draft.id}/finalize`, { method: "POST", credentials: "include" });
                   }
@@ -1480,32 +1504,41 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
           )}
         </div>
       </div>
-      <table className="w-full text-sm">
+      <div className="overflow-x-auto">
+      <table className="w-full text-sm min-w-[640px]">
         <thead className="bg-muted/50 text-xs font-medium text-muted-foreground uppercase tracking-wide">
           <tr>
             <th className="px-6 py-3 text-left">Applicant</th>
-            <th className="px-6 py-3 text-left">Status</th>
             <th className="px-6 py-3 text-left">Reviewers</th>
-            <th className="px-6 py-3 text-left">Draft Decision</th>
-            <th className="px-6 py-3 text-left">Final Decision</th>
+            <th className="px-6 py-3 text-left">Decisions</th>
             <th className="px-6 py-3 text-right">Actions</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
           {displayedApps.map((app: any) => {
             const da = app.domainApplications[0];
-            const status = da?.inferredStatus ?? "Pending";
             const reviews = da?.reviews ?? [];
             const decisions = da?.decisions ?? [];
-            const latestDraft = decisions.find((d: any) => d.stage === "Draft");
-            const latestFinal = decisions.find((d: any) => d.stage === "Final");
+            const draftToFinalize = decisions.find((d: any) => {
+              if (d.stage !== "Draft") return false;
+              return !decisions.some(
+                (other: any) => other.type === d.type && (other.stage === "Final" || other.stage === "Released")
+              );
+            });
+            const pills = da
+              ? summarizeDecisionPills({ decisions })
+              : [];
+            const prePill = da && pills.length === 0
+              ? synthesizePrePipelinePill({
+                  application: { statusUpdates: app.statusUpdates ?? [] },
+                  interviews: da.interviews ?? [],
+                  decisions,
+                })
+              : null;
             return (
               <tr key={app.id} className="hover:bg-muted/50">
                 <td className="px-6 py-4 font-medium text-foreground">
                   {app.user.firstName} {app.user.lastName}
-                </td>
-                <td className="px-6 py-4">
-                  <StatusBadge status={status} />
                 </td>
                 <td className="px-6 py-4">
                   <ReviewerAssignmentCell
@@ -1517,16 +1550,24 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                   />
                 </td>
                 <td className="px-6 py-4">
-                  {latestDraft ? <DecisionBadge type={latestDraft.type} /> : <span className="text-xs text-muted-foreground">—</span>}
+                  {pills.length > 0 ? (
+                    <div className="flex flex-wrap gap-1">
+                      {pills.map((pill, i) => (
+                        <DecisionPillBadge key={i} pill={pill} />
+                      ))}
+                    </div>
+                  ) : prePill ? (
+                    <PrePipelinePillBadge pill={prePill} />
+                  ) : (
+                    <span className="text-xs text-muted-foreground">—</span>
+                  )}
                 </td>
-                <td className="px-6 py-4">
-                  {latestFinal ? <DecisionBadge type={latestFinal.type} /> : <span className="text-xs text-muted-foreground">—</span>}
-                </td>
-                <td className="px-6 py-4 text-right flex items-center justify-end gap-2">
-                  {isUnderReview && latestDraft && !latestFinal && (
+                <td className="px-6 py-4 text-right">
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                  {isUnderReview && draftToFinalize && (
                     <button
                       onClick={async () => {
-                        await fetch(`/api/decisions/${latestDraft.id}/finalize`, { method: "POST", credentials: "include" });
+                        await fetch(`/api/decisions/${draftToFinalize.id}/finalize`, { method: "POST", credentials: "include" });
                         window.location.reload();
                       }}
                       className="px-2 py-1 text-xs font-medium rounded bg-green-600 hover:bg-green-700 text-white transition"
@@ -1540,17 +1581,19 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                   >
                     Review →
                   </Link>
+                  </div>
                 </td>
               </tr>
             );
           })}
           {displayedApps.length === 0 && (
-            <tr><td colSpan={6} className="px-6 py-8 text-center text-muted-foreground/70 text-sm">
+            <tr><td colSpan={4} className="px-6 py-8 text-center text-muted-foreground/70 text-sm">
               {filter === "finalize" ? "No applications need finalization." : "No applications."}
             </td></tr>
           )}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }
@@ -1814,7 +1857,7 @@ function ReviewModal({ review, rubricCriteria, onClose }: {
                   <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
                     Scores
                   </h3>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {scoreEntries.map(([key, score]) => (
                       <div
                         key={key}

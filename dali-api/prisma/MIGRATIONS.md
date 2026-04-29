@@ -11,6 +11,29 @@
 
 Migrations run automatically as a Fly.io release command (`npx prisma migrate deploy`) on every deployment. On dev, the Neon branch is first restored from production, so migrations always run against a clean prod-like state.
 
+### Why `prisma migrate` needs a non-pooled URL
+
+`prisma migrate deploy` acquires a Postgres advisory lock (`pg_advisory_lock`) to serialize migration runs. Advisory locks are **session-scoped**, but Neon's pooler does PgBouncer-style transaction pooling: lock and unlock calls can land on different backend sessions, so the lock either never gets acquired (P1002 after 10s) or never gets released. See https://pris.ly/d/migrate-advisory-locking and issue #101.
+
+So the CLI and the runtime need different URLs:
+
+- Runtime traffic uses `DATABASE_URL` directly (pooled endpoint, serverless-friendly, plays well with `@prisma/adapter-pg` / `@prisma/adapter-neon`). The runtime client in `app/lib/db.ts` reads `process.env.DATABASE_URL` and never goes through `prisma.config.ts`.
+- The Prisma CLI (`migrate`, `db`, `generate`) loads `prisma.config.ts`, which overrides `datasource.url` with a non-pooled URL.
+
+`prisma.config.ts` resolves the CLI URL automatically:
+
+1. If `DIRECT_URL` is set, it wins.
+2. Otherwise, if `DATABASE_URL` is a Neon pooled host (`<endpoint>-pooler.<region>.aws.neon.tech`), `-pooler` is stripped to get the non-pooled twin.
+3. Otherwise (local Docker, CI `postgres:16` — no pooler), `DATABASE_URL` is used as-is.
+
+So in practice **you don't have to set `DIRECT_URL` as a Fly secret** — the auto-derive handles it. Set it explicitly only if you want migrations to run against a different Neon branch from runtime traffic:
+
+```bash
+flyctl secrets set DIRECT_URL='postgres://…@<branch>.<region>.neon.tech/neondb?sslmode=require' --app dali-api-<env>
+```
+
+If a migrate command would still target a `-pooler` host (e.g. an explicit `DIRECT_URL` was set wrong), `prisma.config.ts` throws before Prisma starts, so you get a clear error instead of a 10-second advisory-lock timeout.
+
 ## Making schema changes
 
 Always use Prisma's migration workflow — never edit the database directly.
