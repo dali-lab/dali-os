@@ -603,7 +603,12 @@ export default function DomainLeadDashboard() {
                                 <li key={cv.id} className="flex items-center justify-between">
                                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                                     <CheckCircle className="w-4 h-4 text-green-600" />
-                                    <span>{cv.challenge?.name ?? "Linked"}</span>
+                                    <Link
+                                      to={`/challenges/${cv.challengeId}?versionId=${cv.id}`}
+                                      className="text-blue-600 hover:text-blue-800"
+                                    >
+                                      {cv.challenge?.name ?? "Linked"}
+                                    </Link>
                                     {hasApplicationReviews && (
                                       <span className="text-xs text-gray-400 ml-1">(locked — reviewers have been assigned)</span>
                                     )}
@@ -887,7 +892,12 @@ function DraftSection({ cycle, domainId, challengeVersionOptions, linkedChalleng
           <ul className="text-sm text-foreground/80 space-y-1">
             {linkedChallengeVersions.map((cv: any) => (
               <li key={cv.id} className="flex items-center justify-between">
-                <span>{cv.challenge?.name ?? "Untitled"}</span>
+                <Link
+                  to={`/challenges/${cv.challengeId}?versionId=${cv.id}`}
+                  className="text-blue-600 hover:text-blue-800"
+                >
+                  {cv.challenge?.name ?? "Untitled"}
+                </Link>
                 <span className="text-xs text-muted-foreground">{(cv.questions as any[])?.length ?? 0} questions</span>
               </li>
             ))}
