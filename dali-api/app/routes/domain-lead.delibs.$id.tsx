@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { redirect, useLoaderData, useNavigate } from "react-router";
 import type { Route } from "./+types/domain-lead.delibs.$id";
 import { prisma } from "~/lib/db";
@@ -6,6 +6,7 @@ import { requireAuth } from "~/lib/auth";
 import { isDomainLead } from "~/lib/roles";
 import { ArrowLeft, GripVertical, X, Check } from "lucide-react";
 import { INITIAL_COLUMNS, FINAL_COLUMNS } from "~/lib/delibs";
+import { ApplicantContextModal } from "~/components/delibs/ApplicantContextModal";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const domain = (data as any)?.session?.domain?.name;
@@ -126,6 +127,11 @@ export default function DelibsKanban() {
   const [saving, setSaving] = useState(false);
   const [closing, setClosing] = useState(false);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
+  const [selectedDomainApplicationId, setSelectedDomainApplicationId] =
+    useState<string | null>(null);
+  // HTML5 drag-and-drop fires a stray `click` after `dragend` on some browsers;
+  // suppress the modal-open click that immediately follows a drag.
+  const wasDragging = useRef(false);
 
   const sendMove = useCallback(
     async (cardId: string, toColumn: string) => {
@@ -152,6 +158,7 @@ export default function DelibsKanban() {
 
   function handleDragStart(id: string) {
     setDragItem(id);
+    wasDragging.current = true;
   }
 
   function handleDragOver(e: React.DragEvent, col: string) {
@@ -278,6 +285,13 @@ export default function DelibsKanban() {
         </div>
       )}
 
+      {selectedDomainApplicationId && (
+        <ApplicantContextModal
+          domainApplicationId={selectedDomainApplicationId}
+          onClose={() => setSelectedDomainApplicationId(null)}
+        />
+      )}
+
       {/* Kanban Board */}
       <div className={`grid gap-4`} style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr))` }}>
         {columns.map((col) => {
@@ -326,9 +340,16 @@ export default function DelibsKanban() {
                       draggable={!isClosed}
                       onDragStart={() => handleDragStart(id)}
                       onDragEnd={handleDragEnd}
+                      onClick={() => {
+                        if (wasDragging.current) {
+                          wasDragging.current = false;
+                          return;
+                        }
+                        setSelectedDomainApplicationId(id);
+                      }}
                       className={`bg-card p-3 rounded-lg border border-border shadow-sm transition-all ${
                         isClosed
-                          ? "cursor-default"
+                          ? "cursor-pointer"
                           : "cursor-grab hover:shadow-md active:cursor-grabbing"
                       } ${dragItem === id ? "opacity-50" : ""}`}
                     >
