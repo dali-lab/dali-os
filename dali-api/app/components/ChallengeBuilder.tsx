@@ -5,12 +5,6 @@ import { RichTextEditor } from '~/components/RichTextEditor'
 
 const ACCEPT_PRESETS = [
   { label: 'PDF', value: 'application/pdf' },
-  { label: 'Images', value: 'image/*' },
-  { label: 'Word', value: '.doc,.docx' },
-  { label: 'Excel', value: '.xls,.xlsx' },
-  { label: 'CSV', value: 'text/csv,.csv' },
-  { label: 'ZIP', value: 'application/zip,.zip' },
-  { label: 'Video', value: 'video/*' },
   { label: 'CAD / 3D', value: '.f3z,.f3d' },
 ] as const
 
