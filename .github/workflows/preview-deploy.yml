@@ -202,7 +202,7 @@ jobs:
           n=0
           until flyctl secrets set -a "$APP" --stage \
             DATABASE_URL="$DATABASE_URL" \
-            ENABLE_DEV_LOGIN=true \
+            NODE_ENV=development \
             JWT_SECRET="$JWT_SECRET" \
             API_BASE_URL="$URL" \
             GOOGLE_CLIENT_ID="preview-placeholder.apps.googleusercontent.com" \
