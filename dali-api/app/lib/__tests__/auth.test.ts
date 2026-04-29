@@ -15,6 +15,34 @@ beforeAll(() => {
   process.env.JWT_SECRET = "test-secret-at-least-32-chars-long!!";
 });
 
+describe("getSecret validation", () => {
+  it("throws when JWT_SECRET is shorter than 32 bytes", async () => {
+    vi.stubEnv("JWT_SECRET", "too-short");
+    await expect(
+      signAccessToken({ sub: "u", email: "e@e.com", type: "member" }),
+    ).rejects.toThrow("JWT_SECRET must be at least 32 bytes for HS256 security");
+    vi.unstubAllEnvs();
+  });
+
+  it("throws when JWT_SECRET is unset", async () => {
+    vi.stubEnv("JWT_SECRET", "");
+    await expect(
+      signAccessToken({ sub: "u", email: "e@e.com", type: "member" }),
+    ).rejects.toThrow("JWT_SECRET not set");
+    vi.unstubAllEnvs();
+  });
+
+  it("accepts a 32+ byte secret", async () => {
+    // beforeAll secret is 36 bytes; this asserts the happy path explicitly
+    const token = await signAccessToken({
+      sub: "u",
+      email: "e@e.com",
+      type: "member",
+    });
+    expect(typeof token).toBe("string");
+  });
+});
+
 describe("signAccessToken / verifyAccessToken", () => {
   it("round-trips a token", async () => {
     const token = await signAccessToken({

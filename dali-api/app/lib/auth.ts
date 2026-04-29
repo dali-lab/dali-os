@@ -7,7 +7,11 @@ import { logAuditEvent } from "~/lib/audit";
 function getSecret() {
   const secret = process.env.JWT_SECRET;
   if (!secret) throw new Error("JWT_SECRET not set");
-  return new TextEncoder().encode(secret);
+  const encoded = new TextEncoder().encode(secret);
+  if (encoded.length < 32) {
+    throw new Error("JWT_SECRET must be at least 32 bytes for HS256 security");
+  }
+  return encoded;
 }
 
 export async function signAccessToken(payload: {
