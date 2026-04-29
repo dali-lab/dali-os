@@ -24,11 +24,15 @@ async function getAccessToken(refreshToken: string): Promise<string> {
   return data.access_token as string
 }
 
+function sanitizeHeader(value: string): string {
+  return value.replace(/[\r\n]/g, '')
+}
+
 function makeRawEmail(to: string, subject: string, htmlBody: string): string {
   const msg = [
     `From: DALI Lab <${GMAIL_USER}>`,
-    `To: ${to}`,
-    `Subject: ${subject}`,
+    `To: ${sanitizeHeader(to)}`,
+    `Subject: ${sanitizeHeader(subject)}`,
     'MIME-Version: 1.0',
     'Content-Type: text/html; charset=utf-8',
     '',
