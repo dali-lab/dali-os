@@ -1,9 +1,14 @@
 import type { Route } from "./+types/api.cycles.$cycleId.reviewers.$reviewerId";
+import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isHiringLead, isDomainLead } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { safeJson } from "~/lib/safe-json";
+import { parseJson } from "~/lib/validate";
+
+const PatchReviewerSchema = z.object({
+  domainId: z.string().min(1).max(100).optional(),
+});
 
 export async function action({ request, params }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
@@ -14,7 +19,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!(await isHiringLead(auth.user.sub)) && !(await isDomainLead(auth.user.sub))) return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
 
   if (request.method === "PATCH") {
-    const body = await safeJson<{ domainId?: string }>(request);
+    const body = await parseJson(request, PatchReviewerSchema);
     if (body instanceof Response) return withCors(request, body);
     const reviewer = await prisma.cycleReviewer.update({
       where: { id: params.reviewerId },

@@ -1,9 +1,15 @@
 import type { Route } from "./+types/api.interviews.$id.complete";
+import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { safeJson } from "~/lib/safe-json";
+import { parseJson } from "~/lib/validate";
 
-const VALID_RECOMMENDATIONS = ["Strong Hire", "Hire", "Lean Hire", "Lean No Hire", "No Hire"];
+const VALID_RECOMMENDATIONS = ["Strong Hire", "Hire", "Lean Hire", "Lean No Hire", "No Hire"] as const;
+
+const CompleteSchema = z.object({
+  recommendation: z.enum(VALID_RECOMMENDATIONS),
+  recommendationNotes: z.string().max(10_000).optional(),
+});
 
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
@@ -50,16 +56,9 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   // POST = mark the interview complete.
-  const body = await safeJson<{ recommendation?: string; recommendationNotes?: string }>(request);
+  const body = await parseJson(request, CompleteSchema);
   if (body instanceof Response) return body;
   const { recommendation, recommendationNotes } = body;
-
-  if (!recommendation || !VALID_RECOMMENDATIONS.includes(recommendation)) {
-    return Response.json(
-      { error: `recommendation is required and must be one of: ${VALID_RECOMMENDATIONS.join(", ")}` },
-      { status: 400 },
-    );
-  }
 
   if (interview.status === "Completed") {
     return Response.json({ error: "Interview is already completed" }, { status: 409 });

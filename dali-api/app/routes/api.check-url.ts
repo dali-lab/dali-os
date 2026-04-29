@@ -1,8 +1,14 @@
 import type { Route } from "./+types/api.check-url";
+import { z } from "zod";
 import { requireAuth } from "~/lib/auth";
 import { checkGitHubUrl, checkFigmaUrl } from "~/lib/submission-check";
 import { checkRateLimit } from "~/lib/rate-limit";
-import { safeJson } from "~/lib/safe-json";
+import { parseJson } from "~/lib/validate";
+
+const CheckUrlSchema = z.object({
+  url: z.string().min(1).max(2048),
+  type: z.enum(["github_url", "figma_url"]),
+});
 
 const RATE_LIMIT_MAX = 20;
 const RATE_LIMIT_WINDOW_MS = 60_000;
@@ -14,16 +20,9 @@ export async function action({ request }: Route.ActionArgs) {
   const userLimited = checkRateLimit(request, { max: RATE_LIMIT_MAX, windowMs: RATE_LIMIT_WINDOW_MS }, auth.user.sub);
   if (userLimited) return userLimited;
 
-  const body = await safeJson<{ url: string; type: "github_url" | "figma_url" }>(request);
+  const body = await parseJson(request, CheckUrlSchema);
   if (body instanceof Response) return body;
   const { url, type } = body;
-
-  if (!url || typeof url !== "string") {
-    return Response.json(
-      { status: "invalid_url", url: "", message: "No URL provided" },
-      { status: 400 },
-    );
-  }
 
   const result = type === "figma_url"
     ? await checkFigmaUrl(url)

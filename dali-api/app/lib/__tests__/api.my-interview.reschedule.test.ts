@@ -64,7 +64,7 @@ describe("POST /api/my-interview/reschedule", () => {
     } as any);
     expect(res.status).toBe(400);
     const json = await res.json();
-    expect(json.error).toMatch(/domainApplicationId/);
+    expect(json.details?.fieldErrors?.domainApplicationId).toBeTruthy();
   });
 
   it("scopes the query to the given domainApplicationId", async () => {

@@ -87,3 +87,45 @@ describe("POST /api/cycles/:cycleId/interview-config — timezone validation", (
     expect(call.create.timezone).toBe("America/New_York");
   });
 });
+
+describe("POST /api/cycles/:cycleId/interview-config — schema validation", () => {
+  it("rejects out-of-range dayStartHour", async () => {
+    const res = await action({
+      request: makeRequest({ ...BASE_BODY, dayStartHour: -1 }),
+      params: { cycleId: CYCLE_ID },
+      context: {},
+    } as any);
+    expect(res.status).toBe(400);
+    expect(mockPrisma.interviewConfig.upsert).not.toHaveBeenCalled();
+  });
+
+  it("rejects out-of-range slotDurationMinutes", async () => {
+    const res = await action({
+      request: makeRequest({ ...BASE_BODY, slotDurationMinutes: 999_999 }),
+      params: { cycleId: CYCLE_ID },
+      context: {},
+    } as any);
+    expect(res.status).toBe(400);
+    expect(mockPrisma.interviewConfig.upsert).not.toHaveBeenCalled();
+  });
+
+  it("rejects when dayStartHour >= dayEndHour", async () => {
+    const res = await action({
+      request: makeRequest({ ...BASE_BODY, dayStartHour: 15, dayEndHour: 10 }),
+      params: { cycleId: CYCLE_ID },
+      context: {},
+    } as any);
+    expect(res.status).toBe(400);
+    expect(mockPrisma.interviewConfig.upsert).not.toHaveBeenCalled();
+  });
+
+  it("rejects malformed interviewStartDate", async () => {
+    const res = await action({
+      request: makeRequest({ ...BASE_BODY, interviewStartDate: "not-a-date" }),
+      params: { cycleId: CYCLE_ID },
+      context: {},
+    } as any);
+    expect(res.status).toBe(400);
+    expect(mockPrisma.interviewConfig.upsert).not.toHaveBeenCalled();
+  });
+});

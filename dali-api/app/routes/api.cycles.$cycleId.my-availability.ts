@@ -1,9 +1,26 @@
 import type { Route } from "./+types/api.cycles.$cycleId.my-availability";
+import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { safeJson } from "~/lib/safe-json";
+import { parseJson } from "~/lib/validate";
 import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
+
+const AvailabilitySchema = z.object({
+  blocks: z
+    .array(
+      z
+        .object({
+          startTime: z.string().datetime({ offset: true }),
+          endTime: z.string().datetime({ offset: true }),
+        })
+        .refine((b) => new Date(b.endTime) > new Date(b.startTime), {
+          message: "endTime must be after startTime",
+        }),
+    )
+    .max(500)
+    .default([]),
+});
 
 /** UTC bounds [start, end) of the configured interview window in `timezone`.
  * The stored `interviewStartDate`/`interviewEndDate` are nominally UTC midnight
@@ -81,10 +98,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Not an interviewer for this cycle" }, { status: 404 }));
   }
 
-  const body = await safeJson<{ blocks?: { startTime: string; endTime: string }[] }>(request);
+  const body = await parseJson(request, AvailabilitySchema);
   if (body instanceof Response) return withCors(request, body);
-  const blocks: { startTime: string; endTime: string }[] = body.blocks ?? [];
-  const parsedBlocks = blocks.map((b) => ({
+  const parsedBlocks = body.blocks.map((b) => ({
     startTime: new Date(b.startTime),
     endTime: new Date(b.endTime),
   }));
