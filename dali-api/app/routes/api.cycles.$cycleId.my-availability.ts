@@ -2,6 +2,7 @@ import type { Route } from "./+types/api.cycles.$cycleId.my-availability";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
+import { safeJson } from "~/lib/safe-json";
 import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
 
 /** UTC bounds [start, end) of the configured interview window in `timezone`.
@@ -80,7 +81,8 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Not an interviewer for this cycle" }, { status: 404 }));
   }
 
-  const body = await request.json();
+  const body = await safeJson<{ blocks?: { startTime: string; endTime: string }[] }>(request);
+  if (body instanceof Response) return withCors(request, body);
   const blocks: { startTime: string; endTime: string }[] = body.blocks ?? [];
   const parsedBlocks = blocks.map((b) => ({
     startTime: new Date(b.startTime),

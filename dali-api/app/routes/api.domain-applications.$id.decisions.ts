@@ -2,6 +2,7 @@ import type { Route } from "./+types/api.domain-applications.$id.decisions";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isHiringLead, isDomainLead, hasCycleAccess } from "~/lib/roles";
+import { safeJson } from "~/lib/safe-json";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -37,7 +38,8 @@ export async function action({ request, params }: Route.ActionArgs) {
     return Response.json({ error: "Method not allowed" }, { status: 405 });
   }
 
-  const body = await request.json();
+  const body = await safeJson<{ type?: string; stage?: string; notes?: string; waitlistRank?: number }>(request);
+  if (body instanceof Response) return body;
   const { type, stage, notes, waitlistRank } = body;
 
   if (!type || !stage) {

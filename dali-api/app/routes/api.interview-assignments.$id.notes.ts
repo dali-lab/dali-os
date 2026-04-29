@@ -2,6 +2,7 @@ import type { Route } from "./+types/api.interview-assignments.$id.notes";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { hasCycleAccess } from "~/lib/roles";
+import { safeJson } from "~/lib/safe-json";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -49,7 +50,8 @@ export async function action({ request, params }: Route.ActionArgs) {
     return Response.json({ error: "Not your assignment" }, { status: 403 });
   }
 
-  const body = await request.json();
+  const body = await safeJson<{ content?: unknown }>(request);
+  if (body instanceof Response) return body;
   const { content } = body;
 
   if (content === undefined) {

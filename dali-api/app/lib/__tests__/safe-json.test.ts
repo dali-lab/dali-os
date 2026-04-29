@@ -31,6 +31,13 @@ describe("safeJson", () => {
     expect((result as Response).status).toBe(413);
   });
 
+  it("returns 400 for malformed JSON", async () => {
+    const req = makeRequest("not valid json {{{");
+    const result = await safeJson(req);
+    expect(result).toBeInstanceOf(Response);
+    expect((result as Response).status).toBe(400);
+  });
+
   it("accepts a body exactly at the limit", async () => {
     const body = JSON.stringify({ ok: true });
     const req = makeRequest(body);

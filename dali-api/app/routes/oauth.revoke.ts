@@ -3,6 +3,7 @@ import { revokeToken } from "~/lib/oauth";
 
 import { clearTokenCookies, parseRefreshToken } from "~/lib/cookies";
 import { withCors, handlePreflight, preflightLoader } from "~/lib/cors";
+import { safeJson } from "~/lib/safe-json";
 
 export const loader = preflightLoader;
 
@@ -17,7 +18,8 @@ export async function action({ request }: Route.ActionArgs) {
   if (!token) {
     const contentType = request.headers.get("Content-Type") ?? "";
     if (contentType.includes("application/json")) {
-      const body = await request.json();
+      const body = await safeJson<{ token?: string }>(request);
+      if (body instanceof Response) return withCors(request, body);
       token = body.token;
     } else {
       const formData = await request.formData();

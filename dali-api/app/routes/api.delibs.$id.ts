@@ -2,6 +2,7 @@ import type { Route } from "./+types/api.delibs.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isHiringLead, isDomainLead, hasCycleAccess } from "~/lib/roles";
+import { safeJson } from "~/lib/safe-json";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -31,7 +32,8 @@ export async function action({ request, params }: Route.ActionArgs) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const body = await request.json();
+  const body = await safeJson<Record<string, unknown>>(request);
+  if (body instanceof Response) return body;
 
   if (request.method === "POST") {
     const { intent } = body;
