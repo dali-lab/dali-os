@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resolveChallengeFormDefaults, resolveDuplicateDomainId } from '../ChallengeDetail'
+import { resolveChallengeFormDefaults, resolveDuplicateDomainId, resolveInitialVersionId } from '../ChallengeDetail'
 
 const engineering = { id: 'eng-id', name: 'Engineering' }
 const design = { id: 'des-id', name: 'Design' }
@@ -69,6 +69,29 @@ describe('resolveChallengeFormDefaults', () => {
       domainIdParam: null,
     })
     expect(result.isGeneralForm).toBe(true)
+  })
+})
+
+describe('resolveInitialVersionId', () => {
+  const v1 = { id: 'v1' }
+  const v2 = { id: 'v2' }
+  const v3 = { id: 'v3' }
+
+  it('returns the most recent version when no versionId param is provided', () => {
+    expect(resolveInitialVersionId({ versions: [v1, v2, v3], versionIdParam: null })).toBe('v3')
+  })
+
+  it('returns the version matching the versionId param', () => {
+    expect(resolveInitialVersionId({ versions: [v1, v2, v3], versionIdParam: 'v1' })).toBe('v1')
+  })
+
+  it('falls back to the most recent version when versionId param does not match any known version', () => {
+    expect(resolveInitialVersionId({ versions: [v1, v2, v3], versionIdParam: 'unknown' })).toBe('v3')
+  })
+
+  it('returns null for an empty versions list regardless of param', () => {
+    expect(resolveInitialVersionId({ versions: [], versionIdParam: null })).toBeNull()
+    expect(resolveInitialVersionId({ versions: [], versionIdParam: 'anything' })).toBeNull()
   })
 })
 
