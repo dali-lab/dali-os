@@ -3,6 +3,32 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { safeJson } from "~/lib/safe-json";
+import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
+
+/** UTC bounds [start, end) of the configured interview window in `timezone`.
+ * The stored `interviewStartDate`/`interviewEndDate` are nominally UTC midnight
+ * but represent calendar dates; we derive the actual day in the configured
+ * timezone, then take midnight-on-that-day and midnight-on-(endDate+1) in that
+ * timezone as UTC instants. */
+function interviewWindowUtcBounds(config: {
+  interviewStartDate: Date;
+  interviewEndDate: Date;
+  timezone: string;
+}): { start: Date; end: Date } {
+  const startYMD = getZonedYMD(config.interviewStartDate, config.timezone);
+  const endYMD = getZonedYMD(config.interviewEndDate, config.timezone);
+  const start = zonedDayStartUtc(startYMD.year, startYMD.month, startYMD.day, config.timezone);
+  // End is exclusive — the day after `interviewEndDate`.
+  const endNext = new Date(Date.UTC(endYMD.year, endYMD.month - 1, endYMD.day));
+  endNext.setUTCDate(endNext.getUTCDate() + 1);
+  const end = zonedDayStartUtc(
+    endNext.getUTCFullYear(),
+    endNext.getUTCMonth() + 1,
+    endNext.getUTCDate(),
+    config.timezone,
+  );
+  return { start, end };
+}
 
 // Return every CycleInterviewer row the authenticated member has in this
 // cycle. A member who serves multiple domains has multiple rows; availability
@@ -63,6 +89,22 @@ export async function action({ request, params }: Route.ActionArgs) {
     endTime: new Date(b.endTime),
   }));
 
+  // Clip blocks to the configured interview window. Without this, a stale
+  // calendar (e.g. cached availability from a prior cycle, or a client whose
+  // grid bounds drifted) can save blocks that the scheduler will silently
+  // discard, leaving applicants with "no slots available".
+  const config = await prisma.interviewConfig.findUnique({
+    where: { applicationCycleId: params.cycleId },
+  });
+  const validBlocks = config
+    ? (() => {
+        const { start, end } = interviewWindowUtcBounds(config);
+        return parsedBlocks.filter(
+          (b) => b.startTime >= start && b.endTime <= end,
+        );
+      })()
+    : parsedBlocks;
+
   // Full replacement applied across EVERY row the member has in this cycle.
   // Fans the same availability set out to each CycleInterviewer so reads
   // from the scheduler and from the "Interviewers for this Domain" panel
@@ -72,9 +114,9 @@ export async function action({ request, params }: Route.ActionArgs) {
       await tx.interviewerAvailability.deleteMany({
         where: { cycleInterviewerId: interviewer.id },
       });
-      if (parsedBlocks.length > 0) {
+      if (validBlocks.length > 0) {
         await tx.interviewerAvailability.createMany({
-          data: parsedBlocks.map((b) => ({
+          data: validBlocks.map((b) => ({
             cycleInterviewerId: interviewer.id,
             startTime: b.startTime,
             endTime: b.endTime,

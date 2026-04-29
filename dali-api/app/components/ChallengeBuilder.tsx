@@ -1,6 +1,7 @@
 import React, { useCallback, useState, useRef } from 'react'
 import { GripVertical, Plus, Pencil, Trash2, Save } from 'lucide-react'
 import type { Question } from '~/types'
+import { RichTextEditor } from '~/components/RichTextEditor'
 
 export interface BuildQuestionInput {
   key: string
@@ -64,17 +65,20 @@ export function buildQuestion(input: BuildQuestionInput): Question {
 
 interface FormBuilderTabProps {
   initialQuestions?: Question[]
-  onSave?: (questions: Question[]) => void
+  initialDescription?: unknown
+  onSave?: (payload: { questions: Question[]; description: unknown }) => void
   onCancel?: () => void
   isGeneralForm?: boolean
 }
 export function FormBuilderTab({
   initialQuestions = [],
+  initialDescription,
   onSave,
   onCancel,
   isGeneralForm = false,
 }: FormBuilderTabProps) {
   const [questions, setQuestions] = useState<Question[]>(initialQuestions)
+  const [description, setDescription] = useState<unknown>(initialDescription ?? null)
   const [editingKey, setEditingKey] = useState<string | null>(null)
   const [isAdding, setIsAdding] = useState(false)
   const [editForm, setEditForm] = useState<Partial<Question>>({})
@@ -393,6 +397,19 @@ export function FormBuilderTab({
   }
   return (
     <div className="space-y-6">
+      <div>
+        <label className="block text-sm font-medium text-foreground/80 mb-1">
+          Description (Optional)
+        </label>
+        <p className="text-xs text-muted-foreground mb-2">
+          Shown to applicants and reviewers above the question list.
+        </p>
+        <RichTextEditor
+          value={description}
+          onChange={setDescription}
+          placeholder="Describe this challenge for applicants…"
+        />
+      </div>
       <div className="space-y-2" onDragOver={handleDragOver}>
         {questions.map((q, index) => (
           <div
@@ -514,7 +531,7 @@ export function FormBuilderTab({
         )}
         {onSave && (
           <button
-            onClick={() => onSave(questions)}
+            onClick={() => onSave({ questions, description })}
             className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-green-600 hover:bg-green-700 shadow-sm"
           >
             <Save className="w-4 h-4 mr-2" />

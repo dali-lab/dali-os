@@ -19,7 +19,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const decisions = await prisma.decision.findMany({
     where: { domainApplicationId: params.id },
     orderBy: { createdAt: "desc" },
-    include: { madeBy: { select: { firstName: true, lastName: true } } },
+    include: {
+      madeBy: { select: { firstName: true, lastName: true } },
+      parent: {
+        include: { madeBy: { select: { firstName: true, lastName: true } } },
+      },
+    },
   });
 
   return Response.json(decisions);

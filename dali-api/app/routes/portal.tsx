@@ -11,7 +11,10 @@ import {
 import type { DomainApplicationStatus } from "~/types";
 import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
 import { InterviewSlotPicker } from "~/components/InterviewSlotPicker";
+import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 import { formatInterviewDate, formatInterviewTimeRange } from "~/lib/interview-time";
+
+export const meta: Route.MetaFunction = () => [{ title: "Applicant portal · DALI OS" }];
 
 // ─── Loader ──────────────────────────────────────────────────────────────────
 
@@ -411,11 +414,6 @@ function PendingView({ cycleName }: { cycleName: string }) {
         <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-yellow-50 text-sm text-yellow-700">
           <PulsingDot color="bg-yellow-500" />
           Pending
-        </div>
-        <div className="mt-4">
-          <Link to="/portal/application" className="text-sm text-accent-coral hover:underline">
-            View your submission →
-          </Link>
         </div>
       </div>
     </div>
@@ -1044,6 +1042,14 @@ export default function Portal() {
           </div>
         )}
       </div>
+      <div className="px-6 md:px-16 lg:px-24 py-6 text-center text-xs text-muted-foreground/70">
+        Made with care at DALI Lab.{" "}
+        <span className="text-section-bg select-all font-mono">1:f-2</span>
+      </div>
     </div>
   );
+}
+
+export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
+  return <ApplicantErrorBoundary error={error} secondaryAction={{ kind: "reload" }} />;
 }

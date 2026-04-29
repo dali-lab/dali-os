@@ -1,5 +1,7 @@
-import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3'
+import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
+import { createPresignedPost, type PresignedPost } from '@aws-sdk/s3-presigned-post'
+import { MAX_UPLOAD_BYTES } from './file-validation'
 
 const REGION = process.env.AWS_REGION
 const BUCKET = process.env.AWS_S3_BUCKET
@@ -12,15 +14,26 @@ const s3 = new S3Client({
   },
 })
 
-// Generate a presigned URL for uploading a file directly from the client to S3.
-// The key should be unique per file (e.g. "projects/<projectId>/poster.png").
-export async function getUploadUrl(key: string, contentType: string, expiresIn = 300) {
-  const command = new PutObjectCommand({
-    Bucket: BUCKET,
+// Generate a presigned POST policy for uploading a file directly from the
+// client to S3. Unlike presigned PUT, the policy includes server-bound
+// conditions that S3 enforces — the client cannot exceed the size cap or
+// upload a different content type, even if it ignores its own pre-checks.
+export async function getUploadPost(
+  key: string,
+  contentType: string,
+  expiresIn = 300,
+): Promise<PresignedPost> {
+  return createPresignedPost(s3, {
+    Bucket: BUCKET!,
     Key: key,
-    ContentType: contentType,
+    Conditions: [
+      ['content-length-range', 0, MAX_UPLOAD_BYTES],
+      ['eq', '$Content-Type', contentType],
+      ['starts-with', '$key', 'uploads/'],
+    ],
+    Fields: { 'Content-Type': contentType },
+    Expires: expiresIn,
   })
-  return getSignedUrl(s3, command, { expiresIn })
 }
 
 // Generate a presigned URL for reading a private file.

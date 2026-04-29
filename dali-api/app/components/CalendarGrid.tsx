@@ -162,16 +162,38 @@ export default function CalendarGrid({
   const dragging = useRef(false)
   const dragMode = useRef<'add' | 'remove'>('add')
   const dragTouched = useRef<Set<string>>(new Set())
+  const gridRef = useRef<HTMLDivElement | null>(null)
 
   const weekDays = Array.from({ length: 5 }, (_, i) => addDays(weekStart, i)) // Mon-Fri
   const rowCount = ((dayEndHour - dayStartHour) * 60) / BLOCK_MINUTES
 
+  // Treat range bounds as whole calendar days: rangeStart/rangeEnd are the
+  // first/last allowed day. Cells before rangeStartDay or on/after the day
+  // following rangeEnd are out-of-range and not selectable.
+  const rangeStartDay = new Date(rangeStart)
+  rangeStartDay.setHours(0, 0, 0, 0)
+  const dayAfterRangeEnd = addDays(rangeEnd, 1)
+  dayAfterRangeEnd.setHours(0, 0, 0, 0)
+
   const canGoPrev = getMonday(addDays(weekStart, -7)) >= getMonday(rangeStart)
   const canGoNext = addDays(weekStart, 7) <= rangeEnd
 
-  const handleMouseDown = useCallback(
-    (key: string) => {
-      if (interviewKeys.has(key)) return
+  const applyToCell = useCallback(
+    (key: string, isPast: boolean) => {
+      if (isPast || interviewKeys.has(key) || dragTouched.current.has(key)) return
+      dragTouched.current.add(key)
+      setSelected((prev) => {
+        const next = new Set(prev)
+        dragMode.current === 'add' ? next.add(key) : next.delete(key)
+        return next
+      })
+    },
+    [interviewKeys],
+  )
+
+  const beginDrag = useCallback(
+    (key: string, isPast: boolean) => {
+      if (isPast || interviewKeys.has(key)) return
       dragging.current = true
       dragMode.current = selected.has(key) ? 'remove' : 'add'
       dragTouched.current = new Set([key])
@@ -185,20 +207,50 @@ export default function CalendarGrid({
     [selected, interviewKeys],
   )
 
+  const handleMouseDown = useCallback(
+    (key: string, isPast: boolean) => beginDrag(key, isPast),
+    [beginDrag],
+  )
+
   const handleMouseEnter = useCallback(
-    (key: string) => {
-      if (!dragging.current || interviewKeys.has(key) || dragTouched.current.has(key)) return
-      dragTouched.current.add(key)
-      setSelected((prev) => {
-        const next = new Set(prev)
-        dragMode.current === 'add' ? next.add(key) : next.delete(key)
-        return next
-      })
+    (key: string, isPast: boolean) => {
+      if (!dragging.current) return
+      applyToCell(key, isPast)
     },
-    [interviewKeys],
+    [applyToCell],
   )
 
   const handleMouseUp = useCallback(() => {
+    dragging.current = false
+    dragTouched.current = new Set()
+  }, [])
+
+  // Resolve a touch coordinate to a cell key + past-flag by walking the
+  // element under the touch up to the nearest [data-block-key] ancestor.
+  const cellAtPoint = useCallback((x: number, y: number) => {
+    if (typeof document === 'undefined') return null
+    const el = document.elementFromPoint(x, y) as HTMLElement | null
+    if (!el) return null
+    const cell = el.closest('[data-block-key]') as HTMLElement | null
+    if (!cell || !gridRef.current?.contains(cell)) return null
+    const key = cell.getAttribute('data-block-key')
+    if (!key) return null
+    const isPast = cell.getAttribute('data-block-past') === '1'
+    return { key, isPast }
+  }, [])
+
+  const handleTouchStart = useCallback(
+    (e: React.TouchEvent<HTMLDivElement>) => {
+      if (e.touches.length !== 1) return
+      const t = e.touches[0]
+      const hit = cellAtPoint(t.clientX, t.clientY)
+      if (!hit) return
+      beginDrag(hit.key, hit.isPast)
+    },
+    [beginDrag, cellAtPoint],
+  )
+
+  const handleTouchEnd = useCallback(() => {
     dragging.current = false
     dragTouched.current = new Set()
   }, [])
@@ -208,6 +260,24 @@ export default function CalendarGrid({
     return () => window.removeEventListener('mouseup', handleMouseUp)
   }, [handleMouseUp])
 
+  // Non-passive touchmove listener — React attaches touchmove as passive,
+  // so we can't preventDefault from a synthetic handler. We only block the
+  // default scroll behavior while the user is actively dragging a selection.
+  useEffect(() => {
+    const grid = gridRef.current
+    if (!grid) return
+    const onTouchMove = (e: TouchEvent) => {
+      if (!dragging.current || e.touches.length !== 1) return
+      const t = e.touches[0]
+      const hit = cellAtPoint(t.clientX, t.clientY)
+      if (!hit) return
+      e.preventDefault()
+      applyToCell(hit.key, hit.isPast)
+    }
+    grid.addEventListener('touchmove', onTouchMove, { passive: false })
+    return () => grid.removeEventListener('touchmove', onTouchMove)
+  }, [applyToCell, cellAtPoint])
+
   const handleSave = () => {
     const merged = mergeBlocks(Array.from(selected))
     onSave(merged)
@@ -216,7 +286,7 @@ export default function CalendarGrid({
   return (
     <div className="bg-card rounded-xl border border-border shadow-sm">
       {/* Header: week navigation + import button */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-border gap-4">
+      <div className="flex flex-wrap items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-border gap-2 sm:gap-4">
         <div className="flex items-center gap-2">
           <button
             onClick={() => setWeekStart(getMonday(addDays(weekStart, -7)))}
@@ -225,7 +295,7 @@ export default function CalendarGrid({
           >
             <ChevronLeft className="w-5 h-5 text-muted-foreground" />
           </button>
-          <span className="text-sm font-bold text-foreground min-w-[140px] text-center">
+          <span className="text-sm font-bold text-foreground min-w-[120px] sm:min-w-[140px] text-center">
             {formatDate(weekStart)} — {formatDate(addDays(weekStart, 4))}
           </span>
           <button
@@ -243,14 +313,21 @@ export default function CalendarGrid({
             className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-300 text-xs font-medium text-foreground/80 hover:bg-muted/50 disabled:opacity-50 transition"
           >
             <Calendar className="w-4 h-4" />
-            {importing ? 'Importing...' : 'Import from Google Calendar'}
+            <span className="hidden sm:inline">{importing ? 'Importing...' : 'Import from Google Calendar'}</span>
+            <span className="sm:hidden">{importing ? 'Importing…' : 'Import'}</span>
           </button>
         )}
       </div>
 
       {/* Grid */}
       <div className="overflow-x-auto">
-        <div className="grid select-none" style={{ gridTemplateColumns: '60px repeat(5, 1fr)', minWidth: 600 }}>
+        <div
+          ref={gridRef}
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+          onTouchCancel={handleTouchEnd}
+          className="grid select-none min-w-[480px] sm:min-w-[600px] grid-cols-[40px_repeat(5,minmax(0,1fr))] sm:grid-cols-[60px_repeat(5,minmax(0,1fr))]"
+        >
           {/* Header row */}
           <div className="p-2 text-center border-b border-r border-border text-[10px] font-medium text-muted-foreground/70 uppercase tracking-wider">
             Time
@@ -290,17 +367,24 @@ export default function CalendarGrid({
                   const isSelected = selected.has(key)
                   const isInterview = interviewKeys.has(key)
                   const isPast = cellDate < new Date()
+                  const isOutOfRange = cellDate < rangeStartDay || cellDate >= dayAfterRangeEnd
+                  const isLocked = isInterview || isPast || isOutOfRange
 
                   let bg = 'bg-card hover:bg-green-50'
-                  if (isInterview) bg = 'bg-red-100 cursor-not-allowed'
+                  
+                  if (isInterview) bg = 'bg-blue-100 cursor-not-allowed'
+                  else if (isOutOfRange) bg = 'bg-muted/30 cursor-not-allowed'
+
                   else if (isPast) bg = 'bg-muted/50 cursor-not-allowed'
                   else if (isSelected) bg = 'bg-green-400 hover:bg-green-500'
 
                   return (
                     <div
                       key={key}
-                      onMouseDown={() => !isPast && handleMouseDown(key)}
-                      onMouseEnter={() => !isPast && handleMouseEnter(key)}
+                      data-block-key={key}
+                      data-block-past={isPast ? '1' : '0'}
+                      onMouseDown={() => !isLocked && handleMouseDown(key, isPast)}
+                      onMouseEnter={() => !isLocked && handleMouseEnter(key, isPast)}
                       className={`border-r last:border-r-0 border-border transition-colors ${isHourBoundary ? 'border-t border-border' : 'border-t border-gray-50'} ${bg}`}
                       style={{ height: BLOCK_HEIGHT_PX }}
                     />
@@ -313,8 +397,8 @@ export default function CalendarGrid({
       </div>
 
       {/* Footer */}
-      <div className="flex items-center justify-between px-6 py-4 border-t border-border">
-        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 sm:px-6 py-3 sm:py-4 border-t border-border">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
           <div className="flex items-center gap-1.5">
             <div className="w-3 h-3 bg-card border border-gray-300 rounded" /> Unavailable
           </div>
@@ -322,10 +406,10 @@ export default function CalendarGrid({
             <div className="w-3 h-3 bg-green-400 rounded" /> Available
           </div>
           <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 bg-red-100 border border-red-200 rounded" /> Interview booked
+            <div className="w-3 h-3 bg-blue-100 border border-blue-200 rounded" /> Interview booked
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 sm:justify-end">
           {dirty && (
             <span className="text-xs text-amber-600 font-medium">Unsaved changes</span>
           )}

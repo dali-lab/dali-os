@@ -6,14 +6,20 @@ import { requireAuth } from "~/lib/auth";
 import { getActiveCycle } from "~/lib/cycles";
 import { checkGitHubUrl, checkFigmaUrl } from "~/lib/submission-check";
 import type { SubmissionCheckResult } from "~/lib/submission-check";
+import { countWords, validateWordLimits } from "~/lib/word-count";
+import type { WordCountViolation } from "~/lib/word-count";
 import {
   MAX_UPLOAD_BYTES,
   MAX_UPLOAD_LABEL,
   fileMatchesAccept,
 } from "~/lib/file-validation";
 import type { Question } from "~/types";
+import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 import { Modal } from "~/components/Modal";
 import { QuestionList } from "~/components/ApplicationAnswers";
+import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
+
+export const meta: Route.MetaFunction = () => [{ title: "Apply · DALI OS" }];
 
 // ─── Loader ──────────────────────────────────────────────────────────────────
 
@@ -36,7 +42,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       challengeVersions: {
         include: {
           challengeVersion: {
-            include: { domain: true },
+            include: { domain: true, challenge: true },
           },
         },
       },
@@ -54,19 +60,22 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const generalChallengeVersionId = generalCvac.challengeVersionId;
   const formQuestions = (generalCvac.challengeVersion.questions as unknown as Question[]) ?? [];
+  const generalDescription = generalCvac.challengeVersion.description ?? null;
 
-  // Build domain info with challenge questions (only domain-specific ones)
+  // Build domain info with all linked challenge versions (applicant picks one).
   const domains = cycle.domains.map(dac => {
-    const cv = cycle.challengeVersions.find(
+    const linked = cycle.challengeVersions.filter(
       cvc => cvc.challengeVersion.domainId === dac.domainId,
     );
     return {
       id: dac.domainId,
       name: dac.domain.name,
-      challengeVersionId: cv?.challengeVersionId ?? null,
-      challengeQuestions: cv
-        ? (cv.challengeVersion.questions as unknown as Question[]) ?? []
-        : [],
+      challenges: linked.map(cvc => ({
+        challengeVersionId: cvc.challengeVersionId,
+        challengeName: (cvc.challengeVersion as any).challenge?.name ?? "Challenge",
+        description: (cvc.challengeVersion as any).description ?? null,
+        questions: ((cvc.challengeVersion.questions as unknown) as Question[]) ?? [],
+      })),
     };
   });
 
@@ -94,6 +103,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     closeDate: active.closeDate ? active.closeDate.toISOString() : null,
     generalChallengeVersionId,
     formQuestions,
+    generalDescription,
     domains,
     isAlreadySubmitted: draftStatus === "Submitted",
     draft: draft
@@ -106,6 +116,7 @@ export async function loader({ request }: Route.LoaderArgs) {
           domainApplications: draft.domainApplications.map(da => ({
             id: da.id,
             domainId: da.challengeVersion.domainId,
+            challengeVersionId: da.challengeVersionId,
             answers: da.answers as Record<string, string>,
           })),
         }
@@ -125,16 +136,41 @@ export async function action({ request }: Route.ActionArgs) {
   if (intent === "create-draft") {
     const cycleId = formData.get("cycleId") as string;
     const generalChallengeVersionId = formData.get("generalChallengeVersionId") as string;
-    const selectedDomainIds = JSON.parse(formData.get("selectedDomainIds") as string) as string[];
+    const selectedDomains = JSON.parse(formData.get("selectedDomains") as string) as {
+      domainId: string;
+      challengeVersionId: string;
+    }[];
 
-    // Find challenge versions for selected domains
+    // Validate every chosen CV is linked to this cycle and matches the claimed domain.
     const cvacs = await prisma.challengeVersionApplicationCycle.findMany({
       where: { applicationCycleId: cycleId },
       include: { challengeVersion: true },
     });
+    const cvByPair = new Map<string, string>();
+    for (const c of cvacs) {
+      if (c.challengeVersion.domainId) {
+        cvByPair.set(`${c.challengeVersion.domainId}:${c.challengeVersionId}`, c.challengeVersionId);
+      }
+    }
 
-    const application = await prisma.application.create({
-      data: {
+    const validSelections = selectedDomains.filter(s =>
+      cvByPair.has(`${s.domainId}:${s.challengeVersionId}`),
+    );
+
+    // Upsert keyed on the (userId, applicationCycleId) unique constraint so
+    // that two concurrent "Start Application" clicks (e.g. from two open tabs)
+    // converge on a single draft instead of creating duplicates. For an
+    // existing row the update is a no-op — domain selection is reconciled
+    // separately via the `update-domains` intent.
+    const application = await prisma.application.upsert({
+      where: {
+        userId_applicationCycleId: {
+          userId: auth.user.sub,
+          applicationCycleId: cycleId,
+        },
+      },
+      update: {},
+      create: {
         userId: auth.user.sub,
         applicationCycleId: cycleId,
         generalChallengeVersionId,
@@ -143,16 +179,10 @@ export async function action({ request }: Route.ActionArgs) {
           create: { newStatus: "Draft", userId: auth.user.sub },
         },
         domainApplications: {
-          create: selectedDomainIds
-            .map(domainId => {
-              const cv = cvacs.find(c => c.challengeVersion.domainId === domainId);
-              if (!cv) return null;
-              return {
-                challengeVersionId: cv.challengeVersionId,
-                answers: {},
-              };
-            })
-            .filter(Boolean) as any[],
+          create: validSelections.map(s => ({
+            challengeVersionId: s.challengeVersionId,
+            answers: {},
+          })),
         },
       },
       include: {
@@ -172,6 +202,7 @@ export async function action({ request }: Route.ActionArgs) {
         domainApplications: application.domainApplications.map((da) => ({
           id: da.id,
           domainId: da.challengeVersion.domainId,
+          challengeVersionId: da.challengeVersionId,
           answers: da.answers,
         })),
       },
@@ -181,56 +212,76 @@ export async function action({ request }: Route.ActionArgs) {
   if (intent === "update-domains") {
     const applicationId = formData.get("applicationId") as string;
     const cycleId = formData.get("cycleId") as string;
-    const newDomainIds = JSON.parse(formData.get("selectedDomainIds") as string) as string[];
+    const newSelections = JSON.parse(formData.get("selectedDomains") as string) as {
+      domainId: string;
+      challengeVersionId: string;
+    }[];
 
-    // Find existing domain applications for this application
+    // Validate every chosen CV is linked to this cycle and matches the claimed domain.
+    const cvacs = await prisma.challengeVersionApplicationCycle.findMany({
+      where: { applicationCycleId: cycleId },
+      include: { challengeVersion: true },
+    });
+    const cvByPair = new Map<string, string>();
+    for (const c of cvacs) {
+      if (c.challengeVersion.domainId) {
+        cvByPair.set(`${c.challengeVersion.domainId}:${c.challengeVersionId}`, c.challengeVersionId);
+      }
+    }
+    const validSelections = newSelections.filter(s =>
+      cvByPair.has(`${s.domainId}:${s.challengeVersionId}`),
+    );
+    const newDomainIds = validSelections.map(s => s.domainId);
+    const desiredCvByDomain = new Map(validSelections.map(s => [s.domainId, s.challengeVersionId]));
+
+    // Existing DAs for this application, keyed by domainId
     const existing = await prisma.domainApplication.findMany({
       where: { applicationId },
       include: { challengeVersion: { select: { domainId: true } } },
     });
+    const existingByDomain = new Map<string, (typeof existing)[number]>();
+    for (const da of existing) {
+      const did = da.challengeVersion.domainId;
+      if (did) existingByDomain.set(did, da);
+    }
 
-    const existingDomainIds = existing.map(da => da.challengeVersion.domainId);
-
-    // Domains to add (not already in DB)
-    const toAdd = newDomainIds.filter(id => !existingDomainIds.includes(id));
-
-    if (toAdd.length > 0) {
-      const cvacs = await prisma.challengeVersionApplicationCycle.findMany({
-        where: { applicationCycleId: cycleId },
-        include: { challengeVersion: true },
-      });
-
-      for (const domainId of toAdd) {
-        const cv = cvacs.find(c => c.challengeVersion.domainId === domainId);
-        if (cv) {
-          await prisma.domainApplication.create({
-            data: {
-              applicationId,
-              challengeVersionId: cv.challengeVersionId,
-              answers: {},
-            },
-          });
-        }
+    // For each desired (domainId, cvId): create new DA, reselect, or switch CV.
+    for (const sel of validSelections) {
+      const ex = existingByDomain.get(sel.domainId);
+      if (!ex) {
+        await prisma.domainApplication.create({
+          data: {
+            applicationId,
+            challengeVersionId: sel.challengeVersionId,
+            answers: {},
+          },
+        });
+        continue;
+      }
+      const updates: { selected?: boolean; challengeVersionId?: string; answers?: any } = {};
+      if (!ex.selected) updates.selected = true;
+      if (ex.challengeVersionId !== sel.challengeVersionId) {
+        // Switching the picked challenge wipes that domain's answers — the
+        // question set is different. The applicant is warned client-side.
+        updates.challengeVersionId = sel.challengeVersionId;
+        updates.answers = {};
+      }
+      if (Object.keys(updates).length > 0) {
+        await prisma.domainApplication.update({
+          where: { id: ex.id },
+          data: updates,
+        });
       }
     }
 
-    // Mark deselected domains as not selected (keep records for answer preservation)
-    const toDeselect = existing.filter(da => !newDomainIds.includes(da.challengeVersion.domainId!));
-    if (toDeselect.length > 0) {
+    // Domains the applicant deselected — preserve answers but mark unselected.
+    const toDeselectIds = existing
+      .filter(da => da.challengeVersion.domainId && !newDomainIds.includes(da.challengeVersion.domainId))
+      .map(da => da.id);
+    if (toDeselectIds.length > 0) {
       await prisma.domainApplication.updateMany({
-        where: { id: { in: toDeselect.map(da => da.id) } },
+        where: { id: { in: toDeselectIds } },
         data: { selected: false },
-      });
-    }
-
-    // Mark re-selected domains as selected
-    const toReselect = existing.filter(
-      da => newDomainIds.includes(da.challengeVersion.domainId!) && !da.selected,
-    );
-    if (toReselect.length > 0) {
-      await prisma.domainApplication.updateMany({
-        where: { id: { in: toReselect.map(da => da.id) } },
-        data: { selected: true },
       });
     }
 
@@ -252,6 +303,7 @@ export async function action({ request }: Route.ActionArgs) {
         domainApplications: updatedApp.domainApplications.map((da) => ({
           id: da.id,
           domainId: da.challengeVersion.domainId,
+          challengeVersionId: da.challengeVersionId,
           answers: da.answers,
         })),
       } : null,
@@ -294,6 +346,43 @@ export async function action({ request }: Route.ActionArgs) {
       url: string;
       type: "github_url" | "figma_url";
     }[];
+
+    // Validate word limits server-side before any writes. Trust the questions
+    // from the ChallengeVersion record, not anything in the request payload.
+    const application = await prisma.application.findUnique({
+      where: { id: applicationId },
+      select: {
+        generalChallengeVersion: { select: { questions: true } },
+      },
+    });
+    if (!application) {
+      return Response.json({ error: "Application not found" }, { status: 404 });
+    }
+    const generalQuestions =
+      (application.generalChallengeVersion.questions as unknown as Question[]) ?? [];
+
+    const domainApps = domainAnswers.length
+      ? await prisma.domainApplication.findMany({
+          where: { id: { in: domainAnswers.map(da => da.domainApplicationId) } },
+          select: {
+            id: true,
+            challengeVersion: { select: { questions: true } },
+          },
+        })
+      : [];
+
+    const wordCountErrors: Record<string, WordCountViolation> = {
+      ...validateWordLimits(generalQuestions, answers),
+    };
+    for (const da of domainAnswers) {
+      const dbDa = domainApps.find(d => d.id === da.domainApplicationId);
+      if (!dbDa) continue;
+      const questions = (dbDa.challengeVersion.questions as unknown as Question[]) ?? [];
+      Object.assign(wordCountErrors, validateWordLimits(questions, da.answers));
+    }
+    if (Object.keys(wordCountErrors).length > 0) {
+      return { wordCountErrors };
+    }
 
     // Save final answers
     await prisma.application.update({
@@ -380,7 +469,7 @@ function UrlCheckIndicator({ state }: { state: UrlCheckState }) {
   if (state.status === "checking") {
     return (
       <span className="text-xs text-muted-foreground/70 flex items-center gap-1 mt-1">
-        <span className="inline-block w-3 h-3 border-2 border-gray-300 border-t-accent-coral rounded-full animate-spin" />
+        <span className="inline-block w-3 h-3 border-2 border-border border-t-accent-coral rounded-full animate-spin" />
         Checking URL...
       </span>
     );
@@ -444,7 +533,7 @@ function SkillsRatingField({
           <select
             value={ratings[skill] ?? "0"}
             onChange={e => setRating(skill, e.target.value)}
-            className="w-14 shrink-0 rounded-md border border-gray-200 bg-white text-sm text-center text-dark-blue py-1 focus:outline-none focus:border-accent-coral"
+            className="w-14 shrink-0 rounded-md border border-border bg-card text-sm text-center text-dark-blue py-1 focus:outline-none focus:border-accent-coral"
           >
             {["0", "1", "2", "3", "4", "5"].map(n => (
               <option key={n} value={n}>{n}</option>
@@ -512,15 +601,24 @@ function FileUploadField({
         try { message = JSON.parse(text).error ?? message; } catch {}
         throw new Error(message);
       }
-      const { uploadUrl, key } = await presignRes.json();
+      const { url, fields, key } = await presignRes.json();
 
-      // 2. Upload directly to S3
-      const uploadRes = await fetch(uploadUrl, {
-        method: "PUT",
-        body: file,
-        headers: { "Content-Type": file.type },
-      });
-      if (!uploadRes.ok) throw new Error("Upload failed");
+      // 2. Upload directly to S3 via multipart POST. S3 requires every
+      // policy field to come before the file part in the form body.
+      const formData = new FormData();
+      for (const [name, value] of Object.entries(fields as Record<string, string>)) {
+        formData.append(name, value);
+      }
+      formData.append("file", file);
+      const uploadRes = await fetch(url, { method: "POST", body: formData });
+      if (!uploadRes.ok) {
+        // S3 returns 403 with EntityTooLarge when the size policy fails.
+        const body = await uploadRes.text().catch(() => "");
+        if (uploadRes.status === 403 && /EntityTooLarge/i.test(body)) {
+          throw new Error(`File too large (max ${MAX_UPLOAD_LABEL})`);
+        }
+        throw new Error("Upload failed");
+      }
 
       // 3. Store the S3 key as the answer
       onChange(key);
@@ -538,8 +636,8 @@ function FileUploadField({
 
   if (uploading) {
     return (
-      <div className="flex items-center gap-2 px-4 py-3 rounded-lg border border-gray-200 bg-white text-sm text-gray-500">
-        <span className="inline-block w-4 h-4 border-2 border-gray-300 border-t-accent-coral rounded-full animate-spin" />
+      <div className="flex items-center gap-2 px-4 py-3 rounded-lg border border-border bg-card text-sm text-muted-foreground">
+        <span className="inline-block w-4 h-4 border-2 border-border border-t-accent-coral rounded-full animate-spin" />
         Uploading...
       </div>
     );
@@ -547,7 +645,7 @@ function FileUploadField({
 
   if (fileName) {
     return (
-      <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-gray-200 bg-white">
+      <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border bg-card">
         <svg className="w-5 h-5 text-accent-coral shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
         </svg>
@@ -555,7 +653,7 @@ function FileUploadField({
         <button
           type="button"
           onClick={() => { onChange(""); if (fileRef.current) fileRef.current.value = ""; }}
-          className="text-xs text-gray-400 hover:text-red-500 transition"
+          className="text-xs text-muted-foreground hover:text-red-500 transition"
         >
           Remove
         </button>
@@ -582,7 +680,7 @@ function FileUploadField({
       <button
         type="button"
         onClick={() => fileRef.current?.click()}
-        className="flex items-center gap-2 px-4 py-3 rounded-lg border-2 border-dashed border-gray-200 bg-white text-sm text-gray-500 hover:border-accent-coral hover:text-accent-coral transition w-full"
+        className="flex items-center gap-2 px-4 py-3 rounded-lg border-2 border-dashed border-border bg-card text-sm text-muted-foreground hover:border-accent-coral hover:text-accent-coral transition w-full"
       >
         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
@@ -620,7 +718,7 @@ function QuestionField({
     "w-full rounded-lg border border-border bg-card text-sm text-dark-blue placeholder:text-muted-foreground/70 focus:outline-none focus:border-accent-coral px-4 py-2";
 
   if (question.type === "textarea") {
-    const wordCount = value.trim() ? value.trim().split(/\s+/).filter(Boolean).length : 0;
+    const wordCount = countWords(value);
     const maxWords = question.data.maxWords;
     const overLimit = maxWords !== undefined && wordCount > maxWords;
     return (
@@ -711,7 +809,7 @@ function QuestionField({
 // ─── Domain Colors ──────────────────────────────────────────────────────────
 
 const DOMAIN_COLORS = [
-  { border: "border-l-accent-pink", text: "text-accent-pink", bg: "bg-accent-pink", pillText: "text-white", cardBg: "bg-[hsl(350_70%_93%)]" },
+  { border: "border-l-accent-pink", text: "text-accent-pink", bg: "bg-accent-pink", pillText: "text-white", cardBg: "bg-accent-pink/20" },
   { border: "border-l-accent-teal", text: "text-accent-teal", bg: "bg-accent-teal", pillText: "text-white", cardBg: "bg-accent-teal/20" },
   { border: "border-l-accent-yellow", text: "text-yellow-700", bg: "bg-accent-yellow", pillText: "text-dark-blue", cardBg: "bg-accent-yellow/30" },
   { border: "border-l-accent-coral", text: "text-accent-coral", bg: "bg-accent-coral", pillText: "text-white", cardBg: "bg-accent-coral/20" },
@@ -738,10 +836,26 @@ function isAnswered(value: string | undefined) {
   return typeof value === "string" && value.trim() !== "";
 }
 
+type DomainShape = {
+  id: string;
+  name: string;
+  challenges: { challengeVersionId: string; challengeName: string; description: any; questions: Question[] }[];
+};
+
+function getPickedQuestions(
+  domain: DomainShape,
+  pickedCvId: string | null | undefined,
+): Question[] {
+  if (!pickedCvId) return [];
+  const picked = domain.challenges.find(c => c.challengeVersionId === pickedCvId);
+  return picked?.questions ?? [];
+}
+
 function computeRequiredProgress(
   formQuestions: Question[],
-  domains: { id: string; challengeQuestions: Question[] }[],
+  domains: DomainShape[],
   selectedDomainIds: string[],
+  pickedChallengeByDomain: Record<string, string>,
   answers: Record<string, string>,
   domainAnswers: Record<string, Record<string, string>>,
 ) {
@@ -755,7 +869,8 @@ function computeRequiredProgress(
   for (const domainId of selectedDomainIds) {
     const domain = domains.find(d => d.id === domainId);
     if (!domain) continue;
-    const requiredDomain = domain.challengeQuestions.filter(q => q.required);
+    const questions = getPickedQuestions(domain, pickedChallengeByDomain[domainId]);
+    const requiredDomain = questions.filter(q => q.required);
     totalRequired += requiredDomain.length;
     totalAnswered += requiredDomain.filter(q =>
       isAnswered(domainAnswers[domainId]?.[q.key]),
@@ -767,8 +882,9 @@ function computeRequiredProgress(
 
 function buildSections(
   formQuestions: Question[],
-  domains: { id: string; name: string; challengeQuestions: Question[] }[],
+  domains: DomainShape[],
   selectedDomainIds: string[],
+  pickedChallengeByDomain: Record<string, string>,
   answers: Record<string, string>,
   domainAnswers: Record<string, Record<string, string>>,
 ): Section[] {
@@ -789,8 +905,9 @@ function buildSections(
     const idx = domains.findIndex(d => d.id === domainId);
     if (idx < 0) continue;
     const domain = domains[idx];
-    if (domain.challengeQuestions.length === 0) continue;
-    const required = domain.challengeQuestions.filter(q => q.required);
+    if (domain.challenges.length === 0) continue;
+    const questions = getPickedQuestions(domain, pickedChallengeByDomain[domainId]);
+    const required = questions.filter(q => q.required);
     sections.push({
       id: `domain-${domainId}`,
       label: domain.name,
@@ -894,7 +1011,7 @@ function SectionNavDesktop({
               className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm transition text-left ${
                 isActive
                   ? "bg-dark-blue/5 text-dark-blue font-semibold"
-                  : "text-muted-foreground hover:bg-gray-50 hover:text-dark-blue"
+                  : "text-muted-foreground hover:bg-muted hover:text-dark-blue"
               }`}
             >
               <span className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`} />
@@ -948,21 +1065,11 @@ function BackToTopButton() {
   );
 }
 
-function formatDeadline(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", {
-    timeZone: "UTC",
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export default function PortalApply() {
   const loaderData = useLoaderData<typeof loader>() as any;
-  const { cycleId, cycleName, closeDate, generalChallengeVersionId, formQuestions, domains, isAlreadySubmitted } = loaderData;
+  const { cycleId, cycleName, generalChallengeVersionId, formQuestions, generalDescription, domains, isAlreadySubmitted } = loaderData;
   const [draft, setDraft] = useState(loaderData.draft);
   const [selectedDomainIds, setSelectedDomainIds] = useState<string[]>(
     loaderData.draft?.selectedDomainIds ?? [],
@@ -979,6 +1086,24 @@ export default function PortalApply() {
       return initial;
     },
   );
+  // Which challenge version the applicant has picked for each domain.
+  // Populated from the draft for existing DomainApplications; for newly toggled
+  // domains, defaults to the first linked CV (or stays unset for >1-CV domains
+  // until the applicant picks).
+  const [pickedChallengeByDomain, setPickedChallengeByDomain] = useState<Record<string, string>>(
+    () => {
+      const initial: Record<string, string> = {};
+      for (const da of loaderData.draft?.domainApplications ?? []) {
+        if (da.domainId && da.challengeVersionId) initial[da.domainId] = da.challengeVersionId;
+      }
+      return initial;
+    },
+  );
+  const [pendingChallengeChange, setPendingChallengeChange] = useState<{
+    domainId: string;
+    fromCvId: string;
+    toCvId: string;
+  } | null>(null);
   const [saving, setSaving] = useState(false);
   const [hasSavedOnce, setHasSavedOnce] = useState(() => {
     const initialAnswers = (loaderData.draft?.answers as Record<string, string> | undefined) ?? {};
@@ -992,15 +1117,10 @@ export default function PortalApply() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [urlWarnings, setUrlWarnings] = useState<Record<string, string>>({});
+  const [wordCountErrors, setWordCountErrors] = useState<Record<string, WordCountViolation>>({});
   const [urlChecks, setUrlChecks] = useState<Record<string, UrlCheckState>>({});
   const [showWarningModal, setShowWarningModal] = useState(false);
   const [showReviewModal, setShowReviewModal] = useState(false);
-  // Format the deadline after hydration so toLocaleString uses browser
-  // locale/timezone without producing an SSR/CSR text mismatch.
-  const [deadlineLabel, setDeadlineLabel] = useState<string>("");
-  useEffect(() => {
-    if (closeDate) setDeadlineLabel(formatDeadline(closeDate));
-  }, [closeDate]);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const warningBannerRef = useRef<HTMLDivElement | null>(null);
   const createFetcher = useFetcher();
@@ -1087,19 +1207,76 @@ export default function PortalApply() {
     }
   }, []);
 
+  function buildSelectedDomainsPayload(
+    ids: string[],
+    picks: Record<string, string>,
+  ): { domainId: string; challengeVersionId: string }[] {
+    const payload: { domainId: string; challengeVersionId: string }[] = [];
+    for (const id of ids) {
+      const cvId = picks[id];
+      if (cvId) payload.push({ domainId: id, challengeVersionId: cvId });
+    }
+    return payload;
+  }
+
   function toggleDomain(domainId: string) {
-    const newIds = selectedDomainIds.includes(domainId)
-      ? selectedDomainIds.filter(id => id !== domainId)
-      : [...selectedDomainIds, domainId];
+    const isAdding = !selectedDomainIds.includes(domainId);
+    const newIds = isAdding
+      ? [...selectedDomainIds, domainId]
+      : selectedDomainIds.filter(id => id !== domainId);
+
+    let nextPicks = pickedChallengeByDomain;
+    if (isAdding && !pickedChallengeByDomain[domainId]) {
+      // Default to the first linked challenge so single-challenge domains don't
+      // require an extra click. Multi-challenge domains: applicant can switch
+      // via the radio picker rendered in the domain section.
+      const domain = (domains as DomainShape[]).find((d: DomainShape) => d.id === domainId);
+      const defaultCvId = domain?.challenges[0]?.challengeVersionId;
+      if (defaultCvId) {
+        nextPicks = { ...pickedChallengeByDomain, [domainId]: defaultCvId };
+        setPickedChallengeByDomain(nextPicks);
+      }
+    }
+
     setSelectedDomainIds(newIds);
 
-    // If draft exists, sync domains to server (create new DomainApplications as needed)
     if (draft) {
       const form = new FormData();
       form.set("intent", "update-domains");
       form.set("applicationId", draft.id);
       form.set("cycleId", cycleId);
-      form.set("selectedDomainIds", JSON.stringify(newIds));
+      form.set("selectedDomains", JSON.stringify(buildSelectedDomainsPayload(newIds, nextPicks)));
+      createFetcher.submit(form, { method: "post" });
+    }
+  }
+
+  function handleChallengePick(domainId: string, newCvId: string) {
+    const currentCvId = pickedChallengeByDomain[domainId];
+    if (currentCvId === newCvId) return;
+    const hasAnswers = Object.values(domainAnswers[domainId] ?? {}).some(
+      v => typeof v === "string" && v.trim() !== "",
+    );
+    if (currentCvId && hasAnswers) {
+      setPendingChallengeChange({ domainId, fromCvId: currentCvId, toCvId: newCvId });
+      return;
+    }
+    applyChallengePick(domainId, newCvId);
+  }
+
+  function applyChallengePick(domainId: string, newCvId: string) {
+    const nextPicks = { ...pickedChallengeByDomain, [domainId]: newCvId };
+    setPickedChallengeByDomain(nextPicks);
+    // Clear local answers — the backend will too, since the question set changed.
+    setDomainAnswers(prev => ({ ...prev, [domainId]: {} }));
+    if (draft) {
+      const form = new FormData();
+      form.set("intent", "update-domains");
+      form.set("applicationId", draft.id);
+      form.set("cycleId", cycleId);
+      form.set(
+        "selectedDomains",
+        JSON.stringify(buildSelectedDomainsPayload(selectedDomainIds, nextPicks)),
+      );
       createFetcher.submit(form, { method: "post" });
     }
   }
@@ -1109,12 +1286,20 @@ export default function PortalApply() {
       setError("Please select at least one domain.");
       return;
     }
+    const missing = selectedDomainIds.find(id => !pickedChallengeByDomain[id]);
+    if (missing) {
+      setError("Please pick a challenge for every selected domain.");
+      return;
+    }
 
     const form = new FormData();
     form.set("intent", "create-draft");
     form.set("cycleId", cycleId);
     form.set("generalChallengeVersionId", generalChallengeVersionId);
-    form.set("selectedDomainIds", JSON.stringify(selectedDomainIds));
+    form.set(
+      "selectedDomains",
+      JSON.stringify(buildSelectedDomainsPayload(selectedDomainIds, pickedChallengeByDomain)),
+    );
     createFetcher.submit(form, { method: "post" });
   }
 
@@ -1133,6 +1318,16 @@ export default function PortalApply() {
         }
         return updated;
       });
+      // Sync picked CV from server (authoritative — handles backend CV switches)
+      setPickedChallengeByDomain(prev => {
+        const updated = { ...prev };
+        for (const da of newDraft.domainApplications ?? []) {
+          if (da.domainId && da.challengeVersionId) {
+            updated[da.domainId] = da.challengeVersionId;
+          }
+        }
+        return updated;
+      });
     }
   }, [createFetcher.data]);
 
@@ -1143,10 +1338,15 @@ export default function PortalApply() {
     if (selectedDomainIds.length === 0) {
       return "Please select at least one domain.";
     }
+    const missingPick = selectedDomainIds.find(id => !pickedChallengeByDomain[id]);
+    if (missingPick) {
+      return "Please pick a challenge for every selected domain.";
+    }
     const { totalRequired, totalAnswered } = computeRequiredProgress(
       formQuestions as Question[],
-      domains as { id: string; name: string; challengeQuestions: Question[] }[],
+      domains as DomainShape[],
       selectedDomainIds,
+      pickedChallengeByDomain,
       answers,
       domainAnswers,
     );
@@ -1160,6 +1360,7 @@ export default function PortalApply() {
   function openReviewIfValid() {
     setError(null);
     setUrlWarnings({});
+    setWordCountErrors({});
     if (!draft) return;
     const validationError = validateForReview();
     if (validationError) {
@@ -1172,6 +1373,7 @@ export default function PortalApply() {
   function doSubmit(force = false) {
     setError(null);
     setUrlWarnings({});
+    setWordCountErrors({});
     if (!draft) return;
 
     // Collect URL questions from general and domain-specific forms
@@ -1182,9 +1384,10 @@ export default function PortalApply() {
       }
     }
     for (const domainId of selectedDomainIds) {
-      const domain = domains.find((d: any) => d.id === domainId);
+      const domain = (domains as DomainShape[]).find((d: DomainShape) => d.id === domainId);
       if (!domain) continue;
-      for (const q of domain.challengeQuestions as Question[]) {
+      const questions = getPickedQuestions(domain, pickedChallengeByDomain[domainId]);
+      for (const q of questions) {
         if ((q.type === "github_url" || q.type === "figma_url") && domainAnswers[domainId]?.[q.key]?.trim()) {
           urlQuestions.push({ key: q.key, url: domainAnswers[domainId][q.key], type: q.type as "github_url" | "figma_url" });
         }
@@ -1221,10 +1424,15 @@ export default function PortalApply() {
     }
   }
 
-  // Handle submit response (urlWarnings) — redirects are handled automatically by React Router
+  // Handle submit response (urlWarnings, wordCountErrors) — redirects are handled automatically by React Router
   useEffect(() => {
     if (submitFetcher.state === "idle" && submitFetcher.data) {
       setSubmitting(false);
+      if (submitFetcher.data.wordCountErrors) {
+        setWordCountErrors(submitFetcher.data.wordCountErrors);
+        setTimeout(() => warningBannerRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 50);
+        return;
+      }
       if (submitFetcher.data.urlWarnings) {
         const warnings: Record<string, string> = {};
         for (const [key, result] of Object.entries(submitFetcher.data.urlWarnings) as [string, SubmissionCheckResult][]) {
@@ -1242,15 +1450,17 @@ export default function PortalApply() {
   // Derive sections + progress from current answers
   const sections = buildSections(
     formQuestions as Question[],
-    domains as { id: string; name: string; challengeQuestions: Question[] }[],
+    domains as DomainShape[],
     selectedDomainIds,
+    pickedChallengeByDomain,
     answers,
     domainAnswers,
   );
   const { totalRequired, totalAnswered } = computeRequiredProgress(
     formQuestions as Question[],
-    domains as { id: string; name: string; challengeQuestions: Question[] }[],
+    domains as DomainShape[],
     selectedDomainIds,
+    pickedChallengeByDomain,
     answers,
     domainAnswers,
   );
@@ -1318,12 +1528,7 @@ export default function PortalApply() {
         <div className="flex items-center justify-between mb-2">
           <h2 className="font-heading text-xl font-bold text-dark-blue">{cycleName} Application</h2>
         </div>
-        {deadlineLabel && (
-          <p className="text-sm text-accent-coral font-medium mb-1">
-            Applications close on {deadlineLabel}
-          </p>
-        )}
-        <p className="text-sm text-gray-500 mb-8">
+        <p className="text-sm text-muted-foreground mb-8">
           Select the domains you'd like to apply for, then start your application.
         </p>
 
@@ -1350,27 +1555,21 @@ export default function PortalApply() {
   return (
     <div className="lg:max-w-6xl max-w-3xl mx-auto px-6 py-10">
       {/* Sticky header: (mobile) section chip strip */}
-      <div className="sticky top-0 z-30 -mx-6 px-6 pt-1 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 mb-2">
+      <div className="lg:hidden sticky top-0 z-30 -mx-6 px-6 pt-1 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 mb-2">
         <SectionNavMobile sections={sections} activeSection={activeSection} />
       </div>
-      {deadlineLabel && (
-        <p className="text-sm text-accent-coral font-medium mb-1">
-          Applications close on {deadlineLabel}
-        </p>
-      )}
-      <p className="text-sm text-muted-foreground mb-8">
-        Fill out the form below. Your progress is saved automatically.
-      </p>
 
       <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_220px] lg:gap-10">
         <div className="max-w-3xl">
           <div className="flex items-center justify-between mb-2">
             <h2 className="font-heading text-xl font-bold text-dark-blue">{cycleName} Application</h2>
             {submitting ? (
-              <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-gray-100 text-gray-600 flex items-center gap-1">
-                <span className="inline-block w-3 h-3 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+              <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-muted text-muted-foreground flex items-center gap-1">
+                <span className="inline-block w-3 h-3 border-2 border-border border-t-muted-foreground rounded-full animate-spin" />
                 Submitting...
               </span>
+            ) : Object.keys(wordCountErrors).length > 0 ? (
+              <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-red-100 text-red-700">Action required</span>
             ) : Object.keys(urlWarnings).length > 0 ? (
               <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-amber-100 text-amber-700">Action required</span>
             ) : isAlreadySubmitted ? (
@@ -1393,6 +1592,11 @@ export default function PortalApply() {
           return beforeQuestions.length > 0 ? (
             <div id="section-general-before" className="rounded-2xl bg-[#E8F4FA] px-6 py-5 space-y-6 scroll-mt-24">
               <h3 className="font-heading text-sm font-bold text-dark-blue uppercase tracking-wider">General Questions</h3>
+              {!isEmptyDoc(generalDescription) && (
+                <div className="text-dark-blue">
+                  <RichTextViewer content={generalDescription} />
+                </div>
+              )}
               {beforeQuestions.map(q => (
                 <div key={q.key} id={`question-${q.key}`}>
                   <label className="block text-sm font-semibold text-dark-blue mb-1">
@@ -1412,6 +1616,11 @@ export default function PortalApply() {
                   {urlWarnings[q.key] && (
                     <p className="text-xs text-amber-600 mt-1">{urlWarnings[q.key]}</p>
                   )}
+                  {wordCountErrors[q.key] && (
+                    <p className="text-xs text-red-500 mt-1">
+                      Over the {wordCountErrors[q.key].maxWords}-word limit ({wordCountErrors[q.key].wordCount} words).
+                    </p>
+                  )}
                 </div>
               ))}
             </div>
@@ -1420,10 +1629,13 @@ export default function PortalApply() {
 
         {/* Domain-specific questions — colored left border cards */}
         {selectedDomainIds.map(domainId => {
-          const domainIndex = (domains as any[]).findIndex((d: any) => d.id === domainId);
-          const domain = (domains as any[])[domainIndex];
-          if (!domain || domain.challengeQuestions.length === 0) return null;
+          const domainIndex = (domains as DomainShape[]).findIndex((d: DomainShape) => d.id === domainId);
+          const domain = (domains as DomainShape[])[domainIndex];
+          if (!domain) return null;
           const color = getDomainColor(domainIndex);
+          const pickedCvId = pickedChallengeByDomain[domainId] ?? null;
+          const pickedQuestions = getPickedQuestions(domain, pickedCvId);
+          const showPicker = domain.challenges.length > 1;
 
           return (
             <div key={domainId} id={`section-domain-${domainId}`} className={`rounded-2xl ${color.cardBg} px-6 py-5 space-y-6 scroll-mt-24`}>
@@ -1434,34 +1646,84 @@ export default function PortalApply() {
                 <button
                   onClick={() => toggleDomain(domainId)}
                   aria-label={`Remove ${domain.name}`}
-                  className="w-6 h-6 rounded-full flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 transition"
+                  className="w-6 h-6 rounded-full flex items-center justify-center text-muted-foreground hover:text-red-500 hover:bg-red-50 transition"
                 >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
               </div>
-              {(domain.challengeQuestions as Question[]).map((q: Question) => (
-                <div key={q.key} id={`question-${q.key}`}>
-                  <label className="block text-sm font-semibold text-dark-blue mb-1">
-                    {q.data.label}
-                    {q.required && <span className="text-accent-coral ml-0.5">*</span>}
-                  </label>
-                  {q.data.description && (
-                    <p className="text-xs text-gray-500 mb-1">{q.data.description}</p>
-                  )}
-                  <QuestionField
-                    question={q}
-                    value={domainAnswers[domainId]?.[q.key] ?? ""}
-                    onChange={v => setDomainAnswer(domainId, q.key, v)}
-                    urlCheckState={urlChecks[q.key]}
-                    onUrlBlur={() => checkUrlField(q.key, domainAnswers[domainId]?.[q.key] ?? "", q.type as "github_url" | "figma_url")}
-                  />
-                  {urlWarnings[q.key] && (
-                    <p className="text-xs text-amber-600 mt-1">{urlWarnings[q.key]}</p>
+
+              {showPicker && (
+                <div>
+                  <p className="text-xs font-semibold text-dark-blue mb-2">
+                    Choose your {domain.name} challenge <span className="text-accent-coral">*</span>
+                  </p>
+                  <div className="space-y-2">
+                    {domain.challenges.map(c => (
+                      <label key={c.challengeVersionId} className="flex items-start gap-2 text-sm cursor-pointer">
+                        <input
+                          type="radio"
+                          name={`challenge-${domainId}`}
+                          value={c.challengeVersionId}
+                          checked={pickedCvId === c.challengeVersionId}
+                          onChange={() => handleChallengePick(domainId, c.challengeVersionId)}
+                          className="mt-0.5"
+                        />
+                        <span className="text-dark-blue">{c.challengeName}</span>
+                      </label>
+                    ))}
+                  </div>
+                  {pickedCvId && (
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Switching to a different challenge will clear your answers for this domain.
+                    </p>
                   )}
                 </div>
-              ))}
+              )}
+
+              {pickedCvId ? (
+                <>
+                  {(() => {
+                    const pickedChallenge = domain.challenges.find(c => c.challengeVersionId === pickedCvId);
+                    return !isEmptyDoc(pickedChallenge?.description) ? (
+                      <div className="text-dark-blue">
+                        <RichTextViewer content={pickedChallenge!.description} />
+                      </div>
+                    ) : null;
+                  })()}
+                  {pickedQuestions.map((q: Question) => (
+                    <div key={q.key} id={`question-${q.key}`}>
+                      <label className="block text-sm font-semibold text-dark-blue mb-1">
+                        {q.data.label}
+                        {q.required && <span className="text-accent-coral ml-0.5">*</span>}
+                      </label>
+                      {q.data.description && (
+                        <p className="text-xs text-muted-foreground mb-1">{q.data.description}</p>
+                      )}
+                      <QuestionField
+                        question={q}
+                        value={domainAnswers[domainId]?.[q.key] ?? ""}
+                        onChange={v => setDomainAnswer(domainId, q.key, v)}
+                        urlCheckState={urlChecks[q.key]}
+                        onUrlBlur={() => checkUrlField(q.key, domainAnswers[domainId]?.[q.key] ?? "", q.type as "github_url" | "figma_url")}
+                      />
+                      {urlWarnings[q.key] && (
+                        <p className="text-xs text-amber-600 mt-1">{urlWarnings[q.key]}</p>
+                      )}
+                      {wordCountErrors[q.key] && (
+                        <p className="text-xs text-red-500 mt-1">
+                          Over the {wordCountErrors[q.key].maxWords}-word limit ({wordCountErrors[q.key].wordCount} words).
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Pick a challenge above to see this domain's questions.
+                </p>
+              )}
             </div>
           );
         })}
@@ -1479,13 +1741,18 @@ export default function PortalApply() {
                     {q.required && <span className="text-accent-coral ml-0.5">*</span>}
                   </label>
                   {q.data.description && (
-                    <p className="text-xs text-gray-500 mb-1">{q.data.description}</p>
+                    <p className="text-xs text-muted-foreground mb-1">{q.data.description}</p>
                   )}
                   <QuestionField
                     question={q}
                     value={answers[q.key] ?? ""}
                     onChange={v => setAnswer(q.key, v)}
                   />
+                  {wordCountErrors[q.key] && (
+                    <p className="text-xs text-red-500 mt-1">
+                      Over the {wordCountErrors[q.key].maxWords}-word limit ({wordCountErrors[q.key].wordCount} words).
+                    </p>
+                  )}
                 </div>
               ))}
             </div>
@@ -1494,9 +1761,26 @@ export default function PortalApply() {
 
         {error && <p className="text-sm text-red-500">{error}</p>}
 
+        {/* Word-count errors banner — hard error, blocks submission */}
+        {Object.keys(wordCountErrors).length > 0 && (
+          <div ref={warningBannerRef} className="rounded-xl border border-red-200 bg-red-50 px-5 py-4">
+            <p className="text-sm font-semibold text-red-800 mb-1">Some answers exceed the word limit</p>
+            <p className="text-xs text-red-700">
+              The following answers are over the allowed word count. Trim them down before submitting.
+            </p>
+            <ul className="text-xs text-red-700 mt-2 list-disc list-inside space-y-0.5">
+              {Object.entries(wordCountErrors).map(([key, v]) => (
+                <li key={key}>
+                  <span className="font-semibold">{v.label}:</span> {v.wordCount} / {v.maxWords} words
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {/* URL warnings banner */}
         {Object.keys(urlWarnings).length > 0 && (
-          <div ref={warningBannerRef} className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4">
+          <div ref={Object.keys(wordCountErrors).length > 0 ? undefined : warningBannerRef} className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4">
             <p className="text-sm font-semibold text-amber-800 mb-1">Some URLs may have issues</p>
             <p className="text-xs text-amber-700">
               One or more of your submitted links appear to be private or inaccessible. You can still submit, but reviewers may not be able to view them.
@@ -1516,7 +1800,7 @@ export default function PortalApply() {
           <span className="text-xs text-muted-foreground/70 flex items-center gap-1.5">
             {saving ? (
               <>
-                <span className="inline-block w-3 h-3 border-2 border-gray-300 border-t-accent-coral rounded-full animate-spin" />
+                <span className="inline-block w-3 h-3 border-2 border-border border-t-accent-coral rounded-full animate-spin" />
                 Saving...
               </>
             ) : hasSavedOnce ? (
@@ -1545,7 +1829,7 @@ export default function PortalApply() {
         onClose={() => setShowReviewModal(false)}
         labelledBy="review-modal-title"
         disableEscape={submitting}
-        containerClassName="bg-white rounded-2xl shadow-xl max-w-2xl w-full mx-4 max-h-[85vh] overflow-y-auto p-6"
+        containerClassName="bg-card rounded-2xl shadow-xl max-w-2xl w-full mx-4 max-h-[85vh] overflow-y-auto p-6"
       >
         <h3 id="review-modal-title" className="font-heading text-base font-bold text-dark-blue mb-1">
           {isAlreadySubmitted ? "Review your changes" : "Review your application"}
@@ -1569,17 +1853,24 @@ export default function PortalApply() {
           })()}
 
           {selectedDomainIds.map(domainId => {
-            const domainIndex = (domains as any[]).findIndex((d: any) => d.id === domainId);
-            const domain = (domains as any[])[domainIndex];
-            if (!domain || domain.challengeQuestions.length === 0) return null;
+            const domainIndex = (domains as DomainShape[]).findIndex((d: DomainShape) => d.id === domainId);
+            const domain = (domains as DomainShape[])[domainIndex];
+            if (!domain) return null;
+            const pickedCvId = pickedChallengeByDomain[domainId] ?? null;
+            const pickedQuestions = getPickedQuestions(domain, pickedCvId);
+            if (pickedQuestions.length === 0) return null;
+            const pickedName = domain.challenges.find(c => c.challengeVersionId === pickedCvId)?.challengeName;
             const color = getDomainColor(domainIndex);
             return (
               <div key={domainId} className={`rounded-2xl ${color.cardBg} px-5 py-4`}>
-                <h4 className={`font-heading text-xs font-bold uppercase tracking-wider mb-4 ${color.text}`}>
+                <h4 className={`font-heading text-xs font-bold uppercase tracking-wider mb-1 ${color.text}`}>
                   {domain.name}
                 </h4>
+                {pickedName && domain.challenges.length > 1 && (
+                  <p className="text-xs text-muted-foreground mb-3">Challenge: {pickedName}</p>
+                )}
                 <QuestionList
-                  questions={domain.challengeQuestions as Question[]}
+                  questions={pickedQuestions}
                   answers={domainAnswers[domainId] ?? {}}
                   presigned={false}
                 />
@@ -1630,18 +1921,20 @@ export default function PortalApply() {
         labelledBy="url-warning-modal-title"
       >
         <h3 id="url-warning-modal-title" className="font-heading text-base font-bold text-dark-blue mb-2">Some links may be inaccessible</h3>
-        <p className="text-sm text-gray-600 mb-4">
+        <p className="text-sm text-muted-foreground mb-4">
           One or more URLs appear to be private or inaccessible. Reviewers may not be able to view them.
         </p>
         <ul className="space-y-2 mb-5">
           {Object.entries(urlWarnings).map(([key, message]) => {
             const allQuestions = [
               ...(formQuestions as Question[]),
-              ...(domains as any[]).flatMap((d: any) => d.challengeQuestions as Question[]),
+              ...(domains as DomainShape[]).flatMap((d: DomainShape) =>
+                d.challenges.flatMap(c => c.questions),
+              ),
             ];
             const q = allQuestions.find(q => q.key === key);
             return (
-              <li key={key} className="text-sm text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
+              <li key={key} className="text-sm text-yellow-700 bg-yellow-50 rounded-lg px-3 py-2">
                 <span className="font-semibold">{q?.data.label ?? key}:</span> {message}
               </li>
             );
@@ -1666,6 +1959,44 @@ export default function PortalApply() {
           </button>
         </div>
       </Modal>
+
+      {/* Confirm challenge switch — wipes domain answers */}
+      <Modal
+        open={pendingChallengeChange !== null}
+        onClose={() => setPendingChallengeChange(null)}
+        labelledBy="challenge-switch-title"
+      >
+        <h3 id="challenge-switch-title" className="font-heading text-base font-bold text-dark-blue mb-2">
+          Switch challenge?
+        </h3>
+        <p className="text-sm text-muted-foreground mb-4">
+          Switching to a different challenge will clear the answers you've already written
+          for this domain, since each challenge has its own questions. This can't be undone.
+        </p>
+        <div className="flex gap-3 justify-end">
+          <button
+            onClick={() => setPendingChallengeChange(null)}
+            className="px-5 py-2 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-accent-coral hover:text-accent-coral transition"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => {
+              if (pendingChallengeChange) {
+                applyChallengePick(pendingChallengeChange.domainId, pendingChallengeChange.toCvId);
+              }
+              setPendingChallengeChange(null);
+            }}
+            className="px-5 py-2 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition"
+          >
+            Switch and Clear Answers
+          </button>
+        </div>
+      </Modal>
     </div>
   );
+}
+
+export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
+  return <ApplicantErrorBoundary error={error} />;
 }

@@ -18,6 +18,8 @@ export default [
     route("emails", "routes/email-templates.tsx"),
     route("emails/:id", "routes/email-templates.$id.tsx"),
     route("admin-console", "routes/admin-console.tsx"),
+    route("admin-console/members", "routes/admin-console.members.tsx"),
+    route("admin-console/domains", "routes/admin-console.domains.tsx"),
     route("interviewer", "routes/interviewer.tsx"),
     route("interviewer/interview/:interviewId", "routes/interviewer.interview.$interviewId.tsx"),
     route("schedule-interview", "routes/applicant.schedule-interview.tsx"),
@@ -29,6 +31,9 @@ export default [
     route("portal/apply", "routes/portal.apply.tsx"),
     route("portal/application", "routes/portal.application.tsx"),
   ]),
+
+  // Party route (authed, no layout — full-page easter egg)
+  route("party", "routes/party.tsx"),
 
   // Login (no layout)
   route("login", "routes/login.tsx"),
@@ -99,6 +104,7 @@ export default [
   // Delibs
   route("api/cycles/:cycleId/delibs", "routes/api.cycles.$cycleId.delibs.ts"),
   route("api/delibs/:id", "routes/api.delibs.$id.ts"),
+  route("api/delibs/:id/moves", "routes/api.delibs.$id.moves.ts"),
 
   // Cycle interviewers
   route("api/cycles/:cycleId/interviewers", "routes/api.cycles.$cycleId.interviewers.ts"),

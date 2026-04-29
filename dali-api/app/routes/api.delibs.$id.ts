@@ -35,20 +35,6 @@ export async function action({ request, params }: Route.ActionArgs) {
   const body = await safeJson<Record<string, unknown>>(request);
   if (body instanceof Response) return body;
 
-  if (request.method === "PATCH") {
-    const { columnOrder } = body;
-    if (!columnOrder) {
-      return Response.json({ error: "columnOrder is required" }, { status: 400 });
-    }
-
-    const updated = await prisma.delibsSession.update({
-      where: { id: params.id },
-      data: { columnOrder },
-    });
-
-    return Response.json(updated);
-  }
-
   if (request.method === "POST") {
     const { intent } = body;
 
@@ -68,38 +54,40 @@ export async function action({ request, params }: Route.ActionArgs) {
       }
 
       const columnOrder = session.columnOrder as Record<string, string[]>;
-      const decisions: Array<{ domainApplicationId: string; type: string }> = [];
+      const decisions: Array<{
+        domainApplicationId: string;
+        type: string;
+        waitlistRank: number | null;
+      }> = [];
 
       if (session.type === "Initial") {
         for (const id of columnOrder["Interview"] ?? []) {
-          decisions.push({ domainApplicationId: id, type: "InvitedToInterview" });
+          decisions.push({ domainApplicationId: id, type: "InvitedToInterview", waitlistRank: null });
         }
         for (const id of columnOrder["Reject"] ?? []) {
-          decisions.push({ domainApplicationId: id, type: "Rejected" });
+          decisions.push({ domainApplicationId: id, type: "Rejected", waitlistRank: null });
         }
       } else {
         for (const id of columnOrder["Accept"] ?? []) {
-          decisions.push({ domainApplicationId: id, type: "Accepted" });
+          decisions.push({ domainApplicationId: id, type: "Accepted", waitlistRank: null });
         }
         for (const [rank, id] of (columnOrder["Waitlist"] ?? []).entries()) {
-          decisions.push({ domainApplicationId: id, type: "Waitlisted" });
+          decisions.push({ domainApplicationId: id, type: "Waitlisted", waitlistRank: rank + 1 });
         }
         for (const id of columnOrder["Reject"] ?? []) {
-          decisions.push({ domainApplicationId: id, type: "Rejected" });
+          decisions.push({ domainApplicationId: id, type: "Rejected", waitlistRank: null });
         }
       }
 
-      // Create Final decisions and close session in a transaction.
-      // Decisions go straight to Final so the hiring lead can release them.
       await prisma.$transaction(async (tx) => {
-        for (const [index, d] of decisions.entries()) {
+        for (const d of decisions) {
           await tx.decision.create({
             data: {
               domainApplicationId: d.domainApplicationId,
               type: d.type as any,
-              stage: "Final",
+              stage: "Draft",
               madeById: member.id,
-              waitlistRank: d.type === "Waitlisted" ? index + 1 : null,
+              waitlistRank: d.waitlistRank,
             },
           });
         }

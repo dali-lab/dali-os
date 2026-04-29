@@ -13,6 +13,12 @@ import { PresenceProvider } from '~/components/collab/PresenceProvider'
 import { PresenceBar } from '~/components/collab/PresenceBar'
 import type { Question, RubricCriterion } from '~/types'
 
+export const meta: Route.MetaFunction = ({ data }) => {
+  const user = data?.application?.user
+  const name = [user?.firstName, user?.lastName].filter(Boolean).join(' ').trim()
+  return [{ title: `${name || 'Application'} · Reviewer · DALI OS` }]
+}
+
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request)
   if (!auth.ok) return redirect('/login')

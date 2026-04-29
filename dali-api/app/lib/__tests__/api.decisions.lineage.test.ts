@@ -1,0 +1,161 @@
+import { describe, it, expect, beforeEach, vi } from "vitest";
+
+vi.mock("~/lib/db");
+vi.mock("~/lib/auth");
+vi.mock("~/lib/roles");
+vi.mock("~/lib/gmail");
+
+import { prisma } from "~/lib/db";
+import { requireAuth } from "~/lib/auth";
+import { isHiringLead, isDomainLead, hasCycleAccess } from "~/lib/roles";
+import { sendEmail } from "~/lib/gmail";
+import { action as finalizeAction } from "~/routes/api.decisions.$id.finalize";
+import { action as releaseAction } from "~/routes/api.decisions.$id.release";
+import { action as delibsAction } from "~/routes/api.delibs.$id";
+import { loader as decisionsLoader } from "~/routes/api.domain-applications.$id.decisions";
+
+const mockPrisma = prisma as unknown as {
+  dALIMember: { findFirst: ReturnType<typeof vi.fn> };
+  decision: {
+    findUnique: ReturnType<typeof vi.fn>;
+    create: ReturnType<typeof vi.fn>;
+    findMany: ReturnType<typeof vi.fn>;
+  };
+  domainApplication: { findUnique: ReturnType<typeof vi.fn> };
+  cycleDecisionEmail: { findUnique: ReturnType<typeof vi.fn> };
+  user: { findUnique: ReturnType<typeof vi.fn> };
+  delibsSession: {
+    findUnique: ReturnType<typeof vi.fn>;
+    update: ReturnType<typeof vi.fn>;
+  };
+  $transaction: ReturnType<typeof vi.fn>;
+};
+
+const USER_ID = "user-1";
+const MEMBER_ID = "member-1";
+const DRAFT_ID = "dec-draft";
+const FINAL_ID = "dec-final";
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  (mockPrisma as any).dALIMember = { findFirst: vi.fn() };
+  (mockPrisma as any).decision = { findUnique: vi.fn(), create: vi.fn(), findMany: vi.fn() };
+  (mockPrisma as any).domainApplication = { findUnique: vi.fn() };
+  (mockPrisma as any).cycleDecisionEmail = { findUnique: vi.fn() };
+  (mockPrisma as any).user = { findUnique: vi.fn() };
+  (mockPrisma as any).delibsSession = { findUnique: vi.fn(), update: vi.fn() };
+  (mockPrisma as any).$transaction = vi.fn(async (fn: any) => fn(mockPrisma));
+  vi.mocked(sendEmail).mockResolvedValue(undefined as any);
+  vi.mocked(requireAuth).mockResolvedValue({ ok: true, user: { sub: USER_ID } } as any);
+  mockPrisma.dALIMember.findFirst.mockResolvedValue({ id: MEMBER_ID, userId: USER_ID });
+});
+
+describe("Decision lineage (parentDecisionId)", () => {
+  it("finalize: links the new Final record to its Draft predecessor", async () => {
+    vi.mocked(isHiringLead).mockResolvedValue(true);
+    vi.mocked(isDomainLead).mockResolvedValue(false);
+    mockPrisma.decision.findUnique.mockResolvedValue({
+      id: DRAFT_ID,
+      stage: "Draft",
+      type: "Accepted",
+      domainApplicationId: "da-1",
+      notes: "drafted",
+      waitlistRank: null,
+    });
+    mockPrisma.decision.create.mockResolvedValue({ id: FINAL_ID });
+
+    const req = new Request("http://localhost/api/decisions/dec-draft/finalize", { method: "POST" });
+    const res = await finalizeAction({ request: req, params: { id: DRAFT_ID }, context: {} } as any);
+    expect(res.status).toBe(201);
+
+    const arg = mockPrisma.decision.create.mock.calls[0][0];
+    expect(arg.data.stage).toBe("Final");
+    expect(arg.data.parentDecisionId).toBe(DRAFT_ID);
+    expect(arg.data.madeById).toBe(MEMBER_ID);
+  });
+
+  it("release: links the new Released record to its Final predecessor", async () => {
+    vi.mocked(isHiringLead).mockResolvedValue(true);
+    mockPrisma.decision.findUnique.mockResolvedValue({
+      id: FINAL_ID,
+      stage: "Final",
+      type: "Rejected",
+      domainApplicationId: "da-1",
+      notes: null,
+      waitlistRank: null,
+    });
+    mockPrisma.decision.create.mockResolvedValue({ id: "dec-released" });
+    mockPrisma.domainApplication.findUnique.mockResolvedValue(null);
+
+    const req = new Request("http://localhost/api/decisions/dec-final/release", { method: "POST" });
+    const res = await releaseAction({ request: req, params: { id: FINAL_ID }, context: {} } as any);
+    expect(res.status).toBe(201);
+
+    const arg = mockPrisma.decision.create.mock.calls[0][0];
+    expect(arg.data.stage).toBe("Released");
+    expect(arg.data.parentDecisionId).toBe(FINAL_ID);
+  });
+
+  it("delibs close: leaves parentDecisionId unset (no Draft predecessor exists)", async () => {
+    vi.mocked(isHiringLead).mockResolvedValue(false);
+    vi.mocked(isDomainLead).mockResolvedValue(true);
+    mockPrisma.delibsSession.findUnique.mockResolvedValue({
+      id: "session-1",
+      type: "Final",
+      columnOrder: { Accept: ["da-a"], Waitlist: ["da-w"], Reject: ["da-r"] },
+    });
+    mockPrisma.decision.create.mockResolvedValue({});
+    mockPrisma.delibsSession.update.mockResolvedValue({});
+
+    const req = new Request("http://localhost/api/delibs/session-1", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ intent: "close" }),
+    });
+    const res = await delibsAction({ request: req, params: { id: "session-1" }, context: {} } as any);
+    expect(res.status).toBe(200);
+
+    expect(mockPrisma.decision.create).toHaveBeenCalledTimes(3);
+    for (const call of mockPrisma.decision.create.mock.calls) {
+      expect(call[0].data.parentDecisionId).toBeUndefined();
+      expect(call[0].data.stage).toBe("Draft");
+    }
+  });
+
+  it("decisions loader: includes parent so callers can render drafter alongside finalizer", async () => {
+    vi.mocked(hasCycleAccess).mockResolvedValue(true);
+    mockPrisma.domainApplication.findUnique.mockResolvedValue({
+      application: { applicationCycleId: "cycle-1" },
+    });
+    mockPrisma.decision.findMany.mockResolvedValue([
+      {
+        id: FINAL_ID,
+        stage: "Final",
+        madeBy: { firstName: "Finn", lastName: "Finalizer" },
+        parent: {
+          id: DRAFT_ID,
+          stage: "Draft",
+          madeBy: { firstName: "Drew", lastName: "Drafter" },
+        },
+      },
+    ]);
+
+    const req = new Request("http://localhost/api/domain-applications/da-1/decisions");
+    const res = await decisionsLoader({ request: req, params: { id: "da-1" }, context: {} } as any);
+    expect(res.status).toBe(200);
+
+    expect(mockPrisma.decision.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: expect.objectContaining({
+          parent: expect.objectContaining({
+            include: { madeBy: { select: { firstName: true, lastName: true } } },
+          }),
+        }),
+      }),
+    );
+
+    const body = await res.json();
+    expect(body[0].parent.madeBy.firstName).toBe("Drew");
+    expect(body[0].madeBy.firstName).toBe("Finn");
+  });
+});

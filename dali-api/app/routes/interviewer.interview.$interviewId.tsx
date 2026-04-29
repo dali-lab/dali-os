@@ -18,6 +18,7 @@ import { parseAccessToken } from '~/lib/cookies'
 import { CollaborativeEditor } from '~/components/CollaborativeEditor'
 import { PresenceProvider } from '~/components/collab/PresenceProvider'
 import { PresenceBar } from '~/components/collab/PresenceBar'
+import { RichTextViewer, isEmptyDoc } from '~/components/RichTextViewer'
 import type { Route } from './+types/interviewer.interview.$interviewId'
 
 const RECOMMENDATION_OPTIONS = [
@@ -33,6 +34,12 @@ const STATUS_COLORS: Record<string, string> = {
   Completed: 'bg-green-100 text-green-700',
   CancelledByApplicant: 'bg-red-100 text-red-700',
   CancelledByAdmin: 'bg-muted text-foreground/80',
+}
+
+export const meta: Route.MetaFunction = ({ data }) => {
+  const user = (data as any)?.interview?.domainApplication?.application?.user
+  const name = [user?.firstName, user?.lastName].filter(Boolean).join(' ').trim()
+  return [{ title: `${name ? `${name} interview` : 'Interview'} · DALI OS` }]
 }
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -350,6 +357,11 @@ export default function InterviewDetailPage() {
                 <h3 className="text-sm font-semibold text-foreground/80 uppercase tracking-wide">
                   General Application
                 </h3>
+                {!isEmptyDoc(application?.generalChallengeVersion?.description) && (
+                  <div className="border border-border rounded-md bg-muted/30 px-4 py-3">
+                    <RichTextViewer content={application.generalChallengeVersion.description} />
+                  </div>
+                )}
                 {generalQuestions.map((q: any) => {
                   const answer = application?.answers?.[q.key]
                   return (
@@ -374,6 +386,11 @@ export default function InterviewDetailPage() {
                 <h3 className="text-sm font-semibold text-foreground/80 uppercase tracking-wide">
                   {domain} Challenge
                 </h3>
+                {!isEmptyDoc(interview.domainApplication?.challengeVersion?.description) && (
+                  <div className="border border-border rounded-md bg-muted/30 px-4 py-3">
+                    <RichTextViewer content={interview.domainApplication.challengeVersion.description} />
+                  </div>
+                )}
                 {domainQuestions.map((q: any) => {
                   const answer = interview.domainApplication?.answers?.[q.key]
                   return (
