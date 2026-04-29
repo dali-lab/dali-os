@@ -1,12 +1,14 @@
 // POST /api/upload/presign
-// Body: { key: string, contentType: string }
-// Returns: { uploadUrl: string, key: string }
+// Body: { key: string, contentType: string, contentLength?: number }
+// Returns: { url: string, fields: Record<string, string>, key: string }
 //
-// The client uploads directly to S3 using the presigned PUT URL.
+// The client uploads directly to S3 via multipart POST using the returned
+// url + fields. S3 enforces content-length-range and Content-Type via the
+// signed policy, so a malicious client cannot exceed the size cap.
 // After upload, store the key in the DB and use GET /api/upload/url?key=... to read it.
 
 import { requireAuth } from '~/lib/auth'
-import { getUploadUrl } from '~/lib/s3'
+import { getUploadPost } from '~/lib/s3'
 import { MAX_UPLOAD_BYTES, MAX_UPLOAD_LABEL } from '~/lib/file-validation'
 import { checkRateLimit } from '~/lib/rate-limit'
 
@@ -44,10 +46,9 @@ export async function action({ request }: { request: Request }) {
         { status: 400 },
       )
     }
-    // Advisory size cap. The client supplies contentLength so this is spoofable;
-    // it catches honest oversize requests cheaply but does not bind the actual
-    // upload — S3 presigned PUTs don't enforce length. True enforcement would
-    // require presigned POST with content-length-range.
+    // Cheap pre-check that returns a clean 413 before signing. The presigned
+    // POST policy below also enforces the size cap server-side, so this is
+    // only for UX — the client cannot bypass the real limit.
     if (contentLength !== undefined) {
       if (typeof contentLength !== 'number' || !Number.isFinite(contentLength) || contentLength < 0) {
         return Response.json({ error: 'contentLength must be a non-negative number' }, { status: 400 })
@@ -63,8 +64,8 @@ export async function action({ request }: { request: Request }) {
     // Scope all keys under uploads/ to avoid collisions with other bucket contents
     const scopedKey = key.startsWith('uploads/') ? key : `uploads/${key}`
 
-    const uploadUrl = await getUploadUrl(scopedKey, contentType)
-    return Response.json({ uploadUrl, key: scopedKey })
+    const { url, fields } = await getUploadPost(scopedKey, contentType)
+    return Response.json({ url, fields, key: scopedKey })
   } catch (err) {
     console.error('Upload presign error:', err)
     return Response.json(
