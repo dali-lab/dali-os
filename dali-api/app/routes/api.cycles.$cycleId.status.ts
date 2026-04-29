@@ -1,4 +1,5 @@
 import { prisma } from "~/lib/db";
+import { safeJson } from "~/lib/safe-json";
 import { requireAuth } from "~/lib/auth";
 import { isHiringLead, hasCycleAccess } from "~/lib/roles";
 import { autoCloseIfExpired, findOtherActiveCycleId } from "~/lib/cycles";
@@ -32,7 +33,9 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!auth.ok) return auth.response;
   if (!(await isHiringLead(auth.user.sub))) return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
 
-  const { newStatus, force } = await request.json();
+  const body = await safeJson<{ newStatus?: string; force?: boolean }>(request);
+  if (body instanceof Response) return body;
+  const { newStatus, force } = body;
   if (!STATUS_ORDER.includes(newStatus)) {
     return Response.json({ error: "Invalid status" }, { status: 400 });
   }

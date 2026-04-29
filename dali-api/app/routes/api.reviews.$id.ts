@@ -2,6 +2,7 @@ import type { Route } from "./+types/api.reviews.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isHiringLead, isDomainLead } from "~/lib/roles";
+import { safeJson } from "~/lib/safe-json";
 
 const VALID_RECOMMENDATIONS = ["Strong Hire", "Hire", "Lean Hire", "Lean No Hire", "No Hire"];
 
@@ -167,18 +168,19 @@ export async function action({ request, params }: Route.ActionArgs) {
       return Response.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    let body: unknown;
-    try {
-      body = await request.json();
-    } catch {
-      return Response.json({ error: "Invalid JSON body" }, { status: 400 });
-    }
+    const body = await safeJson<Record<string, unknown>>(request);
+    if (body instanceof Response) return body;
+    const data: Record<string, unknown> = {};
+    if (body.scores !== undefined) data.scores = body.scores;
+    if (body.feedback !== undefined) data.feedback = body.feedback;
+    if (body.rejectionRationale !== undefined) data.rejectionRationale = body.rejectionRationale;
+    if (body.overallRecommendation !== undefined) data.overallRecommendation = body.overallRecommendation;
+    if (body.annotations !== undefined) data.annotations = body.annotations;
 
     const result = validateReviewPatch(body);
     if (!result.ok) {
       return Response.json({ error: result.error }, { status: 400 });
     }
-
     const updated = await prisma.applicationReview.update({
       where: { id: params.id },
       data: result.data,

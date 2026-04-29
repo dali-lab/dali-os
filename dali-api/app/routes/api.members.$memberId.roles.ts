@@ -3,6 +3,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
+import { safeJson } from "~/lib/safe-json";
 import type { MemberRole } from "~/generated/prisma/enums";
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -17,8 +18,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
 
-  const body = await request.json();
-  const roles: MemberRole[] = body.roles;
+  const body = await safeJson<Record<string, unknown>>(request);
+  if (body instanceof Response) return withCors(request, body);
+  const roles: MemberRole[] = body.roles as MemberRole[];
 
   if (!Array.isArray(roles)) {
     return withCors(request, Response.json({ error: "roles must be an array" }, { status: 400 }));

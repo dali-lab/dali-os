@@ -2,6 +2,7 @@ import type { Route } from "./+types/api.my-interview.reschedule";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
+import { safeJson } from "~/lib/safe-json";
 import { assignInterviewers } from "~/lib/scheduling";
 
 export async function action({ request }: Route.ActionArgs) {
@@ -15,7 +16,8 @@ export async function action({ request }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
 
-  const body = await request.json();
+  const body = await safeJson<{ newStart?: string; newEnd?: string; domainApplicationId?: string }>(request);
+  if (body instanceof Response) return withCors(request, body);
   const { newStart, newEnd, domainApplicationId } = body;
 
   if (!domainApplicationId) {
