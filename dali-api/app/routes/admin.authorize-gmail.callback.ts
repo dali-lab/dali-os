@@ -3,6 +3,7 @@
 // and stores the refresh token on the applications@dali.dartmouth.edu user row.
 
 import { requireAuth } from '~/lib/auth'
+import { isHiringLead } from '~/lib/roles'
 import { prisma } from '~/lib/db'
 
 const GMAIL_STATE_COOKIE = '__dali_gmail_oauth_state'
@@ -24,6 +25,10 @@ export async function loader({ request }: { request: Request }) {
     return new Response(null, { status: 302, headers: { Location: '/login' } })
   }
 
+  if (!(await isHiringLead(auth.user.sub))) {
+    return new Response(null, { status: 302, headers: { Location: '/' } })
+  }
+
   const url = new URL(request.url)
   const apiBase = process.env.API_BASE_URL ?? 'http://localhost:3001'
   const clientId = process.env.GMAIL_CLIENT_ID ?? process.env.GOOGLE_CLIENT_ID!
@@ -38,7 +43,7 @@ export async function loader({ request }: { request: Request }) {
   if (error || !code || !state) {
     return new Response(null, {
       status: 302,
-      headers: { 'Set-Cookie': clearCookie, Location: '/admin?gmail_error=auth_failed' },
+      headers: { 'Set-Cookie': clearCookie, Location: '/emails?gmail_error=auth_failed' },
     })
   }
 
@@ -47,7 +52,7 @@ export async function loader({ request }: { request: Request }) {
   if (cookies[GMAIL_STATE_COOKIE] !== state) {
     return new Response(null, {
       status: 302,
-      headers: { 'Set-Cookie': clearCookie, Location: '/admin?gmail_error=state_mismatch' },
+      headers: { 'Set-Cookie': clearCookie, Location: '/emails?gmail_error=state_mismatch' },
     })
   }
 
@@ -68,7 +73,7 @@ export async function loader({ request }: { request: Request }) {
     console.error('Gmail token exchange failed:', await tokenRes.text())
     return new Response(null, {
       status: 302,
-      headers: { 'Set-Cookie': clearCookie, Location: '/admin?gmail_error=token_exchange_failed' },
+      headers: { 'Set-Cookie': clearCookie, Location: '/emails?gmail_error=token_exchange_failed' },
     })
   }
 
@@ -78,7 +83,7 @@ export async function loader({ request }: { request: Request }) {
   if (!refreshToken) {
     return new Response(null, {
       status: 302,
-      headers: { 'Set-Cookie': clearCookie, Location: '/admin?gmail_error=no_refresh_token' },
+      headers: { 'Set-Cookie': clearCookie, Location: '/emails?gmail_error=no_refresh_token' },
     })
   }
 
@@ -106,6 +111,6 @@ export async function loader({ request }: { request: Request }) {
 
   return new Response(null, {
     status: 302,
-    headers: { 'Set-Cookie': clearCookie, Location: '/admin?gmail_authorized=1' },
+    headers: { 'Set-Cookie': clearCookie, Location: '/emails?gmail_authorized=1' },
   })
 }

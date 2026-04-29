@@ -102,7 +102,7 @@
 
   /* blue-50/100 backgrounds → subtle dark blue surface */
   .bg-blue-50  { background-color: hsl(215 40% 16%) !important; }
-  .bg-blue-100 { background-color: hsl(215 40% 20%) !important; }
+  .bg-blue-100 { background-color: hsl(213 75% 32%) !important; }
   .bg-blue-50\/50 { background-color: hsl(215 40% 16% / 0.5) !important; }
 
   /* blue text → lighter/brighter for dark bg */
@@ -130,8 +130,8 @@
   .bg-green-600, .bg-green-700 { background-color: hsl(145 50% 32%) !important; }
 
   /* red-50/100 → dark red surface */
-  .bg-red-50  { background-color: hsl(0 30% 14%) !important; }
-  .bg-red-100 { background-color: hsl(0 30% 18%) !important; }
+  .bg-red-50  { background-color: hsl(0 45% 18%) !important; }
+  .bg-red-100 { background-color: hsl(0 50% 24%) !important; }
   .text-red-500, .text-red-600, .text-red-700 { color: hsl(0 80% 70%) !important; }
   .text-red-800, .text-red-900 { color: hsl(0 80% 78%) !important; }
   .border-red-200 { border-color: hsl(0 30% 28%) !important; }
@@ -147,6 +147,14 @@
   .bg-indigo-100 { background-color: hsl(240 35% 20%) !important; }
   .text-indigo-600, .text-indigo-700 { color: hsl(235 80% 75%) !important; }
   .text-indigo-800, .text-indigo-900 { color: hsl(235 80% 82%) !important; }
+
+  /* purple-50/100 → dark violet surface (domain lead chips, e.g. Engineering) */
+  .bg-purple-50  { background-color: hsl(270 28% 14%) !important; }
+  .bg-purple-100 { background-color: hsl(270 28% 20%) !important; }
+  .text-purple-600, .text-purple-700 { color: hsl(270 58% 72%) !important; }
+  .text-purple-800, .text-purple-900 { color: hsl(270 55% 82%) !important; }
+  .border-purple-200 { border-color: hsl(270 25% 30%) !important; }
+  .hover\:text-purple-600:hover { color: hsl(270 58% 78%) !important; }
 
   /* gray scale → dark equivalents */
   .bg-white { background-color: hsl(215 32% 15%) !important; }
@@ -202,6 +210,22 @@
   .border-pink-200 { border-color: hsl(340 35% 30%) !important; }
   .bg-pink-500 { background-color: hsl(340 65% 55%) !important; }
   .bg-pink-600 { background-color: hsl(340 65% 48%) !important; }
+
+  /* white/light-gray surfaces → card / muted surfaces */
+  .bg-white { background-color: var(--color-card) !important; }
+  .bg-white\/50 { background-color: hsl(215 32% 15% / 0.5) !important; }
+  .bg-gray-50 { background-color: var(--color-muted) !important; }
+  .bg-gray-100, .hover\:bg-gray-100:hover { background-color: hsl(215 28% 22%) !important; }
+  .bg-gray-200 { background-color: hsl(215 28% 25%) !important; }
+
+  /* light-gray borders → border token */
+  .border-gray-100, .border-gray-200 { border-color: var(--color-border) !important; }
+
+  /* dark gray text → foreground-ish */
+  .text-gray-900 { color: var(--color-foreground) !important; }
+  .text-gray-800, .text-gray-700 { color: hsl(210 18% 88%) !important; }
+  .text-gray-600 { color: hsl(210 15% 75%) !important; }
+  .text-gray-500, .text-gray-400 { color: var(--color-muted-foreground) !important; }
 
   /* Brand pale-blue tint → elevated dark surface (login hero, applicant portal cards) */
   .bg-\[\#E8F4FA\] { background-color: hsl(215 32% 15%) !important; }
@@ -263,6 +287,23 @@ h1, h2, h3, h4, h5, h6 {
   100% { transform: translate3d(0,0,0) rotate(0deg); }
 }
 
+/* Wrong party code — row shake (stronger than dali-shake) */
+@keyframes dali-party-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-10px); }
+  40% { transform: translateX(10px); }
+  60% { transform: translateX(-6px); }
+  80% { transform: translateX(6px); }
+}
+.dali-party-code-shake {
+  animation: dali-party-shake 0.42s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .dali-party-code-shake {
+    animation: none;
+  }
+}
+
 @keyframes fallIn {
   0%   { opacity: 0; transform: translateY(-100px) scale(0.8); }
   60%  { transform: translateY(10px) scale(1.05); }
@@ -288,3 +329,55 @@ h1, h2, h3, h4, h5, h6 {
     transition: none !important;
   }
 }
+
+/* Retro mode — toggled by 10 clicks on the DALI logo */
+html.dali-retro {
+  --font-sans: var(--font-mono);
+  --font-heading: var(--font-mono);
+  --color-accent-coral: hsl(177 45% 51%);
+  --color-accent-teal: hsl(354 70% 61%);
+}
+@media (prefers-color-scheme: dark) {
+  html.dali-retro {
+    --color-accent-coral: hsl(177 50% 58%);
+    --color-accent-teal: hsl(354 70% 65%);
+  }
+}
+html.dali-retro body {
+  filter: contrast(1.05) saturate(1.15);
+}
+html.dali-retro body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0) 0,
+    rgba(0, 0, 0, 0) 2px,
+    rgba(0, 0, 0, 0.04) 2px,
+    rgba(0, 0, 0, 0.04) 3px
+  );
+}
+
+/* Sepia wash — toggled via ?lab=2013 on the login page */
+html.dali-sepia body {
+  filter: sepia(0.7) contrast(1.05);
+}
+
+/* Confetti — toggled via ?party=true on the login page */
+@keyframes dali-confetti-fall {
+  0%   { transform: translateY(-20vh) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(120vh) rotate(720deg); opacity: 0.8; }
+}
+.dali-confetti-piece {
+  position: fixed;
+  top: 0;
+  width: 8px;
+  height: 12px;
+  pointer-events: none;
+  z-index: 9998;
+  animation: dali-confetti-fall linear forwards;
+}
+

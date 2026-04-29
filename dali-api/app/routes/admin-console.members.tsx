@@ -11,6 +11,8 @@ import {
   HiringLeadToggle,
 } from "~/components/admin-console-shared";
 
+export const meta: Route.MetaFunction = () => [{ title: "Members · Admin console · DALI OS" }];
+
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
@@ -116,7 +118,7 @@ export default function AdminConsoleMembers() {
           </span>
         </div>
         <div className="flex items-center gap-3">
-          <div role="group" aria-label="Filter members by role" className="flex rounded-md border border-gray-300 overflow-hidden text-sm">
+          <div role="group" aria-label="Filter members by role" className="flex rounded-md border border-border overflow-hidden text-sm">
             {(["all", "admin", "hiringLead"] as RoleFilter[]).map((f) => (
               <button
                 key={f}
@@ -139,7 +141,7 @@ export default function AdminConsoleMembers() {
             placeholder="Search by name or email…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-56 px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-56 px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
           />
         </div>
       </div>
@@ -156,7 +158,7 @@ export default function AdminConsoleMembers() {
               <th className="text-left px-4 py-3 font-medium text-muted-foreground">Domain Lead</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-border">
             {filtered.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground/70">

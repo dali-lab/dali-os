@@ -5,6 +5,11 @@ import { requireAuth } from '~/lib/auth'
 import { isHiringLead } from '~/lib/roles'
 import { EmailTemplateDetail } from '~/components/EmailTemplateDetail'
 
+export const meta: Route.MetaFunction = ({ data }) => {
+  const name = (data as any)?.template?.name
+  return [{ title: `${name || 'Email template'} · DALI OS` }]
+}
+
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request)
   if (!auth.ok) return redirect('/login')

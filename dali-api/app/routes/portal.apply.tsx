@@ -17,6 +17,9 @@ import type { Question } from "~/types";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 import { Modal } from "~/components/Modal";
 import { QuestionList } from "~/components/ApplicationAnswers";
+import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
+
+export const meta: Route.MetaFunction = () => [{ title: "Apply · DALI OS" }];
 
 // ─── Loader ──────────────────────────────────────────────────────────────────
 
@@ -39,7 +42,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       challengeVersions: {
         include: {
           challengeVersion: {
-            include: { domain: true },
+            include: { domain: true, challenge: true },
           },
         },
       },
@@ -57,19 +60,22 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const generalChallengeVersionId = generalCvac.challengeVersionId;
   const formQuestions = (generalCvac.challengeVersion.questions as unknown as Question[]) ?? [];
+  const generalDescription = generalCvac.challengeVersion.description ?? null;
 
-  // Build domain info with challenge questions (only domain-specific ones)
+  // Build domain info with all linked challenge versions (applicant picks one).
   const domains = cycle.domains.map(dac => {
-    const cv = cycle.challengeVersions.find(
+    const linked = cycle.challengeVersions.filter(
       cvc => cvc.challengeVersion.domainId === dac.domainId,
     );
     return {
       id: dac.domainId,
       name: dac.domain.name,
-      challengeVersionId: cv?.challengeVersionId ?? null,
-      challengeQuestions: cv
-        ? (cv.challengeVersion.questions as unknown as Question[]) ?? []
-        : [],
+      challenges: linked.map(cvc => ({
+        challengeVersionId: cvc.challengeVersionId,
+        challengeName: (cvc.challengeVersion as any).challenge?.name ?? "Challenge",
+        description: (cvc.challengeVersion as any).description ?? null,
+        questions: ((cvc.challengeVersion.questions as unknown) as Question[]) ?? [],
+      })),
     };
   });
 
@@ -97,6 +103,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     closeDate: active.closeDate ? active.closeDate.toISOString() : null,
     generalChallengeVersionId,
     formQuestions,
+    generalDescription,
     domains,
     isAlreadySubmitted: draftStatus === "Submitted",
     draft: draft
@@ -109,6 +116,7 @@ export async function loader({ request }: Route.LoaderArgs) {
           domainApplications: draft.domainApplications.map(da => ({
             id: da.id,
             domainId: da.challengeVersion.domainId,
+            challengeVersionId: da.challengeVersionId,
             answers: da.answers as Record<string, string>,
           })),
         }
@@ -128,16 +136,41 @@ export async function action({ request }: Route.ActionArgs) {
   if (intent === "create-draft") {
     const cycleId = formData.get("cycleId") as string;
     const generalChallengeVersionId = formData.get("generalChallengeVersionId") as string;
-    const selectedDomainIds = JSON.parse(formData.get("selectedDomainIds") as string) as string[];
+    const selectedDomains = JSON.parse(formData.get("selectedDomains") as string) as {
+      domainId: string;
+      challengeVersionId: string;
+    }[];
 
-    // Find challenge versions for selected domains
+    // Validate every chosen CV is linked to this cycle and matches the claimed domain.
     const cvacs = await prisma.challengeVersionApplicationCycle.findMany({
       where: { applicationCycleId: cycleId },
       include: { challengeVersion: true },
     });
+    const cvByPair = new Map<string, string>();
+    for (const c of cvacs) {
+      if (c.challengeVersion.domainId) {
+        cvByPair.set(`${c.challengeVersion.domainId}:${c.challengeVersionId}`, c.challengeVersionId);
+      }
+    }
 
-    const application = await prisma.application.create({
-      data: {
+    const validSelections = selectedDomains.filter(s =>
+      cvByPair.has(`${s.domainId}:${s.challengeVersionId}`),
+    );
+
+    // Upsert keyed on the (userId, applicationCycleId) unique constraint so
+    // that two concurrent "Start Application" clicks (e.g. from two open tabs)
+    // converge on a single draft instead of creating duplicates. For an
+    // existing row the update is a no-op — domain selection is reconciled
+    // separately via the `update-domains` intent.
+    const application = await prisma.application.upsert({
+      where: {
+        userId_applicationCycleId: {
+          userId: auth.user.sub,
+          applicationCycleId: cycleId,
+        },
+      },
+      update: {},
+      create: {
         userId: auth.user.sub,
         applicationCycleId: cycleId,
         generalChallengeVersionId,
@@ -146,16 +179,10 @@ export async function action({ request }: Route.ActionArgs) {
           create: { newStatus: "Draft", userId: auth.user.sub },
         },
         domainApplications: {
-          create: selectedDomainIds
-            .map(domainId => {
-              const cv = cvacs.find(c => c.challengeVersion.domainId === domainId);
-              if (!cv) return null;
-              return {
-                challengeVersionId: cv.challengeVersionId,
-                answers: {},
-              };
-            })
-            .filter(Boolean) as any[],
+          create: validSelections.map(s => ({
+            challengeVersionId: s.challengeVersionId,
+            answers: {},
+          })),
         },
       },
       include: {
@@ -175,6 +202,7 @@ export async function action({ request }: Route.ActionArgs) {
         domainApplications: application.domainApplications.map((da) => ({
           id: da.id,
           domainId: da.challengeVersion.domainId,
+          challengeVersionId: da.challengeVersionId,
           answers: da.answers,
         })),
       },
@@ -184,56 +212,76 @@ export async function action({ request }: Route.ActionArgs) {
   if (intent === "update-domains") {
     const applicationId = formData.get("applicationId") as string;
     const cycleId = formData.get("cycleId") as string;
-    const newDomainIds = JSON.parse(formData.get("selectedDomainIds") as string) as string[];
+    const newSelections = JSON.parse(formData.get("selectedDomains") as string) as {
+      domainId: string;
+      challengeVersionId: string;
+    }[];
 
-    // Find existing domain applications for this application
+    // Validate every chosen CV is linked to this cycle and matches the claimed domain.
+    const cvacs = await prisma.challengeVersionApplicationCycle.findMany({
+      where: { applicationCycleId: cycleId },
+      include: { challengeVersion: true },
+    });
+    const cvByPair = new Map<string, string>();
+    for (const c of cvacs) {
+      if (c.challengeVersion.domainId) {
+        cvByPair.set(`${c.challengeVersion.domainId}:${c.challengeVersionId}`, c.challengeVersionId);
+      }
+    }
+    const validSelections = newSelections.filter(s =>
+      cvByPair.has(`${s.domainId}:${s.challengeVersionId}`),
+    );
+    const newDomainIds = validSelections.map(s => s.domainId);
+    const desiredCvByDomain = new Map(validSelections.map(s => [s.domainId, s.challengeVersionId]));
+
+    // Existing DAs for this application, keyed by domainId
     const existing = await prisma.domainApplication.findMany({
       where: { applicationId },
       include: { challengeVersion: { select: { domainId: true } } },
     });
+    const existingByDomain = new Map<string, (typeof existing)[number]>();
+    for (const da of existing) {
+      const did = da.challengeVersion.domainId;
+      if (did) existingByDomain.set(did, da);
+    }
 
-    const existingDomainIds = existing.map(da => da.challengeVersion.domainId);
-
-    // Domains to add (not already in DB)
-    const toAdd = newDomainIds.filter(id => !existingDomainIds.includes(id));
-
-    if (toAdd.length > 0) {
-      const cvacs = await prisma.challengeVersionApplicationCycle.findMany({
-        where: { applicationCycleId: cycleId },
-        include: { challengeVersion: true },
-      });
-
-      for (const domainId of toAdd) {
-        const cv = cvacs.find(c => c.challengeVersion.domainId === domainId);
-        if (cv) {
-          await prisma.domainApplication.create({
-            data: {
-              applicationId,
-              challengeVersionId: cv.challengeVersionId,
-              answers: {},
-            },
-          });
-        }
+    // For each desired (domainId, cvId): create new DA, reselect, or switch CV.
+    for (const sel of validSelections) {
+      const ex = existingByDomain.get(sel.domainId);
+      if (!ex) {
+        await prisma.domainApplication.create({
+          data: {
+            applicationId,
+            challengeVersionId: sel.challengeVersionId,
+            answers: {},
+          },
+        });
+        continue;
+      }
+      const updates: { selected?: boolean; challengeVersionId?: string; answers?: any } = {};
+      if (!ex.selected) updates.selected = true;
+      if (ex.challengeVersionId !== sel.challengeVersionId) {
+        // Switching the picked challenge wipes that domain's answers — the
+        // question set is different. The applicant is warned client-side.
+        updates.challengeVersionId = sel.challengeVersionId;
+        updates.answers = {};
+      }
+      if (Object.keys(updates).length > 0) {
+        await prisma.domainApplication.update({
+          where: { id: ex.id },
+          data: updates,
+        });
       }
     }
 
-    // Mark deselected domains as not selected (keep records for answer preservation)
-    const toDeselect = existing.filter(da => !newDomainIds.includes(da.challengeVersion.domainId!));
-    if (toDeselect.length > 0) {
+    // Domains the applicant deselected — preserve answers but mark unselected.
+    const toDeselectIds = existing
+      .filter(da => da.challengeVersion.domainId && !newDomainIds.includes(da.challengeVersion.domainId))
+      .map(da => da.id);
+    if (toDeselectIds.length > 0) {
       await prisma.domainApplication.updateMany({
-        where: { id: { in: toDeselect.map(da => da.id) } },
+        where: { id: { in: toDeselectIds } },
         data: { selected: false },
-      });
-    }
-
-    // Mark re-selected domains as selected
-    const toReselect = existing.filter(
-      da => newDomainIds.includes(da.challengeVersion.domainId!) && !da.selected,
-    );
-    if (toReselect.length > 0) {
-      await prisma.domainApplication.updateMany({
-        where: { id: { in: toReselect.map(da => da.id) } },
-        data: { selected: true },
       });
     }
 
@@ -255,6 +303,7 @@ export async function action({ request }: Route.ActionArgs) {
         domainApplications: updatedApp.domainApplications.map((da) => ({
           id: da.id,
           domainId: da.challengeVersion.domainId,
+          challengeVersionId: da.challengeVersionId,
           answers: da.answers,
         })),
       } : null,
@@ -552,15 +601,24 @@ function FileUploadField({
         try { message = JSON.parse(text).error ?? message; } catch {}
         throw new Error(message);
       }
-      const { uploadUrl, key } = await presignRes.json();
+      const { url, fields, key } = await presignRes.json();
 
-      // 2. Upload directly to S3
-      const uploadRes = await fetch(uploadUrl, {
-        method: "PUT",
-        body: file,
-        headers: { "Content-Type": file.type },
-      });
-      if (!uploadRes.ok) throw new Error("Upload failed");
+      // 2. Upload directly to S3 via multipart POST. S3 requires every
+      // policy field to come before the file part in the form body.
+      const formData = new FormData();
+      for (const [name, value] of Object.entries(fields as Record<string, string>)) {
+        formData.append(name, value);
+      }
+      formData.append("file", file);
+      const uploadRes = await fetch(url, { method: "POST", body: formData });
+      if (!uploadRes.ok) {
+        // S3 returns 403 with EntityTooLarge when the size policy fails.
+        const body = await uploadRes.text().catch(() => "");
+        if (uploadRes.status === 403 && /EntityTooLarge/i.test(body)) {
+          throw new Error(`File too large (max ${MAX_UPLOAD_LABEL})`);
+        }
+        throw new Error("Upload failed");
+      }
 
       // 3. Store the S3 key as the answer
       onChange(key);
@@ -778,10 +836,26 @@ function isAnswered(value: string | undefined) {
   return typeof value === "string" && value.trim() !== "";
 }
 
+type DomainShape = {
+  id: string;
+  name: string;
+  challenges: { challengeVersionId: string; challengeName: string; description: any; questions: Question[] }[];
+};
+
+function getPickedQuestions(
+  domain: DomainShape,
+  pickedCvId: string | null | undefined,
+): Question[] {
+  if (!pickedCvId) return [];
+  const picked = domain.challenges.find(c => c.challengeVersionId === pickedCvId);
+  return picked?.questions ?? [];
+}
+
 function computeRequiredProgress(
   formQuestions: Question[],
-  domains: { id: string; challengeQuestions: Question[] }[],
+  domains: DomainShape[],
   selectedDomainIds: string[],
+  pickedChallengeByDomain: Record<string, string>,
   answers: Record<string, string>,
   domainAnswers: Record<string, Record<string, string>>,
 ) {
@@ -795,7 +869,8 @@ function computeRequiredProgress(
   for (const domainId of selectedDomainIds) {
     const domain = domains.find(d => d.id === domainId);
     if (!domain) continue;
-    const requiredDomain = domain.challengeQuestions.filter(q => q.required);
+    const questions = getPickedQuestions(domain, pickedChallengeByDomain[domainId]);
+    const requiredDomain = questions.filter(q => q.required);
     totalRequired += requiredDomain.length;
     totalAnswered += requiredDomain.filter(q =>
       isAnswered(domainAnswers[domainId]?.[q.key]),
@@ -807,8 +882,9 @@ function computeRequiredProgress(
 
 function buildSections(
   formQuestions: Question[],
-  domains: { id: string; name: string; challengeQuestions: Question[] }[],
+  domains: DomainShape[],
   selectedDomainIds: string[],
+  pickedChallengeByDomain: Record<string, string>,
   answers: Record<string, string>,
   domainAnswers: Record<string, Record<string, string>>,
 ): Section[] {
@@ -829,8 +905,9 @@ function buildSections(
     const idx = domains.findIndex(d => d.id === domainId);
     if (idx < 0) continue;
     const domain = domains[idx];
-    if (domain.challengeQuestions.length === 0) continue;
-    const required = domain.challengeQuestions.filter(q => q.required);
+    if (domain.challenges.length === 0) continue;
+    const questions = getPickedQuestions(domain, pickedChallengeByDomain[domainId]);
+    const required = questions.filter(q => q.required);
     sections.push({
       id: `domain-${domainId}`,
       label: domain.name,
@@ -992,7 +1069,7 @@ function BackToTopButton() {
 
 export default function PortalApply() {
   const loaderData = useLoaderData<typeof loader>() as any;
-  const { cycleId, cycleName, generalChallengeVersionId, formQuestions, domains, isAlreadySubmitted } = loaderData;
+  const { cycleId, cycleName, generalChallengeVersionId, formQuestions, generalDescription, domains, isAlreadySubmitted } = loaderData;
   const [draft, setDraft] = useState(loaderData.draft);
   const [selectedDomainIds, setSelectedDomainIds] = useState<string[]>(
     loaderData.draft?.selectedDomainIds ?? [],
@@ -1009,6 +1086,24 @@ export default function PortalApply() {
       return initial;
     },
   );
+  // Which challenge version the applicant has picked for each domain.
+  // Populated from the draft for existing DomainApplications; for newly toggled
+  // domains, defaults to the first linked CV (or stays unset for >1-CV domains
+  // until the applicant picks).
+  const [pickedChallengeByDomain, setPickedChallengeByDomain] = useState<Record<string, string>>(
+    () => {
+      const initial: Record<string, string> = {};
+      for (const da of loaderData.draft?.domainApplications ?? []) {
+        if (da.domainId && da.challengeVersionId) initial[da.domainId] = da.challengeVersionId;
+      }
+      return initial;
+    },
+  );
+  const [pendingChallengeChange, setPendingChallengeChange] = useState<{
+    domainId: string;
+    fromCvId: string;
+    toCvId: string;
+  } | null>(null);
   const [saving, setSaving] = useState(false);
   const [hasSavedOnce, setHasSavedOnce] = useState(() => {
     const initialAnswers = (loaderData.draft?.answers as Record<string, string> | undefined) ?? {};
@@ -1112,19 +1207,76 @@ export default function PortalApply() {
     }
   }, []);
 
+  function buildSelectedDomainsPayload(
+    ids: string[],
+    picks: Record<string, string>,
+  ): { domainId: string; challengeVersionId: string }[] {
+    const payload: { domainId: string; challengeVersionId: string }[] = [];
+    for (const id of ids) {
+      const cvId = picks[id];
+      if (cvId) payload.push({ domainId: id, challengeVersionId: cvId });
+    }
+    return payload;
+  }
+
   function toggleDomain(domainId: string) {
-    const newIds = selectedDomainIds.includes(domainId)
-      ? selectedDomainIds.filter(id => id !== domainId)
-      : [...selectedDomainIds, domainId];
+    const isAdding = !selectedDomainIds.includes(domainId);
+    const newIds = isAdding
+      ? [...selectedDomainIds, domainId]
+      : selectedDomainIds.filter(id => id !== domainId);
+
+    let nextPicks = pickedChallengeByDomain;
+    if (isAdding && !pickedChallengeByDomain[domainId]) {
+      // Default to the first linked challenge so single-challenge domains don't
+      // require an extra click. Multi-challenge domains: applicant can switch
+      // via the radio picker rendered in the domain section.
+      const domain = (domains as DomainShape[]).find((d: DomainShape) => d.id === domainId);
+      const defaultCvId = domain?.challenges[0]?.challengeVersionId;
+      if (defaultCvId) {
+        nextPicks = { ...pickedChallengeByDomain, [domainId]: defaultCvId };
+        setPickedChallengeByDomain(nextPicks);
+      }
+    }
+
     setSelectedDomainIds(newIds);
 
-    // If draft exists, sync domains to server (create new DomainApplications as needed)
     if (draft) {
       const form = new FormData();
       form.set("intent", "update-domains");
       form.set("applicationId", draft.id);
       form.set("cycleId", cycleId);
-      form.set("selectedDomainIds", JSON.stringify(newIds));
+      form.set("selectedDomains", JSON.stringify(buildSelectedDomainsPayload(newIds, nextPicks)));
+      createFetcher.submit(form, { method: "post" });
+    }
+  }
+
+  function handleChallengePick(domainId: string, newCvId: string) {
+    const currentCvId = pickedChallengeByDomain[domainId];
+    if (currentCvId === newCvId) return;
+    const hasAnswers = Object.values(domainAnswers[domainId] ?? {}).some(
+      v => typeof v === "string" && v.trim() !== "",
+    );
+    if (currentCvId && hasAnswers) {
+      setPendingChallengeChange({ domainId, fromCvId: currentCvId, toCvId: newCvId });
+      return;
+    }
+    applyChallengePick(domainId, newCvId);
+  }
+
+  function applyChallengePick(domainId: string, newCvId: string) {
+    const nextPicks = { ...pickedChallengeByDomain, [domainId]: newCvId };
+    setPickedChallengeByDomain(nextPicks);
+    // Clear local answers — the backend will too, since the question set changed.
+    setDomainAnswers(prev => ({ ...prev, [domainId]: {} }));
+    if (draft) {
+      const form = new FormData();
+      form.set("intent", "update-domains");
+      form.set("applicationId", draft.id);
+      form.set("cycleId", cycleId);
+      form.set(
+        "selectedDomains",
+        JSON.stringify(buildSelectedDomainsPayload(selectedDomainIds, nextPicks)),
+      );
       createFetcher.submit(form, { method: "post" });
     }
   }
@@ -1134,12 +1286,20 @@ export default function PortalApply() {
       setError("Please select at least one domain.");
       return;
     }
+    const missing = selectedDomainIds.find(id => !pickedChallengeByDomain[id]);
+    if (missing) {
+      setError("Please pick a challenge for every selected domain.");
+      return;
+    }
 
     const form = new FormData();
     form.set("intent", "create-draft");
     form.set("cycleId", cycleId);
     form.set("generalChallengeVersionId", generalChallengeVersionId);
-    form.set("selectedDomainIds", JSON.stringify(selectedDomainIds));
+    form.set(
+      "selectedDomains",
+      JSON.stringify(buildSelectedDomainsPayload(selectedDomainIds, pickedChallengeByDomain)),
+    );
     createFetcher.submit(form, { method: "post" });
   }
 
@@ -1158,6 +1318,16 @@ export default function PortalApply() {
         }
         return updated;
       });
+      // Sync picked CV from server (authoritative — handles backend CV switches)
+      setPickedChallengeByDomain(prev => {
+        const updated = { ...prev };
+        for (const da of newDraft.domainApplications ?? []) {
+          if (da.domainId && da.challengeVersionId) {
+            updated[da.domainId] = da.challengeVersionId;
+          }
+        }
+        return updated;
+      });
     }
   }, [createFetcher.data]);
 
@@ -1168,10 +1338,15 @@ export default function PortalApply() {
     if (selectedDomainIds.length === 0) {
       return "Please select at least one domain.";
     }
+    const missingPick = selectedDomainIds.find(id => !pickedChallengeByDomain[id]);
+    if (missingPick) {
+      return "Please pick a challenge for every selected domain.";
+    }
     const { totalRequired, totalAnswered } = computeRequiredProgress(
       formQuestions as Question[],
-      domains as { id: string; name: string; challengeQuestions: Question[] }[],
+      domains as DomainShape[],
       selectedDomainIds,
+      pickedChallengeByDomain,
       answers,
       domainAnswers,
     );
@@ -1209,9 +1384,10 @@ export default function PortalApply() {
       }
     }
     for (const domainId of selectedDomainIds) {
-      const domain = domains.find((d: any) => d.id === domainId);
+      const domain = (domains as DomainShape[]).find((d: DomainShape) => d.id === domainId);
       if (!domain) continue;
-      for (const q of domain.challengeQuestions as Question[]) {
+      const questions = getPickedQuestions(domain, pickedChallengeByDomain[domainId]);
+      for (const q of questions) {
         if ((q.type === "github_url" || q.type === "figma_url") && domainAnswers[domainId]?.[q.key]?.trim()) {
           urlQuestions.push({ key: q.key, url: domainAnswers[domainId][q.key], type: q.type as "github_url" | "figma_url" });
         }
@@ -1274,15 +1450,17 @@ export default function PortalApply() {
   // Derive sections + progress from current answers
   const sections = buildSections(
     formQuestions as Question[],
-    domains as { id: string; name: string; challengeQuestions: Question[] }[],
+    domains as DomainShape[],
     selectedDomainIds,
+    pickedChallengeByDomain,
     answers,
     domainAnswers,
   );
   const { totalRequired, totalAnswered } = computeRequiredProgress(
     formQuestions as Question[],
-    domains as { id: string; name: string; challengeQuestions: Question[] }[],
+    domains as DomainShape[],
     selectedDomainIds,
+    pickedChallengeByDomain,
     answers,
     domainAnswers,
   );
@@ -1414,6 +1592,11 @@ export default function PortalApply() {
           return beforeQuestions.length > 0 ? (
             <div id="section-general-before" className="rounded-2xl bg-[#E8F4FA] px-6 py-5 space-y-6 scroll-mt-24">
               <h3 className="font-heading text-sm font-bold text-dark-blue uppercase tracking-wider">General Questions</h3>
+              {!isEmptyDoc(generalDescription) && (
+                <div className="text-dark-blue">
+                  <RichTextViewer content={generalDescription} />
+                </div>
+              )}
               {beforeQuestions.map(q => (
                 <div key={q.key} id={`question-${q.key}`}>
                   <label className="block text-sm font-semibold text-dark-blue mb-1">
@@ -1446,10 +1629,13 @@ export default function PortalApply() {
 
         {/* Domain-specific questions — colored left border cards */}
         {selectedDomainIds.map(domainId => {
-          const domainIndex = (domains as any[]).findIndex((d: any) => d.id === domainId);
-          const domain = (domains as any[])[domainIndex];
-          if (!domain || domain.challengeQuestions.length === 0) return null;
+          const domainIndex = (domains as DomainShape[]).findIndex((d: DomainShape) => d.id === domainId);
+          const domain = (domains as DomainShape[])[domainIndex];
+          if (!domain) return null;
           const color = getDomainColor(domainIndex);
+          const pickedCvId = pickedChallengeByDomain[domainId] ?? null;
+          const pickedQuestions = getPickedQuestions(domain, pickedCvId);
+          const showPicker = domain.challenges.length > 1;
 
           return (
             <div key={domainId} id={`section-domain-${domainId}`} className={`rounded-2xl ${color.cardBg} px-6 py-5 space-y-6 scroll-mt-24`}>
@@ -1467,32 +1653,77 @@ export default function PortalApply() {
                   </svg>
                 </button>
               </div>
-              {(domain.challengeQuestions as Question[]).map((q: Question) => (
-                <div key={q.key} id={`question-${q.key}`}>
-                  <label className="block text-sm font-semibold text-dark-blue mb-1">
-                    {q.data.label}
-                    {q.required && <span className="text-accent-coral ml-0.5">*</span>}
-                  </label>
-                  {q.data.description && (
-                    <p className="text-xs text-muted-foreground mb-1">{q.data.description}</p>
-                  )}
-                  <QuestionField
-                    question={q}
-                    value={domainAnswers[domainId]?.[q.key] ?? ""}
-                    onChange={v => setDomainAnswer(domainId, q.key, v)}
-                    urlCheckState={urlChecks[q.key]}
-                    onUrlBlur={() => checkUrlField(q.key, domainAnswers[domainId]?.[q.key] ?? "", q.type as "github_url" | "figma_url")}
-                  />
-                  {urlWarnings[q.key] && (
-                    <p className="text-xs text-amber-600 mt-1">{urlWarnings[q.key]}</p>
-                  )}
-                  {wordCountErrors[q.key] && (
-                    <p className="text-xs text-red-500 mt-1">
-                      Over the {wordCountErrors[q.key].maxWords}-word limit ({wordCountErrors[q.key].wordCount} words).
+
+              {showPicker && (
+                <div>
+                  <p className="text-xs font-semibold text-dark-blue mb-2">
+                    Choose your {domain.name} challenge <span className="text-accent-coral">*</span>
+                  </p>
+                  <div className="space-y-2">
+                    {domain.challenges.map(c => (
+                      <label key={c.challengeVersionId} className="flex items-start gap-2 text-sm cursor-pointer">
+                        <input
+                          type="radio"
+                          name={`challenge-${domainId}`}
+                          value={c.challengeVersionId}
+                          checked={pickedCvId === c.challengeVersionId}
+                          onChange={() => handleChallengePick(domainId, c.challengeVersionId)}
+                          className="mt-0.5"
+                        />
+                        <span className="text-dark-blue">{c.challengeName}</span>
+                      </label>
+                    ))}
+                  </div>
+                  {pickedCvId && (
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Switching to a different challenge will clear your answers for this domain.
                     </p>
                   )}
                 </div>
-              ))}
+              )}
+
+              {pickedCvId ? (
+                <>
+                  {(() => {
+                    const pickedChallenge = domain.challenges.find(c => c.challengeVersionId === pickedCvId);
+                    return !isEmptyDoc(pickedChallenge?.description) ? (
+                      <div className="text-dark-blue">
+                        <RichTextViewer content={pickedChallenge!.description} />
+                      </div>
+                    ) : null;
+                  })()}
+                  {pickedQuestions.map((q: Question) => (
+                    <div key={q.key} id={`question-${q.key}`}>
+                      <label className="block text-sm font-semibold text-dark-blue mb-1">
+                        {q.data.label}
+                        {q.required && <span className="text-accent-coral ml-0.5">*</span>}
+                      </label>
+                      {q.data.description && (
+                        <p className="text-xs text-muted-foreground mb-1">{q.data.description}</p>
+                      )}
+                      <QuestionField
+                        question={q}
+                        value={domainAnswers[domainId]?.[q.key] ?? ""}
+                        onChange={v => setDomainAnswer(domainId, q.key, v)}
+                        urlCheckState={urlChecks[q.key]}
+                        onUrlBlur={() => checkUrlField(q.key, domainAnswers[domainId]?.[q.key] ?? "", q.type as "github_url" | "figma_url")}
+                      />
+                      {urlWarnings[q.key] && (
+                        <p className="text-xs text-amber-600 mt-1">{urlWarnings[q.key]}</p>
+                      )}
+                      {wordCountErrors[q.key] && (
+                        <p className="text-xs text-red-500 mt-1">
+                          Over the {wordCountErrors[q.key].maxWords}-word limit ({wordCountErrors[q.key].wordCount} words).
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Pick a challenge above to see this domain's questions.
+                </p>
+              )}
             </div>
           );
         })}
@@ -1622,17 +1853,24 @@ export default function PortalApply() {
           })()}
 
           {selectedDomainIds.map(domainId => {
-            const domainIndex = (domains as any[]).findIndex((d: any) => d.id === domainId);
-            const domain = (domains as any[])[domainIndex];
-            if (!domain || domain.challengeQuestions.length === 0) return null;
+            const domainIndex = (domains as DomainShape[]).findIndex((d: DomainShape) => d.id === domainId);
+            const domain = (domains as DomainShape[])[domainIndex];
+            if (!domain) return null;
+            const pickedCvId = pickedChallengeByDomain[domainId] ?? null;
+            const pickedQuestions = getPickedQuestions(domain, pickedCvId);
+            if (pickedQuestions.length === 0) return null;
+            const pickedName = domain.challenges.find(c => c.challengeVersionId === pickedCvId)?.challengeName;
             const color = getDomainColor(domainIndex);
             return (
               <div key={domainId} className={`rounded-2xl ${color.cardBg} px-5 py-4`}>
-                <h4 className={`font-heading text-xs font-bold uppercase tracking-wider mb-4 ${color.text}`}>
+                <h4 className={`font-heading text-xs font-bold uppercase tracking-wider mb-1 ${color.text}`}>
                   {domain.name}
                 </h4>
+                {pickedName && domain.challenges.length > 1 && (
+                  <p className="text-xs text-muted-foreground mb-3">Challenge: {pickedName}</p>
+                )}
                 <QuestionList
-                  questions={domain.challengeQuestions as Question[]}
+                  questions={pickedQuestions}
                   answers={domainAnswers[domainId] ?? {}}
                   presigned={false}
                 />
@@ -1690,7 +1928,9 @@ export default function PortalApply() {
           {Object.entries(urlWarnings).map(([key, message]) => {
             const allQuestions = [
               ...(formQuestions as Question[]),
-              ...(domains as any[]).flatMap((d: any) => d.challengeQuestions as Question[]),
+              ...(domains as DomainShape[]).flatMap((d: DomainShape) =>
+                d.challenges.flatMap(c => c.questions),
+              ),
             ];
             const q = allQuestions.find(q => q.key === key);
             return (
@@ -1716,6 +1956,40 @@ export default function PortalApply() {
             className="px-5 py-2 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition disabled:opacity-50"
           >
             Submit Anyway
+          </button>
+        </div>
+      </Modal>
+
+      {/* Confirm challenge switch — wipes domain answers */}
+      <Modal
+        open={pendingChallengeChange !== null}
+        onClose={() => setPendingChallengeChange(null)}
+        labelledBy="challenge-switch-title"
+      >
+        <h3 id="challenge-switch-title" className="font-heading text-base font-bold text-dark-blue mb-2">
+          Switch challenge?
+        </h3>
+        <p className="text-sm text-muted-foreground mb-4">
+          Switching to a different challenge will clear the answers you've already written
+          for this domain, since each challenge has its own questions. This can't be undone.
+        </p>
+        <div className="flex gap-3 justify-end">
+          <button
+            onClick={() => setPendingChallengeChange(null)}
+            className="px-5 py-2 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-accent-coral hover:text-accent-coral transition"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => {
+              if (pendingChallengeChange) {
+                applyChallengePick(pendingChallengeChange.domainId, pendingChallengeChange.toCvId);
+              }
+              setPendingChallengeChange(null);
+            }}
+            className="px-5 py-2 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition"
+          >
+            Switch and Clear Answers
           </button>
         </div>
       </Modal>
