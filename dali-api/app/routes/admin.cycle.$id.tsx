@@ -1395,19 +1395,33 @@ export default function AdminCycleDetails() {
           <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
             <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-border bg-muted/50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <h3 className="font-bold text-foreground">Final Decisions Ready for Release</h3>
-              {pendingDecisions.length > 0 && (
-                <button
-                  onClick={async () => {
-                    for (const d of pendingDecisions) {
-                      await fetch(`/api/decisions/${d.id}/release`, { method: 'POST', credentials: 'include' })
+              {pendingDecisions.length > 0 && (() => {
+                const boundTypes = new Set(
+                  (loaderData?.currentDecisionEmails ?? []).map((b: any) => b.decisionType)
+                )
+                const releasable = pendingDecisions.filter((d: any) => boundTypes.has(d.type))
+                const skipped = pendingDecisions.length - releasable.length
+                return (
+                  <button
+                    onClick={async () => {
+                      for (const d of releasable) {
+                        await fetch(`/api/decisions/${d.id}/release`, { method: 'POST', credentials: 'include' })
+                      }
+                      setPendingDecisions(prev => prev.filter(p => !boundTypes.has(p.type)))
+                    }}
+                    disabled={releasable.length === 0}
+                    title={
+                      skipped > 0
+                        ? `${skipped} decision${skipped === 1 ? '' : 's'} skipped — no email template bound on the Setup tab`
+                        : undefined
                     }
-                    setPendingDecisions([])
-                  }}
-                  className="px-3 py-1.5 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition self-start sm:self-auto"
-                >
-                  Release All ({pendingDecisions.length})
-                </button>
-              )}
+                    className="px-3 py-1.5 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition self-start sm:self-auto disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Release All ({releasable.length})
+                    {skipped > 0 && ` — ${skipped} skipped, no template bound`}
+                  </button>
+                )
+              })()}
             </div>
             <div className="overflow-x-auto">
             <table className="w-full text-sm min-w-[640px]">
@@ -1421,7 +1435,11 @@ export default function AdminCycleDetails() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {pendingDecisions.map((d: any) => (
+                {pendingDecisions.map((d: any) => {
+                  const hasBinding = (loaderData?.currentDecisionEmails ?? []).some(
+                    (b: any) => b.decisionType === d.type
+                  )
+                  return (
                   <tr key={d.id} className="hover:bg-muted/50 transition">
                     <td className="px-4 py-3 font-medium text-foreground">
                       {d.domainApplication.application.user.firstName} {d.domainApplication.application.user.lastName}
@@ -1456,15 +1474,21 @@ export default function AdminCycleDetails() {
                             setPendingDecisions(prev => prev.filter(p => p.id !== d.id))
                             setReleasing(null)
                           }}
-                          disabled={releasing === d.id}
-                          className="px-3 py-1 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition disabled:opacity-50"
+                          disabled={releasing === d.id || !hasBinding}
+                          title={
+                            !hasBinding
+                              ? `No email template bound to ${d.type} in this cycle. Bind one on the Setup tab → Decision Emails before releasing.`
+                              : undefined
+                          }
+                          className="px-3 py-1 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           {releasing === d.id ? 'Releasing...' : 'Release'}
                         </button>
                       </div>
                     </td>
                   </tr>
-                ))}
+                  )
+                })}
                 {pendingDecisions.length === 0 && (
                   <tr><td colSpan={5} className="px-4 py-8 text-center text-muted-foreground/70"><span className="sr-only">Table empty: </span>No Final decisions awaiting release.</td></tr>
                 )}

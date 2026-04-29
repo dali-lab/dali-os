@@ -85,7 +85,16 @@ describe("Decision lineage (parentDecisionId)", () => {
       waitlistRank: null,
     });
     mockPrisma.decision.create.mockResolvedValue({ id: "dec-released" });
-    mockPrisma.domainApplication.findUnique.mockResolvedValue(null);
+    mockPrisma.domainApplication.findUnique.mockResolvedValue({
+      challengeVersion: { domain: null },
+      application: {
+        applicationCycleId: "cycle-1",
+        user: { firstName: "Test", dartmouthEmail: null, netId: null },
+      },
+    });
+    mockPrisma.cycleDecisionEmail.findUnique.mockResolvedValue({
+      emailTemplateVersion: { id: "etv-1", subject: "s", body: "b" },
+    });
 
     const req = new Request("http://localhost/api/decisions/dec-final/release", { method: "POST" });
     const res = await releaseAction({ request: req, params: { id: FINAL_ID }, context: {} } as any);
