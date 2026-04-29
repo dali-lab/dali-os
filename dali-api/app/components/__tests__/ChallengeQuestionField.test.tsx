@@ -43,6 +43,20 @@ describe("ChallengeQuestionField — question types render", () => {
     expect(html).toContain("github.com/owner/repo");
   });
 
+  it("renders a url input for type=figma_url with the figma placeholder", () => {
+    const q: Question = { key: "fig", type: "figma_url", required: false, data: { label: "Fig" } };
+    const html = renderField({ question: q, value: "", onChange: () => {} });
+    expect(html).toContain('type="url"');
+    expect(html).toContain("figma.com/file/");
+  });
+
+  it("renders a url input for type=drive_url with the drive placeholder", () => {
+    const q: Question = { key: "drv", type: "drive_url", required: false, data: { label: "Drive" } };
+    const html = renderField({ question: q, value: "", onChange: () => {} });
+    expect(html).toContain('type="url"');
+    expect(html).toContain("drive.google.com/file/d/");
+  });
+
   it("renders the file upload chrome for type=file when no file is set", () => {
     const q: Question = { key: "resume", type: "file", required: false, data: { label: "Resume" } };
     const html = renderField({ question: q, value: "", onChange: () => {} });

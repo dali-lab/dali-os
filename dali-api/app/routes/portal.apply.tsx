@@ -4,7 +4,7 @@ import type { Route } from "./+types/portal.apply";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { getActiveCycle } from "~/lib/cycles";
-import { checkGitHubUrl, checkFigmaUrl } from "~/lib/submission-check";
+import { checkGitHubUrl, checkFigmaUrl, checkDriveUrl } from "~/lib/submission-check";
 import type { SubmissionCheckResult } from "~/lib/submission-check";
 import { validateWordLimits } from "~/lib/word-count";
 import type { WordCountViolation } from "~/lib/word-count";
@@ -343,7 +343,7 @@ export async function action({ request }: Route.ActionArgs) {
     const urlQuestions = JSON.parse(formData.get("urlQuestions") as string ?? "[]") as {
       key: string;
       url: string;
-      type: "github_url" | "figma_url";
+      type: "github_url" | "figma_url" | "drive_url";
     }[];
 
     // Validate word limits server-side before any writes. Trust the questions
@@ -424,7 +424,13 @@ export async function action({ request }: Route.ActionArgs) {
         .filter(q => q.url.trim())
         .map(async q => ({
           key: q.key,
-          result: await (q.type === "figma_url" ? checkFigmaUrl(q.url) : checkGitHubUrl(q.url)),
+          result: await (
+            q.type === "figma_url"
+              ? checkFigmaUrl(q.url)
+              : q.type === "drive_url"
+                ? checkDriveUrl(q.url)
+                : checkGitHubUrl(q.url)
+          ),
         })),
     );
     for (const { key, result } of urlCheckResults) {
@@ -825,7 +831,7 @@ export default function PortalApply() {
     }
   }
 
-  const checkUrlField = useCallback(async (key: string, url: string, type: "github_url" | "figma_url") => {
+  const checkUrlField = useCallback(async (key: string, url: string, type: "github_url" | "figma_url" | "drive_url") => {
     if (!url.trim()) {
       setUrlChecks(prev => ({ ...prev, [key]: { status: "idle" } }));
       return;
@@ -1010,14 +1016,18 @@ export default function PortalApply() {
     return null;
   }
 
-  // Collect every non-empty github_url / figma_url answer across the general
-  // form and each picked domain challenge. Used by both the pre-review check
-  // and the final submit payload.
-  function collectUrlQuestions(): { key: string; url: string; type: "github_url" | "figma_url" }[] {
-    const urlQuestions: { key: string; url: string; type: "github_url" | "figma_url" }[] = [];
+  // Collect every non-empty github_url / figma_url / drive_url answer across the
+  // general form and each picked domain challenge. Used by both the pre-review
+  // check and the final submit payload.
+  type UrlQuestionType = "github_url" | "figma_url" | "drive_url";
+  function isUrlType(t: string): t is UrlQuestionType {
+    return t === "github_url" || t === "figma_url" || t === "drive_url";
+  }
+  function collectUrlQuestions(): { key: string; url: string; type: UrlQuestionType }[] {
+    const urlQuestions: { key: string; url: string; type: UrlQuestionType }[] = [];
     for (const q of formQuestions as Question[]) {
-      if ((q.type === "github_url" || q.type === "figma_url") && answers[q.key]?.trim()) {
-        urlQuestions.push({ key: q.key, url: answers[q.key], type: q.type as "github_url" | "figma_url" });
+      if (isUrlType(q.type) && answers[q.key]?.trim()) {
+        urlQuestions.push({ key: q.key, url: answers[q.key], type: q.type });
       }
     }
     for (const domainId of selectedDomainIds) {
@@ -1025,8 +1035,8 @@ export default function PortalApply() {
       if (!domain) continue;
       const questions = getPickedQuestions(domain, pickedChallengeByDomain[domainId]);
       for (const q of questions) {
-        if ((q.type === "github_url" || q.type === "figma_url") && domainAnswers[domainId]?.[q.key]?.trim()) {
-          urlQuestions.push({ key: q.key, url: domainAnswers[domainId][q.key], type: q.type as "github_url" | "figma_url" });
+        if (isUrlType(q.type) && domainAnswers[domainId]?.[q.key]?.trim()) {
+          urlQuestions.push({ key: q.key, url: domainAnswers[domainId][q.key], type: q.type });
         }
       }
     }
@@ -1339,7 +1349,7 @@ export default function PortalApply() {
                     value={answers[q.key] ?? ""}
                     onChange={v => setAnswer(q.key, v)}
                     urlCheckState={urlChecks[q.key]}
-                    onUrlBlur={() => checkUrlField(q.key, answers[q.key] ?? "", q.type as "github_url" | "figma_url")}
+                    onUrlBlur={() => checkUrlField(q.key, answers[q.key] ?? "", q.type as "github_url" | "figma_url" | "drive_url")}
                   />
                   {urlWarnings[q.key] && (
                     <p className="text-xs text-amber-600 mt-1">{urlWarnings[q.key]}</p>
@@ -1434,7 +1444,7 @@ export default function PortalApply() {
                         value={domainAnswers[domainId]?.[q.key] ?? ""}
                         onChange={v => setDomainAnswer(domainId, q.key, v)}
                         urlCheckState={urlChecks[q.key]}
-                        onUrlBlur={() => checkUrlField(q.key, domainAnswers[domainId]?.[q.key] ?? "", q.type as "github_url" | "figma_url")}
+                        onUrlBlur={() => checkUrlField(q.key, domainAnswers[domainId]?.[q.key] ?? "", q.type as "github_url" | "figma_url" | "drive_url")}
                       />
                       {urlWarnings[q.key] && (
                         <p className="text-xs text-amber-600 mt-1">{urlWarnings[q.key]}</p>
