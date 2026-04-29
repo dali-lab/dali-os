@@ -5,6 +5,7 @@ import { requireAuth } from "~/lib/auth";
 import { userInitials } from "~/lib/display";
 import { bumpLogoClick, hydrateRetroClass, logConsoleBootBanner } from "~/lib/party";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
+import { RetroExitPill } from "~/components/RetroExitPill";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -77,6 +78,7 @@ export default function ApplicantLayout() {
       <div className="pt-16">
         <Outlet />
       </div>
+      <RetroExitPill />
     </div>
   );
 }

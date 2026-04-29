@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { redirect, useLoaderData } from "react-router";
+import { Link, redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/party";
 import { requireAuth } from "~/lib/auth";
 import {
@@ -13,6 +13,7 @@ import {
   setDinoRewardEarned,
   setExternalCodeUnlocked,
   setInternalCodeUnlocked,
+  useRetro,
 } from "~/lib/party";
 import {
   DIGIT_SUM_CORAL_EXTERNAL_SLOT4,
@@ -38,6 +39,7 @@ export default function Party() {
 
   const [unlocked, setUnlocked] = useState(false);
   const [celebrate, setCelebrate] = useState(false);
+  const [retroOn, setRetroOn] = useRetro();
 
   useEffect(() => {
     setUnlocked(
@@ -53,6 +55,13 @@ export default function Party() {
     <div className="min-h-screen bg-section-bg relative overflow-hidden flex flex-col items-center justify-center px-6 py-16">
       <Confetti />
 
+      <Link
+        to="/"
+        className="absolute top-4 left-4 z-10 text-xs text-muted-foreground hover:text-foreground transition"
+      >
+        ← back
+      </Link>
+
       <div className="relative z-10 text-center max-w-md w-full">
         <p className="text-xs uppercase tracking-widest text-accent-coral font-semibold mb-3">
           Launch Party
@@ -60,6 +69,21 @@ export default function Party() {
         <h1 className="font-heading text-3xl md:text-4xl font-bold text-dark-blue mb-10">
           Welcome, {handle}.
         </h1>
+
+        {retroOn && (
+          <div className="mb-6 flex items-center justify-between rounded-2xl border border-border bg-card/80 backdrop-blur-sm px-4 py-3 text-sm">
+            <span className="text-dark-blue">
+              Retro mode: <span className="font-semibold">on</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => setRetroOn(false)}
+              className="text-xs font-semibold text-accent-coral hover:underline"
+            >
+              turn off
+            </button>
+          </div>
+        )}
 
         <DinoGame isMember={isMember} rewardSlot={dinoSlot} />
 

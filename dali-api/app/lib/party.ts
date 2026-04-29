@@ -1,6 +1,8 @@
 // Launch-party easter-egg helpers. Nothing here affects app behavior —
 // it's all opt-in cosmetic state persisted to localStorage.
 
+import { useEffect, useState } from "react";
+
 export const EXTERNAL_CODE = "D4L1";
 export const INTERNAL_CODE = "C5DE";
 
@@ -49,11 +51,44 @@ export function isRetroOn(): boolean {
   return window.localStorage.getItem(RETRO_KEY) === "1";
 }
 
+const RETRO_EVENT = "dali:party:retro-change";
+
 export function setRetro(on: boolean) {
   if (typeof window === "undefined") return;
-  if (on) window.localStorage.setItem(RETRO_KEY, "1");
-  else window.localStorage.removeItem(RETRO_KEY);
+  if (on) {
+    window.localStorage.setItem(RETRO_KEY, "1");
+  } else {
+    window.localStorage.removeItem(RETRO_KEY);
+    // Also reset the click counter so the user isn't still counting towards /party
+    // after explicitly exiting retro mode.
+    window.sessionStorage.removeItem(CLICK_KEY);
+  }
   document.documentElement.classList.toggle("dali-retro", on);
+  window.dispatchEvent(new CustomEvent(RETRO_EVENT, { detail: { on } }));
+}
+
+/**
+ * React hook that mirrors retro state and rerenders subscribers when it flips.
+ * Returns `[isOn, setOn]`. Safe to call from SSR — initial value is `false`.
+ */
+export function useRetro(): [boolean, (on: boolean) => void] {
+  const [on, setOn] = useState(false);
+
+  useEffect(() => {
+    setOn(isRetroOn());
+    const onChange = () => setOn(isRetroOn());
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === RETRO_KEY) setOn(isRetroOn());
+    };
+    window.addEventListener(RETRO_EVENT, onChange);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener(RETRO_EVENT, onChange);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, []);
+
+  return [on, setRetro];
 }
 
 // Returns the new click count. 5 clicks → retro mode + console nudge.
