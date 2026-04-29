@@ -167,6 +167,14 @@ export default function CalendarGrid({
   const weekDays = Array.from({ length: 5 }, (_, i) => addDays(weekStart, i)) // Mon-Fri
   const rowCount = ((dayEndHour - dayStartHour) * 60) / BLOCK_MINUTES
 
+  // Treat range bounds as whole calendar days: rangeStart/rangeEnd are the
+  // first/last allowed day. Cells before rangeStartDay or on/after the day
+  // following rangeEnd are out-of-range and not selectable.
+  const rangeStartDay = new Date(rangeStart)
+  rangeStartDay.setHours(0, 0, 0, 0)
+  const dayAfterRangeEnd = addDays(rangeEnd, 1)
+  dayAfterRangeEnd.setHours(0, 0, 0, 0)
+
   const canGoPrev = getMonday(addDays(weekStart, -7)) >= getMonday(rangeStart)
   const canGoNext = addDays(weekStart, 7) <= rangeEnd
 
@@ -359,9 +367,14 @@ export default function CalendarGrid({
                   const isSelected = selected.has(key)
                   const isInterview = interviewKeys.has(key)
                   const isPast = cellDate < new Date()
+                  const isOutOfRange = cellDate < rangeStartDay || cellDate >= dayAfterRangeEnd
+                  const isLocked = isInterview || isPast || isOutOfRange
 
                   let bg = 'bg-card hover:bg-green-50'
+                  
                   if (isInterview) bg = 'bg-blue-100 cursor-not-allowed'
+                  else if (isOutOfRange) bg = 'bg-muted/30 cursor-not-allowed'
+
                   else if (isPast) bg = 'bg-muted/50 cursor-not-allowed'
                   else if (isSelected) bg = 'bg-green-400 hover:bg-green-500'
 
@@ -370,8 +383,8 @@ export default function CalendarGrid({
                       key={key}
                       data-block-key={key}
                       data-block-past={isPast ? '1' : '0'}
-                      onMouseDown={() => handleMouseDown(key, isPast)}
-                      onMouseEnter={() => handleMouseEnter(key, isPast)}
+                      onMouseDown={() => !isLocked && handleMouseDown(key, isPast)}
+                      onMouseEnter={() => !isLocked && handleMouseEnter(key, isPast)}
                       className={`border-r last:border-r-0 border-border transition-colors ${isHourBoundary ? 'border-t border-border' : 'border-t border-gray-50'} ${bg}`}
                       style={{ height: BLOCK_HEIGHT_PX }}
                     />
