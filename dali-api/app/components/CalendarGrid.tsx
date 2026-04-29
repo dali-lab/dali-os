@@ -361,7 +361,7 @@ export default function CalendarGrid({
                   const isPast = cellDate < new Date()
 
                   let bg = 'bg-card hover:bg-green-50'
-                  if (isInterview) bg = 'bg-red-100 cursor-not-allowed'
+                  if (isInterview) bg = 'bg-blue-100 cursor-not-allowed'
                   else if (isPast) bg = 'bg-muted/50 cursor-not-allowed'
                   else if (isSelected) bg = 'bg-green-400 hover:bg-green-500'
 
@@ -393,7 +393,7 @@ export default function CalendarGrid({
             <div className="w-3 h-3 bg-green-400 rounded" /> Available
           </div>
           <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 bg-red-100 border border-red-200 rounded" /> Interview booked
+            <div className="w-3 h-3 bg-blue-100 border border-blue-200 rounded" /> Interview booked
           </div>
         </div>
         <div className="flex items-center gap-3 sm:justify-end">

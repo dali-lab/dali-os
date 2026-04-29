@@ -16,6 +16,7 @@ import {
   X,
 } from 'lucide-react'
 import { userInitials } from '~/lib/display'
+import { bumpLogoClick, hydrateRetroClass, logConsoleBootBanner } from '~/lib/party'
 
 interface LayoutProps {
   children: React.ReactNode
@@ -29,9 +30,27 @@ interface LayoutProps {
 export function Layout({ children, user, isHiringLead = false, isAdmin = false, isDomainLead = false, isInterviewer = false }: LayoutProps) {
   const location = useLocation()
   const path = location.pathname
+  const [showStats, setShowStats] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
-  // Close mobile menu on route change
+  const handleLogoClick = () => {
+    bumpLogoClick()
+  }
+
+  useEffect(() => {
+    hydrateRetroClass()
+    logConsoleBootBanner()
+
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'd' || e.key === 'D')) {
+        e.preventDefault()
+        setShowStats(s => !s)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   useEffect(() => {
     setMobileNavOpen(false)
   }, [path])
@@ -114,10 +133,20 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
             >
               {mobileNavOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
-            <div className="w-7 h-7 bg-accent-coral rounded-md flex items-center justify-center flex-shrink-0">
-              <span className="text-white font-bold text-base leading-none font-heading">D</span>
-            </div>
-            <span className="font-heading font-bold text-lg text-white tracking-tight truncate">DALI Hiring</span>
+            <button
+              type="button"
+              onClick={handleLogoClick}
+              className="flex items-center gap-2.5 focus:outline-none min-w-0"
+              title="DALI"
+            >
+              <div className="w-7 h-7 bg-accent-coral rounded-md flex items-center justify-center flex-shrink-0">
+                <span className="text-white font-bold text-base leading-none font-heading">D</span>
+              </div>
+              <span className="font-heading font-bold text-lg text-white tracking-tight truncate">
+                <span className="text-accent-coral/80">D</span>
+                <sup className="text-accent-coral/80 text-[0.5em]">3</sup>ALI Hiring
+              </span>
+            </button>
           </div>
           <div className="flex items-center gap-3">
             <span className="text-xs text-white/50 hidden sm:block truncate max-w-[200px]">{user.email}</span>
@@ -258,6 +287,50 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-8">
         {children}
       </main>
+
+      {showStats && <StatsModal onClose={() => setShowStats(false)} />}
+    </div>
+  )
+}
+
+function StatsModal({ onClose }: { onClose: () => void }) {
+  const stats: [string, string][] = [
+    ['Cycles run', '7'],
+    ['Applications reviewed', '1,284'],
+    ['Challenges written', '42'],
+    ['Interviews scheduled', '318'],
+    ['Lines of code', '~48k'],
+    ['Coffees consumed', '∞'],
+    ['Launch year', '2026'],
+  ]
+  return (
+    <div
+      onClick={onClose}
+      className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        className="bg-card rounded-xl border border-border shadow-2xl w-full max-w-md p-6 relative"
+      >
+        <button
+          onClick={onClose}
+          className="absolute top-3 right-3 text-muted-foreground hover:text-foreground transition"
+          aria-label="Close"
+        >
+          <X className="w-4 h-4" />
+        </button>
+        <h2 className="font-heading text-xl font-bold text-foreground mb-1">DALI Hiring · Stats</h2>
+        <p className="text-xs text-muted-foreground mb-4">A little snapshot of the party we've been throwing.</p>
+        <dl className="divide-y divide-border">
+          {stats.map(([label, value]) => (
+            <div key={label} className="flex items-center justify-between py-2">
+              <dt className="text-sm text-muted-foreground">{label}</dt>
+              <dd className="text-sm font-mono font-semibold text-foreground">{value}</dd>
+            </div>
+          ))}
+        </dl>
+        <p className="mt-4 text-[10px] uppercase tracking-wider text-muted-foreground/70">⌘⇧D to toggle</p>
+      </div>
     </div>
   )
 }
