@@ -101,3 +101,13 @@ Read the decoded characters in slot order to get the code.
 - Reward state for the dino game lives in `localStorage` under `dali:party:dino-reward`. Helpers in [dali-api/app/lib/party.ts](dali-api/app/lib/party.ts).
 - Logo click count is in `sessionStorage` (`dali:party:logo-clicks`) — resets when the tab closes.
 - Audience routing: members get the internal code, everyone else gets external (`auth.user.type === "member"`, [dali-api/app/routes/party.tsx:18-19](dali-api/app/routes/party.tsx#L18-L19)).
+
+---
+
+## Server-side analytics
+
+Party-flow events are recorded server-side in the `PartyEvent` table (separate from `AuditLog`, which stays scoped to security-relevant events). Aggregates live at `/admin-console/party` and are gated to admins only. Counts only — no per-user lists, no PII.
+
+Emit sites use `trackPartyEvent()` from [dali-api/app/lib/party.ts](dali-api/app/lib/party.ts), which fire-and-forgets to `POST /api/party/events`. The endpoint dedupes `PARTY_VISIT` per user per 24h; other event types are not deduped.
+
+Event types: `PARTY_VISIT`, `CODE_UNLOCK_SUCCESS`, `CODE_UNLOCK_FAILURE`, `DINO_REWARD_EARNED`, `LOGO_TRAIL_TRIGGERED`.

@@ -20,6 +20,7 @@ export default [
     route("admin-console", "routes/admin-console.tsx"),
     route("admin-console/members", "routes/admin-console.members.tsx"),
     route("admin-console/domains", "routes/admin-console.domains.tsx"),
+    route("admin-console/party", "routes/admin-console.party.tsx"),
     route("interviewer", "routes/interviewer.tsx"),
     route("interviewer/interview/:interviewId", "routes/interviewer.interview.$interviewId.tsx"),
     route("schedule-interview", "routes/applicant.schedule-interview.tsx"),
@@ -123,6 +124,9 @@ export default [
 
   // Email sending
   route("api/email/send", "routes/api.email.send.ts"),
+
+  // Party launch-event analytics
+  route("api/party/events", "routes/api.party.events.ts"),
   // Submission URL checking
   route("api/check-url", "routes/api.check-url.ts"),
 

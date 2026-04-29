@@ -109,7 +109,10 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
       sub: [
         { label: 'Members', to: '/admin-console/members', active: path.startsWith('/admin-console/members') },
         ...(isAdmin
-          ? [{ label: 'Domains', to: '/admin-console/domains', active: path.startsWith('/admin-console/domains') }]
+          ? [
+              { label: 'Domains', to: '/admin-console/domains', active: path.startsWith('/admin-console/domains') },
+              { label: 'Party', to: '/admin-console/party', active: path.startsWith('/admin-console/party') },
+            ]
           : []),
       ],
     },
