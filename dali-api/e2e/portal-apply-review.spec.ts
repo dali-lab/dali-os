@@ -160,10 +160,21 @@ test.describe('portal: pre-submit review modal', () => {
     });
 
     await page.goto('/portal/apply');
+    await expect(page).toHaveURL(/\/portal\/apply/);
+    // Wait for hydration so the click handler is bound before we click — without
+    // this the click can land before React has wired up `Review Application`,
+    // and openReviewIfValid never runs.
+    await page.waitForLoadState('networkidle');
 
     const reviewButton = page.getByRole('button', { name: /^Review Application$/ });
     await expect(reviewButton).toBeVisible();
+
+    // Click and wait for the URL-check fetch to confirm openReviewIfValid
+    // actually ran (the modal is opened only after this resolves). Without
+    // this anchor we race the async URL check against the heading assertion.
+    const checkUrlRequest = page.waitForRequest('**/api/check-url');
     await reviewButton.click();
+    await checkUrlRequest;
 
     // Warning modal must appear *before* the review modal — this is the
     // regression we're guarding against (#320).
