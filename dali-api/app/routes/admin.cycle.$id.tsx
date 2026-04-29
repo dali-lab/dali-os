@@ -6,6 +6,7 @@ import { requireAuth } from "~/lib/auth";
 import { isHiringLead } from "~/lib/roles";
 import { renderEmail } from "~/lib/email";
 import { Modal } from "~/components/Modal";
+import { ChallengePreviewModal } from "~/components/ChallengePreviewModal";
 import { Settings, Users, Calendar, AlertTriangle, Trash2, Plus, CheckCircle, ArrowRight, Circle, ChevronRight, X, LayoutDashboard, Eye } from 'lucide-react'
 import { formatVersionLabel, buildVersionNumberMap } from "~/lib/formatVersion";
 
@@ -2253,7 +2254,16 @@ function DomainOverridePanel({
 
       {previewCv && (
         <ChallengePreviewModal
-          cv={previewCv}
+          challengeVersionId={previewCv.id}
+          challengeName={previewCv.challenge?.name ?? 'Challenge'}
+          versionLabel={formatVersionLabel({
+            name: previewCv.challenge?.name ?? 'Challenge',
+            versionNumber: previewCv.versionNumber,
+            createdAt: previewCv.createdAt,
+            createdBy: previewCv.createdBy,
+          })}
+          description={previewCv.description}
+          questions={(previewCv.questions as any[]) ?? []}
           onClose={() => setPreviewCvId(null)}
         />
       )}
@@ -2350,39 +2360,6 @@ function DeleteDomainModal({ domain, onClose }: { domain: any; onClose: () => vo
             Remove
           </button>
         </Form>
-      </div>
-    </Modal>
-  );
-}
-
-function ChallengePreviewModal({ cv, onClose }: { cv: any; onClose: () => void }) {
-  const headingId = `challenge-preview-heading-${cv.id}`;
-  const questions: any[] = (cv.questions as any[]) ?? [];
-  return (
-    <Modal open onClose={onClose} labelledBy={headingId} containerClassName="bg-card rounded-2xl shadow-xl max-w-lg w-full mx-4 p-6 max-h-[80vh] overflow-y-auto">
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 id={headingId} className="text-lg font-bold text-foreground">
-            {cv.challenge?.name ?? 'Challenge'} — preview
-          </h2>
-          <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-        <p className="text-xs text-muted-foreground">Created {new Date(cv.createdAt).toLocaleDateString()}</p>
-        {questions.length === 0 ? (
-          <p className="text-sm text-muted-foreground/70 italic">No questions in this version.</p>
-        ) : (
-          <div className="border border-border rounded-lg divide-y divide-border">
-            {questions.map((q: any, i: number) => (
-              <div key={q.key ?? i} className="px-4 py-3">
-                <span className="text-xs font-medium text-muted-foreground/70 uppercase tracking-wide mr-2">Q{i + 1}</span>
-                <span className="text-sm text-foreground/80">{q.data?.label ?? q.label}</span>
-                {q.required && <span className="ml-2 text-xs text-red-500">required</span>}
-              </div>
-            ))}
-          </div>
-        )}
       </div>
     </Modal>
   );
