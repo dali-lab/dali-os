@@ -837,7 +837,8 @@ export default function AdminCycleDetails() {
             const challengeVersions = cycle?.challengeVersions ?? [];
             const coveredDomainIds = new Set(challengeVersions.map((cv: any) => cv.challengeVersion?.domainId));
             const hasGeneralForm = challengeVersions.some((cv: any) => cv.challengeVersion?.domainId === null);
-            return hasCloseDate && domains.length > 0 && domains.every((d: any) => coveredDomainIds.has(d.domainId)) && hasGeneralForm;
+            const allDomainsReady = domains.length > 0 && domains.every((d: any) => d.isReady);
+            return hasCloseDate && domains.length > 0 && domains.every((d: any) => coveredDomainIds.has(d.domainId)) && hasGeneralForm && allDomainsReady;
           })();
           return (
             <button
@@ -906,8 +907,9 @@ export default function AdminCycleDetails() {
         const coveredDomainIds = new Set(challengeVersions.map((cv: any) => cv.challengeVersion?.domainId));
         const allDomainsCovered = domains.length > 0 && domains.every((d: any) => coveredDomainIds.has(d.domainId));
         const hasGeneralForm = challengeVersions.some((cv: any) => cv.challengeVersion?.domainId === null);
+        const allDomainsReady = domains.length > 0 && domains.every((d: any) => d.isReady);
         const hasGeneralRubric = !!cycle?.generalRubricVersionId;
-        const ready = hasCloseDate && allDomainsCovered && hasGeneralForm;
+        const ready = hasCloseDate && allDomainsCovered && hasGeneralForm && allDomainsReady;
         return (
           <div className={`rounded-xl border p-4 space-y-3 ${ready ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200'}`}>
             <h3 className="text-sm font-bold text-foreground">Checklist to Open Applications</h3>
@@ -932,6 +934,15 @@ export default function AdminCycleDetails() {
                   ? <CheckCircle className="w-4 h-4 text-green-600" />
                   : <Circle className="w-4 h-4 text-muted-foreground/70" />}
                 <span className={hasGeneralForm ? 'text-green-800' : 'text-muted-foreground'}>General application form is linked</span>
+              </div>
+              <div className="flex items-center gap-2 text-sm">
+                {allDomainsReady
+                  ? <CheckCircle className="w-4 h-4 text-green-600" />
+                  : <Circle className="w-4 h-4 text-muted-foreground/70" />}
+                <span className={allDomainsReady ? 'text-green-800' : 'text-muted-foreground'}>
+                  Every domain is marked ready
+                  {domains.length === 0 && ' (no domains added)'}
+                </span>
               </div>
             </div>
             {!hasGeneralRubric && (
