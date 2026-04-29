@@ -122,8 +122,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       },
     },
   });
-  const confidentialitySignatureCount = await prisma.confidentialityAgreementSignature.count({
+  const confidentialitySignatures = await prisma.confidentialityAgreementSignature.findMany({
     where: { applicationCycleId: params.id },
+    include: { user: { select: { firstName: true, lastName: true } } },
+    orderBy: { signedAt: "asc" },
   });
 
   const cycleApplicationReviewCount = await prisma.applicationReview.count({
@@ -262,7 +264,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     reviewedDomainIds,
     confidentialityAgreementOptions,
     currentConfidentialityBinding,
-    confidentialitySignatureCount,
+    confidentialitySignatures,
   };
 }
 
@@ -1134,7 +1136,7 @@ export default function AdminCycleDetails() {
           <ConfidentialityAgreementPicker
             currentBinding={loaderData?.currentConfidentialityBinding ?? null}
             agreementOptions={loaderData?.confidentialityAgreementOptions ?? []}
-            signatureCount={loaderData?.confidentialitySignatureCount ?? 0}
+            signatures={loaderData?.confidentialitySignatures ?? []}
           />
 
           {/* Decision-release email bindings */}
@@ -2681,17 +2683,19 @@ function DecisionEmailPicker({ slot, binding, emailTemplates, locked }: {
 function ConfidentialityAgreementPicker({
   currentBinding,
   agreementOptions,
-  signatureCount,
+  signatures,
 }: {
   currentBinding: any | null;
   agreementOptions: any[];
-  signatureCount: number;
+  signatures: { user: { firstName: string | null; lastName: string | null } }[];
 }) {
   const [editing, setEditing] = useState(!currentBinding);
+  const [signersOpen, setSignersOpen] = useState(false);
   const currentName =
     currentBinding?.confidentialityAgreementVersion?.agreement?.name ?? null;
   const currentVersion =
     currentBinding?.confidentialityAgreementVersion?.versionNumber ?? null;
+  const signatureCount = signatures.length;
 
   return (
     <div className="bg-card rounded-xl border border-border shadow-sm p-6 space-y-3">
@@ -2710,22 +2714,51 @@ function ConfidentialityAgreementPicker({
         </div>
       )}
       {currentBinding && !editing ? (
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <CheckCircle className="w-4 h-4 text-green-600" />
-            <span>
-              {currentName ?? "Set"} — v{currentVersion}
-            </span>
-            <span className="text-xs text-muted-foreground/70 ml-2">
-              ({signatureCount} signature{signatureCount === 1 ? "" : "s"})
-            </span>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <CheckCircle className="w-4 h-4 text-green-600" />
+              <span>
+                {currentName ?? "Set"} — v{currentVersion}
+              </span>
+            </div>
+            <button
+              onClick={() => setEditing(true)}
+              className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+            >
+              Change
+            </button>
           </div>
           <button
-            onClick={() => setEditing(true)}
-            className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+            type="button"
+            onClick={() => setSignersOpen((o) => !o)}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
           >
-            Change
+            <ChevronRight
+              className={`w-3 h-3 transition-transform ${signersOpen ? "rotate-90" : ""}`}
+            />
+            {signatureCount} signature{signatureCount === 1 ? "" : "s"}
           </button>
+          {signersOpen && (
+            <ul className="ml-4 space-y-1">
+              {signatures.length === 0 ? (
+                <li className="text-xs text-muted-foreground italic">
+                  No one has signed yet.
+                </li>
+              ) : (
+                signatures.map((sig, i) => {
+                  const name =
+                    `${sig.user.firstName ?? ""} ${sig.user.lastName ?? ""}`.trim() ||
+                    "Unknown";
+                  return (
+                    <li key={i} className="text-xs text-foreground/80">
+                      {name}
+                    </li>
+                  );
+                })
+              )}
+            </ul>
+          )}
         </div>
       ) : (
         <Form

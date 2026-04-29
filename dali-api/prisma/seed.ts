@@ -1958,13 +1958,15 @@ async function main() {
   // ── Reviewers + Interviewers ──────────────────────────────────────────────
   // Two reviewers+interviewers per domain so every domain app has enough
   // review coverage and invited applicants see real slot options.
+  // reviewer3 and pm.lead intentionally left unsigned to seed the "pending"
+  // state visible in the hiring-lead signatures list.
   const reviewerData = [
-    { email: "reviewer1@dali.dartmouth.edu", first: "Riley", last: "Okonkwo", domainId: engDomain.id },
-    { email: "reviewer2@dali.dartmouth.edu", first: "Sam", last: "Alvarez", domainId: designDomain.id },
-    { email: "reviewer3@dali.dartmouth.edu", first: "Pat", last: "Mikhailov", domainId: pmDomain.id },
-    { email: "eng.lead@dali.dartmouth.edu", first: "Mira", last: "Chen", domainId: engDomain.id },
-    { email: "design.lead@dali.dartmouth.edu", first: "Isabela", last: "Ferreira", domainId: designDomain.id },
-    { email: "pm.lead@dali.dartmouth.edu", first: "Theo", last: "Abernathy", domainId: pmDomain.id },
+    { email: "reviewer1@dali.dartmouth.edu", first: "Riley", last: "Okonkwo", domainId: engDomain.id, signed: true },
+    { email: "reviewer2@dali.dartmouth.edu", first: "Sam", last: "Alvarez", domainId: designDomain.id, signed: true },
+    { email: "reviewer3@dali.dartmouth.edu", first: "Pat", last: "Mikhailov", domainId: pmDomain.id, signed: false },
+    { email: "eng.lead@dali.dartmouth.edu", first: "Mira", last: "Chen", domainId: engDomain.id, signed: true },
+    { email: "design.lead@dali.dartmouth.edu", first: "Isabela", last: "Ferreira", domainId: designDomain.id, signed: true },
+    { email: "pm.lead@dali.dartmouth.edu", first: "Theo", last: "Abernathy", domainId: pmDomain.id, signed: false },
   ];
 
   const reviewerMembers: Array<{ id: string; domainId: string }> = [];
@@ -2025,17 +2027,17 @@ async function main() {
       },
     });
 
-    // Sign the confidentiality agreement so reviewers/interviewers can access
-    // sensitive cycle data in E2E tests.
-    await prisma.confidentialityAgreementSignature.upsert({
-      where: { userId_applicationCycleId: { userId: user.id, applicationCycleId: cycle.id } },
-      update: {},
-      create: {
-        userId: user.id,
-        applicationCycleId: cycle.id,
-        confidentialityAgreementVersionId: "cav-fall-2026-v1",
-      },
-    });
+    if (r.signed) {
+      await prisma.confidentialityAgreementSignature.upsert({
+        where: { userId_applicationCycleId: { userId: user.id, applicationCycleId: cycle.id } },
+        update: {},
+        create: {
+          userId: user.id,
+          applicationCycleId: cycle.id,
+          confidentialityAgreementVersionId: "cav-fall-2026-v1",
+        },
+      });
+    }
   }
 
   // ── Engineering reviewers for Winter 2027 ──────────────────────────────────
