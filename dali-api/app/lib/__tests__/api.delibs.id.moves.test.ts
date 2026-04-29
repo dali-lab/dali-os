@@ -10,6 +10,7 @@ import { isHiringLead, isDomainLead } from "~/lib/roles";
 import { action } from "~/routes/api.delibs.$id.moves";
 
 const USER_ID = "user-1";
+const MEMBER_ID = "member-1";
 const SESSION_ID = "delibs-1";
 
 const mockTx: any = {
@@ -17,10 +18,15 @@ const mockTx: any = {
     findUnique: vi.fn(),
     update: vi.fn(),
   },
+  delibsSessionParticipant: {
+    findFirst: vi.fn(),
+    create: vi.fn(),
+  },
 };
 
 const mockPrisma = prisma as unknown as {
   $transaction: ReturnType<typeof vi.fn>;
+  dALIMember: { findFirst: ReturnType<typeof vi.fn> };
 };
 
 beforeEach(() => {
@@ -28,6 +34,12 @@ beforeEach(() => {
 
   mockTx.delibsSession.findUnique = vi.fn();
   mockTx.delibsSession.update = vi.fn();
+  mockTx.delibsSessionParticipant.findFirst = vi.fn().mockResolvedValue(null);
+  mockTx.delibsSessionParticipant.create = vi.fn().mockResolvedValue({});
+
+  (mockPrisma as any).dALIMember = {
+    findFirst: vi.fn().mockResolvedValue({ id: MEMBER_ID }),
+  };
 
   // Run callback against mockTx; serialize concurrent transactions one at a
   // time so callers can simulate two in-flight moves observing fresh state.
@@ -154,6 +166,59 @@ describe("POST /api/delibs/:id/moves", () => {
       Interview: ["card-a"],
       Reject: ["card-b"],
     });
+  });
+
+  it("inserts an open participant row on first move when caller has none", async () => {
+    mockTx.delibsSession.findUnique.mockResolvedValue({
+      id: SESSION_ID,
+      type: "Initial",
+      status: "Open",
+      columnOrder: { "No Decision": ["card-a"], Interview: [], Reject: [] },
+    });
+    mockTx.delibsSession.update.mockImplementation(({ data }: any) => ({
+      id: SESSION_ID,
+      columnOrder: data.columnOrder,
+    }));
+    mockTx.delibsSessionParticipant.findFirst.mockResolvedValue(null);
+
+    const res = await action({
+      request: makeRequest({ cardId: "card-a", toColumn: "Interview" }),
+      params: { id: SESSION_ID },
+      context: {},
+    } as any);
+
+    expect(res.status).toBe(200);
+    expect(mockTx.delibsSessionParticipant.create).toHaveBeenCalledTimes(1);
+    expect(mockTx.delibsSessionParticipant.create).toHaveBeenCalledWith({
+      data: {
+        delibsSessionId: SESSION_ID,
+        daliMemberId: MEMBER_ID,
+        role: "DomainLead",
+      },
+    });
+  });
+
+  it("does not duplicate the participant row when caller already has one open", async () => {
+    mockTx.delibsSession.findUnique.mockResolvedValue({
+      id: SESSION_ID,
+      type: "Initial",
+      status: "Open",
+      columnOrder: { "No Decision": ["card-a"], Interview: [], Reject: [] },
+    });
+    mockTx.delibsSession.update.mockImplementation(({ data }: any) => ({
+      id: SESSION_ID,
+      columnOrder: data.columnOrder,
+    }));
+    mockTx.delibsSessionParticipant.findFirst.mockResolvedValue({ id: "p-1" });
+
+    const res = await action({
+      request: makeRequest({ cardId: "card-a", toColumn: "Interview" }),
+      params: { id: SESSION_ID },
+      context: {},
+    } as any);
+
+    expect(res.status).toBe(200);
+    expect(mockTx.delibsSessionParticipant.create).not.toHaveBeenCalled();
   });
 
   it("returns 403 when caller is neither hiring lead nor domain lead", async () => {

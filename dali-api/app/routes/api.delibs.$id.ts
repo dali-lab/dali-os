@@ -10,6 +10,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const session = await prisma.delibsSession.findUnique({
     where: { id: params.id },
+    include: {
+      participants: {
+        orderBy: { joinedAt: "asc" },
+        include: {
+          daliMember: { select: { id: true, firstName: true, lastName: true } },
+        },
+      },
+    },
   });
 
   if (!session) {
@@ -91,6 +99,11 @@ export async function action({ request, params }: Route.ActionArgs) {
             },
           });
         }
+
+        await tx.delibsSessionParticipant.updateMany({
+          where: { delibsSessionId: params.id, leftAt: null },
+          data: { leftAt: new Date() },
+        });
 
         await tx.delibsSession.update({
           where: { id: params.id },

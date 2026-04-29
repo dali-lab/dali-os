@@ -61,14 +61,15 @@ model DALIMember {
 
   roles MemberRole[] @default([])
 
-  domainLeadAssignments DomainLeadAssignment[]
-  cycleReviewers        CycleReviewer[]
-  cycleInterviewers     CycleInterviewer[]
-  decisions             Decision[]
-  applicationReviews    ApplicationReview[]    @relation("SubmittedBy")
-  delibSessions         DelibsSession[]
-  legacyEmailTemplates  LegacyEmailTemplate[]
-  emailTemplateVersions EmailTemplateVersion[]
+  domainLeadAssignments    DomainLeadAssignment[]
+  cycleReviewers           CycleReviewer[]
+  cycleInterviewers        CycleInterviewer[]
+  decisions                Decision[]
+  applicationReviews       ApplicationReview[]        @relation("SubmittedBy")
+  delibSessions            DelibsSession[]
+  delibsSessionParticipant DelibsSessionParticipant[]
+  legacyEmailTemplates     LegacyEmailTemplate[]
+  emailTemplateVersions    EmailTemplateVersion[]
 }
 
 model ApplicationCycle {
@@ -535,7 +536,39 @@ model DelibsSession {
   openedById String
   openedBy   DALIMember @relation(fields: [openedById], references: [id])
 
+  participants DelibsSessionParticipant[]
+
   @@unique([domainId, applicationCycleId, type])
+}
+
+// Role a DALIMember held when participating in a DelibsSession. Snapshotted
+// at join time so that later role changes do not rewrite session history.
+enum DelibsParticipantRole {
+  HiringLead
+  DomainLead
+  Reviewer
+}
+
+// Append-only audit trail of who was in the room for a DelibsSession.
+// One row per "in the room" segment — a member who joins, leaves, and
+// rejoins gets two rows. Open rows have leftAt == null. The session
+// close hook stamps leftAt on any still-open rows.
+model DelibsSessionParticipant {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  delibsSessionId String
+  delibsSession   DelibsSession @relation(fields: [delibsSessionId], references: [id])
+
+  daliMemberId String
+  daliMember   DALIMember @relation(fields: [daliMemberId], references: [id])
+
+  role     DelibsParticipantRole
+  joinedAt DateTime              @default(now())
+  leftAt   DateTime?
+
+  @@index([delibsSessionId])
+  @@index([delibsSessionId, daliMemberId, leftAt])
 }
 
 // ─── Rubrics ─────────────────────────────────────────────────────────────────

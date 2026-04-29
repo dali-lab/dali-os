@@ -27,6 +27,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
         },
       },
+      participants: {
+        orderBy: { joinedAt: "asc" },
+        include: {
+          daliMember: { select: { id: true, firstName: true, lastName: true } },
+        },
+      },
     },
   });
 

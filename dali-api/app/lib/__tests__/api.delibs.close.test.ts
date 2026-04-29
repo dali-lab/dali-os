@@ -16,6 +16,7 @@ const SESSION_ID = "session-1";
 const mockTx: any = {
   decision: { create: vi.fn() },
   delibsSession: { update: vi.fn() },
+  delibsSessionParticipant: { updateMany: vi.fn() },
 };
 
 const mockPrisma = prisma as unknown as {
@@ -32,6 +33,7 @@ beforeEach(() => {
 
   mockTx.decision.create = vi.fn().mockResolvedValue({});
   mockTx.delibsSession.update = vi.fn().mockResolvedValue({});
+  mockTx.delibsSessionParticipant.updateMany = vi.fn().mockResolvedValue({ count: 0 });
 
   (mockPrisma as any).dALIMember = { findFirst: vi.fn() };
   (mockPrisma as any).delibsSession = { findUnique: vi.fn(), update: vi.fn() };
@@ -112,6 +114,26 @@ describe("POST /api/delibs/:id (intent=close)", () => {
         expect(data.waitlistRank).toBeNull();
       }
     }
+  });
+
+  it("stamps leftAt on every still-open participant row when the session closes", async () => {
+    mockPrisma.delibsSession.findUnique.mockResolvedValue({
+      id: SESSION_ID,
+      type: "Initial",
+      columnOrder: { Interview: ["da-int-1"], Reject: [] },
+    });
+
+    const res = await action({
+      request: makeCloseRequest(),
+      params: { id: SESSION_ID },
+      context: {},
+    } as any);
+
+    expect(res.status).toBe(200);
+    expect(mockTx.delibsSessionParticipant.updateMany).toHaveBeenCalledTimes(1);
+    const args = mockTx.delibsSessionParticipant.updateMany.mock.calls[0][0];
+    expect(args.where).toEqual({ delibsSessionId: SESSION_ID, leftAt: null });
+    expect(args.data.leftAt).toBeInstanceOf(Date);
   });
 
   it("creates Draft decisions for Initial sessions with no waitlistRank", async () => {

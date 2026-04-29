@@ -3,6 +3,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isHiringLead, isDomainLead } from "~/lib/roles";
 import { INITIAL_COLUMNS, FINAL_COLUMNS } from "~/lib/delibs";
+import type { DelibsParticipantRole } from "~/generated/prisma/enums";
 
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
@@ -17,6 +18,12 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!hiringLead && !domainLead) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
+
+  const member = await prisma.dALIMember.findFirst({
+    where: { userId: auth.user.sub },
+    select: { id: true },
+  });
+  const callerRole: DelibsParticipantRole = hiringLead ? "HiringLead" : "DomainLead";
 
   const body = await request.json();
   const { cardId, toColumn, position } = body as {
@@ -72,6 +79,27 @@ export async function action({ request, params }: Route.ActionArgs) {
           where: { id: params.id },
           data: { columnOrder: next },
         });
+
+        if (member) {
+          const open = await tx.delibsSessionParticipant.findFirst({
+            where: {
+              delibsSessionId: params.id,
+              daliMemberId: member.id,
+              leftAt: null,
+            },
+            select: { id: true },
+          });
+          if (!open) {
+            await tx.delibsSessionParticipant.create({
+              data: {
+                delibsSessionId: params.id,
+                daliMemberId: member.id,
+                role: callerRole,
+              },
+            });
+          }
+        }
+
         return result;
       },
       { isolationLevel: "Serializable" },
