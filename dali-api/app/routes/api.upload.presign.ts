@@ -1,5 +1,5 @@
 // POST /api/upload/presign
-// Body: { key: string, contentType: string, contentLength?: number }
+// Body: { key: string, contentType: string, contentLength?: number, accept?: string }
 // Returns: { url: string, fields: Record<string, string>, key: string }
 //
 // The client uploads directly to S3 via multipart POST using the returned
@@ -9,19 +9,53 @@
 
 import { requireAuth } from '~/lib/auth'
 import { getUploadPost } from '~/lib/s3'
-import { MAX_UPLOAD_BYTES, MAX_UPLOAD_LABEL } from '~/lib/file-validation'
+import {
+  MAX_UPLOAD_BYTES,
+  MAX_UPLOAD_LABEL,
+  fileMatchesAccept,
+} from '~/lib/file-validation'
 import { checkRateLimit } from '~/lib/rate-limit'
 
-const ALLOWED_TYPES = new Set([
-  'image/jpeg',
-  'image/png',
-  'image/webp',
-  'image/gif',
-  'application/pdf',
+// Defense-in-depth: block known-dangerous types regardless of what the
+// caller's `accept` config says. Runs unconditionally so a misconfigured
+// challenge accept string can't accidentally permit executables.
+const BLOCKED_TYPES = new Set([
+  'application/x-msdownload',
+  'application/x-msdos-program',
+  'application/x-sh',
+  'application/x-bat',
+  'application/x-csh',
+  'application/x-executable',
+  'application/x-mach-binary',
+])
+
+const BLOCKED_EXTENSIONS = new Set([
+  '.exe',
+  '.bat',
+  '.cmd',
+  '.com',
+  '.sh',
+  '.ps1',
+  '.msi',
+  '.dll',
+  '.app',
+  '.dmg',
+  '.scr',
 ])
 
 const RATE_LIMIT_MAX = 20
 const RATE_LIMIT_WINDOW_MS = 60_000
+
+function getExtension(name: string): string {
+  const idx = name.lastIndexOf('.')
+  if (idx < 0) return ''
+  return name.slice(idx).toLowerCase()
+}
+
+function filenameFromKey(key: string): string {
+  const idx = key.lastIndexOf('/')
+  return idx < 0 ? key : key.slice(idx + 1)
+}
 
 export async function action({ request }: { request: Request }) {
   try {
@@ -35,14 +69,29 @@ export async function action({ request }: { request: Request }) {
     )
     if (rateLimited) return rateLimited
 
-    const { key, contentType, contentLength } = await request.json()
+    const { key, contentType, contentLength, accept } = await request.json()
 
     if (!key || typeof key !== 'string') {
       return Response.json({ error: 'key is required' }, { status: 400 })
     }
-    if (!contentType || !ALLOWED_TYPES.has(contentType)) {
+    if (!contentType || typeof contentType !== 'string') {
+      return Response.json({ error: 'contentType is required' }, { status: 400 })
+    }
+    if (accept !== undefined && typeof accept !== 'string') {
+      return Response.json({ error: 'accept must be a string' }, { status: 400 })
+    }
+
+    const fileName = filenameFromKey(key)
+    const ext = getExtension(fileName)
+    const lowerType = contentType.toLowerCase()
+
+    if (BLOCKED_TYPES.has(lowerType) || (ext && BLOCKED_EXTENSIONS.has(ext))) {
+      return Response.json({ error: 'File type not allowed' }, { status: 400 })
+    }
+
+    if (accept && !fileMatchesAccept(fileName, contentType, accept)) {
       return Response.json(
-        { error: `contentType must be one of: ${[...ALLOWED_TYPES].join(', ')}` },
+        { error: `File type not allowed. Accepted: ${accept}` },
         { status: 400 },
       )
     }

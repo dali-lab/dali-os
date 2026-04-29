@@ -591,8 +591,9 @@ function FileUploadField({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           key: `applications/${questionKey}/${crypto.randomUUID()}-${file.name}`,
-          contentType: file.type,
+          contentType: file.type || 'application/octet-stream',
           contentLength: file.size,
+          accept,
         }),
       });
       if (!presignRes.ok) {
