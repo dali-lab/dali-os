@@ -18,6 +18,8 @@ There's no link. Click the **DALI logo** in the top nav.
 - **5 clicks** → retro mode toggles on. The console prints: *"what if you click a few more times?"*
 - **10 clicks** → redirects to `/party`.
 
+To exit retro mode, click the **✕ exit retro mode** pill in the bottom-right corner, or use the **turn off** toggle on `/party`.
+
 The trail works on both layouts:
 - Members: [dali-api/app/components/Layout.tsx](dali-api/app/components/Layout.tsx) (already wired).
 - Applicants: [dali-api/app/routes/applicant-layout.tsx](dali-api/app/routes/applicant-layout.tsx).
