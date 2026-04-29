@@ -48,6 +48,14 @@ export async function action({ request }: { request: Request }) {
     return Response.json({ error: 'to, subject, and html are required' }, { status: 400 })
   }
 
+  if (/[\r\n]/.test(to) || /[\r\n]/.test(subject)) {
+    return Response.json({ error: 'to and subject must not contain line breaks' }, { status: 400 })
+  }
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+    return Response.json({ error: 'Invalid recipient email' }, { status: 400 })
+  }
+
   try {
     const refreshToken = await getGmailRefreshToken()
     await sendEmail({ refreshToken, to, subject, html })
