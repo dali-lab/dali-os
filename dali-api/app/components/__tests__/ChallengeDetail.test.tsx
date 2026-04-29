@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resolveChallengeFormDefaults } from '../ChallengeDetail'
+import { resolveChallengeFormDefaults, resolveDuplicateDomainId } from '../ChallengeDetail'
 
 const engineering = { id: 'eng-id', name: 'Engineering' }
 const design = { id: 'des-id', name: 'Design' }
@@ -69,5 +69,18 @@ describe('resolveChallengeFormDefaults', () => {
       domainIdParam: null,
     })
     expect(result.isGeneralForm).toBe(true)
+  })
+})
+
+describe('resolveDuplicateDomainId', () => {
+  // Regression for #361: duplicating a general version (domainId === null) used
+  // to leave selectedDomainId pointing at the previously-initialized non-General
+  // id, silently flipping the duplicated version's domain on save.
+  it("returns '' for a general version so the form falls back to General", () => {
+    expect(resolveDuplicateDomainId({ domainId: null })).toBe('')
+  })
+
+  it('returns the version domainId when present (non-general path unchanged)', () => {
+    expect(resolveDuplicateDomainId({ domainId: 'eng-id' })).toBe('eng-id')
   })
 })
