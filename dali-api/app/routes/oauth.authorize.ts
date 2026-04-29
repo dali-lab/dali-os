@@ -5,12 +5,19 @@ import {
   VALID_CLIENT_IDS,
   OAuthError,
 } from "~/lib/oauth";
+import { checkRateLimit } from "~/lib/rate-limit";
+
+const RATE_LIMIT_MAX = 10;
+const RATE_LIMIT_WINDOW_MS = 60_000;
 
 export async function action() {
   return new Response("Method not allowed", { status: 405 });
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
+  const limited = checkRateLimit(request, { max: RATE_LIMIT_MAX, windowMs: RATE_LIMIT_WINDOW_MS });
+  if (limited) return limited;
+
   const url = new URL(request.url);
   const frontendUrl = process.env.FRONTEND_URL ?? "http://localhost:5173";
 
