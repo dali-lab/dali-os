@@ -160,22 +160,20 @@ describe("POST /api/decisions/:id/release", () => {
     expect(args.html).toContain("Ada / ");
   });
 
-  it("releases the decision but skips the email send when no binding exists", async () => {
+  it("returns 409 and does not create the released decision when no binding exists", async () => {
     setupAuth();
     setupFinalDecision("Rejected");
     setupApplicantContext();
     mockPrisma.cycleDecisionEmail.findUnique.mockResolvedValue(null);
 
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
 
-    expect(res.status).toBe(201);
-    expect(mockPrisma.decision.create).toHaveBeenCalledOnce();
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error).toMatch(/Rejected/);
+    expect(body.error).toMatch(/Setup tab/);
+    expect(mockPrisma.decision.create).not.toHaveBeenCalled();
     expect(sendEmail).not.toHaveBeenCalled();
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining(`No email template bound for cycle ${CYCLE_ID} / decision Rejected`),
-    );
-    warnSpy.mockRestore();
   });
 
   it("returns 409 when the decision is not Final", async () => {

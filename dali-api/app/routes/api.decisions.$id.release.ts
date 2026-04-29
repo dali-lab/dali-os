@@ -42,6 +42,50 @@ export async function action({ request, params }: Route.ActionArgs) {
     );
   }
 
+  const domainApp = await prisma.domainApplication.findUnique({
+    where: { id: decision.domainApplicationId },
+    include: {
+      challengeVersion: {
+        include: { domain: { select: { name: true } } },
+      },
+      application: {
+        include: {
+          user: {
+            select: {
+              firstName: true,
+              dartmouthEmail: true,
+              netId: true,
+            },
+          },
+        },
+      },
+    },
+  });
+  if (!domainApp) {
+    return Response.json(
+      { error: "Domain application not found" },
+      { status: 404 }
+    );
+  }
+
+  const binding = await prisma.cycleDecisionEmail.findUnique({
+    where: {
+      applicationCycleId_decisionType: {
+        applicationCycleId: domainApp.application.applicationCycleId,
+        decisionType: decision.type,
+      },
+    },
+    include: { emailTemplateVersion: true },
+  });
+  if (!binding) {
+    return Response.json(
+      {
+        error: `No email template is bound to ${decision.type} in this cycle. Bind one on the Setup tab before releasing.`,
+      },
+      { status: 409 }
+    );
+  }
+
   const released = await prisma.decision.create({
     data: {
       domainApplicationId: decision.domainApplicationId,
@@ -56,66 +100,30 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   // ── Send notification email via per-cycle binding ────────────────────────────
   try {
-    const domainApp = await prisma.domainApplication.findUnique({
-      where: { id: decision.domainApplicationId },
-      include: {
-        challengeVersion: {
-          include: { domain: { select: { name: true } } },
-        },
-        application: {
-          include: {
-            user: {
-              select: {
-                firstName: true,
-                dartmouthEmail: true,
-                netId: true,
-              },
-            },
-          },
-        },
-      },
-    });
-
-    const user = domainApp?.application.user;
+    const user = domainApp.application.user;
     const email =
       user?.dartmouthEmail ??
       (user?.netId ? `${user.netId}@dartmouth.edu` : null);
-    const domainName = domainApp?.challengeVersion.domain?.name ?? "";
+    const domainName = domainApp.challengeVersion.domain?.name ?? "";
 
-    if (email && user && domainApp) {
-      const binding = await prisma.cycleDecisionEmail.findUnique({
-        where: {
-          applicationCycleId_decisionType: {
-            applicationCycleId: domainApp.application.applicationCycleId,
-            decisionType: decision.type,
-          },
-        },
-        include: { emailTemplateVersion: true },
+    if (email && user) {
+      const gmailUser = await prisma.user.findUnique({
+        where: { daliEmail: GMAIL_USER },
+        select: { googleRefreshToken: true },
       });
 
-      if (!binding) {
-        console.warn(
-          `No email template bound for cycle ${domainApp.application.applicationCycleId} / decision ${decision.type}; skipping send.`
-        );
-      } else {
-        const gmailUser = await prisma.user.findUnique({
-          where: { daliEmail: GMAIL_USER },
-          select: { googleRefreshToken: true },
+      if (gmailUser?.googleRefreshToken) {
+        const { subject, html } = renderEmail(binding.emailTemplateVersion, {
+          firstName: user.firstName,
+          domain: domainName,
         });
 
-        if (gmailUser?.googleRefreshToken) {
-          const { subject, html } = renderEmail(binding.emailTemplateVersion, {
-            firstName: user.firstName,
-            domain: domainName,
-          });
-
-          await sendEmail({
-            refreshToken: gmailUser.googleRefreshToken,
-            to: email,
-            subject,
-            html,
-          });
-        }
+        await sendEmail({
+          refreshToken: gmailUser.googleRefreshToken,
+          to: email,
+          subject,
+          html,
+        });
       }
     }
   } catch (err) {
