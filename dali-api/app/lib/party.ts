@@ -13,6 +13,32 @@ const UNLOCK_INT_KEY = "dali:party:unlock-internal";
 const DINO_REWARD_KEY = "dali:party:dino-reward";
 export const DINO_REWARD_THRESHOLD = 100;
 
+export type PartyEventType =
+  | "PARTY_VISIT"
+  | "CODE_UNLOCK_SUCCESS"
+  | "CODE_UNLOCK_FAILURE"
+  | "DINO_REWARD_EARNED"
+  | "LOGO_TRAIL_TRIGGERED";
+
+// Fire-and-forget telemetry. Must never throw or block the easter egg.
+export function trackPartyEvent(
+  eventType: PartyEventType,
+  metadata?: Record<string, unknown>,
+): void {
+  if (typeof window === "undefined") return;
+  try {
+    void fetch("/api/party/events", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ eventType, metadata }),
+      credentials: "include",
+      keepalive: true,
+    }).catch(() => {});
+  } catch {
+    // Swallow — analytics must never break the page.
+  }
+}
+
 export function isDinoRewardEarned(): boolean {
   if (typeof window === "undefined") return false;
   return window.localStorage.getItem(DINO_REWARD_KEY) === "1";
@@ -106,6 +132,7 @@ export function bumpLogoClick(): number {
   }
   if (next >= 10) {
     window.sessionStorage.setItem(CLICK_KEY, "0");
+    trackPartyEvent("LOGO_TRAIL_TRIGGERED");
     window.location.assign("/party");
     return 0;
   }
