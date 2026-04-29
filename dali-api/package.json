@@ -40,6 +40,7 @@
     "google-auth-library": "^10.6.2",
     "ioredis": "^5.10.1",
     "isbot": "^5.1.36",
+    "isomorphic-dompurify": "^3.10.0",
     "jose": "^6.2.2",
     "lucide-react": "^0.544.0",
     "pg": "^8.20.0",
