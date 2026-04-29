@@ -4,6 +4,7 @@ import { requireAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { safeJson } from "~/lib/safe-json";
+import { logAuditEvent } from "~/lib/audit";
 import type { MemberRole } from "~/generated/prisma/enums";
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -26,10 +27,27 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "roles must be an array" }, { status: 400 }));
   }
 
+  const before = await prisma.dALIMember.findUnique({
+    where: { id: params.memberId },
+    select: { roles: true },
+  });
+
   const member = await prisma.dALIMember.update({
     where: { id: params.memberId },
     data: { roles },
     include: { user: { select: { id: true, firstName: true, lastName: true } } },
+  });
+
+  await logAuditEvent({
+    action: "role.change",
+    userId: auth.user.sub,
+    targetId: params.memberId,
+    metadata: {
+      before: before?.roles ?? [],
+      after: roles,
+      targetMemberId: params.memberId,
+    },
+    request,
   });
 
   return withCors(request, Response.json(member));

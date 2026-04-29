@@ -2,6 +2,7 @@ import type { Route } from "./+types/api.decisions.$id.finalize";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isHiringLead, isDomainLead } from "~/lib/roles";
+import { logAuditEvent } from "~/lib/audit";
 
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
@@ -40,6 +41,19 @@ export async function action({ request, params }: Route.ActionArgs) {
       waitlistRank: decision.waitlistRank,
       parentDecisionId: decision.id,
     },
+  });
+
+  await logAuditEvent({
+    action: "decision.finalize",
+    userId: auth.user.sub,
+    targetId: finalized.id,
+    metadata: {
+      decisionId: finalized.id,
+      parentDecisionId: decision.id,
+      domainApplicationId: decision.domainApplicationId,
+      type: finalized.type,
+    },
+    request,
   });
 
   return Response.json(finalized, { status: 201 });
