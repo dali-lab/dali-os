@@ -1,15 +1,72 @@
-import { useState } from 'react'
-import { Link, Form, useLoaderData } from 'react-router'
+import { useEffect, useState } from 'react'
+import { Link, Form, useLoaderData, useSearchParams } from 'react-router'
 import { Plus, Mail, ChevronRight, X } from 'lucide-react'
 import type { loader } from '~/routes/email-templates'
 
+const GMAIL_ERROR_MESSAGES: Record<string, string> = {
+  auth_failed: 'Gmail authorization was denied or failed.',
+  state_mismatch: 'OAuth state mismatch — please try again.',
+  token_exchange_failed: 'Failed to exchange token with Google. Check OAuth credentials.',
+  no_refresh_token: 'Google did not return a refresh token. You may need to revoke access and try again.',
+}
+
 export default function EmailTemplatesList() {
-  const { templates } = useLoaderData<typeof loader>()
+  const { templates, gmailConnected } = useLoaderData<typeof loader>()
   const [showModal, setShowModal] = useState(false)
   const [newName, setNewName] = useState('')
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  const gmailAuthorized = searchParams.get('gmail_authorized') === '1'
+  const gmailError = searchParams.get('gmail_error')
+  const [dismissed, setDismissed] = useState(false)
+
+  useEffect(() => {
+    setDismissed(false)
+  }, [gmailAuthorized, gmailError])
+
+  function dismissBanner() {
+    setDismissed(true)
+    setSearchParams((prev) => {
+      prev.delete('gmail_authorized')
+      prev.delete('gmail_error')
+      return prev
+    }, { replace: true })
+  }
 
   return (
     <div className="space-y-8">
+      {!dismissed && gmailAuthorized && (
+        <div className="flex items-center justify-between bg-green-50 border border-green-200 text-green-800 text-sm rounded-lg px-4 py-3">
+          <span>Gmail authorized successfully. Decision emails are now active.</span>
+          <button onClick={dismissBanner} className="text-green-600 hover:text-green-800"><X className="w-4 h-4" /></button>
+        </div>
+      )}
+      {!dismissed && gmailError && (
+        <div className="flex items-center justify-between bg-red-50 border border-red-200 text-red-800 text-sm rounded-lg px-4 py-3">
+          <span>{GMAIL_ERROR_MESSAGES[gmailError] ?? 'Gmail authorization failed.'}</span>
+          <button onClick={dismissBanner} className="text-red-600 hover:text-red-800"><X className="w-4 h-4" /></button>
+        </div>
+      )}
+
+      <div className="flex items-center justify-between bg-card border border-border rounded-lg px-4 py-3">
+        <div className="flex items-center gap-3">
+          <Mail className="w-4 h-4 text-muted-foreground" />
+          <span className="text-sm text-foreground/80">
+            Gmail sending ({gmailConnected ? (
+              <span className="text-green-600 font-medium">connected</span>
+            ) : (
+              <span className="text-amber-600 font-medium">not connected</span>
+            )})
+          </span>
+        </div>
+        <a
+          href="/admin/authorize-gmail"
+          className="text-sm font-medium text-blue-600 hover:text-blue-700"
+        >
+          {gmailConnected ? 'Reconnect' : 'Connect Gmail'}
+        </a>
+      </div>
+
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Email Templates</h1>
