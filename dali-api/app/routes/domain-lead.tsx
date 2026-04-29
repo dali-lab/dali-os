@@ -558,11 +558,11 @@ export default function DomainLeadDashboard() {
                     <Section
                       title="Setup"
                       badge={
-                        isChallengeReady && currentRubricVersionId
+                        isChallengeReady
                           ? <span className="text-xs text-green-700 bg-green-100 px-2 py-0.5 rounded-full font-medium">Ready</span>
                           : <span className="text-xs text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded-full font-medium">Action needed</span>
                       }
-                      defaultOpen={!isChallengeReady || !currentRubricVersionId}
+                      defaultOpen={!isChallengeReady}
                     >
                       <div className="space-y-4">
                         <DraftSection
@@ -571,21 +571,10 @@ export default function DomainLeadDashboard() {
                           challengeVersionOptions={challengeVersionOptions}
                           linkedChallengeVersions={linkedChallengeVersions ?? []}
                           isChallengeReady={isChallengeReady}
-                          currentRubricVersionId={currentRubricVersionId}
-                        />
-                        <RubricPicker
-                          cycleId={cycle.id}
-                          domainId={assignment.domainId}
-                          options={rubricVersionOptions ?? []}
-                          selectedId={currentRubricVersionId}
-                          locked={hasApplicationReviews}
                         />
                         <div className="flex items-center gap-3 pt-2 border-t border-border">
                           <Link to="/challenges" className="text-xs text-blue-600 hover:text-blue-800 font-medium">
                             {hasLinkedChallenge ? "Manage Challenges →" : "Create Challenge →"}
-                          </Link>
-                          <Link to="/rubrics" className="text-xs text-blue-600 hover:text-blue-800 font-medium">
-                            Manage Rubrics →
                           </Link>
                         </div>
                       </div>
@@ -614,7 +603,12 @@ export default function DomainLeadDashboard() {
                                 <li key={cv.id} className="flex items-center justify-between">
                                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                                     <CheckCircle className="w-4 h-4 text-green-600" />
-                                    <span>{cv.challenge?.name ?? "Linked"}</span>
+                                    <Link
+                                      to={`/challenges/${cv.challengeId}?versionId=${cv.id}`}
+                                      className="text-blue-600 hover:text-blue-800"
+                                    >
+                                      {cv.challenge?.name ?? "Linked"}
+                                    </Link>
                                     {hasApplicationReviews && (
                                       <span className="text-xs text-gray-400 ml-1">(locked — reviewers have been assigned)</span>
                                     )}
@@ -865,13 +859,12 @@ export default function DomainLeadDashboard() {
   );
 }
 
-function DraftSection({ cycle, domainId, challengeVersionOptions, linkedChallengeVersions, isChallengeReady, currentRubricVersionId }: {
+function DraftSection({ cycle, domainId, challengeVersionOptions, linkedChallengeVersions, isChallengeReady }: {
   cycle: any;
   domainId: string;
   challengeVersionOptions: any[];
   linkedChallengeVersions: any[];
   isChallengeReady: boolean;
-  currentRubricVersionId: string | null;
 }) {
   const hasLinkedChallenge = linkedChallengeVersions.length > 0;
   const totalQuestions = linkedChallengeVersions.reduce(
@@ -899,7 +892,12 @@ function DraftSection({ cycle, domainId, challengeVersionOptions, linkedChalleng
           <ul className="text-sm text-foreground/80 space-y-1">
             {linkedChallengeVersions.map((cv: any) => (
               <li key={cv.id} className="flex items-center justify-between">
-                <span>{cv.challenge?.name ?? "Untitled"}</span>
+                <Link
+                  to={`/challenges/${cv.challengeId}?versionId=${cv.id}`}
+                  className="text-blue-600 hover:text-blue-800"
+                >
+                  {cv.challenge?.name ?? "Untitled"}
+                </Link>
                 <span className="text-xs text-muted-foreground">{(cv.questions as any[])?.length ?? 0} questions</span>
               </li>
             ))}
