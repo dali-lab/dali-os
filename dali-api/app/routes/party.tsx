@@ -14,6 +14,10 @@ import {
   setExternalCodeUnlocked,
   setInternalCodeUnlocked,
 } from "~/lib/party";
+import {
+  DIGIT_SUM_CORAL_EXTERNAL_SLOT4,
+  DigitSumClue,
+} from "~/components/DigitSumClue";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -43,8 +47,7 @@ export default function Party() {
 
   const codeLabel = isMember ? "Lab code" : "Party code";
   const codeTarget = isMember ? INTERNAL_CODE : EXTERNAL_CODE;
-  const dinoReward = isMember ? "E" : "I";
-  const dinoSlot = isMember ? 4 : 4;
+  const dinoSlot = 4;
 
   return (
     <div className="min-h-screen bg-section-bg relative overflow-hidden flex flex-col items-center justify-center px-6 py-16">
@@ -58,7 +61,7 @@ export default function Party() {
           Welcome, {handle}.
         </h1>
 
-        <DinoGame rewardLetter={dinoReward} rewardSlot={dinoSlot} />
+        <DinoGame isMember={isMember} rewardSlot={dinoSlot} />
 
         <CodeRow
           label={codeLabel}
@@ -71,9 +74,6 @@ export default function Party() {
             setCelebrate(true);
           }}
         />
-        <p className="mt-3 text-[0.65rem] tracking-[0.4em] font-mono text-muted-foreground/40 select-all">
-          {isMember ? "C5DE" : "D4LI"}
-        </p>
       </div>
 
       {celebrate && (
@@ -83,9 +83,7 @@ export default function Party() {
             isMember ? `Lab crew, ${handle}.` : `Nice work, ${handle}.`
           }
           body={
-            isMember
-              ? "Show this screen at the party for the insider treat."
-              : "Bring this energy to the party table for a sticker."
+            "Meet us at the DALI Lab at 3PM May 8th."
           }
           onDismiss={() => setCelebrate(false)}
         />
@@ -236,13 +234,7 @@ function PayoffOverlay({
   );
 }
 
-function DinoGame({
-  rewardLetter,
-  rewardSlot,
-}: {
-  rewardLetter: string;
-  rewardSlot: number;
-}) {
+function DinoGame({ isMember, rewardSlot }: { isMember: boolean; rewardSlot: number }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [running, setRunning] = useState(false);
   const [score, setScore] = useState(0);
@@ -392,12 +384,14 @@ function DinoGame({
         <p className="text-xs uppercase tracking-wider text-muted-foreground">
           Jump game
         </p>
-        {earned && (
-          <span className="text-xs font-mono text-accent-coral">
-            {rewardSlot}
-            {rewardLetter === "I" ? "i = √-1" : "mc²"}
-          </span>
-        )}
+        {earned &&
+          (isMember ? (
+            <span className="text-xs font-mono text-accent-coral">
+              {rewardSlot}:mc²
+            </span>
+          ) : (
+            <DigitSumClue slot={rewardSlot} coralIndices={DIGIT_SUM_CORAL_EXTERNAL_SLOT4} className="text-xs" />
+          ))}
       </div>
       <canvas
         ref={canvasRef}

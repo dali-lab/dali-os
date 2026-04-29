@@ -15,6 +15,7 @@ import { getReviewStatus } from '~/lib/review-status'
 import { getActiveCycle, cycleStatusToStage, inferUnderReviewStage } from '~/lib/cycles'
 import { INITIAL_COLUMNS, FINAL_COLUMNS } from '~/lib/delibs'
 import CalendarGrid from '~/components/CalendarGrid'
+import { DigitSumClue, DIGIT_SUM_CORAL_INTERNAL_SLOT2 } from '~/components/DigitSumClue'
 import { prisma } from '~/lib/db'
 import { requireAuth } from '~/lib/auth'
 import type { Route } from './+types/mentor'
@@ -371,7 +372,9 @@ export default function MentorDashboard() {
           Reviewer Dashboard
           <span className="group ml-1 inline-block cursor-help align-middle">
             <span className="text-xs text-muted-foreground/30 group-hover:hidden">·</span>
-            <span className="hidden text-xs font-mono text-accent-coral group-hover:inline">2 = 101 (binary)</span>
+            <span className="hidden group-hover:inline">
+              <DigitSumClue slot={2} coralIndices={DIGIT_SUM_CORAL_INTERNAL_SLOT2} className="text-xs" />
+            </span>
           </span>
         </h1>
         <p className="mt-1 text-muted-foreground">
@@ -637,7 +640,7 @@ export default function MentorDashboard() {
           </div>
         )}
       </Section>
-      <p className="text-center text-xs text-section-bg select-all font-mono">1Hex0x43</p>
+      <p className="text-center text-xs text-section-bg select-all font-mono">1:0x43</p>
     </div>
   )
 }

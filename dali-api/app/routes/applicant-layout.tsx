@@ -49,7 +49,7 @@ export default function ApplicantLayout() {
             Applicant Portal
             <span className="group ml-1 inline-block cursor-help align-middle">
               <span className="text-xs text-muted-foreground/30 group-hover:hidden">·</span>
-              <span className="hidden text-xs font-mono text-accent-coral group-hover:inline">2 = √16</span>
+              <span className="hidden text-xs font-mono text-accent-coral group-hover:inline">2:(100)_2</span>
             </span>
           </span>
         </button>

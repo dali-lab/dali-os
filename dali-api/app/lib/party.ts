@@ -1,7 +1,7 @@
 // Launch-party easter-egg helpers. Nothing here affects app behavior —
 // it's all opt-in cosmetic state persisted to localStorage.
 
-export const EXTERNAL_CODE = "D4LI";
+export const EXTERNAL_CODE = "D4L1";
 export const INTERNAL_CODE = "C5DE";
 
 const RETRO_KEY = "dali:party:retro";

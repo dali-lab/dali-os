@@ -10,7 +10,6 @@ import {
   Shield,
   Video,
   Mail,
-  FileText,
   MessageSquare,
   X,
 } from 'lucide-react'

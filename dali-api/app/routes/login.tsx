@@ -132,7 +132,7 @@ export default function Login() {
             Sign in
             <span className="group ml-1 inline-block cursor-help align-middle">
               <span className="text-xs text-muted-foreground/30 group-hover:hidden">·</span>
-              <span className="hidden text-xs font-mono text-accent-coral group-hover:inline">3Roman50</span>
+              <span className="hidden text-xs font-mono text-accent-coral group-hover:inline">3:Roman50</span>
             </span>
           </h1>
           <p className="text-muted-foreground mb-10">
