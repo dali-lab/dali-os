@@ -6,7 +6,9 @@ import { requireAuth } from "~/lib/auth";
 import { isHiringLead } from "~/lib/roles";
 import { renderEmail } from "~/lib/email";
 import { Modal } from "~/components/Modal";
+import { ChallengePreviewModal } from "~/components/ChallengePreviewModal";
 import { Settings, Users, Calendar, AlertTriangle, Trash2, Plus, CheckCircle, ArrowRight, Circle, ChevronRight, X, LayoutDashboard, Eye } from 'lucide-react'
+import { formatVersionLabel, buildVersionNumberMap } from "~/lib/formatVersion";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -82,7 +84,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         include: { domain: true },
       },
       statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
-      challengeVersions: { include: { challengeVersion: { include: { domain: true, challenge: true } } } },
+      challengeVersions: { include: { challengeVersion: { include: { domain: true, challenge: true, createdBy: { select: { firstName: true, lastName: true } } } } } },
       applications: {
         include: {
           user: true,
@@ -100,12 +102,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // General challenge versions (domainId is null) for the form picker
   const generalChallengeVersions = await prisma.challengeVersion.findMany({
     where: { domainId: null },
-    include: { challenge: true },
+    include: { challenge: true, createdBy: { select: { firstName: true, lastName: true } } },
     orderBy: { createdAt: "desc" },
   });
 
   const rubricVersionOptions = await prisma.rubricVersion.findMany({
-    include: { rubric: { select: { name: true } } },
+    include: { rubric: { select: { name: true } }, createdBy: { select: { firstName: true, lastName: true } } },
     orderBy: { createdAt: "desc" },
   });
 
@@ -123,11 +125,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const domainIds: string[] = cycle.domains.map((d: any) => d.domainId);
   const domainChallengeVersions = await prisma.challengeVersion.findMany({
     where: { domainId: { in: domainIds } },
-    include: { challenge: true },
+    include: { challenge: true, createdBy: { select: { firstName: true, lastName: true } } },
     orderBy: { createdAt: "desc" },
   });
   const domainRubricVersions = await prisma.rubricVersion.findMany({
-    include: { rubric: { select: { name: true } } },
+    include: { rubric: { select: { name: true } }, createdBy: { select: { firstName: true, lastName: true } } },
     orderBy: { createdAt: "desc" },
   });
   const reviewsForCycle = await prisma.applicationReview.findMany({
@@ -203,17 +205,44 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
   const releasedDecisionTypes = releasedDecisions.map((d) => d.type);
 
+  // ChallengeVersion has no `versionNumber` column on the schema, so derive
+  // one per challenge family by ranking siblings by createdAt asc. We pull
+  // all sibling versions for any challenge surfaced in this loader so the
+  // numbers stay stable even when only a subset is shown to the picker.
+  const challengeIdsToRank = new Set<string>();
+  for (const cv of generalChallengeVersions) challengeIdsToRank.add(cv.challengeId);
+  for (const cv of domainChallengeVersions) challengeIdsToRank.add(cv.challengeId);
+  for (const link of cycle.challengeVersions) challengeIdsToRank.add(link.challengeVersion.challengeId);
+  const cvSiblings = challengeIdsToRank.size > 0
+    ? await prisma.challengeVersion.findMany({
+        where: { challengeId: { in: [...challengeIdsToRank] } },
+        select: { id: true, challengeId: true, createdAt: true },
+      })
+    : [];
+  const cvNumberMap = buildVersionNumberMap(cvSiblings);
+  const withCvNumber = <T extends { id: string }>(cv: T) => ({
+    ...cv,
+    versionNumber: cvNumberMap.get(cv.id) ?? null,
+  });
+  const cycleWithCvNumbers = {
+    ...cycle,
+    challengeVersions: cycle.challengeVersions.map((link) => ({
+      ...link,
+      challengeVersion: withCvNumber(link.challengeVersion),
+    })),
+  };
+
   return {
-    cycle,
+    cycle: cycleWithCvNumbers,
     allDomains,
     finalDecisions,
     rubricVersionOptions,
     cycleApplicationReviewCount,
-    generalChallengeVersions,
+    generalChallengeVersions: generalChallengeVersions.map(withCvNumber),
     emailTemplates,
     currentDecisionEmails,
     releasedDecisionTypes,
-    domainChallengeVersions,
+    domainChallengeVersions: domainChallengeVersions.map(withCvNumber),
     domainRubricVersions,
     reviewedDomainIds,
   };
@@ -808,7 +837,8 @@ export default function AdminCycleDetails() {
             const challengeVersions = cycle?.challengeVersions ?? [];
             const coveredDomainIds = new Set(challengeVersions.map((cv: any) => cv.challengeVersion?.domainId));
             const hasGeneralForm = challengeVersions.some((cv: any) => cv.challengeVersion?.domainId === null);
-            return hasCloseDate && domains.length > 0 && domains.every((d: any) => coveredDomainIds.has(d.domainId)) && hasGeneralForm;
+            const allDomainsReady = domains.length > 0 && domains.every((d: any) => d.isReady);
+            return hasCloseDate && domains.length > 0 && domains.every((d: any) => coveredDomainIds.has(d.domainId)) && hasGeneralForm && allDomainsReady;
           })();
           return (
             <button
@@ -877,8 +907,9 @@ export default function AdminCycleDetails() {
         const coveredDomainIds = new Set(challengeVersions.map((cv: any) => cv.challengeVersion?.domainId));
         const allDomainsCovered = domains.length > 0 && domains.every((d: any) => coveredDomainIds.has(d.domainId));
         const hasGeneralForm = challengeVersions.some((cv: any) => cv.challengeVersion?.domainId === null);
+        const allDomainsReady = domains.length > 0 && domains.every((d: any) => d.isReady);
         const hasGeneralRubric = !!cycle?.generalRubricVersionId;
-        const ready = hasCloseDate && allDomainsCovered && hasGeneralForm;
+        const ready = hasCloseDate && allDomainsCovered && hasGeneralForm && allDomainsReady;
         return (
           <div className={`rounded-xl border p-4 space-y-3 ${ready ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200'}`}>
             <h3 className="text-sm font-bold text-foreground">Checklist to Open Applications</h3>
@@ -903,6 +934,15 @@ export default function AdminCycleDetails() {
                   ? <CheckCircle className="w-4 h-4 text-green-600" />
                   : <Circle className="w-4 h-4 text-muted-foreground/70" />}
                 <span className={hasGeneralForm ? 'text-green-800' : 'text-muted-foreground'}>General application form is linked</span>
+              </div>
+              <div className="flex items-center gap-2 text-sm">
+                {allDomainsReady
+                  ? <CheckCircle className="w-4 h-4 text-green-600" />
+                  : <Circle className="w-4 h-4 text-muted-foreground/70" />}
+                <span className={allDomainsReady ? 'text-green-800' : 'text-muted-foreground'}>
+                  Every domain is marked ready
+                  {domains.length === 0 && ' (no domains added)'}
+                </span>
               </div>
             </div>
             {!hasGeneralRubric && (
@@ -1041,9 +1081,16 @@ export default function AdminCycleDetails() {
               const generalCv = (cycle?.challengeVersions ?? []).find((cv: any) => cv.challengeVersion?.domainId === null);
               return generalCv?.challengeVersionId ?? null;
             })()}
-            currentCvName={(() => {
+            currentCvLabel={(() => {
               const generalCv = (cycle?.challengeVersions ?? []).find((cv: any) => cv.challengeVersion?.domainId === null);
-              return generalCv ? `${generalCv.challengeVersion?.challenge?.name ?? 'Untitled'} (${(generalCv.challengeVersion?.questions as any[])?.length ?? 0} questions)` : null;
+              if (!generalCv) return null;
+              const cv = generalCv.challengeVersion;
+              return formatVersionLabel({
+                name: cv?.challenge?.name ?? 'Untitled',
+                versionNumber: cv?.versionNumber ?? null,
+                createdAt: cv?.createdAt,
+                createdBy: cv?.createdBy,
+              });
             })()}
             options={loaderData?.generalChallengeVersions ?? []}
             locked={cycleStatus !== 'Draft'}
@@ -1834,6 +1881,14 @@ function GeneralRubricPicker({ currentRubricVersionId, rubricVersionOptions, loc
 }) {
   const [editing, setEditing] = useState(!currentRubricVersionId);
   const currentRubric = rubricVersionOptions.find((rv: any) => rv.id === currentRubricVersionId);
+  const currentRubricLabel = currentRubric
+    ? formatVersionLabel({
+        name: currentRubric.rubric?.name ?? 'Set',
+        versionNumber: currentRubric.versionNumber,
+        createdAt: currentRubric.createdAt,
+        createdBy: currentRubric.createdBy,
+      })
+    : 'Set';
 
   return (
     <div className="bg-card rounded-xl border border-border shadow-sm p-6 space-y-3">
@@ -1843,14 +1898,14 @@ function GeneralRubricPicker({ currentRubricVersionId, rubricVersionOptions, loc
       {locked ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <CheckCircle className="w-4 h-4 text-green-600" />
-          <span>{currentRubric?.rubric?.name ?? 'Set'} — v{currentRubric?.versionNumber}</span>
+          <span>{currentRubricLabel}</span>
           <span className="text-xs text-muted-foreground/70 ml-2">(locked — reviews have started)</span>
         </div>
       ) : currentRubricVersionId && !editing ? (
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <CheckCircle className="w-4 h-4 text-green-600" />
-            <span>{currentRubric?.rubric?.name ?? 'Set'} — v{currentRubric?.versionNumber}</span>
+            <span>{currentRubricLabel}</span>
           </div>
           <button
             onClick={() => setEditing(true)}
@@ -1871,7 +1926,12 @@ function GeneralRubricPicker({ currentRubricVersionId, rubricVersionOptions, loc
               <option value="">No rubric assigned</option>
               {rubricVersionOptions.map((rv: any) => (
                 <option key={rv.id} value={rv.id}>
-                  {rv.rubric.name} — v{rv.versionNumber}
+                  {formatVersionLabel({
+                    name: rv.rubric?.name ?? 'Rubric',
+                    versionNumber: rv.versionNumber,
+                    createdAt: rv.createdAt,
+                    createdBy: rv.createdBy,
+                  })}
                 </option>
               ))}
             </select>
@@ -1927,7 +1987,12 @@ function DomainOverridePanel({
   const summaryLabel = !hasLinkedChallenge
     ? null
     : linkedCvs.length === 1
-      ? `${linkedCvs[0].challenge?.name ?? 'Untitled'} — created ${new Date(linkedCvs[0].createdAt).toLocaleDateString()}`
+      ? formatVersionLabel({
+          name: linkedCvs[0].challenge?.name ?? 'Untitled',
+          versionNumber: linkedCvs[0].versionNumber,
+          createdAt: linkedCvs[0].createdAt,
+          createdBy: linkedCvs[0].createdBy,
+        })
       : `${linkedCvs.length} challenges linked`;
 
   // Picker for adding a new CV (filtered to those not yet linked, and not a duplicate challenge)
@@ -1944,7 +2009,14 @@ function DomainOverridePanel({
   useEffect(() => { setSelectedRubricId(domain.rubricVersionId ?? ''); }, [domain.rubricVersionId]);
 
   const currentRubric = rubricOptions.find((rv: any) => rv.id === selectedRubricId);
-  const currentRubricLabel = currentRubric ? `${currentRubric.rubric.name} — v${currentRubric.versionNumber}` : null;
+  const currentRubricLabel = currentRubric
+    ? formatVersionLabel({
+        name: currentRubric.rubric?.name ?? 'Rubric',
+        versionNumber: currentRubric.versionNumber,
+        createdAt: currentRubric.createdAt,
+        createdBy: currentRubric.createdBy,
+      })
+    : null;
 
   const previewCv = previewCvId
     ? (challengeOptions.find((cv: any) => cv.id === previewCvId) ?? linkedCvs.find((cv: any) => cv.id === previewCvId))
@@ -1996,7 +2068,12 @@ function DomainOverridePanel({
               {linkedCvs.map((cv: any) => (
                 <li key={cv.id} className="flex items-center justify-between px-3 py-2 text-sm">
                   <span className="text-foreground/80 truncate">
-                    {cv.challenge?.name ?? 'Untitled'} — {new Date(cv.createdAt).toLocaleDateString()}
+                    {formatVersionLabel({
+                      name: cv.challenge?.name ?? 'Untitled',
+                      versionNumber: cv.versionNumber,
+                      createdAt: cv.createdAt,
+                      createdBy: cv.createdBy,
+                    })}
                   </span>
                   <div className="flex items-center gap-1 shrink-0">
                     <button
@@ -2051,7 +2128,12 @@ function DomainOverridePanel({
                   <option value="" disabled>Add a challenge version...</option>
                   {addableOptions.map((cv: any) => (
                     <option key={cv.id} value={cv.id}>
-                      {cv.challenge?.name ?? 'Untitled'} — {new Date(cv.createdAt).toLocaleDateString()}
+                      {formatVersionLabel({
+                        name: cv.challenge?.name ?? 'Untitled',
+                        versionNumber: cv.versionNumber,
+                        createdAt: cv.createdAt,
+                        createdBy: cv.createdBy,
+                      })}
                     </option>
                   ))}
                 </select>
@@ -2114,7 +2196,12 @@ function DomainOverridePanel({
                   <option value="">No rubric assigned</option>
                   {rubricOptions.map((rv: any) => (
                     <option key={rv.id} value={rv.id}>
-                      {rv.rubric.name} — v{rv.versionNumber}
+                      {formatVersionLabel({
+                        name: rv.rubric?.name ?? 'Rubric',
+                        versionNumber: rv.versionNumber,
+                        createdAt: rv.createdAt,
+                        createdBy: rv.createdBy,
+                      })}
                     </option>
                   ))}
                 </select>
@@ -2178,7 +2265,16 @@ function DomainOverridePanel({
 
       {previewCv && (
         <ChallengePreviewModal
-          cv={previewCv}
+          challengeVersionId={previewCv.id}
+          challengeName={previewCv.challenge?.name ?? 'Challenge'}
+          versionLabel={formatVersionLabel({
+            name: previewCv.challenge?.name ?? 'Challenge',
+            versionNumber: previewCv.versionNumber,
+            createdAt: previewCv.createdAt,
+            createdBy: previewCv.createdBy,
+          })}
+          description={previewCv.description}
+          questions={(previewCv.questions as any[]) ?? []}
           onClose={() => setPreviewCvId(null)}
         />
       )}
@@ -2280,39 +2376,6 @@ function DeleteDomainModal({ domain, onClose }: { domain: any; onClose: () => vo
   );
 }
 
-function ChallengePreviewModal({ cv, onClose }: { cv: any; onClose: () => void }) {
-  const headingId = `challenge-preview-heading-${cv.id}`;
-  const questions: any[] = (cv.questions as any[]) ?? [];
-  return (
-    <Modal open onClose={onClose} labelledBy={headingId} containerClassName="bg-card rounded-2xl shadow-xl max-w-lg w-full mx-4 p-6 max-h-[80vh] overflow-y-auto">
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 id={headingId} className="text-lg font-bold text-foreground">
-            {cv.challenge?.name ?? 'Challenge'} — preview
-          </h2>
-          <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-        <p className="text-xs text-muted-foreground">Created {new Date(cv.createdAt).toLocaleDateString()}</p>
-        {questions.length === 0 ? (
-          <p className="text-sm text-muted-foreground/70 italic">No questions in this version.</p>
-        ) : (
-          <div className="border border-border rounded-lg divide-y divide-border">
-            {questions.map((q: any, i: number) => (
-              <div key={q.key ?? i} className="px-4 py-3">
-                <span className="text-xs font-medium text-muted-foreground/70 uppercase tracking-wide mr-2">Q{i + 1}</span>
-                <span className="text-sm text-foreground/80">{q.data?.label ?? q.label}</span>
-                {q.required && <span className="ml-2 text-xs text-red-500">required</span>}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </Modal>
-  );
-}
-
 function RubricPreviewModal({ rv, onClose }: { rv: any; onClose: () => void }) {
   const headingId = `rubric-preview-heading-${rv.id}`;
   const criteria: any[] = (rv.criteria as any[]) ?? [];
@@ -2349,9 +2412,9 @@ function RubricPreviewModal({ rv, onClose }: { rv: any; onClose: () => void }) {
   );
 }
 
-function GeneralFormPicker({ currentCvId, currentCvName, options, locked }: {
+function GeneralFormPicker({ currentCvId, currentCvLabel, options, locked }: {
   currentCvId: string | null;
-  currentCvName: string | null;
+  currentCvLabel: string | null;
   options: any[];
   locked: boolean;
 }) {
@@ -2365,7 +2428,7 @@ function GeneralFormPicker({ currentCvId, currentCvName, options, locked }: {
         currentCvId ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <CheckCircle className="w-4 h-4 text-green-600" />
-            <span>{currentCvName}</span>
+            <span>{currentCvLabel}</span>
             <span className="text-xs text-muted-foreground/70 ml-2">(locked — cycle is past Draft)</span>
           </div>
         ) : (
@@ -2375,7 +2438,7 @@ function GeneralFormPicker({ currentCvId, currentCvName, options, locked }: {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <CheckCircle className="w-4 h-4 text-green-600" />
-            <span>{currentCvName}</span>
+            <span>{currentCvLabel}</span>
           </div>
           <button
             onClick={() => setEditing(true)}
@@ -2396,7 +2459,12 @@ function GeneralFormPicker({ currentCvId, currentCvName, options, locked }: {
               <option value="" disabled>Select a general form...</option>
               {options.map((cv: any) => (
                 <option key={cv.id} value={cv.id}>
-                  {cv.challenge?.name ?? 'Untitled'} ({(cv.questions as any[])?.length ?? 0} questions)
+                  {formatVersionLabel({
+                    name: cv.challenge?.name ?? 'Untitled',
+                    versionNumber: cv.versionNumber,
+                    createdAt: cv.createdAt,
+                    createdBy: cv.createdBy,
+                  })}
                 </option>
               ))}
             </select>

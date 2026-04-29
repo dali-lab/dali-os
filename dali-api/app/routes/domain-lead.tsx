@@ -4,10 +4,11 @@ import { redirect } from "react-router";
 import type { Route } from "./+types/domain-lead";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { CheckCircle, Plus, Trash2, Check, Clock, X, CircleDashed, ChevronDown } from "lucide-react";
+import { CheckCircle, Plus, Trash2, Check, Clock, X, CircleDashed, ChevronDown, Eye } from "lucide-react";
 import { inferDomainApplicationStatus } from "~/lib/domain-application-status";
 import { getReviewStatus } from "~/lib/review-status";
 import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
+import { ChallengePreviewModal } from "~/components/ChallengePreviewModal";
 import {
   summarizeDecisionPills,
   synthesizePrePipelinePill,
@@ -15,6 +16,7 @@ import {
   type PrePipelinePill,
 } from "~/lib/decision-pills";
 import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
+import { formatVersionLabel, buildVersionNumberMap } from "~/lib/formatVersion";
 
 const STATUS_LABELS: Record<string, string> = {
   Draft: "Draft",
@@ -67,7 +69,13 @@ export async function loader({ request }: Route.LoaderArgs) {
           domains: { where: { domainId: assignment.domainId } },
           challengeVersions: {
             include: {
-              challengeVersion: { include: { challenge: true, domain: true } },
+              challengeVersion: {
+                include: {
+                  challenge: true,
+                  domain: true,
+                  createdBy: { select: { firstName: true, lastName: true } },
+                },
+              },
             },
           },
           applications: {
@@ -112,16 +120,40 @@ export async function loader({ request }: Route.LoaderArgs) {
       return [await (async (cycle) => {
 
       // Challenge versions available for this domain
-      const challengeVersionOptions = await prisma.challengeVersion.findMany({
+      const challengeVersionOptionsRaw = await prisma.challengeVersion.findMany({
         where: { domainId: assignment.domainId },
-        include: { challenge: true },
+        include: { challenge: true, createdBy: { select: { firstName: true, lastName: true } } },
         orderBy: { createdAt: "desc" },
       });
 
       // Challenge versions linked to this domain in this cycle (may be 0, 1, or many)
-      const linkedChallengeVersions = cycle.challengeVersions
+      const linkedChallengeVersionsRaw = cycle.challengeVersions
         .filter((cv) => cv.challengeVersion.domainId === assignment.domainId)
         .map((cv) => cv.challengeVersion);
+
+      // Derive a 1-based versionNumber for each ChallengeVersion by ranking
+      // siblings within the same `challengeId` ascending by createdAt.
+      // ChallengeVersion has no versionNumber column (RubricVersion does), so
+      // we compute it here for symmetry in the picker labels.
+      const cvFamilyIds = new Set<string>([
+        ...challengeVersionOptionsRaw.map((cv) => cv.challengeId),
+        ...linkedChallengeVersionsRaw.map((cv) => cv.challengeId),
+      ]);
+      const cvSiblings = cvFamilyIds.size > 0
+        ? await prisma.challengeVersion.findMany({
+            where: { challengeId: { in: [...cvFamilyIds] } },
+            select: { id: true, challengeId: true, createdAt: true },
+          })
+        : [];
+      const cvNumberMap = buildVersionNumberMap(cvSiblings);
+      const challengeVersionOptions = challengeVersionOptionsRaw.map((cv) => ({
+        ...cv,
+        versionNumber: cvNumberMap.get(cv.id) ?? null,
+      }));
+      const linkedChallengeVersions = linkedChallengeVersionsRaw.map((cv) => ({
+        ...cv,
+        versionNumber: cvNumberMap.get(cv.id) ?? null,
+      }));
 
       // isReady lives on DomainApplicationCycle (per domain+cycle, not per challenge version)
       const isChallengeReady = cycle.domains[0]?.isReady ?? false;
@@ -246,7 +278,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
       // Rubric options — rubrics are not domain-specific, so all rubric versions are eligible.
       const rubricVersionOptions = await prisma.rubricVersion.findMany({
-        include: { rubric: { select: { name: true } } },
+        include: { rubric: { select: { name: true } }, createdBy: { select: { firstName: true, lastName: true } } },
         orderBy: { createdAt: "desc" },
       });
       const currentRubricVersionId = cycle?.domains[0]?.rubricVersionId ?? null;
@@ -527,11 +559,11 @@ export default function DomainLeadDashboard() {
                     <Section
                       title="Setup"
                       badge={
-                        isChallengeReady && currentRubricVersionId
+                        isChallengeReady
                           ? <span className="text-xs text-green-700 bg-green-100 px-2 py-0.5 rounded-full font-medium">Ready</span>
                           : <span className="text-xs text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded-full font-medium">Action needed</span>
                       }
-                      defaultOpen={!isChallengeReady || !currentRubricVersionId}
+                      defaultOpen={!isChallengeReady}
                     >
                       <div className="space-y-4">
                         <DraftSection
@@ -540,21 +572,10 @@ export default function DomainLeadDashboard() {
                           challengeVersionOptions={challengeVersionOptions}
                           linkedChallengeVersions={linkedChallengeVersions ?? []}
                           isChallengeReady={isChallengeReady}
-                          currentRubricVersionId={currentRubricVersionId}
-                        />
-                        <RubricPicker
-                          cycleId={cycle.id}
-                          domainId={assignment.domainId}
-                          options={rubricVersionOptions ?? []}
-                          selectedId={currentRubricVersionId}
-                          locked={hasApplicationReviews}
                         />
                         <div className="flex items-center gap-3 pt-2 border-t border-border">
                           <Link to="/challenges" className="text-xs text-blue-600 hover:text-blue-800 font-medium">
                             {hasLinkedChallenge ? "Manage Challenges →" : "Create Challenge →"}
-                          </Link>
-                          <Link to="/rubrics" className="text-xs text-blue-600 hover:text-blue-800 font-medium">
-                            Manage Rubrics →
                           </Link>
                         </div>
                       </div>
@@ -583,7 +604,12 @@ export default function DomainLeadDashboard() {
                                 <li key={cv.id} className="flex items-center justify-between">
                                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                                     <CheckCircle className="w-4 h-4 text-green-600" />
-                                    <span>{cv.challenge?.name ?? "Linked"}</span>
+                                    <Link
+                                      to={`/challenges/${cv.challengeId}?versionId=${cv.id}`}
+                                      className="text-blue-600 hover:text-blue-800"
+                                    >
+                                      {cv.challenge?.name ?? "Linked"}
+                                    </Link>
                                     {hasApplicationReviews && (
                                       <span className="text-xs text-gray-400 ml-1">(locked — reviewers have been assigned)</span>
                                     )}
@@ -834,13 +860,12 @@ export default function DomainLeadDashboard() {
   );
 }
 
-function DraftSection({ cycle, domainId, challengeVersionOptions, linkedChallengeVersions, isChallengeReady, currentRubricVersionId }: {
+function DraftSection({ cycle, domainId, challengeVersionOptions, linkedChallengeVersions, isChallengeReady }: {
   cycle: any;
   domainId: string;
   challengeVersionOptions: any[];
   linkedChallengeVersions: any[];
   isChallengeReady: boolean;
-  currentRubricVersionId: string | null;
 }) {
   const hasLinkedChallenge = linkedChallengeVersions.length > 0;
   const totalQuestions = linkedChallengeVersions.reduce(
@@ -868,7 +893,12 @@ function DraftSection({ cycle, domainId, challengeVersionOptions, linkedChalleng
           <ul className="text-sm text-foreground/80 space-y-1">
             {linkedChallengeVersions.map((cv: any) => (
               <li key={cv.id} className="flex items-center justify-between">
-                <span>{cv.challenge?.name ?? "Untitled"}</span>
+                <Link
+                  to={`/challenges/${cv.challengeId}?versionId=${cv.id}`}
+                  className="text-blue-600 hover:text-blue-800"
+                >
+                  {cv.challenge?.name ?? "Untitled"}
+                </Link>
                 <span className="text-xs text-muted-foreground">{(cv.questions as any[])?.length ?? 0} questions</span>
               </li>
             ))}
@@ -961,6 +991,10 @@ function ChallengeSelector({ cycleId, domainId, options, linkedChallengeVersions
   const linkedChallengeIds = new Set(linkedChallengeVersions.map((cv: any) => cv.challengeId));
   const availableOptions = options.filter((cv: any) => !linkedIds.has(cv.id) && !linkedChallengeIds.has(cv.challengeId));
   const [pickerId, setPickerId] = useState<string>("");
+  const [previewCvId, setPreviewCvId] = useState<string | null>(null);
+  const previewCv = previewCvId
+    ? linkedChallengeVersions.find((cv: any) => cv.id === previewCvId)
+    : null;
 
   return (
     <div className="space-y-3 pt-1">
@@ -972,26 +1006,46 @@ function ChallengeSelector({ cycleId, domainId, options, linkedChallengeVersions
               <div key={cv.id} className="px-4 py-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1">
-                    <div className="text-sm font-medium text-foreground">
-                      {cv.challenge?.name ?? "Untitled"}{" "}
-                      <span className="text-xs text-muted-foreground/70 font-normal">(v{cv.id.slice(-4)})</span>
+                    <div className="text-sm font-medium">
+                      <Link
+                        to={`/challenges/${cv.challengeId}?versionId=${cv.id}`}
+                        className="text-blue-600 hover:text-blue-800"
+                      >
+                        {formatVersionLabel({
+                          name: cv.challenge?.name ?? "Untitled",
+                          versionNumber: cv.versionNumber,
+                          createdAt: cv.createdAt,
+                          createdBy: cv.createdBy,
+                        })}
+                      </Link>
                     </div>
                     <div className="text-xs text-muted-foreground mt-0.5">
                       {questions.length} question{questions.length !== 1 ? "s" : ""}
                     </div>
                   </div>
-                  <Form method="post">
-                    <input type="hidden" name="intent" value="remove-challenge" />
-                    <input type="hidden" name="cycleId" value={cycleId} />
-                    <input type="hidden" name="challengeVersionId" value={cv.id} />
+                  <div className="flex items-center gap-2">
                     <button
-                      type="submit"
-                      aria-label={`Remove ${cv.challenge?.name ?? "challenge"}`}
-                      className="text-muted-foreground hover:text-red-600 transition"
+                      type="button"
+                      onClick={() => setPreviewCvId(cv.id)}
+                      aria-label={`Preview ${cv.challenge?.name ?? "challenge"}`}
+                      className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <Eye className="w-3.5 h-3.5" />
+                      Preview
                     </button>
-                  </Form>
+                    <Form method="post">
+                      <input type="hidden" name="intent" value="remove-challenge" />
+                      <input type="hidden" name="cycleId" value={cycleId} />
+                      <input type="hidden" name="challengeVersionId" value={cv.id} />
+                      <button
+                        type="submit"
+                        aria-label={`Remove ${cv.challenge?.name ?? "challenge"}`}
+                        className="text-muted-foreground hover:text-red-600 transition"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </Form>
+                  </div>
                 </div>
                 {!isEmptyDoc(cv.description) && (
                   <div className="mt-2 border border-border rounded-md bg-muted/30 px-4 py-3">
@@ -1022,7 +1076,12 @@ function ChallengeSelector({ cycleId, domainId, options, linkedChallengeVersions
               <option value="" disabled>Select a challenge…</option>
               {availableOptions.map((cv: any) => (
                 <option key={cv.id} value={cv.id}>
-                  {cv.challenge.name} (v{cv.id.slice(-4)})
+                  {formatVersionLabel({
+                    name: cv.challenge?.name ?? "Untitled",
+                    versionNumber: cv.versionNumber,
+                    createdAt: cv.createdAt,
+                    createdBy: cv.createdBy,
+                  })}
                 </option>
               ))}
             </select>
@@ -1040,6 +1099,22 @@ function ChallengeSelector({ cycleId, domainId, options, linkedChallengeVersions
           No challenge versions exist for this domain yet.
         </p>
       ) : null}
+
+      {previewCv && (
+        <ChallengePreviewModal
+          challengeVersionId={previewCv.id}
+          challengeName={previewCv.challenge?.name ?? "Challenge"}
+          versionLabel={formatVersionLabel({
+            name: previewCv.challenge?.name ?? "Challenge",
+            versionNumber: previewCv.versionNumber,
+            createdAt: previewCv.createdAt,
+            createdBy: previewCv.createdBy,
+          })}
+          description={previewCv.description}
+          questions={(previewCv.questions as any[]) ?? []}
+          onClose={() => setPreviewCvId(null)}
+        />
+      )}
     </div>
   );
 }
@@ -1143,7 +1218,15 @@ function RubricPicker({ cycleId, domainId, options, selectedId, locked }: {
   selectedId: string | null;
   locked: boolean;
 }) {
-  const selectedLabel = options.find((rv: any) => rv.id === selectedId);
+  const selectedRv = options.find((rv: any) => rv.id === selectedId);
+  const selectedLabel = selectedRv
+    ? formatVersionLabel({
+        name: selectedRv.rubric?.name ?? 'Rubric',
+        versionNumber: selectedRv.versionNumber,
+        createdAt: selectedRv.createdAt,
+        createdBy: selectedRv.createdBy,
+      })
+    : 'Set';
   return (
     <div className="bg-card border border-border rounded-lg overflow-hidden">
       <div className="px-6 py-4 border-b border-border bg-muted/50">
@@ -1153,7 +1236,7 @@ function RubricPicker({ cycleId, domainId, options, selectedId, locked }: {
         {locked ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <CheckCircle className="w-4 h-4 text-green-600" />
-            <span>{selectedLabel ? `${selectedLabel.rubric.name} — v${selectedLabel.versionNumber}` : 'Set'}</span>
+            <span>{selectedLabel}</span>
             <span className="text-xs text-muted-foreground/70 ml-2">(locked — reviewers have been assigned)</span>
           </div>
         ) : (
@@ -1171,7 +1254,12 @@ function RubricPicker({ cycleId, domainId, options, selectedId, locked }: {
                 <option value="">No rubric assigned</option>
                 {options.map((rv: any) => (
                   <option key={rv.id} value={rv.id}>
-                    {rv.rubric.name} — v{rv.versionNumber}
+                    {formatVersionLabel({
+                      name: rv.rubric?.name ?? 'Rubric',
+                      versionNumber: rv.versionNumber,
+                      createdAt: rv.createdAt,
+                      createdBy: rv.createdBy,
+                    })}
                   </option>
                 ))}
               </select>
