@@ -62,6 +62,19 @@ export async function action({ request, params }: Route.ActionArgs) {
     },
   });
 
+  if (!(await isHiringLead(auth.user.sub))) {
+    const domainLeadForThisDomain = await prisma.dALIMember.findFirst({
+      where: {
+        userId: auth.user.sub,
+        domainLeadAssignments: { some: { domainId: domainApp.challengeVersion.domainId } },
+      },
+      select: { id: true },
+    });
+    if (!domainLeadForThisDomain) {
+      return Response.json({ error: "Forbidden" }, { status: 403 });
+    }
+  }
+
   const cycle = await prisma.applicationCycle.findUniqueOrThrow({
     where: { id: domainApp.application.applicationCycleId },
   });
