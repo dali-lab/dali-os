@@ -15,6 +15,12 @@ function formatDateTime(iso: string | Date) {
   )
 }
 
+export function resolveDuplicateDomainId(version: { domainId: string | null }): string {
+  // A general version's domainId is null; coerce to '' so the form's selected
+  // domain is explicitly cleared instead of retaining a stale non-General id.
+  return version.domainId ?? ''
+}
+
 export function resolveChallengeFormDefaults({
   domains,
   versions,
@@ -204,7 +210,7 @@ export function ChallengeDetail() {
                 </div>
                 <button
                   onClick={() => {
-                    if (selectedVersion.domainId) setSelectedDomainId(selectedVersion.domainId)
+                    setSelectedDomainId(resolveDuplicateDomainId(selectedVersion))
                     setIsCreatingVersion(true)
                   }}
                   className="text-sm text-blue-600 hover:text-blue-700 font-medium"

@@ -6,11 +6,12 @@ vi.mock("~/lib/roles");
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead, isDomainLead } from "~/lib/roles";
+import { isHiringLead, isDomainLead, hasCycleAccess } from "~/lib/roles";
 import { action } from "~/routes/api.delibs.$id.moves";
 
 const USER_ID = "user-1";
 const SESSION_ID = "delibs-1";
+const CYCLE_ID = "cycle-1";
 
 const mockTx: any = {
   delibsSession: {
@@ -21,6 +22,7 @@ const mockTx: any = {
 
 const mockPrisma = prisma as unknown as {
   $transaction: ReturnType<typeof vi.fn>;
+  delibsSession: { findUnique: ReturnType<typeof vi.fn> };
 };
 
 beforeEach(() => {
@@ -28,6 +30,10 @@ beforeEach(() => {
 
   mockTx.delibsSession.findUnique = vi.fn();
   mockTx.delibsSession.update = vi.fn();
+
+  (mockPrisma as any).delibsSession = {
+    findUnique: vi.fn().mockResolvedValue({ applicationCycleId: CYCLE_ID }),
+  };
 
   // Run callback against mockTx; serialize concurrent transactions one at a
   // time so callers can simulate two in-flight moves observing fresh state.
@@ -44,6 +50,7 @@ beforeEach(() => {
   } as any);
   vi.mocked(isHiringLead).mockResolvedValue(false);
   vi.mocked(isDomainLead).mockResolvedValue(true);
+  vi.mocked(hasCycleAccess).mockResolvedValue(true);
 });
 
 function makeRequest(body: Record<string, unknown>) {
@@ -226,5 +233,58 @@ describe("POST /api/delibs/:id/moves", () => {
 
     expect(res.status).toBe(409);
     expect(mockTx.delibsSession.update).not.toHaveBeenCalled();
+  });
+
+  it("returns 403 when the caller has a lead role but no access to the session's cycle", async () => {
+    vi.mocked(isHiringLead).mockResolvedValue(true);
+    vi.mocked(hasCycleAccess).mockResolvedValue(false);
+
+    const res = await action({
+      request: makeRequest({ cardId: "card-a", toColumn: "Interview" }),
+      params: { id: SESSION_ID },
+      context: {},
+    } as any);
+
+    expect(res.status).toBe(403);
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 when the pre-flight session lookup finds nothing", async () => {
+    (mockPrisma as any).delibsSession.findUnique.mockResolvedValue(null);
+
+    const res = await action({
+      request: makeRequest({ cardId: "card-a", toColumn: "Interview" }),
+      params: { id: SESSION_ID },
+      context: {},
+    } as any);
+
+    expect(res.status).toBe(404);
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("calls hasCycleAccess with the session's applicationCycleId before proceeding", async () => {
+    mockTx.delibsSession.findUnique.mockResolvedValue({
+      id: SESSION_ID,
+      type: "Initial",
+      status: "Open",
+      columnOrder: {
+        "No Decision": ["card-a"],
+        Interview: [],
+        Reject: [],
+      },
+    });
+    mockTx.delibsSession.update.mockImplementation(({ data }: any) => ({
+      id: SESSION_ID,
+      columnOrder: data.columnOrder,
+    }));
+
+    const res = await action({
+      request: makeRequest({ cardId: "card-a", toColumn: "Interview" }),
+      params: { id: SESSION_ID },
+      context: {},
+    } as any);
+
+    expect(res.status).toBe(200);
+    expect(hasCycleAccess).toHaveBeenCalledWith(USER_ID, CYCLE_ID);
   });
 });

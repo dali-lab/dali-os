@@ -2,7 +2,7 @@ import type { Route } from "./+types/api.delibs.$id.moves";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead, isDomainLead } from "~/lib/roles";
+import { isHiringLead, isDomainLead, hasCycleAccess } from "~/lib/roles";
 import { INITIAL_COLUMNS, FINAL_COLUMNS } from "~/lib/delibs";
 import { parseJson } from "~/lib/validate";
 
@@ -26,9 +26,28 @@ export async function action({ request, params }: Route.ActionArgs) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 
+
+  const sessionForAuth = await prisma.delibsSession.findUnique({
+    where: { id: params.id },
+    select: { applicationCycleId: true },
+  });
+  if (!sessionForAuth) {
+    return Response.json({ error: "Not found" }, { status: 404 });
+  }
+  if (!(await hasCycleAccess(auth.user.sub, sessionForAuth.applicationCycleId))) {
+    return Response.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const body = await parseJson(request, MoveSchema);
   if (body instanceof Response) return body;
   const { cardId, toColumn, position } = body;
+
+  if (!cardId || typeof cardId !== "string") {
+    return Response.json({ error: "cardId is required" }, { status: 400 });
+  }
+  if (!toColumn || typeof toColumn !== "string") {
+    return Response.json({ error: "toColumn is required" }, { status: 400 });
+  }
 
   try {
     const updated = await prisma.$transaction(
