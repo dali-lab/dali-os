@@ -2,7 +2,7 @@ import type { Route } from "./+types/api.domain-applications.$id.reviews";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead, isDomainLead, hasCycleAccess } from "~/lib/roles";
+import { isHiringLead, hasCycleAccess } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
 
 const CreateReviewSchema = z.object({
@@ -42,12 +42,6 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   if (request.method !== "POST") {
     return Response.json({ error: "Method not allowed" }, { status: 405 });
-  }
-
-  const hiringLead = await isHiringLead(auth.user.sub);
-  const domainLead = await isDomainLead(auth.user.sub);
-  if (!hiringLead && !domainLead) {
-    return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const body = await parseJson(request, CreateReviewSchema);
