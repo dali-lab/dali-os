@@ -77,15 +77,13 @@ export async function action({ request, params }: Route.ActionArgs) {
         }
       }
 
-      const stage = session.type === "Initial" ? "Draft" : "Final";
-
       await prisma.$transaction(async (tx) => {
         for (const d of decisions) {
           await tx.decision.create({
             data: {
               domainApplicationId: d.domainApplicationId,
               type: d.type as any,
-              stage,
+              stage: "Draft",
               madeById: member.id,
               waitlistRank: d.waitlistRank,
             },

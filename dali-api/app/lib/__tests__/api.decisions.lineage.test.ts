@@ -118,7 +118,7 @@ describe("Decision lineage (parentDecisionId)", () => {
     expect(mockPrisma.decision.create).toHaveBeenCalledTimes(3);
     for (const call of mockPrisma.decision.create.mock.calls) {
       expect(call[0].data.parentDecisionId).toBeUndefined();
-      expect(call[0].data.stage).toBe("Final");
+      expect(call[0].data.stage).toBe("Draft");
     }
   });
 
