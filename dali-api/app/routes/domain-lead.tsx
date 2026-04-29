@@ -15,6 +15,7 @@ import {
   type PrePipelinePill,
 } from "~/lib/decision-pills";
 import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
+import { formatVersionLabel, buildVersionNumberMap } from "~/lib/formatVersion";
 
 const STATUS_LABELS: Record<string, string> = {
   Draft: "Draft",
@@ -67,7 +68,13 @@ export async function loader({ request }: Route.LoaderArgs) {
           domains: { where: { domainId: assignment.domainId } },
           challengeVersions: {
             include: {
-              challengeVersion: { include: { challenge: true, domain: true } },
+              challengeVersion: {
+                include: {
+                  challenge: true,
+                  domain: true,
+                  createdBy: { select: { firstName: true, lastName: true } },
+                },
+              },
             },
           },
           applications: {
@@ -112,16 +119,40 @@ export async function loader({ request }: Route.LoaderArgs) {
       return [await (async (cycle) => {
 
       // Challenge versions available for this domain
-      const challengeVersionOptions = await prisma.challengeVersion.findMany({
+      const challengeVersionOptionsRaw = await prisma.challengeVersion.findMany({
         where: { domainId: assignment.domainId },
-        include: { challenge: true },
+        include: { challenge: true, createdBy: { select: { firstName: true, lastName: true } } },
         orderBy: { createdAt: "desc" },
       });
 
       // Challenge versions linked to this domain in this cycle (may be 0, 1, or many)
-      const linkedChallengeVersions = cycle.challengeVersions
+      const linkedChallengeVersionsRaw = cycle.challengeVersions
         .filter((cv) => cv.challengeVersion.domainId === assignment.domainId)
         .map((cv) => cv.challengeVersion);
+
+      // Derive a 1-based versionNumber for each ChallengeVersion by ranking
+      // siblings within the same `challengeId` ascending by createdAt.
+      // ChallengeVersion has no versionNumber column (RubricVersion does), so
+      // we compute it here for symmetry in the picker labels.
+      const cvFamilyIds = new Set<string>([
+        ...challengeVersionOptionsRaw.map((cv) => cv.challengeId),
+        ...linkedChallengeVersionsRaw.map((cv) => cv.challengeId),
+      ]);
+      const cvSiblings = cvFamilyIds.size > 0
+        ? await prisma.challengeVersion.findMany({
+            where: { challengeId: { in: [...cvFamilyIds] } },
+            select: { id: true, challengeId: true, createdAt: true },
+          })
+        : [];
+      const cvNumberMap = buildVersionNumberMap(cvSiblings);
+      const challengeVersionOptions = challengeVersionOptionsRaw.map((cv) => ({
+        ...cv,
+        versionNumber: cvNumberMap.get(cv.id) ?? null,
+      }));
+      const linkedChallengeVersions = linkedChallengeVersionsRaw.map((cv) => ({
+        ...cv,
+        versionNumber: cvNumberMap.get(cv.id) ?? null,
+      }));
 
       // isReady lives on DomainApplicationCycle (per domain+cycle, not per challenge version)
       const isChallengeReady = cycle.domains[0]?.isReady ?? false;
@@ -246,7 +277,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
       // Rubric options — rubrics are not domain-specific, so all rubric versions are eligible.
       const rubricVersionOptions = await prisma.rubricVersion.findMany({
-        include: { rubric: { select: { name: true } } },
+        include: { rubric: { select: { name: true } }, createdBy: { select: { firstName: true, lastName: true } } },
         orderBy: { createdAt: "desc" },
       });
       const currentRubricVersionId = cycle?.domains[0]?.rubricVersionId ?? null;
@@ -973,8 +1004,12 @@ function ChallengeSelector({ cycleId, domainId, options, linkedChallengeVersions
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1">
                     <div className="text-sm font-medium text-foreground">
-                      {cv.challenge?.name ?? "Untitled"}{" "}
-                      <span className="text-xs text-muted-foreground/70 font-normal">(v{cv.id.slice(-4)})</span>
+                      {formatVersionLabel({
+                        name: cv.challenge?.name ?? "Untitled",
+                        versionNumber: cv.versionNumber,
+                        createdAt: cv.createdAt,
+                        createdBy: cv.createdBy,
+                      })}
                     </div>
                     <div className="text-xs text-muted-foreground mt-0.5">
                       {questions.length} question{questions.length !== 1 ? "s" : ""}
@@ -1022,7 +1057,12 @@ function ChallengeSelector({ cycleId, domainId, options, linkedChallengeVersions
               <option value="" disabled>Select a challenge…</option>
               {availableOptions.map((cv: any) => (
                 <option key={cv.id} value={cv.id}>
-                  {cv.challenge.name} (v{cv.id.slice(-4)})
+                  {formatVersionLabel({
+                    name: cv.challenge?.name ?? "Untitled",
+                    versionNumber: cv.versionNumber,
+                    createdAt: cv.createdAt,
+                    createdBy: cv.createdBy,
+                  })}
                 </option>
               ))}
             </select>
@@ -1143,7 +1183,15 @@ function RubricPicker({ cycleId, domainId, options, selectedId, locked }: {
   selectedId: string | null;
   locked: boolean;
 }) {
-  const selectedLabel = options.find((rv: any) => rv.id === selectedId);
+  const selectedRv = options.find((rv: any) => rv.id === selectedId);
+  const selectedLabel = selectedRv
+    ? formatVersionLabel({
+        name: selectedRv.rubric?.name ?? 'Rubric',
+        versionNumber: selectedRv.versionNumber,
+        createdAt: selectedRv.createdAt,
+        createdBy: selectedRv.createdBy,
+      })
+    : 'Set';
   return (
     <div className="bg-card border border-border rounded-lg overflow-hidden">
       <div className="px-6 py-4 border-b border-border bg-muted/50">
@@ -1153,7 +1201,7 @@ function RubricPicker({ cycleId, domainId, options, selectedId, locked }: {
         {locked ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <CheckCircle className="w-4 h-4 text-green-600" />
-            <span>{selectedLabel ? `${selectedLabel.rubric.name} — v${selectedLabel.versionNumber}` : 'Set'}</span>
+            <span>{selectedLabel}</span>
             <span className="text-xs text-muted-foreground/70 ml-2">(locked — reviewers have been assigned)</span>
           </div>
         ) : (
@@ -1171,7 +1219,12 @@ function RubricPicker({ cycleId, domainId, options, selectedId, locked }: {
                 <option value="">No rubric assigned</option>
                 {options.map((rv: any) => (
                   <option key={rv.id} value={rv.id}>
-                    {rv.rubric.name} — v{rv.versionNumber}
+                    {formatVersionLabel({
+                      name: rv.rubric?.name ?? 'Rubric',
+                      versionNumber: rv.versionNumber,
+                      createdAt: rv.createdAt,
+                      createdBy: rv.createdBy,
+                    })}
                   </option>
                 ))}
               </select>
