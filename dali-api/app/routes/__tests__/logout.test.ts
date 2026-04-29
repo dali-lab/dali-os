@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/oauth");
+vi.mock("~/lib/oauth", () => ({
+  revokeToken: vi.fn(),
+}));
 
 import { revokeToken } from "~/lib/oauth";
 import { loader } from "~/routes/logout";
