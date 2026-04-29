@@ -41,15 +41,15 @@ beforeEach(() => {
 
 describe("POST /api/email/send rate limiting", () => {
   it("allows requests under the limit", async () => {
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 100; i++) {
       const res = await action({ request: makeRequest() } as any);
       expect(res.status).toBe(200);
     }
-    expect(sendEmail).toHaveBeenCalledTimes(10);
+    expect(sendEmail).toHaveBeenCalledTimes(100);
   });
 
   it("returns 429 with Retry-After once the limit is exceeded", async () => {
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 100; i++) {
       await action({ request: makeRequest() } as any);
     }
     const res = await action({ request: makeRequest() } as any);
@@ -58,7 +58,7 @@ describe("POST /api/email/send rate limiting", () => {
   });
 
   it("scopes the rate limit per user", async () => {
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 100; i++) {
       await action({ request: makeRequest() } as any);
     }
     const limited = await action({ request: makeRequest() } as any);

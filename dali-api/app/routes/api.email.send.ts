@@ -13,7 +13,7 @@ import { checkRateLimit } from '~/lib/rate-limit'
 
 const GMAIL_USER = 'applications@dali.dartmouth.edu'
 
-const RATE_LIMIT_MAX = 10
+const RATE_LIMIT_MAX = 100
 const RATE_LIMIT_WINDOW_MS = 60_000
 
 async function getGmailRefreshToken(): Promise<string> {
