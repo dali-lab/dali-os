@@ -4,6 +4,7 @@ import { requireAuth } from "~/lib/auth";
 import { isHiringLead } from "~/lib/roles";
 import { sendEmail } from "~/lib/gmail";
 import { renderEmail } from "~/lib/email";
+import { logAuditEvent } from "~/lib/audit";
 
 const GMAIL_USER = "applications@dali.dartmouth.edu";
 
@@ -99,6 +100,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   });
 
   // ── Send notification email via per-cycle binding ────────────────────────────
+  let emailSent = false;
   try {
     const user = domainApp.application.user;
     const email =
@@ -124,12 +126,27 @@ export async function action({ request, params }: Route.ActionArgs) {
           subject,
           html,
         });
+        emailSent = true;
       }
     }
   } catch (err) {
     // Log but don't fail the release if email sending fails.
     console.error("Failed to send release email:", err);
   }
+
+  await logAuditEvent({
+    action: "decision.release",
+    userId: auth.user.sub,
+    targetId: released.id,
+    metadata: {
+      decisionId: released.id,
+      parentDecisionId: decision.id,
+      domainApplicationId: decision.domainApplicationId,
+      type: released.type,
+      emailSent,
+    },
+    request,
+  });
 
   return Response.json(released, { status: 201 });
 }
