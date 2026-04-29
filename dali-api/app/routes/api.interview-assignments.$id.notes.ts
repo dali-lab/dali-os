@@ -1,8 +1,13 @@
 import type { Route } from "./+types/api.interview-assignments.$id.notes";
+import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { hasCycleAccess } from "~/lib/roles";
-import { safeJson } from "~/lib/safe-json";
+import { parseJson } from "~/lib/validate";
+
+const NoteVersionSchema = z.object({
+  content: z.string().max(100_000),
+});
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -50,13 +55,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     return Response.json({ error: "Not your assignment" }, { status: 403 });
   }
 
-  const body = await safeJson<{ content?: unknown }>(request);
+  const body = await parseJson(request, NoteVersionSchema);
   if (body instanceof Response) return body;
   const { content } = body;
-
-  if (content === undefined) {
-    return Response.json({ error: "content is required" }, { status: 400 });
-  }
 
   const version = await prisma.interviewNoteVersion.create({
     data: {

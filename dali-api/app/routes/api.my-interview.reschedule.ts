@@ -1,9 +1,20 @@
 import type { Route } from "./+types/api.my-interview.reschedule";
+import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { safeJson } from "~/lib/safe-json";
+import { parseJson } from "~/lib/validate";
 import { assignInterviewers } from "~/lib/scheduling";
+
+const RescheduleSchema = z
+  .object({
+    newStart: z.string().datetime({ offset: true }),
+    newEnd: z.string().datetime({ offset: true }),
+    domainApplicationId: z.string().min(1).max(100),
+  })
+  .refine((v) => new Date(v.newEnd) > new Date(v.newStart), {
+    message: "newEnd must be after newStart",
+  });
 
 export async function action({ request }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
@@ -16,17 +27,9 @@ export async function action({ request }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
 
-  const body = await safeJson<{ newStart?: string; newEnd?: string; domainApplicationId?: string }>(request);
+  const body = await parseJson(request, RescheduleSchema);
   if (body instanceof Response) return withCors(request, body);
   const { newStart, newEnd, domainApplicationId } = body;
-
-  if (!domainApplicationId) {
-    return withCors(request, Response.json({ error: "domainApplicationId is required" }, { status: 400 }));
-  }
-
-  if (!newStart || !newEnd) {
-    return withCors(request, Response.json({ error: "newStart and newEnd required" }, { status: 400 }));
-  }
 
   // Cancel old + book new atomically inside a single serializable transaction.
   // If assignInterviewers throws (no free interviewers at the new slot), the

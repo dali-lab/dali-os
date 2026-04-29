@@ -1,10 +1,21 @@
 import type { Route } from "./+types/api.cycles.$cycleId.book-interview";
+import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { assignInterviewers } from "~/lib/scheduling";
 import { checkRateLimit } from "~/lib/rate-limit";
-import { safeJson } from "~/lib/safe-json";
+import { parseJson } from "~/lib/validate";
+
+const BookInterviewSchema = z
+  .object({
+    slotStart: z.string().datetime({ offset: true }),
+    slotEnd: z.string().datetime({ offset: true }),
+    domainApplicationId: z.string().min(1).max(100),
+  })
+  .refine((v) => new Date(v.slotEnd) > new Date(v.slotStart), {
+    message: "slotEnd must be after slotStart",
+  });
 
 const RATE_LIMIT_MAX = 5;
 const RATE_LIMIT_WINDOW_MS = 60_000;
@@ -23,13 +34,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
 
-  const body = await safeJson<{ slotStart: string; slotEnd: string; domainApplicationId: string }>(request);
+  const body = await parseJson(request, BookInterviewSchema);
   if (body instanceof Response) return withCors(request, body);
   const { slotStart, slotEnd, domainApplicationId } = body;
-
-  if (!slotStart || !slotEnd || !domainApplicationId) {
-    return withCors(request, Response.json({ error: "slotStart, slotEnd, and domainApplicationId required" }, { status: 400 }));
-  }
 
   const domainApplication = await prisma.domainApplication.findUnique({
     where: { id: domainApplicationId },

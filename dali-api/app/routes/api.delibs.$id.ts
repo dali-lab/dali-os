@@ -1,8 +1,13 @@
 import type { Route } from "./+types/api.delibs.$id";
+import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isHiringLead, isDomainLead, hasCycleAccess } from "~/lib/roles";
-import { safeJson } from "~/lib/safe-json";
+import { parseJson } from "~/lib/validate";
+
+const DelibsActionSchema = z.object({
+  intent: z.enum(["close"]),
+});
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -32,10 +37,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const body = await safeJson<Record<string, unknown>>(request);
-  if (body instanceof Response) return body;
-
   if (request.method === "POST") {
+    const body = await parseJson(request, DelibsActionSchema);
+    if (body instanceof Response) return body;
     const { intent } = body;
 
     if (intent === "close") {
