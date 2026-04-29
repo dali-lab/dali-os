@@ -147,10 +147,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
   const reviewedDomainIds = Array.from(reviewedDomainIdSet);
 
-  // Final decisions ready for release (HiringLead decisions panel)
+  // Final decisions ready for release (HiringLead decisions panel).
+  // Exclude Finals that already have a Released child — Decision is append-only,
+  // so released rows still match stage="Final" and would otherwise re-appear here
+  // after the optimistic UI update is undone by a loader refetch.
   const finalDecisions = await prisma.decision.findMany({
     where: {
       stage: "Final",
+      children: { none: { stage: "Released" } },
       domainApplication: {
         application: { applicationCycleId: params.id },
       },
