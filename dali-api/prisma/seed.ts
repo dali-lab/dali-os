@@ -1880,6 +1880,49 @@ async function main() {
     },
   });
 
+  // ── Confidentiality agreement (Fall 2026) ────────────────────────────────
+  // Bind a signed agreement to the active cycle so domain leads and the hiring
+  // lead can access confidentiality-gated pages in E2E tests.
+  await prisma.confidentialityAgreement.upsert({
+    where: { id: "ca-fall-2026" },
+    update: {},
+    create: { id: "ca-fall-2026", name: "Fall 2026 Hiring Confidentiality Agreement" },
+  });
+  await prisma.confidentialityAgreementVersion.upsert({
+    where: { id: "cav-fall-2026-v1" },
+    update: {},
+    create: {
+      id: "cav-fall-2026-v1",
+      versionNumber: 1,
+      body: { type: "doc", content: [] },
+      agreementId: "ca-fall-2026",
+      createdById: jordanMember.id,
+    },
+  });
+  await prisma.cycleConfidentialityAgreement.upsert({
+    where: { applicationCycleId: cycle.id },
+    update: {},
+    create: {
+      applicationCycleId: cycle.id,
+      confidentialityAgreementVersionId: "cav-fall-2026-v1",
+    },
+  });
+  for (const [sigId, userId] of [
+    ["cas-eng-lead", engLead.id],
+    ["cas-jordan", jordan.id],
+  ] as [string, string][]) {
+    await prisma.confidentialityAgreementSignature.upsert({
+      where: { userId_applicationCycleId: { userId, applicationCycleId: cycle.id } },
+      update: {},
+      create: {
+        id: sigId,
+        userId,
+        applicationCycleId: cycle.id,
+        confidentialityAgreementVersionId: "cav-fall-2026-v1",
+      },
+    });
+  }
+
   // ── Interview config ──────────────────────────────────────────────────────
   const today = new Date();
   const interviewStart = new Date(today);
