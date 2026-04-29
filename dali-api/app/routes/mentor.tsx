@@ -12,6 +12,8 @@ import {
 } from 'lucide-react'
 import { getReviewStatus } from '~/lib/review-status'
 import { getActiveCycle, cycleStatusToStage, inferUnderReviewStage } from '~/lib/cycles'
+import { getCycleConfidentialityState } from '~/lib/confidentiality'
+import { ConfidentialityGate } from '~/components/ConfidentialityGate'
 import { INITIAL_COLUMNS, FINAL_COLUMNS } from '~/lib/delibs'
 import CalendarGrid from '~/components/CalendarGrid'
 import { getZonedYMD } from '~/lib/timezone'
@@ -42,6 +44,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     needsAvailabilityPrompt: false,
     delibsSessions: [] as any[],
     delibsApplications: [] as any[],
+    confidentialityRequired: null as null | "no_agreement" | "unsigned",
   }
 
   const auth = await requireAuth(request)
@@ -68,8 +71,14 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const activeCycleStatus = active.currentStatus
 
-  // Fetch all ApplicationReview records assigned to this reviewer
-  const myReviews = await prisma.applicationReview.findMany({
+  const confState = await getCycleConfidentialityState(auth.user.sub, active.id)
+  const confidentialityRequired =
+    confState.status === "signed" ? null : confState.status
+
+  // Only load applicant names when the user has signed the cycle's
+  // confidentiality agreement. Otherwise return empty arrays and surface a
+  // gate placeholder in the component.
+  const myReviews = confidentialityRequired ? [] : await prisma.applicationReview.findMany({
     where: { cycleReviewerId: { in: reviewerIds } },
     include: {
       domainApplication: {
@@ -109,7 +118,23 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   // Fetch active delibs sessions for the reviewer's domains (live mirror view).
+  // Only load when signed — the session cards show applicant names.
   // Initial sessions are blinded; Final sessions show real names.
+  if (confidentialityRequired) {
+    return {
+      activeCycle: { id: active.id, name: active.name },
+      currentStage,
+      mentorUserId: auth.user.sub,
+      memberId: member.id,
+      myReviews: [],
+      isCycleInterviewer,
+      needsAvailabilityPrompt,
+      delibsSessions: [],
+      delibsApplications: [],
+      confidentialityRequired,
+    }
+  }
+
   const delibsSessionsRaw = await prisma.delibsSession.findMany({
     where: {
       applicationCycleId: active.id,
@@ -195,6 +220,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     needsAvailabilityPrompt,
     delibsSessions,
     delibsApplications,
+    confidentialityRequired: null as null | "no_agreement" | "unsigned",
   }
 }
 
@@ -207,6 +233,7 @@ export default function MentorDashboard() {
     needsAvailabilityPrompt,
     delibsSessions,
     delibsApplications,
+    confidentialityRequired,
   } = useLoaderData<typeof loader>()
 
   if (!activeCycle) {
@@ -382,14 +409,20 @@ export default function MentorDashboard() {
         title="Assigned Written Applications"
         icon={<FileText className="w-4 h-4 text-blue-600" />}
         badge={
-          reviews.length > 0 ? (
+          !confidentialityRequired && reviews.length > 0 ? (
             <span className="text-xs font-medium text-gray-500">
               {submittedReviews.length}/{reviews.length} submitted
             </span>
           ) : null
         }
       >
-        {reviews.length === 0 ? (
+        {confidentialityRequired ? (
+          <ConfidentialityGate
+            cycleId={activeCycle.id}
+            reason={confidentialityRequired}
+            next="/mentor"
+          />
+        ) : reviews.length === 0 ? (
           <p className="text-sm text-gray-500">
             You don't have any assigned applications yet. You'll see them here
             once your Domain Lead assigns reviewers.
@@ -594,7 +627,7 @@ export default function MentorDashboard() {
         title="Delibs View"
         icon={<ListOrdered className="w-4 h-4 text-blue-600" />}
         badge={
-          (delibsSessions?.length ?? 0) > 0 ? (
+          !confidentialityRequired && (delibsSessions?.length ?? 0) > 0 ? (
             <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full flex items-center">
               <EyeOff className="w-3 h-3 mr-1" />
               Live · Read-only
@@ -602,7 +635,13 @@ export default function MentorDashboard() {
           ) : null
         }
       >
-        {(delibsSessions?.length ?? 0) === 0 ? (
+        {confidentialityRequired ? (
+          <ConfidentialityGate
+            cycleId={activeCycle.id}
+            reason={confidentialityRequired}
+            next="/mentor"
+          />
+        ) : (delibsSessions?.length ?? 0) === 0 ? (
           <p className="text-sm text-gray-500">
             No active deliberations. Once your Domain Lead opens a delibs
             session, you'll see a live, read-only view of the buckets here.
