@@ -2,13 +2,14 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/auth");
 vi.mock("~/lib/s3", () => ({
-  getUploadUrl: vi.fn(),
+  getUploadPost: vi.fn(),
   getDownloadUrl: vi.fn(),
 }));
 
 import { requireAuth } from "~/lib/auth";
-import { getUploadUrl } from "~/lib/s3";
+import { getUploadPost } from "~/lib/s3";
 import { _resetForTests } from "~/lib/rate-limit";
+import { MAX_UPLOAD_BYTES } from "~/lib/file-validation";
 import { action } from "~/routes/api.upload.presign";
 
 const USER_ID = "user-1";
@@ -22,6 +23,17 @@ function makeRequest(body: unknown = { key: "foo.png", contentType: "image/png" 
   });
 }
 
+const PRESIGNED_POST = {
+  url: "https://s3.example/bucket",
+  fields: {
+    "Content-Type": "image/png",
+    bucket: "bucket",
+    key: "uploads/foo.png",
+    Policy: "base64-policy",
+    "X-Amz-Signature": "sig",
+  },
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
   _resetForTests();
@@ -29,7 +41,71 @@ beforeEach(() => {
     ok: true,
     user: { sub: USER_ID, email: "u@x.com", type: "user" },
   } as any);
-  vi.mocked(getUploadUrl).mockResolvedValue("https://s3.example/signed");
+  vi.mocked(getUploadPost).mockResolvedValue(PRESIGNED_POST as any);
+});
+
+describe("POST /api/upload/presign response shape", () => {
+  it("returns url, fields, and a scoped key on success", async () => {
+    const res = await action({ request: makeRequest() } as any);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toEqual({
+      url: PRESIGNED_POST.url,
+      fields: PRESIGNED_POST.fields,
+      key: "uploads/foo.png",
+    });
+    expect(body.key.startsWith("uploads/")).toBe(true);
+  });
+
+  it("returns 401 when unauthenticated", async () => {
+    vi.mocked(requireAuth).mockResolvedValue({
+      ok: false,
+      response: new Response(null, { status: 401 }),
+    } as any);
+    const res = await action({ request: makeRequest() } as any);
+    expect(res.status).toBe(401);
+    expect(getUploadPost).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when key is missing", async () => {
+    const res = await action({
+      request: makeRequest({ contentType: "image/png" }),
+    } as any);
+    expect(res.status).toBe(400);
+    expect(getUploadPost).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when contentType is not allowed", async () => {
+    const res = await action({
+      request: makeRequest({ key: "foo.exe", contentType: "application/x-msdownload" }),
+    } as any);
+    expect(res.status).toBe(400);
+    expect(getUploadPost).not.toHaveBeenCalled();
+  });
+
+  it("returns 413 when contentLength exceeds the cap", async () => {
+    const res = await action({
+      request: makeRequest({
+        key: "foo.png",
+        contentType: "image/png",
+        contentLength: MAX_UPLOAD_BYTES + 1,
+      }),
+    } as any);
+    expect(res.status).toBe(413);
+    expect(getUploadPost).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when contentLength is malformed", async () => {
+    const res = await action({
+      request: makeRequest({
+        key: "foo.png",
+        contentType: "image/png",
+        contentLength: "huge",
+      }),
+    } as any);
+    expect(res.status).toBe(400);
+    expect(getUploadPost).not.toHaveBeenCalled();
+  });
 });
 
 describe("POST /api/upload/presign rate limiting", () => {
