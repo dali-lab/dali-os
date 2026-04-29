@@ -558,11 +558,11 @@ export default function DomainLeadDashboard() {
                     <Section
                       title="Setup"
                       badge={
-                        isChallengeReady && currentRubricVersionId
+                        isChallengeReady
                           ? <span className="text-xs text-green-700 bg-green-100 px-2 py-0.5 rounded-full font-medium">Ready</span>
                           : <span className="text-xs text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded-full font-medium">Action needed</span>
                       }
-                      defaultOpen={!isChallengeReady || !currentRubricVersionId}
+                      defaultOpen={!isChallengeReady}
                     >
                       <div className="space-y-4">
                         <DraftSection
@@ -571,21 +571,10 @@ export default function DomainLeadDashboard() {
                           challengeVersionOptions={challengeVersionOptions}
                           linkedChallengeVersions={linkedChallengeVersions ?? []}
                           isChallengeReady={isChallengeReady}
-                          currentRubricVersionId={currentRubricVersionId}
-                        />
-                        <RubricPicker
-                          cycleId={cycle.id}
-                          domainId={assignment.domainId}
-                          options={rubricVersionOptions ?? []}
-                          selectedId={currentRubricVersionId}
-                          locked={hasApplicationReviews}
                         />
                         <div className="flex items-center gap-3 pt-2 border-t border-border">
                           <Link to="/challenges" className="text-xs text-blue-600 hover:text-blue-800 font-medium">
                             {hasLinkedChallenge ? "Manage Challenges →" : "Create Challenge →"}
-                          </Link>
-                          <Link to="/rubrics" className="text-xs text-blue-600 hover:text-blue-800 font-medium">
-                            Manage Rubrics →
                           </Link>
                         </div>
                       </div>
@@ -865,13 +854,12 @@ export default function DomainLeadDashboard() {
   );
 }
 
-function DraftSection({ cycle, domainId, challengeVersionOptions, linkedChallengeVersions, isChallengeReady, currentRubricVersionId }: {
+function DraftSection({ cycle, domainId, challengeVersionOptions, linkedChallengeVersions, isChallengeReady }: {
   cycle: any;
   domainId: string;
   challengeVersionOptions: any[];
   linkedChallengeVersions: any[];
   isChallengeReady: boolean;
-  currentRubricVersionId: string | null;
 }) {
   const hasLinkedChallenge = linkedChallengeVersions.length > 0;
   const totalQuestions = linkedChallengeVersions.reduce(
