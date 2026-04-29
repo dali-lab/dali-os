@@ -75,9 +75,105 @@ describe("POST /api/upload/presign response shape", () => {
     expect(getUploadPost).not.toHaveBeenCalled();
   });
 
-  it("returns 400 when contentType is not allowed", async () => {
+  it("returns 400 when contentType is on the global denylist", async () => {
     const res = await action({
-      request: makeRequest({ key: "foo.exe", contentType: "application/x-msdownload" }),
+      request: makeRequest({ key: "foo.bin", contentType: "application/x-msdownload" }),
+    } as any);
+    expect(res.status).toBe(400);
+    expect(getUploadPost).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when key extension is on the global denylist", async () => {
+    const res = await action({
+      request: makeRequest({ key: "foo.exe", contentType: "application/octet-stream" }),
+    } as any);
+    expect(res.status).toBe(400);
+    expect(getUploadPost).not.toHaveBeenCalled();
+  });
+
+  it("denylist fires even when accept would permit it", async () => {
+    const res = await action({
+      request: makeRequest({
+        key: "applications/q/abc-foo.exe",
+        contentType: "application/octet-stream",
+        accept: ".exe",
+      }),
+    } as any);
+    expect(res.status).toBe(400);
+    expect(getUploadPost).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when contentType is missing", async () => {
+    const res = await action({
+      request: makeRequest({ key: "foo.png" }),
+    } as any);
+    expect(res.status).toBe(400);
+    expect(getUploadPost).not.toHaveBeenCalled();
+  });
+
+  it("accepts .f3z by extension when accept lists it", async () => {
+    const res = await action({
+      request: makeRequest({
+        key: "applications/q/abc-design.f3z",
+        contentType: "application/octet-stream",
+        accept: ".f3z, .f3d",
+      }),
+    } as any);
+    expect(res.status).toBe(200);
+    expect(getUploadPost).toHaveBeenCalled();
+  });
+
+  it("accepts a PDF when accept is application/pdf", async () => {
+    const res = await action({
+      request: makeRequest({
+        key: "applications/q/abc-resume.pdf",
+        contentType: "application/pdf",
+        accept: "application/pdf",
+      }),
+    } as any);
+    expect(res.status).toBe(200);
+  });
+
+  it("accepts a PNG when accept is image/*", async () => {
+    const res = await action({
+      request: makeRequest({
+        key: "applications/q/abc-pic.png",
+        contentType: "image/png",
+        accept: "image/*",
+      }),
+    } as any);
+    expect(res.status).toBe(200);
+  });
+
+  it("rejects a PNG when accept only allows .pdf", async () => {
+    const res = await action({
+      request: makeRequest({
+        key: "applications/q/abc-pic.png",
+        contentType: "image/png",
+        accept: ".pdf",
+      }),
+    } as any);
+    expect(res.status).toBe(400);
+    expect(getUploadPost).not.toHaveBeenCalled();
+  });
+
+  it("falls through when no accept is provided, blocking only denylisted types", async () => {
+    const res = await action({
+      request: makeRequest({
+        key: "applications/q/abc-data.f3d",
+        contentType: "application/zip",
+      }),
+    } as any);
+    expect(res.status).toBe(200);
+  });
+
+  it("returns 400 when accept is not a string", async () => {
+    const res = await action({
+      request: makeRequest({
+        key: "foo.png",
+        contentType: "image/png",
+        accept: 123,
+      }),
     } as any);
     expect(res.status).toBe(400);
     expect(getUploadPost).not.toHaveBeenCalled();
