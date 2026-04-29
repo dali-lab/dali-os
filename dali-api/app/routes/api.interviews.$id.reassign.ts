@@ -2,6 +2,7 @@ import type { Route } from "./+types/api.interviews.$id.reassign";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isHiringLead } from "~/lib/roles";
+import { safeJson } from "~/lib/safe-json";
 
 export async function action({ request, params }: Route.ActionArgs) {
   if (request.method !== "POST") {
@@ -14,7 +15,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const { assignmentId, newCycleInterviewerId } = await request.json();
+  const body = await safeJson<{ assignmentId?: string; newCycleInterviewerId?: string }>(request);
+  if (body instanceof Response) return body;
+  const { assignmentId, newCycleInterviewerId } = body;
   if (!assignmentId || !newCycleInterviewerId) {
     return Response.json({ error: "assignmentId and newCycleInterviewerId are required" }, { status: 400 });
   }

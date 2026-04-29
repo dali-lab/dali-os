@@ -2,6 +2,7 @@ import type { Route } from "./+types/api.cycles.$cycleId.my-interviews.$intervie
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
+import { safeJson } from "~/lib/safe-json";
 
 async function getAssignment(userId: string, cycleId: string, interviewId: string) {
   const member = await prisma.dALIMember.findFirst({ where: { userId } });
@@ -55,7 +56,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Assignment not found" }, { status: 404 }));
   }
 
-  const { content } = await request.json();
+  const body = await safeJson<{ content?: unknown }>(request);
+  if (body instanceof Response) return withCors(request, body);
+  const { content } = body;
   if (typeof content !== "string") {
     return withCors(request, Response.json({ error: "content required" }, { status: 400 }));
   }

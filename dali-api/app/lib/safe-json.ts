@@ -50,5 +50,12 @@ export async function safeJson<T>(
     offset += chunk.byteLength;
   }
 
-  return JSON.parse(new TextDecoder().decode(merged)) as T;
+  try {
+    return JSON.parse(new TextDecoder().decode(merged)) as T;
+  } catch {
+    return new Response(JSON.stringify({ error: "Invalid JSON" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
 }

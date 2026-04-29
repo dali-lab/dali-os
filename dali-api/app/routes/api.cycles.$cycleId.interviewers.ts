@@ -2,6 +2,7 @@ import type { Route } from "./+types/api.cycles.$cycleId.interviewers";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isHiringLead, isDomainLead, hasCycleAccess } from "~/lib/roles";
+import { safeJson } from "~/lib/safe-json";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -33,7 +34,8 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   if (request.method === "POST") {
-    const body = await request.json();
+    const body = await safeJson<{ daliMemberId?: string; domainId?: string }>(request);
+    if (body instanceof Response) return body;
     const { daliMemberId, domainId } = body;
 
     if (!daliMemberId || !domainId) {
@@ -52,7 +54,8 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   if (request.method === "DELETE") {
-    const body = await request.json();
+    const body = await safeJson<{ interviewerId?: string }>(request);
+    if (body instanceof Response) return body;
     const { interviewerId } = body;
 
     if (!interviewerId) {
