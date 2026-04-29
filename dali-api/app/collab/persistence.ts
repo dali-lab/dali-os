@@ -213,24 +213,34 @@ export async function maybeSnapshot(
 ): Promise<boolean> {
   if (isPresenceRoom(name)) return false;
 
-  const latest = await prisma.collabDocumentVersion.findFirst({
-    where: { name },
-    orderBy: { createdAt: "desc" },
-    select: { createdAt: true },
-  });
-  if (latest && Date.now() - latest.createdAt.getTime() < SNAPSHOT_MIN_INTERVAL_MS) {
-    return false;
-  }
+  // Cross-instance dedup. The Hocuspocus Redis extension already serializes
+  // onStoreDocument across machines, but onDisconnect fires per-machine, so
+  // simultaneous disconnects on different instances would race the throttle
+  // window. A transaction-scoped Postgres advisory lock keyed on the doc name
+  // pins the findFirst+create check to one instance at a time and auto-releases
+  // when the transaction ends.
+  return await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${name}))`;
 
-  await prisma.collabDocumentVersion.create({
-    data: {
-      name,
-      state: stored.state,
-      plainText: stored.plainText,
-      authorIds,
-    },
+    const latest = await tx.collabDocumentVersion.findFirst({
+      where: { name },
+      orderBy: { createdAt: "desc" },
+      select: { createdAt: true },
+    });
+    if (latest && Date.now() - latest.createdAt.getTime() < SNAPSHOT_MIN_INTERVAL_MS) {
+      return false;
+    }
+
+    await tx.collabDocumentVersion.create({
+      data: {
+        name,
+        state: stored.state,
+        plainText: stored.plainText,
+        authorIds,
+      },
+    });
+    return true;
   });
-  return true;
 }
 
 /**
