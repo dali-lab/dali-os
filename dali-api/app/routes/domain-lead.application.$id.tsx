@@ -68,7 +68,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     where: { id: params.id },
     include: {
       ...domainApplicationStatusInclude,
-      challengeVersion: { include: { domain: true } },
+      challengeVersion: { include: { domain: true, challenge: true } },
       application: {
         include: {
           user: true,
@@ -209,7 +209,7 @@ export default function DomainLeadApplicationView() {
 
           <section className="bg-card border border-border rounded-lg p-6 space-y-5">
             <h2 className="text-lg font-semibold text-foreground">
-              {da.challengeVersion.domain?.name} Challenge
+              {da.challengeVersion.challenge?.name ?? `${da.challengeVersion.domain?.name} Challenge`}
             </h2>
             {!isEmptyDoc(da.challengeVersion.description) && (
               <div className="border border-border rounded-md bg-muted/30 px-4 py-3">
