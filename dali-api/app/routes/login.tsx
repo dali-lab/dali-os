@@ -3,9 +3,13 @@ import { useEffect } from "react";
 import { Form, redirect, useSearchParams } from "react-router";
 import type { Route } from "./+types/login";
 import { requireAuth } from "~/lib/auth";
+import { checkRateLimit } from "~/lib/rate-limit";
 
 const OAUTH_STATE_COOKIE = "__dali_oauth_state";
 const ACCOUNT_TYPE_COOKIE = "__dali_account_type";
+
+const RATE_LIMIT_MAX = 5;
+const RATE_LIMIT_WINDOW_MS = 60_000;
 
 export const meta: Route.MetaFunction = () => [{ title: "Sign in · DALI OS" }];
 
@@ -20,6 +24,9 @@ export async function loader({ request }: Route.LoaderArgs) {
 }
 
 export async function action({ request }: Route.ActionArgs) {
+  const limited = checkRateLimit(request, { max: RATE_LIMIT_MAX, windowMs: RATE_LIMIT_WINDOW_MS });
+  if (limited) return limited;
+
   const formData = await request.formData();
   const provider = formData.get("provider") as string;
   const accountType = formData.get("accountType") as string | null;
