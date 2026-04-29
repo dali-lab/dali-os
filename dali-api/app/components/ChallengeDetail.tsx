@@ -42,6 +42,19 @@ export function resolveChallengeFormDefaults({
   return { defaultDomainId, isGeneralForm }
 }
 
+export function resolveInitialVersionId({
+  versions,
+  versionIdParam,
+}: {
+  versions: { id: string }[]
+  versionIdParam: string | null
+}): string | null {
+  if (versionIdParam && versions.some((v) => v.id === versionIdParam)) {
+    return versionIdParam
+  }
+  return versions.length ? versions[versions.length - 1].id : null
+}
+
 export function ChallengeDetail() {
   const { challenge, domains: rawDomains } = useLoaderData<typeof loader>()
   const submit = useSubmit()
@@ -54,7 +67,6 @@ export function ChallengeDetail() {
     ...rawDomains.filter((d) => d.name !== 'General'),
   ]
 
-  const lastVersion = challenge.versions.length ? challenge.versions[challenge.versions.length - 1] : null
   const { defaultDomainId, isGeneralForm } = resolveChallengeFormDefaults({
     domains,
     versions: challenge.versions,
@@ -62,7 +74,12 @@ export function ChallengeDetail() {
     domainIdParam: searchParams.get('domainId'),
   })
 
-  const [selectedVersionId, setSelectedVersionId] = useState<string | null>(lastVersion?.id ?? null)
+  const [selectedVersionId, setSelectedVersionId] = useState<string | null>(() =>
+    resolveInitialVersionId({
+      versions: challenge.versions,
+      versionIdParam: searchParams.get('versionId'),
+    }),
+  )
   const [isCreatingVersion, setIsCreatingVersion] = useState(false)
   const [selectedDomainId, setSelectedDomainId] = useState<string>(defaultDomainId)
   const [showPreviewModal, setShowPreviewModal] = useState(false)
