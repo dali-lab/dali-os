@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { userInitials } from '~/lib/display'
 import { bumpLogoClick, hydrateRetroClass, logConsoleBootBanner } from '~/lib/party'
+import { RetroExitPill } from '~/components/RetroExitPill'
 
 interface LayoutProps {
   children: React.ReactNode
@@ -289,6 +290,7 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
       </main>
 
       {showStats && <StatsModal onClose={() => setShowStats(false)} />}
+      <RetroExitPill />
     </div>
   )
 }
