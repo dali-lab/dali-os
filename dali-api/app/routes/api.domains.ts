@@ -25,6 +25,16 @@ export async function loader({ request }: Route.LoaderArgs) {
       domainLeadAssignments: {
         include: { member: { include: { user: true } } },
       },
+      _count: {
+        select: {
+          challengeVersions: true,
+          applicationCycles: true,
+          domainLeadAssignments: true,
+          cycleReviewers: true,
+          cycleInterviewers: true,
+          delibsSessions: true,
+        },
+      },
     },
   });
 
@@ -37,7 +47,7 @@ export async function action({ request }: Route.ActionArgs) {
 
   const auth = await requireAuth(request);
   if (!auth.ok) return withCors(request, auth.response);
-  if (!(await isHiringLead(auth.user.sub))) return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+  if (!(await isAdmin(auth.user.sub))) return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
 
   if (request.method !== "POST") {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));

@@ -6,7 +6,20 @@ import { requireAuth } from "~/lib/auth";
 import { getActiveCycle } from "~/lib/cycles";
 import { checkGitHubUrl, checkFigmaUrl } from "~/lib/submission-check";
 import type { SubmissionCheckResult } from "~/lib/submission-check";
+import { countWords, validateWordLimits } from "~/lib/word-count";
+import type { WordCountViolation } from "~/lib/word-count";
+import {
+  MAX_UPLOAD_BYTES,
+  MAX_UPLOAD_LABEL,
+  fileMatchesAccept,
+} from "~/lib/file-validation";
 import type { Question } from "~/types";
+import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
+import { Modal } from "~/components/Modal";
+import { QuestionList } from "~/components/ApplicationAnswers";
+import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
+
+export const meta: Route.MetaFunction = () => [{ title: "Apply · DALI OS" }];
 
 // ─── Loader ──────────────────────────────────────────────────────────────────
 
@@ -47,6 +60,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const generalChallengeVersionId = generalCvac.challengeVersionId;
   const formQuestions = (generalCvac.challengeVersion.questions as unknown as Question[]) ?? [];
+  const generalDescription = generalCvac.challengeVersion.description ?? null;
 
   // Build domain info with challenge questions (only domain-specific ones)
   const domains = cycle.domains.map(dac => {
@@ -60,6 +74,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       challengeQuestions: cv
         ? (cv.challengeVersion.questions as unknown as Question[]) ?? []
         : [],
+      challengeDescription: cv?.challengeVersion.description ?? null,
     };
   });
 
@@ -84,15 +99,19 @@ export async function loader({ request }: Route.LoaderArgs) {
   return {
     cycleId: active.id,
     cycleName: active.name,
+    closeDate: active.closeDate ? active.closeDate.toISOString() : null,
     generalChallengeVersionId,
     formQuestions,
+    generalDescription,
     domains,
     isAlreadySubmitted: draftStatus === "Submitted",
     draft: draft
       ? {
           id: draft.id,
           answers: draft.answers as Record<string, string>,
-          selectedDomainIds: draft.domainApplications.map(da => da.challengeVersion.domainId),
+          selectedDomainIds: draft.domainApplications
+            .filter(da => da.selected)
+            .map(da => da.challengeVersion.domainId),
           domainApplications: draft.domainApplications.map(da => ({
             id: da.id,
             domainId: da.challengeVersion.domainId,
@@ -123,8 +142,20 @@ export async function action({ request }: Route.ActionArgs) {
       include: { challengeVersion: true },
     });
 
-    const application = await prisma.application.create({
-      data: {
+    // Upsert keyed on the (userId, applicationCycleId) unique constraint so
+    // that two concurrent "Start Application" clicks (e.g. from two open tabs)
+    // converge on a single draft instead of creating duplicates. For an
+    // existing row the update is a no-op — domain selection is reconciled
+    // separately via the `update-domains` intent.
+    const application = await prisma.application.upsert({
+      where: {
+        userId_applicationCycleId: {
+          userId: auth.user.sub,
+          applicationCycleId: cycleId,
+        },
+      },
+      update: {},
+      create: {
         userId: auth.user.sub,
         applicationCycleId: cycleId,
         generalChallengeVersionId,
@@ -204,8 +235,25 @@ export async function action({ request }: Route.ActionArgs) {
       }
     }
 
-    // Don't delete removed domains — keep answers intact for re-adding.
-    // Frontend tracks selectedDomainIds locally and only renders selected ones.
+    // Mark deselected domains as not selected (keep records for answer preservation)
+    const toDeselect = existing.filter(da => !newDomainIds.includes(da.challengeVersion.domainId!));
+    if (toDeselect.length > 0) {
+      await prisma.domainApplication.updateMany({
+        where: { id: { in: toDeselect.map(da => da.id) } },
+        data: { selected: false },
+      });
+    }
+
+    // Mark re-selected domains as selected
+    const toReselect = existing.filter(
+      da => newDomainIds.includes(da.challengeVersion.domainId!) && !da.selected,
+    );
+    if (toReselect.length > 0) {
+      await prisma.domainApplication.updateMany({
+        where: { id: { in: toReselect.map(da => da.id) } },
+        data: { selected: true },
+      });
+    }
 
     // Return full updated draft
     const updatedApp = await prisma.application.findUnique({
@@ -268,6 +316,43 @@ export async function action({ request }: Route.ActionArgs) {
       type: "github_url" | "figma_url";
     }[];
 
+    // Validate word limits server-side before any writes. Trust the questions
+    // from the ChallengeVersion record, not anything in the request payload.
+    const application = await prisma.application.findUnique({
+      where: { id: applicationId },
+      select: {
+        generalChallengeVersion: { select: { questions: true } },
+      },
+    });
+    if (!application) {
+      return Response.json({ error: "Application not found" }, { status: 404 });
+    }
+    const generalQuestions =
+      (application.generalChallengeVersion.questions as unknown as Question[]) ?? [];
+
+    const domainApps = domainAnswers.length
+      ? await prisma.domainApplication.findMany({
+          where: { id: { in: domainAnswers.map(da => da.domainApplicationId) } },
+          select: {
+            id: true,
+            challengeVersion: { select: { questions: true } },
+          },
+        })
+      : [];
+
+    const wordCountErrors: Record<string, WordCountViolation> = {
+      ...validateWordLimits(generalQuestions, answers),
+    };
+    for (const da of domainAnswers) {
+      const dbDa = domainApps.find(d => d.id === da.domainApplicationId);
+      if (!dbDa) continue;
+      const questions = (dbDa.challengeVersion.questions as unknown as Question[]) ?? [];
+      Object.assign(wordCountErrors, validateWordLimits(questions, da.answers));
+    }
+    if (Object.keys(wordCountErrors).length > 0) {
+      return { wordCountErrors };
+    }
+
     // Save final answers
     await prisma.application.update({
       where: { id: applicationId },
@@ -278,6 +363,27 @@ export async function action({ request }: Route.ActionArgs) {
       await prisma.domainApplication.update({
         where: { id: da.domainApplicationId },
         data: { answers: da.answers },
+      });
+    }
+
+    // Persist final domain selection state
+    const selectedDomainIds = JSON.parse(formData.get("selectedDomainIds") as string) as string[];
+    const allDas = await prisma.domainApplication.findMany({
+      where: { applicationId },
+      include: { challengeVersion: { select: { domainId: true } } },
+    });
+    const toSelect = allDas.filter(da => selectedDomainIds.includes(da.challengeVersion.domainId!) && !da.selected);
+    const toDeselect = allDas.filter(da => !selectedDomainIds.includes(da.challengeVersion.domainId!) && da.selected);
+    if (toSelect.length > 0) {
+      await prisma.domainApplication.updateMany({
+        where: { id: { in: toSelect.map(da => da.id) } },
+        data: { selected: true },
+      });
+    }
+    if (toDeselect.length > 0) {
+      await prisma.domainApplication.updateMany({
+        where: { id: { in: toDeselect.map(da => da.id) } },
+        data: { selected: false },
       });
     }
 
@@ -332,7 +438,7 @@ function UrlCheckIndicator({ state }: { state: UrlCheckState }) {
   if (state.status === "checking") {
     return (
       <span className="text-xs text-muted-foreground/70 flex items-center gap-1 mt-1">
-        <span className="inline-block w-3 h-3 border-2 border-gray-300 border-t-accent-coral rounded-full animate-spin" />
+        <span className="inline-block w-3 h-3 border-2 border-border border-t-accent-coral rounded-full animate-spin" />
         Checking URL...
       </span>
     );
@@ -396,7 +502,7 @@ function SkillsRatingField({
           <select
             value={ratings[skill] ?? "0"}
             onChange={e => setRating(skill, e.target.value)}
-            className="w-14 shrink-0 rounded-md border border-gray-200 bg-white text-sm text-center text-dark-blue py-1 focus:outline-none focus:border-accent-coral"
+            className="w-14 shrink-0 rounded-md border border-border bg-card text-sm text-center text-dark-blue py-1 focus:outline-none focus:border-accent-coral"
           >
             {["0", "1", "2", "3", "4", "5"].map(n => (
               <option key={n} value={n}>{n}</option>
@@ -429,6 +535,22 @@ function FileUploadField({
 
   async function handleFile(file: File) {
     setError(null);
+
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setError(`File too large (max ${MAX_UPLOAD_LABEL})`);
+      if (fileRef.current) fileRef.current.value = "";
+      return;
+    }
+    if (!fileMatchesAccept(file.name, file.type, accept)) {
+      setError(
+        accept
+          ? `File type not allowed. Accepted: ${accept}`
+          : "File type not allowed",
+      );
+      if (fileRef.current) fileRef.current.value = "";
+      return;
+    }
+
     setUploading(true);
     try {
       // 1. Get presigned upload URL
@@ -439,6 +561,7 @@ function FileUploadField({
         body: JSON.stringify({
           key: `applications/${questionKey}/${crypto.randomUUID()}-${file.name}`,
           contentType: file.type,
+          contentLength: file.size,
         }),
       });
       if (!presignRes.ok) {
@@ -473,8 +596,8 @@ function FileUploadField({
 
   if (uploading) {
     return (
-      <div className="flex items-center gap-2 px-4 py-3 rounded-lg border border-gray-200 bg-white text-sm text-gray-500">
-        <span className="inline-block w-4 h-4 border-2 border-gray-300 border-t-accent-coral rounded-full animate-spin" />
+      <div className="flex items-center gap-2 px-4 py-3 rounded-lg border border-border bg-card text-sm text-muted-foreground">
+        <span className="inline-block w-4 h-4 border-2 border-border border-t-accent-coral rounded-full animate-spin" />
         Uploading...
       </div>
     );
@@ -482,7 +605,7 @@ function FileUploadField({
 
   if (fileName) {
     return (
-      <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-gray-200 bg-white">
+      <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border bg-card">
         <svg className="w-5 h-5 text-accent-coral shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
         </svg>
@@ -490,7 +613,7 @@ function FileUploadField({
         <button
           type="button"
           onClick={() => { onChange(""); if (fileRef.current) fileRef.current.value = ""; }}
-          className="text-xs text-gray-400 hover:text-red-500 transition"
+          className="text-xs text-muted-foreground hover:text-red-500 transition"
         >
           Remove
         </button>
@@ -517,7 +640,7 @@ function FileUploadField({
       <button
         type="button"
         onClick={() => fileRef.current?.click()}
-        className="flex items-center gap-2 px-4 py-3 rounded-lg border-2 border-dashed border-gray-200 bg-white text-sm text-gray-500 hover:border-accent-coral hover:text-accent-coral transition w-full"
+        className="flex items-center gap-2 px-4 py-3 rounded-lg border-2 border-dashed border-border bg-card text-sm text-muted-foreground hover:border-accent-coral hover:text-accent-coral transition w-full"
       >
         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
@@ -555,7 +678,7 @@ function QuestionField({
     "w-full rounded-lg border border-border bg-card text-sm text-dark-blue placeholder:text-muted-foreground/70 focus:outline-none focus:border-accent-coral px-4 py-2";
 
   if (question.type === "textarea") {
-    const wordCount = value.trim() ? value.trim().split(/\s+/).filter(Boolean).length : 0;
+    const wordCount = countWords(value);
     const maxWords = question.data.maxWords;
     const overLimit = maxWords !== undefined && wordCount > maxWords;
     return (
@@ -646,7 +769,7 @@ function QuestionField({
 // ─── Domain Colors ──────────────────────────────────────────────────────────
 
 const DOMAIN_COLORS = [
-  { border: "border-l-accent-pink", text: "text-accent-pink", bg: "bg-accent-pink", pillText: "text-white", cardBg: "bg-[hsl(350_70%_93%)]" },
+  { border: "border-l-accent-pink", text: "text-accent-pink", bg: "bg-accent-pink", pillText: "text-white", cardBg: "bg-accent-pink/20" },
   { border: "border-l-accent-teal", text: "text-accent-teal", bg: "bg-accent-teal", pillText: "text-white", cardBg: "bg-accent-teal/20" },
   { border: "border-l-accent-yellow", text: "text-yellow-700", bg: "bg-accent-yellow", pillText: "text-dark-blue", cardBg: "bg-accent-yellow/30" },
   { border: "border-l-accent-coral", text: "text-accent-coral", bg: "bg-accent-coral", pillText: "text-white", cardBg: "bg-accent-coral/20" },
@@ -657,11 +780,237 @@ function getDomainColor(index: number) {
   return DOMAIN_COLORS[index % DOMAIN_COLORS.length];
 }
 
+// ─── Section Progress Helpers ───────────────────────────────────────────────
+
+type DomainColor = ReturnType<typeof getDomainColor>;
+
+type Section = {
+  id: string;
+  label: string;
+  color?: DomainColor;
+  requiredCount: number;
+  answeredRequiredCount: number;
+};
+
+function isAnswered(value: string | undefined) {
+  return typeof value === "string" && value.trim() !== "";
+}
+
+function computeRequiredProgress(
+  formQuestions: Question[],
+  domains: { id: string; challengeQuestions: Question[] }[],
+  selectedDomainIds: string[],
+  answers: Record<string, string>,
+  domainAnswers: Record<string, Record<string, string>>,
+) {
+  let totalRequired = 0;
+  let totalAnswered = 0;
+
+  const requiredGeneral = formQuestions.filter(q => q.required);
+  totalRequired += requiredGeneral.length;
+  totalAnswered += requiredGeneral.filter(q => isAnswered(answers[q.key])).length;
+
+  for (const domainId of selectedDomainIds) {
+    const domain = domains.find(d => d.id === domainId);
+    if (!domain) continue;
+    const requiredDomain = domain.challengeQuestions.filter(q => q.required);
+    totalRequired += requiredDomain.length;
+    totalAnswered += requiredDomain.filter(q =>
+      isAnswered(domainAnswers[domainId]?.[q.key]),
+    ).length;
+  }
+
+  return { totalRequired, totalAnswered };
+}
+
+function buildSections(
+  formQuestions: Question[],
+  domains: { id: string; name: string; challengeQuestions: Question[] }[],
+  selectedDomainIds: string[],
+  answers: Record<string, string>,
+  domainAnswers: Record<string, Record<string, string>>,
+): Section[] {
+  const sections: Section[] = [];
+
+  const beforeQuestions = formQuestions.filter(q => !q.data.afterDomains);
+  if (beforeQuestions.length > 0) {
+    const required = beforeQuestions.filter(q => q.required);
+    sections.push({
+      id: "general-before",
+      label: "General",
+      requiredCount: required.length,
+      answeredRequiredCount: required.filter(q => isAnswered(answers[q.key])).length,
+    });
+  }
+
+  for (const domainId of selectedDomainIds) {
+    const idx = domains.findIndex(d => d.id === domainId);
+    if (idx < 0) continue;
+    const domain = domains[idx];
+    if (domain.challengeQuestions.length === 0) continue;
+    const required = domain.challengeQuestions.filter(q => q.required);
+    sections.push({
+      id: `domain-${domainId}`,
+      label: domain.name,
+      color: getDomainColor(idx),
+      requiredCount: required.length,
+      answeredRequiredCount: required.filter(q =>
+        isAnswered(domainAnswers[domainId]?.[q.key]),
+      ).length,
+    });
+  }
+
+  const afterQuestions = formQuestions.filter(q => q.data.afterDomains);
+  if (afterQuestions.length > 0) {
+    const required = afterQuestions.filter(q => q.required);
+    sections.push({
+      id: "general-after",
+      label: "Anything Else",
+      requiredCount: required.length,
+      answeredRequiredCount: required.filter(q => isAnswered(answers[q.key])).length,
+    });
+  }
+
+  return sections;
+}
+
+// ─── SectionNav Component ───────────────────────────────────────────────────
+
+function scrollToSection(id: string) {
+  const el = document.getElementById(`section-${id}`);
+  if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function SectionNavMobile({
+  sections,
+  activeSection,
+}: {
+  sections: Section[];
+  activeSection: string | null;
+}) {
+  if (sections.length === 0) return null;
+  return (
+    <div className="lg:hidden flex gap-2 overflow-x-auto pb-2">
+      {sections.map(s => {
+        const isActive = s.id === activeSection;
+        const isComplete = s.requiredCount > 0 && s.answeredRequiredCount === s.requiredCount;
+        const dotColor = s.color?.bg ?? "bg-dark-blue";
+        return (
+          <button
+            key={s.id}
+            type="button"
+            onClick={() => scrollToSection(s.id)}
+            className={`shrink-0 flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+              isActive
+                ? "bg-dark-blue text-white border-dark-blue"
+                : "bg-card text-dark-blue border-border hover:border-accent-coral"
+            }`}
+          >
+            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor}`} />
+            <span>{s.label}</span>
+            {s.requiredCount > 0 && (
+              isComplete ? (
+                <svg className="w-3.5 h-3.5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              ) : (
+                <span className={isActive ? "text-white/80" : "text-muted-foreground"}>
+                  {s.answeredRequiredCount}/{s.requiredCount}
+                </span>
+              )
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function SectionNavDesktop({
+  sections,
+  activeSection,
+}: {
+  sections: Section[];
+  activeSection: string | null;
+}) {
+  if (sections.length === 0) return null;
+  return (
+    <aside className="hidden lg:block">
+      <div className="sticky top-24 space-y-1">
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 px-2">
+          Sections
+        </p>
+        {sections.map(s => {
+          const isActive = s.id === activeSection;
+          const isComplete = s.requiredCount > 0 && s.answeredRequiredCount === s.requiredCount;
+          const dotColor = s.color?.bg ?? "bg-dark-blue";
+          return (
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => scrollToSection(s.id)}
+              className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm transition text-left ${
+                isActive
+                  ? "bg-dark-blue/5 text-dark-blue font-semibold"
+                  : "text-muted-foreground hover:bg-muted hover:text-dark-blue"
+              }`}
+            >
+              <span className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`} />
+              <span className="flex-1 truncate">{s.label}</span>
+              {s.requiredCount > 0 && (
+                isComplete ? (
+                  <svg className="w-4 h-4 text-green-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                ) : (
+                  <span className="text-xs text-muted-foreground shrink-0 tabular-nums">
+                    {s.answeredRequiredCount}/{s.requiredCount}
+                  </span>
+                )
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </aside>
+  );
+}
+
+// ─── BackToTopButton Component ──────────────────────────────────────────────
+
+function BackToTopButton() {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    function onScroll() {
+      setVisible(window.scrollY > 600);
+    }
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  if (!visible) return null;
+
+  return (
+    <button
+      type="button"
+      onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+      aria-label="Back to top"
+      className="fixed bottom-6 right-6 z-30 w-11 h-11 rounded-full bg-dark-blue text-white shadow-lg hover:bg-dark-blue/90 transition flex items-center justify-center"
+    >
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
+      </svg>
+    </button>
+  );
+}
+
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export default function PortalApply() {
   const loaderData = useLoaderData<typeof loader>() as any;
-  const { cycleId, cycleName, generalChallengeVersionId, formQuestions, domains, isAlreadySubmitted } = loaderData;
+  const { cycleId, cycleName, generalChallengeVersionId, formQuestions, generalDescription, domains, isAlreadySubmitted } = loaderData;
   const [draft, setDraft] = useState(loaderData.draft);
   const [selectedDomainIds, setSelectedDomainIds] = useState<string[]>(
     loaderData.draft?.selectedDomainIds ?? [],
@@ -679,11 +1028,22 @@ export default function PortalApply() {
     },
   );
   const [saving, setSaving] = useState(false);
+  const [hasSavedOnce, setHasSavedOnce] = useState(() => {
+    const initialAnswers = (loaderData.draft?.answers as Record<string, string> | undefined) ?? {};
+    if (Object.values(initialAnswers).some(v => typeof v === "string" && v.trim() !== "")) return true;
+    for (const da of loaderData.draft?.domainApplications ?? []) {
+      const daAnswers = (da.answers as Record<string, string> | undefined) ?? {};
+      if (Object.values(daAnswers).some(v => typeof v === "string" && v.trim() !== "")) return true;
+    }
+    return false;
+  });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [urlWarnings, setUrlWarnings] = useState<Record<string, string>>({});
+  const [wordCountErrors, setWordCountErrors] = useState<Record<string, WordCountViolation>>({});
   const [urlChecks, setUrlChecks] = useState<Record<string, UrlCheckState>>({});
   const [showWarningModal, setShowWarningModal] = useState(false);
+  const [showReviewModal, setShowReviewModal] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const warningBannerRef = useRef<HTMLDivElement | null>(null);
   const createFetcher = useFetcher();
@@ -712,10 +1072,12 @@ export default function PortalApply() {
     if (!draft) return;
     setSaving(true);
     try {
-      const daPayload = (draft.domainApplications ?? []).map((da: any) => ({
-        domainApplicationId: da.id,
-        answers: domainAnswers[da.domainId] ?? {},
-      }));
+      const daPayload = (draft.domainApplications ?? [])
+        .filter((da: any) => selectedDomainIds.includes(da.domainId))
+        .map((da: any) => ({
+          domainApplicationId: da.id,
+          answers: domainAnswers[da.domainId] ?? {},
+        }));
 
       await fetch(`/portal/apply`, {
         method: "POST",
@@ -727,6 +1089,7 @@ export default function PortalApply() {
           domainAnswers: JSON.stringify(daPayload),
         }),
       });
+      setHasSavedOnce(true);
     } finally {
       setSaving(false);
     }
@@ -816,36 +1179,45 @@ export default function PortalApply() {
     }
   }, [createFetcher.data]);
 
-  function handleSubmit(force = false) {
+  // Validation gate: runs before opening the review modal. Returns null on
+  // success, or an error string to surface to the user.
+  function validateForReview(): string | null {
+    if (!draft) return null;
+    if (selectedDomainIds.length === 0) {
+      return "Please select at least one domain.";
+    }
+    const { totalRequired, totalAnswered } = computeRequiredProgress(
+      formQuestions as Question[],
+      domains as { id: string; name: string; challengeQuestions: Question[] }[],
+      selectedDomainIds,
+      answers,
+      domainAnswers,
+    );
+    const totalMissing = totalRequired - totalAnswered;
+    if (totalMissing > 0) {
+      return `Please answer all required questions (${totalMissing} of ${totalRequired} unanswered).`;
+    }
+    return null;
+  }
+
+  function openReviewIfValid() {
     setError(null);
     setUrlWarnings({});
+    setWordCountErrors({});
     if (!draft) return;
-
-    if (selectedDomainIds.length === 0) {
-      setError("Please select at least one domain.");
+    const validationError = validateForReview();
+    if (validationError) {
+      setError(validationError);
       return;
     }
+    setShowReviewModal(true);
+  }
 
-    // Validate all required questions across general + selected domains
-    let totalRequired = 0;
-    let totalMissing = 0;
-
-    const requiredGeneral = (formQuestions as Question[]).filter(q => q.required);
-    totalRequired += requiredGeneral.length;
-    totalMissing += requiredGeneral.filter(q => !answers[q.key]?.trim()).length;
-
-    for (const domainId of selectedDomainIds) {
-      const domain = domains.find((d: any) => d.id === domainId);
-      if (!domain) continue;
-      const requiredDomain = (domain.challengeQuestions as Question[]).filter((q: Question) => q.required);
-      totalRequired += requiredDomain.length;
-      totalMissing += requiredDomain.filter((q: Question) => !(domainAnswers[domainId]?.[q.key]?.trim())).length;
-    }
-
-    if (totalMissing > 0) {
-      setError(`Please answer all required questions (${totalMissing} of ${totalRequired} unanswered).`);
-      return;
-    }
+  function doSubmit(force = false) {
+    setError(null);
+    setUrlWarnings({});
+    setWordCountErrors({});
+    if (!draft) return;
 
     // Collect URL questions from general and domain-specific forms
     const urlQuestions: { key: string; url: string; type: "github_url" | "figma_url" }[] = [];
@@ -878,15 +1250,31 @@ export default function PortalApply() {
     form.set("applicationId", draft.id);
     form.set("answers", JSON.stringify(answers));
     form.set("domainAnswers", JSON.stringify(daPayload));
+    form.set("selectedDomainIds", JSON.stringify(selectedDomainIds));
     form.set("urlQuestions", JSON.stringify(force ? [] : urlQuestions));
 
     submitFetcher.submit(form, { method: "post" });
   }
 
-  // Handle submit response (urlWarnings) — redirects are handled automatically by React Router
+  function scrollToFirstWarning() {
+    const firstKey = Object.keys(urlWarnings)[0];
+    if (!firstKey) return;
+    const el = document.getElementById(`question-${firstKey}`);
+    if (el) {
+      // Small delay to let the modal close before scrolling
+      setTimeout(() => el.scrollIntoView({ behavior: "smooth", block: "center" }), 50);
+    }
+  }
+
+  // Handle submit response (urlWarnings, wordCountErrors) — redirects are handled automatically by React Router
   useEffect(() => {
     if (submitFetcher.state === "idle" && submitFetcher.data) {
       setSubmitting(false);
+      if (submitFetcher.data.wordCountErrors) {
+        setWordCountErrors(submitFetcher.data.wordCountErrors);
+        setTimeout(() => warningBannerRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 50);
+        return;
+      }
       if (submitFetcher.data.urlWarnings) {
         const warnings: Record<string, string> = {};
         for (const [key, result] of Object.entries(submitFetcher.data.urlWarnings) as [string, SubmissionCheckResult][]) {
@@ -900,6 +1288,45 @@ export default function PortalApply() {
       setSubmitting(false);
     }
   }, [submitFetcher.state, submitFetcher.data]);
+
+  // Derive sections + progress from current answers
+  const sections = buildSections(
+    formQuestions as Question[],
+    domains as { id: string; name: string; challengeQuestions: Question[] }[],
+    selectedDomainIds,
+    answers,
+    domainAnswers,
+  );
+  const { totalRequired, totalAnswered } = computeRequiredProgress(
+    formQuestions as Question[],
+    domains as { id: string; name: string; challengeQuestions: Question[] }[],
+    selectedDomainIds,
+    answers,
+    domainAnswers,
+  );
+  const [activeSection, setActiveSection] = useState<string | null>(null);
+  const sectionIdsKey = sections.map(s => s.id).join(",");
+
+  useEffect(() => {
+    if (!draft || sections.length === 0) return;
+    const observer = new IntersectionObserver(
+      entries => {
+        const visible = entries.filter(e => e.isIntersecting);
+        if (visible.length === 0) return;
+        const top = visible.reduce((a, b) =>
+          a.boundingClientRect.top < b.boundingClientRect.top ? a : b,
+        );
+        const id = top.target.id.replace(/^section-/, "");
+        setActiveSection(id);
+      },
+      { rootMargin: "-120px 0px -55% 0px", threshold: 0 },
+    );
+    for (const s of sections) {
+      const el = document.getElementById(`section-${s.id}`);
+      if (el) observer.observe(el);
+    }
+    return () => observer.disconnect();
+  }, [draft, sectionIdsKey]);
 
   // Render domain pill selector (shared between both states)
   function renderDomainSelector() {
@@ -941,7 +1368,7 @@ export default function PortalApply() {
         <div className="flex items-center justify-between mb-2">
           <h2 className="font-heading text-xl font-bold text-dark-blue">{cycleName} Application</h2>
         </div>
-        <p className="text-sm text-gray-500 mb-8">
+        <p className="text-sm text-muted-foreground mb-8">
           Select the domains you'd like to apply for, then start your application.
         </p>
 
@@ -966,38 +1393,52 @@ export default function PortalApply() {
 
   // Application form (single screen with inline domain management)
   return (
-    <div className="max-w-3xl mx-auto px-6 py-10">
-      <div className="flex items-center justify-between mb-2">
-        <h2 className="font-heading text-xl font-bold text-dark-blue">{cycleName} Application</h2>
-        {submitting ? (
-          <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-gray-100 text-gray-600 flex items-center gap-1">
-            <span className="inline-block w-3 h-3 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
-            Submitting...
-          </span>
-        ) : Object.keys(urlWarnings).length > 0 ? (
-          <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-amber-100 text-amber-700">Action required</span>
-        ) : isAlreadySubmitted ? (
-          <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-green-100 text-green-700">Submitted</span>
-        ) : (
-          <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-blue-100 text-blue-700">Draft</span>
-        )}
+    <div className="lg:max-w-6xl max-w-3xl mx-auto px-6 py-10">
+      {/* Sticky header: (mobile) section chip strip */}
+      <div className="lg:hidden sticky top-0 z-30 -mx-6 px-6 pt-1 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 mb-2">
+        <SectionNavMobile sections={sections} activeSection={activeSection} />
       </div>
-      <p className="text-sm text-muted-foreground mb-8">
-        Fill out the form below. Your progress is saved automatically.
-      </p>
 
-      <div className="space-y-8">
-        {/* Domain selector (interactive) */}
-        {renderDomainSelector()}
+      <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_220px] lg:gap-10">
+        <div className="max-w-3xl">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="font-heading text-xl font-bold text-dark-blue">{cycleName} Application</h2>
+            {submitting ? (
+              <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-muted text-muted-foreground flex items-center gap-1">
+                <span className="inline-block w-3 h-3 border-2 border-border border-t-muted-foreground rounded-full animate-spin" />
+                Submitting...
+              </span>
+            ) : Object.keys(wordCountErrors).length > 0 ? (
+              <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-red-100 text-red-700">Action required</span>
+            ) : Object.keys(urlWarnings).length > 0 ? (
+              <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-amber-100 text-amber-700">Action required</span>
+            ) : isAlreadySubmitted ? (
+              <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-green-100 text-green-700">Submitted</span>
+            ) : (
+              <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-blue-100 text-blue-700">Draft</span>
+            )}
+          </div>
+          <p className="text-sm text-muted-foreground mb-8">
+            Fill out the form below. Your progress is saved automatically.
+          </p>
+
+          <div className="space-y-8">
+            {/* Domain selector (interactive) */}
+            {renderDomainSelector()}
 
         {/* General questions (before domains) */}
         {(() => {
           const beforeQuestions = (formQuestions as Question[]).filter(q => !q.data.afterDomains);
           return beforeQuestions.length > 0 ? (
-            <div className="rounded-2xl bg-[#E8F4FA] px-6 py-5 space-y-6">
+            <div id="section-general-before" className="rounded-2xl bg-[#E8F4FA] px-6 py-5 space-y-6 scroll-mt-24">
               <h3 className="font-heading text-sm font-bold text-dark-blue uppercase tracking-wider">General Questions</h3>
+              {!isEmptyDoc(generalDescription) && (
+                <div className="text-dark-blue">
+                  <RichTextViewer content={generalDescription} />
+                </div>
+              )}
               {beforeQuestions.map(q => (
-                <div key={q.key}>
+                <div key={q.key} id={`question-${q.key}`}>
                   <label className="block text-sm font-semibold text-dark-blue mb-1">
                     {q.data.label}
                     {q.required && <span className="text-accent-coral ml-0.5">*</span>}
@@ -1015,6 +1456,11 @@ export default function PortalApply() {
                   {urlWarnings[q.key] && (
                     <p className="text-xs text-amber-600 mt-1">{urlWarnings[q.key]}</p>
                   )}
+                  {wordCountErrors[q.key] && (
+                    <p className="text-xs text-red-500 mt-1">
+                      Over the {wordCountErrors[q.key].maxWords}-word limit ({wordCountErrors[q.key].wordCount} words).
+                    </p>
+                  )}
                 </div>
               ))}
             </div>
@@ -1029,7 +1475,7 @@ export default function PortalApply() {
           const color = getDomainColor(domainIndex);
 
           return (
-            <div key={domainId} className={`rounded-2xl ${color.cardBg} px-6 py-5 space-y-6`}>
+            <div key={domainId} id={`section-domain-${domainId}`} className={`rounded-2xl ${color.cardBg} px-6 py-5 space-y-6 scroll-mt-24`}>
               <div className="flex items-center justify-between">
                 <h3 className={`font-heading text-sm font-bold uppercase tracking-wider ${color.text}`}>
                   {domain.name} Questions
@@ -1037,21 +1483,26 @@ export default function PortalApply() {
                 <button
                   onClick={() => toggleDomain(domainId)}
                   aria-label={`Remove ${domain.name}`}
-                  className="w-6 h-6 rounded-full flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 transition"
+                  className="w-6 h-6 rounded-full flex items-center justify-center text-muted-foreground hover:text-red-500 hover:bg-red-50 transition"
                 >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
               </div>
+              {!isEmptyDoc(domain.challengeDescription) && (
+                <div className="text-dark-blue">
+                  <RichTextViewer content={domain.challengeDescription} />
+                </div>
+              )}
               {(domain.challengeQuestions as Question[]).map((q: Question) => (
-                <div key={q.key}>
+                <div key={q.key} id={`question-${q.key}`}>
                   <label className="block text-sm font-semibold text-dark-blue mb-1">
                     {q.data.label}
                     {q.required && <span className="text-accent-coral ml-0.5">*</span>}
                   </label>
                   {q.data.description && (
-                    <p className="text-xs text-gray-500 mb-1">{q.data.description}</p>
+                    <p className="text-xs text-muted-foreground mb-1">{q.data.description}</p>
                   )}
                   <QuestionField
                     question={q}
@@ -1063,6 +1514,11 @@ export default function PortalApply() {
                   {urlWarnings[q.key] && (
                     <p className="text-xs text-amber-600 mt-1">{urlWarnings[q.key]}</p>
                   )}
+                  {wordCountErrors[q.key] && (
+                    <p className="text-xs text-red-500 mt-1">
+                      Over the {wordCountErrors[q.key].maxWords}-word limit ({wordCountErrors[q.key].wordCount} words).
+                    </p>
+                  )}
                 </div>
               ))}
             </div>
@@ -1073,22 +1529,27 @@ export default function PortalApply() {
         {(() => {
           const afterQuestions = (formQuestions as Question[]).filter(q => q.data.afterDomains);
           return afterQuestions.length > 0 ? (
-            <div className="rounded-2xl bg-[#E8F4FA] px-6 py-5 space-y-6">
+            <div id="section-general-after" className="rounded-2xl bg-[#E8F4FA] px-6 py-5 space-y-6 scroll-mt-24">
               <h3 className="font-heading text-sm font-bold text-dark-blue uppercase tracking-wider">Anything Else</h3>
               {afterQuestions.map(q => (
-                <div key={q.key}>
+                <div key={q.key} id={`question-${q.key}`}>
                   <label className="block text-sm font-semibold text-dark-blue mb-1">
                     {q.data.label}
                     {q.required && <span className="text-accent-coral ml-0.5">*</span>}
                   </label>
                   {q.data.description && (
-                    <p className="text-xs text-gray-500 mb-1">{q.data.description}</p>
+                    <p className="text-xs text-muted-foreground mb-1">{q.data.description}</p>
                   )}
                   <QuestionField
                     question={q}
                     value={answers[q.key] ?? ""}
                     onChange={v => setAnswer(q.key, v)}
                   />
+                  {wordCountErrors[q.key] && (
+                    <p className="text-xs text-red-500 mt-1">
+                      Over the {wordCountErrors[q.key].maxWords}-word limit ({wordCountErrors[q.key].wordCount} words).
+                    </p>
+                  )}
                 </div>
               ))}
             </div>
@@ -1097,9 +1558,26 @@ export default function PortalApply() {
 
         {error && <p className="text-sm text-red-500">{error}</p>}
 
+        {/* Word-count errors banner — hard error, blocks submission */}
+        {Object.keys(wordCountErrors).length > 0 && (
+          <div ref={warningBannerRef} className="rounded-xl border border-red-200 bg-red-50 px-5 py-4">
+            <p className="text-sm font-semibold text-red-800 mb-1">Some answers exceed the word limit</p>
+            <p className="text-xs text-red-700">
+              The following answers are over the allowed word count. Trim them down before submitting.
+            </p>
+            <ul className="text-xs text-red-700 mt-2 list-disc list-inside space-y-0.5">
+              {Object.entries(wordCountErrors).map(([key, v]) => (
+                <li key={key}>
+                  <span className="font-semibold">{v.label}:</span> {v.wordCount} / {v.maxWords} words
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {/* URL warnings banner */}
         {Object.keys(urlWarnings).length > 0 && (
-          <div ref={warningBannerRef} className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4">
+          <div ref={Object.keys(wordCountErrors).length > 0 ? undefined : warningBannerRef} className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4">
             <p className="text-sm font-semibold text-amber-800 mb-1">Some URLs may have issues</p>
             <p className="text-xs text-amber-700">
               One or more of your submitted links appear to be private or inaccessible. You can still submit, but reviewers may not be able to view them.
@@ -1110,80 +1588,169 @@ export default function PortalApply() {
         {/* Actions */}
         <div className="flex items-center gap-3 pt-2">
           <button
-            onClick={() => doSave()}
-            disabled={saving}
-            className="px-5 py-2.5 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-accent-coral hover:text-accent-coral transition disabled:opacity-50"
-          >
-            {saving ? "Saving..." : "Save Draft"}
-          </button>
-          <button
-            onClick={() => handleSubmit()}
+            onClick={() => openReviewIfValid()}
             disabled={submitting}
             className="px-6 py-2.5 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition disabled:opacity-50"
           >
-            {submitting ? "Submitting..." : isAlreadySubmitted ? "Update Application" : "Submit Application"}
+            {submitting ? "Submitting..." : isAlreadySubmitted ? "Review Updates" : "Review Application"}
           </button>
           <span className="text-xs text-muted-foreground/70 flex items-center gap-1.5">
             {saving ? (
               <>
-                <span className="inline-block w-3 h-3 border-2 border-gray-300 border-t-accent-coral rounded-full animate-spin" />
+                <span className="inline-block w-3 h-3 border-2 border-border border-t-accent-coral rounded-full animate-spin" />
                 Saving...
               </>
-            ) : (
+            ) : hasSavedOnce ? (
               <>
                 <svg className="w-3.5 h-3.5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                 </svg>
                 Draft auto-saved
               </>
+            ) : (
+              <>Changes will be saved automatically</>
             )}
           </span>
         </div>
       </div>
+        </div>
+
+        <SectionNavDesktop sections={sections} activeSection={activeSection} />
+      </div>
+
+      <BackToTopButton />
+
+      {/* Pre-submit review modal */}
+      <Modal
+        open={showReviewModal}
+        onClose={() => setShowReviewModal(false)}
+        labelledBy="review-modal-title"
+        disableEscape={submitting}
+        containerClassName="bg-card rounded-2xl shadow-xl max-w-2xl w-full mx-4 max-h-[85vh] overflow-y-auto p-6"
+      >
+        <h3 id="review-modal-title" className="font-heading text-base font-bold text-dark-blue mb-1">
+          {isAlreadySubmitted ? "Review your changes" : "Review your application"}
+        </h3>
+        <p className="text-sm text-muted-foreground mb-5">
+          Take one last look at your answers before {isAlreadySubmitted ? "updating" : "submitting"}. You can still go back to edit.
+        </p>
+
+        <div className="space-y-5">
+          {(() => {
+            const beforeQuestions = (formQuestions as Question[]).filter(q => !q.data.afterDomains);
+            return beforeQuestions.length > 0 ? (
+              <div className="rounded-2xl bg-[#E8F4FA] px-5 py-4">
+                <h4 className="font-heading text-xs font-bold text-dark-blue uppercase tracking-wider mb-4">
+                  General Questions
+                </h4>
+                {/* Apply page only has S3 keys, not presigned URLs — show filenames only */}
+                <QuestionList questions={beforeQuestions} answers={answers} presigned={false} />
+              </div>
+            ) : null;
+          })()}
+
+          {selectedDomainIds.map(domainId => {
+            const domainIndex = (domains as any[]).findIndex((d: any) => d.id === domainId);
+            const domain = (domains as any[])[domainIndex];
+            if (!domain || domain.challengeQuestions.length === 0) return null;
+            const color = getDomainColor(domainIndex);
+            return (
+              <div key={domainId} className={`rounded-2xl ${color.cardBg} px-5 py-4`}>
+                <h4 className={`font-heading text-xs font-bold uppercase tracking-wider mb-4 ${color.text}`}>
+                  {domain.name}
+                </h4>
+                <QuestionList
+                  questions={domain.challengeQuestions as Question[]}
+                  answers={domainAnswers[domainId] ?? {}}
+                  presigned={false}
+                />
+              </div>
+            );
+          })}
+
+          {(() => {
+            const afterQuestions = (formQuestions as Question[]).filter(q => q.data.afterDomains);
+            return afterQuestions.length > 0 ? (
+              <div className="rounded-2xl bg-[#E8F4FA] px-5 py-4">
+                <h4 className="font-heading text-xs font-bold text-dark-blue uppercase tracking-wider mb-4">
+                  Anything Else
+                </h4>
+                <QuestionList questions={afterQuestions} answers={answers} presigned={false} />
+              </div>
+            ) : null;
+          })()}
+        </div>
+
+        <div className="flex gap-3 justify-end pt-5 mt-5 border-t border-border">
+          <button
+            type="button"
+            onClick={() => setShowReviewModal(false)}
+            disabled={submitting}
+            className="px-5 py-2 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-accent-coral hover:text-accent-coral transition disabled:opacity-50"
+          >
+            Go Back and Edit
+          </button>
+          <button
+            type="button"
+            onClick={() => { setShowReviewModal(false); doSubmit(false); }}
+            disabled={submitting}
+            className="px-5 py-2 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition disabled:opacity-50"
+          >
+            {submitting ? "Submitting..." : "Confirm Submission"}
+          </button>
+        </div>
+      </Modal>
 
       {/* URL warning modal */}
-      {showWarningModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full mx-4 p-6">
-            <h3 className="font-heading text-base font-bold text-dark-blue mb-2">Some links may be inaccessible</h3>
-            <p className="text-sm text-gray-600 mb-4">
-              One or more URLs appear to be private or inaccessible. Reviewers may not be able to view them.
-            </p>
-            <ul className="space-y-2 mb-5">
-              {Object.entries(urlWarnings).map(([key, message]) => {
-                const allQuestions = [
-                  ...(formQuestions as Question[]),
-                  ...(domains as any[]).flatMap((d: any) => d.challengeQuestions as Question[]),
-                ];
-                const q = allQuestions.find(q => q.key === key);
-                return (
-                  <li key={key} className="text-sm text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
-                    <span className="font-semibold">{q?.data.label ?? key}:</span> {message}
-                  </li>
-                );
-              })}
-            </ul>
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={() => {
-                  setShowWarningModal(false);
-                  warningBannerRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-                }}
-                className="px-5 py-2 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-accent-coral hover:text-accent-coral transition"
-              >
-                Go Back and Fix
-              </button>
-              <button
-                onClick={() => { setShowWarningModal(false); handleSubmit(true); }}
-                disabled={submitting}
-                className="px-5 py-2 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition disabled:opacity-50"
-              >
-                Submit Anyway
-              </button>
-            </div>
-          </div>
+      <Modal
+        open={showWarningModal}
+        onClose={() => {
+          setShowWarningModal(false);
+          scrollToFirstWarning();
+        }}
+        labelledBy="url-warning-modal-title"
+      >
+        <h3 id="url-warning-modal-title" className="font-heading text-base font-bold text-dark-blue mb-2">Some links may be inaccessible</h3>
+        <p className="text-sm text-muted-foreground mb-4">
+          One or more URLs appear to be private or inaccessible. Reviewers may not be able to view them.
+        </p>
+        <ul className="space-y-2 mb-5">
+          {Object.entries(urlWarnings).map(([key, message]) => {
+            const allQuestions = [
+              ...(formQuestions as Question[]),
+              ...(domains as any[]).flatMap((d: any) => d.challengeQuestions as Question[]),
+            ];
+            const q = allQuestions.find(q => q.key === key);
+            return (
+              <li key={key} className="text-sm text-yellow-700 bg-yellow-50 rounded-lg px-3 py-2">
+                <span className="font-semibold">{q?.data.label ?? key}:</span> {message}
+              </li>
+            );
+          })}
+        </ul>
+        <div className="flex gap-3 justify-end">
+          <button
+            onClick={() => {
+              setShowWarningModal(false);
+              scrollToFirstWarning();
+            }}
+            className="px-5 py-2 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-accent-coral hover:text-accent-coral transition"
+          >
+            Go Back and Fix
+          </button>
+          <button
+            onClick={() => { setShowWarningModal(false); doSubmit(true); }}
+            disabled={submitting}
+            className="px-5 py-2 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition disabled:opacity-50"
+          >
+            Submit Anyway
+          </button>
         </div>
-      )}
+      </Modal>
     </div>
   );
+}
+
+export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
+  return <ApplicantErrorBoundary error={error} />;
 }

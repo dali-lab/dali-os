@@ -448,7 +448,7 @@ async function main() {
   const generalRubric = await prisma.rubric.upsert({
     where: { id: "rubric-general" },
     update: {},
-    create: { id: "rubric-general", name: "General Application Rubric", domainId: null },
+    create: { id: "rubric-general", name: "General Application Rubric" },
   });
 
   await prisma.rubricVersion.upsert({
@@ -471,7 +471,7 @@ async function main() {
   const engRubric = await prisma.rubric.upsert({
     where: { id: "rubric-eng" },
     update: {},
-    create: { id: "rubric-eng", name: "Engineering Rubric", domainId: engDomain.id },
+    create: { id: "rubric-eng", name: "Engineering Rubric" },
   });
 
   const engRubricVersion = await prisma.rubricVersion.upsert({
@@ -495,7 +495,7 @@ async function main() {
   const designRubric = await prisma.rubric.upsert({
     where: { id: "rubric-design" },
     update: {},
-    create: { id: "rubric-design", name: "Design Rubric", domainId: designDomain.id },
+    create: { id: "rubric-design", name: "Design Rubric" },
   });
 
   const designRubricVersion = await prisma.rubricVersion.upsert({
@@ -519,7 +519,7 @@ async function main() {
   const pmRubric = await prisma.rubric.upsert({
     where: { id: "rubric-pm" },
     update: {},
-    create: { id: "rubric-pm", name: "Product Rubric", domainId: pmDomain.id },
+    create: { id: "rubric-pm", name: "Product Rubric" },
   });
 
   const pmRubricVersion = await prisma.rubricVersion.upsert({
@@ -2612,16 +2612,70 @@ async function main() {
       body: `Hi {{firstName}},\n\nWe are thrilled to offer you a spot in DALI!\n\nAfter a highly competitive review process, we believe you'll be a fantastic addition to our team. Please log in to your application portal to confirm your acceptance.\n\nOnboarding details and next steps will follow shortly. In the meantime, if you have any questions, feel free to reach out to us at applications@dali.dartmouth.edu.\n\nWelcome to the family — we can't wait to work with you!\n\nWarmly,\nThe DALI Team`,
     },
   ]
+  // Legacy single-table templates: still used by ApplicationReceived (auto on
+  // submit) and InterviewInviteMentor (manual batch only). The other 5 types
+  // are no longer auto-keyed by type — they live as named EmailTemplate parents
+  // and bind to a cycle via CycleDecisionEmail.
   for (const t of seedTemplates) {
-    // Only seed if no version exists yet for this type
-    const existing = await prisma.emailTemplate.findFirst({ where: { type: t.type } })
+    if (t.type !== 'ApplicationReceived' && t.type !== 'InterviewInviteMentor') continue
+    const existing = await prisma.legacyEmailTemplate.findFirst({ where: { type: t.type } })
     if (!existing) {
-      await prisma.emailTemplate.create({
+      await prisma.legacyEmailTemplate.create({
         data: { ...t, version: 1, createdById: engLeadMember.id },
       })
     }
   }
-  console.log(`  ${seedTemplates.length} email templates seeded`)
+
+  // New rubric-pattern templates: one named parent + one EmailTemplateVersion
+  // per legacy type. Deterministic ids match the migration backfill so re-seeding
+  // a freshly-migrated DB doesn't double-write.
+  for (const t of seedTemplates) {
+    const templateId = `tmpl_${t.type.toLowerCase()}`
+    await prisma.emailTemplate.upsert({
+      where: { id: templateId },
+      update: {},
+      create: { id: templateId, name: t.type },
+    })
+    const existingVersion = await prisma.emailTemplateVersion.findFirst({
+      where: { templateId },
+    })
+    if (!existingVersion) {
+      await prisma.emailTemplateVersion.create({
+        data: {
+          templateId,
+          versionNumber: 1,
+          subject: t.subject,
+          body: t.body,
+          createdById: engLeadMember.id,
+        },
+      })
+    }
+  }
+
+  // Bind Fall 2026 (the active seeded cycle) to the four DecisionType slots.
+  for (const dt of ['Rejected', 'InvitedToInterview', 'Accepted', 'Waitlisted'] as const) {
+    const version = await prisma.emailTemplateVersion.findFirst({
+      where: { templateId: `tmpl_${dt.toLowerCase()}` },
+      orderBy: { versionNumber: 'desc' },
+    })
+    if (version) {
+      await prisma.cycleDecisionEmail.upsert({
+        where: {
+          applicationCycleId_decisionType: {
+            applicationCycleId: cycle.id,
+            decisionType: dt,
+          },
+        },
+        update: { emailTemplateVersionId: version.id },
+        create: {
+          applicationCycleId: cycle.id,
+          decisionType: dt,
+          emailTemplateVersionId: version.id,
+        },
+      })
+    }
+  }
+  console.log(`  ${seedTemplates.length} email templates seeded (2 legacy + 7 new + Fall 2026 decision bindings)`)
   console.log(`  ${reviewSpecs.length} ApplicationReviews + ${decisionSpecs.filter(s => s.type === "InvitedToInterview").length * 3 + decisionSpecs.filter(s => s.type !== "InvitedToInterview").length * 2} Decisions + ${interviewBookings.length} booked interviews for Fall 2026`);
 }
 

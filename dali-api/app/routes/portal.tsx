@@ -10,6 +10,11 @@ import {
 } from "~/lib/domain-application-status";
 import type { DomainApplicationStatus } from "~/types";
 import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
+import { InterviewSlotPicker } from "~/components/InterviewSlotPicker";
+import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
+import { formatInterviewDate, formatInterviewTimeRange } from "~/lib/interview-time";
+
+export const meta: Route.MetaFunction = () => [{ title: "Applicant portal · DALI OS" }];
 
 // ─── Loader ──────────────────────────────────────────────────────────────────
 
@@ -21,6 +26,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     cycleName: null as string | null,
     cycleId: null as string | null,
     cycleStatus: null as string | null,
+    closeDate: null as string | null,
     domainApplications: [] as any[],
     slotDurationMinutes: 30,
     hasApplication: false,
@@ -34,11 +40,13 @@ export async function loader({ request }: Route.LoaderArgs) {
   let cycleId: string;
   let cycleName: string;
   let cycleStatus: ApplicationCycleStatus;
+  let closeDate: string | null = null;
 
   if (active) {
     cycleId = active.id;
     cycleName = active.name;
     cycleStatus = active.currentStatus as ApplicationCycleStatus;
+    closeDate = active.closeDate ? active.closeDate.toISOString() : null;
   } else {
     const recentApp = await prisma.application.findFirst({
       where: { userId: auth.user.sub },
@@ -55,6 +63,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     cycleId = recentApp.applicationCycleId;
     cycleName = recentApp.applicationCycle.name;
     cycleStatus = (recentApp.applicationCycle.statusUpdates[0]?.newStatus ?? "Draft") as ApplicationCycleStatus;
+    closeDate = recentApp.applicationCycle.closeDate ? recentApp.applicationCycle.closeDate.toISOString() : null;
   }
 
   const application = await prisma.application.findFirst({
@@ -62,6 +71,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     include: {
       statusUpdates: true,
       domainApplications: {
+        where: { selected: true },
         include: {
           ...domainApplicationStatusInclude,
           challengeVersion: { include: { domain: true } },
@@ -74,11 +84,18 @@ export async function loader({ request }: Route.LoaderArgs) {
     where: { applicationCycleId: cycleId },
   });
 
-  const appStatus = application?.statusUpdates.some(u => u.newStatus === "Submitted")
-    ? "Submitted"
-    : application
-      ? "Draft"
-      : null;
+  // Use the most recent status update so Withdrawn (which always follows Submitted)
+  // takes precedence over the earlier Submitted/Draft entries.
+  const latestStatus = application?.statusUpdates
+    .slice()
+    .sort((a: any, b: any) => b.createdAt.getTime() - a.createdAt.getTime())[0]?.newStatus;
+  const appStatus = latestStatus === "Withdrawn"
+    ? "Withdrawn"
+    : application?.statusUpdates.some((u: any) => u.newStatus === "Submitted")
+      ? "Submitted"
+      : application
+        ? "Draft"
+        : null;
 
   // Compute per-domain-application status using inferDomainApplicationStatus
   const domainApplications = (application?.domainApplications ?? []).map((da: any) => {
@@ -107,6 +124,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     cycleName,
     cycleId,
     cycleStatus,
+    closeDate,
     domainApplications,
     slotDurationMinutes: config?.slotDurationMinutes ?? 30,
     hasApplication: !!application,
@@ -135,12 +153,10 @@ interface TimeSlot {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function apiSlotToTimeSlot(slot: { startTime: string; endTime: string }, index: number): TimeSlot {
-  const start = new Date(slot.startTime);
-  const end = new Date(slot.endTime);
   return {
     id: `slot-${index}`,
-    date: start.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }),
-    time: `${start.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })} - ${end.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`,
+    date: formatInterviewDate(slot.startTime),
+    time: formatInterviewTimeRange(slot.startTime, slot.endTime),
     isoStart: slot.startTime,
     isoEnd: slot.endTime,
   };
@@ -196,6 +212,63 @@ function downloadIcs(slot: TimeSlot, cycleName: string): void {
   a.download = "dali-interview.ics";
   a.click();
   URL.revokeObjectURL(url);
+}
+
+function formatDeadline(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-US", {
+    timeZone: "UTC",
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function formatRemaining(iso: string): { label: string; tone: "urgent" | "warn" | "ok" } | null {
+  const ms = new Date(iso).getTime() - Date.now();
+  if (ms <= 0) return null;
+  if (ms > 7 * 86_400_000) return null;
+  const days = Math.floor(ms / 86_400_000);
+  const hours = Math.floor(ms / 3_600_000);
+  if (days >= 2) return { label: `${days} days remaining`, tone: "ok" };
+  if (hours >= 24) return { label: "1 day remaining", tone: "warn" };
+  if (hours >= 1) return { label: `Closes in ${hours} hour${hours === 1 ? "" : "s"}`, tone: "urgent" };
+  const mins = Math.max(1, Math.floor(ms / 60_000));
+  return { label: `Closes in ${mins} minute${mins === 1 ? "" : "s"}`, tone: "urgent" };
+}
+
+// Deadline rendering happens after hydration so toLocaleString uses the
+// browser's locale/timezone without producing an SSR/CSR text mismatch.
+function DeadlineLine({ closeDate }: { closeDate: string }) {
+  const [label, setLabel] = useState<string>("");
+  const [remaining, setRemaining] = useState<{ label: string; tone: "urgent" | "warn" | "ok" } | null>(null);
+  useEffect(() => {
+    setLabel(formatDeadline(closeDate));
+    const tick = () => setRemaining(formatRemaining(closeDate));
+    tick();
+    const id = setInterval(tick, 60_000);
+    return () => clearInterval(id);
+  }, [closeDate]);
+  if (!label) return null;
+  const toneStyles: Record<"urgent" | "warn" | "ok", string> = {
+    urgent: "text-red-700",
+    warn: "text-yellow-800",
+    ok: "text-muted-foreground",
+  };
+  return (
+    <div className={`text-sm mt-2 flex items-center gap-2 flex-wrap ${remaining ? toneStyles[remaining.tone] : "text-muted-foreground"}`}>
+      <span>Applications close on {label}</span>
+      {remaining && (
+        <span className={`text-xs px-2.5 py-0.5 rounded-full font-semibold ${
+          remaining.tone === "urgent" ? "bg-red-100 text-red-700" :
+          remaining.tone === "warn" ? "bg-yellow-100 text-yellow-800" :
+          "bg-blue-100 text-blue-700"
+        }`}>
+          {remaining.label}
+        </span>
+      )}
+    </div>
+  );
 }
 
 // ─── Shared UI ───────────────────────────────────────────────────────────────
@@ -264,7 +337,7 @@ function StageIndicator({ stage }: { stage: DomainApplicationStatus | "Applicati
 
 // ─── Stage Views ─────────────────────────────────────────────────────────────
 
-function ApplicationOpenView({ cycleName }: { cycleName: string }) {
+function ApplicationOpenView({ cycleName, closeDate }: { cycleName: string; closeDate: string | null }) {
   return (
     <div className="max-w-2xl mx-auto text-center py-16">
       <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-accent-green/30 flex items-center justify-center">
@@ -283,7 +356,7 @@ function ApplicationOpenView({ cycleName }: { cycleName: string }) {
   );
 }
 
-function ApplicationDraftView({ cycleName }: { cycleName: string }) {
+function ApplicationDraftView({ cycleName, closeDate }: { cycleName: string; closeDate: string | null }) {
   return (
     <div className="max-w-2xl mx-auto text-center py-16">
       <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-accent-green/30 flex items-center justify-center">
@@ -298,6 +371,29 @@ function ApplicationDraftView({ cycleName }: { cycleName: string }) {
       <Link to="/portal/apply" className="px-8 py-3 rounded-full bg-accent-coral text-white font-semibold font-heading tracking-wider hover:bg-accent-coral/90 transition shadow-lg hover:shadow-xl">
         Continue Application
       </Link>
+    </div>
+  );
+}
+
+function WithdrawnView({ cycleName }: { cycleName: string }) {
+  return (
+    <div className="max-w-2xl mx-auto py-12">
+      <div className="text-center mb-6">
+        <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-muted flex items-center justify-center">
+          <svg className="w-8 h-8 text-muted-foreground/70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </div>
+        <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">Application Withdrawn</h2>
+        <p className="text-muted-foreground leading-relaxed">
+          You withdrew your application for {cycleName}. If you change your mind, contact the DALI team.
+        </p>
+        <div className="mt-4">
+          <Link to="/portal/application" className="text-sm text-accent-coral hover:underline">
+            View your submission →
+          </Link>
+        </div>
+      </div>
     </div>
   );
 }
@@ -459,27 +555,13 @@ function InvitedToInterviewView({
         </div>
       ) : (
         <>
-          <div className="space-y-6 mb-8">
-            {grouped.map(({ date, slots: dateSlots }) => (
-              <div key={date}>
-                <h4 className="text-sm font-bold text-dark-blue mb-2">{date}</h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {dateSlots.map(s => (
-                    <button
-                      key={s.id}
-                      onClick={() => setSelectedSlot(s.id)}
-                      className={`px-4 py-3 rounded-xl text-sm font-medium border-2 transition-all text-left ${
-                        selectedSlot === s.id
-                          ? "border-accent-coral bg-accent-coral/5 text-accent-coral"
-                          : "border-border text-dark-blue hover:border-accent-coral/50"
-                      }`}
-                    >
-                      {s.time}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
+          <div className="mb-8">
+            <InterviewSlotPicker
+              groups={grouped}
+              variant="selectable"
+              selectedSlotId={selectedSlot}
+              onSelect={(s) => setSelectedSlot(s.id)}
+            />
           </div>
 
           <button
@@ -563,23 +645,12 @@ function InterviewScheduledView({
         <p className="text-sm text-muted-foreground mb-6">
           Currently scheduled: <strong>{slot.date}, {slot.time}</strong>. Pick a new time below.
         </p>
-        <div className="space-y-6 mb-8">
-          {grouped.map(({ date, slots: dateSlots }) => (
-            <div key={date}>
-              <h4 className="text-sm font-bold text-dark-blue mb-2">{date}</h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {dateSlots.map(s => (
-                  <button
-                    key={s.id}
-                    onClick={() => handleReschedule(s)}
-                    className="px-4 py-3 rounded-xl text-sm font-medium border-2 border-border text-dark-blue hover:border-accent-coral/50 transition-all text-left"
-                  >
-                    {s.time}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))}
+        <div className="mb-8">
+          <InterviewSlotPicker
+            groups={grouped}
+            variant="reschedule"
+            onSelect={(s) => handleReschedule(s as any)}
+          />
         </div>
         <button onClick={() => setRescheduling(false)} className="text-sm font-semibold text-muted-foreground hover:underline">
           Cancel
@@ -797,33 +868,50 @@ function DomainApplicationCard({
   onRevalidate: () => void;
 }) {
   const stage = da.inferredStatus;
+  const [isExpanded, setIsExpanded] = useState(false);
 
   return (
     <div className="rounded-2xl border border-gray-200 overflow-hidden">
-      <div className="bg-[#E8F4FA] px-6 py-4 flex items-center justify-between">
+      <button
+        type="button"
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full bg-[#E8F4FA] px-6 py-4 flex items-center justify-between cursor-pointer"
+      >
         <h3 className="font-heading text-base font-bold text-dark-blue">{da.domainName}</h3>
-        <StageIndicator stage={stage} />
-      </div>
-      <div className="px-2">
-        {stage === "Pending" && <PendingView cycleName={cycleName} />}
-        {stage === "Rejected" && <RejectedView cycleName={cycleName} />}
-        {stage === "InvitedToInterview" && (
-          <InvitedToInterviewView domainApp={da} cycleId={cycleId} cycleName={cycleName} onBooked={onRevalidate} />
-        )}
-        {stage === "InterviewScheduled" && (
-          <InterviewScheduledView
-            domainApp={da}
-            cycleId={cycleId}
-            cycleName={cycleName}
-            slotDurationMinutes={slotDurationMinutes}
-            onCancelled={onRevalidate}
-            onRescheduled={onRevalidate}
-          />
-        )}
-        {stage === "PostInterviewPending" && <PostInterviewPendingView />}
-        {stage === "Accepted" && <AcceptedView cycleName={cycleName} />}
-        {stage === "Waitlisted" && <WaitlistedView cycleName={cycleName} />}
-      </div>
+        <div className="flex items-center gap-3">
+          <StageIndicator stage={stage} />
+          <svg
+            className={`w-5 h-5 text-gray-500 transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`}
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </div>
+      </button>
+      {isExpanded && (
+        <div className="px-2">
+          {stage === "Pending" && <PendingView cycleName={cycleName} />}
+          {stage === "Rejected" && <RejectedView cycleName={cycleName} />}
+          {stage === "InvitedToInterview" && (
+            <InvitedToInterviewView domainApp={da} cycleId={cycleId} cycleName={cycleName} onBooked={onRevalidate} />
+          )}
+          {stage === "InterviewScheduled" && (
+            <InterviewScheduledView
+              domainApp={da}
+              cycleId={cycleId}
+              cycleName={cycleName}
+              slotDurationMinutes={slotDurationMinutes}
+              onCancelled={onRevalidate}
+              onRescheduled={onRevalidate}
+            />
+          )}
+          {stage === "PostInterviewPending" && <PostInterviewPendingView />}
+          {stage === "Accepted" && <AcceptedView cycleName={cycleName} />}
+          {stage === "Waitlisted" && <WaitlistedView cycleName={cycleName} />}
+        </div>
+      )}
     </div>
   );
 }
@@ -836,6 +924,7 @@ export default function Portal() {
     cycleName,
     cycleId,
     cycleStatus,
+    closeDate,
     domainApplications,
     slotDurationMinutes,
     hasApplication,
@@ -859,8 +948,12 @@ export default function Portal() {
   const das = domainApplications as DomainAppData[];
 
   // Determine top-level state when there are no domain applications yet
-  let topLevelStage: "ApplicationOpen" | "ApplicationsClosed" | "Pending" | "Draft" | null = null;
-  if (das.length === 0) {
+  let topLevelStage: "ApplicationOpen" | "ApplicationsClosed" | "Pending" | "Draft" | "Withdrawn" | null = null;
+  if (applicationStatus === "Withdrawn") {
+    // Withdrawal is terminal at the application level — short-circuit per-domain
+    // cards regardless of how many DAs the applicant created.
+    topLevelStage = "Withdrawn";
+  } else if (das.length === 0) {
     if (applicationStatus === "Submitted") {
       topLevelStage = "Pending";
     } else if (!hasApplication && cycleStatus === "Open") {
@@ -880,6 +973,7 @@ export default function Portal() {
           <h1 className="font-heading text-xl font-bold text-dark-blue">
             {cycleName} Application Portal
           </h1>
+          {cycleStatus === "Open" && closeDate && <DeadlineLine closeDate={closeDate} />}
         </div>
       </div>
 
@@ -898,7 +992,7 @@ export default function Portal() {
             </p>
           </div>
         )}
-        {topLevelStage === "ApplicationOpen" && <ApplicationOpenView cycleName={cycleName} />}
+        {topLevelStage === "ApplicationOpen" && <ApplicationOpenView cycleName={cycleName} closeDate={closeDate} />}
         {topLevelStage === "Pending" && (
           <>
             <PendingView cycleName={cycleName} />
@@ -917,9 +1011,10 @@ export default function Portal() {
             )}
           </>
         )}
-        {topLevelStage === "Draft" && <ApplicationDraftView cycleName={cycleName} />}
+        {topLevelStage === "Draft" && <ApplicationDraftView cycleName={cycleName} closeDate={cycleStatus === "Open" ? closeDate : null} />}
+        {topLevelStage === "Withdrawn" && <WithdrawnView cycleName={cycleName} />}
 
-        {das.length > 0 && applicationStatus !== "Draft" && (
+        {das.length > 0 && applicationStatus !== "Draft" && applicationStatus !== "Withdrawn" && (
           <div className="max-w-3xl mx-auto space-y-8">
             {cycleStatus === "Open" && applicationStatus === "Submitted" && (
               <div className="rounded-xl border border-blue-200 bg-blue-50 px-5 py-4 flex items-center justify-between gap-4">
@@ -958,4 +1053,8 @@ export default function Portal() {
       </div>
     </div>
   );
+}
+
+export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
+  return <ApplicantErrorBoundary error={error} secondaryAction={{ kind: "reload" }} />;
 }

@@ -7,7 +7,6 @@ import {
   FileText,
   CalendarDays,
   Video,
-  Save,
   EyeOff,
   ListOrdered,
 } from 'lucide-react'
@@ -19,6 +18,8 @@ import { DigitSumClue, DIGIT_SUM_CORAL_INTERNAL_SLOT2 } from '~/components/Digit
 import { prisma } from '~/lib/db'
 import { requireAuth } from '~/lib/auth'
 import type { Route } from './+types/mentor'
+
+export const meta: Route.MetaFunction = () => [{ title: "Reviewer · DALI OS" }]
 
 export async function loader({ request }: Route.LoaderArgs) {
   const empty = {
@@ -224,17 +225,6 @@ export default function MentorDashboard() {
   }
 
   const [scheduledInterviews, setScheduledInterviews] = useState<any[]>([])
-  const [interviewNotes, setInterviewNotes] = useState<Record<string, string>>({})
-  const handleSaveNotes = useCallback(async (interviewId: string) => {
-    if (!activeCycle) return
-    const notes = interviewNotes[interviewId]
-    if (notes === undefined) return
-    await fetch(`/api/cycles/${activeCycle.id}/my-interviews/${interviewId}/notes`, {
-      method: 'PUT', credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ notes }),
-    })
-  }, [activeCycle, interviewNotes])
   // Interview Availability State (API-connected)
   const [savedAvailability, setSavedAvailability] = useState<{ startTime: string; endTime: string }[]>([])
   const [interviewBlocks, setInterviewBlocks] = useState<{ startTime: string; endTime: string }[]>([])
@@ -275,11 +265,6 @@ export default function MentorDashboard() {
             endTime: a.interview.endTime,
           }))
         )
-        const notesMap: Record<string, string> = {}
-        for (const a of assignments) {
-          if (a.notes) notesMap[a.interview.id] = a.notes
-        }
-        setInterviewNotes(notesMap)
       })
       .catch(() => {})
   }, [activeCycle?.id])
@@ -577,31 +562,14 @@ export default function MentorDashboard() {
                       </p>
                     </div>
                   </div>
-                  <div className="p-6 flex-1 flex flex-col">
-                    <label className="block text-sm font-bold text-gray-700 mb-2">
-                      Interview Notes
-                    </label>
-                    <textarea
-                      rows={5}
-                      value={interviewNotes[interview.id] || ''}
-                      onChange={(e) =>
-                        setInterviewNotes({
-                          ...interviewNotes,
-                          [interview.id]: e.target.value,
-                        })
-                      }
-                      placeholder="Jot down notes during or after the interview..."
-                      className="block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-3 flex-1 resize-none"
-                    />
-                    <div className="mt-4 flex justify-end">
-                      <button
-                        onClick={() => handleSaveNotes(interview.id)}
-                        className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                      >
-                        <Save className="w-4 h-4 mr-2" />
-                        Save Notes
-                      </button>
-                    </div>
+                  <div className="p-6 flex-1 flex flex-col justify-end">
+                    <Link
+                      to={`/interviewer/interview/${interview.id}`}
+                      className="inline-flex items-center justify-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                    >
+                      <Video className="w-4 h-4 mr-2" />
+                      Open Interview
+                    </Link>
                   </div>
                 </div>
               )

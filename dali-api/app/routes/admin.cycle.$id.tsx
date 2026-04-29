@@ -4,7 +4,9 @@ import type { Route } from "./+types/admin.cycle.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isHiringLead } from "~/lib/roles";
-import { Settings, Users, Calendar, AlertTriangle, Trash2, Plus, CheckCircle, ArrowRight, Circle, ChevronRight, X, LayoutDashboard } from 'lucide-react'
+import { renderEmail } from "~/lib/email";
+import { Modal } from "~/components/Modal";
+import { Settings, Users, Calendar, AlertTriangle, Trash2, Plus, CheckCircle, ArrowRight, Circle, ChevronRight, X, LayoutDashboard, Eye } from 'lucide-react'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -63,6 +65,11 @@ function nextStatus(current: CycleStatus): CycleStatus | null {
 
 // ─── Loader ──────────────────────────────────────────────────────────────────
 
+export const meta: Route.MetaFunction = ({ data }) => {
+  const name = (data as any)?.cycle?.name;
+  return [{ title: `${name || "Cycle"} · Hiring lead · DALI OS` }];
+};
+
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
@@ -98,7 +105,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
 
   const rubricVersionOptions = await prisma.rubricVersion.findMany({
-    where: { rubric: { domainId: null } },
     include: { rubric: { select: { name: true } } },
     orderBy: { createdAt: "desc" },
   });
@@ -111,6 +117,36 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
   });
 
+  // Per-domain options + which domains already have reviews assigned (used to
+  // gate rubric edits — once any domain application has a review, changing
+  // the rubric out from under it would invalidate scoring).
+  const domainIds: string[] = cycle.domains.map((d: any) => d.domainId);
+  const domainChallengeVersions = await prisma.challengeVersion.findMany({
+    where: { domainId: { in: domainIds } },
+    include: { challenge: true },
+    orderBy: { createdAt: "desc" },
+  });
+  const domainRubricVersions = await prisma.rubricVersion.findMany({
+    include: { rubric: { select: { name: true } } },
+    orderBy: { createdAt: "desc" },
+  });
+  const reviewsForCycle = await prisma.applicationReview.findMany({
+    where: {
+      domainApplication: { application: { applicationCycleId: params.id } },
+    },
+    select: {
+      domainApplication: {
+        select: { challengeVersion: { select: { domainId: true } } },
+      },
+    },
+  });
+  const reviewedDomainIdSet = new Set<string>();
+  for (const r of reviewsForCycle) {
+    const did = r.domainApplication.challengeVersion.domainId;
+    if (did) reviewedDomainIdSet.add(did);
+  }
+  const reviewedDomainIds = Array.from(reviewedDomainIdSet);
+
   // Final decisions ready for release (HiringLead decisions panel)
   const finalDecisions = await prisma.decision.findMany({
     where: {
@@ -122,7 +158,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     include: {
       domainApplication: {
         include: {
-          application: { include: { user: { select: { firstName: true, lastName: true } } } },
+          application: { include: { user: { select: { firstName: true, lastName: true, dartmouthEmail: true, netId: true } } } },
           challengeVersion: { include: { domain: { select: { name: true } } } },
         },
       },
@@ -131,7 +167,52 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     orderBy: { createdAt: "desc" },
   });
 
-  return { cycle, allDomains, finalDecisions, rubricVersionOptions, cycleApplicationReviewCount, generalChallengeVersions };
+  // Email-template options + current per-cycle decision bindings + which
+  // DecisionTypes already have a Released decision (used to lock those slots).
+  // All versions are surfaced in the picker so a hiring lead can pin a specific
+  // (older) version per cycle, mirroring how RubricVersion options work.
+  const emailTemplates = await prisma.emailTemplate.findMany({
+    include: {
+      versions: {
+        orderBy: { versionNumber: "desc" },
+      },
+    },
+    orderBy: { name: "asc" },
+  });
+
+  const currentDecisionEmails = await prisma.cycleDecisionEmail.findMany({
+    where: { applicationCycleId: params.id },
+    include: {
+      emailTemplateVersion: { include: { template: { select: { name: true } } } },
+    },
+  });
+
+  const releasedDecisions = await prisma.decision.findMany({
+    where: {
+      stage: "Released",
+      domainApplication: {
+        application: { applicationCycleId: params.id },
+      },
+    },
+    select: { type: true },
+    distinct: ["type"],
+  });
+  const releasedDecisionTypes = releasedDecisions.map((d) => d.type);
+
+  return {
+    cycle,
+    allDomains,
+    finalDecisions,
+    rubricVersionOptions,
+    cycleApplicationReviewCount,
+    generalChallengeVersions,
+    emailTemplates,
+    currentDecisionEmails,
+    releasedDecisionTypes,
+    domainChallengeVersions,
+    domainRubricVersions,
+    reviewedDomainIds,
+  };
 }
 
 // ─── Action ──────────────────────────────────────────────────────────────────
@@ -149,9 +230,14 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   if (intent === "set-close-date") {
     const closeDate = formData.get("closeDate") as string;
+    let parsedClose: Date | null = null;
+    if (closeDate) {
+      // Store as end-of-day UTC so the deadline covers the entire selected date
+      parsedClose = new Date(closeDate + "T23:59:59Z");
+    }
     await prisma.applicationCycle.update({
       where: { id: params.id },
-      data: { closeDate: closeDate ? new Date(closeDate) : null },
+      data: { closeDate: parsedClose },
     });
     return redirect(`/hiring-lead-admin/cycle/${params.id}`);
   }
@@ -175,6 +261,50 @@ export async function action({ request, params }: Route.ActionArgs) {
     return redirect(`/hiring-lead-admin/cycle/${params.id}`);
   }
 
+  if (intent === "set-decision-email") {
+    const decisionType = formData.get("decisionType") as string;
+    const emailTemplateVersionId = (formData.get("emailTemplateVersionId") as string) || null;
+    const validTypes = ["Rejected", "InvitedToInterview", "Accepted", "Waitlisted"] as const;
+    if (!validTypes.includes(decisionType as (typeof validTypes)[number])) {
+      return new Response(JSON.stringify({ error: "Invalid decision type" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+    // Lock once a Released decision of this type exists for this cycle.
+    const alreadyReleased = await prisma.decision.count({
+      where: {
+        stage: "Released",
+        type: decisionType as (typeof validTypes)[number],
+        domainApplication: { application: { applicationCycleId: params.id } },
+      },
+    });
+    if (alreadyReleased > 0) {
+      return redirect(`/hiring-lead-admin/cycle/${params.id}`);
+    }
+    if (emailTemplateVersionId) {
+      await prisma.cycleDecisionEmail.upsert({
+        where: {
+          applicationCycleId_decisionType: {
+            applicationCycleId: params.id,
+            decisionType: decisionType as (typeof validTypes)[number],
+          },
+        },
+        update: { emailTemplateVersionId },
+        create: {
+          applicationCycleId: params.id,
+          decisionType: decisionType as (typeof validTypes)[number],
+          emailTemplateVersionId,
+        },
+      });
+    } else {
+      await prisma.cycleDecisionEmail.deleteMany({
+        where: {
+          applicationCycleId: params.id,
+          decisionType: decisionType as (typeof validTypes)[number],
+        },
+      });
+    }
+    return redirect(`/hiring-lead-admin/cycle/${params.id}`);
+  }
+
   if (intent === "link-general-form") {
     const challengeVersionId = formData.get("challengeVersionId") as string;
     if (!challengeVersionId) {
@@ -195,6 +325,110 @@ export async function action({ request, params }: Route.ActionArgs) {
     // Link the new one
     await prisma.challengeVersionApplicationCycle.create({
       data: { challengeVersionId, applicationCycleId: params.id },
+    });
+    return redirect(`/hiring-lead-admin/cycle/${params.id}`);
+  }
+
+  if (intent === "hl-set-domain-challenge") {
+    const domainId = formData.get("domainId") as string;
+    const challengeVersionId = formData.get("challengeVersionId") as string;
+    if (!domainId || !challengeVersionId) {
+      return redirect(`/hiring-lead-admin/cycle/${params.id}`);
+    }
+    // Hiring lead override mirrors domain lead's window: challenge edits are
+    // Draft-only because applicants see the form once the cycle is Open.
+    const latestUpdate = await prisma.applicationCycleStatusUpdate.findFirst({
+      where: { applicationCycleId: params.id },
+      orderBy: { createdAt: "desc" },
+    });
+    if ((latestUpdate?.newStatus ?? "Draft") !== "Draft") {
+      return redirect(`/hiring-lead-admin/cycle/${params.id}`);
+    }
+    // Confirm the chosen version belongs to the named domain — guard against
+    // form tampering linking a different domain's challenge.
+    const cv = await prisma.challengeVersion.findUnique({ where: { id: challengeVersionId } });
+    if (!cv || cv.domainId !== domainId) {
+      return redirect(`/hiring-lead-admin/cycle/${params.id}`);
+    }
+    await prisma.challengeVersionApplicationCycle.deleteMany({
+      where: {
+        applicationCycleId: params.id,
+        challengeVersion: { domainId },
+      },
+    });
+    await prisma.challengeVersionApplicationCycle.create({
+      data: { challengeVersionId, applicationCycleId: params.id },
+    });
+    return redirect(`/hiring-lead-admin/cycle/${params.id}`);
+  }
+
+  if (intent === "hl-set-domain-rubric") {
+    const domainId = formData.get("domainId") as string;
+    const rubricVersionId = (formData.get("rubricVersionId") as string) || null;
+    if (!domainId) {
+      return redirect(`/hiring-lead-admin/cycle/${params.id}`);
+    }
+    // Once any review is assigned for this domain in this cycle, the rubric
+    // is locked: changing it would silently invalidate prior scores.
+    const hasAssignedReviews = await prisma.applicationReview.count({
+      where: {
+        domainApplication: {
+          challengeVersion: { domainId },
+          application: { applicationCycleId: params.id },
+        },
+      },
+    });
+    if (hasAssignedReviews > 0) {
+      return redirect(`/hiring-lead-admin/cycle/${params.id}`);
+    }
+    if (rubricVersionId) {
+      const rv = await prisma.rubricVersion.findUnique({
+        where: { id: rubricVersionId },
+      });
+      if (!rv) {
+        return redirect(`/hiring-lead-admin/cycle/${params.id}`);
+      }
+    }
+    await prisma.domainApplicationCycle.upsert({
+      where: { domainId_applicationCycleId: { domainId, applicationCycleId: params.id } },
+      update: { rubricVersionId },
+      create: { domainId, applicationCycleId: params.id, rubricVersionId },
+    });
+    return redirect(`/hiring-lead-admin/cycle/${params.id}`);
+  }
+
+  if (intent === "hl-force-mark-ready" || intent === "hl-force-unmark-ready") {
+    const domainId = formData.get("domainId") as string;
+    const confirm = formData.get("confirm");
+    if (!domainId || confirm !== "true") {
+      return redirect(`/hiring-lead-admin/cycle/${params.id}`);
+    }
+    const latestUpdate = await prisma.applicationCycleStatusUpdate.findFirst({
+      where: { applicationCycleId: params.id },
+      orderBy: { createdAt: "desc" },
+    });
+    if ((latestUpdate?.newStatus ?? "Draft") !== "Draft") {
+      return redirect(`/hiring-lead-admin/cycle/${params.id}`);
+    }
+    const isReady = intent === "hl-force-mark-ready";
+    if (isReady) {
+      // Marking ready without a challenge linked would let the cycle pretend
+      // it's configured when advance-status would still block — surface that
+      // by refusing the override here.
+      const hasChallenge = await prisma.challengeVersionApplicationCycle.count({
+        where: {
+          applicationCycleId: params.id,
+          challengeVersion: { domainId },
+        },
+      });
+      if (hasChallenge === 0) {
+        return redirect(`/hiring-lead-admin/cycle/${params.id}`);
+      }
+    }
+    await prisma.domainApplicationCycle.upsert({
+      where: { domainId_applicationCycleId: { domainId, applicationCycleId: params.id } },
+      update: { isReady },
+      create: { domainId, applicationCycleId: params.id, isReady },
     });
     return redirect(`/hiring-lead-admin/cycle/${params.id}`);
   }
@@ -322,6 +556,7 @@ export default function AdminCycleDetails() {
   // ── Decisions state ──
   const [pendingDecisions, setPendingDecisions] = useState<any[]>(loaderData?.finalDecisions ?? [])
   const [releasing, setReleasing] = useState<string | null>(null)
+  const [previewDecisionId, setPreviewDecisionId] = useState<string | null>(null)
 
   // ── Loaders (extracted so handlers can refetch after mutations) ──
   const loadStatus = useCallback(async () => {
@@ -517,7 +752,7 @@ export default function AdminCycleDetails() {
       </div>
 
       {/* Cycle Status */}
-      <div className="bg-card rounded-xl border border-border shadow-sm p-4 flex items-center justify-between">
+      <div className="bg-card rounded-xl border border-border shadow-sm p-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <span className="text-sm font-medium text-muted-foreground">Status:</span>
           <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-bold ${STATUS_COLORS[cycleStatus]}`}>
@@ -624,7 +859,7 @@ export default function AdminCycleDetails() {
       })()}
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-muted rounded-lg p-1">
+      <div className="flex gap-1 bg-muted rounded-lg p-1 overflow-x-auto">
         {([
           { key: 'setup' as const, label: 'Cycle Setup', icon: LayoutDashboard },
           { key: 'config' as const, label: 'Interview Setup', icon: Settings },
@@ -635,7 +870,7 @@ export default function AdminCycleDetails() {
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition ${
+            className={`flex-shrink-0 md:flex-1 flex items-center justify-center gap-2 px-3 sm:px-4 py-2 rounded-md text-sm font-medium transition whitespace-nowrap ${
               tab === t.key ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
             }`}
           >
@@ -649,9 +884,9 @@ export default function AdminCycleDetails() {
       {tab === 'setup' && (
         <div className="space-y-6">
           {/* Close Date */}
-          <div className="bg-card rounded-xl border border-border shadow-sm p-6">
+          <div className="bg-card rounded-xl border border-border shadow-sm p-4 sm:p-6">
             <h3 className="text-sm font-bold text-foreground/80 mb-3">Application Close Date</h3>
-            <Form method="post" className="flex items-end gap-3">
+            <Form method="post" className="flex flex-col sm:flex-row sm:items-end gap-3">
               <input type="hidden" name="intent" value="set-close-date" />
               <div className="flex-1">
                 <input
@@ -673,36 +908,31 @@ export default function AdminCycleDetails() {
           {/* Domains */}
           <div className="bg-card rounded-xl border border-border shadow-sm p-6 space-y-4">
             <h3 className="text-sm font-bold text-foreground/80">Domains in this Cycle</h3>
+            <p className="text-xs text-muted-foreground">
+              Hiring leads can override per-domain challenge, rubric, and ready-state selections set by domain leads.
+            </p>
             {(cycle?.domains ?? []).length > 0 ? (
-              <div className="divide-y divide-border">
+              <div className="space-y-3">
                 {(cycle?.domains ?? []).map((d: any) => {
-                  const hasChallengeVersion = (cycle?.challengeVersions ?? []).some(
+                  const selectedCvLink = (cycle?.challengeVersions ?? []).find(
                     (cv: any) => cv.challengeVersion?.domainId === d.domainId
                   );
+                  const challengeOptions = (loaderData?.domainChallengeVersions ?? []).filter(
+                    (cv: any) => cv.domainId === d.domainId,
+                  );
+                  const rubricOptions = loaderData?.domainRubricVersions ?? [];
+                  const reviewedDomainIds: string[] = loaderData?.reviewedDomainIds ?? [];
+                  const rubricLocked = reviewedDomainIds.includes(d.domainId);
                   return (
-                    <div key={d.domainId} className="flex items-center justify-between py-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-foreground">{d.domain?.name ?? d.domainId}</span>
-                        {hasChallengeVersion ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700">
-                            <CheckCircle className="w-3 h-3" /> Challenge linked
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-yellow-100 text-yellow-700">
-                            <AlertTriangle className="w-3 h-3" /> No challenge
-                          </span>
-                        )}
-                      </div>
-                      {cycleStatus === 'Draft' && (
-                        <Form method="post">
-                          <input type="hidden" name="intent" value="remove-domain" />
-                          <input type="hidden" name="domainId" value={d.domainId} />
-                          <button type="submit" className="text-red-500 hover:text-red-700 transition">
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </Form>
-                      )}
-                    </div>
+                    <DomainOverridePanel
+                      key={d.domainId}
+                      domain={d}
+                      cycleStatus={cycleStatus}
+                      selectedCvLink={selectedCvLink}
+                      challengeOptions={challengeOptions}
+                      rubricOptions={rubricOptions}
+                      rubricLocked={rubricLocked}
+                    />
                   );
                 })}
               </div>
@@ -757,6 +987,13 @@ export default function AdminCycleDetails() {
             currentRubricVersionId={cycle?.generalRubricVersionId}
             rubricVersionOptions={loaderData?.rubricVersionOptions ?? []}
             locked={(loaderData?.cycleApplicationReviewCount ?? 0) > 0}
+          />
+
+          {/* Decision-release email bindings */}
+          <DecisionEmailsSection
+            emailTemplates={loaderData?.emailTemplates ?? []}
+            currentDecisionEmails={loaderData?.currentDecisionEmails ?? []}
+            releasedDecisionTypes={loaderData?.releasedDecisionTypes ?? []}
           />
         </div>
       )}
@@ -851,7 +1088,7 @@ export default function AdminCycleDetails() {
       {tab === 'reviewers' && (
         <div className="space-y-4">
           {/* Add reviewer form */}
-          <div className="bg-card rounded-xl border border-border shadow-sm p-6">
+          <div className="bg-card rounded-xl border border-border shadow-sm p-4 sm:p-6">
             <h3 className="text-sm font-bold text-foreground/80 mb-4 flex items-center gap-2">
               <Plus className="w-4 h-4" /> Add Reviewer
             </h3>
@@ -898,7 +1135,8 @@ export default function AdminCycleDetails() {
 
           {/* Roster table */}
           <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[480px]">
               <thead className="bg-muted/50 border-b border-border">
                 <tr>
                   <th className="text-left px-4 py-3 font-bold text-foreground/80">Reviewer</th>
@@ -925,10 +1163,11 @@ export default function AdminCycleDetails() {
                 )}
               </tbody>
             </table>
+            </div>
           </div>
 
           {/* Add interviewer form */}
-          <div className="bg-card rounded-xl border border-border shadow-sm p-6">
+          <div className="bg-card rounded-xl border border-border shadow-sm p-4 sm:p-6">
             <h3 className="text-sm font-bold text-foreground/80 mb-4 flex items-center gap-2">
               <Plus className="w-4 h-4" /> Add Interviewer
             </h3>
@@ -975,7 +1214,8 @@ export default function AdminCycleDetails() {
 
           {/* Interviewer roster table */}
           <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[480px]">
               <thead className="bg-muted/50 border-b border-border">
                 <tr>
                   <th className="text-left px-4 py-3 font-bold text-foreground/80">Interviewer</th>
@@ -1004,6 +1244,7 @@ export default function AdminCycleDetails() {
                 )}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       )}
@@ -1012,7 +1253,8 @@ export default function AdminCycleDetails() {
       {tab === 'dashboard' && (
         <div className="space-y-4">
           <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[820px]">
               <thead className="bg-muted/50 border-b border-border">
                 <tr>
                   <th className="text-left px-4 py-3 font-bold text-foreground/80">Applicant</th>
@@ -1064,7 +1306,8 @@ export default function AdminCycleDetails() {
                                 <span>{name} ({roleLabel})</span>
                                 {isFuture && interview.status === 'Scheduled' && (
                                   <select
-                                    className="ml-1 text-[10px] border border-gray-300 rounded px-1 py-0.5"
+                                    className="ml-1 text-xs border border-gray-300 rounded px-1.5 py-0.5"
+                                    aria-label={`Reassign ${a.role === 'InDomain' ? 'in-domain' : 'cross-domain'} interviewer`}
                                     defaultValue=""
                                     onChange={async (e) => {
                                       if (!e.target.value) return
@@ -1104,6 +1347,7 @@ export default function AdminCycleDetails() {
                 )}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       )}
@@ -1112,7 +1356,7 @@ export default function AdminCycleDetails() {
       {tab === 'decisions' && (
         <div className="space-y-4">
           <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-            <div className="px-6 py-4 border-b border-border bg-muted/50 flex items-center justify-between">
+            <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-border bg-muted/50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <h3 className="font-bold text-foreground">Final Decisions Ready for Release</h3>
               {pendingDecisions.length > 0 && (
                 <button
@@ -1122,13 +1366,14 @@ export default function AdminCycleDetails() {
                     }
                     setPendingDecisions([])
                   }}
-                  className="px-3 py-1.5 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition"
+                  className="px-3 py-1.5 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition self-start sm:self-auto"
                 >
                   Release All ({pendingDecisions.length})
                 </button>
               )}
             </div>
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[640px]">
               <thead className="bg-muted/50 border-b border-border">
                 <tr>
                   <th className="text-left px-4 py-3 font-bold text-foreground/80">Applicant</th>
@@ -1157,18 +1402,29 @@ export default function AdminCycleDetails() {
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">{d.madeBy.firstName} {d.madeBy.lastName}</td>
                     <td className="px-4 py-3 text-right">
-                      <button
-                        onClick={async () => {
-                          setReleasing(d.id)
-                          await fetch(`/api/decisions/${d.id}/release`, { method: 'POST', credentials: 'include' })
-                          setPendingDecisions(prev => prev.filter(p => p.id !== d.id))
-                          setReleasing(null)
-                        }}
-                        disabled={releasing === d.id}
-                        className="px-3 py-1 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition disabled:opacity-50"
-                      >
-                        {releasing === d.id ? 'Releasing...' : 'Release'}
-                      </button>
+                      <div className="inline-flex flex-wrap items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setPreviewDecisionId(d.id)}
+                          className="inline-flex items-center gap-1 px-3 py-1 text-sm font-medium rounded-lg border border-border bg-card hover:bg-muted/40 text-foreground transition"
+                          aria-label={`Preview email for ${d.domainApplication.application.user.firstName}`}
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          Preview
+                        </button>
+                        <button
+                          onClick={async () => {
+                            setReleasing(d.id)
+                            await fetch(`/api/decisions/${d.id}/release`, { method: 'POST', credentials: 'include' })
+                            setPendingDecisions(prev => prev.filter(p => p.id !== d.id))
+                            setReleasing(null)
+                          }}
+                          disabled={releasing === d.id}
+                          className="px-3 py-1 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition disabled:opacity-50"
+                        >
+                          {releasing === d.id ? 'Releasing...' : 'Release'}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -1177,9 +1433,115 @@ export default function AdminCycleDetails() {
                 )}
               </tbody>
             </table>
+            </div>
           </div>
+          {previewDecisionId && (() => {
+            const d = pendingDecisions.find((x: any) => x.id === previewDecisionId)
+            if (!d) return null
+            const binding = (loaderData?.currentDecisionEmails ?? []).find((b: any) => b.decisionType === d.type)
+            return (
+              <DecisionEmailPreviewModal
+                decision={d}
+                binding={binding ?? null}
+                onClose={() => setPreviewDecisionId(null)}
+              />
+            )
+          })()}
         </div>
       )}
+    </div>
+  )
+}
+
+function DecisionEmailPreviewModal({ decision, binding, onClose }: {
+  decision: any;
+  binding: any | null;
+  onClose: () => void;
+}) {
+  const firstName = decision.domainApplication.application.user.firstName ?? ''
+  const domain = decision.domainApplication.challengeVersion.domain.name ?? ''
+  const tmpl = binding?.emailTemplateVersion ?? null
+  const rendered = tmpl ? renderEmail(tmpl, { firstName, domain }) : null
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-card rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-3 px-4 sm:px-6 py-3 sm:py-4 border-b border-border">
+          <div className="min-w-0">
+            <h2 className="text-lg font-bold text-foreground">Email preview</h2>
+            <p className="text-xs text-muted-foreground break-words">
+              {decision.domainApplication.application.user.firstName} {decision.domainApplication.application.user.lastName}
+              {' · '}
+              {decision.domainApplication.challengeVersion.domain.name}
+              {' · '}
+              <span className="font-medium">{decision.type}</span>
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-muted-foreground/70 hover:text-foreground flex-shrink-0"
+            aria-label="Close preview"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="px-4 sm:px-6 py-4 space-y-4">
+          {tmpl ? (
+            <>
+              <div>
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">From</h3>
+                <p className="mt-1 text-sm text-foreground">applications@dali.dartmouth.edu</p>
+              </div>
+              <div>
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">To</h3>
+                <p className="mt-1 text-sm text-foreground">
+                  {decision.domainApplication.application.user.dartmouthEmail
+                    ?? (decision.domainApplication.application.user.netId
+                      ? `${decision.domainApplication.application.user.netId}@dartmouth.edu`
+                      : '(no address on file)')}
+                </p>
+              </div>
+              <div>
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Subject</h3>
+                <p className="mt-1 text-sm text-foreground">{rendered?.subject ?? ''}</p>
+              </div>
+              <div>
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Body</h3>
+                <div
+                  className="mt-1 prose prose-sm max-w-none text-foreground"
+                  // eslint-disable-next-line react/no-danger
+                  dangerouslySetInnerHTML={{ __html: rendered?.html ?? '' }}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Template: <span className="font-medium">{binding?.emailTemplateVersion?.template?.name}</span>
+                {' '}— v{binding?.emailTemplateVersion?.versionNumber}
+              </p>
+            </>
+          ) : (
+            <div className="rounded-lg bg-orange-50 border border-orange-200 p-4 text-sm text-orange-800">
+              <p className="font-medium">No template assigned for {decision.type} in this cycle.</p>
+              <p className="mt-1">Releasing this decision will not send an email. Bind a template on the Setup tab under "Decision Emails".</p>
+            </div>
+          )}
+        </div>
+        <div className="px-4 sm:px-6 py-3 border-t border-border bg-muted/30 flex justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-gray-300 rounded-md hover:bg-muted/50"
+          >
+            Close
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -1356,6 +1718,424 @@ function GeneralRubricPicker({ currentRubricVersionId, rubricVersionOptions, loc
   );
 }
 
+function DomainOverridePanel({
+  domain,
+  cycleStatus,
+  selectedCvLink,
+  challengeOptions,
+  rubricOptions,
+  rubricLocked,
+}: {
+  domain: any;
+  cycleStatus: string;
+  selectedCvLink: any | undefined;
+  challengeOptions: any[];
+  rubricOptions: any[];
+  rubricLocked: boolean;
+}) {
+  const [showReadyModal, setShowReadyModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showChallengePreview, setShowChallengePreview] = useState(false);
+  const [showRubricPreview, setShowRubricPreview] = useState(false);
+
+  const challengeLocked = cycleStatus !== 'Draft';
+  const readyLocked = cycleStatus !== 'Draft';
+  const isReady: boolean = !!domain.isReady;
+  const selectedCvId: string | null = selectedCvLink?.challengeVersionId ?? null;
+  const selectedCv = selectedCvLink?.challengeVersion;
+  const selectedCvLabel = selectedCv
+    ? `${selectedCv.challenge?.name ?? 'Untitled'} — created ${new Date(selectedCv.createdAt).toLocaleDateString()}`
+    : null;
+
+  // Controlled selects so the displayed value always reflects the saved state
+  // after React Router re-renders (same-URL redirect may not remount the component).
+  const [selectedChallengeId, setSelectedChallengeId] = useState(selectedCvId ?? '');
+  useEffect(() => { setSelectedChallengeId(selectedCvId ?? ''); }, [selectedCvId]);
+
+  // Close the ready modal when isReady flips — same-URL redirects don't remount
+  // the component so the modal state survives the round-trip without this.
+  useEffect(() => { setShowReadyModal(false); }, [isReady]);
+
+  const [selectedRubricId, setSelectedRubricId] = useState(domain.rubricVersionId ?? '');
+  useEffect(() => { setSelectedRubricId(domain.rubricVersionId ?? ''); }, [domain.rubricVersionId]);
+
+  const currentRubric = rubricOptions.find((rv: any) => rv.id === selectedRubricId);
+  const currentRubricLabel = currentRubric ? `${currentRubric.rubric.name} — v${currentRubric.versionNumber}` : null;
+
+  const previewCv = challengeOptions.find((cv: any) => cv.id === selectedChallengeId) ?? selectedCv;
+
+  return (
+    <div className="border border-border rounded-lg p-4 space-y-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm font-semibold text-foreground">{domain.domain?.name ?? domain.domainId}</span>
+          {selectedCv ? (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700">
+              <CheckCircle className="w-3 h-3" /> Challenge linked
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-yellow-100 text-yellow-700">
+              <AlertTriangle className="w-3 h-3" /> No challenge
+            </span>
+          )}
+          {isReady ? (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700">
+              <CheckCircle className="w-3 h-3" /> Domain marked ready
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-muted text-muted-foreground">
+              <Circle className="w-3 h-3" /> Not ready
+            </span>
+          )}
+        </div>
+        {cycleStatus === 'Draft' && (
+          <button
+            type="button"
+            onClick={() => setShowDeleteModal(true)}
+            className="text-red-500 hover:text-red-700 transition"
+            aria-label={`Remove ${domain.domain?.name ?? domain.domainId}`}
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs font-medium text-muted-foreground mb-1">
+            Challenge version {challengeLocked && <span className="text-muted-foreground/70">(locked — cycle is past Draft)</span>}
+          </label>
+          {challengeLocked ? (
+            <div className="flex items-center gap-2">
+              <div className="flex-1 text-sm text-foreground/80 px-3 py-2 bg-muted/40 rounded-lg">
+                {selectedCvLabel ?? 'No challenge linked'}
+              </div>
+              {selectedCv && (
+                <button
+                  type="button"
+                  onClick={() => setShowChallengePreview(true)}
+                  className="flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-lg border border-border hover:bg-muted/50 text-foreground/70 transition"
+                >
+                  <Eye className="w-3 h-3" /> Preview
+                </button>
+              )}
+            </div>
+          ) : challengeOptions.length === 0 ? (
+            <p className="text-xs text-muted-foreground/70 px-3 py-2 bg-muted/30 rounded-lg">
+              No challenge versions exist for this domain. Create one on the Challenges page.
+            </p>
+          ) : (
+            <Form method="post" className="flex items-end gap-2">
+              <input type="hidden" name="intent" value="hl-set-domain-challenge" />
+              <input type="hidden" name="domainId" value={domain.domainId} />
+              <div className="flex-1 min-w-0">
+                <select
+                  name="challengeVersionId"
+                  value={selectedChallengeId}
+                  onChange={(e) => setSelectedChallengeId(e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  aria-label={`Select challenge version for ${domain.domain?.name ?? domain.domainId}`}
+                >
+                  <option value="" disabled>Select a challenge version...</option>
+                  {challengeOptions.map((cv: any) => (
+                    <option key={cv.id} value={cv.id}>
+                      {cv.challenge?.name ?? 'Untitled'} — {new Date(cv.createdAt).toLocaleDateString()}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {selectedChallengeId && (
+                <button
+                  type="button"
+                  onClick={() => setShowChallengePreview(true)}
+                  className="flex items-center gap-1 px-2 py-2 text-xs font-medium rounded-lg border border-border hover:bg-muted/50 text-foreground/70 transition"
+                >
+                  <Eye className="w-3 h-3" /> Preview
+                </button>
+              )}
+              <button
+                type="submit"
+                className="px-3 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition"
+              >
+                Save
+              </button>
+            </Form>
+          )}
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-muted-foreground mb-1">
+            Rubric version {rubricLocked && <span className="text-muted-foreground/70">(locked — reviews assigned)</span>}
+          </label>
+          {rubricLocked ? (
+            <div className="flex items-center gap-2">
+              <div className="flex-1 text-sm text-foreground/80 px-3 py-2 bg-muted/40 rounded-lg">
+                {currentRubricLabel ?? 'No rubric set'}
+              </div>
+              {currentRubric && (
+                <button
+                  type="button"
+                  onClick={() => setShowRubricPreview(true)}
+                  className="flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-lg border border-border hover:bg-muted/50 text-foreground/70 transition"
+                >
+                  <Eye className="w-3 h-3" /> Preview
+                </button>
+              )}
+            </div>
+          ) : rubricOptions.length === 0 ? (
+            <p className="text-xs text-muted-foreground/70 px-3 py-2 bg-muted/30 rounded-lg">
+              No rubric versions exist. Create one on the Rubrics page.
+            </p>
+          ) : (
+            <Form method="post" className="flex items-end gap-2">
+              <input type="hidden" name="intent" value="hl-set-domain-rubric" />
+              <input type="hidden" name="domainId" value={domain.domainId} />
+              <div className="flex-1 min-w-0">
+                <select
+                  name="rubricVersionId"
+                  value={selectedRubricId}
+                  onChange={(e) => setSelectedRubricId(e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  aria-label={`Select rubric version for ${domain.domain?.name ?? domain.domainId}`}
+                >
+                  <option value="">No rubric assigned</option>
+                  {rubricOptions.map((rv: any) => (
+                    <option key={rv.id} value={rv.id}>
+                      {rv.rubric.name} — v{rv.versionNumber}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {selectedRubricId && (
+                <button
+                  type="button"
+                  onClick={() => setShowRubricPreview(true)}
+                  className="flex items-center gap-1 px-2 py-2 text-xs font-medium rounded-lg border border-border hover:bg-muted/50 text-foreground/70 transition"
+                >
+                  <Eye className="w-3 h-3" /> Preview
+                </button>
+              )}
+              <button
+                type="submit"
+                className="px-3 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition"
+              >
+                Save
+              </button>
+            </Form>
+          )}
+        </div>
+      </div>
+
+      {!readyLocked && (
+        <div className="pt-2 border-t border-border flex items-center justify-between gap-3">
+          <p className="text-xs text-muted-foreground">
+            Force-mark this domain ready to unblock cycle advancement when the domain lead is unavailable.
+          </p>
+          <button
+            type="button"
+            onClick={() => setShowReadyModal(true)}
+            disabled={!isReady && !selectedCv}
+            title={!isReady && !selectedCv ? 'Link a challenge before marking ready' : undefined}
+            className={`px-3 py-1.5 text-sm font-medium rounded-lg transition disabled:opacity-50 ${
+              isReady
+                ? 'bg-card border border-border hover:bg-muted/50 text-foreground/80'
+                : 'bg-amber-600 hover:bg-amber-700 text-white'
+            }`}
+          >
+            {isReady ? 'Unmark Ready' : 'Force Mark Ready'}
+          </button>
+        </div>
+      )}
+
+      {showDeleteModal && (
+        <DeleteDomainModal
+          domain={domain}
+          onClose={() => setShowDeleteModal(false)}
+        />
+      )}
+
+      {showReadyModal && (
+        <ForceReadyModal
+          domain={domain}
+          isReady={isReady}
+          selectedCvLabel={selectedCvLabel}
+          onClose={() => setShowReadyModal(false)}
+        />
+      )}
+
+      {showChallengePreview && previewCv && (
+        <ChallengePreviewModal
+          cv={previewCv}
+          onClose={() => setShowChallengePreview(false)}
+        />
+      )}
+
+      {showRubricPreview && currentRubric && (
+        <RubricPreviewModal
+          rv={currentRubric}
+          onClose={() => setShowRubricPreview(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function ForceReadyModal({
+  domain,
+  isReady,
+  selectedCvLabel,
+  onClose,
+}: {
+  domain: any;
+  isReady: boolean;
+  selectedCvLabel: string | null;
+  onClose: () => void;
+}) {
+  const intent = isReady ? 'hl-force-unmark-ready' : 'hl-force-mark-ready';
+  const headingId = `force-ready-heading-${domain.domainId}`;
+  return (
+    <Modal open onClose={onClose} labelledBy={headingId} containerClassName="bg-card rounded-2xl shadow-xl max-w-md w-full mx-4 p-6">
+      <div className="space-y-4">
+        <h2 id={headingId} className="text-lg font-bold text-foreground">
+          {isReady ? 'Unmark domain as ready?' : 'Override domain lead?'}
+        </h2>
+        <div className="text-sm text-muted-foreground space-y-2">
+          <p>
+            Domain: <span className="font-semibold text-foreground">{domain.domain?.name ?? domain.domainId}</span>
+          </p>
+          <div className="bg-muted/40 rounded-lg p-3 text-xs">
+            <span className="font-medium text-foreground/80">Challenge: </span>
+            {selectedCvLabel ?? <span className="text-amber-700">none</span>}
+          </div>
+          {isReady ? (
+            <p>This will revert the domain back to "not ready" until the domain lead (or a hiring lead) marks it ready again.</p>
+          ) : (
+            <p>This will mark the domain as ready on behalf of the domain lead. Use this when the domain lead is unavailable and the cycle needs to advance.</p>
+          )}
+        </div>
+        <Form method="post" className="flex justify-end gap-2 pt-2">
+          <input type="hidden" name="intent" value={intent} />
+          <input type="hidden" name="domainId" value={domain.domainId} />
+          <input type="hidden" name="confirm" value="true" />
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-border rounded-md hover:bg-muted/50"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className={`px-3 py-2 text-sm font-medium rounded-md text-white ${isReady ? 'bg-red-600 hover:bg-red-700' : 'bg-amber-600 hover:bg-amber-700'}`}
+          >
+            {isReady ? 'Yes, unmark ready' : 'Yes, override domain lead'}
+          </button>
+        </Form>
+      </div>
+    </Modal>
+  );
+}
+
+function DeleteDomainModal({ domain, onClose }: { domain: any; onClose: () => void }) {
+  const headingId = `delete-domain-heading-${domain.domainId}`;
+  return (
+    <Modal open onClose={onClose} labelledBy={headingId} containerClassName="bg-card rounded-2xl shadow-xl max-w-sm w-full mx-4 p-6">
+      <div className="space-y-4">
+        <h2 id={headingId} className="text-lg font-bold text-foreground">Remove domain from cycle?</h2>
+        <p className="text-sm text-muted-foreground">
+          Remove <span className="font-semibold text-foreground">{domain.domain?.name ?? domain.domainId}</span> from this cycle? Any linked challenge version for this domain will be unlinked.
+        </p>
+        <Form method="post" className="flex justify-end gap-2 pt-2">
+          <input type="hidden" name="intent" value="remove-domain" />
+          <input type="hidden" name="domainId" value={domain.domainId} />
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-border rounded-md hover:bg-muted/50"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="px-3 py-2 text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700"
+          >
+            Remove
+          </button>
+        </Form>
+      </div>
+    </Modal>
+  );
+}
+
+function ChallengePreviewModal({ cv, onClose }: { cv: any; onClose: () => void }) {
+  const headingId = `challenge-preview-heading-${cv.id}`;
+  const questions: any[] = (cv.questions as any[]) ?? [];
+  return (
+    <Modal open onClose={onClose} labelledBy={headingId} containerClassName="bg-card rounded-2xl shadow-xl max-w-lg w-full mx-4 p-6 max-h-[80vh] overflow-y-auto">
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 id={headingId} className="text-lg font-bold text-foreground">
+            {cv.challenge?.name ?? 'Challenge'} — preview
+          </h2>
+          <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <p className="text-xs text-muted-foreground">Created {new Date(cv.createdAt).toLocaleDateString()}</p>
+        {questions.length === 0 ? (
+          <p className="text-sm text-muted-foreground/70 italic">No questions in this version.</p>
+        ) : (
+          <div className="border border-border rounded-lg divide-y divide-border">
+            {questions.map((q: any, i: number) => (
+              <div key={q.key ?? i} className="px-4 py-3">
+                <span className="text-xs font-medium text-muted-foreground/70 uppercase tracking-wide mr-2">Q{i + 1}</span>
+                <span className="text-sm text-foreground/80">{q.data?.label ?? q.label}</span>
+                {q.required && <span className="ml-2 text-xs text-red-500">required</span>}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+function RubricPreviewModal({ rv, onClose }: { rv: any; onClose: () => void }) {
+  const headingId = `rubric-preview-heading-${rv.id}`;
+  const criteria: any[] = (rv.criteria as any[]) ?? [];
+  return (
+    <Modal open onClose={onClose} labelledBy={headingId} containerClassName="bg-card rounded-2xl shadow-xl max-w-lg w-full mx-4 p-6 max-h-[80vh] overflow-y-auto">
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 id={headingId} className="text-lg font-bold text-foreground">
+            {rv.rubric?.name ?? 'Rubric'} — v{rv.versionNumber}
+          </h2>
+          <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        {criteria.length === 0 ? (
+          <p className="text-sm text-muted-foreground/70 italic">No criteria in this version.</p>
+        ) : (
+          <div className="space-y-3">
+            {criteria.map((c: any) => (
+              <div key={c.key} className="border border-border rounded-lg p-3">
+                <div className="flex items-center justify-between mb-1">
+                  <h4 className="text-sm font-semibold text-foreground">{c.label}</h4>
+                  <span className="text-xs text-muted-foreground">Max: {c.maxScore}</span>
+                </div>
+                {c.description && (
+                  <p className="text-xs text-muted-foreground">{c.description}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
 function GeneralFormPicker({ currentCvId, currentCvName, options, locked }: {
   currentCvId: string | null;
   currentCvName: string | null;
@@ -1426,6 +2206,134 @@ function GeneralFormPicker({ currentCvId, currentCvName, options, locked }: {
         </Form>
       ) : (
         <p className="text-xs text-muted-foreground/70">No general forms available. Create a challenge with no domain on the Challenges page first.</p>
+      )}
+    </div>
+  );
+}
+
+const DECISION_EMAIL_SLOTS = [
+  { type: "Rejected", label: "Rejected", description: "Sent when a Rejected decision is released to the applicant." },
+  { type: "InvitedToInterview", label: "Invited to Interview", description: "Sent when an applicant is invited to interview." },
+  { type: "Waitlisted", label: "Waitlisted", description: "Sent when an applicant is placed on the waitlist." },
+  { type: "Accepted", label: "Accepted", description: "Sent when an applicant is offered a spot." },
+] as const;
+
+function DecisionEmailsSection({ emailTemplates, currentDecisionEmails, releasedDecisionTypes }: {
+  emailTemplates: any[];
+  currentDecisionEmails: any[];
+  releasedDecisionTypes: string[];
+}) {
+  return (
+    <div className="bg-card rounded-xl border border-border shadow-sm p-6 space-y-4">
+      <div>
+        <h3 className="text-sm font-bold text-foreground/80">Decision Emails</h3>
+        <p className="text-xs text-muted-foreground">
+          Pick which template fires when each decision type is released. Slots without a binding will not send an email.
+          Once a decision of a given type has been released, its slot locks for this cycle.
+        </p>
+      </div>
+      <div className="space-y-3">
+        {DECISION_EMAIL_SLOTS.map((slot) => {
+          const binding = currentDecisionEmails.find((b: any) => b.decisionType === slot.type);
+          const locked = releasedDecisionTypes.includes(slot.type);
+          return (
+            <DecisionEmailPicker
+              key={slot.type}
+              slot={slot}
+              binding={binding ?? null}
+              emailTemplates={emailTemplates}
+              locked={locked}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function DecisionEmailPicker({ slot, binding, emailTemplates, locked }: {
+  slot: { type: string; label: string; description: string };
+  binding: any | null;
+  emailTemplates: any[];
+  locked: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const currentVersionId: string | null = binding?.emailTemplateVersionId ?? null;
+  const currentLabel = binding
+    ? `${binding.emailTemplateVersion.template.name} — v${binding.emailTemplateVersion.versionNumber}`
+    : null;
+
+  return (
+    <div className="border border-border rounded-lg p-4 space-y-2">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h4 className="text-sm font-bold text-foreground">{slot.label}</h4>
+          <p className="text-xs text-muted-foreground">{slot.description}</p>
+        </div>
+        {!editing && !locked && (
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="text-xs text-blue-600 hover:text-blue-800 font-medium shrink-0"
+          >
+            {currentLabel ? "Change" : "Assign"}
+          </button>
+        )}
+      </div>
+
+      {locked ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <CheckCircle className="w-4 h-4 text-green-600" />
+          <span>{currentLabel ?? "No template assigned"}</span>
+          <span className="text-xs text-muted-foreground/70 ml-2">(locked — decisions of this type already released)</span>
+        </div>
+      ) : !editing ? (
+        currentLabel ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <CheckCircle className="w-4 h-4 text-green-600" />
+            <span>{currentLabel}</span>
+          </div>
+        ) : (
+          <div className="text-sm text-orange-700 bg-orange-50 border border-orange-200 rounded px-2 py-1">
+            No template assigned — releasing a {slot.label} decision will not send an email.
+          </div>
+        )
+      ) : (
+        <Form method="post" className="flex items-end gap-2 flex-wrap" onSubmit={() => setEditing(false)}>
+          <input type="hidden" name="intent" value="set-decision-email" />
+          <input type="hidden" name="decisionType" value={slot.type} />
+          <div className="flex-1 min-w-[14rem]">
+            <select
+              name="emailTemplateVersionId"
+              defaultValue={currentVersionId ?? ""}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            >
+              <option value="">No template (skip email)</option>
+              {emailTemplates
+                .filter((t: any) => t.versions.length > 0)
+                .flatMap((t: any) =>
+                  t.versions.map((v: any) => (
+                    <option key={v.id} value={v.id}>
+                      {t.name} — v{v.versionNumber}
+                    </option>
+                  ))
+                )}
+            </select>
+          </div>
+          <button
+            type="submit"
+            className="px-3 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition"
+          >
+            Save
+          </button>
+          <button
+            type="button"
+            onClick={() => setEditing(false)}
+            className="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground"
+          >
+            Cancel
+          </button>
+        </Form>
       )}
     </div>
   );

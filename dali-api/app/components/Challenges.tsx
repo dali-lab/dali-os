@@ -158,7 +158,11 @@ export default function Challenges() {
               className="space-y-4"
             >
               <input type="hidden" name="intent" value="create" />
-              {!isGeneral && <input type="hidden" name="domainId" value={activeTab} />}
+              {isGeneral ? (
+                <input type="hidden" name="general" value="1" />
+              ) : (
+                <input type="hidden" name="domainId" value={activeTab} />
+              )}
               <div>
                 <label className="block text-sm font-medium text-foreground/80 mb-1">
                   Challenge Name <span className="text-red-500">*</span>

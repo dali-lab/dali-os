@@ -183,10 +183,11 @@ async function assignInterviewersWithTx(
     where: { applicationCycleId: cycleId },
     select: { id: true },
   });
-  if (cycleInterviewers.length > 0) {
-    const ids = cycleInterviewers.map((i) => i.id);
-    await tx.$executeRaw`SELECT id FROM "CycleInterviewer" WHERE id = ANY(${ids}::text[]) FOR UPDATE`;
+  if (cycleInterviewers.length === 0) {
+    throw new Error("No interviewers have been configured for this cycle. Contact the hiring lead.");
   }
+  const ids = cycleInterviewers.map((i) => i.id);
+  await tx.$executeRaw`SELECT id FROM "CycleInterviewer" WHERE id = ANY(${ids}::text[]) FOR UPDATE`;
 
   const interviewers = await tx.cycleInterviewer.findMany({
     where: { applicationCycleId: cycleId },
@@ -249,6 +250,13 @@ async function assignInterviewersWithTx(
     throw new Error("No cross-domain interviewer available for this slot");
   }
 
+  // Nested write: Prisma issues the parent Interview and both
+  // InterviewAssignment rows inside the same transaction `tx`, so a constraint
+  // failure on either assignment rolls the Interview back. Splitting this into
+  // separate `tx.interview.create` + `tx.interviewAssignment.create` calls
+  // would still rollback together, but only if the throw escapes `tx` — the
+  // post-create length check below guards against a future refactor that
+  // accidentally swallows the error.
   const interview = await tx.interview.create({
     data: {
       domainApplicationId,
@@ -273,6 +281,10 @@ async function assignInterviewersWithTx(
     },
     include: { assignments: true },
   });
+
+  if (interview.assignments.length !== 2) {
+    throw new Error("Interview created without expected assignments");
+  }
 
   return interview;
 }

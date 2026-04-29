@@ -23,32 +23,30 @@ export const links: Route.LinksFunction = () => [
   },
 ];
 
+export const meta: Route.MetaFunction = () => [{ title: "DALI OS" }];
+
 export function Layout({ children }: { children: React.ReactNode }) {
-  // Inject the collab WebSocket URL into the client so CollaborativeEditor can
-  // connect. This value is only computed server-side; on the client we rely on
-  // the DOM already containing the serialized script. `suppressHydrationWarning`
-  // prevents React from complaining about the server/client value difference.
+  // Published as a <meta> tag rather than an inline <script> so that
+  // `script-src 'self'` in the CSP can stay strict. Only computed server-side;
+  // on the client the DOM already carries it.
   const collabUrl =
     typeof window === "undefined"
       ? process.env.COLLAB_URL ??
         `ws://localhost:${process.env.COLLAB_PORT ?? "3002"}`
-      : (window as any).__COLLAB_URL ?? "";
+      : document
+          .querySelector('meta[name="collab-url"]')
+          ?.getAttribute("content") ?? "";
 
   return (
     <html lang="en">
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="collab-url" content={collabUrl} suppressHydrationWarning />
         <Meta />
         <Links />
       </head>
       <body>
-        <script
-          suppressHydrationWarning
-          dangerouslySetInnerHTML={{
-            __html: `window.__COLLAB_URL=${JSON.stringify(collabUrl)};`,
-          }}
-        />
         {children}
         <ScrollRestoration />
         <Scripts />

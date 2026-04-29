@@ -7,6 +7,8 @@ import { requireAuth } from "~/lib/auth";
 const OAUTH_STATE_COOKIE = "__dali_oauth_state";
 const ACCOUNT_TYPE_COOKIE = "__dali_account_type";
 
+export const meta: Route.MetaFunction = () => [{ title: "Sign in · DALI OS" }];
+
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (auth.ok) {

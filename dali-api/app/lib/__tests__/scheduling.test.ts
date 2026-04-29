@@ -462,6 +462,29 @@ describe("assignInterviewers", () => {
     ).rejects.toThrow("No interview config for this cycle");
   });
 
+  it("throws a clear error when the cycle has no interviewers configured", async () => {
+    mockPrisma.$transaction.mockImplementation(async (fn: any) => {
+      const tx = {
+        interviewConfig: { findUnique: vi.fn().mockResolvedValue({ bufferMinutes: 15 }) },
+        cycleInterviewer: {
+          findMany: vi.fn().mockResolvedValueOnce([]),
+        },
+        $executeRaw: vi.fn().mockResolvedValue(0),
+      };
+      return fn(tx);
+    });
+
+    await expect(
+      assignInterviewers(
+        "cycle1",
+        "app1",
+        ["domain1"],
+        new Date("2026-04-13T14:00:00Z"),
+        new Date("2026-04-13T14:30:00Z"),
+      ),
+    ).rejects.toThrow("No interviewers have been configured for this cycle. Contact the hiring lead.");
+  });
+
   it("throws when no in-domain reviewer is available", async () => {
     const onlyCrossDomain = [
       {
@@ -617,6 +640,124 @@ describe("assignInterviewers", () => {
     const createArgs = capturedCreate.mock.calls[0][0];
     const inDomain = createArgs.data.assignments.create.find((a: any) => a.role === "InDomain");
     expect(inDomain.cycleInterviewerId).toBe("r-bob");
+  });
+
+  // Regression for #258: a constraint failure inside the nested
+  // interview.create write must propagate so the surrounding $transaction rolls
+  // back, leaving no Interview row behind. The function must not attempt any
+  // compensating cleanup writes — rollback handles it.
+  it("rejects and performs no compensating writes when interview.create fails", async () => {
+    const interviewers = [
+      {
+        id: "r1",
+        daliMemberId: "m1",
+        domainId: "domain1",
+        availabilityBlocks: [
+          { startTime: new Date("2026-04-13T13:00:00Z"), endTime: new Date("2026-04-13T17:00:00Z") },
+        ],
+        interviewAssignments: [],
+      },
+      {
+        id: "r2",
+        daliMemberId: "m2",
+        domainId: "domain-other",
+        availabilityBlocks: [
+          { startTime: new Date("2026-04-13T13:00:00Z"), endTime: new Date("2026-04-13T17:00:00Z") },
+        ],
+        interviewAssignments: [],
+      },
+    ];
+    const interviewCreate = vi.fn().mockRejectedValue(
+      Object.assign(new Error("Unique constraint failed"), { code: "P2002" }),
+    );
+    const interviewUpdate = vi.fn();
+    const assignmentCreate = vi.fn();
+    const assignmentUpdate = vi.fn();
+    mockPrisma.$transaction.mockImplementation(async (fn: any) => {
+      const tx = {
+        interviewConfig: { findUnique: vi.fn().mockResolvedValue({ bufferMinutes: 15 }) },
+        cycleInterviewer: {
+          findMany: vi.fn()
+            .mockResolvedValueOnce(interviewers.map((i) => ({ id: i.id })))
+            .mockResolvedValueOnce(interviewers),
+        },
+        interview: { create: interviewCreate, update: interviewUpdate },
+        interviewAssignment: { create: assignmentCreate, update: assignmentUpdate },
+        $executeRaw: vi.fn().mockResolvedValue(0),
+      };
+      return fn(tx);
+    });
+
+    await expect(
+      assignInterviewers(
+        "cycle1",
+        "app1",
+        ["domain1"],
+        new Date("2026-04-13T14:00:00Z"),
+        new Date("2026-04-13T14:30:00Z"),
+      ),
+    ).rejects.toThrow("Unique constraint failed");
+
+    expect(interviewCreate).toHaveBeenCalledTimes(1);
+    expect(interviewUpdate).not.toHaveBeenCalled();
+    expect(assignmentCreate).not.toHaveBeenCalled();
+    expect(assignmentUpdate).not.toHaveBeenCalled();
+  });
+
+  // Defense-in-depth for #258: if a future refactor splits the nested write
+  // and leaves the Interview without its two assignments, the post-create
+  // length check must throw so the surrounding transaction rolls back.
+  it("throws when interview.create returns fewer than two assignments", async () => {
+    const interviewers = [
+      {
+        id: "r1",
+        daliMemberId: "m1",
+        domainId: "domain1",
+        availabilityBlocks: [
+          { startTime: new Date("2026-04-13T13:00:00Z"), endTime: new Date("2026-04-13T17:00:00Z") },
+        ],
+        interviewAssignments: [],
+      },
+      {
+        id: "r2",
+        daliMemberId: "m2",
+        domainId: "domain-other",
+        availabilityBlocks: [
+          { startTime: new Date("2026-04-13T13:00:00Z"), endTime: new Date("2026-04-13T17:00:00Z") },
+        ],
+        interviewAssignments: [],
+      },
+    ];
+    mockPrisma.$transaction.mockImplementation(async (fn: any) => {
+      const tx = {
+        interviewConfig: { findUnique: vi.fn().mockResolvedValue({ bufferMinutes: 15 }) },
+        cycleInterviewer: {
+          findMany: vi.fn()
+            .mockResolvedValueOnce(interviewers.map((i) => ({ id: i.id })))
+            .mockResolvedValueOnce(interviewers),
+        },
+        interview: {
+          create: vi.fn().mockResolvedValue({
+            id: "int1",
+            assignments: [
+              { cycleInterviewerId: "r1", role: "InDomain", status: "Active" },
+            ],
+          }),
+        },
+        $executeRaw: vi.fn().mockResolvedValue(0),
+      };
+      return fn(tx);
+    });
+
+    await expect(
+      assignInterviewers(
+        "cycle1",
+        "app1",
+        ["domain1"],
+        new Date("2026-04-13T14:00:00Z"),
+        new Date("2026-04-13T14:30:00Z"),
+      ),
+    ).rejects.toThrow("Interview created without expected assignments");
   });
 });
 

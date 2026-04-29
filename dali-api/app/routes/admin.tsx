@@ -20,6 +20,8 @@ const STATUS_COLORS: Record<string, string> = {
   Completed: "bg-blue-100 text-blue-700",
 };
 
+export const meta: Route.MetaFunction = () => [{ title: "Hiring lead · DALI OS" }];
+
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");

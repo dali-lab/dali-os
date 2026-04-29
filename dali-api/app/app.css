@@ -156,10 +156,60 @@
   .border-purple-200 { border-color: hsl(270 25% 30%) !important; }
   .hover\:text-purple-600:hover { color: hsl(270 58% 78%) !important; }
 
-  /* border-gray-300 → use border token */
+  /* gray scale → dark equivalents */
+  .bg-white { background-color: hsl(215 32% 15%) !important; }
+  .text-black { color: hsl(210 20% 95%) !important; }
+  .bg-gray-50 { background-color: hsl(215 28% 14%) !important; }
+  .bg-gray-100 { background-color: hsl(215 28% 18%) !important; }
+  .bg-gray-200 { background-color: hsl(215 25% 22%) !important; }
+  .bg-gray-300 { background-color: hsl(215 22% 28%) !important; }
+  .bg-gray-700 { background-color: hsl(215 22% 30%) !important; }
+  .bg-gray-800 { background-color: hsl(215 25% 25%) !important; }
+  .bg-gray-900 { background-color: hsl(215 28% 22%) !important; }
+  .text-gray-300, .text-gray-400 { color: hsl(210 15% 70%) !important; }
+  .text-gray-500 { color: hsl(210 15% 65%) !important; }
+  .text-gray-600 { color: hsl(210 15% 72%) !important; }
+  .text-gray-700 { color: hsl(210 18% 82%) !important; }
+  .text-gray-800, .text-gray-900 { color: hsl(210 20% 95%) !important; }
+  .border-gray-100 { border-color: hsl(215 25% 22%) !important; }
+  .border-gray-200 { border-color: hsl(215 25% 25%) !important; }
   .border-gray-300 { border-color: hsl(215 25% 28%) !important; }
   .border-gray-400 { border-color: hsl(215 20% 35%) !important; }
   .border-gray-700 { border-color: hsl(215 20% 30%) !important; }
+  .hover\:bg-gray-50:hover { background-color: hsl(215 28% 16%) !important; }
+  .hover\:bg-gray-100:hover { background-color: hsl(215 28% 20%) !important; }
+  .hover\:bg-gray-200:hover { background-color: hsl(215 25% 24%) !important; }
+  .hover\:bg-gray-700:hover { background-color: hsl(215 22% 32%) !important; }
+  .hover\:text-gray-700:hover { color: hsl(210 18% 82%) !important; }
+  .hover\:text-gray-800:hover { color: hsl(210 20% 95%) !important; }
+
+  /* purple scale */
+  .bg-purple-50 { background-color: hsl(270 30% 16%) !important; }
+  .bg-purple-100 { background-color: hsl(270 30% 22%) !important; }
+  .text-purple-500, .text-purple-600 { color: hsl(270 75% 75%) !important; }
+  .text-purple-700, .text-purple-800 { color: hsl(270 75% 82%) !important; }
+  .text-purple-900 { color: hsl(270 75% 88%) !important; }
+  .border-purple-200 { border-color: hsl(270 30% 30%) !important; }
+  .bg-purple-600 { background-color: hsl(270 50% 45%) !important; }
+  .bg-purple-700 { background-color: hsl(270 50% 38%) !important; }
+
+  /* orange scale */
+  .bg-orange-50 { background-color: hsl(25 35% 14%) !important; }
+  .bg-orange-100 { background-color: hsl(25 35% 18%) !important; }
+  .text-orange-500, .text-orange-600 { color: hsl(25 90% 65%) !important; }
+  .text-orange-700, .text-orange-800 { color: hsl(25 90% 72%) !important; }
+  .border-orange-200 { border-color: hsl(25 35% 28%) !important; }
+  .bg-orange-500 { background-color: hsl(25 75% 50%) !important; }
+  .bg-orange-600 { background-color: hsl(25 75% 42%) !important; }
+
+  /* pink scale */
+  .bg-pink-50 { background-color: hsl(340 35% 16%) !important; }
+  .bg-pink-100 { background-color: hsl(340 35% 20%) !important; }
+  .text-pink-500, .text-pink-600 { color: hsl(340 75% 72%) !important; }
+  .text-pink-700, .text-pink-800 { color: hsl(340 75% 80%) !important; }
+  .border-pink-200 { border-color: hsl(340 35% 30%) !important; }
+  .bg-pink-500 { background-color: hsl(340 65% 55%) !important; }
+  .bg-pink-600 { background-color: hsl(340 65% 48%) !important; }
 
   /* white/light-gray surfaces → card / muted surfaces */
   .bg-white { background-color: var(--color-card) !important; }

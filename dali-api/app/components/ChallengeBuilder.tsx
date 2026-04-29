@@ -1,25 +1,91 @@
 import React, { useCallback, useState, useRef } from 'react'
-import { GripVertical, Plus, Pencil, Trash2, Save, X } from 'lucide-react'
+import { GripVertical, Plus, Pencil, Trash2, Save } from 'lucide-react'
 import type { Question } from '~/types'
-import { domains } from '~/mockData'
+import { RichTextEditor } from '~/components/RichTextEditor'
+
+export interface BuildQuestionInput {
+  key: string
+  type: Question['type']
+  required: boolean
+  label: string
+  description?: string
+  optionsText?: string
+  accept?: string
+  showForRoles?: string[]
+  afterDomains?: boolean
+  isGeneralForm?: boolean
+  maxWordsEnabled?: boolean
+  maxWordsValue?: number | string
+}
+
+export function buildQuestion(input: BuildQuestionInput): Question {
+  const {
+    key,
+    type,
+    required,
+    label,
+    description,
+    optionsText,
+    accept,
+    showForRoles,
+    afterDomains,
+    isGeneralForm,
+    maxWordsEnabled,
+    maxWordsValue,
+  } = input
+
+  let maxWords: number | undefined
+  if (type === 'textarea' && maxWordsEnabled) {
+    const raw =
+      typeof maxWordsValue === 'number' ? maxWordsValue : String(maxWordsValue ?? '').trim()
+    const parsed = raw === '' ? NaN : Number(raw)
+    if (Number.isInteger(parsed) && parsed >= 1) {
+      maxWords = parsed
+    }
+  }
+
+  return {
+    key,
+    type,
+    required,
+    data: {
+      label,
+      description: description || undefined,
+      options:
+        type === 'select' || type === 'skills_rating'
+          ? (optionsText ?? '').split('\n').filter((o) => o.trim() !== '')
+          : undefined,
+      accept: type === 'file' ? accept || undefined : undefined,
+      showForRoles: showForRoles && showForRoles.length > 0 ? showForRoles : undefined,
+      afterDomains: isGeneralForm && afterDomains ? true : undefined,
+      maxWords,
+    },
+  }
+}
+
 interface FormBuilderTabProps {
   initialQuestions?: Question[]
-  onSave?: (questions: Question[]) => void
+  initialDescription?: unknown
+  onSave?: (payload: { questions: Question[]; description: unknown }) => void
   onCancel?: () => void
   isGeneralForm?: boolean
 }
 export function FormBuilderTab({
   initialQuestions = [],
+  initialDescription,
   onSave,
   onCancel,
   isGeneralForm = false,
 }: FormBuilderTabProps) {
   const [questions, setQuestions] = useState<Question[]>(initialQuestions)
+  const [description, setDescription] = useState<unknown>(initialDescription ?? null)
   const [editingKey, setEditingKey] = useState<string | null>(null)
   const [isAdding, setIsAdding] = useState(false)
   const [editForm, setEditForm] = useState<Partial<Question>>({})
   const [optionsText, setOptionsText] = useState('')
   const [showForRoles, setShowForRoles] = useState<string[]>([])
+  const [maxWordsEnabled, setMaxWordsEnabled] = useState(false)
+  const [maxWordsValue, setMaxWordsValue] = useState<string>('')
   // Drag and drop state
   const dragItemRef = useRef<number | null>(null)
   const dragOverItemRef = useRef<number | null>(null)
@@ -60,11 +126,22 @@ export function FormBuilderTab({
     dragOverItemRef.current = null
     setIsDragging(false)
   }
+  const resetEditState = () => {
+    setEditingKey(null)
+    setIsAdding(false)
+    setEditForm({})
+    setOptionsText('')
+    setShowForRoles([])
+    setMaxWordsEnabled(false)
+    setMaxWordsValue('')
+  }
   const handleEdit = (q: Question) => {
     setEditingKey(q.key)
     setEditForm(q)
     setOptionsText(q.data.options?.join('\n') || '')
     setShowForRoles(q.data.showForRoles || [])
+    setMaxWordsEnabled(q.data.maxWords !== undefined)
+    setMaxWordsValue(q.data.maxWords !== undefined ? String(q.data.maxWords) : '')
     setIsAdding(false)
   }
   const handleDelete = (key: string) => {
@@ -72,22 +149,20 @@ export function FormBuilderTab({
   }
   const handleSaveEdit = () => {
     if (!editForm.key || !editForm.data?.label) return
-    const updatedQuestion: Question = {
+    const updatedQuestion = buildQuestion({
       key: editForm.key,
       type: editForm.type || 'text',
       required: editForm.required || false,
-      data: {
-        label: editForm.data.label,
-        description: editForm.data.description,
-        options:
-          (editForm.type === 'select' || editForm.type === 'skills_rating')
-            ? optionsText.split('\n').filter((o) => o.trim() !== '')
-            : undefined,
-        accept: editForm.type === 'file' ? (editForm.data.accept || undefined) : undefined,
-        showForRoles: showForRoles.length > 0 ? showForRoles : undefined,
-        afterDomains: isGeneralForm && editForm.data.afterDomains ? true : undefined,
-      },
-    }
+      label: editForm.data.label,
+      description: editForm.data.description,
+      optionsText,
+      accept: editForm.data.accept,
+      showForRoles,
+      afterDomains: editForm.data.afterDomains,
+      isGeneralForm,
+      maxWordsEnabled,
+      maxWordsValue,
+    })
     if (isAdding) {
       setQuestions([...questions, updatedQuestion])
     } else {
@@ -95,18 +170,10 @@ export function FormBuilderTab({
         questions.map((q) => (q.key === editingKey ? updatedQuestion : q)),
       )
     }
-    setEditingKey(null)
-    setIsAdding(false)
-    setEditForm({})
-    setOptionsText('')
-    setShowForRoles([])
+    resetEditState()
   }
   const handleCancelEdit = () => {
-    setEditingKey(null)
-    setIsAdding(false)
-    setEditForm({})
-    setOptionsText('')
-    setShowForRoles([])
+    resetEditState()
   }
   const handleAddQuestion = () => {
     setIsAdding(true)
@@ -121,13 +188,8 @@ export function FormBuilderTab({
     })
     setOptionsText('')
     setShowForRoles([])
-  }
-  const toggleRole = (roleId: string) => {
-    setShowForRoles((prev) =>
-      prev.includes(roleId)
-        ? prev.filter((id) => id !== roleId)
-        : [...prev, roleId],
-    )
+    setMaxWordsEnabled(false)
+    setMaxWordsValue('')
   }
   const renderEditForm = (isNew: boolean) => {
     return (
@@ -235,6 +297,31 @@ export function FormBuilderTab({
             />
           </div>
 
+          {editForm.type === 'textarea' && (
+            <div className="col-span-2 flex flex-wrap items-center gap-3">
+              <label className="flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={maxWordsEnabled}
+                  onChange={(e) => setMaxWordsEnabled(e.target.checked)}
+                  className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
+                />
+                <span className="ml-2 text-sm text-foreground/80">Limit word count</span>
+              </label>
+              <input
+                type="number"
+                min={1}
+                step={1}
+                disabled={!maxWordsEnabled}
+                value={maxWordsValue}
+                onChange={(e) => setMaxWordsValue(e.target.value)}
+                className="w-28 rounded-md border border-gray-300 bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2 disabled:bg-muted disabled:text-muted-foreground"
+                placeholder="e.g. 200"
+              />
+              <span className="text-xs text-muted-foreground">words</span>
+            </div>
+          )}
+
           {editForm.type === 'select' && (
             <div className="col-span-2">
               <label className="block text-sm font-medium text-foreground/80 mb-1">
@@ -293,7 +380,7 @@ export function FormBuilderTab({
 
         <div className="flex justify-end gap-3 pt-2">
           <button
-            onClick={() => (isNew ? setIsAdding(false) : setEditingKey(null))}
+            onClick={handleCancelEdit}
             className="px-3 py-1.5 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-foreground/80 bg-card hover:bg-muted/50"
           >
             Cancel
@@ -310,6 +397,19 @@ export function FormBuilderTab({
   }
   return (
     <div className="space-y-6">
+      <div>
+        <label className="block text-sm font-medium text-foreground/80 mb-1">
+          Description (Optional)
+        </label>
+        <p className="text-xs text-muted-foreground mb-2">
+          Shown to applicants and reviewers above the question list.
+        </p>
+        <RichTextEditor
+          value={description}
+          onChange={setDescription}
+          placeholder="Describe this challenge for applicants…"
+        />
+      </div>
       <div className="space-y-2" onDragOver={handleDragOver}>
         {questions.map((q, index) => (
           <div
@@ -352,6 +452,11 @@ export function FormBuilderTab({
                     {q.data.afterDomains && (
                       <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-800">
                         After Domains
+                      </span>
+                    )}
+                    {q.type === 'textarea' && q.data.maxWords !== undefined && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-800">
+                        Max {q.data.maxWords} words
                       </span>
                     )}
                     <span className="text-xs font-medium text-muted-foreground bg-muted px-2 py-0.5 rounded-full capitalize">
@@ -426,7 +531,7 @@ export function FormBuilderTab({
         )}
         {onSave && (
           <button
-            onClick={() => onSave(questions)}
+            onClick={() => onSave({ questions, description })}
             className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-green-600 hover:bg-green-700 shadow-sm"
           >
             <Save className="w-4 h-4 mr-2" />
