@@ -19,11 +19,18 @@ const mockPrisma = prisma as unknown as {
   user: { findUnique: ReturnType<typeof vi.fn> };
 };
 
-function makeRequest() {
+function makeRequest(
+  overrides: { to?: string; subject?: string; html?: string } = {},
+) {
+  const payload = {
+    to: overrides.to ?? "x@y.com",
+    subject: overrides.subject ?? "Hi",
+    html: overrides.html ?? "<p>hi</p>",
+  };
   return new Request("http://localhost/api/email/send", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ to: "x@y.com", subject: "Hi", html: "<p>hi</p>" }),
+    body: JSON.stringify(payload),
   });
 }
 
@@ -78,6 +85,57 @@ describe("POST /api/email/send rate limiting", () => {
       const res = await action({ request: makeRequest() } as any);
       expect(res.status).toBe(401);
     }
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/email/send recipient and header validation", () => {
+  it("accepts a syntactically valid recipient", async () => {
+    const res = await action({ request: makeRequest({ to: "applicant@example.com" }) } as any);
+    expect(res.status).toBe(200);
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects a recipient missing an @", async () => {
+    const res = await action({ request: makeRequest({ to: "not-an-email" }) } as any);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "Invalid recipient email" });
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it("rejects a recipient missing a TLD", async () => {
+    const res = await action({ request: makeRequest({ to: "user@host" }) } as any);
+    expect(res.status).toBe(400);
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it("rejects CRLF in the recipient", async () => {
+    const res = await action({
+      request: makeRequest({ to: "x@y.com\r\nBcc: attacker@evil.com" }),
+    } as any);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: "to and subject must not contain line breaks",
+    });
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it("rejects CRLF in the subject", async () => {
+    const res = await action({
+      request: makeRequest({ subject: "Hi\r\nReply-To: attacker@evil.com" }),
+    } as any);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: "to and subject must not contain line breaks",
+    });
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it("rejects a bare LF in the recipient", async () => {
+    const res = await action({
+      request: makeRequest({ to: "x@y.com\nBcc: attacker@evil.com" }),
+    } as any);
+    expect(res.status).toBe(400);
     expect(sendEmail).not.toHaveBeenCalled();
   });
 });
