@@ -9,8 +9,12 @@
 import { requireAuth } from '~/lib/auth'
 import { prisma } from '~/lib/db'
 import { sendEmail } from '~/lib/gmail'
+import { checkRateLimit } from '~/lib/rate-limit'
 
 const GMAIL_USER = 'applications@dali.dartmouth.edu'
+
+const RATE_LIMIT_MAX = 100
+const RATE_LIMIT_WINDOW_MS = 60_000
 
 async function getGmailRefreshToken(): Promise<string> {
   const user = await prisma.user.findUnique({
@@ -26,6 +30,9 @@ async function getGmailRefreshToken(): Promise<string> {
 export async function action({ request }: { request: Request }) {
   const auth = await requireAuth(request)
   if (!auth.ok) return Response.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const limited = checkRateLimit(request, { max: RATE_LIMIT_MAX, windowMs: RATE_LIMIT_WINDOW_MS }, auth.user.sub)
+  if (limited) return limited
 
   let body: Record<string, unknown>
   try {
