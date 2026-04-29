@@ -2024,6 +2024,18 @@ async function main() {
         domainId: r.domainId,
       },
     });
+
+    // Sign the confidentiality agreement so reviewers/interviewers can access
+    // sensitive cycle data in E2E tests.
+    await prisma.confidentialityAgreementSignature.upsert({
+      where: { userId_applicationCycleId: { userId: user.id, applicationCycleId: cycle.id } },
+      update: {},
+      create: {
+        userId: user.id,
+        applicationCycleId: cycle.id,
+        confidentialityAgreementVersionId: "cav-fall-2026-v1",
+      },
+    });
   }
 
   // ── Engineering reviewers for Winter 2027 ──────────────────────────────────

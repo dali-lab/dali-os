@@ -39,6 +39,9 @@ beforeEach(() => {
   (mockPrisma as any).decision = { findMany: vi.fn() };
   (mockPrisma as any).emailTemplate = { findMany: vi.fn() };
   (mockPrisma as any).cycleDecisionEmail = { findMany: vi.fn() };
+  (mockPrisma as any).confidentialityAgreement = { findMany: vi.fn().mockResolvedValue([]) };
+  (mockPrisma as any).cycleConfidentialityAgreement = { findUnique: vi.fn().mockResolvedValue(null) };
+  (mockPrisma as any).confidentialityAgreementSignature = { count: vi.fn().mockResolvedValue(0) };
 
   mockPrisma.applicationCycle.findUniqueOrThrow.mockResolvedValue({
     id: CYCLE_ID,
