@@ -22,6 +22,8 @@ const STATUS_LABELS: Record<string, string> = {
   CancelledByAdmin: 'Cancelled',
 }
 
+export const meta: Route.MetaFunction = () => [{ title: 'Interviewer · DALI OS' }]
+
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request)
   if (!auth.ok) throw redirect('/login')

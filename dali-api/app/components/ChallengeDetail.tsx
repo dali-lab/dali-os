@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Link, useLoaderData, useSubmit, useSearchParams, useNavigation, Form } from 'react-router'
 import { ArrowLeft, Plus, FileText, Clock, UserIcon } from 'lucide-react'
 import { FormBuilderTab } from '~/components/ChallengeBuilder'
+import { RichTextViewer, isEmptyDoc } from '~/components/RichTextViewer'
 import type { Question } from '~/types'
 import type { loader } from '~/routes/admin.challenges.$id'
 
@@ -12,6 +13,26 @@ function formatDateTime(iso: string | Date) {
     ' at ' +
     d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
   )
+}
+
+export function resolveChallengeFormDefaults({
+  domains,
+  versions,
+  generalParam,
+  domainIdParam,
+}: {
+  domains: { id: string; name: string }[]
+  versions: { domainId: string | null }[]
+  generalParam: string | null
+  domainIdParam: string | null
+}): { defaultDomainId: string; isGeneralForm: boolean } {
+  const isGeneralIntent = generalParam === '1'
+  const lastVersion = versions.length ? versions[versions.length - 1] : null
+  const defaultDomainId = isGeneralIntent
+    ? ''
+    : (domainIdParam ?? lastVersion?.domainId ?? domains.find((d) => d.name !== 'General')?.id ?? domains[0]?.id ?? '')
+  const isGeneralForm = isGeneralIntent || versions.some((v) => v.domainId === null)
+  return { defaultDomainId, isGeneralForm }
 }
 
 export function ChallengeDetail() {
@@ -27,14 +48,18 @@ export function ChallengeDetail() {
   ]
 
   const lastVersion = challenge.versions.length ? challenge.versions[challenge.versions.length - 1] : null
-  const defaultDomainId = searchParams.get('domainId') ?? lastVersion?.domainId ?? domains.find((d) => d.name !== 'General')?.id ?? domains[0]?.id ?? ''
+  const { defaultDomainId, isGeneralForm } = resolveChallengeFormDefaults({
+    domains,
+    versions: challenge.versions,
+    generalParam: searchParams.get('general'),
+    domainIdParam: searchParams.get('domainId'),
+  })
 
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(lastVersion?.id ?? null)
   const [isCreatingVersion, setIsCreatingVersion] = useState(false)
   const [selectedDomainId, setSelectedDomainId] = useState<string>(defaultDomainId)
 
   const selectedVersion = challenge.versions.find((v) => v.id === selectedVersionId)
-  const isGeneralForm = challenge.versions.some((v) => v.domainId === null)
 
   const nextVersionNumber = challenge.versions.length + 1
 
@@ -49,11 +74,12 @@ export function ChallengeDetail() {
     prevVersionCount.current = challenge.versions.length
   }, [challenge.versions.length])
 
-  const handleSaveNewVersion = (questions: Question[]) => {
+  const handleSaveNewVersion = ({ questions, description }: { questions: Question[]; description: unknown }) => {
     const formData = new FormData()
     formData.set('intent', 'create-version')
     formData.set('domainId', selectedDomainId)
     formData.set('questions', JSON.stringify(questions))
+    formData.set('description', description ? JSON.stringify(description) : '')
     submit(formData, { method: 'post' })
   }
 
@@ -151,12 +177,13 @@ export function ChallengeDetail() {
                 <div>
                   <p className="text-sm font-medium text-foreground/80 mb-1">Domain</p>
                   <p className="text-sm text-foreground">
-                    {domains.find((d) => d.id === selectedDomainId)?.name ?? '—'}
+                    {domains.find((d) => d.id === selectedDomainId)?.name ?? (isGeneralForm ? 'General' : '—')}
                   </p>
                 </div>
               </div>
               <FormBuilderTab
                 initialQuestions={(selectedVersion?.questions as unknown as Question[]) || []}
+                initialDescription={selectedVersion?.description ?? null}
                 onSave={handleSaveNewVersion}
                 onCancel={() => setIsCreatingVersion(false)}
                 isGeneralForm={isGeneralForm}
@@ -188,6 +215,11 @@ export function ChallengeDetail() {
               {/* Rubrics are now assigned at the domain+cycle level, not per challenge version */}
 
               <div className="p-6 space-y-4">
+                {!isEmptyDoc(selectedVersion.description) && (
+                  <div className="px-4 py-3 rounded-lg border border-border bg-muted/30">
+                    <RichTextViewer content={selectedVersion.description} />
+                  </div>
+                )}
                 {(selectedVersion.questions as unknown as Question[]).map((q, index) => (
                   <div
                     key={q.key}

@@ -7,6 +7,11 @@ import { isDomainLead } from "~/lib/roles";
 import { ArrowLeft, GripVertical, X, Check } from "lucide-react";
 import { INITIAL_COLUMNS, FINAL_COLUMNS } from "~/lib/delibs";
 
+export const meta: Route.MetaFunction = ({ data }) => {
+  const domain = (data as any)?.session?.domain?.name;
+  return [{ title: `${domain ? `${domain} ` : ""}delibs · DALI OS` }];
+};
+
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");

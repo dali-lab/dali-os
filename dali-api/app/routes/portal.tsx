@@ -14,6 +14,8 @@ import { InterviewSlotPicker } from "~/components/InterviewSlotPicker";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 import { formatInterviewDate, formatInterviewTimeRange } from "~/lib/interview-time";
 
+export const meta: Route.MetaFunction = () => [{ title: "Applicant portal · DALI OS" }];
+
 // ─── Loader ──────────────────────────────────────────────────────────────────
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -1039,6 +1041,10 @@ export default function Portal() {
             ))}
           </div>
         )}
+      </div>
+      <div className="px-6 md:px-16 lg:px-24 py-6 text-center text-xs text-muted-foreground/70">
+        Made with care at DALI Lab.{" "}
+        <span className="text-section-bg select-all font-mono">1:f-2</span>
       </div>
     </div>
   );

@@ -141,6 +141,8 @@ model Application {
 
   statusUpdates      ApplicationStatusUpdate[]
   domainApplications DomainApplication[]
+
+  @@unique([userId, applicationCycleId])
 }
 
 // Domain is not stored directly — it is derivable via challengeVersion.domain.
@@ -199,6 +201,9 @@ model ChallengeVersion {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
 
+  // Optional ProseMirror JSON document shown to applicants and reviewers above
+  // the questions for this challenge version. Null = no description.
+  description Json?
   questions   Json
   challengeId String
   challenge   Challenge @relation(fields: [challengeId], references: [id])
@@ -456,7 +461,14 @@ model Decision {
   notes        String?
   waitlistRank Int? // set when type == Waitlisted; current rank = latest record's value
 
+  // Lineage pointer for stage transitions (Draft → Final → Released).
+  // Null when the row has no predecessor (e.g. delibs close, direct creation).
+  parentDecisionId String?
+  parent           Decision?  @relation("DecisionLineage", fields: [parentDecisionId], references: [id])
+  children         Decision[] @relation("DecisionLineage")
+
   @@index([domainApplicationId, createdAt])
+  @@index([parentDecisionId])
 }
 
 // ─── Application Reviews ─────────────────────────────────────────────────────

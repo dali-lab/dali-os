@@ -23,6 +23,8 @@ export const links: Route.LinksFunction = () => [
   },
 ];
 
+export const meta: Route.MetaFunction = () => [{ title: "DALI OS" }];
+
 export function Layout({ children }: { children: React.ReactNode }) {
   // Published as a <meta> tag rather than an inline <script> so that
   // `script-src 'self'` in the CSP can stay strict. Only computed server-side;
