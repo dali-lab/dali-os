@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.domain-applications.$id.reviews";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead, isDomainLead, hasCycleAccess } from "~/lib/roles";
+import { isHiringLead, hasCycleAccess } from "~/lib/roles";
 import { safeJson } from "~/lib/safe-json";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -39,12 +39,6 @@ export async function action({ request, params }: Route.ActionArgs) {
     return Response.json({ error: "Method not allowed" }, { status: 405 });
   }
 
-  const hiringLead = await isHiringLead(auth.user.sub);
-  const domainLead = await isDomainLead(auth.user.sub);
-  if (!hiringLead && !domainLead) {
-    return Response.json({ error: "Forbidden" }, { status: 403 });
-  }
-
   const body = await safeJson<{ cycleReviewerId?: string }>(request);
   if (body instanceof Response) return body;
   const { cycleReviewerId } = body;
@@ -60,6 +54,19 @@ export async function action({ request, params }: Route.ActionArgs) {
       challengeVersion: { select: { domainId: true } },
     },
   });
+
+  if (!(await isHiringLead(auth.user.sub))) {
+    const domainLeadForThisDomain = await prisma.dALIMember.findFirst({
+      where: {
+        userId: auth.user.sub,
+        domainLeadAssignments: { some: { domainId: domainApp.challengeVersion.domainId } },
+      },
+      select: { id: true },
+    });
+    if (!domainLeadForThisDomain) {
+      return Response.json({ error: "Forbidden" }, { status: 403 });
+    }
+  }
 
   const cycle = await prisma.applicationCycle.findUniqueOrThrow({
     where: { id: domainApp.application.applicationCycleId },
