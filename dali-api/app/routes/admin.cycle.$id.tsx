@@ -65,6 +65,11 @@ function nextStatus(current: CycleStatus): CycleStatus | null {
 
 // ─── Loader ──────────────────────────────────────────────────────────────────
 
+export const meta: Route.MetaFunction = ({ data }) => {
+  const name = (data as any)?.cycle?.name;
+  return [{ title: `${name || "Cycle"} · Hiring lead · DALI OS` }];
+};
+
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
@@ -784,7 +789,7 @@ export default function AdminCycleDetails() {
       </div>
 
       {/* Cycle Status */}
-      <div className="bg-card rounded-xl border border-border shadow-sm p-4 flex items-center justify-between">
+      <div className="bg-card rounded-xl border border-border shadow-sm p-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <span className="text-sm font-medium text-muted-foreground">Status:</span>
           <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-bold ${STATUS_COLORS[cycleStatus]}`}>
@@ -891,7 +896,7 @@ export default function AdminCycleDetails() {
       })()}
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-muted rounded-lg p-1">
+      <div className="flex gap-1 bg-muted rounded-lg p-1 overflow-x-auto">
         {([
           { key: 'setup' as const, label: 'Cycle Setup', icon: LayoutDashboard },
           { key: 'config' as const, label: 'Interview Setup', icon: Settings },
@@ -902,7 +907,7 @@ export default function AdminCycleDetails() {
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition ${
+            className={`flex-shrink-0 md:flex-1 flex items-center justify-center gap-2 px-3 sm:px-4 py-2 rounded-md text-sm font-medium transition whitespace-nowrap ${
               tab === t.key ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
             }`}
           >
@@ -916,9 +921,9 @@ export default function AdminCycleDetails() {
       {tab === 'setup' && (
         <div className="space-y-6">
           {/* Close Date */}
-          <div className="bg-card rounded-xl border border-border shadow-sm p-6">
+          <div className="bg-card rounded-xl border border-border shadow-sm p-4 sm:p-6">
             <h3 className="text-sm font-bold text-foreground/80 mb-3">Application Close Date</h3>
-            <Form method="post" className="flex items-end gap-3">
+            <Form method="post" className="flex flex-col sm:flex-row sm:items-end gap-3">
               <input type="hidden" name="intent" value="set-close-date" />
               <div className="flex-1">
                 <input
@@ -1120,7 +1125,7 @@ export default function AdminCycleDetails() {
       {tab === 'reviewers' && (
         <div className="space-y-4">
           {/* Add reviewer form */}
-          <div className="bg-card rounded-xl border border-border shadow-sm p-6">
+          <div className="bg-card rounded-xl border border-border shadow-sm p-4 sm:p-6">
             <h3 className="text-sm font-bold text-foreground/80 mb-4 flex items-center gap-2">
               <Plus className="w-4 h-4" /> Add Reviewer
             </h3>
@@ -1167,7 +1172,8 @@ export default function AdminCycleDetails() {
 
           {/* Roster table */}
           <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[480px]">
               <thead className="bg-muted/50 border-b border-border">
                 <tr>
                   <th className="text-left px-4 py-3 font-bold text-foreground/80">Reviewer</th>
@@ -1194,10 +1200,11 @@ export default function AdminCycleDetails() {
                 )}
               </tbody>
             </table>
+            </div>
           </div>
 
           {/* Add interviewer form */}
-          <div className="bg-card rounded-xl border border-border shadow-sm p-6">
+          <div className="bg-card rounded-xl border border-border shadow-sm p-4 sm:p-6">
             <h3 className="text-sm font-bold text-foreground/80 mb-4 flex items-center gap-2">
               <Plus className="w-4 h-4" /> Add Interviewer
             </h3>
@@ -1244,7 +1251,8 @@ export default function AdminCycleDetails() {
 
           {/* Interviewer roster table */}
           <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[480px]">
               <thead className="bg-muted/50 border-b border-border">
                 <tr>
                   <th className="text-left px-4 py-3 font-bold text-foreground/80">Interviewer</th>
@@ -1273,6 +1281,7 @@ export default function AdminCycleDetails() {
                 )}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       )}
@@ -1281,7 +1290,8 @@ export default function AdminCycleDetails() {
       {tab === 'dashboard' && (
         <div className="space-y-4">
           <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[820px]">
               <thead className="bg-muted/50 border-b border-border">
                 <tr>
                   <th className="text-left px-4 py-3 font-bold text-foreground/80">Applicant</th>
@@ -1333,7 +1343,8 @@ export default function AdminCycleDetails() {
                                 <span>{name} ({roleLabel})</span>
                                 {isFuture && interview.status === 'Scheduled' && (
                                   <select
-                                    className="ml-1 text-[10px] border border-gray-300 rounded px-1 py-0.5"
+                                    className="ml-1 text-xs border border-gray-300 rounded px-1.5 py-0.5"
+                                    aria-label={`Reassign ${a.role === 'InDomain' ? 'in-domain' : 'cross-domain'} interviewer`}
                                     defaultValue=""
                                     onChange={async (e) => {
                                       if (!e.target.value) return
@@ -1373,6 +1384,7 @@ export default function AdminCycleDetails() {
                 )}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       )}
@@ -1381,7 +1393,7 @@ export default function AdminCycleDetails() {
       {tab === 'decisions' && (
         <div className="space-y-4">
           <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-            <div className="px-6 py-4 border-b border-border bg-muted/50 flex items-center justify-between">
+            <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-border bg-muted/50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <h3 className="font-bold text-foreground">Final Decisions Ready for Release</h3>
               {pendingDecisions.length > 0 && (
                 <button
@@ -1391,13 +1403,14 @@ export default function AdminCycleDetails() {
                     }
                     setPendingDecisions([])
                   }}
-                  className="px-3 py-1.5 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition"
+                  className="px-3 py-1.5 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition self-start sm:self-auto"
                 >
                   Release All ({pendingDecisions.length})
                 </button>
               )}
             </div>
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[640px]">
               <thead className="bg-muted/50 border-b border-border">
                 <tr>
                   <th className="text-left px-4 py-3 font-bold text-foreground/80">Applicant</th>
@@ -1426,7 +1439,7 @@ export default function AdminCycleDetails() {
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">{d.madeBy.firstName} {d.madeBy.lastName}</td>
                     <td className="px-4 py-3 text-right">
-                      <div className="inline-flex items-center gap-2">
+                      <div className="inline-flex flex-wrap items-center justify-end gap-2">
                         <button
                           type="button"
                           onClick={() => setPreviewDecisionId(d.id)}
@@ -1457,6 +1470,7 @@ export default function AdminCycleDetails() {
                 )}
               </tbody>
             </table>
+            </div>
           </div>
           {previewDecisionId && (() => {
             const d = pendingDecisions.find((x: any) => x.id === previewDecisionId)
@@ -1495,10 +1509,10 @@ function DecisionEmailPreviewModal({ decision, binding, onClose }: {
         className="bg-card rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-          <div>
+        <div className="flex items-center justify-between gap-3 px-4 sm:px-6 py-3 sm:py-4 border-b border-border">
+          <div className="min-w-0">
             <h2 className="text-lg font-bold text-foreground">Email preview</h2>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-muted-foreground break-words">
               {decision.domainApplication.application.user.firstName} {decision.domainApplication.application.user.lastName}
               {' · '}
               {decision.domainApplication.challengeVersion.domain.name}
@@ -1509,13 +1523,13 @@ function DecisionEmailPreviewModal({ decision, binding, onClose }: {
           <button
             type="button"
             onClick={onClose}
-            className="text-muted-foreground/70 hover:text-foreground"
+            className="text-muted-foreground/70 hover:text-foreground flex-shrink-0"
             aria-label="Close preview"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
-        <div className="px-6 py-4 space-y-4">
+        <div className="px-4 sm:px-6 py-4 space-y-4">
           {tmpl ? (
             <>
               <div>
@@ -1555,7 +1569,7 @@ function DecisionEmailPreviewModal({ decision, binding, onClose }: {
             </div>
           )}
         </div>
-        <div className="px-6 py-3 border-t border-border bg-muted/30 flex justify-end">
+        <div className="px-4 sm:px-6 py-3 border-t border-border bg-muted/30 flex justify-end">
           <button
             type="button"
             onClick={onClose}

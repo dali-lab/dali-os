@@ -4,6 +4,7 @@ import type { Route } from "./+types/domain-lead.application.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { ChevronDown } from "lucide-react";
+import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
 import {
   inferDomainApplicationStatus,
   domainApplicationStatusInclude,
@@ -40,6 +41,12 @@ const STAGE_LABELS: Record<string, string> = {
   Draft: "Draft",
   Final: "Finalized",
   Released: "Released",
+};
+
+export const meta: Route.MetaFunction = ({ data }) => {
+  const user = (data as any)?.application?.user;
+  const name = [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim();
+  return [{ title: `${name || "Application"} · Domain lead · DALI OS` }];
 };
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -181,6 +188,11 @@ export default function DomainLeadApplicationView() {
           {generalQuestions.length > 0 && (
             <section className="bg-card border border-border rounded-lg p-6 space-y-5">
               <h2 className="text-lg font-semibold text-foreground">General Application</h2>
+              {!isEmptyDoc(application.generalChallengeVersion?.description) && (
+                <div className="border border-border rounded-md bg-muted/30 px-4 py-3">
+                  <RichTextViewer content={application.generalChallengeVersion.description} />
+                </div>
+              )}
               {generalQuestions.map((q: any) => {
                 const answer = application.answers?.[q.key];
                 return (
@@ -199,6 +211,11 @@ export default function DomainLeadApplicationView() {
             <h2 className="text-lg font-semibold text-foreground">
               {da.challengeVersion.challenge?.name ?? `${da.challengeVersion.domain?.name} Challenge`}
             </h2>
+            {!isEmptyDoc(da.challengeVersion.description) && (
+              <div className="border border-border rounded-md bg-muted/30 px-4 py-3">
+                <RichTextViewer content={da.challengeVersion.description} />
+              </div>
+            )}
             {challengeQuestions.map((q: any) => {
               const answer = da.answers?.[q.key];
               return (

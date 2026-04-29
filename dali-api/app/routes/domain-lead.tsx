@@ -7,6 +7,7 @@ import { requireAuth } from "~/lib/auth";
 import { CheckCircle, Plus, Trash2, Check, Clock, X, CircleDashed, ChevronDown } from "lucide-react";
 import { inferDomainApplicationStatus } from "~/lib/domain-application-status";
 import { getReviewStatus } from "~/lib/review-status";
+import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
 import {
   summarizeDecisionPills,
   synthesizePrePipelinePill,
@@ -35,6 +36,8 @@ const STATUS_MESSAGES: Record<string, string> = {
   UnderReview: "Submissions are closed. Review applications below.",
   Completed: "Decisions have been released to applicants.",
 };
+
+export const meta: Route.MetaFunction = () => [{ title: "Domain lead · DALI OS" }];
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -495,11 +498,11 @@ export default function DomainLeadDashboard() {
             ) : (
               <>
                 {/* Domain header */}
-                <div className="px-6 py-4 border-b border-border bg-card">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
+                <div className="px-4 sm:px-6 py-4 border-b border-border bg-card">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                       <h2 className="text-xl font-semibold text-foreground">{assignment.domain.name}</h2>
-                      <span className="text-muted-foreground/70">·</span>
+                      <span className="text-muted-foreground/70 hidden sm:inline">·</span>
                       <span className="text-lg text-muted-foreground">{cycle.name}</span>
                       {currentStatus && (
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[currentStatus]}`}>
@@ -508,7 +511,7 @@ export default function DomainLeadDashboard() {
                       )}
                     </div>
                     {currentStatus !== "Draft" && (
-                      <div className="flex items-center gap-4">
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
                         <StatPill label="submitted" value={apps.length} />
                         {fullyReviewed > 0 && <StatPill label="reviewed" value={fullyReviewed} color="text-green-700" />}
                         {withDecisions > 0 && <StatPill label="decided" value={withDecisions} color="text-blue-700" />}
@@ -518,7 +521,7 @@ export default function DomainLeadDashboard() {
                   <p className="text-sm text-muted-foreground mt-1">{STATUS_MESSAGES[currentStatus]}</p>
                 </div>
 
-                <div className="p-6 space-y-4">
+                <div className="p-4 sm:p-6 space-y-4">
                   {/* Setup — Draft only */}
                   {currentStatus === "Draft" && (
                     <Section
@@ -611,7 +614,7 @@ export default function DomainLeadDashboard() {
                   <Section
                     title="Reviews"
                     badge={
-                      <div className="flex items-center gap-3 text-xs text-gray-600">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600">
                         <span>{cycleReviewers.length} reviewers, {(interviewers ?? []).length} interviewers</span>
                         {currentRubricVersionId
                           ? <span className="text-green-700">· rubric set</span>
@@ -660,7 +663,7 @@ export default function DomainLeadDashboard() {
                     <Section
                       title="Applications"
                       badge={
-                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                           <span>{apps.length} submitted</span>
                           <span>·</span>
                           <span>{fullyReviewed} reviewed</span>
@@ -693,7 +696,7 @@ export default function DomainLeadDashboard() {
                     <Section
                       title="Deliberations"
                       badge={
-                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                           <span>{initialDelibsCount ?? 0} ready for initial</span>
                           <span>·</span>
                           <span>{finalDelibsCount ?? 0} ready for final</span>
@@ -721,7 +724,7 @@ export default function DomainLeadDashboard() {
                       <Section
                         title="Interviews"
                         badge={
-                          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                             {awaitingBooking.length > 0 && <span className="text-yellow-700">{awaitingBooking.length} awaiting booking</span>}
                             {scheduledInterviews > 0 && <><span>·</span><span>{scheduledInterviews} scheduled</span></>}
                             {completedInterviews > 0 && <><span>·</span><span className="text-green-700">{completedInterviews} completed</span></>}
@@ -761,7 +764,8 @@ export default function DomainLeadDashboard() {
                           {interviews.length > 0 && (
                             <div>
                               <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">Booked Interviews</h4>
-                              <table className="w-full text-sm border border-border rounded-lg overflow-hidden">
+                              <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+                              <table className="w-full text-sm border border-border rounded-lg overflow-hidden min-w-[640px]">
                                 <thead className="bg-muted/50 text-xs font-medium text-muted-foreground uppercase tracking-wide">
                                   <tr>
                                     <th className="px-4 py-2 text-left">Applicant</th>
@@ -813,6 +817,7 @@ export default function DomainLeadDashboard() {
                                   })}
                                 </tbody>
                               </table>
+                              </div>
                             </div>
                           )}
                         </div>
@@ -964,28 +969,35 @@ function ChallengeSelector({ cycleId, domainId, options, linkedChallengeVersions
           {linkedChallengeVersions.map((cv: any) => {
             const questions: any[] = (cv.questions as any[]) ?? [];
             return (
-              <div key={cv.id} className="px-4 py-3 flex items-start justify-between gap-3">
-                <div className="flex-1">
-                  <div className="text-sm font-medium text-foreground">
-                    {cv.challenge?.name ?? "Untitled"}{" "}
-                    <span className="text-xs text-muted-foreground/70 font-normal">(v{cv.id.slice(-4)})</span>
+              <div key={cv.id} className="px-4 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-foreground">
+                      {cv.challenge?.name ?? "Untitled"}{" "}
+                      <span className="text-xs text-muted-foreground/70 font-normal">(v{cv.id.slice(-4)})</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      {questions.length} question{questions.length !== 1 ? "s" : ""}
+                    </div>
                   </div>
-                  <div className="text-xs text-muted-foreground mt-0.5">
-                    {questions.length} question{questions.length !== 1 ? "s" : ""}
-                  </div>
+                  <Form method="post">
+                    <input type="hidden" name="intent" value="remove-challenge" />
+                    <input type="hidden" name="cycleId" value={cycleId} />
+                    <input type="hidden" name="challengeVersionId" value={cv.id} />
+                    <button
+                      type="submit"
+                      aria-label={`Remove ${cv.challenge?.name ?? "challenge"}`}
+                      className="text-muted-foreground hover:text-red-600 transition"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </Form>
                 </div>
-                <Form method="post">
-                  <input type="hidden" name="intent" value="remove-challenge" />
-                  <input type="hidden" name="cycleId" value={cycleId} />
-                  <input type="hidden" name="challengeVersionId" value={cv.id} />
-                  <button
-                    type="submit"
-                    aria-label={`Remove ${cv.challenge?.name ?? "challenge"}`}
-                    className="text-muted-foreground hover:text-red-600 transition"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </Form>
+                {!isEmptyDoc(cv.description) && (
+                  <div className="mt-2 border border-border rounded-md bg-muted/30 px-4 py-3">
+                    <RichTextViewer content={cv.description} />
+                  </div>
+                )}
               </div>
             );
           })}
@@ -1079,7 +1091,7 @@ function ReviewerSection({ cycleId, domainId, initialReviewers }: {
         <h3 className="font-semibold text-foreground">Reviewers for this Domain ({reviewers.length})</h3>
       </div>
       <div className="p-4 space-y-3">
-        <div className="flex gap-2 items-end">
+        <div className="flex flex-col sm:flex-row sm:items-end gap-2">
           <div className="flex-1">
             <label className="block text-xs font-medium text-muted-foreground mb-1">Add Reviewer</label>
             <select
@@ -1145,7 +1157,7 @@ function RubricPicker({ cycleId, domainId, options, selectedId, locked }: {
             <span className="text-xs text-muted-foreground/70 ml-2">(locked — reviewers have been assigned)</span>
           </div>
         ) : (
-          <Form method="post" key={`rubric-${selectedId}`} className="flex items-end gap-3">
+          <Form method="post" key={`rubric-${selectedId}`} className="flex flex-col sm:flex-row sm:items-end gap-3">
             <input type="hidden" name="intent" value="set-rubric" />
             <input type="hidden" name="cycleId" value={cycleId} />
             <input type="hidden" name="domainId" value={domainId} />
@@ -1226,7 +1238,7 @@ function InterviewerSection({ cycleId, domainId, initialInterviewers }: {
         <h3 className="font-semibold text-foreground">Interviewers for this Domain ({interviewers.length})</h3>
       </div>
       <div className="p-4 space-y-3">
-        <div className="flex gap-2 items-end">
+        <div className="flex flex-col sm:flex-row sm:items-end gap-2">
           <div className="flex-1">
             <label className="block text-xs font-medium text-muted-foreground mb-1">Add Interviewer</label>
             <select
@@ -1474,7 +1486,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
 
   return (
     <div className="bg-card border border-border rounded-lg overflow-hidden">
-      <div className="px-6 py-4 border-b border-border bg-muted/50 flex items-center justify-between">
+      <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-border bg-muted/50 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-1">
           {isUnderReview ? (
             <div className="flex items-center gap-1 bg-muted rounded-lg p-0.5">
@@ -1551,7 +1563,8 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
           )}
         </div>
       </div>
-      <table className="w-full text-sm">
+      <div className="overflow-x-auto">
+      <table className="w-full text-sm min-w-[640px]">
         <thead className="bg-muted/50 text-xs font-medium text-muted-foreground uppercase tracking-wide">
           <tr>
             <th className="px-6 py-3 text-left">Applicant</th>
@@ -1608,7 +1621,8 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                     <span className="text-xs text-muted-foreground">—</span>
                   )}
                 </td>
-                <td className="px-6 py-4 text-right flex items-center justify-end gap-2">
+                <td className="px-6 py-4 text-right">
+                  <div className="flex flex-wrap items-center justify-end gap-2">
                   {isUnderReview && draftToFinalize && (
                     <button
                       onClick={async () => {
@@ -1626,6 +1640,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                   >
                     Review →
                   </Link>
+                  </div>
                 </td>
               </tr>
             );
@@ -1637,6 +1652,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
           )}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }
@@ -1900,7 +1916,7 @@ function ReviewModal({ review, rubricCriteria, onClose }: {
                   <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
                     Scores
                   </h3>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {scoreEntries.map(([key, score]) => (
                       <div
                         key={key}

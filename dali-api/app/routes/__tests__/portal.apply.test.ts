@@ -17,6 +17,7 @@ const mockPrisma = prisma as unknown as {
     findUnique: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
     create: ReturnType<typeof vi.fn>;
+    upsert: ReturnType<typeof vi.fn>;
   };
   domainApplication: {
     findMany: ReturnType<typeof vi.fn>;
@@ -73,6 +74,7 @@ beforeEach(() => {
     findUnique: vi.fn(),
     update: vi.fn().mockResolvedValue({}),
     create: vi.fn(),
+    upsert: vi.fn(),
   };
   (mockPrisma as any).domainApplication = {
     findMany: vi.fn(),
@@ -266,7 +268,7 @@ describe("POST /portal/apply (create-draft) — multi-challenge", () => {
       { challengeVersionId: CV_A2, challengeVersion: { domainId: DOMAIN_A } },
       { challengeVersionId: CV_B1, challengeVersion: { domainId: DOMAIN_B } },
     ]);
-    mockPrisma.application.create.mockResolvedValue({
+    mockPrisma.application.upsert.mockResolvedValue({
       id: APP_ID,
       answers: {},
       domainApplications: [
@@ -284,9 +286,9 @@ describe("POST /portal/apply (create-draft) — multi-challenge", () => {
       context: {},
     } as any);
 
-    expect(mockPrisma.application.create).toHaveBeenCalledTimes(1);
-    const callArg = mockPrisma.application.create.mock.calls[0][0];
-    expect(callArg.data.domainApplications.create).toEqual([
+    expect(mockPrisma.application.upsert).toHaveBeenCalledTimes(1);
+    const callArg = mockPrisma.application.upsert.mock.calls[0][0];
+    expect(callArg.create.domainApplications.create).toEqual([
       { challengeVersionId: CV_A2, answers: {} },
       { challengeVersionId: CV_B1, answers: {} },
     ]);
@@ -296,7 +298,7 @@ describe("POST /portal/apply (create-draft) — multi-challenge", () => {
     mockPrisma.challengeVersionApplicationCycle.findMany.mockResolvedValue([
       { challengeVersionId: CV_A1, challengeVersion: { domainId: DOMAIN_A } },
     ]);
-    mockPrisma.application.create.mockResolvedValue({
+    mockPrisma.application.upsert.mockResolvedValue({
       id: APP_ID,
       answers: {},
       domainApplications: [
@@ -314,8 +316,8 @@ describe("POST /portal/apply (create-draft) — multi-challenge", () => {
       context: {},
     } as any);
 
-    const callArg = mockPrisma.application.create.mock.calls[0][0];
-    expect(callArg.data.domainApplications.create).toEqual([
+    const callArg = mockPrisma.application.upsert.mock.calls[0][0];
+    expect(callArg.create.domainApplications.create).toEqual([
       { challengeVersionId: CV_A1, answers: {} },
     ]);
   });
@@ -325,7 +327,7 @@ describe("POST /portal/apply (create-draft) — multi-challenge", () => {
       { challengeVersionId: CV_A1, challengeVersion: { domainId: DOMAIN_A } },
       { challengeVersionId: CV_B1, challengeVersion: { domainId: DOMAIN_B } },
     ]);
-    mockPrisma.application.create.mockResolvedValue({
+    mockPrisma.application.upsert.mockResolvedValue({
       id: APP_ID,
       answers: {},
       domainApplications: [],
@@ -340,8 +342,8 @@ describe("POST /portal/apply (create-draft) — multi-challenge", () => {
       context: {},
     } as any);
 
-    const callArg = mockPrisma.application.create.mock.calls[0][0];
-    expect(callArg.data.domainApplications.create).toEqual([]);
+    const callArg = mockPrisma.application.upsert.mock.calls[0][0];
+    expect(callArg.create.domainApplications.create).toEqual([]);
   });
 });
 

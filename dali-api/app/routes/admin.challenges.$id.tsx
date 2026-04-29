@@ -5,6 +5,11 @@ import { requireAuth } from "~/lib/auth";
 import { isHiringLead, isDomainLead } from "~/lib/roles";
 import { ChallengeDetail } from "~/components/ChallengeDetail";
 
+export const meta: Route.MetaFunction = ({ data }) => {
+  const name = (data as any)?.challenge?.name;
+  return [{ title: `${name || "Challenge"} · DALI OS` }];
+};
+
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
@@ -42,14 +47,17 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (intent === "create-version") {
     const domainId = (formData.get("domainId") as string) || null;
     const questionsJson = formData.get("questions") as string;
+    const descriptionJson = (formData.get("description") as string) ?? "";
 
     const questions = JSON.parse(questionsJson || "[]");
+    const description = descriptionJson ? JSON.parse(descriptionJson) : null;
 
     await prisma.challengeVersion.create({
       data: {
         challengeId: params.id,
         domainId,
         questions,
+        ...(description ? { description } : {}),
         createdById: user.id,
       },
     });

@@ -17,6 +17,9 @@ import type { Question } from "~/types";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 import { Modal } from "~/components/Modal";
 import { QuestionList } from "~/components/ApplicationAnswers";
+import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
+
+export const meta: Route.MetaFunction = () => [{ title: "Apply · DALI OS" }];
 
 // ─── Loader ──────────────────────────────────────────────────────────────────
 
@@ -57,6 +60,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const generalChallengeVersionId = generalCvac.challengeVersionId;
   const formQuestions = (generalCvac.challengeVersion.questions as unknown as Question[]) ?? [];
+  const generalDescription = generalCvac.challengeVersion.description ?? null;
 
   // Build domain info with all linked challenge versions (applicant picks one).
   const domains = cycle.domains.map(dac => {
@@ -69,6 +73,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       challenges: linked.map(cvc => ({
         challengeVersionId: cvc.challengeVersionId,
         challengeName: (cvc.challengeVersion as any).challenge?.name ?? "Challenge",
+        description: (cvc.challengeVersion as any).description ?? null,
         questions: ((cvc.challengeVersion.questions as unknown) as Question[]) ?? [],
       })),
     };
@@ -98,6 +103,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     closeDate: active.closeDate ? active.closeDate.toISOString() : null,
     generalChallengeVersionId,
     formQuestions,
+    generalDescription,
     domains,
     isAlreadySubmitted: draftStatus === "Submitted",
     draft: draft
@@ -151,8 +157,20 @@ export async function action({ request }: Route.ActionArgs) {
       cvByPair.has(`${s.domainId}:${s.challengeVersionId}`),
     );
 
-    const application = await prisma.application.create({
-      data: {
+    // Upsert keyed on the (userId, applicationCycleId) unique constraint so
+    // that two concurrent "Start Application" clicks (e.g. from two open tabs)
+    // converge on a single draft instead of creating duplicates. For an
+    // existing row the update is a no-op — domain selection is reconciled
+    // separately via the `update-domains` intent.
+    const application = await prisma.application.upsert({
+      where: {
+        userId_applicationCycleId: {
+          userId: auth.user.sub,
+          applicationCycleId: cycleId,
+        },
+      },
+      update: {},
+      create: {
         userId: auth.user.sub,
         applicationCycleId: cycleId,
         generalChallengeVersionId,
@@ -812,7 +830,7 @@ function isAnswered(value: string | undefined) {
 type DomainShape = {
   id: string;
   name: string;
-  challenges: { challengeVersionId: string; challengeName: string; questions: Question[] }[];
+  challenges: { challengeVersionId: string; challengeName: string; description: any; questions: Question[] }[];
 };
 
 function getPickedQuestions(
@@ -1042,7 +1060,7 @@ function BackToTopButton() {
 
 export default function PortalApply() {
   const loaderData = useLoaderData<typeof loader>() as any;
-  const { cycleId, cycleName, generalChallengeVersionId, formQuestions, domains, isAlreadySubmitted } = loaderData;
+  const { cycleId, cycleName, generalChallengeVersionId, formQuestions, generalDescription, domains, isAlreadySubmitted } = loaderData;
   const [draft, setDraft] = useState(loaderData.draft);
   const [selectedDomainIds, setSelectedDomainIds] = useState<string[]>(
     loaderData.draft?.selectedDomainIds ?? [],
@@ -1565,6 +1583,11 @@ export default function PortalApply() {
           return beforeQuestions.length > 0 ? (
             <div id="section-general-before" className="rounded-2xl bg-[#E8F4FA] px-6 py-5 space-y-6 scroll-mt-24">
               <h3 className="font-heading text-sm font-bold text-dark-blue uppercase tracking-wider">General Questions</h3>
+              {!isEmptyDoc(generalDescription) && (
+                <div className="text-dark-blue">
+                  <RichTextViewer content={generalDescription} />
+                </div>
+              )}
               {beforeQuestions.map(q => (
                 <div key={q.key} id={`question-${q.key}`}>
                   <label className="block text-sm font-semibold text-dark-blue mb-1">
@@ -1651,32 +1674,42 @@ export default function PortalApply() {
               )}
 
               {pickedCvId ? (
-                pickedQuestions.map((q: Question) => (
-                  <div key={q.key} id={`question-${q.key}`}>
-                    <label className="block text-sm font-semibold text-dark-blue mb-1">
-                      {q.data.label}
-                      {q.required && <span className="text-accent-coral ml-0.5">*</span>}
-                    </label>
-                    {q.data.description && (
-                      <p className="text-xs text-muted-foreground mb-1">{q.data.description}</p>
-                    )}
-                    <QuestionField
-                      question={q}
-                      value={domainAnswers[domainId]?.[q.key] ?? ""}
-                      onChange={v => setDomainAnswer(domainId, q.key, v)}
-                      urlCheckState={urlChecks[q.key]}
-                      onUrlBlur={() => checkUrlField(q.key, domainAnswers[domainId]?.[q.key] ?? "", q.type as "github_url" | "figma_url")}
-                    />
-                    {urlWarnings[q.key] && (
-                      <p className="text-xs text-amber-600 mt-1">{urlWarnings[q.key]}</p>
-                    )}
-                    {wordCountErrors[q.key] && (
-                      <p className="text-xs text-red-500 mt-1">
-                        Over the {wordCountErrors[q.key].maxWords}-word limit ({wordCountErrors[q.key].wordCount} words).
-                      </p>
-                    )}
-                  </div>
-                ))
+                <>
+                  {(() => {
+                    const pickedChallenge = domain.challenges.find(c => c.challengeVersionId === pickedCvId);
+                    return !isEmptyDoc(pickedChallenge?.description) ? (
+                      <div className="text-dark-blue">
+                        <RichTextViewer content={pickedChallenge!.description} />
+                      </div>
+                    ) : null;
+                  })()}
+                  {pickedQuestions.map((q: Question) => (
+                    <div key={q.key} id={`question-${q.key}`}>
+                      <label className="block text-sm font-semibold text-dark-blue mb-1">
+                        {q.data.label}
+                        {q.required && <span className="text-accent-coral ml-0.5">*</span>}
+                      </label>
+                      {q.data.description && (
+                        <p className="text-xs text-muted-foreground mb-1">{q.data.description}</p>
+                      )}
+                      <QuestionField
+                        question={q}
+                        value={domainAnswers[domainId]?.[q.key] ?? ""}
+                        onChange={v => setDomainAnswer(domainId, q.key, v)}
+                        urlCheckState={urlChecks[q.key]}
+                        onUrlBlur={() => checkUrlField(q.key, domainAnswers[domainId]?.[q.key] ?? "", q.type as "github_url" | "figma_url")}
+                      />
+                      {urlWarnings[q.key] && (
+                        <p className="text-xs text-amber-600 mt-1">{urlWarnings[q.key]}</p>
+                      )}
+                      {wordCountErrors[q.key] && (
+                        <p className="text-xs text-red-500 mt-1">
+                          Over the {wordCountErrors[q.key].maxWords}-word limit ({wordCountErrors[q.key].wordCount} words).
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </>
               ) : (
                 <p className="text-sm text-muted-foreground">
                   Pick a challenge above to see this domain's questions.
