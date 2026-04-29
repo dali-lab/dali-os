@@ -38,6 +38,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       madeById: member.id,
       notes: decision.notes,
       waitlistRank: decision.waitlistRank,
+      parentDecisionId: decision.id,
     },
   });
 

@@ -7,6 +7,7 @@ import { requireAuth } from "~/lib/auth";
 import { CheckCircle, Plus, Trash2, Check, Clock, X, CircleDashed, ChevronDown } from "lucide-react";
 import { inferDomainApplicationStatus } from "~/lib/domain-application-status";
 import { getReviewStatus } from "~/lib/review-status";
+import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
 import {
   summarizeDecisionPills,
   synthesizePrePipelinePill,
@@ -35,6 +36,8 @@ const STATUS_MESSAGES: Record<string, string> = {
   UnderReview: "Submissions are closed. Review applications below.",
   Completed: "Decisions have been released to applicants.",
 };
+
+export const meta: Route.MetaFunction = () => [{ title: "Domain lead · DALI OS" }];
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -104,7 +107,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         return status === "Draft";
       }) ?? null;
 
-      if (!activeCycle) return [{ assignment, cycle: null, apps: [], challengeVersionOptions: [], selectedChallengeVersionId: null, isChallengeReady: false, interviews: [], reviewers: [], delibsSessions: [], draftDecisions: [], cycleReviewersForDomain: [], initialDelibsCount: 0, finalDelibsCount: 0, rubricVersionOptions: [], currentRubricVersionId: null, rubricCriteria: [], interviewers: [], hasApplicationReviews: false }];
+      if (!activeCycle) return [{ assignment, cycle: null, apps: [], challengeVersionOptions: [], linkedChallengeVersions: [], isChallengeReady: false, interviews: [], reviewers: [], delibsSessions: [], draftDecisions: [], cycleReviewersForDomain: [], initialDelibsCount: 0, finalDelibsCount: 0, rubricVersionOptions: [], currentRubricVersionId: null, rubricCriteria: [], interviewers: [], hasApplicationReviews: false }];
 
       return [await (async (cycle) => {
 
@@ -115,11 +118,10 @@ export async function loader({ request }: Route.LoaderArgs) {
         orderBy: { createdAt: "desc" },
       });
 
-      // Currently selected challenge version(s) for this domain in this cycle
-      const selectedChallengeVersionId =
-        cycle.challengeVersions.find(
-          (cv) => cv.challengeVersion.domainId === assignment.domainId
-        )?.challengeVersionId ?? null;
+      // Challenge versions linked to this domain in this cycle (may be 0, 1, or many)
+      const linkedChallengeVersions = cycle.challengeVersions
+        .filter((cv) => cv.challengeVersion.domainId === assignment.domainId)
+        .map((cv) => cv.challengeVersion);
 
       // isReady lives on DomainApplicationCycle (per domain+cycle, not per challenge version)
       const isChallengeReady = cycle.domains[0]?.isReady ?? false;
@@ -242,9 +244,8 @@ export async function loader({ request }: Route.LoaderArgs) {
           })
         : [];
 
-      // Rubric options for this domain
+      // Rubric options — rubrics are not domain-specific, so all rubric versions are eligible.
       const rubricVersionOptions = await prisma.rubricVersion.findMany({
-        where: { rubric: { domainId: assignment.domainId } },
         include: { rubric: { select: { name: true } } },
         orderBy: { createdAt: "desc" },
       });
@@ -283,7 +284,7 @@ export async function loader({ request }: Route.LoaderArgs) {
           })) > 0
         : false;
 
-      return { assignment, cycle, apps: appsWithStatus, challengeVersionOptions, selectedChallengeVersionId, isChallengeReady, interviews, reviewers, delibsSessions, draftDecisions, cycleReviewersForDomain, initialDelibsCount, finalDelibsCount, rubricVersionOptions, currentRubricVersionId, rubricCriteria, interviewers, hasApplicationReviews };
+      return { assignment, cycle, apps: appsWithStatus, challengeVersionOptions, linkedChallengeVersions, isChallengeReady, interviews, reviewers, delibsSessions, draftDecisions, cycleReviewersForDomain, initialDelibsCount, finalDelibsCount, rubricVersionOptions, currentRubricVersionId, rubricCriteria, interviewers, hasApplicationReviews };
       })(activeCycle)];
     })
   );
@@ -319,7 +320,7 @@ export async function action({ request }: Route.ActionArgs) {
     return redirect("/domain-lead");
   }
 
-  if (intent === "select-challenge") {
+  if (intent === "add-challenge") {
     const cycleId = formData.get("cycleId") as string;
     const newVersionId = formData.get("challengeVersionId") as string;
     const domainId = formData.get("domainId") as string;
@@ -332,25 +333,63 @@ export async function action({ request }: Route.ActionArgs) {
       return redirect("/domain-lead");
     }
 
-    // Remove any existing challenge version for this domain in this cycle
-    const existing = await prisma.challengeVersionApplicationCycle.findMany({
-      where: {
-        applicationCycleId: cycleId,
-        challengeVersion: { domainId },
-      },
-    });
-    if (existing.length > 0) {
-      await prisma.challengeVersionApplicationCycle.deleteMany({
-        where: {
-          applicationCycleId: cycleId,
-          challengeVersionId: { in: existing.map((e) => e.challengeVersionId) },
-        },
-      });
+    // Confirm the chosen version belongs to the named domain — guard against
+    // form tampering linking a different domain's challenge.
+    const cv = await prisma.challengeVersion.findUnique({ where: { id: newVersionId } });
+    if (!cv || cv.domainId !== domainId) {
+      return redirect("/domain-lead");
     }
 
-    await prisma.challengeVersionApplicationCycle.create({
-      data: { challengeVersionId: newVersionId, applicationCycleId: cycleId },
+    // Prevent linking two versions of the same underlying challenge in one cycle.
+    const sameChallenge = await prisma.challengeVersionApplicationCycle.findFirst({
+      where: {
+        applicationCycleId: cycleId,
+        challengeVersion: { challengeId: cv.challengeId, domainId },
+      },
     });
+    if (sameChallenge) {
+      return redirect("/domain-lead");
+    }
+
+    // Idempotent: skip if already linked.
+    const existing = await prisma.challengeVersionApplicationCycle.findUnique({
+      where: { challengeVersionId_applicationCycleId: { challengeVersionId: newVersionId, applicationCycleId: cycleId } },
+    });
+    if (!existing) {
+      await prisma.challengeVersionApplicationCycle.create({
+        data: { challengeVersionId: newVersionId, applicationCycleId: cycleId },
+      });
+    }
+    return redirect("/domain-lead");
+  }
+
+  if (intent === "remove-challenge") {
+    const cycleId = formData.get("cycleId") as string;
+    const versionId = formData.get("challengeVersionId") as string;
+
+    const latestUpdate = await prisma.applicationCycleStatusUpdate.findFirst({
+      where: { applicationCycleId: cycleId },
+      orderBy: { createdAt: "desc" },
+    });
+    if ((latestUpdate?.newStatus ?? "Draft") !== "Draft") {
+      return redirect("/domain-lead");
+    }
+
+    // Refuse to remove if any DomainApplication in this cycle picked this CV.
+    const inUse = await prisma.domainApplication.count({
+      where: {
+        challengeVersionId: versionId,
+        application: { applicationCycleId: cycleId },
+      },
+    });
+    if (inUse > 0) {
+      return redirect("/domain-lead");
+    }
+
+    await prisma.challengeVersionApplicationCycle.deleteMany({
+      where: { challengeVersionId: versionId, applicationCycleId: cycleId },
+    });
+    return redirect("/domain-lead");
   }
 
   if (intent === "mark-ready" || intent === "unmark-ready") {
@@ -425,7 +464,8 @@ export default function DomainLeadDashboard() {
     <div className="space-y-8">
       <h1 className="text-2xl font-bold text-foreground">Domain Lead Dashboard</h1>
 
-      {domainData.map(({ assignment, cycle, apps, challengeVersionOptions, selectedChallengeVersionId, isChallengeReady, interviews, reviewers: cycleReviewers, delibsSessions, draftDecisions, cycleReviewersForDomain, initialDelibsCount, finalDelibsCount, rubricVersionOptions, currentRubricVersionId, rubricCriteria, interviewers, hasApplicationReviews }: any, idx: number) => {
+      {domainData.map(({ assignment, cycle, apps, challengeVersionOptions, linkedChallengeVersions, isChallengeReady, interviews, reviewers: cycleReviewers, delibsSessions, draftDecisions, cycleReviewersForDomain, initialDelibsCount, finalDelibsCount, rubricVersionOptions, currentRubricVersionId, rubricCriteria, interviewers, hasApplicationReviews }: any, idx: number) => {
+        const hasLinkedChallenge = (linkedChallengeVersions ?? []).length > 0;
         const currentStatus = cycle?.statusUpdates[0]?.newStatus ?? null;
 
         // Compute stats for progress badges
@@ -458,11 +498,11 @@ export default function DomainLeadDashboard() {
             ) : (
               <>
                 {/* Domain header */}
-                <div className="px-6 py-4 border-b border-border bg-card">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
+                <div className="px-4 sm:px-6 py-4 border-b border-border bg-card">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                       <h2 className="text-xl font-semibold text-foreground">{assignment.domain.name}</h2>
-                      <span className="text-muted-foreground/70">·</span>
+                      <span className="text-muted-foreground/70 hidden sm:inline">·</span>
                       <span className="text-lg text-muted-foreground">{cycle.name}</span>
                       {currentStatus && (
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[currentStatus]}`}>
@@ -471,7 +511,7 @@ export default function DomainLeadDashboard() {
                       )}
                     </div>
                     {currentStatus !== "Draft" && (
-                      <div className="flex items-center gap-4">
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
                         <StatPill label="submitted" value={apps.length} />
                         {fullyReviewed > 0 && <StatPill label="reviewed" value={fullyReviewed} color="text-green-700" />}
                         {withDecisions > 0 && <StatPill label="decided" value={withDecisions} color="text-blue-700" />}
@@ -481,7 +521,7 @@ export default function DomainLeadDashboard() {
                   <p className="text-sm text-muted-foreground mt-1">{STATUS_MESSAGES[currentStatus]}</p>
                 </div>
 
-                <div className="p-6 space-y-4">
+                <div className="p-4 sm:p-6 space-y-4">
                   {/* Setup — Draft only */}
                   {currentStatus === "Draft" && (
                     <Section
@@ -498,7 +538,7 @@ export default function DomainLeadDashboard() {
                           cycle={cycle}
                           domainId={assignment.domainId}
                           challengeVersionOptions={challengeVersionOptions}
-                          selectedChallengeVersionId={selectedChallengeVersionId}
+                          linkedChallengeVersions={linkedChallengeVersions ?? []}
                           isChallengeReady={isChallengeReady}
                           currentRubricVersionId={currentRubricVersionId}
                         />
@@ -510,18 +550,9 @@ export default function DomainLeadDashboard() {
                           locked={hasApplicationReviews}
                         />
                         <div className="flex items-center gap-3 pt-2 border-t border-border">
-                          {selectedChallengeVersionId ? (() => {
-                            const cv = challengeVersionOptions.find((c: any) => c.id === selectedChallengeVersionId);
-                            return cv?.challenge?.id ? (
-                              <Link to={`/challenges/${cv.challenge.id}`} className="text-xs text-blue-600 hover:text-blue-800 font-medium">
-                                Edit Challenge →
-                              </Link>
-                            ) : null;
-                          })() : (
-                            <Link to="/challenges" className="text-xs text-blue-600 hover:text-blue-800 font-medium">
-                              Create Challenge →
-                            </Link>
-                          )}
+                          <Link to="/challenges" className="text-xs text-blue-600 hover:text-blue-800 font-medium">
+                            {hasLinkedChallenge ? "Manage Challenges →" : "Create Challenge →"}
+                          </Link>
                           <Link to="/rubrics" className="text-xs text-blue-600 hover:text-blue-800 font-medium">
                             Manage Rubrics →
                           </Link>
@@ -530,38 +561,36 @@ export default function DomainLeadDashboard() {
                     </Section>
                   )}
 
-                  {/* Setup — just the domain challenge */}
+                  {/* Setup — just the domain challenges (read-only after Draft) */}
                   {currentStatus !== "Draft" && (currentStatus === "Open" || currentStatus === "UnderReview") && (
                     <Section
                       title="Setup"
                       badge={
-                        selectedChallengeVersionId
+                        hasLinkedChallenge
                           ? <span className="text-xs text-green-700 bg-green-100 px-2 py-0.5 rounded-full font-medium">Configured</span>
                           : <span className="text-xs text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded-full font-medium">Needs attention</span>
                       }
-                      defaultOpen={!selectedChallengeVersionId}
+                      defaultOpen={!hasLinkedChallenge}
                     >
                       <div className="space-y-4">
                         <div>
-                          <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">Domain Challenge</h4>
-                          {selectedChallengeVersionId ? (
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                <CheckCircle className="w-4 h-4 text-green-600" />
-                                <span>{challengeVersionOptions.find((c: any) => c.id === selectedChallengeVersionId)?.challenge?.name ?? "Linked"}</span>
-                                {hasApplicationReviews && (
-                                  <span className="text-xs text-gray-400 ml-1">(locked — reviewers have been assigned)</span>
-                                )}
-                              </div>
-                              {!hasApplicationReviews && (() => {
-                                const cv = challengeVersionOptions.find((c: any) => c.id === selectedChallengeVersionId);
-                                return cv?.challenge?.id ? (
-                                  <Link to={`/challenges/${cv.challenge.id}`} className="text-xs text-blue-600 hover:text-blue-800 font-medium">
-                                    Edit →
-                                  </Link>
-                                ) : null;
-                              })()}
-                            </div>
+                          <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">
+                            Domain Challenge{(linkedChallengeVersions ?? []).length > 1 ? "s" : ""}
+                          </h4>
+                          {hasLinkedChallenge ? (
+                            <ul className="space-y-1">
+                              {linkedChallengeVersions.map((cv: any) => (
+                                <li key={cv.id} className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                    <CheckCircle className="w-4 h-4 text-green-600" />
+                                    <span>{cv.challenge?.name ?? "Linked"}</span>
+                                    {hasApplicationReviews && (
+                                      <span className="text-xs text-gray-400 ml-1">(locked — reviewers have been assigned)</span>
+                                    )}
+                                  </div>
+                                </li>
+                              ))}
+                            </ul>
                           ) : (
                             <div className="flex items-center justify-between">
                               <span className="text-sm text-muted-foreground/70">No challenge linked</span>
@@ -585,7 +614,7 @@ export default function DomainLeadDashboard() {
                   <Section
                     title="Reviews"
                     badge={
-                      <div className="flex items-center gap-3 text-xs text-gray-600">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600">
                         <span>{cycleReviewers.length} reviewers, {(interviewers ?? []).length} interviewers</span>
                         {currentRubricVersionId
                           ? <span className="text-green-700">· rubric set</span>
@@ -634,7 +663,7 @@ export default function DomainLeadDashboard() {
                     <Section
                       title="Applications"
                       badge={
-                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                           <span>{apps.length} submitted</span>
                           <span>·</span>
                           <span>{fullyReviewed} reviewed</span>
@@ -667,7 +696,7 @@ export default function DomainLeadDashboard() {
                     <Section
                       title="Deliberations"
                       badge={
-                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                           <span>{initialDelibsCount ?? 0} ready for initial</span>
                           <span>·</span>
                           <span>{finalDelibsCount ?? 0} ready for final</span>
@@ -695,7 +724,7 @@ export default function DomainLeadDashboard() {
                       <Section
                         title="Interviews"
                         badge={
-                          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                             {awaitingBooking.length > 0 && <span className="text-yellow-700">{awaitingBooking.length} awaiting booking</span>}
                             {scheduledInterviews > 0 && <><span>·</span><span>{scheduledInterviews} scheduled</span></>}
                             {completedInterviews > 0 && <><span>·</span><span className="text-green-700">{completedInterviews} completed</span></>}
@@ -735,7 +764,8 @@ export default function DomainLeadDashboard() {
                           {interviews.length > 0 && (
                             <div>
                               <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">Booked Interviews</h4>
-                              <table className="w-full text-sm border border-border rounded-lg overflow-hidden">
+                              <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+                              <table className="w-full text-sm border border-border rounded-lg overflow-hidden min-w-[640px]">
                                 <thead className="bg-muted/50 text-xs font-medium text-muted-foreground uppercase tracking-wide">
                                   <tr>
                                     <th className="px-4 py-2 text-left">Applicant</th>
@@ -787,6 +817,7 @@ export default function DomainLeadDashboard() {
                                   })}
                                 </tbody>
                               </table>
+                              </div>
                             </div>
                           )}
                         </div>
@@ -803,19 +834,22 @@ export default function DomainLeadDashboard() {
   );
 }
 
-function DraftSection({ cycle, domainId, challengeVersionOptions, selectedChallengeVersionId, isChallengeReady, currentRubricVersionId }: {
+function DraftSection({ cycle, domainId, challengeVersionOptions, linkedChallengeVersions, isChallengeReady, currentRubricVersionId }: {
   cycle: any;
   domainId: string;
   challengeVersionOptions: any[];
-  selectedChallengeVersionId: string | null;
+  linkedChallengeVersions: any[];
   isChallengeReady: boolean;
   currentRubricVersionId: string | null;
 }) {
-  const selectedVersion = challengeVersionOptions.find((cv: any) => cv.id === selectedChallengeVersionId);
-  const questionCount: number = selectedVersion?.questions?.length ?? 0;
+  const hasLinkedChallenge = linkedChallengeVersions.length > 0;
+  const totalQuestions = linkedChallengeVersions.reduce(
+    (sum: number, cv: any) => sum + ((cv.questions as any[])?.length ?? 0),
+    0,
+  );
 
-  // State 3: Challenge selected and marked ready — "Challenge Questions Finalized"
-  if (selectedChallengeVersionId && isChallengeReady) {
+  // State 3: At least one challenge linked and marked ready — "Challenge Questions Finalized"
+  if (hasLinkedChallenge && isChallengeReady) {
     return (
       <div className="bg-card border border-border rounded-xl p-8 flex flex-col items-center text-center space-y-6">
         <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center">
@@ -824,21 +858,21 @@ function DraftSection({ cycle, domainId, challengeVersionOptions, selectedChalle
         <div className="space-y-1">
           <h3 className="text-xl font-bold text-foreground">Challenge Questions Finalized</h3>
           <p className="text-muted-foreground text-sm max-w-sm">
-            Your {selectedVersion?.challenge?.name ?? "challenge"} has {questionCount} question{questionCount !== 1 ? "s" : ""} configured and is ready for applicants.
+            {linkedChallengeVersions.length === 1
+              ? `Your ${linkedChallengeVersions[0]?.challenge?.name ?? "challenge"} has ${totalQuestions} question${totalQuestions !== 1 ? "s" : ""} configured and is ready for applicants.`
+              : `${linkedChallengeVersions.length} challenges are configured (${totalQuestions} questions total). Applicants will pick one when they apply.`}
           </p>
         </div>
 
         <div className="w-full max-w-sm bg-muted/50 border border-border rounded-xl p-4 text-left space-y-3">
-          <div className="grid grid-cols-2 divide-x divide-gray-200">
-            <div className="pr-4">
-              <p className="text-xs text-muted-foreground">Challenge Selected</p>
-              <p className="font-bold text-foreground mt-0.5">Yes</p>
-            </div>
-            <div className="pl-4">
-              <p className="text-xs text-muted-foreground">Questions Configured</p>
-              <p className="font-bold text-foreground mt-0.5">{questionCount}</p>
-            </div>
-          </div>
+          <ul className="text-sm text-foreground/80 space-y-1">
+            {linkedChallengeVersions.map((cv: any) => (
+              <li key={cv.id} className="flex items-center justify-between">
+                <span>{cv.challenge?.name ?? "Untitled"}</span>
+                <span className="text-xs text-muted-foreground">{(cv.questions as any[])?.length ?? 0} questions</span>
+              </li>
+            ))}
+          </ul>
           <div className="flex items-center gap-1.5 text-green-600 text-sm font-medium pt-1 border-t border-border">
             <CheckCircle className="w-4 h-4" />
             Ready for applications
@@ -853,15 +887,15 @@ function DraftSection({ cycle, domainId, challengeVersionOptions, selectedChalle
             type="submit"
             className="px-4 py-2 text-sm font-medium text-foreground/80 bg-card border border-gray-300 rounded-lg hover:bg-muted/50"
           >
-            Edit Challenge
+            Edit Challenges
           </button>
         </Form>
       </div>
     );
   }
 
-  // State 2: Challenge selected but not yet marked ready — "Ready to finalize?"
-  if (selectedChallengeVersionId && !isChallengeReady) {
+  // State 2: Challenges linked but not yet marked ready — "Ready to finalize?"
+  if (hasLinkedChallenge && !isChallengeReady) {
     return (
       <div className="space-y-4">
         <div className="bg-blue-50 border border-blue-100 rounded-xl p-6 space-y-4">
@@ -872,7 +906,7 @@ function DraftSection({ cycle, domainId, challengeVersionOptions, selectedChalle
             <div className="space-y-1">
               <h3 className="font-bold text-blue-900">Ready to finalize?</h3>
               <p className="text-sm text-blue-700 leading-relaxed">
-                Once you mark your challenge as ready, your challenge questions will be locked in and visible to applicants when applications open. You can still return here to make edits before the application deadline.
+                Once you mark your challenges as ready, your challenge questions will be locked in and visible to applicants when applications open. You can still return here to make edits before the application deadline.
               </p>
             </div>
           </div>
@@ -894,83 +928,118 @@ function DraftSection({ cycle, domainId, challengeVersionOptions, selectedChalle
           cycleId={cycle.id}
           domainId={domainId}
           options={challengeVersionOptions}
-          selectedId={selectedChallengeVersionId}
+          linkedChallengeVersions={linkedChallengeVersions}
         />
       </div>
     );
   }
 
-  // State 1: No challenge selected yet
+  // State 1: No challenge linked yet
   return (
     <div className="bg-card border border-border rounded-lg p-6 space-y-4">
       <div>
-        <h3 className="font-semibold text-foreground">Configure Challenge</h3>
-        <p className="text-sm text-muted-foreground mt-0.5">Select the challenge version applicants will complete for {cycle.name}.</p>
+        <h3 className="font-semibold text-foreground">Configure Challenges</h3>
+        <p className="text-sm text-muted-foreground mt-0.5">Add one or more challenge versions for {cycle.name}. Applicants will pick which one to complete when there is more than one.</p>
       </div>
       <ChallengeSelector
         cycleId={cycle.id}
         domainId={domainId}
         options={challengeVersionOptions}
-        selectedId={selectedChallengeVersionId}
+        linkedChallengeVersions={linkedChallengeVersions}
       />
     </div>
   );
 }
 
-function ChallengeSelector({ cycleId, domainId, options, selectedId }: {
+function ChallengeSelector({ cycleId, domainId, options, linkedChallengeVersions }: {
   cycleId: string;
   domainId: string;
   options: any[];
-  selectedId: string | null;
+  linkedChallengeVersions: any[];
 }) {
-  const [previewId, setPreviewId] = useState<string>(selectedId ?? "");
-  const previewVersion = options.find((cv: any) => cv.id === previewId);
-  const questions: any[] = previewVersion?.questions ?? [];
+  const linkedIds = new Set(linkedChallengeVersions.map((cv: any) => cv.id));
+  const linkedChallengeIds = new Set(linkedChallengeVersions.map((cv: any) => cv.challengeId));
+  const availableOptions = options.filter((cv: any) => !linkedIds.has(cv.id) && !linkedChallengeIds.has(cv.challengeId));
+  const [pickerId, setPickerId] = useState<string>("");
 
   return (
     <div className="space-y-3 pt-1">
-      <Form method="post" className="flex items-end gap-3">
-        <input type="hidden" name="intent" value="select-challenge" />
-        <input type="hidden" name="cycleId" value={cycleId} />
-        <input type="hidden" name="domainId" value={domainId} />
-        <div className="flex-1">
-          <label className="block text-sm font-medium text-foreground/80 mb-1">
-            Challenge
-          </label>
-          <select
-            name="challengeVersionId"
-            value={previewId}
-            onChange={(e) => setPreviewId(e.target.value)}
-            className="w-full px-3 py-2 text-sm text-foreground border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="" disabled>Select a challenge…</option>
-            {options.map((cv: any) => (
-              <option key={cv.id} value={cv.id}>
-                {cv.challenge.name} (v{cv.id.slice(-4)})
-              </option>
-            ))}
-          </select>
-        </div>
-        <button
-          type="submit"
-          disabled={!previewId}
-          className="px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          Save
-        </button>
-      </Form>
-
-      {questions.length > 0 && (
+      {linkedChallengeVersions.length > 0 && (
         <div className="border border-border rounded-md divide-y divide-gray-100">
-          {questions.map((q: any, i: number) => (
-            <div key={q.key} className="px-4 py-3">
-              <span className="text-xs font-medium text-muted-foreground/70 uppercase tracking-wide mr-2">Q{i + 1}</span>
-              <span className="text-sm text-foreground/80">{q.data.label}</span>
-              {q.required && <span className="ml-2 text-xs text-red-500">required</span>}
-            </div>
-          ))}
+          {linkedChallengeVersions.map((cv: any) => {
+            const questions: any[] = (cv.questions as any[]) ?? [];
+            return (
+              <div key={cv.id} className="px-4 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-foreground">
+                      {cv.challenge?.name ?? "Untitled"}{" "}
+                      <span className="text-xs text-muted-foreground/70 font-normal">(v{cv.id.slice(-4)})</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      {questions.length} question{questions.length !== 1 ? "s" : ""}
+                    </div>
+                  </div>
+                  <Form method="post">
+                    <input type="hidden" name="intent" value="remove-challenge" />
+                    <input type="hidden" name="cycleId" value={cycleId} />
+                    <input type="hidden" name="challengeVersionId" value={cv.id} />
+                    <button
+                      type="submit"
+                      aria-label={`Remove ${cv.challenge?.name ?? "challenge"}`}
+                      className="text-muted-foreground hover:text-red-600 transition"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </Form>
+                </div>
+                {!isEmptyDoc(cv.description) && (
+                  <div className="mt-2 border border-border rounded-md bg-muted/30 px-4 py-3">
+                    <RichTextViewer content={cv.description} />
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
+
+      {availableOptions.length > 0 ? (
+        <Form method="post" className="flex items-end gap-3">
+          <input type="hidden" name="intent" value="add-challenge" />
+          <input type="hidden" name="cycleId" value={cycleId} />
+          <input type="hidden" name="domainId" value={domainId} />
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-foreground/80 mb-1">
+              Add Challenge
+            </label>
+            <select
+              name="challengeVersionId"
+              value={pickerId}
+              onChange={(e) => setPickerId(e.target.value)}
+              className="w-full px-3 py-2 text-sm text-foreground border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="" disabled>Select a challenge…</option>
+              {availableOptions.map((cv: any) => (
+                <option key={cv.id} value={cv.id}>
+                  {cv.challenge.name} (v{cv.id.slice(-4)})
+                </option>
+              ))}
+            </select>
+          </div>
+          <button
+            type="submit"
+            disabled={!pickerId}
+            className="px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Add
+          </button>
+        </Form>
+      ) : linkedChallengeVersions.length === 0 ? (
+        <p className="text-sm text-muted-foreground/70">
+          No challenge versions exist for this domain yet.
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -1022,7 +1091,7 @@ function ReviewerSection({ cycleId, domainId, initialReviewers }: {
         <h3 className="font-semibold text-foreground">Reviewers for this Domain ({reviewers.length})</h3>
       </div>
       <div className="p-4 space-y-3">
-        <div className="flex gap-2 items-end">
+        <div className="flex flex-col sm:flex-row sm:items-end gap-2">
           <div className="flex-1">
             <label className="block text-xs font-medium text-muted-foreground mb-1">Add Reviewer</label>
             <select
@@ -1088,7 +1157,7 @@ function RubricPicker({ cycleId, domainId, options, selectedId, locked }: {
             <span className="text-xs text-muted-foreground/70 ml-2">(locked — reviewers have been assigned)</span>
           </div>
         ) : (
-          <Form method="post" key={`rubric-${selectedId}`} className="flex items-end gap-3">
+          <Form method="post" key={`rubric-${selectedId}`} className="flex flex-col sm:flex-row sm:items-end gap-3">
             <input type="hidden" name="intent" value="set-rubric" />
             <input type="hidden" name="cycleId" value={cycleId} />
             <input type="hidden" name="domainId" value={domainId} />
@@ -1169,7 +1238,7 @@ function InterviewerSection({ cycleId, domainId, initialInterviewers }: {
         <h3 className="font-semibold text-foreground">Interviewers for this Domain ({interviewers.length})</h3>
       </div>
       <div className="p-4 space-y-3">
-        <div className="flex gap-2 items-end">
+        <div className="flex flex-col sm:flex-row sm:items-end gap-2">
           <div className="flex-1">
             <label className="block text-xs font-medium text-muted-foreground mb-1">Add Interviewer</label>
             <select
@@ -1417,7 +1486,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
 
   return (
     <div className="bg-card border border-border rounded-lg overflow-hidden">
-      <div className="px-6 py-4 border-b border-border bg-muted/50 flex items-center justify-between">
+      <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-border bg-muted/50 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-1">
           {isUnderReview ? (
             <div className="flex items-center gap-1 bg-muted rounded-lg p-0.5">
@@ -1494,7 +1563,8 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
           )}
         </div>
       </div>
-      <table className="w-full text-sm">
+      <div className="overflow-x-auto">
+      <table className="w-full text-sm min-w-[640px]">
         <thead className="bg-muted/50 text-xs font-medium text-muted-foreground uppercase tracking-wide">
           <tr>
             <th className="px-6 py-3 text-left">Applicant</th>
@@ -1551,7 +1621,8 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                     <span className="text-xs text-muted-foreground">—</span>
                   )}
                 </td>
-                <td className="px-6 py-4 text-right flex items-center justify-end gap-2">
+                <td className="px-6 py-4 text-right">
+                  <div className="flex flex-wrap items-center justify-end gap-2">
                   {isUnderReview && draftToFinalize && (
                     <button
                       onClick={async () => {
@@ -1569,6 +1640,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                   >
                     Review →
                   </Link>
+                  </div>
                 </td>
               </tr>
             );
@@ -1580,6 +1652,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
           )}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }
@@ -1843,7 +1916,7 @@ function ReviewModal({ review, rubricCriteria, onClose }: {
                   <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
                     Scores
                   </h3>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {scoreEntries.map(([key, score]) => (
                       <div
                         key={key}

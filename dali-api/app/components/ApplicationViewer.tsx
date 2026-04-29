@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from 'react'
 import { X } from 'lucide-react'
 import type { Question } from '~/types'
+import { RichTextViewer, isEmptyDoc } from '~/components/RichTextViewer'
 
 type HighlightColor = 'yellow' | 'green' | 'red' | 'blue'
 
@@ -233,12 +234,13 @@ function AnnotatableField({
 export interface ApplicationViewerProps {
   application: {
     answers: unknown
-    generalChallengeVersion: { questions: unknown } | null
+    generalChallengeVersion: { questions: unknown; description?: unknown } | null
     domainApplications: Array<{
       id: string
       answers: unknown
       challengeVersion: {
         questions: unknown
+        description?: unknown
         domain: { name: string }
         challenge: { name: string }
       }
@@ -286,6 +288,11 @@ export function ApplicationViewer({ application, questionLabels, initialAnnotati
           <h2 className="text-lg font-semibold text-foreground">General Information</h2>
         </div>
         <div className="p-6 space-y-6">
+          {!isEmptyDoc(application.generalChallengeVersion?.description) && (
+            <div className="border border-border rounded-md bg-muted/30 px-4 py-3">
+              <RichTextViewer content={application.generalChallengeVersion!.description} />
+            </div>
+          )}
           {Object.entries(application.answers as Record<string, unknown>).map(([key, value]) => (
             <div key={key}>
               <h3 className="text-sm font-medium text-muted-foreground mb-1">
@@ -307,6 +314,11 @@ export function ApplicationViewer({ application, questionLabels, initialAnnotati
               <h2 className="text-lg font-semibold text-foreground">{domainName} Challenge</h2>
             </div>
             <div className="p-6 space-y-6">
+              {!isEmptyDoc(dapp.challengeVersion.description) && (
+                <div className="border border-border rounded-md bg-muted/30 px-4 py-3">
+                  <RichTextViewer content={dapp.challengeVersion.description} />
+                </div>
+              )}
               {Object.entries(dapp.answers as Record<string, unknown>).map(([key, value]) => {
                 const label = challengeQuestions.find((q) => q.key === key)?.data.label ?? questionLabels[key] ?? key
                 return (

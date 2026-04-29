@@ -448,7 +448,7 @@ async function main() {
   const generalRubric = await prisma.rubric.upsert({
     where: { id: "rubric-general" },
     update: {},
-    create: { id: "rubric-general", name: "General Application Rubric", domainId: null },
+    create: { id: "rubric-general", name: "General Application Rubric" },
   });
 
   await prisma.rubricVersion.upsert({
@@ -471,7 +471,7 @@ async function main() {
   const engRubric = await prisma.rubric.upsert({
     where: { id: "rubric-eng" },
     update: {},
-    create: { id: "rubric-eng", name: "Engineering Rubric", domainId: engDomain.id },
+    create: { id: "rubric-eng", name: "Engineering Rubric" },
   });
 
   const engRubricVersion = await prisma.rubricVersion.upsert({
@@ -495,7 +495,7 @@ async function main() {
   const designRubric = await prisma.rubric.upsert({
     where: { id: "rubric-design" },
     update: {},
-    create: { id: "rubric-design", name: "Design Rubric", domainId: designDomain.id },
+    create: { id: "rubric-design", name: "Design Rubric" },
   });
 
   const designRubricVersion = await prisma.rubricVersion.upsert({
@@ -519,7 +519,7 @@ async function main() {
   const pmRubric = await prisma.rubric.upsert({
     where: { id: "rubric-pm" },
     update: {},
-    create: { id: "rubric-pm", name: "Product Rubric", domainId: pmDomain.id },
+    create: { id: "rubric-pm", name: "Product Rubric" },
   });
 
   const pmRubricVersion = await prisma.rubricVersion.upsert({

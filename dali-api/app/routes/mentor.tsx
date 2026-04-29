@@ -24,9 +24,12 @@ function isoToLocalMidnightInTz(iso: string, timezone: string): Date {
   const { year, month, day } = getZonedYMD(new Date(iso), timezone)
   return new Date(year, month - 1, day)
 }
+import { DigitSumClue, DIGIT_SUM_CORAL_INTERNAL_SLOT2 } from '~/components/DigitSumClue'
 import { prisma } from '~/lib/db'
 import { requireAuth } from '~/lib/auth'
 import type { Route } from './+types/mentor'
+
+export const meta: Route.MetaFunction = () => [{ title: "Reviewer · DALI OS" }]
 
 export async function loader({ request }: Route.LoaderArgs) {
   const empty = {
@@ -357,10 +360,19 @@ export default function MentorDashboard() {
       setImporting(false)
     }
   }, [interviewConfig])
+
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-foreground">Reviewer Dashboard</h1>
+        <h1 className="text-2xl font-bold text-foreground">
+          Reviewer Dashboard
+          <span className="group ml-1 inline-block cursor-help align-middle">
+            <span className="text-xs text-muted-foreground/30 group-hover:hidden">·</span>
+            <span className="hidden group-hover:inline">
+              <DigitSumClue slot={2} coralIndices={DIGIT_SUM_CORAL_INTERNAL_SLOT2} className="text-xs" />
+            </span>
+          </span>
+        </h1>
         <p className="mt-1 text-muted-foreground">
           Manage your hiring responsibilities.
         </p>
@@ -607,6 +619,7 @@ export default function MentorDashboard() {
           </div>
         )}
       </Section>
+      <p className="text-center text-xs text-section-bg select-all font-mono">1:0x43</p>
     </div>
   )
 }

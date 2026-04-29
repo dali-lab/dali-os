@@ -65,6 +65,11 @@ function nextStatus(current: CycleStatus): CycleStatus | null {
 
 // ─── Loader ──────────────────────────────────────────────────────────────────
 
+export const meta: Route.MetaFunction = ({ data }) => {
+  const name = (data as any)?.cycle?.name;
+  return [{ title: `${name || "Cycle"} · Hiring lead · DALI OS` }];
+};
+
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
@@ -100,7 +105,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
 
   const rubricVersionOptions = await prisma.rubricVersion.findMany({
-    where: { rubric: { domainId: null } },
     include: { rubric: { select: { name: true } } },
     orderBy: { createdAt: "desc" },
   });
@@ -123,8 +127,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     orderBy: { createdAt: "desc" },
   });
   const domainRubricVersions = await prisma.rubricVersion.findMany({
-    where: { rubric: { domainId: { in: domainIds } } },
-    include: { rubric: { select: { name: true, domainId: true } } },
+    include: { rubric: { select: { name: true } } },
     orderBy: { createdAt: "desc" },
   });
   const reviewsForCycle = await prisma.applicationReview.findMany({
@@ -326,7 +329,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     return redirect(`/hiring-lead-admin/cycle/${params.id}`);
   }
 
-  if (intent === "hl-set-domain-challenge") {
+  if (intent === "hl-add-domain-challenge") {
     const domainId = formData.get("domainId") as string;
     const challengeVersionId = formData.get("challengeVersionId") as string;
     if (!domainId || !challengeVersionId) {
@@ -347,14 +350,51 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (!cv || cv.domainId !== domainId) {
       return redirect(`/hiring-lead-admin/cycle/${params.id}`);
     }
-    await prisma.challengeVersionApplicationCycle.deleteMany({
+    // Prevent linking two versions of the same underlying challenge in one cycle.
+    const sameChallenge = await prisma.challengeVersionApplicationCycle.findFirst({
       where: {
-        applicationCycleId: params.id,
-        challengeVersion: { domainId },
+        applicationCycleId: params.id!,
+        challengeVersion: { challengeId: cv.challengeId, domainId },
       },
     });
-    await prisma.challengeVersionApplicationCycle.create({
-      data: { challengeVersionId, applicationCycleId: params.id },
+    if (sameChallenge) {
+      return redirect(`/hiring-lead-admin/cycle/${params.id}`);
+    }
+    const existing = await prisma.challengeVersionApplicationCycle.findUnique({
+      where: { challengeVersionId_applicationCycleId: { challengeVersionId, applicationCycleId: params.id! } },
+    });
+    if (!existing) {
+      await prisma.challengeVersionApplicationCycle.create({
+        data: { challengeVersionId, applicationCycleId: params.id! },
+      });
+    }
+    return redirect(`/hiring-lead-admin/cycle/${params.id}`);
+  }
+
+  if (intent === "hl-remove-domain-challenge") {
+    const challengeVersionId = formData.get("challengeVersionId") as string;
+    if (!challengeVersionId) {
+      return redirect(`/hiring-lead-admin/cycle/${params.id}`);
+    }
+    const latestUpdate = await prisma.applicationCycleStatusUpdate.findFirst({
+      where: { applicationCycleId: params.id },
+      orderBy: { createdAt: "desc" },
+    });
+    if ((latestUpdate?.newStatus ?? "Draft") !== "Draft") {
+      return redirect(`/hiring-lead-admin/cycle/${params.id}`);
+    }
+    // Refuse to remove if any DomainApplication in this cycle picked this CV.
+    const inUse = await prisma.domainApplication.count({
+      where: {
+        challengeVersionId,
+        application: { applicationCycleId: params.id! },
+      },
+    });
+    if (inUse > 0) {
+      return redirect(`/hiring-lead-admin/cycle/${params.id}`);
+    }
+    await prisma.challengeVersionApplicationCycle.deleteMany({
+      where: { challengeVersionId, applicationCycleId: params.id! },
     });
     return redirect(`/hiring-lead-admin/cycle/${params.id}`);
   }
@@ -381,9 +421,8 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (rubricVersionId) {
       const rv = await prisma.rubricVersion.findUnique({
         where: { id: rubricVersionId },
-        include: { rubric: true },
       });
-      if (!rv || rv.rubric.domainId !== domainId) {
+      if (!rv) {
         return redirect(`/hiring-lead-admin/cycle/${params.id}`);
       }
     }
@@ -750,7 +789,7 @@ export default function AdminCycleDetails() {
       </div>
 
       {/* Cycle Status */}
-      <div className="bg-card rounded-xl border border-border shadow-sm p-4 flex items-center justify-between">
+      <div className="bg-card rounded-xl border border-border shadow-sm p-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <span className="text-sm font-medium text-muted-foreground">Status:</span>
           <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-bold ${STATUS_COLORS[cycleStatus]}`}>
@@ -857,7 +896,7 @@ export default function AdminCycleDetails() {
       })()}
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-muted rounded-lg p-1">
+      <div className="flex gap-1 bg-muted rounded-lg p-1 overflow-x-auto">
         {([
           { key: 'setup' as const, label: 'Cycle Setup', icon: LayoutDashboard },
           { key: 'config' as const, label: 'Interview Setup', icon: Settings },
@@ -868,7 +907,7 @@ export default function AdminCycleDetails() {
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition ${
+            className={`flex-shrink-0 md:flex-1 flex items-center justify-center gap-2 px-3 sm:px-4 py-2 rounded-md text-sm font-medium transition whitespace-nowrap ${
               tab === t.key ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
             }`}
           >
@@ -882,9 +921,9 @@ export default function AdminCycleDetails() {
       {tab === 'setup' && (
         <div className="space-y-6">
           {/* Close Date */}
-          <div className="bg-card rounded-xl border border-border shadow-sm p-6">
+          <div className="bg-card rounded-xl border border-border shadow-sm p-4 sm:p-6">
             <h3 className="text-sm font-bold text-foreground/80 mb-3">Application Close Date</h3>
-            <Form method="post" className="flex items-end gap-3">
+            <Form method="post" className="flex flex-col sm:flex-row sm:items-end gap-3">
               <input type="hidden" name="intent" value="set-close-date" />
               <div className="flex-1">
                 <input
@@ -912,15 +951,13 @@ export default function AdminCycleDetails() {
             {(cycle?.domains ?? []).length > 0 ? (
               <div className="space-y-3">
                 {(cycle?.domains ?? []).map((d: any) => {
-                  const selectedCvLink = (cycle?.challengeVersions ?? []).find(
+                  const linkedCvLinks = (cycle?.challengeVersions ?? []).filter(
                     (cv: any) => cv.challengeVersion?.domainId === d.domainId
                   );
                   const challengeOptions = (loaderData?.domainChallengeVersions ?? []).filter(
                     (cv: any) => cv.domainId === d.domainId,
                   );
-                  const rubricOptions = (loaderData?.domainRubricVersions ?? []).filter(
-                    (rv: any) => rv.rubric?.domainId === d.domainId,
-                  );
+                  const rubricOptions = loaderData?.domainRubricVersions ?? [];
                   const reviewedDomainIds: string[] = loaderData?.reviewedDomainIds ?? [];
                   const rubricLocked = reviewedDomainIds.includes(d.domainId);
                   return (
@@ -928,7 +965,7 @@ export default function AdminCycleDetails() {
                       key={d.domainId}
                       domain={d}
                       cycleStatus={cycleStatus}
-                      selectedCvLink={selectedCvLink}
+                      linkedCvLinks={linkedCvLinks}
                       challengeOptions={challengeOptions}
                       rubricOptions={rubricOptions}
                       rubricLocked={rubricLocked}
@@ -1088,7 +1125,7 @@ export default function AdminCycleDetails() {
       {tab === 'reviewers' && (
         <div className="space-y-4">
           {/* Add reviewer form */}
-          <div className="bg-card rounded-xl border border-border shadow-sm p-6">
+          <div className="bg-card rounded-xl border border-border shadow-sm p-4 sm:p-6">
             <h3 className="text-sm font-bold text-foreground/80 mb-4 flex items-center gap-2">
               <Plus className="w-4 h-4" /> Add Reviewer
             </h3>
@@ -1135,7 +1172,8 @@ export default function AdminCycleDetails() {
 
           {/* Roster table */}
           <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[480px]">
               <thead className="bg-muted/50 border-b border-border">
                 <tr>
                   <th className="text-left px-4 py-3 font-bold text-foreground/80">Reviewer</th>
@@ -1162,10 +1200,11 @@ export default function AdminCycleDetails() {
                 )}
               </tbody>
             </table>
+            </div>
           </div>
 
           {/* Add interviewer form */}
-          <div className="bg-card rounded-xl border border-border shadow-sm p-6">
+          <div className="bg-card rounded-xl border border-border shadow-sm p-4 sm:p-6">
             <h3 className="text-sm font-bold text-foreground/80 mb-4 flex items-center gap-2">
               <Plus className="w-4 h-4" /> Add Interviewer
             </h3>
@@ -1212,7 +1251,8 @@ export default function AdminCycleDetails() {
 
           {/* Interviewer roster table */}
           <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[480px]">
               <thead className="bg-muted/50 border-b border-border">
                 <tr>
                   <th className="text-left px-4 py-3 font-bold text-foreground/80">Interviewer</th>
@@ -1241,6 +1281,7 @@ export default function AdminCycleDetails() {
                 )}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       )}
@@ -1249,7 +1290,8 @@ export default function AdminCycleDetails() {
       {tab === 'dashboard' && (
         <div className="space-y-4">
           <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[820px]">
               <thead className="bg-muted/50 border-b border-border">
                 <tr>
                   <th className="text-left px-4 py-3 font-bold text-foreground/80">Applicant</th>
@@ -1301,7 +1343,8 @@ export default function AdminCycleDetails() {
                                 <span>{name} ({roleLabel})</span>
                                 {isFuture && interview.status === 'Scheduled' && (
                                   <select
-                                    className="ml-1 text-[10px] border border-gray-300 rounded px-1 py-0.5"
+                                    className="ml-1 text-xs border border-gray-300 rounded px-1.5 py-0.5"
+                                    aria-label={`Reassign ${a.role === 'InDomain' ? 'in-domain' : 'cross-domain'} interviewer`}
                                     defaultValue=""
                                     onChange={async (e) => {
                                       if (!e.target.value) return
@@ -1341,6 +1384,7 @@ export default function AdminCycleDetails() {
                 )}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       )}
@@ -1349,7 +1393,7 @@ export default function AdminCycleDetails() {
       {tab === 'decisions' && (
         <div className="space-y-4">
           <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-            <div className="px-6 py-4 border-b border-border bg-muted/50 flex items-center justify-between">
+            <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-border bg-muted/50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <h3 className="font-bold text-foreground">Final Decisions Ready for Release</h3>
               {pendingDecisions.length > 0 && (
                 <button
@@ -1359,13 +1403,14 @@ export default function AdminCycleDetails() {
                     }
                     setPendingDecisions([])
                   }}
-                  className="px-3 py-1.5 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition"
+                  className="px-3 py-1.5 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition self-start sm:self-auto"
                 >
                   Release All ({pendingDecisions.length})
                 </button>
               )}
             </div>
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[640px]">
               <thead className="bg-muted/50 border-b border-border">
                 <tr>
                   <th className="text-left px-4 py-3 font-bold text-foreground/80">Applicant</th>
@@ -1394,7 +1439,7 @@ export default function AdminCycleDetails() {
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">{d.madeBy.firstName} {d.madeBy.lastName}</td>
                     <td className="px-4 py-3 text-right">
-                      <div className="inline-flex items-center gap-2">
+                      <div className="inline-flex flex-wrap items-center justify-end gap-2">
                         <button
                           type="button"
                           onClick={() => setPreviewDecisionId(d.id)}
@@ -1425,6 +1470,7 @@ export default function AdminCycleDetails() {
                 )}
               </tbody>
             </table>
+            </div>
           </div>
           {previewDecisionId && (() => {
             const d = pendingDecisions.find((x: any) => x.id === previewDecisionId)
@@ -1463,10 +1509,10 @@ function DecisionEmailPreviewModal({ decision, binding, onClose }: {
         className="bg-card rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-          <div>
+        <div className="flex items-center justify-between gap-3 px-4 sm:px-6 py-3 sm:py-4 border-b border-border">
+          <div className="min-w-0">
             <h2 className="text-lg font-bold text-foreground">Email preview</h2>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-muted-foreground break-words">
               {decision.domainApplication.application.user.firstName} {decision.domainApplication.application.user.lastName}
               {' · '}
               {decision.domainApplication.challengeVersion.domain.name}
@@ -1477,13 +1523,13 @@ function DecisionEmailPreviewModal({ decision, binding, onClose }: {
           <button
             type="button"
             onClick={onClose}
-            className="text-muted-foreground/70 hover:text-foreground"
+            className="text-muted-foreground/70 hover:text-foreground flex-shrink-0"
             aria-label="Close preview"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
-        <div className="px-6 py-4 space-y-4">
+        <div className="px-4 sm:px-6 py-4 space-y-4">
           {tmpl ? (
             <>
               <div>
@@ -1523,7 +1569,7 @@ function DecisionEmailPreviewModal({ decision, binding, onClose }: {
             </div>
           )}
         </div>
-        <div className="px-6 py-3 border-t border-border bg-muted/30 flex justify-end">
+        <div className="px-4 sm:px-6 py-3 border-t border-border bg-muted/30 flex justify-end">
           <button
             type="button"
             onClick={onClose}
@@ -1712,36 +1758,41 @@ function GeneralRubricPicker({ currentRubricVersionId, rubricVersionOptions, loc
 function DomainOverridePanel({
   domain,
   cycleStatus,
-  selectedCvLink,
+  linkedCvLinks,
   challengeOptions,
   rubricOptions,
   rubricLocked,
 }: {
   domain: any;
   cycleStatus: string;
-  selectedCvLink: any | undefined;
+  linkedCvLinks: any[];
   challengeOptions: any[];
   rubricOptions: any[];
   rubricLocked: boolean;
 }) {
   const [showReadyModal, setShowReadyModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [showChallengePreview, setShowChallengePreview] = useState(false);
+  const [previewCvId, setPreviewCvId] = useState<string | null>(null);
   const [showRubricPreview, setShowRubricPreview] = useState(false);
 
   const challengeLocked = cycleStatus !== 'Draft';
   const readyLocked = cycleStatus !== 'Draft';
   const isReady: boolean = !!domain.isReady;
-  const selectedCvId: string | null = selectedCvLink?.challengeVersionId ?? null;
-  const selectedCv = selectedCvLink?.challengeVersion;
-  const selectedCvLabel = selectedCv
-    ? `${selectedCv.challenge?.name ?? 'Untitled'} — created ${new Date(selectedCv.createdAt).toLocaleDateString()}`
-    : null;
+  const linkedCvs: any[] = linkedCvLinks.map((l: any) => l.challengeVersion).filter(Boolean);
+  const linkedCvIds = new Set<string>(linkedCvs.map((cv: any) => cv.id));
+  const linkedChallengeIds = new Set<string>(linkedCvs.map((cv: any) => cv.challengeId));
+  const hasLinkedChallenge = linkedCvs.length > 0;
+  const summaryLabel = !hasLinkedChallenge
+    ? null
+    : linkedCvs.length === 1
+      ? `${linkedCvs[0].challenge?.name ?? 'Untitled'} — created ${new Date(linkedCvs[0].createdAt).toLocaleDateString()}`
+      : `${linkedCvs.length} challenges linked`;
 
-  // Controlled selects so the displayed value always reflects the saved state
-  // after React Router re-renders (same-URL redirect may not remount the component).
-  const [selectedChallengeId, setSelectedChallengeId] = useState(selectedCvId ?? '');
-  useEffect(() => { setSelectedChallengeId(selectedCvId ?? ''); }, [selectedCvId]);
+  // Picker for adding a new CV (filtered to those not yet linked, and not a duplicate challenge)
+  const addableOptions = challengeOptions.filter((cv: any) => !linkedCvIds.has(cv.id) && !linkedChallengeIds.has(cv.challengeId));
+  const [pickerCvId, setPickerCvId] = useState('');
+  // Reset picker when the linked set changes (after a redirect re-render)
+  useEffect(() => { setPickerCvId(''); }, [linkedCvIds.size]);
 
   // Close the ready modal when isReady flips — same-URL redirects don't remount
   // the component so the modal state survives the round-trip without this.
@@ -1753,16 +1804,18 @@ function DomainOverridePanel({
   const currentRubric = rubricOptions.find((rv: any) => rv.id === selectedRubricId);
   const currentRubricLabel = currentRubric ? `${currentRubric.rubric.name} — v${currentRubric.versionNumber}` : null;
 
-  const previewCv = challengeOptions.find((cv: any) => cv.id === selectedChallengeId) ?? selectedCv;
+  const previewCv = previewCvId
+    ? (challengeOptions.find((cv: any) => cv.id === previewCvId) ?? linkedCvs.find((cv: any) => cv.id === previewCvId))
+    : null;
 
   return (
     <div className="border border-border rounded-lg p-4 space-y-3">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-sm font-semibold text-foreground">{domain.domain?.name ?? domain.domainId}</span>
-          {selectedCv ? (
+          {hasLinkedChallenge ? (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700">
-              <CheckCircle className="w-3 h-3" /> Challenge linked
+              <CheckCircle className="w-3 h-3" /> {linkedCvs.length === 1 ? 'Challenge linked' : `${linkedCvs.length} challenges linked`}
             </span>
           ) : (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-yellow-100 text-yellow-700">
@@ -1792,53 +1845,79 @@ function DomainOverridePanel({
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div>
-          <label className="block text-xs font-medium text-muted-foreground mb-1">
-            Challenge version {challengeLocked && <span className="text-muted-foreground/70">(locked — cycle is past Draft)</span>}
+        <div className="space-y-2">
+          <label className="block text-xs font-medium text-muted-foreground">
+            Challenge versions {challengeLocked && <span className="text-muted-foreground/70">(locked — cycle is past Draft)</span>}
           </label>
+          {linkedCvs.length > 0 && (
+            <ul className="border border-border rounded-lg divide-y divide-border bg-card">
+              {linkedCvs.map((cv: any) => (
+                <li key={cv.id} className="flex items-center justify-between px-3 py-2 text-sm">
+                  <span className="text-foreground/80 truncate">
+                    {cv.challenge?.name ?? 'Untitled'} — {new Date(cv.createdAt).toLocaleDateString()}
+                  </span>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setPreviewCvId(cv.id)}
+                      className="flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-lg border border-border hover:bg-muted/50 text-foreground/70 transition"
+                    >
+                      <Eye className="w-3 h-3" /> Preview
+                    </button>
+                    {!challengeLocked && (
+                      <Form method="post">
+                        <input type="hidden" name="intent" value="hl-remove-domain-challenge" />
+                        <input type="hidden" name="challengeVersionId" value={cv.id} />
+                        <button
+                          type="submit"
+                          aria-label={`Remove ${cv.challenge?.name ?? 'challenge'}`}
+                          className="text-muted-foreground hover:text-red-600 transition px-1"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </Form>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
           {challengeLocked ? (
-            <div className="flex items-center gap-2">
-              <div className="flex-1 text-sm text-foreground/80 px-3 py-2 bg-muted/40 rounded-lg">
-                {selectedCvLabel ?? 'No challenge linked'}
+            !hasLinkedChallenge && (
+              <div className="text-sm text-foreground/80 px-3 py-2 bg-muted/40 rounded-lg">
+                No challenge linked
               </div>
-              {selectedCv && (
-                <button
-                  type="button"
-                  onClick={() => setShowChallengePreview(true)}
-                  className="flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-lg border border-border hover:bg-muted/50 text-foreground/70 transition"
-                >
-                  <Eye className="w-3 h-3" /> Preview
-                </button>
-              )}
-            </div>
-          ) : challengeOptions.length === 0 ? (
-            <p className="text-xs text-muted-foreground/70 px-3 py-2 bg-muted/30 rounded-lg">
-              No challenge versions exist for this domain. Create one on the Challenges page.
-            </p>
+            )
+          ) : addableOptions.length === 0 ? (
+            !hasLinkedChallenge && (
+              <p className="text-xs text-muted-foreground/70 px-3 py-2 bg-muted/30 rounded-lg">
+                No challenge versions exist for this domain. Create one on the Challenges page.
+              </p>
+            )
           ) : (
             <Form method="post" className="flex items-end gap-2">
-              <input type="hidden" name="intent" value="hl-set-domain-challenge" />
+              <input type="hidden" name="intent" value="hl-add-domain-challenge" />
               <input type="hidden" name="domainId" value={domain.domainId} />
               <div className="flex-1 min-w-0">
                 <select
                   name="challengeVersionId"
-                  value={selectedChallengeId}
-                  onChange={(e) => setSelectedChallengeId(e.target.value)}
+                  value={pickerCvId}
+                  onChange={(e) => setPickerCvId(e.target.value)}
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                  aria-label={`Select challenge version for ${domain.domain?.name ?? domain.domainId}`}
+                  aria-label={`Add challenge version for ${domain.domain?.name ?? domain.domainId}`}
                 >
-                  <option value="" disabled>Select a challenge version...</option>
-                  {challengeOptions.map((cv: any) => (
+                  <option value="" disabled>Add a challenge version...</option>
+                  {addableOptions.map((cv: any) => (
                     <option key={cv.id} value={cv.id}>
                       {cv.challenge?.name ?? 'Untitled'} — {new Date(cv.createdAt).toLocaleDateString()}
                     </option>
                   ))}
                 </select>
               </div>
-              {selectedChallengeId && (
+              {pickerCvId && (
                 <button
                   type="button"
-                  onClick={() => setShowChallengePreview(true)}
+                  onClick={() => setPreviewCvId(pickerCvId)}
                   className="flex items-center gap-1 px-2 py-2 text-xs font-medium rounded-lg border border-border hover:bg-muted/50 text-foreground/70 transition"
                 >
                   <Eye className="w-3 h-3" /> Preview
@@ -1846,9 +1925,10 @@ function DomainOverridePanel({
               )}
               <button
                 type="submit"
-                className="px-3 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition"
+                disabled={!pickerCvId}
+                className="px-3 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition disabled:opacity-50"
               >
-                Save
+                Add
               </button>
             </Form>
           )}
@@ -1875,7 +1955,7 @@ function DomainOverridePanel({
             </div>
           ) : rubricOptions.length === 0 ? (
             <p className="text-xs text-muted-foreground/70 px-3 py-2 bg-muted/30 rounded-lg">
-              No rubric versions exist for this domain. Create one on the Rubrics page.
+              No rubric versions exist. Create one on the Rubrics page.
             </p>
           ) : (
             <Form method="post" className="flex items-end gap-2">
@@ -1925,8 +2005,8 @@ function DomainOverridePanel({
           <button
             type="button"
             onClick={() => setShowReadyModal(true)}
-            disabled={!isReady && !selectedCv}
-            title={!isReady && !selectedCv ? 'Link a challenge before marking ready' : undefined}
+            disabled={!isReady && !hasLinkedChallenge}
+            title={!isReady && !hasLinkedChallenge ? 'Link a challenge before marking ready' : undefined}
             className={`px-3 py-1.5 text-sm font-medium rounded-lg transition disabled:opacity-50 ${
               isReady
                 ? 'bg-card border border-border hover:bg-muted/50 text-foreground/80'
@@ -1949,15 +2029,15 @@ function DomainOverridePanel({
         <ForceReadyModal
           domain={domain}
           isReady={isReady}
-          selectedCvLabel={selectedCvLabel}
+          selectedCvLabel={summaryLabel}
           onClose={() => setShowReadyModal(false)}
         />
       )}
 
-      {showChallengePreview && previewCv && (
+      {previewCv && (
         <ChallengePreviewModal
           cv={previewCv}
-          onClose={() => setShowChallengePreview(false)}
+          onClose={() => setPreviewCvId(null)}
         />
       )}
 
