@@ -72,6 +72,21 @@ describe("party.ts retro helpers", () => {
     expect(docClasses.has("dali-retro")).toBe(false);
   });
 
+  it("setRetro(false) also resets the session click counter so the /party redirect doesn't trigger unexpectedly", async () => {
+    const { setRetro } = await import("~/lib/party");
+    win.sessionStorage.setItem("dali:party:logo-clicks", "5");
+    setRetro(true);
+    setRetro(false);
+    expect(win.sessionStorage.getItem("dali:party:logo-clicks")).toBeNull();
+  });
+
+  it("setRetro(true) does not clear the session click counter", async () => {
+    const { setRetro } = await import("~/lib/party");
+    win.sessionStorage.setItem("dali:party:logo-clicks", "3");
+    setRetro(true);
+    expect(win.sessionStorage.getItem("dali:party:logo-clicks")).toBe("3");
+  });
+
   it("setRetro dispatches a retro-change event so subscribers can rerender", async () => {
     const { setRetro } = await import("~/lib/party");
     setRetro(true);

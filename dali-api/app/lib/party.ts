@@ -55,8 +55,14 @@ const RETRO_EVENT = "dali:party:retro-change";
 
 export function setRetro(on: boolean) {
   if (typeof window === "undefined") return;
-  if (on) window.localStorage.setItem(RETRO_KEY, "1");
-  else window.localStorage.removeItem(RETRO_KEY);
+  if (on) {
+    window.localStorage.setItem(RETRO_KEY, "1");
+  } else {
+    window.localStorage.removeItem(RETRO_KEY);
+    // Also reset the click counter so the user isn't still counting towards /party
+    // after explicitly exiting retro mode.
+    window.sessionStorage.removeItem(CLICK_KEY);
+  }
   document.documentElement.classList.toggle("dali-retro", on);
   window.dispatchEvent(new CustomEvent(RETRO_EVENT, { detail: { on } }));
 }
