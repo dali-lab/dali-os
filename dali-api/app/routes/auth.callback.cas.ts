@@ -3,6 +3,7 @@ import { prisma } from "~/lib/db";
 import { validateCasTicket } from "~/lib/auth";
 import { issueTokens } from "~/lib/oauth";
 import { setTokenCookies } from "~/lib/cookies";
+import { logAuditEvent } from "~/lib/audit";
 
 export async function action() {
   return new Response("Method not allowed", { status: 405 });
@@ -15,6 +16,11 @@ export async function loader({ request }: Route.LoaderArgs) {
   const ticket = url.searchParams.get("ticket");
 
   if (!ticket) {
+    await logAuditEvent({
+      action: "login.failure",
+      metadata: { provider: "cas", reason: "missing_ticket" },
+      request,
+    });
     return new Response(null, {
       status: 302,
       headers: { Location: "/login?error=cas_auth_failed" },
@@ -26,6 +32,11 @@ export async function loader({ request }: Route.LoaderArgs) {
   try {
     casUser = await validateCasTicket(ticket, `${apiBase}/auth/callback/cas`);
   } catch {
+    await logAuditEvent({
+      action: "login.failure",
+      metadata: { provider: "cas", reason: "ticket_validation_failed" },
+      request,
+    });
     return new Response(null, {
       status: 302,
       headers: { Location: "/login?error=cas_auth_failed" },
@@ -51,6 +62,16 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   // Issue tokens and set cookies
   const tokens = await issueTokens(user.id, "dartmouth");
+  await logAuditEvent({
+    action: "login.success",
+    userId: user.id,
+    metadata: {
+      provider: "cas",
+      authType: "dartmouth",
+      netId: casUser.netId,
+    },
+    request,
+  });
   const headers = new Headers();
   setTokenCookies(headers, tokens.access_token, tokens.refresh_token);
   headers.set("Location", "/portal");

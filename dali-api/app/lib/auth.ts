@@ -1,5 +1,6 @@
 import { SignJWT, jwtVerify } from "jose";
 import { parseAccessToken } from "~/lib/cookies";
+import { logAuditEvent } from "~/lib/audit";
 
 // jwt helper functions
 
@@ -79,6 +80,13 @@ export async function requireAuth(request: Request): Promise<AuthResult> {
     const user = await verifyAccessToken(token);
     return { ok: true, user };
   } catch {
+    // Only log when a token was presented but failed to verify — logging every
+    // missing-cookie request would flood the audit table with normal
+    // unauthenticated traffic.
+    await logAuditEvent({
+      action: "auth.token.invalid",
+      request,
+    });
     return {
       ok: false,
       response: new Response(

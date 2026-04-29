@@ -36,5 +36,8 @@ export const prisma = {
   application: {
     findUnique: vi.fn(),
   },
+  auditLog: {
+    create: vi.fn(),
+  },
   $transaction: vi.fn(),
 };

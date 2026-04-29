@@ -2,6 +2,7 @@ import type { Route } from "./+types/auth.callback.google";
 import { prisma } from "~/lib/db";
 import { exchangeGoogleCode, issueTokens } from "~/lib/oauth";
 import { setTokenCookies } from "~/lib/cookies";
+import { logAuditEvent } from "~/lib/audit";
 
 const OAUTH_STATE_COOKIE = "__dali_oauth_state";
 const ACCOUNT_TYPE_COOKIE = "__dali_account_type";
@@ -29,6 +30,11 @@ export async function loader({ request }: Route.LoaderArgs) {
   const googleError = url.searchParams.get("error");
 
   if (googleError || !code || !state) {
+    await logAuditEvent({
+      action: "login.failure",
+      metadata: { provider: "google", reason: "missing_code" },
+      request,
+    });
     return new Response(null, {
       status: 302,
       headers: { Location: "/login?error=google_auth_failed" },
@@ -41,6 +47,11 @@ export async function loader({ request }: Route.LoaderArgs) {
   const clearStateCookie = `${OAUTH_STATE_COOKIE}=; Path=/auth/callback/google; Max-Age=0; HttpOnly; SameSite=Lax`;
 
   if (!savedState || savedState !== state) {
+    await logAuditEvent({
+      action: "login.failure",
+      metadata: { provider: "google", reason: "state_mismatch" },
+      request,
+    });
     return new Response(null, {
       status: 302,
       headers: {
@@ -55,6 +66,11 @@ export async function loader({ request }: Route.LoaderArgs) {
   try {
     googleUser = await exchangeGoogleCode(code, `${apiBase}/auth/callback/google`);
   } catch {
+    await logAuditEvent({
+      action: "login.failure",
+      metadata: { provider: "google", reason: "code_exchange_failed" },
+      request,
+    });
     return new Response(null, {
       status: 302,
       headers: {
@@ -71,6 +87,15 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   // For member login, enforce DALI domain
   if (isMemberLogin && !googleUser.email.endsWith("@dali.dartmouth.edu")) {
+    await logAuditEvent({
+      action: "login.failure",
+      metadata: {
+        provider: "google",
+        reason: "domain_denied",
+        email: googleUser.email,
+      },
+      request,
+    });
     const headers = new Headers();
     headers.append("Set-Cookie", clearStateCookie);
     headers.append("Set-Cookie", clearAccountTypeCookie);
@@ -152,6 +177,16 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   // Issue tokens and set cookies
   const tokens = await issueTokens(user.id, authType);
+  await logAuditEvent({
+    action: "login.success",
+    userId: user.id,
+    metadata: {
+      provider: "google",
+      authType,
+      email: googleUser.email,
+    },
+    request,
+  });
   const headers = new Headers();
   headers.append("Set-Cookie", clearStateCookie);
   headers.append("Set-Cookie", clearAccountTypeCookie);

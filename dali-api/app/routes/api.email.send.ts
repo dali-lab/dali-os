@@ -9,6 +9,7 @@
 import { requireAuth } from '~/lib/auth'
 import { prisma } from '~/lib/db'
 import { sendEmail } from '~/lib/gmail'
+import { logAuditEvent } from '~/lib/audit'
 import { checkRateLimit } from '~/lib/rate-limit'
 
 const GMAIL_USER = 'applications@dali.dartmouth.edu'
@@ -50,6 +51,12 @@ export async function action({ request }: { request: Request }) {
   try {
     const refreshToken = await getGmailRefreshToken()
     await sendEmail({ refreshToken, to, subject, html })
+    await logAuditEvent({
+      action: 'email.send',
+      userId: auth.user.sub,
+      metadata: { to, subject },
+      request,
+    })
     return Response.json({ ok: true })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)

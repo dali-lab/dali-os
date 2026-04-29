@@ -1,4 +1,9 @@
 import { describe, it, expect, beforeAll, vi } from "vitest";
+
+vi.mock("~/lib/audit", () => ({
+  logAuditEvent: vi.fn(),
+}));
+
 import {
   signAccessToken,
   verifyAccessToken,

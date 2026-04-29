@@ -727,6 +727,27 @@ model CycleDecisionEmail {
   @@id([applicationCycleId, decisionType])
 }
 
+// ─── Audit Logging ───────────────────────────────────────────────────────────
+
+// Append-only audit trail of security-relevant events (auth, role changes,
+// decision state transitions, email sends). userId is intentionally a free-form
+// string rather than an FK so audit rows survive User deletion.
+model AuditLog {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  action    String // e.g. "login.success", "role.change", "decision.release"
+  userId    String? // acting user id (null when unattributed)
+  targetId  String? // affected resource id
+  metadata  Json? // additional context — must not contain secrets, tokens, or PII beyond what's necessary
+  ip        String?
+  userAgent String?
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
+
 // Which domains a DALIMember leads (permanent assignment, not cycle-scoped)
 model DomainLeadAssignment {
   id        String   @id @default(cuid())
