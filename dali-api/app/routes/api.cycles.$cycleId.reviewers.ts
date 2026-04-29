@@ -1,9 +1,15 @@
 import type { Route } from "./+types/api.cycles.$cycleId.reviewers";
+import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isHiringLead, isDomainLead, hasCycleAccess } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { safeJson } from "~/lib/safe-json";
+import { parseJson } from "~/lib/validate";
+
+const CreateReviewerSchema = z.object({
+  daliMemberId: z.string().min(1).max(100),
+  domainId: z.string().min(1).max(100),
+});
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const preflight = handlePreflight(request);
@@ -38,13 +44,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
 
-  const body = await safeJson<{ daliMemberId?: string; domainId?: string }>(request);
+  const body = await parseJson(request, CreateReviewerSchema);
   if (body instanceof Response) return withCors(request, body);
   const { daliMemberId, domainId } = body;
-
-  if (!daliMemberId || !domainId) {
-    return withCors(request, Response.json({ error: "daliMemberId and domainId required" }, { status: 400 }));
-  }
 
   // Ensure domain is linked to cycle
   await prisma.domainApplicationCycle.upsert({

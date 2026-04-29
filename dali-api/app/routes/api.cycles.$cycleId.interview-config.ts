@@ -1,10 +1,33 @@
 import type { Route } from "./+types/api.cycles.$cycleId.interview-config";
+import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isHiringLead, hasCycleAccess } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { safeJson } from "~/lib/safe-json";
+import { parseJson } from "~/lib/validate";
 import { isValidTimezone } from "~/lib/timezone";
+
+const InterviewConfigSchema = z
+  .object({
+    slotDurationMinutes: z.number().int().min(5).max(240).optional(),
+    bufferMinutes: z.number().int().min(0).max(120).optional(),
+    dayStartHour: z.number().int().min(0).max(23).optional(),
+    dayEndHour: z.number().int().min(0).max(23).optional(),
+    interviewStartDate: z.string().datetime({ offset: true }),
+    interviewEndDate: z.string().datetime({ offset: true }),
+    timezone: z.string().min(1).max(100).optional(),
+  })
+  .refine(
+    (v) =>
+      v.dayStartHour === undefined ||
+      v.dayEndHour === undefined ||
+      v.dayStartHour < v.dayEndHour,
+    { message: "dayStartHour must be less than dayEndHour" },
+  )
+  .refine(
+    (v) => new Date(v.interviewEndDate) >= new Date(v.interviewStartDate),
+    { message: "interviewEndDate must be on or after interviewStartDate" },
+  );
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const preflight = handlePreflight(request);
@@ -35,7 +58,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
 
-  const body = await safeJson<Record<string, unknown>>(request);
+  const body = await parseJson(request, InterviewConfigSchema);
   if (body instanceof Response) return withCors(request, body);
 
   if (body.timezone !== undefined && !isValidTimezone(body.timezone)) {

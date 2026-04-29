@@ -1,8 +1,13 @@
 import type { Route } from "./+types/api.domain-applications.$id.reviews";
+import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isHiringLead, isDomainLead, hasCycleAccess } from "~/lib/roles";
-import { safeJson } from "~/lib/safe-json";
+import { parseJson } from "~/lib/validate";
+
+const CreateReviewSchema = z.object({
+  cycleReviewerId: z.string().min(1).max(100),
+});
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -45,13 +50,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const body = await safeJson<{ cycleReviewerId?: string }>(request);
+  const body = await parseJson(request, CreateReviewSchema);
   if (body instanceof Response) return body;
   const { cycleReviewerId } = body;
-
-  if (!cycleReviewerId) {
-    return Response.json({ error: "cycleReviewerId is required" }, { status: 400 });
-  }
 
   const domainApp = await prisma.domainApplication.findUniqueOrThrow({
     where: { id: params.id },

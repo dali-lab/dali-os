@@ -1,8 +1,13 @@
 import type { Route } from "./+types/api.my-interview.cancel";
+import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { safeJson } from "~/lib/safe-json";
+import { parseJson } from "~/lib/validate";
+
+const CancelSchema = z.object({
+  domainApplicationId: z.string().min(1).max(100),
+});
 
 export async function action({ request }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
@@ -15,13 +20,9 @@ export async function action({ request }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
 
-  const body = await safeJson<{ domainApplicationId?: string }>(request);
+  const body = await parseJson(request, CancelSchema);
   if (body instanceof Response) return withCors(request, body);
   const { domainApplicationId } = body;
-
-  if (!domainApplicationId) {
-    return withCors(request, Response.json({ error: "domainApplicationId is required" }, { status: 400 }));
-  }
 
   const interview = await prisma.interview.findFirst({
     where: {
