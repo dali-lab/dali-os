@@ -11,7 +11,6 @@ export interface BuildQuestionInput {
   description?: string
   optionsText?: string
   accept?: string
-  showForRoles?: string[]
   afterDomains?: boolean
   isGeneralForm?: boolean
   maxWordsEnabled?: boolean
@@ -27,7 +26,6 @@ export function buildQuestion(input: BuildQuestionInput): Question {
     description,
     optionsText,
     accept,
-    showForRoles,
     afterDomains,
     isGeneralForm,
     maxWordsEnabled,
@@ -56,7 +54,6 @@ export function buildQuestion(input: BuildQuestionInput): Question {
           ? (optionsText ?? '').split('\n').filter((o) => o.trim() !== '')
           : undefined,
       accept: type === 'file' ? accept || undefined : undefined,
-      showForRoles: showForRoles && showForRoles.length > 0 ? showForRoles : undefined,
       afterDomains: isGeneralForm && afterDomains ? true : undefined,
       maxWords,
     },
@@ -83,7 +80,6 @@ export function FormBuilderTab({
   const [isAdding, setIsAdding] = useState(false)
   const [editForm, setEditForm] = useState<Partial<Question>>({})
   const [optionsText, setOptionsText] = useState('')
-  const [showForRoles, setShowForRoles] = useState<string[]>([])
   const [maxWordsEnabled, setMaxWordsEnabled] = useState(false)
   const [maxWordsValue, setMaxWordsValue] = useState<string>('')
   // Drag and drop state
@@ -131,7 +127,6 @@ export function FormBuilderTab({
     setIsAdding(false)
     setEditForm({})
     setOptionsText('')
-    setShowForRoles([])
     setMaxWordsEnabled(false)
     setMaxWordsValue('')
   }
@@ -139,7 +134,6 @@ export function FormBuilderTab({
     setEditingKey(q.key)
     setEditForm(q)
     setOptionsText(q.data.options?.join('\n') || '')
-    setShowForRoles(q.data.showForRoles || [])
     setMaxWordsEnabled(q.data.maxWords !== undefined)
     setMaxWordsValue(q.data.maxWords !== undefined ? String(q.data.maxWords) : '')
     setIsAdding(false)
@@ -157,7 +151,6 @@ export function FormBuilderTab({
       description: editForm.data.description,
       optionsText,
       accept: editForm.data.accept,
-      showForRoles,
       afterDomains: editForm.data.afterDomains,
       isGeneralForm,
       maxWordsEnabled,
@@ -187,7 +180,6 @@ export function FormBuilderTab({
       },
     })
     setOptionsText('')
-    setShowForRoles([])
     setMaxWordsEnabled(false)
     setMaxWordsValue('')
   }
@@ -442,11 +434,6 @@ export function FormBuilderTab({
                     {q.required && (
                       <span className="text-xs font-medium text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
                         Required
-                      </span>
-                    )}
-                    {q.data.showForRoles && q.data.showForRoles.length > 0 && (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-purple-100 text-purple-800">
-                        Conditional
                       </span>
                     )}
                     {q.data.afterDomains && (

@@ -99,7 +99,6 @@ export interface Question {
     label: string
     description?: string
     options?: string[]
-    showForRoles?: string[]
     afterDomains?: boolean
     accept?: string
     maxWords?: number

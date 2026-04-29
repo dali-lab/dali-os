@@ -2,15 +2,18 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as Y from "yjs";
 
 // Mock prisma before importing the module under test
-vi.mock("~/lib/db", () => ({
-  prisma: {
+vi.mock("~/lib/db", () => {
+  const mock: any = {
     collabDocument: { findUnique: vi.fn(), upsert: vi.fn() },
     collabDocumentVersion: { findFirst: vi.fn(), create: vi.fn() },
     applicationReview: { findUnique: vi.fn(), update: vi.fn() },
     interview: { findUnique: vi.fn(), update: vi.fn() },
     interviewAssignment: { findMany: vi.fn() },
-  },
-}));
+    $executeRaw: vi.fn().mockResolvedValue(1),
+    $transaction: vi.fn((fn: (tx: any) => Promise<any>) => fn(mock)),
+  };
+  return { prisma: mock };
+});
 
 // Mock the server module to avoid circular imports
 vi.mock("~/collab/server", () => ({
@@ -202,5 +205,36 @@ describe("maybeSnapshot", () => {
         authorIds: ["u1", "u2"],
       }),
     });
+  });
+
+  it("acquires a per-doc advisory lock inside the transaction", async () => {
+    mockPrisma.collabDocumentVersion.findFirst.mockResolvedValue(null);
+    mockPrisma.collabDocumentVersion.create.mockResolvedValue({});
+
+    const stored = { state: Buffer.from([]), plainText: "" };
+    await maybeSnapshot("review:r1:feedback", stored, []);
+
+    expect(mockPrisma.$transaction).toHaveBeenCalledOnce();
+    expect(mockPrisma.$executeRaw).toHaveBeenCalledOnce();
+    // Tagged-template call: first arg is the strings array, then the bound name.
+    const [strings, ...values] = mockPrisma.$executeRaw.mock.calls[0];
+    expect(strings.join("?")).toContain("pg_advisory_xact_lock");
+    expect(values).toEqual(["review:r1:feedback"]);
+  });
+
+  it("re-checks the throttle inside the lock so a racing instance's recent insert wins", async () => {
+    // Simulate the cross-machine race: when this instance enters the
+    // transaction and runs findFirst, a peer instance has already inserted
+    // a snapshot 5s ago. The throttle should kick in and skip the create.
+    mockPrisma.collabDocumentVersion.findFirst.mockResolvedValue({
+      createdAt: new Date(Date.now() - 5_000),
+    });
+
+    const stored = { state: Buffer.from([1]), plainText: "x" };
+    const result = await maybeSnapshot("review:r1:feedback", stored, ["u1"]);
+
+    expect(result).toBe(false);
+    expect(mockPrisma.$executeRaw).toHaveBeenCalledOnce();
+    expect(mockPrisma.collabDocumentVersion.create).not.toHaveBeenCalled();
   });
 });

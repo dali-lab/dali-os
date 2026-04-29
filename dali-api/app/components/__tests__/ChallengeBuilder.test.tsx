@@ -61,13 +61,11 @@ describe('buildQuestion (form builder save logic)', () => {
     const q = buildQuestion({
       ...base,
       description: 'Keep it brief.',
-      showForRoles: ['developer'],
       maxWordsEnabled: true,
       maxWordsValue: '100',
     })
     expect(q.data.label).toBe('Tell us about yourself')
     expect(q.data.description).toBe('Keep it brief.')
-    expect(q.data.showForRoles).toEqual(['developer'])
     expect(q.data.maxWords).toBe(100)
   })
 })
