@@ -6,7 +6,7 @@ test.describe('hiring lead workflow', () => {
   });
 
   test('cycles list shows active cycle and controls', async ({ page }) => {
-    await page.goto('/hiring-lead-admin');
+    await page.goto('/hiring/lead');
     await expect(page.getByRole('heading', { name: 'Hiring Cycles' })).toBeVisible();
     await expect(page.getByRole('button', { name: /New Cycle/ })).toBeVisible();
     await expect(page.getByText('Fall 2026').first()).toBeVisible();
@@ -14,13 +14,13 @@ test.describe('hiring lead workflow', () => {
   });
 
   test('can navigate to cycle detail', async ({ page }) => {
-    await page.goto('/hiring-lead-admin');
+    await page.goto('/hiring/lead');
     await page.getByText('Fall 2026').first().click();
-    await expect(page).toHaveURL(/\/hiring-lead-admin\/cycle\/.+/);
+    await expect(page).toHaveURL(/\/hiring\/lead\/cycle\/.+/);
   });
 
   test('cycle detail shows management tabs', async ({ page }) => {
-    await page.goto('/hiring-lead-admin');
+    await page.goto('/hiring/lead');
     await page.getByRole('link', { name: /Fall 2026/ }).click();
 
     await expect(page.getByRole('button', { name: 'Cycle Setup' })).toBeVisible();
@@ -31,7 +31,7 @@ test.describe('hiring lead workflow', () => {
   });
 
   test('cycle setup tab shows domains', async ({ page }) => {
-    await page.goto('/hiring-lead-admin');
+    await page.goto('/hiring/lead');
     await page.getByRole('link', { name: /Fall 2026/ }).click();
 
     await expect(page.getByText('Engineering').first()).toBeVisible();
@@ -40,7 +40,7 @@ test.describe('hiring lead workflow', () => {
   });
 
   test('interview setup tab shows config fields', async ({ page }) => {
-    await page.goto('/hiring-lead-admin');
+    await page.goto('/hiring/lead');
     await page.getByRole('link', { name: /Fall 2026/ }).click();
     await page.getByRole('button', { name: 'Interview Setup' }).click();
 
@@ -49,7 +49,7 @@ test.describe('hiring lead workflow', () => {
   });
 
   test('decisions tab shows finalized decisions', async ({ page }) => {
-    await page.goto('/hiring-lead-admin');
+    await page.goto('/hiring/lead');
     await page.getByRole('link', { name: /Fall 2026/ }).click();
     await page.getByRole('button', { name: 'Decisions' }).click();
 

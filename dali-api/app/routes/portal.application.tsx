@@ -3,12 +3,12 @@ import { redirect, useLoaderData, useFetcher, Link } from "react-router";
 import type { Route } from "./+types/portal.application";
 import { prisma } from "~/lib/db";
 import { requireAuth, withAuth } from "~/lib/auth";
-import { getActiveCycle } from "~/lib/cycles";
+import { getActiveCycle } from "~/hiring/lib/cycles";
 import { getDownloadUrl } from "~/lib/s3";
 import type { Question } from "~/types";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 import { Modal } from "~/components/Modal";
-import { QuestionList } from "~/components/ApplicationAnswers";
+import { QuestionList } from "~/hiring/components/ApplicationAnswers";
 
 export const meta: Route.MetaFunction = () => [{ title: "My application · DALI OS" }];
 

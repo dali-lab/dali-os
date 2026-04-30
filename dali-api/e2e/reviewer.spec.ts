@@ -10,7 +10,7 @@ async function advanceCycleTo(browser: any, status: string) {
   const page = await ctx.newPage();
   await page.goto(`/dev-login-as?daliEmail=jordan.taylor@dali.dartmouth.edu`);
   await page.waitForLoadState('networkidle');
-  const resp = await page.request.post(`/api/cycles/${cycleId}/status`, {
+  const resp = await page.request.post(`/api/hiring/cycles/${cycleId}/status`, {
     data: { newStatus: status },
   });
   expect(resp.ok()).toBeTruthy();
@@ -25,7 +25,7 @@ test.describe.serial('reviewer workflow', () => {
     });
 
     test('dashboard loads', async ({ page }) => {
-      await page.goto('/reviewer');
+      await page.goto('/hiring/reviewer');
       await expect(page.getByRole('heading', { name: 'Reviewer Dashboard' })).toBeVisible();
       await expect(page.getByText('Assigned Written Applications')).toBeVisible({ timeout: 10_000 });
     });
@@ -42,14 +42,14 @@ test.describe.serial('reviewer workflow', () => {
     });
 
     test('dashboard shows review columns', async ({ page }) => {
-      await page.goto('/reviewer');
+      await page.goto('/hiring/reviewer');
       await expect(page.getByRole('heading', { name: 'Reviewer Dashboard' })).toBeVisible();
       await expect(page.getByRole('heading', { name: /Pending/ })).toBeVisible({ timeout: 10_000 });
       await expect(page.getByRole('heading', { name: /Submitted/ })).toBeVisible();
     });
 
     test('shows assigned applicant reviews', async ({ page }) => {
-      await page.goto('/reviewer');
+      await page.goto('/hiring/reviewer');
       await expect(page.getByText('Alice Johnson')).toBeVisible({ timeout: 10_000 });
       await expect(page.getByText('Diego Rivera')).toBeVisible();
     });
@@ -57,11 +57,11 @@ test.describe.serial('reviewer workflow', () => {
     test('review detail page shows scoring form', async ({ page }) => {
       // Get the review link href and navigate directly to avoid hydration
       // timing issues with client-side router click handling on CI.
-      await page.goto('/reviewer');
+      await page.goto('/hiring/reviewer');
       const reviewLink = page.getByRole('link', { name: /View Review|Continue Review|Start Review/ }).first();
       await reviewLink.waitFor({ state: 'visible', timeout: 15_000 });
       const href = await reviewLink.getAttribute('href');
-      expect(href).toMatch(/\/reviewer\/application\/.+/);
+      expect(href).toMatch(/\/hiring\/reviewer\/application\/.+/);
       await page.goto(href!);
 
       await expect(page.getByText('Your Review')).toBeVisible({ timeout: 10_000 });
