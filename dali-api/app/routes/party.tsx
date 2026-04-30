@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/party";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, withAuth } from "~/lib/auth";
 import {
   DINO_REWARD_THRESHOLD,
   EXTERNAL_CODE,
@@ -23,10 +23,10 @@ import {
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return withAuth(auth, redirect("/login"));
   const partyAudience =
     auth.user.type === "member" ? ("member" as const) : ("applicant" as const);
-  return { email: auth.user.email, partyAudience };
+  return withAuth(auth, { email: auth.user.email, partyAudience });
 }
 
 export default function Party() {

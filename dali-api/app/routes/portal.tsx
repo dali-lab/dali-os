@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { redirect, useLoaderData, useRevalidator, Link } from "react-router";
 import type { Route } from "./+types/portal";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, withAuth } from "~/lib/auth";
 import { getActiveCycle } from "~/lib/cycles";
 import {
   inferDomainApplicationStatus,
@@ -20,7 +20,7 @@ export const meta: Route.MetaFunction = () => [{ title: "Applicant portal · DAL
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return withAuth(auth, redirect("/login"));
 
   const emptyResult = {
     cycleName: null as string | null,
@@ -58,7 +58,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       orderBy: { createdAt: "desc" },
     });
 
-    if (!recentApp) return emptyResult;
+    if (!recentApp) return withAuth(auth, emptyResult);
 
     cycleId = recentApp.applicationCycleId;
     cycleName = recentApp.applicationCycle.name;
@@ -120,16 +120,16 @@ export async function loader({ request }: Route.LoaderArgs) {
     };
   });
 
-  return {
-    cycleName,
-    cycleId,
-    cycleStatus,
-    closeDate,
-    domainApplications,
-    slotDurationMinutes: config?.slotDurationMinutes ?? 30,
-    hasApplication: !!application,
-    applicationStatus: appStatus,
-  };
+  return withAuth(auth, {
+      cycleName,
+      cycleId,
+      cycleStatus,
+      closeDate,
+      domainApplications,
+      slotDurationMinutes: config?.slotDurationMinutes ?? 30,
+      hasApplication: !!application,
+      applicationStatus: appStatus,
+    });
 }
 
 // ─── Types ───────────────────────────────────────────────────────────────────

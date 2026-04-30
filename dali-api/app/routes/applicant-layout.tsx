@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { Outlet, redirect, useLoaderData, Link, useNavigate } from "react-router";
 import type { Route } from "./+types/applicant-layout";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, withAuth } from "~/lib/auth";
 import { userInitials } from "~/lib/display";
 import { bumpLogoClick, hydrateRetroClass, logConsoleBootBanner } from "~/lib/party";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
@@ -9,8 +9,8 @@ import { RetroExitPill } from "~/components/RetroExitPill";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
-  return { user: auth.user };
+  if (!auth.ok) return withAuth(auth, redirect("/login"));
+  return withAuth(auth, { user: auth.user });
 }
 
 export default function ApplicantLayout() {

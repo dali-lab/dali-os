@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.cycles.$cycleId.reviewers";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, withAuth } from "~/lib/auth";
 import { isHiringLead, isDomainLead, hasCycleAccess } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
@@ -19,7 +19,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!auth.ok) return withCors(request, auth.response);
 
   if (!(await hasCycleAccess(auth.user.sub, params.cycleId!)))
-    return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+    return withAuth(auth, withCors(request, Response.json({ error: "Forbidden" }, { status: 403 })));
 
   const reviewers = await prisma.cycleReviewer.findMany({
     where: { applicationCycleId: params.cycleId },
@@ -29,7 +29,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
   });
 
-  return withCors(request, Response.json(reviewers));
+  return withAuth(auth, withCors(request, Response.json(reviewers)));
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -38,14 +38,14 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const auth = await requireAuth(request);
   if (!auth.ok) return withCors(request, auth.response);
-  if (!(await isHiringLead(auth.user.sub)) && !(await isDomainLead(auth.user.sub))) return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+  if (!(await isHiringLead(auth.user.sub)) && !(await isDomainLead(auth.user.sub))) return withAuth(auth, withCors(request, Response.json({ error: "Forbidden" }, { status: 403 })));
 
   if (request.method !== "POST") {
-    return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
+    return withAuth(auth, withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 })));
   }
 
   const body = await parseJson(request, CreateReviewerSchema);
-  if (body instanceof Response) return withCors(request, body);
+  if (body instanceof Response) return withAuth(auth, withCors(request, body));
   const { daliMemberId, domainId } = body;
 
   // Ensure domain is linked to cycle
@@ -67,5 +67,5 @@ export async function action({ request, params }: Route.ActionArgs) {
     },
   });
 
-  return withCors(request, Response.json(reviewer, { status: 201 }));
+  return withAuth(auth, withCors(request, Response.json(reviewer, { status: 201 })));
 }

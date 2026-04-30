@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Link, redirect, useLoaderData, useSubmit } from 'react-router'
 import { ArrowLeft, HelpCircle, X, Check } from 'lucide-react'
 import { prisma } from '~/lib/db'
-import { requireAuth } from '~/lib/auth'
+import { requireAuth, withAuth } from '~/lib/auth'
 import { hasCycleAccess } from '~/lib/roles'
 import { parseAccessToken } from '~/lib/cookies'
 import { requirePageSignedOrRedirect } from '~/lib/confidentiality'
@@ -22,7 +22,7 @@ export const meta: Route.MetaFunction = ({ data }) => {
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request)
-  if (!auth.ok) return redirect('/login')
+  if (!auth.ok) return withAuth(auth, redirect('/login'))
 
   const [application, mentor, existingReview] = await Promise.all([
     prisma.application.findUniqueOrThrow({
@@ -122,12 +122,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const collabToken = parseAccessToken(request)
   const userName = [mentor.firstName, mentor.lastName].filter(Boolean).join(' ') || auth.user.email
 
-  return { application, mentor, existingReview: review, collabToken, userName }
+  return withAuth(auth, { application, mentor, existingReview: review, collabToken, userName })
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request)
-  if (!auth.ok) return redirect('/login')
+  if (!auth.ok) return withAuth(auth, redirect('/login'))
 
   const formData = await request.formData()
   const intent = formData.get('intent') as string
@@ -152,7 +152,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
   }
 
-  return null
+  return withAuth(auth, null)
 }
 
 const RECOMMENDATIONS = ['Strong Hire', 'Hire', 'Lean Hire', 'Lean No Hire', 'No Hire'] as const

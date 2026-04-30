@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.cycles.$cycleId.delibs";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, withAuth } from "~/lib/auth";
 import { isHiringLead, isDomainLead, hasCycleAccess } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
 import { requireApiSignedOrForbidden } from "~/lib/confidentiality";
@@ -16,7 +16,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!auth.ok) return auth.response;
 
   if (!(await hasCycleAccess(auth.user.sub, params.cycleId!)))
-    return Response.json({ error: "Forbidden" }, { status: 403 });
+    return withAuth(auth, Response.json({ error: "Forbidden" }, { status: 403 }));
 
   const gate = await requireApiSignedOrForbidden(auth.user.sub, params.cycleId!);
   if (gate) return gate;
@@ -26,7 +26,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     orderBy: { createdAt: "desc" },
   });
 
-  return Response.json(sessions);
+  return withAuth(auth, Response.json(sessions));
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -34,13 +34,13 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!auth.ok) return auth.response;
 
   if (request.method !== "POST") {
-    return Response.json({ error: "Method not allowed" }, { status: 405 });
+    return withAuth(auth, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
 
   const hiringLead = await isHiringLead(auth.user.sub);
   const domainLead = await isDomainLead(auth.user.sub);
   if (!hiringLead && !domainLead) {
-    return Response.json({ error: "Forbidden" }, { status: 403 });
+    return withAuth(auth, Response.json({ error: "Forbidden" }, { status: 403 }));
   }
 
   const gate = await requireApiSignedOrForbidden(auth.user.sub, params.cycleId!);
@@ -50,11 +50,11 @@ export async function action({ request, params }: Route.ActionArgs) {
     where: { userId: auth.user.sub },
   });
   if (!member) {
-    return Response.json({ error: "Not a DALI member" }, { status: 403 });
+    return withAuth(auth, Response.json({ error: "Not a DALI member" }, { status: 403 }));
   }
 
   const body = await parseJson(request, CreateDelibsSchema);
-  if (body instanceof Response) return body;
+  if (body instanceof Response) return withAuth(auth, body);
   const { domainId, type } = body;
 
   // Upsert: reopen if previously closed, create if new
@@ -78,5 +78,5 @@ export async function action({ request, params }: Route.ActionArgs) {
     },
   });
 
-  return Response.json(session, { status: 201 });
+  return withAuth(auth, Response.json(session, { status: 201 }));
 }

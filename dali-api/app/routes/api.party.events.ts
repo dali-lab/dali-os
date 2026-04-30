@@ -3,7 +3,7 @@
 // loader). Server fills userId/audience/createdAt — clients can only supply
 // the event type and optional metadata.
 
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, withAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { safeJson } from "~/lib/safe-json";
 
@@ -32,11 +32,11 @@ export async function action({ request }: { request: Request }) {
     eventType?: unknown;
     metadata?: unknown;
   }>(request, PARTY_BODY_MAX_BYTES);
-  if (parsed instanceof Response) return parsed;
+  if (parsed instanceof Response) return withAuth(auth, parsed);
 
   const eventType = parsed.eventType;
   if (typeof eventType !== "string" || !EVENT_TYPES.includes(eventType as PartyEventType)) {
-    return Response.json({ error: "Invalid eventType" }, { status: 400 });
+    return withAuth(auth, Response.json({ error: "Invalid eventType" }, { status: 400 }));
   }
 
   const audience = auth.user.type === "member" ? "member" : "applicant";
@@ -60,7 +60,7 @@ export async function action({ request }: { request: Request }) {
       },
       select: { id: true },
     });
-    if (existing) return Response.json({ ok: true, deduped: true });
+    if (existing) return withAuth(auth, Response.json({ ok: true, deduped: true }));
   }
 
   await prisma.partyEvent.create({
@@ -72,5 +72,5 @@ export async function action({ request }: { request: Request }) {
     },
   });
 
-  return Response.json({ ok: true });
+  return withAuth(auth, Response.json({ ok: true }));
 }

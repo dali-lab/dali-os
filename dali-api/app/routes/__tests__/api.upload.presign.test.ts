@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/auth");
+vi.mock("~/lib/auth", () => ({
+  requireAuth: vi.fn(),
+  withAuth: <T,>(_auth: unknown, value: T) => value,
+}));
 vi.mock("~/lib/s3", () => ({
   getUploadPost: vi.fn(),
   getDownloadUrl: vi.fn(),

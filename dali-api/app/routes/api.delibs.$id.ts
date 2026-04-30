@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.delibs.$id";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, withAuth } from "~/lib/auth";
 import { isHiringLead, isDomainLead, hasCycleAccess } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
 import { requireApiSignedOrForbidden } from "~/lib/confidentiality";
@@ -19,11 +19,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
 
   if (!session) {
-    return Response.json({ error: "Not found" }, { status: 404 });
+    return withAuth(auth, Response.json({ error: "Not found" }, { status: 404 }));
   }
 
   if (!(await hasCycleAccess(auth.user.sub, session.applicationCycleId)))
-    return Response.json({ error: "Forbidden" }, { status: 403 });
+    return withAuth(auth, Response.json({ error: "Forbidden" }, { status: 403 }));
 
   const gate = await requireApiSignedOrForbidden(
     auth.user.sub,
@@ -31,7 +31,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   );
   if (gate) return gate;
 
-  return Response.json(session);
+  return withAuth(auth, Response.json(session));
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -41,7 +41,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   const hiringLead = await isHiringLead(auth.user.sub);
   const domainLead = await isDomainLead(auth.user.sub);
   if (!hiringLead && !domainLead) {
-    return Response.json({ error: "Forbidden" }, { status: 403 });
+    return withAuth(auth, Response.json({ error: "Forbidden" }, { status: 403 }));
   }
 
   const sessionForGate = await prisma.delibsSession.findUnique({
@@ -59,7 +59,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   if (request.method === "POST") {
     const body = await parseJson(request, DelibsActionSchema);
-    if (body instanceof Response) return body;
+    if (body instanceof Response) return withAuth(auth, body);
     const { intent } = body;
 
     if (intent === "close") {
@@ -67,14 +67,14 @@ export async function action({ request, params }: Route.ActionArgs) {
         where: { userId: auth.user.sub },
       });
       if (!member) {
-        return Response.json({ error: "Not a DALI member" }, { status: 403 });
+        return withAuth(auth, Response.json({ error: "Not a DALI member" }, { status: 403 }));
       }
 
       const session = await prisma.delibsSession.findUnique({
         where: { id: params.id },
       });
       if (!session) {
-        return Response.json({ error: "Not found" }, { status: 404 });
+        return withAuth(auth, Response.json({ error: "Not found" }, { status: 404 }));
       }
 
       const columnOrder = session.columnOrder as Record<string, string[]>;
@@ -122,9 +122,9 @@ export async function action({ request, params }: Route.ActionArgs) {
         });
       });
 
-      return Response.json({ closed: true, decisionsCreated: decisions.length });
+      return withAuth(auth, Response.json({ closed: true, decisionsCreated: decisions.length }));
     }
   }
 
-  return Response.json({ error: "Invalid request" }, { status: 400 });
+  return withAuth(auth, Response.json({ error: "Invalid request" }, { status: 400 }));
 }

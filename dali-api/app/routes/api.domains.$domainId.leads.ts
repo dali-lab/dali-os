@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.domains.$domainId.leads";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, withAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
@@ -20,14 +20,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const auth = await requireAuth(request);
   if (!auth.ok) return withCors(request, auth.response);
-  if (!(await isAdmin(auth.user.sub))) return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+  if (!(await isAdmin(auth.user.sub))) return withAuth(auth, withCors(request, Response.json({ error: "Forbidden" }, { status: 403 })));
 
   const leads = await prisma.domainLeadAssignment.findMany({
     where: { domainId: params.domainId },
     include: { member: { include: { user: true } }, domain: true },
   });
 
-  return withCors(request, Response.json(leads));
+  return withAuth(auth, withCors(request, Response.json(leads)));
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -36,27 +36,27 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const auth = await requireAuth(request);
   if (!auth.ok) return withCors(request, auth.response);
-  if (!(await isAdmin(auth.user.sub))) return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+  if (!(await isAdmin(auth.user.sub))) return withAuth(auth, withCors(request, Response.json({ error: "Forbidden" }, { status: 403 })));
 
   if (request.method === "POST") {
     const postBody = await parseJson(request, AddLeadSchema);
-    if (postBody instanceof Response) return withCors(request, postBody);
+    if (postBody instanceof Response) return withAuth(auth, withCors(request, postBody));
     const { memberId } = postBody;
 
     const assignment = await prisma.domainLeadAssignment.create({
       data: { memberId, domainId: params.domainId! },
       include: { member: { include: { user: true } }, domain: true },
     });
-    return withCors(request, Response.json(assignment, { status: 201 }));
+    return withAuth(auth, withCors(request, Response.json(assignment, { status: 201 })));
   }
 
   if (request.method === "DELETE") {
     const delBody = await parseJson(request, RemoveLeadSchema);
-    if (delBody instanceof Response) return withCors(request, delBody);
+    if (delBody instanceof Response) return withAuth(auth, withCors(request, delBody));
     const { assignmentId } = delBody;
     await prisma.domainLeadAssignment.delete({ where: { id: assignmentId } });
-    return withCors(request, Response.json({ ok: true }));
+    return withAuth(auth, withCors(request, Response.json({ ok: true })));
   }
 
-  return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
+  return withAuth(auth, withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 })));
 }

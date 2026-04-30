@@ -1,7 +1,7 @@
 import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/admin-console.party";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, withAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
 import { Sparkles } from "lucide-react";
 
@@ -13,8 +13,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
-  if (!(await isAdmin(auth.user.sub))) return redirect("/admin-console/members");
+  if (!auth.ok) return withAuth(auth, redirect("/login"));
+  if (!(await isAdmin(auth.user.sub))) return withAuth(auth, redirect("/admin-console/members"));
 
   const since = new Date(Date.now() - 30 * DAY_MS);
 
@@ -64,12 +64,12 @@ export async function loader({ request }: Route.LoaderArgs) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([day, count]) => ({ day, count }));
 
-  return {
-    totals,
-    uniqueVisitors: uniqueVisitors.filter((v) => v.userId !== null).length,
-    unlocksByAudience,
-    timeline,
-  };
+  return withAuth(auth, {
+      totals,
+      uniqueVisitors: uniqueVisitors.filter((v) => v.userId !== null).length,
+      unlocksByAudience,
+      timeline,
+    });
 }
 
 export default function AdminConsoleParty() {

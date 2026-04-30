@@ -1,6 +1,13 @@
-import { SignJWT, jwtVerify } from "jose";
-import { parseAccessToken } from "~/lib/cookies";
+import { SignJWT, jwtVerify, errors as joseErrors } from "jose";
+import { data } from "react-router";
+import {
+  parseAccessToken,
+  parseRefreshToken,
+  setTokenCookies,
+  clearTokenCookies,
+} from "~/lib/cookies";
 import { logAuditEvent } from "~/lib/audit";
+import { refreshTokens } from "~/lib/oauth";
 
 // jwt helper functions
 
@@ -41,18 +48,81 @@ export async function verifyAccessToken(token: string) {
 
 // auth middleware
 
+type AuthUser = {
+  sub: string;
+  email: string;
+  type: string;
+  firstName?: string;
+  lastName?: string;
+};
 type AuthSuccess = {
   ok: true;
-  user: {
-    sub: string;
-    email: string;
-    type: string;
-    firstName?: string;
-    lastName?: string;
-  };
+  user: AuthUser;
+  // Set-Cookie strings to attach to the outgoing response, set when
+  // requireAuth performed a silent refresh. Use `withAuth(auth, response)` to
+  // forward them to the browser.
+  setCookies?: string[];
 };
 type AuthFailure = { ok: false; response: Response };
 export type AuthResult = AuthSuccess | AuthFailure;
+
+function unauthorized(): Response {
+  return new Response(JSON.stringify({ error: "Unauthorized" }), {
+    status: 401,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+function unauthorizedClearingCookies(): Response {
+  const headers = new Headers({ "Content-Type": "application/json" });
+  clearTokenCookies(headers);
+  return new Response(JSON.stringify({ error: "Unauthorized" }), {
+    status: 401,
+    headers,
+  });
+}
+
+// Per-request de-dup so two parallel loaders don't both burn a single RT.
+// The first call rotates the RT; the second awaits the same in-flight promise
+// and reuses its newly-issued tokens, instead of presenting the now-revoked RT
+// and tripping reuse detection.
+type RefreshOutcome =
+  | { ok: true; user: AuthUser; setCookies: string[] }
+  | { ok: false };
+const inFlightRefreshes = new Map<string, Promise<RefreshOutcome>>();
+
+async function performRefresh(rawRT: string): Promise<RefreshOutcome> {
+  const existing = inFlightRefreshes.get(rawRT);
+  if (existing) return existing;
+
+  const promise = (async (): Promise<RefreshOutcome> => {
+    try {
+      const refreshed = await refreshTokens(rawRT);
+      const headers = new Headers();
+      setTokenCookies(headers, refreshed.access_token, refreshed.refresh_token);
+      return {
+        ok: true,
+        user: {
+          sub: refreshed.userInfo.id,
+          email: refreshed.userInfo.email,
+          type: refreshed.userInfo.type,
+          firstName: refreshed.userInfo.firstName,
+          lastName: refreshed.userInfo.lastName,
+        },
+        setCookies: headers.getSetCookie(),
+      };
+    } catch {
+      return { ok: false };
+    }
+  })();
+
+  inFlightRefreshes.set(rawRT, promise);
+  try {
+    return await promise;
+  } finally {
+    inFlightRefreshes.delete(rawRT);
+  }
+}
 
 export async function requireAuth(request: Request): Promise<AuthResult> {
   // try cookie first, fall back to authorization header if not present
@@ -66,38 +136,59 @@ export async function requireAuth(request: Request): Promise<AuthResult> {
     }
   }
 
-  if (!token) {
-    return {
-      ok: false,
-      response: new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" },
-      }),
-    };
+  if (token) {
+    try {
+      const user = await verifyAccessToken(token);
+      return { ok: true, user };
+    } catch (e) {
+      if (!(e instanceof joseErrors.JWTExpired)) {
+        // Tampered or otherwise malformed AT — don't try to refresh.
+        await logAuditEvent({
+          action: "auth.token.invalid",
+          request,
+        });
+        return { ok: false, response: unauthorized() };
+      }
+      // AT is just expired — fall through to silent refresh.
+    }
   }
 
-  try {
-    const user = await verifyAccessToken(token);
-    return { ok: true, user };
-  } catch {
-    // Only log when a token was presented but failed to verify — logging every
-    // missing-cookie request would flood the audit table with normal
-    // unauthenticated traffic.
-    await logAuditEvent({
-      action: "auth.token.invalid",
-      request,
-    });
-    return {
-      ok: false,
-      response: new Response(
-        JSON.stringify({ error: "Invalid or expired token" }),
-        {
-          status: 401,
-          headers: { "Content-Type": "application/json" },
-        },
-      ),
-    };
+  // Silent refresh: trade a valid RT for a fresh AT/RT pair without bouncing
+  // the user to /login. Bearer-token API callers (no RT cookie) still 401.
+  const rawRT = parseRefreshToken(request);
+  if (!rawRT) {
+    return { ok: false, response: unauthorized() };
   }
+
+  const outcome = await performRefresh(rawRT);
+  if (outcome.ok) {
+    return { ok: true, user: outcome.user, setCookies: outcome.setCookies };
+  }
+
+  // Refresh failed — RT is invalid, expired, revoked, or its family was
+  // revoked due to reuse. Clear cookies so the browser stops resending them.
+  return { ok: false, response: unauthorizedClearingCookies() };
+}
+
+// Forward Set-Cookie headers from `requireAuth` (silent refresh on success,
+// cleared cookies after a failed refresh) onto the outgoing response. No-op
+// when there are no cookies to forward, so it's safe to wrap unconditionally.
+export function withAuth<T>(auth: AuthResult, value: T): T;
+export function withAuth(auth: AuthResult, value: Response): Response;
+export function withAuth(auth: AuthResult, value: unknown): unknown {
+  const cookies = auth.ok
+    ? auth.setCookies
+    : auth.response.headers.getSetCookie();
+  if (!cookies || cookies.length === 0) return value;
+
+  if (value instanceof Response) {
+    for (const c of cookies) value.headers.append("Set-Cookie", c);
+    return value;
+  }
+
+  const headers = new Headers();
+  for (const c of cookies) headers.append("Set-Cookie", c);
+  return data(value, { headers });
 }
 
 // dartmouth cas (sso) ticket validation

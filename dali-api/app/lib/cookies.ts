@@ -29,7 +29,10 @@ export function setTokenCookies(
   refreshToken: string,
 ) {
   setCookie(headers, COOKIE_AT, accessToken, 900);
-  setCookie(headers, COOKIE_RT, refreshToken, 604800, "/oauth");
+  // RT path is `/` so it is sent to every request — required for the silent
+  // refresh in `requireAuth`. Theft defence is the family-revocation reuse
+  // detection in `refreshTokens`, plus HttpOnly + SameSite=Lax + Secure-in-prod.
+  setCookie(headers, COOKIE_RT, refreshToken, 604800);
 }
 
 export function clearTokenCookies(headers: Headers) {
@@ -39,7 +42,7 @@ export function clearTokenCookies(headers: Headers) {
   );
   headers.append(
     "Set-Cookie",
-    `${COOKIE_RT}=; Max-Age=0; Path=/oauth; HttpOnly; SameSite=Lax`,
+    `${COOKIE_RT}=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax`,
   );
 }
 
