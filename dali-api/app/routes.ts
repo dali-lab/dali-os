@@ -9,6 +9,7 @@ export default [
     route("domain-lead", "routes/domain-lead.tsx"),
     route("domain-lead/application/:id", "routes/domain-lead.application.$id.tsx"),
     route("domain-lead/delibs/:id", "routes/domain-lead.delibs.$id.tsx"),
+    route("analytics", "routes/analytics.tsx"),
     route("hiring-lead-admin", "routes/admin.tsx"),
     route("hiring-lead-admin/cycle/:id", "routes/admin.cycle.$id.tsx"),
     route("challenges", "routes/admin.challenges.tsx"),
