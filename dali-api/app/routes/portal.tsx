@@ -306,7 +306,7 @@ function StageIndicator({ stage }: { stage: DomainApplicationStatus | "Applicati
   if (!currentStep) return null;
 
   return (
-    <div className="px-2.5 py-1 rounded-full text-xs font-medium bg-accent-green text-dark-blue">
+    <div className="px-2.5 py-1 rounded-full text-xs font-medium bg-accent-teal text-white">
       {currentStep.label}
     </div>
   );
