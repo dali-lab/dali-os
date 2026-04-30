@@ -28,7 +28,7 @@ function memberLabel(
 const EMPTY_DOC = { type: "doc", content: [{ type: "paragraph" }] };
 
 export function ConfidentialityAgreementDetail() {
-  const { agreement } = useLoaderData<typeof loader>();
+  const { agreement, canEdit } = useLoaderData<typeof loader>();
 
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(
     agreement.versions[0]?.id ?? null,
@@ -100,14 +100,16 @@ export function ConfidentialityAgreementDetail() {
               <h1 className="text-2xl font-bold text-foreground">
                 {agreement.name}
               </h1>
-              <button
-                type="button"
-                onClick={() => setIsRenaming(true)}
-                className="text-muted-foreground/70 hover:text-foreground"
-                aria-label="Rename agreement"
-              >
-                <Pencil className="w-4 h-4" />
-              </button>
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={() => setIsRenaming(true)}
+                  className="text-muted-foreground/70 hover:text-foreground"
+                  aria-label="Rename agreement"
+                >
+                  <Pencil className="w-4 h-4" />
+                </button>
+              )}
             </div>
           )}
           <p className="mt-1 text-sm text-muted-foreground">
@@ -116,7 +118,7 @@ export function ConfidentialityAgreementDetail() {
           </p>
         </div>
 
-        {!isCreatingVersion && (
+        {canEdit && !isCreatingVersion && (
           <button
             type="button"
             onClick={handleStartCreate}

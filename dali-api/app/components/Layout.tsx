@@ -86,11 +86,15 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
       label: 'Library',
       to: '/challenges',
       icon: FileText,
-      show: isHiringLead || isDomainLead,
-      active: path.startsWith('/challenges') || path.startsWith('/rubrics'),
+      show: isHiringLead || isDomainLead || isAdmin,
+      active:
+        path.startsWith('/challenges') ||
+        path.startsWith('/rubrics') ||
+        path.startsWith('/confidentiality-agreements'),
       sub: [
         { label: 'Challenges', to: '/challenges', active: path.startsWith('/challenges') },
         { label: 'Rubrics', to: '/rubrics', active: path.startsWith('/rubrics') },
+        { label: 'Confidentiality Agreements', to: '/confidentiality-agreements', active: path.startsWith('/confidentiality-agreements') },
       ],
     },
     {

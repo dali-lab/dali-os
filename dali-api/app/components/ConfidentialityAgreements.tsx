@@ -4,7 +4,7 @@ import { Plus, ShieldCheck, ChevronRight, X } from "lucide-react";
 import type { loader } from "~/routes/confidentiality-agreements";
 
 export default function ConfidentialityAgreementsList() {
-  const { agreements } = useLoaderData<typeof loader>();
+  const { agreements, canEdit } = useLoaderData<typeof loader>();
   const [showModal, setShowModal] = useState(false);
   const [newName, setNewName] = useState("");
 
@@ -21,13 +21,15 @@ export default function ConfidentialityAgreementsList() {
             leads, and admins must sign before viewing sensitive cycle data.
           </p>
         </div>
-        <button
-          onClick={() => setShowModal(true)}
-          className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 shadow-sm"
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          New Agreement
-        </button>
+        {canEdit && (
+          <button
+            onClick={() => setShowModal(true)}
+            className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 shadow-sm"
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            New Agreement
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
