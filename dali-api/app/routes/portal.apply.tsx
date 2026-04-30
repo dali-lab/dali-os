@@ -8,6 +8,7 @@ import { checkGitHubUrl, checkFigmaUrl, checkDriveUrl } from "~/lib/submission-c
 import type { SubmissionCheckResult } from "~/lib/submission-check";
 import { validateWordLimits } from "~/lib/word-count";
 import type { WordCountViolation } from "~/lib/word-count";
+import { isSkillsRatingComplete } from "~/lib/skills-rating";
 import type { Question } from "~/types";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 import { Modal } from "~/components/Modal";
@@ -489,7 +490,10 @@ type Section = {
   answeredRequiredCount: number;
 };
 
-function isAnswered(value: string | undefined) {
+function isAnswered(value: string | undefined, question?: Question) {
+  if (question?.type === "skills_rating") {
+    return isSkillsRatingComplete(value, question.data.options ?? []);
+  }
   return typeof value === "string" && value.trim() !== "";
 }
 
@@ -521,7 +525,7 @@ function computeRequiredProgress(
 
   const requiredGeneral = formQuestions.filter(q => q.required);
   totalRequired += requiredGeneral.length;
-  totalAnswered += requiredGeneral.filter(q => isAnswered(answers[q.key])).length;
+  totalAnswered += requiredGeneral.filter(q => isAnswered(answers[q.key], q)).length;
 
   for (const domainId of selectedDomainIds) {
     const domain = domains.find(d => d.id === domainId);
@@ -530,7 +534,7 @@ function computeRequiredProgress(
     const requiredDomain = questions.filter(q => q.required);
     totalRequired += requiredDomain.length;
     totalAnswered += requiredDomain.filter(q =>
-      isAnswered(domainAnswers[domainId]?.[q.key]),
+      isAnswered(domainAnswers[domainId]?.[q.key], q),
     ).length;
   }
 
@@ -554,7 +558,7 @@ function buildSections(
       id: "general-before",
       label: "General",
       requiredCount: required.length,
-      answeredRequiredCount: required.filter(q => isAnswered(answers[q.key])).length,
+      answeredRequiredCount: required.filter(q => isAnswered(answers[q.key], q)).length,
     });
   }
 
@@ -571,7 +575,7 @@ function buildSections(
       color: getDomainColor(idx),
       requiredCount: required.length,
       answeredRequiredCount: required.filter(q =>
-        isAnswered(domainAnswers[domainId]?.[q.key]),
+        isAnswered(domainAnswers[domainId]?.[q.key], q),
       ).length,
     });
   }
@@ -583,7 +587,7 @@ function buildSections(
       id: "general-after",
       label: "Anything Else",
       requiredCount: required.length,
-      answeredRequiredCount: required.filter(q => isAnswered(answers[q.key])).length,
+      answeredRequiredCount: required.filter(q => isAnswered(answers[q.key], q)).length,
     });
   }
 
