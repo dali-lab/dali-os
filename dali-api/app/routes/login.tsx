@@ -17,7 +17,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (auth.ok) {
     // Route based on user type: members go to admin, others to portal
-    if (auth.user.type === "member") return withAuth(auth, redirect("/reviewer"));
+    if (auth.user.type === "member") return withAuth(auth, redirect("/hiring/reviewer"));
     return withAuth(auth, redirect("/portal"));
   }
   return withAuth(auth, {});

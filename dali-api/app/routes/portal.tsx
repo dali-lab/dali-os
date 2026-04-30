@@ -3,16 +3,16 @@ import { redirect, useLoaderData, useRevalidator, Link } from "react-router";
 import type { Route } from "./+types/portal";
 import { prisma } from "~/lib/db";
 import { requireAuth, withAuth } from "~/lib/auth";
-import { getActiveCycle } from "~/lib/cycles";
+import { getActiveCycle } from "~/hiring/lib/cycles";
 import {
   inferDomainApplicationStatus,
   domainApplicationStatusInclude,
-} from "~/lib/domain-application-status";
+} from "~/hiring/lib/domain-application-status";
 import type { DomainApplicationStatus } from "~/types";
 import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
-import { InterviewSlotPicker } from "~/components/InterviewSlotPicker";
+import { InterviewSlotPicker } from "~/hiring/components/InterviewSlotPicker";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
-import { formatInterviewDate, formatInterviewTimeRange } from "~/lib/interview-time";
+import { formatInterviewDate, formatInterviewTimeRange } from "~/hiring/lib/interview-time";
 
 export const meta: Route.MetaFunction = () => [{ title: "Applicant portal · DALI OS" }];
 
@@ -459,7 +459,7 @@ function InvitedToInterviewView({
 
   useEffect(() => {
     if (!domainApp.domainId) return;
-    fetch(`/api/cycles/${cycleId}/available-slots?domainId=${domainApp.domainId}`, {
+    fetch(`/api/hiring/cycles/${cycleId}/available-slots?domainId=${domainApp.domainId}`, {
       credentials: "include",
     })
       .then(r => r.ok ? r.json() : [])
@@ -477,7 +477,7 @@ function InvitedToInterviewView({
     setBooking(true);
     setError(null);
     try {
-      const res = await fetch(`/api/domain-applications/${domainApp.id}/schedule-interview`, {
+      const res = await fetch(`/api/hiring/domain-applications/${domainApp.id}/hiring/schedule-interview`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -489,7 +489,7 @@ function InvitedToInterviewView({
         const body = await res.json().catch(() => ({}));
         setError(body.error ?? "Failed to book this slot. It may have been taken.");
         // Re-fetch slots since they may have changed
-        const slotsRes = await fetch(`/api/cycles/${cycleId}/available-slots?domainId=${domainApp.domainId}`, { credentials: "include" });
+        const slotsRes = await fetch(`/api/hiring/cycles/${cycleId}/available-slots?domainId=${domainApp.domainId}`, { credentials: "include" });
         if (slotsRes.ok) {
           const freshSlots = await slotsRes.json();
           setSlots(freshSlots.map(apiSlotToTimeSlot));
@@ -573,7 +573,7 @@ function InterviewScheduledView({
 
   useEffect(() => {
     if (!rescheduling) return;
-    fetch(`/api/cycles/${cycleId}/available-slots?domainId=${domainApp.domainId}`, { credentials: "include" })
+    fetch(`/api/hiring/cycles/${cycleId}/available-slots?domainId=${domainApp.domainId}`, { credentials: "include" })
       .then(r => r.ok ? r.json() : [])
       .then((apiSlots: { startTime: string; endTime: string }[]) => {
         setRescheduleSlots(
@@ -585,7 +585,7 @@ function InterviewScheduledView({
 
   async function handleCancel() {
     setCancelling(true);
-    const res = await fetch("/api/my-interview/cancel", {
+    const res = await fetch("/api/hiring/my-interview/cancel", {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
@@ -597,7 +597,7 @@ function InterviewScheduledView({
 
   async function handleReschedule(newSlot: TimeSlot) {
     const newEnd = new Date(new Date(newSlot.isoStart).getTime() + slotDurationMinutes * 60_000).toISOString();
-    const res = await fetch("/api/my-interview/reschedule", {
+    const res = await fetch("/api/hiring/my-interview/reschedule", {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },

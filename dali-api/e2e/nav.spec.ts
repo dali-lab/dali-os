@@ -6,7 +6,7 @@ test.describe('navigation for hiring lead', () => {
   });
 
   test('shows hiring lead and domain lead nav tabs', async ({ page }) => {
-    await page.goto('/reviewer');
+    await page.goto('/hiring/reviewer');
     const nav = page.locator('nav');
     await expect(nav.getByRole('link', { name: 'Reviews' })).toBeVisible();
     await expect(nav.getByRole('link', { name: 'Domain' })).toBeVisible();
@@ -14,8 +14,8 @@ test.describe('navigation for hiring lead', () => {
   });
 
   test('can navigate to cycles page', async ({ page }) => {
-    await page.goto('/hiring-lead-admin');
-    await expect(page).toHaveURL(/\/hiring-lead-admin/);
+    await page.goto('/hiring/lead');
+    await expect(page).toHaveURL(/\/hiring\/lead/);
     await expect(page.getByRole('heading', { name: 'Hiring Cycles' })).toBeVisible();
   });
 });
@@ -26,7 +26,7 @@ test.describe('navigation for domain lead', () => {
   });
 
   test('shows domain lead tab but not cycles', async ({ page }) => {
-    await page.goto('/reviewer');
+    await page.goto('/hiring/reviewer');
     const nav = page.locator('nav');
     await expect(nav.getByRole('link', { name: 'Reviews' })).toBeVisible();
     await expect(nav.getByRole('link', { name: 'Domain' })).toBeVisible();
@@ -40,7 +40,7 @@ test.describe('navigation for reviewer', () => {
   });
 
   test('shows reviews tab only', async ({ page }) => {
-    await page.goto('/reviewer');
+    await page.goto('/hiring/reviewer');
     const nav = page.locator('nav');
     await expect(nav.getByRole('link', { name: 'Reviews' })).toBeVisible();
     await expect(nav.getByRole('link', { name: 'Domain' })).not.toBeVisible();

@@ -14,13 +14,13 @@ vi.mock("~/lib/roles", () => ({
   isHiringLead: vi.fn().mockResolvedValue(false),
 }));
 
-vi.mock("~/lib/confidentiality", () => ({
+vi.mock("~/hiring/lib/confidentiality", () => ({
   getCycleConfidentialityState: vi.fn().mockResolvedValue({ status: "signed", activeVersionId: "v1" }),
 }));
 
 import { prisma } from "~/lib/db";
 import { isDomainLead, isHiringLead } from "~/lib/roles";
-import { getCycleConfidentialityState } from "~/lib/confidentiality";
+import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { authorizeCollabDoc, hydrateAuthors } from "../collabAuth";
 
 const mockPrisma = prisma as any;
