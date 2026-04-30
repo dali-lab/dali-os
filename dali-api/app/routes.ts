@@ -130,6 +130,9 @@ export default [
   // Submission URL checking
   route("api/check-url", "routes/api.check-url.ts"),
 
+  // Audit logs (admin)
+  route("api/audit-logs", "routes/api.audit-logs.ts"),
+
   // Collaborative editing version history
   route("api/collab/versions", "routes/api.collab.versions.ts"),
   route("api/collab/versions/:id", "routes/api.collab.versions.$id.ts"),
