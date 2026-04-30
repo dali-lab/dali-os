@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { Link, useLoaderData, useSubmit, useSearchParams, useNavigation, Form } from 'react-router'
-import { ArrowLeft, Plus, FileText, Clock, UserIcon } from 'lucide-react'
+import { ArrowLeft, Plus, FileText, Clock, UserIcon, Eye } from 'lucide-react'
 import { FormBuilderTab } from '~/components/ChallengeBuilder'
 import { RichTextViewer, isEmptyDoc } from '~/components/RichTextViewer'
+import { ChallengePreviewModal } from '~/components/ChallengePreviewModal'
 import type { Question } from '~/types'
 import type { loader } from '~/routes/admin.challenges.$id'
 
@@ -81,6 +82,7 @@ export function ChallengeDetail() {
   )
   const [isCreatingVersion, setIsCreatingVersion] = useState(false)
   const [selectedDomainId, setSelectedDomainId] = useState<string>(defaultDomainId)
+  const [showPreviewModal, setShowPreviewModal] = useState(false)
 
   const selectedVersion = challenge.versions.find((v) => v.id === selectedVersionId)
 
@@ -225,15 +227,24 @@ export function ChallengeDetail() {
                     {formatDateTime(selectedVersion.createdAt)}
                   </p>
                 </div>
-                <button
-                  onClick={() => {
-                    setSelectedDomainId(resolveDuplicateDomainId(selectedVersion))
-                    setIsCreatingVersion(true)
-                  }}
-                  className="text-sm text-blue-600 hover:text-blue-700 font-medium"
-                >
-                  Duplicate to New Version
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setShowPreviewModal(true)}
+                    className="inline-flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-700 font-medium"
+                  >
+                    <Eye className="w-4 h-4" />
+                    Preview
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSelectedDomainId(resolveDuplicateDomainId(selectedVersion))
+                      setIsCreatingVersion(true)
+                    }}
+                    className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+                  >
+                    Duplicate to New Version
+                  </button>
+                </div>
               </div>
               {/* Rubrics are now assigned at the domain+cycle level, not per challenge version */}
 
@@ -304,6 +315,17 @@ export function ChallengeDetail() {
           )}
         </div>
       </div>
+
+      {showPreviewModal && selectedVersion && (
+        <ChallengePreviewModal
+          challengeVersionId={selectedVersion.id}
+          challengeName={challenge.name}
+          versionLabel={`v${challenge.versions.findIndex((v) => v.id === selectedVersionId) + 1} · ${selectedVersion.domain?.name ?? 'General'}`}
+          description={selectedVersion.description}
+          questions={(selectedVersion.questions as unknown as Question[])}
+          onClose={() => setShowPreviewModal(false)}
+        />
+      )}
     </div>
   )
 }

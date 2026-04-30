@@ -271,6 +271,7 @@ export function FormBuilderTab({
               <option value="select">Dropdown Select</option>
               <option value="github_url">GitHub URL</option>
               <option value="figma_url">Figma URL</option>
+              <option value="drive_url">Google Drive URL</option>
               <option value="file">File Upload</option>
               <option value="skills_rating">Skills Rating</option>
             </select>

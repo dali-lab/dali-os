@@ -6,6 +6,7 @@ import { requireAuth } from "~/lib/auth";
 import { isHiringLead } from "~/lib/roles";
 import { renderEmail } from "~/lib/email";
 import { Modal } from "~/components/Modal";
+import { ChallengePreviewModal } from "~/components/ChallengePreviewModal";
 import { Settings, Users, Calendar, AlertTriangle, Trash2, Plus, CheckCircle, ArrowRight, Circle, ChevronRight, X, LayoutDashboard, Eye } from 'lucide-react'
 import { formatVersionLabel, buildVersionNumberMap } from "~/lib/formatVersion";
 
@@ -877,7 +878,8 @@ export default function AdminCycleDetails() {
             const challengeVersions = cycle?.challengeVersions ?? [];
             const coveredDomainIds = new Set(challengeVersions.map((cv: any) => cv.challengeVersion?.domainId));
             const hasGeneralForm = challengeVersions.some((cv: any) => cv.challengeVersion?.domainId === null);
-            return hasCloseDate && domains.length > 0 && domains.every((d: any) => coveredDomainIds.has(d.domainId)) && hasGeneralForm;
+            const allDomainsReady = domains.length > 0 && domains.every((d: any) => d.isReady);
+            return hasCloseDate && domains.length > 0 && domains.every((d: any) => coveredDomainIds.has(d.domainId)) && hasGeneralForm && allDomainsReady;
           })();
           return (
             <button
@@ -946,8 +948,9 @@ export default function AdminCycleDetails() {
         const coveredDomainIds = new Set(challengeVersions.map((cv: any) => cv.challengeVersion?.domainId));
         const allDomainsCovered = domains.length > 0 && domains.every((d: any) => coveredDomainIds.has(d.domainId));
         const hasGeneralForm = challengeVersions.some((cv: any) => cv.challengeVersion?.domainId === null);
+        const allDomainsReady = domains.length > 0 && domains.every((d: any) => d.isReady);
         const hasGeneralRubric = !!cycle?.generalRubricVersionId;
-        const ready = hasCloseDate && allDomainsCovered && hasGeneralForm;
+        const ready = hasCloseDate && allDomainsCovered && hasGeneralForm && allDomainsReady;
         return (
           <div className={`rounded-xl border p-4 space-y-3 ${ready ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200'}`}>
             <h3 className="text-sm font-bold text-foreground">Checklist to Open Applications</h3>
@@ -972,6 +975,15 @@ export default function AdminCycleDetails() {
                   ? <CheckCircle className="w-4 h-4 text-green-600" />
                   : <Circle className="w-4 h-4 text-muted-foreground/70" />}
                 <span className={hasGeneralForm ? 'text-green-800' : 'text-muted-foreground'}>General application form is linked</span>
+              </div>
+              <div className="flex items-center gap-2 text-sm">
+                {allDomainsReady
+                  ? <CheckCircle className="w-4 h-4 text-green-600" />
+                  : <Circle className="w-4 h-4 text-muted-foreground/70" />}
+                <span className={allDomainsReady ? 'text-green-800' : 'text-muted-foreground'}>
+                  Every domain is marked ready
+                  {domains.length === 0 && ' (no domains added)'}
+                </span>
               </div>
             </div>
             {!hasGeneralRubric && (
@@ -2301,7 +2313,16 @@ function DomainOverridePanel({
 
       {previewCv && (
         <ChallengePreviewModal
-          cv={previewCv}
+          challengeVersionId={previewCv.id}
+          challengeName={previewCv.challenge?.name ?? 'Challenge'}
+          versionLabel={formatVersionLabel({
+            name: previewCv.challenge?.name ?? 'Challenge',
+            versionNumber: previewCv.versionNumber,
+            createdAt: previewCv.createdAt,
+            createdBy: previewCv.createdBy,
+          })}
+          description={previewCv.description}
+          questions={(previewCv.questions as any[]) ?? []}
           onClose={() => setPreviewCvId(null)}
         />
       )}
@@ -2398,39 +2419,6 @@ function DeleteDomainModal({ domain, onClose }: { domain: any; onClose: () => vo
             Remove
           </button>
         </Form>
-      </div>
-    </Modal>
-  );
-}
-
-function ChallengePreviewModal({ cv, onClose }: { cv: any; onClose: () => void }) {
-  const headingId = `challenge-preview-heading-${cv.id}`;
-  const questions: any[] = (cv.questions as any[]) ?? [];
-  return (
-    <Modal open onClose={onClose} labelledBy={headingId} containerClassName="bg-card rounded-2xl shadow-xl max-w-lg w-full mx-4 p-6 max-h-[80vh] overflow-y-auto">
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 id={headingId} className="text-lg font-bold text-foreground">
-            {cv.challenge?.name ?? 'Challenge'} — preview
-          </h2>
-          <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-        <p className="text-xs text-muted-foreground">Created {new Date(cv.createdAt).toLocaleDateString()}</p>
-        {questions.length === 0 ? (
-          <p className="text-sm text-muted-foreground/70 italic">No questions in this version.</p>
-        ) : (
-          <div className="border border-border rounded-lg divide-y divide-border">
-            {questions.map((q: any, i: number) => (
-              <div key={q.key ?? i} className="px-4 py-3">
-                <span className="text-xs font-medium text-muted-foreground/70 uppercase tracking-wide mr-2">Q{i + 1}</span>
-                <span className="text-sm text-foreground/80">{q.data?.label ?? q.label}</span>
-                {q.required && <span className="ml-2 text-xs text-red-500">required</span>}
-              </div>
-            ))}
-          </div>
-        )}
       </div>
     </Modal>
   );

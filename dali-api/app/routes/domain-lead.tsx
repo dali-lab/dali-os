@@ -4,10 +4,11 @@ import { redirect } from "react-router";
 import type { Route } from "./+types/domain-lead";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { CheckCircle, Plus, Trash2, Check, Clock, X, CircleDashed, ChevronDown } from "lucide-react";
+import { CheckCircle, Plus, Trash2, Check, Clock, X, CircleDashed, ChevronDown, Eye } from "lucide-react";
 import { inferDomainApplicationStatus } from "~/lib/domain-application-status";
 import { getReviewStatus } from "~/lib/review-status";
 import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
+import { ChallengePreviewModal } from "~/components/ChallengePreviewModal";
 import {
   summarizeDecisionPills,
   synthesizePrePipelinePill,
@@ -990,6 +991,10 @@ function ChallengeSelector({ cycleId, domainId, options, linkedChallengeVersions
   const linkedChallengeIds = new Set(linkedChallengeVersions.map((cv: any) => cv.challengeId));
   const availableOptions = options.filter((cv: any) => !linkedIds.has(cv.id) && !linkedChallengeIds.has(cv.challengeId));
   const [pickerId, setPickerId] = useState<string>("");
+  const [previewCvId, setPreviewCvId] = useState<string | null>(null);
+  const previewCv = previewCvId
+    ? linkedChallengeVersions.find((cv: any) => cv.id === previewCvId)
+    : null;
 
   return (
     <div className="space-y-3 pt-1">
@@ -1001,30 +1006,46 @@ function ChallengeSelector({ cycleId, domainId, options, linkedChallengeVersions
               <div key={cv.id} className="px-4 py-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1">
-                    <div className="text-sm font-medium text-foreground">
-                      {formatVersionLabel({
-                        name: cv.challenge?.name ?? "Untitled",
-                        versionNumber: cv.versionNumber,
-                        createdAt: cv.createdAt,
-                        createdBy: cv.createdBy,
-                      })}
+                    <div className="text-sm font-medium">
+                      <Link
+                        to={`/challenges/${cv.challengeId}?versionId=${cv.id}`}
+                        className="text-blue-600 hover:text-blue-800"
+                      >
+                        {formatVersionLabel({
+                          name: cv.challenge?.name ?? "Untitled",
+                          versionNumber: cv.versionNumber,
+                          createdAt: cv.createdAt,
+                          createdBy: cv.createdBy,
+                        })}
+                      </Link>
                     </div>
                     <div className="text-xs text-muted-foreground mt-0.5">
                       {questions.length} question{questions.length !== 1 ? "s" : ""}
                     </div>
                   </div>
-                  <Form method="post">
-                    <input type="hidden" name="intent" value="remove-challenge" />
-                    <input type="hidden" name="cycleId" value={cycleId} />
-                    <input type="hidden" name="challengeVersionId" value={cv.id} />
+                  <div className="flex items-center gap-2">
                     <button
-                      type="submit"
-                      aria-label={`Remove ${cv.challenge?.name ?? "challenge"}`}
-                      className="text-muted-foreground hover:text-red-600 transition"
+                      type="button"
+                      onClick={() => setPreviewCvId(cv.id)}
+                      aria-label={`Preview ${cv.challenge?.name ?? "challenge"}`}
+                      className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <Eye className="w-3.5 h-3.5" />
+                      Preview
                     </button>
-                  </Form>
+                    <Form method="post">
+                      <input type="hidden" name="intent" value="remove-challenge" />
+                      <input type="hidden" name="cycleId" value={cycleId} />
+                      <input type="hidden" name="challengeVersionId" value={cv.id} />
+                      <button
+                        type="submit"
+                        aria-label={`Remove ${cv.challenge?.name ?? "challenge"}`}
+                        className="text-muted-foreground hover:text-red-600 transition"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </Form>
+                  </div>
                 </div>
                 {!isEmptyDoc(cv.description) && (
                   <div className="mt-2 border border-border rounded-md bg-muted/30 px-4 py-3">
@@ -1078,6 +1099,22 @@ function ChallengeSelector({ cycleId, domainId, options, linkedChallengeVersions
           No challenge versions exist for this domain yet.
         </p>
       ) : null}
+
+      {previewCv && (
+        <ChallengePreviewModal
+          challengeVersionId={previewCv.id}
+          challengeName={previewCv.challenge?.name ?? "Challenge"}
+          versionLabel={formatVersionLabel({
+            name: previewCv.challenge?.name ?? "Challenge",
+            versionNumber: previewCv.versionNumber,
+            createdAt: previewCv.createdAt,
+            createdBy: previewCv.createdBy,
+          })}
+          description={previewCv.description}
+          questions={(previewCv.questions as any[]) ?? []}
+          onClose={() => setPreviewCvId(null)}
+        />
+      )}
     </div>
   );
 }
