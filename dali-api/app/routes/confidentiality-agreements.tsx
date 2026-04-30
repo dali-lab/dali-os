@@ -29,13 +29,18 @@ export async function loader({ request }: Route.LoaderArgs) {
     },
     orderBy: { createdAt: "desc" },
   });
-  return { agreements, canEdit: hiringLead };
+  return { agreements, canEdit: hiringLead || domainLead || admin };
 }
 
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
-  if (!(await isHiringLead(auth.user.sub))) return redirect("/");
+  const [hiringLead, domainLead, admin] = await Promise.all([
+    isHiringLead(auth.user.sub),
+    isDomainLead(auth.user.sub),
+    isAdmin(auth.user.sub),
+  ]);
+  if (!hiringLead && !domainLead && !admin) return redirect("/");
 
   const formData = await request.formData();
   const intent = formData.get("intent") as string;

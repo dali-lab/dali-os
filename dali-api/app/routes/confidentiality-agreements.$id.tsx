@@ -31,13 +31,18 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
   });
 
-  return { agreement, canEdit: hiringLead };
+  return { agreement, canEdit: hiringLead || domainLead || admin };
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
-  if (!(await isHiringLead(auth.user.sub))) return redirect("/");
+  const [hiringLead, domainLead, admin] = await Promise.all([
+    isHiringLead(auth.user.sub),
+    isDomainLead(auth.user.sub),
+    isAdmin(auth.user.sub),
+  ]);
+  if (!hiringLead && !domainLead && !admin) return redirect("/");
 
   const member = await prisma.dALIMember.findFirst({
     where: { userId: auth.user.sub },
