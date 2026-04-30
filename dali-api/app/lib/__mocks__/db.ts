@@ -3,6 +3,7 @@ import { vi } from "vitest";
 export const prisma = {
   user: {
     findUnique: vi.fn(),
+    findMany: vi.fn(),
     update: vi.fn(),
     delete: vi.fn(),
   },
@@ -42,6 +43,9 @@ export const prisma = {
   partyEvent: {
     create: vi.fn(),
     findFirst: vi.fn(),
+    findMany: vi.fn(),
+    groupBy: vi.fn(),
+    count: vi.fn(),
   },
   confidentialityAgreement: {
     findMany: vi.fn().mockResolvedValue([]),
