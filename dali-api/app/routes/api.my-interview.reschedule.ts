@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.my-interview.reschedule";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, withAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import { assignInterviewers } from "~/lib/scheduling";
@@ -24,11 +24,11 @@ export async function action({ request }: Route.ActionArgs) {
   if (!auth.ok) return withCors(request, auth.response);
 
   if (request.method !== "POST") {
-    return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
+    return withAuth(auth, withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 })));
   }
 
   const body = await parseJson(request, RescheduleSchema);
-  if (body instanceof Response) return withCors(request, body);
+  if (body instanceof Response) return withAuth(auth, withCors(request, body));
   const { newStart, newEnd, domainApplicationId } = body;
 
   // Cancel old + book new atomically inside a single serializable transaction.
@@ -81,11 +81,11 @@ export async function action({ request }: Route.ActionArgs) {
       { isolationLevel: "Serializable" },
     );
 
-    return withCors(request, Response.json(newInterview, { status: 201 }));
+    return withAuth(auth, withCors(request, Response.json(newInterview, { status: 201 })));
   } catch (err: any) {
     if (err?.message === "__NO_ACTIVE_INTERVIEW__") {
-      return withCors(request, Response.json({ error: "No active interview found" }, { status: 404 }));
+      return withAuth(auth, withCors(request, Response.json({ error: "No active interview found" }, { status: 404 })));
     }
-    return withCors(request, Response.json({ error: err?.message ?? "Failed to reschedule" }, { status: 409 }));
+    return withAuth(auth, withCors(request, Response.json({ error: err?.message ?? "Failed to reschedule" }, { status: 409 })));
   }
 }

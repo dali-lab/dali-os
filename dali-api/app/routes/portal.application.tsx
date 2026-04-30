@@ -2,7 +2,7 @@ import { useState } from "react";
 import { redirect, useLoaderData, useFetcher, Link } from "react-router";
 import type { Route } from "./+types/portal.application";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, withAuth } from "~/lib/auth";
 import { getActiveCycle } from "~/lib/cycles";
 import { getDownloadUrl } from "~/lib/s3";
 import type { Question } from "~/types";
@@ -33,7 +33,7 @@ async function presignAnswers(
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return withAuth(auth, redirect("/login"));
 
   const active = await getActiveCycle();
   let cycleId: string;
@@ -46,7 +46,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       orderBy: { createdAt: "desc" },
       select: { applicationCycleId: true },
     });
-    if (!recentApp) return redirect("/portal");
+    if (!recentApp) return withAuth(auth, redirect("/portal"));
     cycleId = recentApp.applicationCycleId;
   }
 
@@ -69,7 +69,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Need at least one Submitted update to render this page. Withdrawn is allowed
   // (and renders the withdrawn-state view); Draft alone redirects back to /portal.
   const submittedUpdate = application?.statusUpdates.find((u: any) => u.newStatus === "Submitted");
-  if (!application || !submittedUpdate) return redirect("/portal");
+  if (!application || !submittedUpdate) return withAuth(auth, redirect("/portal"));
 
   const latestUpdate = application.statusUpdates[application.statusUpdates.length - 1];
   const isWithdrawn = latestUpdate?.newStatus === "Withdrawn";
@@ -94,14 +94,14 @@ export async function loader({ request }: Route.LoaderArgs) {
     }),
   );
 
-  return {
-    submittedAt: submittedUpdate.createdAt.toISOString(),
-    withdrawnAt: withdrawnUpdate?.createdAt.toISOString() ?? null,
-    canWithdraw,
-    generalQuestions,
-    generalAnswers,
-    domains,
-  };
+  return withAuth(auth, {
+      submittedAt: submittedUpdate.createdAt.toISOString(),
+      withdrawnAt: withdrawnUpdate?.createdAt.toISOString() ?? null,
+      canWithdraw,
+      generalQuestions,
+      generalAnswers,
+      domains,
+    });
 }
 
 // ─── Action ──────────────────────────────────────────────────────────────────
@@ -114,12 +114,12 @@ export async function action({ request }: Route.ActionArgs) {
   const intent = formData.get("intent");
 
   if (intent !== "withdraw") {
-    return Response.json({ error: "Unknown intent" }, { status: 400 });
+    return withAuth(auth, Response.json({ error: "Unknown intent" }, { status: 400 }));
   }
 
   const active = await getActiveCycle();
   if (!active) {
-    return Response.json({ error: "No active cycle" }, { status: 400 });
+    return withAuth(auth, Response.json({ error: "No active cycle" }, { status: 400 }));
   }
 
   const application = await prisma.application.findFirst({
@@ -128,15 +128,15 @@ export async function action({ request }: Route.ActionArgs) {
   });
 
   if (!application) {
-    return Response.json({ error: "No application found" }, { status: 404 });
+    return withAuth(auth, Response.json({ error: "No application found" }, { status: 404 }));
   }
 
   const latest = application.statusUpdates[0]?.newStatus;
   if (latest !== "Submitted") {
-    return Response.json(
-      { error: latest === "Withdrawn" ? "Already withdrawn" : "Application is not submitted" },
-      { status: 400 },
-    );
+    return withAuth(auth, Response.json(
+          { error: latest === "Withdrawn" ? "Already withdrawn" : "Application is not submitted" },
+          { status: 400 },
+        ));
   }
 
   await prisma.applicationStatusUpdate.create({
@@ -147,7 +147,7 @@ export async function action({ request }: Route.ActionArgs) {
     },
   });
 
-  return Response.json({ ok: true });
+  return withAuth(auth, Response.json({ ok: true }));
 }
 
 // ─── Domain section (collapsible) ────────────────────────────────────────────

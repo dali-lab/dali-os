@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.audit-logs";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, withAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 
@@ -14,7 +14,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return withCors(request, auth.response);
   if (!(await isAdmin(auth.user.sub)))
-    return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+    return withAuth(auth, withCors(request, Response.json({ error: "Forbidden" }, { status: 403 })));
 
   const url = new URL(request.url);
   const limit = Math.min(Number(url.searchParams.get("limit") ?? DEFAULT_LIMIT) || DEFAULT_LIMIT, MAX_LIMIT);
@@ -29,5 +29,5 @@ export async function loader({ request }: Route.LoaderArgs) {
     prisma.auditLog.count(),
   ]);
 
-  return withCors(request, Response.json({ total, limit, offset, entries }));
+  return withAuth(auth, withCors(request, Response.json({ total, limit, offset, entries })));
 }

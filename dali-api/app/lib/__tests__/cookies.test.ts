@@ -47,7 +47,9 @@ describe("setTokenCookies", () => {
     expect(cookies[0]).toContain("HttpOnly");
     expect(cookies[1]).toContain("__dali_rt=rt_value");
     expect(cookies[1]).toContain("Max-Age=604800");
-    expect(cookies[1]).toContain("Path=/oauth");
+    // RT cookie path is `/` so the silent refresh in `requireAuth` sees it on
+    // every request — not just calls into /oauth/*.
+    expect(cookies[1]).toContain("Path=/");
   });
 });
 

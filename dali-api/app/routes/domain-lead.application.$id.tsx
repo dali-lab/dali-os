@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/domain-lead.application.$id";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, withAuth } from "~/lib/auth";
 import { ChevronDown } from "lucide-react";
 import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
 import {
@@ -51,7 +51,7 @@ export const meta: Route.MetaFunction = ({ data }) => {
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return withAuth(auth, redirect("/login"));
 
   const member = await prisma.dALIMember.findFirst({
     where: { userId: auth.user.sub },
@@ -59,7 +59,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
 
   if (!member || member.domainLeadAssignments.length === 0) {
-    return redirect("/reviewer");
+    return withAuth(auth, redirect("/reviewer"));
   }
 
   const leadDomainIds = member.domainLeadAssignments.map((a) => a.domainId);
@@ -109,8 +109,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
   });
 
-  if (!da) return redirect("/domain-lead");
-  if (!leadDomainIds.includes(da.challengeVersion.domainId!)) return redirect("/domain-lead");
+  if (!da) return withAuth(auth, redirect("/domain-lead"));
+  if (!leadDomainIds.includes(da.challengeVersion.domainId!)) return withAuth(auth, redirect("/domain-lead"));
 
   // Load rubric criteria for score labels
   const dac = da.challengeVersion.domainId
@@ -136,13 +136,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     cycleStatus,
   );
 
-  return {
-    domainApplication: da,
-    application: da.application,
-    inferredStatus,
-    domainRubricCriteria: (dac?.rubricVersion?.criteria as any[]) ?? [],
-    generalRubricCriteria: (generalRubric?.generalRubricVersion?.criteria as any[]) ?? [],
-  };
+  return withAuth(auth, {
+      domainApplication: da,
+      application: da.application,
+      inferredStatus,
+      domainRubricCriteria: (dac?.rubricVersion?.criteria as any[]) ?? [],
+      generalRubricCriteria: (generalRubric?.generalRubricVersion?.criteria as any[]) ?? [],
+    });
 }
 
 export default function DomainLeadApplicationView() {

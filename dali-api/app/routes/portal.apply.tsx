@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { redirect, useLoaderData, useFetcher } from "react-router";
 import type { Route } from "./+types/portal.apply";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, withAuth } from "~/lib/auth";
 import { getActiveCycle } from "~/lib/cycles";
 import { checkGitHubUrl, checkFigmaUrl, checkDriveUrl } from "~/lib/submission-check";
 import type { SubmissionCheckResult } from "~/lib/submission-check";
@@ -25,11 +25,11 @@ export const meta: Route.MetaFunction = () => [{ title: "Apply · DALI OS" }];
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return withAuth(auth, redirect("/login"));
 
   const active = await getActiveCycle();
   if (!active || active.currentStatus !== "Open") {
-    return redirect("/portal");
+    return withAuth(auth, redirect("/portal"));
   }
 
   // Load cycle with its challenge versions and hiring domains
@@ -49,14 +49,14 @@ export async function loader({ request }: Route.LoaderArgs) {
     },
   });
 
-  if (!cycle) return redirect("/portal");
+  if (!cycle) return withAuth(auth, redirect("/portal"));
 
   // General form = ChallengeVersion with domainId: null linked to this cycle
   const generalCvac = cycle.challengeVersions.find(
     cvc => cvc.challengeVersion.domainId === null,
   );
 
-  if (!generalCvac) return redirect("/portal");
+  if (!generalCvac) return withAuth(auth, redirect("/portal"));
 
   const generalChallengeVersionId = generalCvac.challengeVersionId;
   const formQuestions = (generalCvac.challengeVersion.questions as unknown as Question[]) ?? [];
@@ -97,31 +97,31 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const draftStatus = draft?.statusUpdates[0]?.newStatus ?? null;
 
-  return {
-    cycleId: active.id,
-    cycleName: active.name,
-    closeDate: active.closeDate ? active.closeDate.toISOString() : null,
-    generalChallengeVersionId,
-    formQuestions,
-    generalDescription,
-    domains,
-    isAlreadySubmitted: draftStatus === "Submitted",
-    draft: draft
-      ? {
-          id: draft.id,
-          answers: draft.answers as Record<string, string>,
-          selectedDomainIds: draft.domainApplications
-            .filter(da => da.selected)
-            .map(da => da.challengeVersion.domainId),
-          domainApplications: draft.domainApplications.map(da => ({
-            id: da.id,
-            domainId: da.challengeVersion.domainId,
-            challengeVersionId: da.challengeVersionId,
-            answers: da.answers as Record<string, string>,
-          })),
-        }
-      : null,
-  };
+  return withAuth(auth, {
+      cycleId: active.id,
+      cycleName: active.name,
+      closeDate: active.closeDate ? active.closeDate.toISOString() : null,
+      generalChallengeVersionId,
+      formQuestions,
+      generalDescription,
+      domains,
+      isAlreadySubmitted: draftStatus === "Submitted",
+      draft: draft
+        ? {
+            id: draft.id,
+            answers: draft.answers as Record<string, string>,
+            selectedDomainIds: draft.domainApplications
+              .filter(da => da.selected)
+              .map(da => da.challengeVersion.domainId),
+            domainApplications: draft.domainApplications.map(da => ({
+              id: da.id,
+              domainId: da.challengeVersion.domainId,
+              challengeVersionId: da.challengeVersionId,
+              answers: da.answers as Record<string, string>,
+            })),
+          }
+        : null,
+    });
 }
 
 // ─── Action ──────────────────────────────────────────────────────────────────
@@ -192,21 +192,21 @@ export async function action({ request }: Route.ActionArgs) {
       },
     });
 
-    return {
-      draft: {
-        id: application.id,
-        answers: application.answers,
-        selectedDomainIds: application.domainApplications.map(
-          (da) => da.challengeVersion.domainId,
-        ),
-        domainApplications: application.domainApplications.map((da) => ({
-          id: da.id,
-          domainId: da.challengeVersion.domainId,
-          challengeVersionId: da.challengeVersionId,
-          answers: da.answers,
-        })),
-      },
-    };
+    return withAuth(auth, {
+          draft: {
+            id: application.id,
+            answers: application.answers,
+            selectedDomainIds: application.domainApplications.map(
+              (da) => da.challengeVersion.domainId,
+            ),
+            domainApplications: application.domainApplications.map((da) => ({
+              id: da.id,
+              domainId: da.challengeVersion.domainId,
+              challengeVersionId: da.challengeVersionId,
+              answers: da.answers,
+            })),
+          },
+        });
   }
 
   if (intent === "update-domains") {
@@ -295,19 +295,19 @@ export async function action({ request }: Route.ActionArgs) {
       },
     });
 
-    return {
-      draft: updatedApp ? {
-        id: updatedApp.id,
-        answers: updatedApp.answers,
-        selectedDomainIds: newDomainIds,
-        domainApplications: updatedApp.domainApplications.map((da) => ({
-          id: da.id,
-          domainId: da.challengeVersion.domainId,
-          challengeVersionId: da.challengeVersionId,
-          answers: da.answers,
-        })),
-      } : null,
-    };
+    return withAuth(auth, {
+          draft: updatedApp ? {
+            id: updatedApp.id,
+            answers: updatedApp.answers,
+            selectedDomainIds: newDomainIds,
+            domainApplications: updatedApp.domainApplications.map((da) => ({
+              id: da.id,
+              domainId: da.challengeVersion.domainId,
+              challengeVersionId: da.challengeVersionId,
+              answers: da.answers,
+            })),
+          } : null,
+        });
   }
 
   if (intent === "save-draft") {
@@ -331,7 +331,7 @@ export async function action({ request }: Route.ActionArgs) {
       });
     }
 
-    return { saved: true };
+    return withAuth(auth, { saved: true });
   }
 
   if (intent === "submit") {
@@ -356,7 +356,7 @@ export async function action({ request }: Route.ActionArgs) {
       },
     });
     if (!application) {
-      return Response.json({ error: "Application not found" }, { status: 404 });
+      return withAuth(auth, Response.json({ error: "Application not found" }, { status: 404 }));
     }
     const generalQuestions =
       (application.generalChallengeVersion.questions as unknown as Question[]) ?? [];
@@ -381,7 +381,7 @@ export async function action({ request }: Route.ActionArgs) {
       Object.assign(wordCountErrors, validateWordLimits(questions, da.answers));
     }
     if (Object.keys(wordCountErrors).length > 0) {
-      return { wordCountErrors };
+      return withAuth(auth, { wordCountErrors });
     }
 
     // Save final answers
@@ -441,7 +441,7 @@ export async function action({ request }: Route.ActionArgs) {
     }
 
     if (Object.keys(urlWarnings).length > 0) {
-      return { urlWarnings };
+      return withAuth(auth, { urlWarnings });
     }
 
     // Create Submitted status update only on first submission
@@ -458,10 +458,10 @@ export async function action({ request }: Route.ActionArgs) {
       });
     }
 
-    return redirect("/portal");
+    return withAuth(auth, redirect("/portal"));
   }
 
-  return { error: "Unknown intent" };
+  return withAuth(auth, { error: "Unknown intent" });
 }
 
 // ─── Domain Colors ──────────────────────────────────────────────────────────

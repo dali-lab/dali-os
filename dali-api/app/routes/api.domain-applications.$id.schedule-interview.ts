@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.domain-applications.$id.schedule-interview";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, withAuth } from "~/lib/auth";
 import { assignInterviewers } from "~/lib/scheduling";
 import { parseJson } from "~/lib/validate";
 
@@ -14,11 +14,11 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!auth.ok) return auth.response;
 
   if (request.method !== "POST") {
-    return Response.json({ error: "Method not allowed" }, { status: 405 });
+    return withAuth(auth, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
 
   const body = await parseJson(request, ScheduleInterviewSchema);
-  if (body instanceof Response) return body;
+  if (body instanceof Response) return withAuth(auth, body);
   const { startTime } = body;
 
   const da = await prisma.domainApplication.findUnique({
@@ -33,11 +33,11 @@ export async function action({ request, params }: Route.ActionArgs) {
   });
 
   if (!da) {
-    return Response.json({ error: "Domain application not found" }, { status: 404 });
+    return withAuth(auth, Response.json({ error: "Domain application not found" }, { status: 404 }));
   }
 
   if (da.application.userId !== auth.user.sub) {
-    return Response.json({ error: "Not your application" }, { status: 403 });
+    return withAuth(auth, Response.json({ error: "Not your application" }, { status: 403 }));
   }
 
   const latestDecision = await prisma.decision.findFirst({
@@ -45,11 +45,11 @@ export async function action({ request, params }: Route.ActionArgs) {
     orderBy: { createdAt: "desc" },
   });
   if (!latestDecision || latestDecision.type !== "InvitedToInterview") {
-    return Response.json({ error: "Not invited to interview" }, { status: 403 });
+    return withAuth(auth, Response.json({ error: "Not invited to interview" }, { status: 403 }));
   }
 
   if (da.interviews.length > 0) {
-    return Response.json({ error: "Interview already scheduled" }, { status: 409 });
+    return withAuth(auth, Response.json({ error: "Interview already scheduled" }, { status: 409 }));
   }
 
   // DomainApplications always attach to a domain-scoped challenge version.
@@ -57,14 +57,14 @@ export async function action({ request, params }: Route.ActionArgs) {
   // rows are never created for general forms — defensive guard in case that
   // invariant ever breaks.
   if (!da.challengeVersion.domainId) {
-    return Response.json({ error: "Domain application is not attached to a domain" }, { status: 400 });
+    return withAuth(auth, Response.json({ error: "Domain application is not attached to a domain" }, { status: 400 }));
   }
 
   const config = await prisma.interviewConfig.findUnique({
     where: { applicationCycleId: da.application.applicationCycleId },
   });
   if (!config) {
-    return Response.json({ error: "No interview config for this cycle" }, { status: 400 });
+    return withAuth(auth, Response.json({ error: "No interview config for this cycle" }, { status: 400 }));
   }
 
   const slotStart = new Date(startTime);
@@ -78,8 +78,8 @@ export async function action({ request, params }: Route.ActionArgs) {
       slotStart,
       slotEnd,
     );
-    return Response.json(interview, { status: 201 });
+    return withAuth(auth, Response.json(interview, { status: 201 }));
   } catch (err: any) {
-    return Response.json({ error: err.message }, { status: 409 });
+    return withAuth(auth, Response.json({ error: err.message }, { status: 409 }));
   }
 }

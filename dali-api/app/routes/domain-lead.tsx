@@ -3,7 +3,7 @@ import { Form, Link, useLoaderData } from "react-router";
 import { redirect } from "react-router";
 import type { Route } from "./+types/domain-lead";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, withAuth } from "~/lib/auth";
 import { CheckCircle, Plus, Trash2, Check, Clock, X, CircleDashed, ChevronDown, Eye } from "lucide-react";
 import { inferDomainApplicationStatus } from "~/lib/domain-application-status";
 import { getReviewStatus } from "~/lib/review-status";
@@ -43,14 +43,14 @@ export const meta: Route.MetaFunction = () => [{ title: "Domain lead · DALI OS"
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return { domainData: [] };
+  if (!auth.ok) return withAuth(auth, { domainData: [] });
 
   const member = await prisma.dALIMember.findFirst({
     where: { userId: auth.user.sub },
   });
 
   if (!member) {
-    return { domainData: [] };
+    return withAuth(auth, { domainData: [] });
   }
 
   const assignments = await prisma.domainLeadAssignment.findMany({
@@ -321,7 +321,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     })
   );
 
-  return { domainData: domainData.flat() };
+  return withAuth(auth, { domainData: domainData.flat() });
 }
 
 export async function action({ request }: Route.ActionArgs) {

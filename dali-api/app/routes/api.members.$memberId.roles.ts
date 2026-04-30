@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.members.$memberId.roles";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, withAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
@@ -19,14 +19,14 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const auth = await requireAuth(request);
   if (!auth.ok) return withCors(request, auth.response);
-  if (!(await isAdmin(auth.user.sub))) return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+  if (!(await isAdmin(auth.user.sub))) return withAuth(auth, withCors(request, Response.json({ error: "Forbidden" }, { status: 403 })));
 
   if (request.method !== "PATCH") {
-    return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
+    return withAuth(auth, withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 })));
   }
 
   const body = await parseJson(request, RolesPatchSchema);
-  if (body instanceof Response) return withCors(request, body);
+  if (body instanceof Response) return withAuth(auth, withCors(request, body));
   const { roles } = body;
 
   const before = await prisma.dALIMember.findUnique({
@@ -52,5 +52,5 @@ export async function action({ request, params }: Route.ActionArgs) {
     request,
   });
 
-  return withCors(request, Response.json(member));
+  return withAuth(auth, withCors(request, Response.json(member)));
 }

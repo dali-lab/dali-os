@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.cycles.$cycleId.book-interview";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, withAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { assignInterviewers } from "~/lib/scheduling";
 import { checkRateLimit } from "~/lib/rate-limit";
@@ -28,14 +28,14 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!auth.ok) return withCors(request, auth.response);
 
   const rateLimited = checkRateLimit(request, { max: RATE_LIMIT_MAX, windowMs: RATE_LIMIT_WINDOW_MS }, auth.user.sub);
-  if (rateLimited) return withCors(request, rateLimited);
+  if (rateLimited) return withAuth(auth, withCors(request, rateLimited));
 
   if (request.method !== "POST") {
-    return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
+    return withAuth(auth, withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 })));
   }
 
   const body = await parseJson(request, BookInterviewSchema);
-  if (body instanceof Response) return withCors(request, body);
+  if (body instanceof Response) return withAuth(auth, withCors(request, body));
   const { slotStart, slotEnd, domainApplicationId } = body;
 
   const domainApplication = await prisma.domainApplication.findUnique({
@@ -47,11 +47,11 @@ export async function action({ request, params }: Route.ActionArgs) {
   });
 
   if (!domainApplication) {
-    return withCors(request, Response.json({ error: "DomainApplication not found" }, { status: 404 }));
+    return withAuth(auth, withCors(request, Response.json({ error: "DomainApplication not found" }, { status: 404 })));
   }
 
   if (domainApplication.application.userId !== auth.user.sub) {
-    return withCors(request, Response.json({ error: "Not your application" }, { status: 403 }));
+    return withAuth(auth, withCors(request, Response.json({ error: "Not your application" }, { status: 403 })));
   }
 
   const applicantDomainIds = [domainApplication.challengeVersion.domainId];
@@ -64,8 +64,8 @@ export async function action({ request, params }: Route.ActionArgs) {
       new Date(slotStart),
       new Date(slotEnd),
     );
-    return withCors(request, Response.json(interview, { status: 201 }));
+    return withAuth(auth, withCors(request, Response.json(interview, { status: 201 })));
   } catch (err: any) {
-    return withCors(request, Response.json({ error: err.message }, { status: 409 }));
+    return withAuth(auth, withCors(request, Response.json({ error: err.message }, { status: 409 })));
   }
 }

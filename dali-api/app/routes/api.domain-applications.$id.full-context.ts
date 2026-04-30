@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.domain-applications.$id.full-context";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, withAuth } from "~/lib/auth";
 import { hasCycleAccess } from "~/lib/roles";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -40,9 +40,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
   });
 
-  if (!da) return Response.json({ error: "Not found" }, { status: 404 });
+  if (!da) return withAuth(auth, Response.json({ error: "Not found" }, { status: 404 }));
   if (!(await hasCycleAccess(auth.user.sub, da.application.applicationCycleId))) {
-    return Response.json({ error: "Forbidden" }, { status: 403 });
+    return withAuth(auth, Response.json({ error: "Forbidden" }, { status: 403 }));
   }
 
   const domainId = da.challengeVersion.domain?.id ?? null;
@@ -66,24 +66,24 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       : Promise.resolve(null),
   ]);
 
-  return Response.json({
-    domainApplication: {
-      id: da.id,
-      answers: da.answers,
-      domain: da.challengeVersion.domain,
-      challengeQuestions: da.challengeVersion.questions,
-    },
-    application: {
-      id: da.application.id,
-      answers: da.application.answers,
-      generalQuestions: da.application.generalChallengeVersion?.questions ?? [],
-      applicant: da.application.user,
-    },
-    reviews: da.reviews,
-    decisions: da.decisions,
-    rubric: {
-      generalCriteria: generalRubric?.criteria ?? [],
-      domainCriteria: domainCycle?.rubricVersion?.criteria ?? [],
-    },
-  });
+  return withAuth(auth, Response.json({
+      domainApplication: {
+        id: da.id,
+        answers: da.answers,
+        domain: da.challengeVersion.domain,
+        challengeQuestions: da.challengeVersion.questions,
+      },
+      application: {
+        id: da.application.id,
+        answers: da.application.answers,
+        generalQuestions: da.application.generalChallengeVersion?.questions ?? [],
+        applicant: da.application.user,
+      },
+      reviews: da.reviews,
+      decisions: da.decisions,
+      rubric: {
+        generalCriteria: generalRubric?.criteria ?? [],
+        domainCriteria: domainCycle?.rubricVersion?.criteria ?? [],
+      },
+    }));
 }

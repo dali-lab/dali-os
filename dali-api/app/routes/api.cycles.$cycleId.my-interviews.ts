@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.cycles.$cycleId.my-interviews";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, withAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -11,12 +11,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!auth.ok) return withCors(request, auth.response);
 
   const member = await prisma.dALIMember.findFirst({ where: { userId: auth.user.sub } });
-  if (!member) return withCors(request, Response.json([]));
+  if (!member) return withAuth(auth, withCors(request, Response.json([])));
 
   const interviewer = await prisma.cycleInterviewer.findFirst({
     where: { daliMemberId: member.id, applicationCycleId: params.cycleId },
   });
-  if (!interviewer) return withCors(request, Response.json([]));
+  if (!interviewer) return withAuth(auth, withCors(request, Response.json([])));
 
   const assignments = await prisma.interviewAssignment.findMany({
     where: { cycleInterviewerId: interviewer.id, status: "Active" },
@@ -54,5 +54,5 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     orderBy: { interview: { startTime: "asc" } },
   });
 
-  return withCors(request, Response.json(assignments));
+  return withAuth(auth, withCors(request, Response.json(assignments)));
 }

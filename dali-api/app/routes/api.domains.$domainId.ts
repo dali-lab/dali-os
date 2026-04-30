@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.domains.$domainId";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, withAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 
@@ -35,10 +35,10 @@ export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return withCors(request, auth.response);
   if (!(await isAdmin(auth.user.sub)))
-    return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+    return withAuth(auth, withCors(request, Response.json({ error: "Forbidden" }, { status: 403 })));
 
   if (request.method !== "DELETE") {
-    return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
+    return withAuth(auth, withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 })));
   }
 
   const domainId = params.domainId!;
@@ -70,16 +70,16 @@ export async function action({ request, params }: Route.ActionArgs) {
   });
 
   if (result.kind === "not-found") {
-    return withCors(request, Response.json({ error: "Domain not found" }, { status: 404 }));
+    return withAuth(auth, withCors(request, Response.json({ error: "Domain not found" }, { status: 404 })));
   }
   if (result.kind === "in-use") {
-    return withCors(
-      request,
-      Response.json(
-        { error: `Cannot delete: domain is in use by ${result.blocking.join(", ")}.` },
-        { status: 409 },
-      ),
-    );
+    return withAuth(auth, withCors(
+          request,
+          Response.json(
+            { error: `Cannot delete: domain is in use by ${result.blocking.join(", ")}.` },
+            { status: 409 },
+          ),
+        ));
   }
-  return withCors(request, Response.json({ ok: true }));
+  return withAuth(auth, withCors(request, Response.json({ ok: true })));
 }

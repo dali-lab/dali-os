@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.cycles.$cycleId.interview-config";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, withAuth } from "~/lib/auth";
 import { isHiringLead, hasCycleAccess } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
@@ -37,13 +37,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!auth.ok) return withCors(request, auth.response);
 
   if (!(await hasCycleAccess(auth.user.sub, params.cycleId!)))
-    return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+    return withAuth(auth, withCors(request, Response.json({ error: "Forbidden" }, { status: 403 })));
 
   const config = await prisma.interviewConfig.findUnique({
     where: { applicationCycleId: params.cycleId },
   });
 
-  return withCors(request, Response.json(config));
+  return withAuth(auth, withCors(request, Response.json(config)));
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -52,17 +52,17 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const auth = await requireAuth(request);
   if (!auth.ok) return withCors(request, auth.response);
-  if (!(await isHiringLead(auth.user.sub))) return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+  if (!(await isHiringLead(auth.user.sub))) return withAuth(auth, withCors(request, Response.json({ error: "Forbidden" }, { status: 403 })));
 
   if (request.method !== "POST") {
-    return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
+    return withAuth(auth, withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 })));
   }
 
   const body = await parseJson(request, InterviewConfigSchema);
-  if (body instanceof Response) return withCors(request, body);
+  if (body instanceof Response) return withAuth(auth, withCors(request, body));
 
   if (body.timezone !== undefined && !isValidTimezone(body.timezone)) {
-    return withCors(request, Response.json({ error: "Invalid timezone" }, { status: 400 }));
+    return withAuth(auth, withCors(request, Response.json({ error: "Invalid timezone" }, { status: 400 })));
   }
 
   const config = await prisma.interviewConfig.upsert({
@@ -88,5 +88,5 @@ export async function action({ request, params }: Route.ActionArgs) {
     },
   });
 
-  return withCors(request, Response.json(config));
+  return withAuth(auth, withCors(request, Response.json(config)));
 }
