@@ -63,7 +63,7 @@ describe("ChallengeQuestionField — question types render", () => {
     expect(html).toContain("Choose file to upload");
   });
 
-  it("renders the skills rating grid for type=skills_rating", () => {
+  it("renders the skills rating grid with each skill defaulting to '-' for type=skills_rating", () => {
     const q: Question = {
       key: "skills",
       type: "skills_rating",
@@ -73,8 +73,27 @@ describe("ChallengeQuestionField — question types render", () => {
     const html = renderField({ question: q, value: "", onChange: () => {} });
     expect(html).toContain("React");
     expect(html).toContain("TypeScript");
-    // 6 options 0-5 per skill
+    // The unrated sentinel appears once per skill on first render.
+    expect(html.match(/>-<\/option>/g)?.length ?? 0).toBe(2);
+    // Each row still offers 0-5 as valid ratings.
     expect(html.match(/>0<\/option>/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+    expect(html.match(/>5<\/option>/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+  });
+
+  it("drops the '-' option for a skill once it has a real rating", () => {
+    const q: Question = {
+      key: "skills",
+      type: "skills_rating",
+      required: false,
+      data: { label: "Skills", options: ["React", "TypeScript"] },
+    };
+    const html = renderField({
+      question: q,
+      value: "React: 3\nTypeScript: -",
+      onChange: () => {},
+    });
+    // Only the unrated skill still has '-' as an option.
+    expect(html.match(/>-<\/option>/g)?.length ?? 0).toBe(1);
   });
 });
 
