@@ -35,6 +35,7 @@ beforeEach(() => {
   vi.mocked(isHiringLead).mockResolvedValue(true);
 
   (mockPrisma as any).applicationCycle = { findUniqueOrThrow: vi.fn() };
+  (mockPrisma as any).application = { findMany: vi.fn().mockResolvedValue([]) };
   (mockPrisma as any).domain = { findMany: vi.fn() };
   (mockPrisma as any).challengeVersion = { findMany: vi.fn() };
   (mockPrisma as any).rubricVersion = { findMany: vi.fn() };
@@ -42,9 +43,17 @@ beforeEach(() => {
   (mockPrisma as any).decision = { findMany: vi.fn() };
   (mockPrisma as any).emailTemplate = { findMany: vi.fn() };
   (mockPrisma as any).cycleDecisionEmail = { findMany: vi.fn() };
+  // Default the gate to "signed" so the loader keeps calling decision.findMany
+  // for finalDecisions — the assertion below depends on that query firing. The
+  // confidentiality gating itself is exercised in dedicated tests.
   (mockPrisma as any).confidentialityAgreement = { findMany: vi.fn().mockResolvedValue([]) };
-  (mockPrisma as any).cycleConfidentialityAgreement = { findUnique: vi.fn().mockResolvedValue(null) };
-  (mockPrisma as any).confidentialityAgreementSignature = { findMany: vi.fn().mockResolvedValue([]) };
+  (mockPrisma as any).cycleConfidentialityAgreement = {
+    findUnique: vi.fn().mockResolvedValue({ confidentialityAgreementVersionId: "test-cav" }),
+  };
+  (mockPrisma as any).confidentialityAgreementSignature = {
+    findMany: vi.fn().mockResolvedValue([]),
+    findUnique: vi.fn().mockResolvedValue({ confidentialityAgreementVersionId: "test-cav" }),
+  };
 
   mockPrisma.applicationCycle.findUniqueOrThrow.mockResolvedValue({
     id: CYCLE_ID,
