@@ -1445,7 +1445,7 @@ export default function AdminCycleDetails() {
         <ConfidentialityGate
           cycleId={cycleId ?? ''}
           reason={loaderData.confidentialityRequired}
-          next={`/admin/cycle/${cycleId}?tab=dashboard`}
+          next={`/hiring-lead-admin/cycle/${cycleId}?tab=dashboard`}
         />
       ) : tab === 'dashboard' && (
         <div className="space-y-4">
@@ -1554,7 +1554,7 @@ export default function AdminCycleDetails() {
         <ConfidentialityGate
           cycleId={cycleId ?? ''}
           reason={loaderData.confidentialityRequired}
-          next={`/admin/cycle/${cycleId}?tab=decisions`}
+          next={`/hiring-lead-admin/cycle/${cycleId}?tab=decisions`}
         />
       ) : tab === 'decisions' && (
         <div className="space-y-4">

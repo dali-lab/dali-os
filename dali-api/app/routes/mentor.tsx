@@ -420,7 +420,7 @@ export default function MentorDashboard() {
           <ConfidentialityGate
             cycleId={activeCycle.id}
             reason={confidentialityRequired}
-            next="/mentor"
+            next="/reviewer"
           />
         ) : reviews.length === 0 ? (
           <p className="text-sm text-gray-500">
@@ -639,7 +639,7 @@ export default function MentorDashboard() {
           <ConfidentialityGate
             cycleId={activeCycle.id}
             reason={confidentialityRequired}
-            next="/mentor"
+            next="/reviewer"
           />
         ) : (delibsSessions?.length ?? 0) === 0 ? (
           <p className="text-sm text-gray-500">
