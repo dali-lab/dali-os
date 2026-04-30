@@ -5,14 +5,14 @@ const CYCLE = 'cycle-fall-2026';
 test.describe('scheduling API: slot queries', () => {
   test('returns 400 without domainId param', async ({ page, loginAs }) => {
     await loginAs({ netId: 'f007ev5' });
-    const res = await page.request.get(`/api/cycles/${CYCLE}/available-slots`);
+    const res = await page.request.get(`/api/hiring/cycles/${CYCLE}/available-slots`);
     expect(res.status()).toBe(400);
   });
 
   test('returns 30-minute slots for single-domain applicant', async ({ page, loginAs }) => {
     await loginAs({ netId: 'f007ev5' }); // Eve - Design
     const res = await page.request.get(
-      `/api/cycles/${CYCLE}/available-slots?domainId=domain-design`,
+      `/api/hiring/cycles/${CYCLE}/available-slots?domainId=domain-design`,
     );
     expect(res.ok()).toBeTruthy();
     const slots = await res.json();
@@ -28,7 +28,7 @@ test.describe('scheduling API: slot queries', () => {
     await loginAs({ netId: 'f007bo2' }); // Bob - Design + Product
     // Bob needs: in-domain from Design OR Product, cross-domain from Engineering
     const res = await page.request.get(
-      `/api/cycles/${CYCLE}/available-slots?domainId=domain-design&domainId=domain-pm`,
+      `/api/hiring/cycles/${CYCLE}/available-slots?domainId=domain-design&domainId=domain-pm`,
     );
     expect(res.ok()).toBeTruthy();
     const slots = await res.json();
@@ -38,7 +38,7 @@ test.describe('scheduling API: slot queries', () => {
   test('slots only fall on weekdays', async ({ page, loginAs }) => {
     await loginAs({ netId: 'f007ev5' });
     const res = await page.request.get(
-      `/api/cycles/${CYCLE}/available-slots?domainId=domain-design`,
+      `/api/hiring/cycles/${CYCLE}/available-slots?domainId=domain-design`,
     );
     const slots = await res.json();
     for (const slot of slots) {
@@ -57,13 +57,13 @@ test.describe('scheduling API: double-booking prevention', () => {
   test('already-booked applicant gets 409', async ({ page, loginAs }) => {
     await loginAs({ netId: 'f007al1' }); // Alice - already has interview
     const slotsRes = await page.request.get(
-      `/api/cycles/${CYCLE}/available-slots?domainId=domain-eng`,
+      `/api/hiring/cycles/${CYCLE}/available-slots?domainId=domain-eng`,
     );
     const slots = await slotsRes.json();
     expect(slots.length).toBeGreaterThan(0);
 
     const bookRes = await page.request.post(
-      `/api/domain-applications/da-alice-eng/schedule-interview`,
+      `/api/hiring/domain-applications/da-alice-eng/schedule-interview`,
       { data: { startTime: slots[0].startTime } },
     );
     expect(bookRes.status()).toBe(409);
@@ -74,17 +74,17 @@ test.describe.serial('scheduling API: book → view → cancel flow', () => {
   test('Eve books an available Design slot', async ({ page, loginAs }) => {
     await loginAs({ netId: 'f007ev5' }); // Eve - Design, invited
     // Cancel any leftover interview from a previous test run
-    await page.request.post('/api/my-interview/cancel', {
+    await page.request.post('/api/hiring/my-interview/cancel', {
       data: { domainApplicationId: 'da-eve-design' },
     });
     const slotsRes = await page.request.get(
-      `/api/cycles/${CYCLE}/available-slots?domainId=domain-design`,
+      `/api/hiring/cycles/${CYCLE}/available-slots?domainId=domain-design`,
     );
     const slots = await slotsRes.json();
     expect(slots.length).toBeGreaterThan(0);
 
     const bookRes = await page.request.post(
-      `/api/domain-applications/da-eve-design/schedule-interview`,
+      `/api/hiring/domain-applications/da-eve-design/schedule-interview`,
       { data: { startTime: slots[0].startTime } },
     );
     expect(bookRes.status()).toBe(201);
@@ -96,7 +96,7 @@ test.describe.serial('scheduling API: book → view → cancel flow', () => {
 
   test('Eve can view her scheduled interview', async ({ page, loginAs }) => {
     await loginAs({ netId: 'f007ev5' });
-    const res = await page.request.get('/api/my-interview');
+    const res = await page.request.get('/api/hiring/my-interview');
     expect(res.ok()).toBeTruthy();
     const interview = await res.json();
     expect(interview).not.toBeNull();
@@ -106,11 +106,11 @@ test.describe.serial('scheduling API: book → view → cancel flow', () => {
   test('Eve cannot book a second interview (409)', async ({ page, loginAs }) => {
     await loginAs({ netId: 'f007ev5' });
     const slotsRes = await page.request.get(
-      `/api/cycles/${CYCLE}/available-slots?domainId=domain-design`,
+      `/api/hiring/cycles/${CYCLE}/available-slots?domainId=domain-design`,
     );
     const slots = await slotsRes.json();
     const bookRes = await page.request.post(
-      `/api/domain-applications/da-eve-design/schedule-interview`,
+      `/api/hiring/domain-applications/da-eve-design/schedule-interview`,
       { data: { startTime: slots[0].startTime } },
     );
     expect(bookRes.status()).toBe(409);
@@ -118,7 +118,7 @@ test.describe.serial('scheduling API: book → view → cancel flow', () => {
 
   test('Eve cancels her interview', async ({ page, loginAs }) => {
     await loginAs({ netId: 'f007ev5' });
-    const res = await page.request.post('/api/my-interview/cancel', {
+    const res = await page.request.post('/api/hiring/my-interview/cancel', {
       data: { domainApplicationId: 'da-eve-design' },
     });
     expect(res.ok()).toBeTruthy();
@@ -128,14 +128,14 @@ test.describe.serial('scheduling API: book → view → cancel flow', () => {
 
   test('after cancel, Eve has no active interview', async ({ page, loginAs }) => {
     await loginAs({ netId: 'f007ev5' });
-    const res = await page.request.get('/api/my-interview');
+    const res = await page.request.get('/api/hiring/my-interview');
     const interview = await res.json();
     expect(interview).toBeNull();
   });
 
   test('cancel with no active interview returns 404', async ({ page, loginAs }) => {
     await loginAs({ netId: 'f007ev5' }); // Eve just cancelled
-    const res = await page.request.post('/api/my-interview/cancel', {
+    const res = await page.request.post('/api/hiring/my-interview/cancel', {
       data: { domainApplicationId: 'da-eve-design' },
     });
     expect(res.status()).toBe(404);
@@ -144,13 +144,13 @@ test.describe.serial('scheduling API: book → view → cancel flow', () => {
   test('after cancel, Eve can book again', async ({ page, loginAs }) => {
     await loginAs({ netId: 'f007ev5' });
     const slotsRes = await page.request.get(
-      `/api/cycles/${CYCLE}/available-slots?domainId=domain-design`,
+      `/api/hiring/cycles/${CYCLE}/available-slots?domainId=domain-design`,
     );
     const slots = await slotsRes.json();
     expect(slots.length).toBeGreaterThan(0);
 
     const bookRes = await page.request.post(
-      `/api/domain-applications/da-eve-design/schedule-interview`,
+      `/api/hiring/domain-applications/da-eve-design/schedule-interview`,
       { data: { startTime: slots[0].startTime } },
     );
     expect(bookRes.status()).toBe(201);
@@ -160,7 +160,7 @@ test.describe.serial('scheduling API: book → view → cancel flow', () => {
 test.describe.serial('scheduling API: reschedule atomicity', () => {
   test('Alice has an existing interview', async ({ page, loginAs }) => {
     await loginAs({ netId: 'f007al1' });
-    const res = await page.request.get('/api/my-interview');
+    const res = await page.request.get('/api/hiring/my-interview');
     const interview = await res.json();
     expect(interview).not.toBeNull();
     expect(interview.status).toBe('Scheduled');
@@ -169,13 +169,13 @@ test.describe.serial('scheduling API: reschedule atomicity', () => {
   test('Alice reschedules to a different slot', async ({ page, loginAs }) => {
     await loginAs({ netId: 'f007al1' });
     // Get current interview time so we can pick a DIFFERENT slot
-    const currentRes = await page.request.get('/api/my-interview');
+    const currentRes = await page.request.get('/api/hiring/my-interview');
     const current = await currentRes.json();
     const currentStart = current.startTime;
 
     // Get available slots
     const slotsRes = await page.request.get(
-      `/api/cycles/${CYCLE}/available-slots?domainId=domain-eng`,
+      `/api/hiring/cycles/${CYCLE}/available-slots?domainId=domain-eng`,
     );
     const slots = await slotsRes.json();
     // Pick a slot different from the current one
@@ -183,7 +183,7 @@ test.describe.serial('scheduling API: reschedule atomicity', () => {
       (s: { startTime: string }) => s.startTime !== currentStart,
     ) ?? slots[0];
 
-    const res = await page.request.post('/api/my-interview/reschedule', {
+    const res = await page.request.post('/api/hiring/my-interview/reschedule', {
       data: { newStart: newSlot.startTime, newEnd: newSlot.endTime, domainApplicationId: 'da-alice-eng' },
     });
     expect(res.status()).toBe(201);
@@ -195,7 +195,7 @@ test.describe.serial('scheduling API: reschedule atomicity', () => {
   test('after reschedule, old slot is freed', async ({ page, loginAs }) => {
     await loginAs({ netId: 'f007al1' });
     // Alice still has an active interview (the new one)
-    const res = await page.request.get('/api/my-interview');
+    const res = await page.request.get('/api/hiring/my-interview');
     const interview = await res.json();
     expect(interview).not.toBeNull();
     expect(interview.status).toBe('Scheduled');
@@ -206,12 +206,12 @@ test.describe('scheduling API: authorization', () => {
   test('booking someone else\'s application returns 403', async ({ page, loginAs }) => {
     await loginAs({ netId: 'f007fe6' }); // Felix
     const slotsRes = await page.request.get(
-      `/api/cycles/${CYCLE}/available-slots?domainId=domain-eng`,
+      `/api/hiring/cycles/${CYCLE}/available-slots?domainId=domain-eng`,
     );
     const slots = await slotsRes.json();
     // Felix tries to book Alice's domain application
     const bookRes = await page.request.post(
-      `/api/domain-applications/da-alice-eng/schedule-interview`,
+      `/api/hiring/domain-applications/da-alice-eng/schedule-interview`,
       { data: { startTime: slots[0].startTime } },
     );
     expect(bookRes.status()).toBe(403);
@@ -219,7 +219,7 @@ test.describe('scheduling API: authorization', () => {
 
   test('reschedule with missing fields returns 400', async ({ page, loginAs }) => {
     await loginAs({ netId: 'f007al1' }); // Alice (has interview after reschedule test)
-    const res = await page.request.post('/api/my-interview/reschedule', {
+    const res = await page.request.post('/api/hiring/my-interview/reschedule', {
       data: {},
     });
     expect(res.status()).toBe(400);
@@ -231,13 +231,13 @@ test.describe('scheduling API: domain filtering edge cases', () => {
     await loginAs({ netId: 'f007bo2' }); // Bob - Design + Product
     // Single domain: cross-domain pool includes Eng + Product interviewers
     const singleRes = await page.request.get(
-      `/api/cycles/${CYCLE}/available-slots?domainId=domain-design`,
+      `/api/hiring/cycles/${CYCLE}/available-slots?domainId=domain-design`,
     );
     const singleSlots = await singleRes.json();
 
     // Both domains: cross-domain pool shrinks to Eng ONLY
     const multiRes = await page.request.get(
-      `/api/cycles/${CYCLE}/available-slots?domainId=domain-design&domainId=domain-pm`,
+      `/api/hiring/cycles/${CYCLE}/available-slots?domainId=domain-design&domainId=domain-pm`,
     );
     const multiSlots = await multiRes.json();
 
@@ -246,30 +246,30 @@ test.describe('scheduling API: domain filtering edge cases', () => {
 
   test('multi-domain applicant books for one domain using single-domain filtering', async ({ page, loginAs }) => {
     await loginAs({ netId: 'f007bo2' }); // Bob - Design + Product
-    await page.request.post('/api/my-interview/cancel', {
+    await page.request.post('/api/hiring/my-interview/cancel', {
       data: { domainApplicationId: 'da-bob-design' },
     }); // clean up
 
     // Book for Design only — server passes [domain-design] to assignInterviewers,
     // so cross-domain pool includes Eng AND Product interviewers
     const slotsRes = await page.request.get(
-      `/api/cycles/${CYCLE}/available-slots?domainId=domain-design`,
+      `/api/hiring/cycles/${CYCLE}/available-slots?domainId=domain-design`,
     );
     const slots = await slotsRes.json();
 
     const bookRes = await page.request.post(
-      `/api/domain-applications/da-bob-design/schedule-interview`,
+      `/api/hiring/domain-applications/da-bob-design/schedule-interview`,
       { data: { startTime: slots[0].startTime } },
     );
     expect(bookRes.status()).toBe(201);
 
     // Verify Bob has a scheduled interview
-    const interviewRes = await page.request.get('/api/my-interview');
+    const interviewRes = await page.request.get('/api/hiring/my-interview');
     const interview = await interviewRes.json();
     expect(interview.status).toBe('Scheduled');
 
     // Clean up
-    await page.request.post('/api/my-interview/cancel', {
+    await page.request.post('/api/hiring/my-interview/cancel', {
       data: { domainApplicationId: 'da-bob-design' },
     });
   });
@@ -279,13 +279,13 @@ test.describe('scheduling API: domain filtering edge cases', () => {
 
     // available-slots is restricted to invited applicants + cycle members
     const slotsRes = await page.request.get(
-      `/api/cycles/${CYCLE}/available-slots?domainId=domain-design`,
+      `/api/hiring/cycles/${CYCLE}/available-slots?domainId=domain-design`,
     );
     expect(slotsRes.status()).toBe(403);
 
     // Booking endpoint also rejects non-invited applicants
     const bookRes = await page.request.post(
-      `/api/domain-applications/da-harper-design/schedule-interview`,
+      `/api/hiring/domain-applications/da-harper-design/schedule-interview`,
       { data: { startTime: new Date().toISOString() } },
     );
     expect(bookRes.status()).toBe(403);
@@ -296,13 +296,13 @@ test.describe('scheduling API: domain filtering edge cases', () => {
 
     // available-slots is restricted to invited applicants + cycle members
     const slotsRes = await page.request.get(
-      `/api/cycles/${CYCLE}/available-slots?domainId=domain-eng`,
+      `/api/hiring/cycles/${CYCLE}/available-slots?domainId=domain-eng`,
     );
     expect(slotsRes.status()).toBe(403);
 
     // Booking endpoint also rejects rejected applicants
     const bookRes = await page.request.post(
-      `/api/domain-applications/da-grace-eng/schedule-interview`,
+      `/api/hiring/domain-applications/da-grace-eng/schedule-interview`,
       { data: { startTime: new Date().toISOString() } },
     );
     expect(bookRes.status()).toBe(403);

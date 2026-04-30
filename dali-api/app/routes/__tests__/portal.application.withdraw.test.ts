@@ -5,14 +5,14 @@ vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
   withAuth: <T,>(_auth: unknown, value: T) => value,
 }));
-vi.mock("~/lib/cycles");
+vi.mock("~/hiring/lib/cycles");
 vi.mock("~/lib/s3", () => ({
   getDownloadUrl: vi.fn(),
 }));
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { getActiveCycle } from "~/lib/cycles";
+import { getActiveCycle } from "~/hiring/lib/cycles";
 import { action } from "~/routes/portal.application";
 
 const mockPrisma = prisma as unknown as {

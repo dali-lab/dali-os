@@ -137,7 +137,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     }
 
     authType = "member";
-    redirectTo = "/reviewer";
+    redirectTo = "/hiring/reviewer";
   } else if (googleUser.email.endsWith("@dartmouth.edu")) {
     // Dartmouth student via Google (non-DALI email)
     user = await prisma.user.upsert({

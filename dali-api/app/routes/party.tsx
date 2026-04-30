@@ -19,7 +19,7 @@ import {
 import {
   DIGIT_SUM_CORAL_EXTERNAL_SLOT4,
   DigitSumClue,
-} from "~/components/DigitSumClue";
+} from "~/hiring/components/DigitSumClue";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);

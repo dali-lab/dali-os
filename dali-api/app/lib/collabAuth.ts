@@ -1,6 +1,6 @@
 import { prisma } from "~/lib/db";
 import { isHiringLead, isDomainLead } from "~/lib/roles";
-import { getCycleConfidentialityState } from "~/lib/confidentiality";
+import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 
 /** Hydrate author IDs into `{ id, name }` objects in a single IN query. */
 export async function hydrateAuthors(

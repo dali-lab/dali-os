@@ -22,5 +22,5 @@ All windows are 60 seconds. Limits are generous on IP-based tiers because users 
 |---|---|---|---|---|
 | `api.check-url` | 1 (pre-auth) | IP | 200/60s | DoS guard |
 | `api.check-url` | 2 (post-auth) | User ID | 20/60s | Per-user fairness |
-| `api.cycles.$cycleId.book-interview` | post-auth | User ID | 5/60s | Per-user fairness |
+| `api.hiring.cycles.$cycleId.book-interview` | post-auth | User ID | 5/60s | Per-user fairness |
 | `oauth.token` | pre-auth | IP | 200/60s | Brute-force protection |

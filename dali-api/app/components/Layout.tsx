@@ -56,71 +56,111 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
     setMobileNavOpen(false)
   }, [path])
 
-  // Build navigation structure with sub-items
-  const sections = [
+  // Tier 1 — top-level sections (always shown).
+  const hasHiringAccess = true // every authenticated, non-applicant user can use hiring views
+  const areas = [
+    {
+      key: 'hiring' as const,
+      label: 'Hiring',
+      to: '/hiring/reviewer',
+      show: hasHiringAccess,
+      active: path.startsWith('/hiring'),
+    },
+    {
+      key: 'admin-console' as const,
+      label: 'Admin Console',
+      to: '/admin-console',
+      show: isAdmin,
+      active: path.startsWith('/admin-console'),
+    },
+  ]
+  const activeAreaKey: 'hiring' | 'admin-console' | null =
+    path.startsWith('/admin-console') ? 'admin-console'
+    : path.startsWith('/hiring') ? 'hiring'
+    : null
+
+  // Tier 2 — section nav, depends on active area.
+  const hiringSections = [
     {
       label: 'Domain',
-      to: '/domain-lead',
+      to: '/hiring/domain-lead',
       icon: Shield,
       show: isDomainLead,
-      active: path.startsWith('/domain-lead'),
+      active: path.startsWith('/hiring/domain-lead'),
       sub: null,
     },
     {
       label: 'Reviews',
-      to: '/reviewer',
+      to: '/hiring/reviewer',
       icon: MessageSquare,
       show: true,
-      active: path.startsWith('/reviewer') || path.startsWith('/interviewer'),
+      active: path.startsWith('/hiring/reviewer') || path.startsWith('/hiring/interviewer'),
       sub: null,
     },
     {
       label: 'Cycles',
-      to: '/hiring-lead-admin',
+      to: '/hiring/lead',
       icon: Calendar,
       show: isHiringLead,
-      active: path.startsWith('/hiring-lead-admin'),
+      active: path.startsWith('/hiring/lead'),
       sub: null,
     },
     {
       label: 'Library',
-      to: '/challenges',
+      to: '/hiring/challenges',
       icon: FileText,
       show: isHiringLead || isDomainLead || isAdmin,
       active:
-        path.startsWith('/challenges') ||
-        path.startsWith('/rubrics') ||
-        path.startsWith('/confidentiality-agreements'),
+        path.startsWith('/hiring/challenges') ||
+        path.startsWith('/hiring/rubrics') ||
+        path.startsWith('/hiring/confidentiality-agreements'),
       sub: [
-        { label: 'Challenges', to: '/challenges', active: path.startsWith('/challenges') },
-        { label: 'Rubrics', to: '/rubrics', active: path.startsWith('/rubrics') },
-        { label: 'Confidentiality Agreements', to: '/confidentiality-agreements', active: path.startsWith('/confidentiality-agreements') },
+        { label: 'Challenges', to: '/hiring/challenges', active: path.startsWith('/hiring/challenges') },
+        { label: 'Rubrics', to: '/hiring/rubrics', active: path.startsWith('/hiring/rubrics') },
+        { label: 'Confidentiality Agreements', to: '/hiring/confidentiality-agreements', active: path.startsWith('/hiring/confidentiality-agreements') },
       ],
     },
     {
       label: 'Emails',
-      to: '/emails',
+      to: '/hiring/emails',
       icon: Mail,
       show: isHiringLead,
-      active: location.pathname.startsWith('/emails'),
+      active: path.startsWith('/hiring/emails'),
+    },
+  ]
+
+  const adminSections = [
+    {
+      label: 'Members',
+      to: '/admin-console/members',
+      icon: Users,
+      show: true,
+      active: path.startsWith('/admin-console/members'),
+      sub: null,
     },
     {
-      label: 'Admin',
-      to: '/admin-console',
-      icon: Users,
+      label: 'Domains',
+      to: '/admin-console/domains',
+      icon: Shield,
       show: isAdmin,
-      active: path.startsWith('/admin-console'),
-      sub: [
-        { label: 'Members', to: '/admin-console/members', active: path.startsWith('/admin-console/members') },
-        ...(isAdmin
-          ? [
-              { label: 'Domains', to: '/admin-console/domains', active: path.startsWith('/admin-console/domains') },
-              { label: 'Party', to: '/admin-console/party', active: path.startsWith('/admin-console/party') },
-            ]
-          : []),
-      ],
+      active: path.startsWith('/admin-console/domains'),
+      sub: null,
     },
-  ].filter((s) => s.show)
+    {
+      label: 'Party',
+      to: '/admin-console/party',
+      icon: Trophy,
+      show: isAdmin,
+      active: path.startsWith('/admin-console/party'),
+      sub: null,
+    },
+  ]
+
+  const sections = (
+    activeAreaKey === 'admin-console' ? adminSections
+    : activeAreaKey === 'hiring' ? hiringSections
+    : hiringSections
+  ).filter((s) => s.show)
 
   const activeSection = sections.find((s) => s.active)
   const initials = userInitials(user)
@@ -152,9 +192,31 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
               </div>
               <span className="font-heading font-bold text-lg text-white tracking-tight truncate">
                 <span className="text-accent-coral/80">D</span>
-                <sup className="text-accent-coral/80 text-[0.5em]">3</sup>ALI Hiring
+                <sup className="text-accent-coral/80 text-[0.5em]">3</sup>ALI OS
               </span>
             </button>
+
+            {/* Tier 1 — section switcher, inline with brand on desktop */}
+            <nav className="hidden md:flex items-center gap-0.5 ml-4 pl-4 border-l border-white/10">
+              {areas.map((area) => (
+                <Link
+                  key={area.key}
+                  to={area.to}
+                  aria-disabled={!area.show}
+                  tabIndex={area.show ? 0 : -1}
+                  className={`px-2.5 py-1 text-xs font-heading font-semibold rounded-md transition-colors whitespace-nowrap ${
+                    area.active
+                      ? 'bg-white/15 text-white'
+                      : area.show
+                        ? 'text-white/60 hover:text-white hover:bg-white/5'
+                        : 'text-white/25 cursor-not-allowed'
+                  }`}
+                  onClick={(e) => { if (!area.show) e.preventDefault() }}
+                >
+                  {area.label}
+                </Link>
+              ))}
+            </nav>
           </div>
           <div className="flex items-center gap-3">
             <span className="text-xs text-white/50 hidden sm:block truncate max-w-[200px]">{user.email}</span>
@@ -254,6 +316,27 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
             id="mobile-nav-panel"
             className="md:hidden fixed inset-x-0 top-14 z-20 bg-card border-b border-border shadow-lg max-h-[calc(100vh-3.5rem)] overflow-y-auto"
           >
+            {/* Tier 1 — section switcher (always shown) */}
+            <div className="flex items-center gap-1 px-3 py-2 border-b border-border bg-muted/30">
+              {areas.map((area) => (
+                <Link
+                  key={area.key}
+                  to={area.to}
+                  aria-disabled={!area.show}
+                  tabIndex={area.show ? 0 : -1}
+                  onClick={(e) => { if (!area.show) e.preventDefault() }}
+                  className={`px-2.5 py-1 text-xs font-heading font-semibold rounded-md transition-colors ${
+                    area.active
+                      ? 'bg-accent-coral/10 text-accent-coral'
+                      : area.show
+                        ? 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                        : 'text-muted-foreground/40 cursor-not-allowed'
+                  }`}
+                >
+                  {area.label}
+                </Link>
+              ))}
+            </div>
             <nav className="py-2">
               {sections.map((section) => (
                 <div key={section.to} className="border-b border-border last:border-b-0">
@@ -328,7 +411,7 @@ function StatsModal({ onClose }: { onClose: () => void }) {
         >
           <X className="w-4 h-4" />
         </button>
-        <h2 className="font-heading text-xl font-bold text-foreground mb-1">DALI Hiring · Stats</h2>
+        <h2 className="font-heading text-xl font-bold text-foreground mb-1">DALI OS · Stats</h2>
         <p className="text-xs text-muted-foreground mb-4">A little snapshot of the party we've been throwing.</p>
         <dl className="divide-y divide-border">
           {stats.map(([label, value]) => (
