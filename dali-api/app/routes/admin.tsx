@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Form, Link, redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/admin";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, withAuth } from "~/lib/auth";
 import { isHiringLead } from "~/lib/roles";
 import { ChevronRight, ChevronDown, Plus, X } from "lucide-react";
 
@@ -24,8 +24,8 @@ export const meta: Route.MetaFunction = () => [{ title: "Hiring lead · DALI OS"
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
-  if (!(await isHiringLead(auth.user.sub))) return redirect("/");
+  if (!auth.ok) return withAuth(auth, redirect("/login"));
+  if (!(await isHiringLead(auth.user.sub))) return withAuth(auth, redirect("/"));
 
   const cycles = await prisma.applicationCycle.findMany({
     include: {
@@ -36,7 +36,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     orderBy: { createdAt: "desc" },
   });
 
-  return { cycles };
+  return withAuth(auth, { cycles });
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -46,7 +46,7 @@ export async function action({ request }: Route.ActionArgs) {
 
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
-  if (!(await isHiringLead(auth.user.sub))) return redirect("/");
+  if (!(await isHiringLead(auth.user.sub))) return withAuth(auth, redirect("/"));
   const adminUser = await prisma.user.findUniqueOrThrow({
     where: { id: auth.user.sub },
   });
@@ -60,7 +60,7 @@ export async function action({ request }: Route.ActionArgs) {
     },
   });
 
-  return redirect(`/hiring-lead-admin/cycle/${cycle.id}`);
+  return withAuth(auth, redirect(`/hiring-lead-admin/cycle/${cycle.id}`));
 }
 
 export default function AdminDashboard() {

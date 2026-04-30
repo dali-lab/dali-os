@@ -30,7 +30,8 @@ export class OAuthError extends Error {
 
 const SESSION_TTL_MS = 10 * 60 * 1000; // 10 min for the authorize→callback→exchange round-trip
 const AUTH_CODE_TTL_MS = 60 * 1000; // 1 min for code→token exchange
-const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days sliding
+const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days absolute cap
 const ACCESS_TOKEN_EXPIRES_IN = 900; // 15 min
 
 export const VALID_CLIENT_IDS = ["dali-api"] as const;
@@ -92,6 +93,7 @@ async function createTokenPair(
   },
   authType: string,
   family?: string,
+  familyCreatedAt?: Date,
 ) {
   const userInfo = buildUserInfo(user, authType);
 
@@ -111,6 +113,7 @@ async function createTokenPair(
       userId: user.id,
       family: family ?? generateOpaqueToken(),
       expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_MS),
+      familyCreatedAt: familyCreatedAt ?? new Date(),
     },
   });
 
@@ -251,6 +254,10 @@ export async function refreshTokens(rawRefreshToken: string) {
     throw new OAuthError("invalid_grant", "Refresh token expired");
   }
 
+  if (existing.familyCreatedAt.getTime() + SESSION_MAX_AGE_MS < Date.now()) {
+    throw new OAuthError("invalid_grant", "Session expired — please log in again");
+  }
+
   // revoke old token
   await prisma.refreshToken.update({
     where: { id: existing.id },
@@ -262,7 +269,7 @@ export async function refreshTokens(rawRefreshToken: string) {
   });
   if (!user) throw new OAuthError("server_error", "User not found");
 
-  return createTokenPair(user, deriveAuthType(user), existing.family);
+  return createTokenPair(user, deriveAuthType(user), existing.family, existing.familyCreatedAt);
 }
 
 // revoke tokens

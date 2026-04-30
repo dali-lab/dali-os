@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.cycles.$cycleId.my-interviews.$interviewId.notes";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, withAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 
@@ -33,7 +33,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const assignment = await getAssignment(auth.user.sub, params.cycleId!, params.interviewId!);
   if (!assignment) {
-    return withCors(request, Response.json({ error: "Assignment not found" }, { status: 404 }));
+    return withAuth(auth, withCors(request, Response.json({ error: "Assignment not found" }, { status: 404 })));
   }
 
   const versions = await prisma.interviewNoteVersion.findMany({
@@ -41,7 +41,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     orderBy: { createdAt: "desc" },
   });
 
-  return withCors(request, Response.json(versions));
+  return withAuth(auth, withCors(request, Response.json(versions)));
 }
 
 // POST: append a new note version (auto-save)
@@ -58,16 +58,16 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const assignment = await getAssignment(auth.user.sub, params.cycleId!, params.interviewId!);
   if (!assignment) {
-    return withCors(request, Response.json({ error: "Assignment not found" }, { status: 404 }));
+    return withAuth(auth, withCors(request, Response.json({ error: "Assignment not found" }, { status: 404 })));
   }
 
   const body = await parseJson(request, NoteVersionSchema);
-  if (body instanceof Response) return withCors(request, body);
+  if (body instanceof Response) return withAuth(auth, withCors(request, body));
   const { content } = body;
 
   const version = await prisma.interviewNoteVersion.create({
     data: { interviewAssignmentId: assignment.id, content },
   });
 
-  return withCors(request, Response.json(version, { status: 201 }));
+  return withAuth(auth, withCors(request, Response.json(version, { status: 201 })));
 }

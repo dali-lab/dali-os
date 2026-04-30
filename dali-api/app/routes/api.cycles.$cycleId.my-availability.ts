@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.cycles.$cycleId.my-availability";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, withAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
@@ -68,7 +68,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const interviewers = await findCycleInterviewers(auth.user.sub, params.cycleId!);
   if (interviewers.length === 0) {
-    return withCors(request, Response.json([]));
+    return withAuth(auth, withCors(request, Response.json([])));
   }
 
   // All of the member's rows should hold the same availability set after a
@@ -79,7 +79,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     orderBy: { startTime: "asc" },
   });
 
-  return withCors(request, Response.json(blocks));
+  return withAuth(auth, withCors(request, Response.json(blocks)));
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -95,11 +95,11 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const interviewers = await findCycleInterviewers(auth.user.sub, params.cycleId!);
   if (interviewers.length === 0) {
-    return withCors(request, Response.json({ error: "Not an interviewer for this cycle" }, { status: 404 }));
+    return withAuth(auth, withCors(request, Response.json({ error: "Not an interviewer for this cycle" }, { status: 404 })));
   }
 
   const body = await parseJson(request, AvailabilitySchema);
-  if (body instanceof Response) return withCors(request, body);
+  if (body instanceof Response) return withAuth(auth, withCors(request, body));
   const parsedBlocks = body.blocks.map((b) => ({
     startTime: new Date(b.startTime),
     endTime: new Date(b.endTime),
@@ -147,5 +147,5 @@ export async function action({ request, params }: Route.ActionArgs) {
     orderBy: { startTime: "asc" },
   });
 
-  return withCors(request, Response.json(updated));
+  return withAuth(auth, withCors(request, Response.json(updated)));
 }

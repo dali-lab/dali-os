@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.my-application";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, withAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { sendEmail } from "~/lib/gmail";
 import { renderEmail } from "~/lib/email";
@@ -58,18 +58,18 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   if (!cycle) {
-    return withCors(request, Response.json({ application: null, interview: null, cycleStatus: null }));
+    return withAuth(auth, withCors(request, Response.json({ application: null, interview: null, cycleStatus: null })));
   }
 
   const cycleStatus = cycle.statusUpdates[0]?.newStatus ?? "Draft";
 
   if (!application) {
-    return withCors(request, Response.json({
-      application: null,
-      interview: null,
-      cycleStatus,
-      cycleId: cycle.id,
-    }));
+    return withAuth(auth, withCors(request, Response.json({
+          application: null,
+          interview: null,
+          cycleStatus,
+          cycleId: cycle.id,
+        })));
   }
 
   const appStatus = application.statusUpdates[0]?.newStatus ?? "Draft";
@@ -86,19 +86,19 @@ export async function loader({ request }: Route.LoaderArgs) {
     orderBy: { createdAt: "desc" },
   });
 
-  return withCors(request, Response.json({
-    application: {
-      id: application.id,
-      applicationCycleId: application.applicationCycleId,
-      status: appStatus,
-      domainIds,
-    },
-    interview: interview
-      ? { id: interview.id, startTime: interview.startTime, endTime: interview.endTime, status: interview.status }
-      : null,
-    cycleStatus,
-    cycleId: cycle.id,
-  }));
+  return withAuth(auth, withCors(request, Response.json({
+      application: {
+        id: application.id,
+        applicationCycleId: application.applicationCycleId,
+        status: appStatus,
+        domainIds,
+      },
+      interview: interview
+        ? { id: interview.id, startTime: interview.startTime, endTime: interview.endTime, status: interview.status }
+        : null,
+      cycleStatus,
+      cycleId: cycle.id,
+    })));
 }
 
 // POST /api/my-application
@@ -114,7 +114,7 @@ export async function action({ request }: Route.ActionArgs) {
   const userId = auth.user.sub;
 
   const body = await parseJson(request, ApplicationSchema);
-  if (body instanceof Response) return withCors(request, body);
+  if (body instanceof Response) return withAuth(auth, withCors(request, body));
 
   const answers = body.answers ?? {};
 
@@ -133,12 +133,12 @@ export async function action({ request }: Route.ActionArgs) {
   );
 
   if (!cycle || !generalCvac) {
-    return withCors(request, Response.json({ error: "No active application cycle" }, { status: 400 }));
+    return withAuth(auth, withCors(request, Response.json({ error: "No active application cycle" }, { status: 400 })));
   }
 
   const cycleStatus = cycle.statusUpdates[0]?.newStatus ?? "Draft";
   if (cycleStatus !== "Open") {
-    return withCors(request, Response.json({ error: "Applications are not open" }, { status: 400 }));
+    return withAuth(auth, withCors(request, Response.json({ error: "Applications are not open" }, { status: 400 })));
   }
 
   // Withdrawn is sticky: bail before the upsert so we never resurrect a
@@ -148,10 +148,10 @@ export async function action({ request }: Route.ActionArgs) {
     include: { statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 } },
   });
   if (existingForWithdrawnCheck?.statusUpdates[0]?.newStatus === "Withdrawn") {
-    return withCors(
-      request,
-      Response.json({ error: "Application has been withdrawn" }, { status: 409 }),
-    );
+    return withAuth(auth, withCors(
+          request,
+          Response.json({ error: "Application has been withdrawn" }, { status: 409 }),
+        ));
   }
 
   // Atomic upsert keyed on the (userId, applicationCycleId) unique constraint.
@@ -184,7 +184,7 @@ export async function action({ request }: Route.ActionArgs) {
 
   // Only send confirmation email on first submission
   if (!firstSubmission) {
-    return withCors(request, Response.json({ ok: true }));
+    return withAuth(auth, withCors(request, Response.json({ ok: true })));
   }
 
   // Send confirmation email (best-effort — don't fail the submission if email fails)
@@ -215,5 +215,5 @@ export async function action({ request }: Route.ActionArgs) {
     console.error("Failed to send application confirmation email:", err);
   }
 
-  return withCors(request, Response.json({ ok: true }));
+  return withAuth(auth, withCors(request, Response.json({ ok: true })));
 }

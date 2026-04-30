@@ -1,7 +1,7 @@
 import { redirect } from 'react-router'
 import type { Route } from './+types/email-templates'
 import { prisma } from '~/lib/db'
-import { requireAuth } from '~/lib/auth'
+import { requireAuth, withAuth } from '~/lib/auth'
 import { isHiringLead } from '~/lib/roles'
 import EmailTemplatesList from '~/components/EmailTemplates'
 
@@ -9,8 +9,8 @@ export const meta: Route.MetaFunction = () => [{ title: 'Email templates · DALI
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request)
-  if (!auth.ok) return redirect('/login')
-  if (!(await isHiringLead(auth.user.sub))) return redirect('/')
+  if (!auth.ok) return withAuth(auth, redirect('/login'))
+  if (!(await isHiringLead(auth.user.sub))) return withAuth(auth, redirect('/'))
 
   const [templates, gmailUser] = await Promise.all([
     prisma.emailTemplate.findMany({
@@ -27,25 +27,25 @@ export async function loader({ request }: Route.LoaderArgs) {
       select: { googleRefreshToken: true },
     }),
   ])
-  return { templates, gmailConnected: !!gmailUser?.googleRefreshToken }
+  return withAuth(auth, { templates, gmailConnected: !!gmailUser?.googleRefreshToken })
 }
 
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request)
-  if (!auth.ok) return redirect('/login')
-  if (!(await isHiringLead(auth.user.sub))) return redirect('/')
+  if (!auth.ok) return withAuth(auth, redirect('/login'))
+  if (!(await isHiringLead(auth.user.sub))) return withAuth(auth, redirect('/'))
 
   const formData = await request.formData()
   const intent = formData.get('intent') as string
 
   if (intent === 'create') {
     const name = (formData.get('name') as string)?.trim()
-    if (!name) return { error: 'Name is required' }
+    if (!name) return withAuth(auth, { error: 'Name is required' })
     const template = await prisma.emailTemplate.create({ data: { name } })
-    return redirect(`/emails/${template.id}`)
+    return withAuth(auth, redirect(`/emails/${template.id}`))
   }
 
-  return null
+  return withAuth(auth, null)
 }
 
 export default EmailTemplatesList

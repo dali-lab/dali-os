@@ -2,7 +2,7 @@ import { useState } from "react";
 import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/applicant.schedule-interview";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, withAuth } from "~/lib/auth";
 import { getActiveCycle } from "~/lib/cycles";
 import { computeAvailableSlots } from "~/lib/scheduling";
 import { inferDomainApplicationStatus } from "~/lib/domain-application-status";
@@ -22,10 +22,10 @@ export const meta: Route.MetaFunction = () => [{ title: "Schedule interview · D
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return withAuth(auth, redirect("/login"));
 
   const active = await getActiveCycle();
-  if (!active) return { domainAppsToSchedule: [], slotsByDomainAppId: {}, cycleId: null };
+  if (!active) return withAuth(auth, { domainAppsToSchedule: [], slotsByDomainAppId: {}, cycleId: null });
 
   const application = await prisma.application.findFirst({
     where: { userId: auth.user.sub, applicationCycleId: active.id },
@@ -41,7 +41,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     },
   });
 
-  if (!application) return { domainAppsToSchedule: [], slotsByDomainAppId: {}, cycleId: active.id };
+  if (!application) return withAuth(auth, { domainAppsToSchedule: [], slotsByDomainAppId: {}, cycleId: active.id });
 
   const cycleStatus = active.currentStatus as ApplicationCycleStatus;
 
@@ -65,7 +65,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   );
   const slotsByDomainAppId: Record<string, RawSlot[]> = Object.fromEntries(slotResults);
 
-  return { domainAppsToSchedule, slotsByDomainAppId, cycleId: active.id };
+  return withAuth(auth, { domainAppsToSchedule, slotsByDomainAppId, cycleId: active.id });
 }
 
 export default function ScheduleInterview() {

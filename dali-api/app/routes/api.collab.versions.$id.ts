@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.collab.versions.$id";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, withAuth } from "~/lib/auth";
 import { authorizeCollabDoc, hydrateAuthors } from "~/lib/collabAuth";
 import { getCollabServer } from "~/collab/server";
 import { restoreVersion } from "~/collab/persistence";
@@ -27,17 +27,17 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       authorIds: true,
     },
   });
-  if (!version) return Response.json({ error: "Not found" }, { status: 404 });
+  if (!version) return withAuth(auth, Response.json({ error: "Not found" }, { status: 404 }));
 
   const allowed = await authorizeCollabDoc(auth.user.sub, version.name);
-  if (!allowed) return Response.json({ error: "Forbidden" }, { status: 403 });
+  if (!allowed) return withAuth(auth, Response.json({ error: "Forbidden" }, { status: 403 }));
 
-  return Response.json({
-    id: version.id,
-    createdAt: version.createdAt,
-    plainText: version.plainText,
-    authors: await hydrateAuthors(version.authorIds),
-  });
+  return withAuth(auth, Response.json({
+      id: version.id,
+      createdAt: version.createdAt,
+      plainText: version.plainText,
+      authors: await hydrateAuthors(version.authorIds),
+    }));
 }
 
 // POST /api/collab/versions/{id}  body: { intent: "restore" }
@@ -52,22 +52,22 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!auth.ok) return auth.response;
 
   const body = await parseJson(request, RestoreSchema);
-  if (body instanceof Response) return body;
+  if (body instanceof Response) return withAuth(auth, body);
 
   const version = await prisma.collabDocumentVersion.findUnique({
     where: { id: params.id },
     select: { id: true, name: true },
   });
-  if (!version) return Response.json({ error: "Not found" }, { status: 404 });
+  if (!version) return withAuth(auth, Response.json({ error: "Not found" }, { status: 404 }));
 
   const allowed = await authorizeCollabDoc(auth.user.sub, version.name);
-  if (!allowed) return Response.json({ error: "Forbidden" }, { status: 403 });
+  if (!allowed) return withAuth(auth, Response.json({ error: "Forbidden" }, { status: 403 }));
 
   const server = getCollabServer();
   if (!server) {
-    return Response.json({ error: "Collab server not running" }, { status: 503 });
+    return withAuth(auth, Response.json({ error: "Collab server not running" }, { status: 503 }));
   }
 
   await restoreVersion(server, version.name, version.id);
-  return Response.json({ ok: true });
+  return withAuth(auth, Response.json({ ok: true }));
 }

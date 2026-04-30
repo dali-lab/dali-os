@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.cycles.$cycleId.domains.$domainId.auto-assign";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, withAuth } from "~/lib/auth";
 import { isHiringLead, isDomainLead } from "~/lib/roles";
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -8,13 +8,13 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!auth.ok) return auth.response;
 
   if (request.method !== "POST") {
-    return Response.json({ error: "Method not allowed" }, { status: 405 });
+    return withAuth(auth, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
 
   const hiringLead = await isHiringLead(auth.user.sub);
   const domainLead = await isDomainLead(auth.user.sub);
   if (!hiringLead && !domainLead) {
-    return Response.json({ error: "Forbidden" }, { status: 403 });
+    return withAuth(auth, Response.json({ error: "Forbidden" }, { status: 403 }));
   }
 
   const { cycleId, domainId } = params;
@@ -23,17 +23,17 @@ export async function action({ request, params }: Route.ActionArgs) {
     where: { id: cycleId! },
   });
   if (!cycle.generalRubricVersionId) {
-    return Response.json({ error: "A general application rubric must be set before assigning reviewers to applications" }, { status: 400 });
+    return withAuth(auth, Response.json({ error: "A general application rubric must be set before assigning reviewers to applications" }, { status: 400 }));
   }
 
   const domainCycle = await prisma.domainApplicationCycle.findUnique({
     where: { domainId_applicationCycleId: { domainId: domainId!, applicationCycleId: cycleId! } },
   });
   if (!domainCycle) {
-    return Response.json({ error: "Domain not part of this cycle" }, { status: 404 });
+    return withAuth(auth, Response.json({ error: "Domain not part of this cycle" }, { status: 404 }));
   }
   if (!domainCycle.rubricVersionId) {
-    return Response.json({ error: "A domain rubric must be set before assigning reviewers to applications" }, { status: 400 });
+    return withAuth(auth, Response.json({ error: "A domain rubric must be set before assigning reviewers to applications" }, { status: 400 }));
   }
 
   const targetCount = domainCycle.reviewersPerApplication;
@@ -44,7 +44,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   });
 
   if (reviewers.length === 0) {
-    return Response.json({ error: "No reviewers assigned to this domain" }, { status: 400 });
+    return withAuth(auth, Response.json({ error: "No reviewers assigned to this domain" }, { status: 400 }));
   }
 
   const domainApps = await prisma.domainApplication.findMany({
@@ -92,5 +92,5 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
   }
 
-  return Response.json({ assigned });
+  return withAuth(auth, Response.json({ assigned }));
 }

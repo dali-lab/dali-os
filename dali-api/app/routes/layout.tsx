@@ -1,6 +1,6 @@
 import { Outlet, redirect, useLoaderData } from 'react-router'
 import { Layout } from '~/components/Layout'
-import { requireAuth } from '~/lib/auth'
+import { requireAuth, withAuth } from '~/lib/auth'
 import { getUserRoles } from '~/lib/roles'
 import { getActiveCycle } from '~/lib/cycles'
 import { prisma } from '~/lib/db'
@@ -8,8 +8,8 @@ import type { Route } from './+types/layout'
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request)
-  if (!auth.ok) return redirect('/login')
-  if (auth.user.type === 'applicant') return redirect('/portal')
+  if (!auth.ok) return withAuth(auth, redirect('/login'))
+  if (auth.user.type === 'applicant') return withAuth(auth, redirect('/portal'))
   const { memberId, isHiringLead: hiringLead, isAdmin: admin, isDomainLead: domainLead } = await getUserRoles(auth.user.sub)
 
   let isInterviewer = false
@@ -23,7 +23,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     }
   }
 
-  return { user: auth.user, isHiringLead: hiringLead, isAdmin: admin, isDomainLead: domainLead, isInterviewer }
+  return withAuth(auth, { user: auth.user, isHiringLead: hiringLead, isAdmin: admin, isDomainLead: domainLead, isInterviewer })
 }
 
 export default function AppLayoutRoute() {

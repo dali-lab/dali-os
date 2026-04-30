@@ -1,7 +1,7 @@
 import { redirect } from 'react-router'
 import type { Route } from './+types/email-templates.$id'
 import { prisma } from '~/lib/db'
-import { requireAuth } from '~/lib/auth'
+import { requireAuth, withAuth } from '~/lib/auth'
 import { isHiringLead } from '~/lib/roles'
 import { EmailTemplateDetail } from '~/components/EmailTemplateDetail'
 
@@ -12,8 +12,8 @@ export const meta: Route.MetaFunction = ({ data }) => {
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request)
-  if (!auth.ok) return redirect('/login')
-  if (!(await isHiringLead(auth.user.sub))) return redirect('/')
+  if (!auth.ok) return withAuth(auth, redirect('/login'))
+  if (!(await isHiringLead(auth.user.sub))) return withAuth(auth, redirect('/'))
 
   const template = await prisma.emailTemplate.findUniqueOrThrow({
     where: { id: params.id },
@@ -25,18 +25,18 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
   })
 
-  return { template }
+  return withAuth(auth, { template })
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request)
-  if (!auth.ok) return redirect('/login')
-  if (!(await isHiringLead(auth.user.sub))) return redirect('/')
+  if (!auth.ok) return withAuth(auth, redirect('/login'))
+  if (!(await isHiringLead(auth.user.sub))) return withAuth(auth, redirect('/'))
 
   const member = await prisma.dALIMember.findFirst({
     where: { userId: auth.user.sub },
   })
-  if (!member) return redirect('/login')
+  if (!member) return withAuth(auth, redirect('/login'))
 
   const formData = await request.formData()
   const intent = formData.get('intent') as string
@@ -44,7 +44,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (intent === 'create-version') {
     const subject = (formData.get('subject') as string)?.trim()
     const body = (formData.get('body') as string) ?? ''
-    if (!subject) return { error: 'Subject is required' }
+    if (!subject) return withAuth(auth, { error: 'Subject is required' })
 
     const lastVersion = await prisma.emailTemplateVersion.findFirst({
       where: { templateId: params.id },
@@ -62,20 +62,20 @@ export async function action({ request, params }: Route.ActionArgs) {
       },
     })
 
-    return redirect(`/emails/${params.id}`)
+    return withAuth(auth, redirect(`/emails/${params.id}`))
   }
 
   if (intent === 'rename') {
     const name = (formData.get('name') as string)?.trim()
-    if (!name) return { error: 'Name is required' }
+    if (!name) return withAuth(auth, { error: 'Name is required' })
     await prisma.emailTemplate.update({
       where: { id: params.id },
       data: { name },
     })
-    return redirect(`/emails/${params.id}`)
+    return withAuth(auth, redirect(`/emails/${params.id}`))
   }
 
-  return null
+  return withAuth(auth, null)
 }
 
 export default EmailTemplateDetail

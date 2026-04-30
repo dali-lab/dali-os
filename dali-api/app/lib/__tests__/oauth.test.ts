@@ -254,12 +254,14 @@ describe("refreshTokens", () => {
   });
 
   it("succeeds with token rotation", async () => {
+    const familyCreatedAt = new Date(Date.now() - 24 * 60 * 60 * 1000);
     mockPrisma.refreshToken.findUnique.mockResolvedValue({
       id: "rt1",
       family: "fam1",
       revokedAt: null,
       expiresAt: new Date(Date.now() + 60000),
       userId: "u1",
+      familyCreatedAt,
     });
     mockPrisma.refreshToken.update.mockResolvedValue({});
     mockPrisma.user.findUnique.mockResolvedValue(mockUser);
@@ -277,6 +279,24 @@ describe("refreshTokens", () => {
       where: { id: "rt1" },
       data: { revokedAt: expect.any(Date) },
     });
+    // familyCreatedAt propagated to new token
+    expect(mockPrisma.refreshToken.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ familyCreatedAt }) }),
+    );
+  });
+
+  it("throws when session exceeds 30-day absolute cap", async () => {
+    mockPrisma.refreshToken.findUnique.mockResolvedValue({
+      id: "rt1",
+      family: "fam1",
+      revokedAt: null,
+      expiresAt: new Date(Date.now() + 60000),
+      userId: "u1",
+      familyCreatedAt: new Date(Date.now() - 31 * 24 * 60 * 60 * 1000),
+    });
+    await expect(refreshTokens("old-session-token")).rejects.toThrow(
+      "Session expired",
+    );
   });
 });
 

@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.interviews.$id.complete";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, withAuth } from "~/lib/auth";
 import { parseJson } from "~/lib/validate";
 
 const VALID_RECOMMENDATIONS = ["Strong Hire", "Hire", "Lean Hire", "Lean No Hire", "No Hire"] as const;
@@ -16,12 +16,12 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!auth.ok) return auth.response;
 
   if (request.method !== "POST" && request.method !== "DELETE") {
-    return Response.json({ error: "Method not allowed" }, { status: 405 });
+    return withAuth(auth, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
 
   const member = await prisma.dALIMember.findFirst({ where: { userId: auth.user.sub } });
   if (!member) {
-    return Response.json({ error: "Not a DALI member" }, { status: 403 });
+    return withAuth(auth, Response.json({ error: "Not a DALI member" }, { status: 403 }));
   }
 
   // Verify the caller is an active interviewer on this interview
@@ -33,12 +33,12 @@ export async function action({ request, params }: Route.ActionArgs) {
     },
   });
   if (!assignment) {
-    return Response.json({ error: "You are not an active interviewer for this interview" }, { status: 403 });
+    return withAuth(auth, Response.json({ error: "You are not an active interviewer for this interview" }, { status: 403 }));
   }
 
   const interview = await prisma.interview.findUnique({ where: { id: params.id } });
   if (!interview) {
-    return Response.json({ error: "Interview not found" }, { status: 404 });
+    return withAuth(auth, Response.json({ error: "Interview not found" }, { status: 404 }));
   }
 
   // DELETE = reopen a completed interview (flip status back to Scheduled).
@@ -46,22 +46,22 @@ export async function action({ request, params }: Route.ActionArgs) {
   // re-submit the same values or edit them before marking complete again.
   if (request.method === "DELETE") {
     if (interview.status !== "Completed") {
-      return Response.json({ error: "Interview is not completed" }, { status: 409 });
+      return withAuth(auth, Response.json({ error: "Interview is not completed" }, { status: 409 }));
     }
     const updated = await prisma.interview.update({
       where: { id: params.id },
       data: { status: "Scheduled" },
     });
-    return Response.json(updated);
+    return withAuth(auth, Response.json(updated));
   }
 
   // POST = mark the interview complete.
   const body = await parseJson(request, CompleteSchema);
-  if (body instanceof Response) return body;
+  if (body instanceof Response) return withAuth(auth, body);
   const { recommendation, recommendationNotes } = body;
 
   if (interview.status === "Completed") {
-    return Response.json({ error: "Interview is already completed" }, { status: 409 });
+    return withAuth(auth, Response.json({ error: "Interview is already completed" }, { status: 409 }));
   }
 
   const updated = await prisma.interview.update({
@@ -73,5 +73,5 @@ export async function action({ request, params }: Route.ActionArgs) {
     },
   });
 
-  return Response.json(updated);
+  return withAuth(auth, Response.json(updated));
 }

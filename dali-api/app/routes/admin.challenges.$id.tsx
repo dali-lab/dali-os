@@ -1,7 +1,7 @@
 import { redirect } from "react-router";
 import type { Route } from "./+types/admin.challenges.$id";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, withAuth } from "~/lib/auth";
 import { isHiringLead, isDomainLead } from "~/lib/roles";
 import { ChallengeDetail } from "~/components/ChallengeDetail";
 
@@ -12,8 +12,8 @@ export const meta: Route.MetaFunction = ({ data }) => {
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
-  if (!(await isHiringLead(auth.user.sub)) && !(await isDomainLead(auth.user.sub))) return redirect("/");
+  if (!auth.ok) return withAuth(auth, redirect("/login"));
+  if (!(await isHiringLead(auth.user.sub)) && !(await isDomainLead(auth.user.sub))) return withAuth(auth, redirect("/"));
   const [challenge, domains] = await Promise.all([
     prisma.challenge.findUniqueOrThrow({
       where: { id: params.id },
@@ -30,16 +30,16 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     prisma.domain.findMany({ orderBy: { name: "asc" } }),
   ]);
 
-  return { challenge, domains };
+  return withAuth(auth, { challenge, domains });
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
-  if (!(await isHiringLead(auth.user.sub)) && !(await isDomainLead(auth.user.sub))) return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
+  if (!(await isHiringLead(auth.user.sub)) && !(await isDomainLead(auth.user.sub))) return withAuth(auth, new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } }));
 
   const user = await prisma.user.findUnique({ where: { id: auth.user.sub } });
-  if (!user) return new Response(JSON.stringify({ error: "User not found" }), { status: 401 });
+  if (!user) return withAuth(auth, new Response(JSON.stringify({ error: "User not found" }), { status: 401 }));
 
   const formData = await request.formData();
   const intent = formData.get("intent") as string;
@@ -62,10 +62,10 @@ export async function action({ request, params }: Route.ActionArgs) {
       },
     });
 
-    return redirect(`/challenges/${params.id}`);
+    return withAuth(auth, redirect(`/challenges/${params.id}`));
   }
 
-  return null;
+  return withAuth(auth, null);
 }
 
 export default ChallengeDetail;

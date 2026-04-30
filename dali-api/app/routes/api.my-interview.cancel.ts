@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.my-interview.cancel";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, withAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 
@@ -17,11 +17,11 @@ export async function action({ request }: Route.ActionArgs) {
   if (!auth.ok) return withCors(request, auth.response);
 
   if (request.method !== "POST") {
-    return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
+    return withAuth(auth, withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 })));
   }
 
   const body = await parseJson(request, CancelSchema);
-  if (body instanceof Response) return withCors(request, body);
+  if (body instanceof Response) return withAuth(auth, withCors(request, body));
   const { domainApplicationId } = body;
 
   const interview = await prisma.interview.findFirst({
@@ -33,7 +33,7 @@ export async function action({ request }: Route.ActionArgs) {
   });
 
   if (!interview) {
-    return withCors(request, Response.json({ error: "No active interview found" }, { status: 404 }));
+    return withAuth(auth, withCors(request, Response.json({ error: "No active interview found" }, { status: 404 })));
   }
 
   const updated = await prisma.interview.update({
@@ -41,5 +41,5 @@ export async function action({ request }: Route.ActionArgs) {
     data: { status: "CancelledByApplicant" },
   });
 
-  return withCors(request, Response.json(updated));
+  return withAuth(auth, withCors(request, Response.json(updated)));
 }

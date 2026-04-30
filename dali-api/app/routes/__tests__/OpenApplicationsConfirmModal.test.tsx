@@ -3,7 +3,10 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 vi.mock("~/lib/db");
-vi.mock("~/lib/auth");
+vi.mock("~/lib/auth", () => ({
+  requireAuth: vi.fn(),
+  withAuth: <T,>(_auth: unknown, value: T) => value,
+}));
 vi.mock("~/lib/roles");
 vi.mock("~/lib/email");
 
