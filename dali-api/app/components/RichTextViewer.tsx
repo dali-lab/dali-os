@@ -1,11 +1,18 @@
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
+import Link from "@tiptap/extension-link";
 import { useEffect } from "react";
 
 interface RichTextViewerProps {
   content: unknown;
   className?: string;
 }
+
+const LINK_HTML_ATTRIBUTES = {
+  target: "_blank",
+  rel: "noopener noreferrer nofollow",
+  class: "text-blue-600 underline hover:text-blue-800",
+};
 
 export function isEmptyDoc(content: unknown): boolean {
   if (!content || typeof content !== "object") return true;
@@ -28,7 +35,16 @@ function isEmptyNode(node: unknown): boolean {
 export function RichTextViewer({ content, className }: RichTextViewerProps) {
   const editor = useEditor({
     immediatelyRender: false,
-    extensions: [StarterKit],
+    extensions: [
+      StarterKit,
+      Link.configure({
+        openOnClick: true,
+        autolink: false,
+        linkOnPaste: false,
+        protocols: ["http", "https", "mailto"],
+        HTMLAttributes: LINK_HTML_ATTRIBUTES,
+      }),
+    ],
     content: isEmptyDoc(content) ? "" : (content as object),
     editable: false,
     editorProps: {
