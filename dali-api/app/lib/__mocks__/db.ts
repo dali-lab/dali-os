@@ -43,5 +43,15 @@ export const prisma = {
     create: vi.fn(),
     findFirst: vi.fn(),
   },
+  confidentialityAgreement: {
+    findMany: vi.fn().mockResolvedValue([]),
+  },
+  cycleConfidentialityAgreement: {
+    findUnique: vi.fn().mockResolvedValue({ confidentialityAgreementVersionId: "mock-cav-id" }),
+  },
+  confidentialityAgreementSignature: {
+    findUnique: vi.fn().mockResolvedValue({ confidentialityAgreementVersionId: "mock-cav-id" }),
+    count: vi.fn().mockResolvedValue(0),
+  },
   $transaction: vi.fn(),
 };

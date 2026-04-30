@@ -64,6 +64,7 @@ describe("Decision lineage (parentDecisionId)", () => {
       domainApplicationId: "da-1",
       notes: "drafted",
       waitlistRank: null,
+      domainApplication: { application: { applicationCycleId: "cycle-1" } },
     });
     mockPrisma.decision.create.mockResolvedValue({ id: FINAL_ID });
 

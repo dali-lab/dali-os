@@ -9,6 +9,8 @@ import { Modal } from "~/components/Modal";
 import { ChallengePreviewModal } from "~/components/ChallengePreviewModal";
 import { Settings, Users, Calendar, AlertTriangle, Trash2, Plus, CheckCircle, ArrowRight, Circle, ChevronRight, X, LayoutDashboard, Eye } from 'lucide-react'
 import { formatVersionLabel, buildVersionNumberMap } from "~/lib/formatVersion";
+import { getCycleConfidentialityState } from "~/lib/confidentiality";
+import { ConfidentialityGate } from "~/components/ConfidentialityGate";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -77,7 +79,16 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!auth.ok) return withAuth(auth, redirect("/login"));
   if (!(await isHiringLead(auth.user.sub))) return withAuth(auth, redirect("/"));
 
-  const cycle = await prisma.applicationCycle.findUniqueOrThrow({
+  // Hiring leads must be able to reach this page to bind a confidentiality
+  // agreement to the cycle, so we don't redirect when unsigned. Instead, the
+  // loader strips every sensitive payload — applicant identities, final
+  // decisions, review counts — and the UI shows a placeholder where those
+  // panels would be.
+  const confState = await getCycleConfidentialityState(auth.user.sub, params.id);
+  const confidentialityRequired =
+    confState.status === "signed" ? null : confState.status;
+
+  const cycleBase = await prisma.applicationCycle.findUniqueOrThrow({
     where: { id: params.id },
     include: {
       domains: {
@@ -85,7 +96,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       },
       statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
       challengeVersions: { include: { challengeVersion: { include: { domain: true, challenge: true, createdBy: { select: { firstName: true, lastName: true } } } } } },
-      applications: {
+    },
+  });
+  const applications = confidentialityRequired
+    ? []
+    : await prisma.application.findMany({
+        where: { applicationCycleId: params.id },
         include: {
           user: true,
           statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
@@ -93,9 +109,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
             include: { challengeVersion: { include: { domain: true } } },
           },
         },
-      },
-    },
-  });
+      });
+  const cycle = { ...cycleBase, applications };
 
   const allDomains = await prisma.domain.findMany({ orderBy: { name: "asc" } });
 
@@ -111,13 +126,38 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     orderBy: { createdAt: "desc" },
   });
 
-  const cycleApplicationReviewCount = await prisma.applicationReview.count({
-    where: {
-      domainApplication: {
-        application: { applicationCycleId: params.id },
+  const confidentialityAgreementOptions = await prisma.confidentialityAgreement.findMany({
+    include: { versions: { orderBy: { versionNumber: "desc" } } },
+    orderBy: { name: "asc" },
+  });
+  const currentConfidentialityBinding = await prisma.cycleConfidentialityAgreement.findUnique({
+    where: { applicationCycleId: params.id },
+    include: {
+      confidentialityAgreementVersion: {
+        include: { agreement: { select: { name: true } } },
       },
     },
   });
+  const confidentialitySignatures = await prisma.confidentialityAgreementSignature.findMany({
+    where: { applicationCycleId: params.id },
+    include: { user: { select: { firstName: true, lastName: true } } },
+    orderBy: { signedAt: "asc" },
+  });
+
+  // Even the count of reviews on this cycle is sensitive — it tells anyone
+  // pre-signature how far review has progressed. Zero it out when unsigned;
+  // the only reader is the rubric-locking UI, which fail-closed locks edits
+  // when reviews exist (count > 0). With confidentialityRequired set, the
+  // reviewer dashboard is gated anyway, so the rubric lock state is moot.
+  const cycleApplicationReviewCount = confidentialityRequired
+    ? 0
+    : await prisma.applicationReview.count({
+        where: {
+          domainApplication: {
+            application: { applicationCycleId: params.id },
+          },
+        },
+      });
 
   // Per-domain options + which domains already have reviews assigned (used to
   // gate rubric edits — once any domain application has a review, changing
@@ -132,16 +172,18 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     include: { rubric: { select: { name: true } }, createdBy: { select: { firstName: true, lastName: true } } },
     orderBy: { createdAt: "desc" },
   });
-  const reviewsForCycle = await prisma.applicationReview.findMany({
-    where: {
-      domainApplication: { application: { applicationCycleId: params.id } },
-    },
-    select: {
-      domainApplication: {
-        select: { challengeVersion: { select: { domainId: true } } },
-      },
-    },
-  });
+  const reviewsForCycle = confidentialityRequired
+    ? []
+    : await prisma.applicationReview.findMany({
+        where: {
+          domainApplication: { application: { applicationCycleId: params.id } },
+        },
+        select: {
+          domainApplication: {
+            select: { challengeVersion: { select: { domainId: true } } },
+          },
+        },
+      });
   const reviewedDomainIdSet = new Set<string>();
   for (const r of reviewsForCycle) {
     const did = r.domainApplication.challengeVersion.domainId;
@@ -153,25 +195,27 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // Exclude Finals that already have a Released child — Decision is append-only,
   // so released rows still match stage="Final" and would otherwise re-appear here
   // after the optimistic UI update is undone by a loader refetch.
-  const finalDecisions = await prisma.decision.findMany({
-    where: {
-      stage: "Final",
-      children: { none: { stage: "Released" } },
-      domainApplication: {
-        application: { applicationCycleId: params.id },
-      },
-    },
-    include: {
-      domainApplication: {
-        include: {
-          application: { include: { user: { select: { firstName: true, lastName: true, dartmouthEmail: true, netId: true } } } },
-          challengeVersion: { include: { domain: { select: { name: true } } } },
+  const finalDecisions = confidentialityRequired
+    ? []
+    : await prisma.decision.findMany({
+        where: {
+          stage: "Final",
+          children: { none: { stage: "Released" } },
+          domainApplication: {
+            application: { applicationCycleId: params.id },
+          },
         },
-      },
-      madeBy: { select: { firstName: true, lastName: true } },
-    },
-    orderBy: { createdAt: "desc" },
-  });
+        include: {
+          domainApplication: {
+            include: {
+              application: { include: { user: { select: { firstName: true, lastName: true, dartmouthEmail: true, netId: true } } } },
+              challengeVersion: { include: { domain: { select: { name: true } } } },
+            },
+          },
+          madeBy: { select: { firstName: true, lastName: true } },
+        },
+        orderBy: { createdAt: "desc" },
+      });
 
   // Email-template options + current per-cycle decision bindings + which
   // DecisionTypes already have a Released decision (used to lock those slots).
@@ -193,16 +237,18 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
   });
 
-  const releasedDecisions = await prisma.decision.findMany({
-    where: {
-      stage: "Released",
-      domainApplication: {
-        application: { applicationCycleId: params.id },
-      },
-    },
-    select: { type: true },
-    distinct: ["type"],
-  });
+  const releasedDecisions = confidentialityRequired
+    ? []
+    : await prisma.decision.findMany({
+        where: {
+          stage: "Released",
+          domainApplication: {
+            application: { applicationCycleId: params.id },
+          },
+        },
+        select: { type: true },
+        distinct: ["type"],
+      });
   const releasedDecisionTypes = releasedDecisions.map((d) => d.type);
 
   // ChallengeVersion has no `versionNumber` column on the schema, so derive
@@ -245,6 +291,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       domainChallengeVersions: domainChallengeVersions.map(withCvNumber),
       domainRubricVersions,
       reviewedDomainIds,
+      confidentialityAgreementOptions,
+      currentConfidentialityBinding,
+      confidentialitySignatures,
+      confidentialityRequired,
     });
 }
 
@@ -292,6 +342,26 @@ export async function action({ request, params }: Route.ActionArgs) {
       data: { generalRubricVersionId: rubricVersionId },
     });
     return withAuth(auth, redirect(`/hiring-lead-admin/cycle/${params.id}`));
+  }
+
+  if (intent === "set-confidentiality-agreement") {
+    const versionId =
+      (formData.get("confidentialityAgreementVersionId") as string) || null;
+    if (versionId) {
+      await prisma.cycleConfidentialityAgreement.upsert({
+        where: { applicationCycleId: params.id },
+        update: { confidentialityAgreementVersionId: versionId },
+        create: {
+          applicationCycleId: params.id,
+          confidentialityAgreementVersionId: versionId,
+        },
+      });
+    } else {
+      await prisma.cycleConfidentialityAgreement.deleteMany({
+        where: { applicationCycleId: params.id },
+      });
+    }
+    return redirect(`/hiring-lead-admin/cycle/${params.id}`);
   }
 
   if (intent === "set-decision-email") {
@@ -1103,6 +1173,13 @@ export default function AdminCycleDetails() {
             locked={(loaderData?.cycleApplicationReviewCount ?? 0) > 0}
           />
 
+          {/* Confidentiality Agreement */}
+          <ConfidentialityAgreementPicker
+            currentBinding={loaderData?.currentConfidentialityBinding ?? null}
+            agreementOptions={loaderData?.confidentialityAgreementOptions ?? []}
+            signatures={loaderData?.confidentialitySignatures ?? []}
+          />
+
           {/* Decision-release email bindings */}
           <DecisionEmailsSection
             emailTemplates={loaderData?.emailTemplates ?? []}
@@ -1364,7 +1441,13 @@ export default function AdminCycleDetails() {
       )}
 
       {/* ── Interview Dashboard Tab ── */}
-      {tab === 'dashboard' && (
+      {tab === 'dashboard' && loaderData?.confidentialityRequired ? (
+        <ConfidentialityGate
+          cycleId={cycleId ?? ''}
+          reason={loaderData.confidentialityRequired}
+          next={`/hiring-lead-admin/cycle/${cycleId}?tab=dashboard`}
+        />
+      ) : tab === 'dashboard' && (
         <div className="space-y-4">
           <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
@@ -1467,7 +1550,13 @@ export default function AdminCycleDetails() {
       )}
 
       {/* ── Decisions Tab ── */}
-      {tab === 'decisions' && (
+      {tab === 'decisions' && loaderData?.confidentialityRequired ? (
+        <ConfidentialityGate
+          cycleId={cycleId ?? ''}
+          reason={loaderData.confidentialityRequired}
+          next={`/hiring-lead-admin/cycle/${cycleId}?tab=decisions`}
+        />
+      ) : tab === 'decisions' && (
         <div className="space-y-4">
           <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
             <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-border bg-muted/50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -2614,6 +2703,136 @@ function DecisionEmailPicker({ slot, binding, emailTemplates, locked }: {
           >
             Cancel
           </button>
+        </Form>
+      )}
+    </div>
+  );
+}
+
+function ConfidentialityAgreementPicker({
+  currentBinding,
+  agreementOptions,
+  signatures,
+}: {
+  currentBinding: any | null;
+  agreementOptions: any[];
+  signatures: { user: { firstName: string | null; lastName: string | null } }[];
+}) {
+  const [editing, setEditing] = useState(!currentBinding);
+  const [signersOpen, setSignersOpen] = useState(false);
+  const currentName =
+    currentBinding?.confidentialityAgreementVersion?.agreement?.name ?? null;
+  const currentVersion =
+    currentBinding?.confidentialityAgreementVersion?.versionNumber ?? null;
+  const signatureCount = signatures.length;
+
+  return (
+    <div className="bg-card rounded-xl border border-border shadow-sm p-6 space-y-3">
+      <h3 className="text-sm font-bold text-foreground/80">
+        Confidentiality Agreement
+      </h3>
+      <p className="text-xs text-muted-foreground">
+        Reviewers, interviewers, domain leads, and admins must sign this
+        agreement before viewing sensitive data for the cycle. If unset, nobody
+        — including you — can see submitted applications, reviews, interviews,
+        notes, or decisions.
+      </p>
+      {!currentBinding && !editing && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          No agreement bound — sensitive cycle data is hidden from everyone.
+        </div>
+      )}
+      {currentBinding && !editing ? (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <CheckCircle className="w-4 h-4 text-green-600" />
+              <span>
+                {currentName ?? "Set"} — v{currentVersion}
+              </span>
+            </div>
+            <button
+              onClick={() => setEditing(true)}
+              className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+            >
+              Change
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSignersOpen((o) => !o)}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+          >
+            <ChevronRight
+              className={`w-3 h-3 transition-transform ${signersOpen ? "rotate-90" : ""}`}
+            />
+            {signatureCount} signature{signatureCount === 1 ? "" : "s"}
+          </button>
+          {signersOpen && (
+            <ul className="ml-4 space-y-1">
+              {signatures.length === 0 ? (
+                <li className="text-xs text-muted-foreground italic">
+                  No one has signed yet.
+                </li>
+              ) : (
+                signatures.map((sig, i) => {
+                  const name =
+                    `${sig.user.firstName ?? ""} ${sig.user.lastName ?? ""}`.trim() ||
+                    "Unknown";
+                  return (
+                    <li key={i} className="text-xs text-foreground/80">
+                      {name}
+                    </li>
+                  );
+                })
+              )}
+            </ul>
+          )}
+        </div>
+      ) : (
+        <Form
+          method="post"
+          className="flex items-end gap-3"
+          onSubmit={() => setEditing(false)}
+        >
+          <input
+            type="hidden"
+            name="intent"
+            value="set-confidentiality-agreement"
+          />
+          <div className="flex-1">
+            <select
+              name="confidentialityAgreementVersionId"
+              defaultValue={
+                currentBinding?.confidentialityAgreementVersionId ?? ""
+              }
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            >
+              <option value="">No agreement bound</option>
+              {agreementOptions.map((a: any) =>
+                (a.versions ?? []).map((v: any) => (
+                  <option key={v.id} value={v.id}>
+                    {a.name} — v{v.versionNumber}
+                  </option>
+                )),
+              )}
+            </select>
+          </div>
+          <button
+            type="submit"
+            className="px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition"
+          >
+            Save
+          </button>
+          {currentBinding && (
+            <button
+              type="button"
+              onClick={() => setEditing(false)}
+              className="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground"
+            >
+              Cancel
+            </button>
+          )}
         </Form>
       )}
     </div>

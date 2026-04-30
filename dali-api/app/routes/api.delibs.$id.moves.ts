@@ -5,6 +5,7 @@ import { requireAuth, withAuth } from "~/lib/auth";
 import { isHiringLead, isDomainLead, hasCycleAccess } from "~/lib/roles";
 import { INITIAL_COLUMNS, FINAL_COLUMNS } from "~/lib/delibs";
 import { parseJson } from "~/lib/validate";
+import { requireApiSignedOrForbidden } from "~/lib/confidentiality";
 
 const MoveSchema = z.object({
   cardId: z.string().min(1).max(100),
@@ -37,6 +38,12 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!(await hasCycleAccess(auth.user.sub, sessionForAuth.applicationCycleId))) {
     return withAuth(auth, Response.json({ error: "Forbidden" }, { status: 403 }));
   }
+
+  const gate = await requireApiSignedOrForbidden(
+    auth.user.sub,
+    sessionForAuth.applicationCycleId,
+  );
+  if (gate) return gate;
 
   const body = await parseJson(request, MoveSchema);
   if (body instanceof Response) return withAuth(auth, body);

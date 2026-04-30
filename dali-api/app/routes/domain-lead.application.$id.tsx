@@ -3,6 +3,7 @@ import { Link, redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/domain-lead.application.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth, withAuth } from "~/lib/auth";
+import { requirePageSignedOrRedirect } from "~/lib/confidentiality";
 import { ChevronDown } from "lucide-react";
 import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
 import {
@@ -111,6 +112,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   if (!da) return withAuth(auth, redirect("/domain-lead"));
   if (!leadDomainIds.includes(da.challengeVersion.domainId!)) return withAuth(auth, redirect("/domain-lead"));
+
+  const confRedirect = await requirePageSignedOrRedirect(
+    auth.user.sub,
+    da.application.applicationCycleId,
+    request,
+  );
+  if (confRedirect) return confRedirect;
 
   // Load rubric criteria for score labels
   const dac = da.challengeVersion.domainId

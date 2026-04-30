@@ -6,6 +6,8 @@ import CalendarGrid from '~/components/CalendarGrid'
 import { prisma } from '~/lib/db'
 import { requireAuth, withAuth } from '~/lib/auth'
 import { getActiveCycle } from '~/lib/cycles'
+import { getCycleConfidentialityState } from '~/lib/confidentiality'
+import { ConfidentialityGate } from '~/components/ConfidentialityGate'
 import type { Route } from './+types/interviewer'
 
 const STATUS_COLORS: Record<string, string> = {
@@ -34,6 +36,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     assignments: [] as any[],
     interviewConfig: null as any,
     savedAvailability: [] as { startTime: string; endTime: string }[],
+    confidentialityRequired: null as null | "no_agreement" | "unsigned",
   }
 
   const member = await prisma.dALIMember.findFirst({
@@ -59,8 +62,13 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const cycleInterviewerIds = cycleInterviewers.map((ci) => ci.id)
 
-  // Load interview assignments with full details
-  const assignments = await prisma.interviewAssignment.findMany({
+  const confState = await getCycleConfidentialityState(auth.user.sub, active.id)
+
+  // Load interview assignments with full details — only when the user has
+  // signed the cycle's confidentiality agreement. Otherwise we surface a
+  // gate placeholder and the rest of the page (availability picker etc.)
+  // remains usable.
+  const assignments = confState.status === "signed" ? await prisma.interviewAssignment.findMany({
     where: {
       cycleInterviewerId: { in: cycleInterviewerIds },
       status: 'Active',
@@ -80,7 +88,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       noteVersions: { orderBy: { createdAt: 'desc' }, take: 1 },
     },
     orderBy: { interview: { startTime: 'asc' } },
-  })
+  }) : []
 
   // Load availability blocks
   const availabilityBlocks = await prisma.interviewerAvailability.findMany({
@@ -111,6 +119,8 @@ export async function loader({ request }: Route.LoaderArgs) {
           }
         : null,
       savedAvailability,
+      confidentialityRequired:
+        confState.status === "signed" ? null : confState.status,
     })
 }
 
@@ -123,6 +133,7 @@ export default function InterviewerDashboard() {
     assignments,
     interviewConfig: loaderInterviewConfig,
     savedAvailability: loaderAvailability,
+    confidentialityRequired,
   } = data
 
   // Availability state
@@ -215,10 +226,16 @@ export default function InterviewerDashboard() {
       <section>
         <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center">
           <Video className="w-5 h-5 mr-2 text-blue-600" />
-          Assigned Interviews ({(assignments ?? []).length})
+          Assigned Interviews{confidentialityRequired ? '' : ` (${(assignments ?? []).length})`}
         </h2>
 
-        {(assignments ?? []).length === 0 ? (
+        {confidentialityRequired ? (
+          <ConfidentialityGate
+            cycleId={activeCycle?.id ?? ''}
+            reason={confidentialityRequired}
+            next="/interviewer"
+          />
+        ) : (assignments ?? []).length === 0 ? (
           <div className="bg-card rounded-xl border border-border p-8 text-center shadow-sm">
             <p className="text-muted-foreground">No interviews assigned yet.</p>
           </div>

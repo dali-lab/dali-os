@@ -4,6 +4,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth, withAuth } from "~/lib/auth";
 import { isHiringLead, isDomainLead, hasCycleAccess } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
+import { requireApiSignedOrForbidden } from "~/lib/confidentiality";
 
 const DecisionSchema = z.object({
   type: z.enum(["Rejected", "InvitedToInterview", "Accepted", "Waitlisted"]),
@@ -23,6 +24,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!domainApp) return withAuth(auth, Response.json({ error: "Not found" }, { status: 404 }));
   if (!(await hasCycleAccess(auth.user.sub, domainApp.application.applicationCycleId)))
     return withAuth(auth, Response.json({ error: "Forbidden" }, { status: 403 }));
+
+  const gate = await requireApiSignedOrForbidden(
+    auth.user.sub,
+    domainApp.application.applicationCycleId,
+  );
+  if (gate) return gate;
 
   const decisions = await prisma.decision.findMany({
     where: { domainApplicationId: params.id },
@@ -49,6 +56,17 @@ export async function action({ request, params }: Route.ActionArgs) {
   const body = await parseJson(request, DecisionSchema);
   if (body instanceof Response) return withAuth(auth, body);
   const { type, stage, notes, waitlistRank } = body;
+
+  const da = await prisma.domainApplication.findUnique({
+    where: { id: params.id },
+    select: { application: { select: { applicationCycleId: true } } },
+  });
+  if (!da) return Response.json({ error: "Not found" }, { status: 404 });
+  const gate = await requireApiSignedOrForbidden(
+    auth.user.sub,
+    da.application.applicationCycleId,
+  );
+  if (gate) return gate;
 
   const member = await prisma.dALIMember.findFirst({
     where: { userId: auth.user.sub },

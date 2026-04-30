@@ -2,6 +2,7 @@ import type { Route } from "./+types/api.reviews.$id.unsubmit";
 import { prisma } from "~/lib/db";
 import { requireAuth, withAuth } from "~/lib/auth";
 import { isHiringLead, isDomainLead } from "~/lib/roles";
+import { requireApiSignedOrForbidden } from "~/lib/confidentiality";
 
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
@@ -21,6 +22,12 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!review.submittedAt) {
     return withAuth(auth, Response.json({ error: "Review is not submitted" }, { status: 409 }));
   }
+
+  const gate = await requireApiSignedOrForbidden(
+    auth.user.sub,
+    review.cycleReviewer.applicationCycleId,
+  );
+  if (gate) return gate;
 
   const member = await prisma.dALIMember.findFirst({ where: { userId: auth.user.sub } });
   const isOwner = member && review.cycleReviewer.daliMemberId === member.id;

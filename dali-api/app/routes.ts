@@ -17,6 +17,9 @@ export default [
     route("rubrics/:id", "routes/rubrics.$id.tsx"),
     route("emails", "routes/email-templates.tsx"),
     route("emails/:id", "routes/email-templates.$id.tsx"),
+    route("confidentiality-agreements", "routes/confidentiality-agreements.tsx"),
+    route("confidentiality-agreements/:id", "routes/confidentiality-agreements.$id.tsx"),
+    route("cycles/:cycleId/confidentiality", "routes/cycles.$cycleId.confidentiality.tsx"),
     route("admin-console", "routes/admin-console.tsx"),
     route("admin-console/members", "routes/admin-console.members.tsx"),
     route("admin-console/domains", "routes/admin-console.domains.tsx"),
@@ -124,6 +127,9 @@ export default [
 
   // Email sending
   route("api/email/send", "routes/api.email.send.ts"),
+
+  // Confidentiality agreement signing
+  route("api/cycles/:cycleId/confidentiality/sign", "routes/api.cycles.$cycleId.confidentiality.sign.ts"),
 
   // Party launch-event analytics
   route("api/party/events", "routes/api.party.events.ts"),

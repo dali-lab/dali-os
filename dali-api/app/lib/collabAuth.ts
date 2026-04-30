@@ -1,5 +1,6 @@
 import { prisma } from "~/lib/db";
 import { isHiringLead, isDomainLead } from "~/lib/roles";
+import { getCycleConfidentialityState } from "~/lib/confidentiality";
 
 /** Hydrate author IDs into `{ id, name }` objects in a single IN query. */
 export async function hydrateAuthors(
@@ -43,6 +44,9 @@ export async function authorizeCollabDoc(
       include: { cycleReviewer: true },
     });
     if (!review) return false;
+    const cycleId = review.cycleReviewer.applicationCycleId;
+    const confState = await getCycleConfidentialityState(userSub, cycleId);
+    if (confState.status !== "signed") return false;
     const member = await prisma.dALIMember.findFirst({
       where: { userId: userSub },
     });
@@ -53,6 +57,16 @@ export async function authorizeCollabDoc(
   }
 
   if (entity === "interview") {
+    const interview = await prisma.interview.findUnique({
+      where: { id },
+      select: { applicationCycleId: true },
+    });
+    if (!interview) return false;
+    const confState = await getCycleConfidentialityState(
+      userSub,
+      interview.applicationCycleId,
+    );
+    if (confState.status !== "signed") return false;
     const member = await prisma.dALIMember.findFirst({
       where: { userId: userSub },
     });
