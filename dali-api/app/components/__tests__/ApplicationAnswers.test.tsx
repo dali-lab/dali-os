@@ -58,6 +58,19 @@ describe("AnswerDisplay non-file types are unaffected by presigned mode", () => 
     expect(unlinked).toContain('href="https://github.com/x/y"');
   });
 
+  it("renders drive_url as a link in both modes", () => {
+    const q: Question = { key: "drv", type: "drive_url", required: false, data: { label: "Drive" } };
+    const driveAnswer = "https://drive.google.com/file/d/abc123/view";
+    const linked = renderToStaticMarkup(
+      createElement(AnswerDisplay, { question: q, answer: driveAnswer, presigned: true }),
+    );
+    const unlinked = renderToStaticMarkup(
+      createElement(AnswerDisplay, { question: q, answer: driveAnswer, presigned: false }),
+    );
+    expect(linked).toContain(`href="${driveAnswer}"`);
+    expect(unlinked).toContain(`href="${driveAnswer}"`);
+  });
+
   it("renders text answers as plain content", () => {
     const q: Question = { key: "name", type: "text", required: false, data: { label: "Name" } };
     const html = renderToStaticMarkup(

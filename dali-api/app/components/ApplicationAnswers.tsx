@@ -41,7 +41,11 @@ export function AnswerDisplay({ question, answer, presigned = true }: AnswerDisp
     return <span className="text-muted-foreground italic">—</span>;
   }
 
-  if (question.type === "github_url" || question.type === "figma_url") {
+  if (
+    question.type === "github_url" ||
+    question.type === "figma_url" ||
+    question.type === "drive_url"
+  ) {
     return (
       <a
         href={answer}

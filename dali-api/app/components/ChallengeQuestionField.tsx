@@ -335,10 +335,17 @@ export function ChallengeQuestionField({
     );
   }
 
-  if (question.type === "github_url" || question.type === "figma_url") {
-    const placeholder = question.type === "github_url"
-      ? "https://github.com/owner/repo"
-      : "https://www.figma.com/file/...";
+  if (
+    question.type === "github_url" ||
+    question.type === "figma_url" ||
+    question.type === "drive_url"
+  ) {
+    const placeholder =
+      question.type === "github_url"
+        ? "https://github.com/owner/repo"
+        : question.type === "figma_url"
+          ? "https://www.figma.com/file/..."
+          : "https://drive.google.com/file/d/...";
     return (
       <div>
         <input
