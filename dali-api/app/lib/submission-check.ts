@@ -183,6 +183,128 @@ export async function checkFigmaUrl(
 }
 
 /**
+ * extract the canonical fetch target from a Google Drive / Docs URL.
+ * supports:
+ *  - drive.google.com/file/d/{id}[/...]
+ *  - drive.google.com/drive/folders/{id}[/...]
+ *  - docs.google.com/{document|spreadsheets|presentation|presentations|forms}/d/{id}[/...]
+ */
+function parseDriveUrl(url: string): { host: string; path: string } | null {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.replace(/^www\./, "");
+    const segments = parsed.pathname.split("/").filter(Boolean);
+
+    if (host === "drive.google.com") {
+      // /file/d/{id}
+      if (segments[0] === "file" && segments[1] === "d" && segments[2]) {
+        return { host, path: `/file/d/${segments[2]}/view` };
+      }
+      // /drive/folders/{id}
+      if (segments[0] === "drive" && segments[1] === "folders" && segments[2]) {
+        return { host, path: `/drive/folders/${segments[2]}` };
+      }
+      return null;
+    }
+
+    if (host === "docs.google.com") {
+      const docKinds = new Set([
+        "document",
+        "spreadsheets",
+        "presentation",
+        "presentations",
+        "forms",
+      ]);
+      if (docKinds.has(segments[0]) && segments[1] === "d" && segments[2]) {
+        return { host, path: `/${segments[0]}/d/${segments[2]}/edit` };
+      }
+      return null;
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * check whether a Google Drive / Docs URL points to an accessible file by fetching
+ * the page directly. cannot detect emptiness without API access — same caveat as
+ * the Figma check.
+ */
+export async function checkDriveUrl(
+  url: string,
+): Promise<SubmissionCheckResult> {
+  const parsed = parseDriveUrl(url);
+  if (!parsed) {
+    return {
+      status: "invalid_url",
+      url,
+      message: "Not a valid Google Drive URL",
+    };
+  }
+
+  const pageUrl = `https://${parsed.host}${parsed.path}`;
+
+  try {
+    const res = await fetch(pageUrl, { redirect: "manual" });
+
+    if (res.status >= 300 && res.status < 400) {
+      const location = res.headers.get("location") ?? "";
+      if (!location) {
+        return { status: "private", url, message: "Drive file is private (redirects to login)" };
+      }
+      try {
+        const dest = new URL(location, pageUrl);
+        const isAccountsLogin =
+          dest.hostname === "accounts.google.com" ||
+          dest.pathname.startsWith("/accounts") ||
+          dest.pathname.startsWith("/ServiceLogin");
+        if (isAccountsLogin) {
+          return { status: "private", url, message: "Drive file is private (redirects to login)" };
+        }
+        const isDriveHost =
+          dest.hostname === "drive.google.com" || dest.hostname === "docs.google.com";
+        if (isDriveHost) {
+          return { status: "valid", url, message: "Drive file is publicly accessible" };
+        }
+      } catch {
+        // malformed location header — fall through to private
+      }
+      return {
+        status: "private",
+        url,
+        message: "Drive file is private (redirects to login)",
+      };
+    }
+
+    if (res.status === 401 || res.status === 403 || res.status === 404) {
+      return {
+        status: "private",
+        url,
+        message: "Drive file is private or does not exist",
+      };
+    }
+
+    if (!res.ok) {
+      return { status: "error", url, message: `Google Drive returned ${res.status}` };
+    }
+
+    return {
+      status: "valid",
+      url,
+      message: "Drive file is publicly accessible",
+    };
+  } catch (err) {
+    return {
+      status: "error",
+      url,
+      message: `Failed to reach Google Drive: ${(err as Error).message}`,
+    };
+  }
+}
+
+/**
  * convenience wrapper that detects the URL type and calls the correct check function.
  */
 export async function checkUrl(url: string): Promise<SubmissionCheckResult> {
@@ -194,9 +316,13 @@ export async function checkUrl(url: string): Promise<SubmissionCheckResult> {
     return checkFigmaUrl(url);
   }
 
+  if (parseDriveUrl(url)) {
+    return checkDriveUrl(url);
+  }
+
   return {
     status: "invalid_url",
     url,
-    message: "URL is not a recognized GitHub or Figma link",
+    message: "URL is not a recognized GitHub, Figma, or Google Drive link",
   };
 }

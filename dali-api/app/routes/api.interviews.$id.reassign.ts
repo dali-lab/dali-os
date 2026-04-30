@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.interviews.$id.reassign";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, withAuth } from "~/lib/auth";
 import { isHiringLead } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
 
@@ -18,11 +18,11 @@ export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
   if (!(await isHiringLead(auth.user.sub))) {
-    return Response.json({ error: "Forbidden" }, { status: 403 });
+    return withAuth(auth, Response.json({ error: "Forbidden" }, { status: 403 }));
   }
 
   const body = await parseJson(request, ReassignSchema);
-  if (body instanceof Response) return body;
+  if (body instanceof Response) return withAuth(auth, body);
   const { assignmentId, newCycleInterviewerId } = body;
 
   const assignment = await prisma.interviewAssignment.findUnique({
@@ -30,7 +30,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     include: { interview: true },
   });
   if (!assignment || assignment.interview.id !== params.id) {
-    return Response.json({ error: "Assignment not found" }, { status: 404 });
+    return withAuth(auth, Response.json({ error: "Assignment not found" }, { status: 404 }));
   }
 
   await prisma.$transaction(async (tx) => {
@@ -49,5 +49,5 @@ export async function action({ request, params }: Route.ActionArgs) {
     });
   });
 
-  return Response.json({ success: true });
+  return withAuth(auth, Response.json({ success: true }));
 }

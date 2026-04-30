@@ -4,7 +4,7 @@ import { redirect } from 'react-router'
 import { Clock, Check, Video, AlertTriangle, ChevronDown } from 'lucide-react'
 import CalendarGrid from '~/components/CalendarGrid'
 import { prisma } from '~/lib/db'
-import { requireAuth } from '~/lib/auth'
+import { requireAuth, withAuth } from '~/lib/auth'
 import { getActiveCycle } from '~/lib/cycles'
 import type { Route } from './+types/interviewer'
 
@@ -39,10 +39,10 @@ export async function loader({ request }: Route.LoaderArgs) {
   const member = await prisma.dALIMember.findFirst({
     where: { userId: auth.user.sub },
   })
-  if (!member) return empty
+  if (!member) return withAuth(auth, empty)
 
   const active = await getActiveCycle()
-  if (!active) return empty
+  if (!active) return withAuth(auth, empty)
 
   // Find CycleInterviewer records for this member in the active cycle
   const cycleInterviewers = await prisma.cycleInterviewer.findMany({
@@ -55,7 +55,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     },
   })
 
-  if (cycleInterviewers.length === 0) return empty
+  if (cycleInterviewers.length === 0) return withAuth(auth, empty)
 
   const cycleInterviewerIds = cycleInterviewers.map((ci) => ci.id)
 
@@ -98,20 +98,20 @@ export async function loader({ request }: Route.LoaderArgs) {
     where: { applicationCycleId: active.id },
   })
 
-  return {
-    isInterviewer: true as const,
-    activeCycle: { id: active.id, name: active.name },
-    assignments,
-    interviewConfig: interviewConfig
-      ? {
-          dayStartHour: interviewConfig.dayStartHour,
-          dayEndHour: interviewConfig.dayEndHour,
-          interviewStartDate: interviewConfig.interviewStartDate.toISOString(),
-          interviewEndDate: interviewConfig.interviewEndDate.toISOString(),
-        }
-      : null,
-    savedAvailability,
-  }
+  return withAuth(auth, {
+      isInterviewer: true as const,
+      activeCycle: { id: active.id, name: active.name },
+      assignments,
+      interviewConfig: interviewConfig
+        ? {
+            dayStartHour: interviewConfig.dayStartHour,
+            dayEndHour: interviewConfig.dayEndHour,
+            interviewStartDate: interviewConfig.interviewStartDate.toISOString(),
+            interviewEndDate: interviewConfig.interviewEndDate.toISOString(),
+          }
+        : null,
+      savedAvailability,
+    })
 }
 
 export default function InterviewerDashboard() {

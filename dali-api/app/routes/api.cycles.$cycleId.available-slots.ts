@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.cycles.$cycleId.available-slots";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, withAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { hasCycleAccess } from "~/lib/roles";
 import { computeAvailableSlots } from "~/lib/scheduling";
@@ -23,17 +23,17 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       select: { id: true },
     });
     if (!invited)
-      return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+      return withAuth(auth, withCors(request, Response.json({ error: "Forbidden" }, { status: 403 })));
   }
 
   const url = new URL(request.url);
   const domainIds = url.searchParams.getAll("domainId");
 
   if (domainIds.length === 0) {
-    return withCors(request, Response.json({ error: "At least one domainId query param required" }, { status: 400 }));
+    return withAuth(auth, withCors(request, Response.json({ error: "At least one domainId query param required" }, { status: 400 })));
   }
 
   const slots = await computeAvailableSlots(params.cycleId, domainIds);
 
-  return withCors(request, Response.json(slots));
+  return withAuth(auth, withCors(request, Response.json(slots)));
 }

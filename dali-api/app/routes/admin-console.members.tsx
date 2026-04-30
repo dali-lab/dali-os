@@ -2,7 +2,7 @@ import { useState } from "react";
 import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/admin-console.members";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, withAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
 import { Users, Check } from "lucide-react";
 import {
@@ -15,9 +15,9 @@ export const meta: Route.MetaFunction = () => [{ title: "Members · Admin consol
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return withAuth(auth, redirect("/login"));
   const admin = await isAdmin(auth.user.sub);
-  if (!admin) return redirect("/");
+  if (!admin) return withAuth(auth, redirect("/"));
 
   const [members, domains] = await Promise.all([
     prisma.dALIMember.findMany({
@@ -33,7 +33,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     }),
   ]);
 
-  return { members, domains };
+  return withAuth(auth, { members, domains });
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -41,7 +41,7 @@ export async function action({ request }: Route.ActionArgs) {
   if (!auth.ok) return auth.response;
   const admin = await isAdmin(auth.user.sub);
   if (!admin)
-    return Response.json({ error: "Forbidden" }, { status: 403 });
+    return withAuth(auth, Response.json({ error: "Forbidden" }, { status: 403 }));
 
   const formData = await request.formData();
   const intent = formData.get("intent") as string;
@@ -57,7 +57,7 @@ export async function action({ request }: Route.ActionArgs) {
       ? [...new Set([...member.roles, "Admin" as const])]
       : member.roles.filter((r) => r !== "Admin");
     await prisma.dALIMember.update({ where: { id: memberId }, data: { roles } });
-    return null;
+    return withAuth(auth, null);
   }
 
   if (intent === "set-hiring-lead") {
@@ -71,23 +71,23 @@ export async function action({ request }: Route.ActionArgs) {
       ? [...new Set([...member.roles, "HiringLead" as const])]
       : member.roles.filter((r) => r !== "HiringLead");
     await prisma.dALIMember.update({ where: { id: memberId }, data: { roles } });
-    return null;
+    return withAuth(auth, null);
   }
 
   if (intent === "add-domain-lead") {
     const memberId = formData.get("memberId") as string;
     const domainId = formData.get("domainId") as string;
     await prisma.domainLeadAssignment.create({ data: { memberId, domainId } });
-    return null;
+    return withAuth(auth, null);
   }
 
   if (intent === "remove-domain-lead") {
     const assignmentId = formData.get("assignmentId") as string;
     await prisma.domainLeadAssignment.delete({ where: { id: assignmentId } });
-    return null;
+    return withAuth(auth, null);
   }
 
-  return null;
+  return withAuth(auth, null);
 }
 
 type RoleFilter = "all" | "admin" | "hiringLead";

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { checkGitHubUrl, checkFigmaUrl, checkUrl } from "~/lib/submission-check";
+import { checkGitHubUrl, checkFigmaUrl, checkDriveUrl, checkUrl } from "~/lib/submission-check";
 
 const fetchMock = vi.fn();
 vi.stubGlobal("fetch", fetchMock);
@@ -223,6 +223,151 @@ describe("checkFigmaUrl — page fetch responses", () => {
   });
 });
 
+// --------------- Drive URL parsing ---------------
+
+describe("checkDriveUrl — URL parsing", () => {
+  it("rejects a non-Google URL", async () => {
+    const result = await checkDriveUrl("https://example.com/file/d/abc/view");
+    expect(result.status).toBe("invalid_url");
+  });
+
+  it("rejects a malformed URL", async () => {
+    const result = await checkDriveUrl("not-a-url");
+    expect(result.status).toBe("invalid_url");
+  });
+
+  it("rejects a Drive URL without a file id", async () => {
+    const result = await checkDriveUrl("https://drive.google.com/file/d/");
+    expect(result.status).toBe("invalid_url");
+  });
+
+  it("rejects a docs.google.com URL with an unknown product segment", async () => {
+    const result = await checkDriveUrl("https://docs.google.com/widget/d/abc/view");
+    expect(result.status).toBe("invalid_url");
+  });
+
+  it("accepts a Drive /file/d/ URL", async () => {
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200 });
+    await checkDriveUrl("https://drive.google.com/file/d/abc123/view?usp=sharing");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://drive.google.com/file/d/abc123/view",
+      expect.objectContaining({ redirect: "manual" }),
+    );
+  });
+
+  it("accepts a Drive /drive/folders/ URL", async () => {
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200 });
+    await checkDriveUrl("https://drive.google.com/drive/folders/folder789?usp=share_link");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://drive.google.com/drive/folders/folder789",
+      expect.anything(),
+    );
+  });
+
+  it("accepts a Google Doc URL", async () => {
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200 });
+    await checkDriveUrl("https://docs.google.com/document/d/docKey/edit");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://docs.google.com/document/d/docKey/edit",
+      expect.anything(),
+    );
+  });
+
+  it("accepts a Google Sheet URL", async () => {
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200 });
+    await checkDriveUrl("https://docs.google.com/spreadsheets/d/sheetKey/edit#gid=0");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://docs.google.com/spreadsheets/d/sheetKey/edit",
+      expect.anything(),
+    );
+  });
+
+  it("accepts a Google Slides URL", async () => {
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200 });
+    await checkDriveUrl("https://docs.google.com/presentation/d/slidesKey/edit");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://docs.google.com/presentation/d/slidesKey/edit",
+      expect.anything(),
+    );
+  });
+
+  it("handles www.drive.google.com", async () => {
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200 });
+    await checkDriveUrl("https://www.drive.google.com/file/d/abc/view");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://drive.google.com/file/d/abc/view",
+      expect.anything(),
+    );
+  });
+});
+
+// --------------- Drive page fetch responses ---------------
+
+describe("checkDriveUrl — page fetch responses", () => {
+  const url = "https://drive.google.com/file/d/abc123/view";
+
+  it("returns 'private' when redirect goes to accounts.google.com", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 302,
+      headers: new Headers({ location: "https://accounts.google.com/ServiceLogin?continue=..." }),
+    });
+    const result = await checkDriveUrl(url);
+    expect(result.status).toBe("private");
+  });
+
+  it("returns 'valid' when redirect stays within drive.google.com", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 302,
+      headers: new Headers({ location: "https://drive.google.com/file/d/abc123/preview" }),
+    });
+    const result = await checkDriveUrl(url);
+    expect(result.status).toBe("valid");
+  });
+
+  it("returns 'private' on redirect with no location header", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 301,
+      headers: new Headers(),
+    });
+    const result = await checkDriveUrl(url);
+    expect(result.status).toBe("private");
+  });
+
+  it("returns 'private' on 403", async () => {
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 403 });
+    const result = await checkDriveUrl(url);
+    expect(result.status).toBe("private");
+  });
+
+  it("returns 'private' on 404", async () => {
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 404 });
+    const result = await checkDriveUrl(url);
+    expect(result.status).toBe("private");
+  });
+
+  it("returns 'valid' on 200", async () => {
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200 });
+    const result = await checkDriveUrl(url);
+    expect(result.status).toBe("valid");
+  });
+
+  it("returns 'error' on unexpected status code", async () => {
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 500 });
+    const result = await checkDriveUrl(url);
+    expect(result.status).toBe("error");
+  });
+
+  it("returns 'error' on network failure", async () => {
+    fetchMock.mockRejectedValueOnce(new Error("timeout"));
+    const result = await checkDriveUrl(url);
+    expect(result.status).toBe("error");
+    expect(result.message).toContain("timeout");
+  });
+});
+
 // --------------- Convenience wrapper ---------------
 
 describe("checkUrl", () => {
@@ -242,6 +387,26 @@ describe("checkUrl", () => {
     expect(result.status).toBe("valid");
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining("www.figma.com"),
+      expect.anything(),
+    );
+  });
+
+  it("routes Drive URLs to checkDriveUrl", async () => {
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200 });
+    const result = await checkUrl("https://drive.google.com/file/d/abc/view");
+    expect(result.status).toBe("valid");
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("drive.google.com/file/d/abc"),
+      expect.anything(),
+    );
+  });
+
+  it("routes Google Docs URLs to checkDriveUrl", async () => {
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200 });
+    const result = await checkUrl("https://docs.google.com/document/d/abc/edit");
+    expect(result.status).toBe("valid");
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("docs.google.com/document/d/abc"),
       expect.anything(),
     );
   });

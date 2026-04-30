@@ -22,6 +22,7 @@ const allTypes: Question[] = [
   },
   { key: "gh", type: "github_url", required: false, data: { label: "Repo URL" } },
   { key: "fig", type: "figma_url", required: false, data: { label: "Design URL" } },
+  { key: "drv", type: "drive_url", required: false, data: { label: "Drive URL" } },
 ];
 
 describe("ChallengePreview", () => {

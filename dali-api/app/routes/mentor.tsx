@@ -26,7 +26,7 @@ function isoToLocalMidnightInTz(iso: string, timezone: string): Date {
 }
 import { DigitSumClue, DIGIT_SUM_CORAL_INTERNAL_SLOT2 } from '~/components/DigitSumClue'
 import { prisma } from '~/lib/db'
-import { requireAuth } from '~/lib/auth'
+import { requireAuth, withAuth } from '~/lib/auth'
 import type { Route } from './+types/mentor'
 
 export const meta: Route.MetaFunction = () => [{ title: "Reviewer · DALI OS" }]
@@ -45,24 +45,24 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   const auth = await requireAuth(request)
-  if (!auth.ok) return empty
+  if (!auth.ok) return withAuth(auth, empty)
 
   const member = await prisma.dALIMember.findFirst({ where: { userId: auth.user.sub } })
-  if (!member) return { ...empty, mentorUserId: auth.user.sub }
+  if (!member) return withAuth(auth, { ...empty, mentorUserId: auth.user.sub })
 
   // Anchor on the single active cycle (invariant: at most one cycle is in
   // Open/UnderReview at a time). Older code here picked "most recent cycle
   // that ever had an Open/UnderReview status update", which matched completed
   // cycles that had historically passed through UnderReview.
   const active = await getActiveCycle()
-  if (!active) return { ...empty, mentorUserId: auth.user.sub }
+  if (!active) return withAuth(auth, { ...empty, mentorUserId: auth.user.sub })
 
   // Fetch all CycleReviewer records for this member in this cycle (may span multiple domains)
   const myReviewerIds = await prisma.cycleReviewer.findMany({
     where: { daliMemberId: member.id, applicationCycleId: active.id },
     select: { id: true, domainId: true },
   })
-  if (myReviewerIds.length === 0) return { ...empty, mentorUserId: auth.user.sub }
+  if (myReviewerIds.length === 0) return withAuth(auth, { ...empty, mentorUserId: auth.user.sub })
   const reviewerIds = myReviewerIds.map(r => r.id)
   const myDomainIds = Array.from(new Set(myReviewerIds.map(r => r.domainId)))
 
@@ -185,17 +185,17 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const delibsApplications = Array.from(hydratedDaIds).map(id => daIdToSummary.get(id));
 
-  return {
-    activeCycle: { id: active.id, name: active.name },
-    currentStage,
-    mentorUserId: auth.user.sub,
-    memberId: member.id,
-    myReviews,
-    isCycleInterviewer,
-    needsAvailabilityPrompt,
-    delibsSessions,
-    delibsApplications,
-  }
+  return withAuth(auth, {
+      activeCycle: { id: active.id, name: active.name },
+      currentStage,
+      mentorUserId: auth.user.sub,
+      memberId: member.id,
+      myReviews,
+      isCycleInterviewer,
+      needsAvailabilityPrompt,
+      delibsSessions,
+      delibsApplications,
+    })
 }
 
 export default function MentorDashboard() {

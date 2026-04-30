@@ -1,13 +1,13 @@
 import type { Route } from "./+types/api.check-url";
 import { z } from "zod";
-import { requireAuth } from "~/lib/auth";
-import { checkGitHubUrl, checkFigmaUrl } from "~/lib/submission-check";
+import { requireAuth, withAuth } from "~/lib/auth";
+import { checkGitHubUrl, checkFigmaUrl, checkDriveUrl } from "~/lib/submission-check";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { parseJson } from "~/lib/validate";
 
 const CheckUrlSchema = z.object({
   url: z.string().min(1).max(2048),
-  type: z.enum(["github_url", "figma_url"]),
+  type: z.enum(["github_url", "figma_url", "drive_url"]),
 });
 
 const RATE_LIMIT_MAX = 20;
@@ -18,14 +18,17 @@ export async function action({ request }: Route.ActionArgs) {
   if (!auth.ok) return auth.response;
 
   const userLimited = checkRateLimit(request, { max: RATE_LIMIT_MAX, windowMs: RATE_LIMIT_WINDOW_MS }, auth.user.sub);
-  if (userLimited) return userLimited;
+  if (userLimited) return withAuth(auth, userLimited);
 
   const body = await parseJson(request, CheckUrlSchema);
-  if (body instanceof Response) return body;
+  if (body instanceof Response) return withAuth(auth, body);
   const { url, type } = body;
 
-  const result = type === "figma_url"
-    ? await checkFigmaUrl(url)
-    : await checkGitHubUrl(url);
-  return Response.json(result);
+  const result =
+    type === "figma_url"
+      ? await checkFigmaUrl(url)
+      : type === "drive_url"
+        ? await checkDriveUrl(url)
+        : await checkGitHubUrl(url);
+  return withAuth(auth, Response.json(result));
 }

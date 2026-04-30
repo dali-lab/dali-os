@@ -13,7 +13,7 @@ import {
   MessageSquare,
 } from 'lucide-react'
 import { prisma } from '~/lib/db'
-import { requireAuth } from '~/lib/auth'
+import { requireAuth, withAuth } from '~/lib/auth'
 import { parseAccessToken } from '~/lib/cookies'
 import { CollaborativeEditor } from '~/components/CollaborativeEditor'
 import { PresenceProvider } from '~/components/collab/PresenceProvider'
@@ -115,13 +115,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // Build user display name for cursors
   const userName = [member.firstName, member.lastName].filter(Boolean).join(' ') || auth.user.email
 
-  return {
-    interview,
-    myAssignment,
-    rubricCriteria,
-    collabToken,
-    userName,
-  }
+  return withAuth(auth, {
+      interview,
+      myAssignment,
+      rubricCriteria,
+      collabToken,
+      userName,
+    })
 }
 
 export default function InterviewDetailPage() {

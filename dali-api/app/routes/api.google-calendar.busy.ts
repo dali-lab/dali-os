@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.google-calendar.busy";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, withAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { fetchBusyEvents } from "~/lib/google-calendar";
 
@@ -15,13 +15,13 @@ export async function loader({ request }: Route.LoaderArgs) {
   const end = url.searchParams.get("end");
 
   if (!start || !end) {
-    return withCors(request, Response.json({ error: "start and end query params required" }, { status: 400 }));
+    return withAuth(auth, withCors(request, Response.json({ error: "start and end query params required" }, { status: 400 })));
   }
 
   try {
     const busy = await fetchBusyEvents(auth.user.sub, new Date(start), new Date(end));
-    return withCors(request, Response.json(busy));
+    return withAuth(auth, withCors(request, Response.json(busy)));
   } catch (err: any) {
-    return withCors(request, Response.json({ error: err.message }, { status: 500 }));
+    return withAuth(auth, withCors(request, Response.json({ error: err.message }, { status: 500 })));
   }
 }

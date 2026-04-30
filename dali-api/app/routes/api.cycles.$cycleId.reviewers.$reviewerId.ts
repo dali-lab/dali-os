@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.cycles.$cycleId.reviewers.$reviewerId";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, withAuth } from "~/lib/auth";
 import { isHiringLead, isDomainLead } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
@@ -16,11 +16,11 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const auth = await requireAuth(request);
   if (!auth.ok) return withCors(request, auth.response);
-  if (!(await isHiringLead(auth.user.sub)) && !(await isDomainLead(auth.user.sub))) return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+  if (!(await isHiringLead(auth.user.sub)) && !(await isDomainLead(auth.user.sub))) return withAuth(auth, withCors(request, Response.json({ error: "Forbidden" }, { status: 403 })));
 
   if (request.method === "PATCH") {
     const body = await parseJson(request, PatchReviewerSchema);
-    if (body instanceof Response) return withCors(request, body);
+    if (body instanceof Response) return withAuth(auth, withCors(request, body));
     const reviewer = await prisma.cycleReviewer.update({
       where: { id: params.reviewerId },
       data: {
@@ -31,15 +31,15 @@ export async function action({ request, params }: Route.ActionArgs) {
         domain: true,
       },
     });
-    return withCors(request, Response.json(reviewer));
+    return withAuth(auth, withCors(request, Response.json(reviewer)));
   }
 
   if (request.method === "DELETE") {
     await prisma.cycleReviewer.delete({
       where: { id: params.reviewerId },
     });
-    return withCors(request, Response.json({ ok: true }));
+    return withAuth(auth, withCors(request, Response.json({ ok: true })));
   }
 
-  return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
+  return withAuth(auth, withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 })));
 }

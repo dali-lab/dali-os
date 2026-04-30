@@ -6,7 +6,7 @@
 //
 // Requires authenticated user.
 
-import { requireAuth } from '~/lib/auth'
+import { requireAuth, withAuth } from '~/lib/auth'
 import { prisma } from '~/lib/db'
 import { sendEmail } from '~/lib/gmail'
 import { logAuditEvent } from '~/lib/audit'
@@ -30,30 +30,30 @@ async function getGmailRefreshToken(): Promise<string> {
 
 export async function action({ request }: { request: Request }) {
   const auth = await requireAuth(request)
-  if (!auth.ok) return Response.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!auth.ok) return withAuth(auth, Response.json({ error: 'Unauthorized' }, { status: 401 }))
 
   const limited = checkRateLimit(request, { max: RATE_LIMIT_MAX, windowMs: RATE_LIMIT_WINDOW_MS }, auth.user.sub)
-  if (limited) return limited
+  if (limited) return withAuth(auth, limited)
 
   let body: Record<string, unknown>
   try {
     body = await request.json()
   } catch {
-    return Response.json({ error: 'Invalid JSON body' }, { status: 400 })
+    return withAuth(auth, Response.json({ error: 'Invalid JSON body' }, { status: 400 }))
   }
 
   const { to, subject, html } = body as { to?: string; subject?: string; html?: string }
 
   if (!to || !subject || !html) {
-    return Response.json({ error: 'to, subject, and html are required' }, { status: 400 })
+    return withAuth(auth, Response.json({ error: 'to, subject, and html are required' }, { status: 400 }))
   }
 
   if (/[\r\n]/.test(to) || /[\r\n]/.test(subject)) {
-    return Response.json({ error: 'to and subject must not contain line breaks' }, { status: 400 })
+    return withAuth(auth, Response.json({ error: 'to and subject must not contain line breaks' }, { status: 400 }))
   }
 
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
-    return Response.json({ error: 'Invalid recipient email' }, { status: 400 })
+    return withAuth(auth, Response.json({ error: 'Invalid recipient email' }, { status: 400 }))
   }
 
   try {
@@ -65,10 +65,10 @@ export async function action({ request }: { request: Request }) {
       metadata: { to, subject },
       request,
     })
-    return Response.json({ ok: true })
+    return withAuth(auth, Response.json({ ok: true }))
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error('Email send error:', message)
-    return Response.json({ error: message }, { status: 500 })
+    return withAuth(auth, Response.json({ error: message }, { status: 500 }))
   }
 }
