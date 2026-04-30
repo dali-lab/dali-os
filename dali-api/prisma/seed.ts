@@ -2732,7 +2732,31 @@ async function main() {
       })
     }
   }
-  console.log(`  ${seedTemplates.length} email templates seeded (2 legacy + 7 new + Fall 2026 decision bindings)`)
+
+  // Bind Fall 2026 to the two NotificationType slots.
+  for (const nt of ['ApplicationReceived', 'InterviewInviteMentor'] as const) {
+    const version = await prisma.emailTemplateVersion.findFirst({
+      where: { templateId: `tmpl_${nt.toLowerCase()}` },
+      orderBy: { versionNumber: 'desc' },
+    })
+    if (version) {
+      await prisma.cycleNotificationEmail.upsert({
+        where: {
+          applicationCycleId_notificationType: {
+            applicationCycleId: cycle.id,
+            notificationType: nt,
+          },
+        },
+        update: { emailTemplateVersionId: version.id },
+        create: {
+          applicationCycleId: cycle.id,
+          notificationType: nt,
+          emailTemplateVersionId: version.id,
+        },
+      })
+    }
+  }
+  console.log(`  ${seedTemplates.length} email templates seeded (2 legacy + 7 new + Fall 2026 decision + notification bindings)`)
   console.log(`  ${reviewSpecs.length} ApplicationReviews + ${decisionSpecs.filter(s => s.type === "InvitedToInterview").length * 3 + decisionSpecs.filter(s => s.type !== "InvitedToInterview").length * 2} Decisions + ${interviewBookings.length} booked interviews for Fall 2026`);
 }
 

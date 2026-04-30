@@ -103,6 +103,7 @@ model ApplicationCycle {
   interviews        Interview[]
   delibsSessions    DelibsSession[]
   decisionEmails    CycleDecisionEmail[]
+  notificationEmails CycleNotificationEmail[]
 
   confidentialityBinding   CycleConfidentialityAgreement?
   confidentialitySignatures ConfidentialityAgreementSignature[]
@@ -714,7 +715,8 @@ model EmailTemplateVersion {
   createdById String
   createdBy   DALIMember @relation(fields: [createdById], references: [id])
 
-  cycleDecisionEmails CycleDecisionEmail[]
+  cycleDecisionEmails     CycleDecisionEmail[]
+  cycleNotificationEmails CycleNotificationEmail[]
 
   @@index([templateId, versionNumber])
 }
@@ -732,6 +734,26 @@ model CycleDecisionEmail {
   emailTemplateVersion   EmailTemplateVersion @relation(fields: [emailTemplateVersionId], references: [id])
 
   @@id([applicationCycleId, decisionType])
+}
+
+// Non-decision email slots managed per-cycle. Mirrors CycleDecisionEmail but
+// without the lock-on-release semantics — notification emails can be rebound
+// at any time.
+enum NotificationType {
+  ApplicationReceived
+  InterviewInviteMentor
+}
+
+model CycleNotificationEmail {
+  applicationCycleId String
+  applicationCycle   ApplicationCycle @relation(fields: [applicationCycleId], references: [id])
+
+  notificationType NotificationType
+
+  emailTemplateVersionId String
+  emailTemplateVersion   EmailTemplateVersion @relation(fields: [emailTemplateVersionId], references: [id])
+
+  @@id([applicationCycleId, notificationType])
 }
 
 // ─── Audit Logging ───────────────────────────────────────────────────────────
