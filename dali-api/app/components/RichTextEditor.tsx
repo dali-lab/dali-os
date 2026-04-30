@@ -130,30 +130,32 @@ function Toolbar({ editor }: { editor: Editor }) {
   // version is read so React picks up active-state changes from editor events
   void version;
 
+  if (!hasSelection && !isLinkActive) return null;
+
   return (
     <div className="flex items-center gap-1 border-b border-gray-200 px-2 py-1">
       <button
         type="button"
         onClick={setLink}
-        disabled={!hasSelection && !isLinkActive}
         className={`rounded px-2 py-1 text-xs font-medium ${
           isLinkActive
             ? "bg-blue-100 text-blue-800"
             : "text-gray-700 hover:bg-gray-100"
-        } disabled:cursor-not-allowed disabled:opacity-50`}
+        }`}
         aria-label={isLinkActive ? "Edit link" : "Add link"}
       >
         {isLinkActive ? "Edit link" : "Link"}
       </button>
-      <button
-        type="button"
-        onClick={unsetLink}
-        disabled={!isLinkActive}
-        className="rounded px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
-        aria-label="Remove link"
-      >
-        Remove link
-      </button>
+      {isLinkActive && (
+        <button
+          type="button"
+          onClick={unsetLink}
+          className="rounded px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-100"
+          aria-label="Remove link"
+        >
+          Remove link
+        </button>
+      )}
     </div>
   );
 }
