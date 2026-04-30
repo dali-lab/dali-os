@@ -909,7 +909,7 @@ function DraftSection({ cycle, domainId, challengeVersionOptions, linkedChalleng
           </div>
         </div>
 
-        <Form method="post">
+        <Form method="post" preventScrollReset>
           <input type="hidden" name="intent" value="unmark-ready" />
           <input type="hidden" name="cycleId" value={cycle.id} />
           <input type="hidden" name="domainId" value={domainId} />
@@ -940,7 +940,7 @@ function DraftSection({ cycle, domainId, challengeVersionOptions, linkedChalleng
               </p>
             </div>
           </div>
-          <Form method="post">
+          <Form method="post" preventScrollReset>
             <input type="hidden" name="intent" value="mark-ready" />
             <input type="hidden" name="cycleId" value={cycle.id} />
             <input type="hidden" name="domainId" value={domainId} />
@@ -1033,7 +1033,7 @@ function ChallengeSelector({ cycleId, domainId, options, linkedChallengeVersions
                       <Eye className="w-3.5 h-3.5" />
                       Preview
                     </button>
-                    <Form method="post">
+                    <Form method="post" preventScrollReset>
                       <input type="hidden" name="intent" value="remove-challenge" />
                       <input type="hidden" name="cycleId" value={cycleId} />
                       <input type="hidden" name="challengeVersionId" value={cv.id} />
@@ -1059,7 +1059,7 @@ function ChallengeSelector({ cycleId, domainId, options, linkedChallengeVersions
       )}
 
       {availableOptions.length > 0 ? (
-        <Form method="post" className="flex items-end gap-3">
+        <Form method="post" preventScrollReset className="flex items-end gap-3">
           <input type="hidden" name="intent" value="add-challenge" />
           <input type="hidden" name="cycleId" value={cycleId} />
           <input type="hidden" name="domainId" value={domainId} />
@@ -1240,7 +1240,7 @@ function RubricPicker({ cycleId, domainId, options, selectedId, locked }: {
             <span className="text-xs text-muted-foreground/70 ml-2">(locked — reviewers have been assigned)</span>
           </div>
         ) : (
-          <Form method="post" key={`rubric-${selectedId}`} className="flex flex-col sm:flex-row sm:items-end gap-3">
+          <Form method="post" preventScrollReset key={`rubric-${selectedId}`} className="flex flex-col sm:flex-row sm:items-end gap-3">
             <input type="hidden" name="intent" value="set-rubric" />
             <input type="hidden" name="cycleId" value={cycleId} />
             <input type="hidden" name="domainId" value={domainId} />
