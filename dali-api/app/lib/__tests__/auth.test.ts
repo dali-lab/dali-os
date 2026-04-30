@@ -170,6 +170,7 @@ describe("requireAuth", () => {
       family: "fam-1",
       expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       revokedAt: null,
+      familyCreatedAt: new Date(Date.now() - 24 * 60 * 60 * 1000), // 1 day old
     });
     mockPrisma.refreshToken.update.mockResolvedValue({});
     mockPrisma.refreshToken.create.mockResolvedValue({});
@@ -217,6 +218,7 @@ describe("requireAuth", () => {
       family: "fam-2",
       expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       revokedAt: new Date(),
+      familyCreatedAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
     });
     mockPrisma.refreshToken.updateMany.mockResolvedValue({ count: 3 });
 
@@ -237,6 +239,33 @@ describe("requireAuth", () => {
     expect(mockPrisma.refreshToken.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { family: "fam-2" } }),
     );
+  });
+
+  it("clears cookies and 401s when session exceeds 30-day absolute cap", async () => {
+    mockPrisma.refreshToken.findUnique.mockResolvedValue({
+      id: "rt-old",
+      tokenHash: "x",
+      userId: "u6",
+      family: "fam-old",
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      revokedAt: null,
+      familyCreatedAt: new Date(Date.now() - 31 * 24 * 60 * 60 * 1000), // 31 days ago
+    });
+    mockPrisma.refreshToken.updateMany.mockResolvedValue({ count: 0 });
+
+    const req = new Request("http://localhost/api/test", {
+      headers: { Cookie: "__dali_rt=old-session-rt" },
+    });
+
+    const result = await requireAuth(req);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.response.status).toBe(401);
+      const cleared = result.response.headers.getSetCookie();
+      expect(cleared.length).toBe(2);
+      expect(cleared.some((c) => /__dali_at=;.*Max-Age=0/.test(c))).toBe(true);
+      expect(cleared.some((c) => /__dali_rt=;.*Max-Age=0/.test(c))).toBe(true);
+    }
   });
 
   it("clears cookies and 401s when RT is unknown", async () => {
@@ -288,6 +317,7 @@ describe("requireAuth", () => {
       family: "fam-3",
       expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       revokedAt: null,
+      familyCreatedAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
     });
 
     const [a, b] = await Promise.all([r1, r2]);

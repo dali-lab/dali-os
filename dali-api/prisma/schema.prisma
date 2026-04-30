@@ -634,13 +634,14 @@ model OAuthSession {
 }
 
 model RefreshToken {
-  id        String    @id @default(cuid())
-  tokenHash String    @unique // sha-256 token hash
-  userId    String
-  family    String // rotation detection
-  expiresAt DateTime
-  revokedAt DateTime?
-  createdAt DateTime  @default(now())
+  id              String    @id @default(cuid())
+  tokenHash       String    @unique // sha-256 token hash
+  userId          String
+  family          String // rotation detection
+  expiresAt       DateTime
+  revokedAt       DateTime?
+  createdAt       DateTime  @default(now())
+  familyCreatedAt DateTime  @default(now()) // absolute session cap anchor
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
