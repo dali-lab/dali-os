@@ -993,7 +993,7 @@ export default function AdminCycleDetails() {
           {/* Close Date */}
           <div className="bg-card rounded-xl border border-border shadow-sm p-4 sm:p-6">
             <h3 className="text-sm font-bold text-foreground/80 mb-3">Application Close Date</h3>
-            <Form method="post" className="flex flex-col sm:flex-row sm:items-end gap-3">
+            <Form method="post" preventScrollReset className="flex flex-col sm:flex-row sm:items-end gap-3">
               <input type="hidden" name="intent" value="set-close-date" />
               <div className="flex-1">
                 <input
@@ -1047,7 +1047,7 @@ export default function AdminCycleDetails() {
               <p className="text-sm text-muted-foreground/70">No domains added yet.</p>
             )}
             {cycleStatus === 'Draft' && (
-              <Form method="post" className="flex items-end gap-3 pt-2 border-t border-border">
+              <Form method="post" preventScrollReset className="flex items-end gap-3 pt-2 border-t border-border">
                 <input type="hidden" name="intent" value="add-domain" />
                 <div className="flex-1">
                   <label htmlFor="add-domain-select" className="block text-xs font-medium text-muted-foreground mb-1">Add Domain</label>
@@ -1915,7 +1915,7 @@ function GeneralRubricPicker({ currentRubricVersionId, rubricVersionOptions, loc
           </button>
         </div>
       ) : (
-        <Form method="post" className="flex items-end gap-3" onSubmit={() => setEditing(false)}>
+        <Form method="post" preventScrollReset className="flex items-end gap-3" onSubmit={() => setEditing(false)}>
           <input type="hidden" name="intent" value="set-general-rubric" />
           <div className="flex-1">
             <select
@@ -2084,7 +2084,7 @@ function DomainOverridePanel({
                       <Eye className="w-3 h-3" /> Preview
                     </button>
                     {!challengeLocked && (
-                      <Form method="post">
+                      <Form method="post" preventScrollReset>
                         <input type="hidden" name="intent" value="hl-remove-domain-challenge" />
                         <input type="hidden" name="challengeVersionId" value={cv.id} />
                         <button
@@ -2114,7 +2114,7 @@ function DomainOverridePanel({
               </p>
             )
           ) : (
-            <Form method="post" className="flex items-end gap-2">
+            <Form method="post" preventScrollReset className="flex items-end gap-2">
               <input type="hidden" name="intent" value="hl-add-domain-challenge" />
               <input type="hidden" name="domainId" value={domain.domainId} />
               <div className="flex-1 min-w-0">
@@ -2182,7 +2182,7 @@ function DomainOverridePanel({
               No rubric versions exist. Create one on the Rubrics page.
             </p>
           ) : (
-            <Form method="post" className="flex items-end gap-2">
+            <Form method="post" preventScrollReset className="flex items-end gap-2">
               <input type="hidden" name="intent" value="hl-set-domain-rubric" />
               <input type="hidden" name="domainId" value={domain.domainId} />
               <div className="flex-1 min-w-0">
@@ -2322,7 +2322,7 @@ function ForceReadyModal({
             <p>This will mark the domain as ready on behalf of the domain lead. Use this when the domain lead is unavailable and the cycle needs to advance.</p>
           )}
         </div>
-        <Form method="post" className="flex justify-end gap-2 pt-2">
+        <Form method="post" preventScrollReset className="flex justify-end gap-2 pt-2">
           <input type="hidden" name="intent" value={intent} />
           <input type="hidden" name="domainId" value={domain.domainId} />
           <input type="hidden" name="confirm" value="true" />
@@ -2354,7 +2354,7 @@ function DeleteDomainModal({ domain, onClose }: { domain: any; onClose: () => vo
         <p className="text-sm text-muted-foreground">
           Remove <span className="font-semibold text-foreground">{domain.domain?.name ?? domain.domainId}</span> from this cycle? Any linked challenge version for this domain will be unlinked.
         </p>
-        <Form method="post" className="flex justify-end gap-2 pt-2">
+        <Form method="post" preventScrollReset className="flex justify-end gap-2 pt-2">
           <input type="hidden" name="intent" value="remove-domain" />
           <input type="hidden" name="domainId" value={domain.domainId} />
           <button
@@ -2448,7 +2448,7 @@ function GeneralFormPicker({ currentCvId, currentCvLabel, options, locked }: {
           </button>
         </div>
       ) : options.length > 0 ? (
-        <Form method="post" className="flex items-end gap-3" onSubmit={() => setEditing(false)}>
+        <Form method="post" preventScrollReset className="flex items-end gap-3" onSubmit={() => setEditing(false)}>
           <input type="hidden" name="intent" value="link-general-form" />
           <div className="flex-1">
             <select
@@ -2580,7 +2580,7 @@ function DecisionEmailPicker({ slot, binding, emailTemplates, locked }: {
           </div>
         )
       ) : (
-        <Form method="post" className="flex items-end gap-2 flex-wrap" onSubmit={() => setEditing(false)}>
+        <Form method="post" preventScrollReset className="flex items-end gap-2 flex-wrap" onSubmit={() => setEditing(false)}>
           <input type="hidden" name="intent" value="set-decision-email" />
           <input type="hidden" name="decisionType" value={slot.type} />
           <div className="flex-1 min-w-[14rem]">
