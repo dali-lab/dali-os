@@ -7,6 +7,8 @@ import { requireAuth } from "~/lib/auth";
 import { CheckCircle, Plus, Trash2, Check, Clock, X, CircleDashed, ChevronDown, Eye } from "lucide-react";
 import { inferDomainApplicationStatus } from "~/lib/domain-application-status";
 import { getReviewStatus } from "~/lib/review-status";
+import { getCycleConfidentialityState } from "~/lib/confidentiality";
+import { ConfidentialityGate } from "~/components/ConfidentialityGate";
 import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
 import { ChallengePreviewModal } from "~/components/ChallengePreviewModal";
 import {
@@ -115,7 +117,10 @@ export async function loader({ request }: Route.LoaderArgs) {
         return status === "Draft";
       }) ?? null;
 
-      if (!activeCycle) return [{ assignment, cycle: null, apps: [], challengeVersionOptions: [], linkedChallengeVersions: [], isChallengeReady: false, interviews: [], reviewers: [], delibsSessions: [], draftDecisions: [], cycleReviewersForDomain: [], initialDelibsCount: 0, finalDelibsCount: 0, rubricVersionOptions: [], currentRubricVersionId: null, rubricCriteria: [], interviewers: [], hasApplicationReviews: false }];
+      if (!activeCycle) return [{ assignment, cycle: null, apps: [], challengeVersionOptions: [], linkedChallengeVersions: [], isChallengeReady: false, interviews: [], reviewers: [], delibsSessions: [], draftDecisions: [], cycleReviewersForDomain: [], initialDelibsCount: 0, finalDelibsCount: 0, rubricVersionOptions: [], currentRubricVersionId: null, rubricCriteria: [], interviewers: [], hasApplicationReviews: false, confidentialityRequired: null as null | "no_agreement" | "unsigned" }];
+
+      const confState = await getCycleConfidentialityState(auth.user.sub, activeCycle.id);
+      const confidentialityRequired = confState.status === "signed" ? null : confState.status;
 
       return [await (async (cycle) => {
 
@@ -316,7 +321,38 @@ export async function loader({ request }: Route.LoaderArgs) {
           })) > 0
         : false;
 
-      return { assignment, cycle, apps: appsWithStatus, challengeVersionOptions, linkedChallengeVersions, isChallengeReady, interviews, reviewers, delibsSessions, draftDecisions, cycleReviewersForDomain, initialDelibsCount, finalDelibsCount, rubricVersionOptions, currentRubricVersionId, rubricCriteria, interviewers, hasApplicationReviews };
+      // When the user has not signed the cycle's confidentiality agreement,
+      // strip every sensitive data path: applicant identities (cycle.applications),
+      // assigned applications, scheduled interviews, draft decisions, and delibs
+      // sessions. The dashboard still loads so the domain lead can see static
+      // setup (challenges, rubric, team, counts that depend only on staff side)
+      // and gets a placeholder pointing at the sign page.
+      if (confidentialityRequired) {
+        const sanitizedCycle = { ...cycle, applications: [] };
+        return {
+          assignment,
+          cycle: sanitizedCycle,
+          apps: [] as any[],
+          challengeVersionOptions,
+          linkedChallengeVersions,
+          isChallengeReady,
+          interviews: [] as any[],
+          reviewers,
+          delibsSessions: [] as any[],
+          draftDecisions: [] as any[],
+          cycleReviewersForDomain,
+          initialDelibsCount: 0,
+          finalDelibsCount: 0,
+          rubricVersionOptions,
+          currentRubricVersionId,
+          rubricCriteria,
+          interviewers,
+          hasApplicationReviews,
+          confidentialityRequired,
+        };
+      }
+
+      return { assignment, cycle, apps: appsWithStatus, challengeVersionOptions, linkedChallengeVersions, isChallengeReady, interviews, reviewers, delibsSessions, draftDecisions, cycleReviewersForDomain, initialDelibsCount, finalDelibsCount, rubricVersionOptions, currentRubricVersionId, rubricCriteria, interviewers, hasApplicationReviews, confidentialityRequired: null as null | "no_agreement" | "unsigned" };
       })(activeCycle)];
     })
   );
@@ -496,7 +532,7 @@ export default function DomainLeadDashboard() {
     <div className="space-y-8">
       <h1 className="text-2xl font-bold text-foreground">Domain Lead Dashboard</h1>
 
-      {domainData.map(({ assignment, cycle, apps, challengeVersionOptions, linkedChallengeVersions, isChallengeReady, interviews, reviewers: cycleReviewers, delibsSessions, draftDecisions, cycleReviewersForDomain, initialDelibsCount, finalDelibsCount, rubricVersionOptions, currentRubricVersionId, rubricCriteria, interviewers, hasApplicationReviews }: any, idx: number) => {
+      {domainData.map(({ assignment, cycle, apps, challengeVersionOptions, linkedChallengeVersions, isChallengeReady, interviews, reviewers: cycleReviewers, delibsSessions, draftDecisions, cycleReviewersForDomain, initialDelibsCount, finalDelibsCount, rubricVersionOptions, currentRubricVersionId, rubricCriteria, interviewers, hasApplicationReviews, confidentialityRequired }: any, idx: number) => {
         const hasLinkedChallenge = (linkedChallengeVersions ?? []).length > 0;
         const currentStatus = cycle?.statusUpdates[0]?.newStatus ?? null;
 
@@ -542,7 +578,7 @@ export default function DomainLeadDashboard() {
                         </span>
                       )}
                     </div>
-                    {currentStatus !== "Draft" && (
+                    {currentStatus !== "Draft" && !confidentialityRequired && (
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
                         <StatPill label="submitted" value={apps.length} />
                         {fullyReviewed > 0 && <StatPill label="reviewed" value={fullyReviewed} color="text-green-700" />}
@@ -689,16 +725,26 @@ export default function DomainLeadDashboard() {
                     <Section
                       title="Applications"
                       badge={
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                          <span>{apps.length} submitted</span>
-                          <span>·</span>
-                          <span>{fullyReviewed} reviewed</span>
-                          {needsReviewers > 0 && <><span>·</span><span className="text-yellow-700">{needsReviewers} need reviewers</span></>}
-                        </div>
+                        confidentialityRequired ? (
+                          <span className="text-xs text-muted-foreground">hidden</span>
+                        ) : (
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                            <span>{apps.length} submitted</span>
+                            <span>·</span>
+                            <span>{fullyReviewed} reviewed</span>
+                            {needsReviewers > 0 && <><span>·</span><span className="text-yellow-700">{needsReviewers} need reviewers</span></>}
+                          </div>
+                        )
                       }
                       defaultOpen={true}
                     >
-                      {apps.length > 0 ? (
+                      {confidentialityRequired ? (
+                        <ConfidentialityGate
+                          cycleId={cycle.id}
+                          reason={confidentialityRequired}
+                          next="/domain-lead"
+                        />
+                      ) : apps.length > 0 ? (
                         <ApplicationsTable
                           apps={apps}
                           draftDecisions={draftDecisions ?? []}
@@ -722,20 +768,44 @@ export default function DomainLeadDashboard() {
                     <Section
                       title="Deliberations"
                       badge={
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                          <span>{initialDelibsCount ?? 0} ready for initial</span>
-                          <span>·</span>
-                          <span>{finalDelibsCount ?? 0} ready for final</span>
-                        </div>
+                        confidentialityRequired ? (
+                          <span className="text-xs text-muted-foreground">hidden</span>
+                        ) : (
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                            <span>{initialDelibsCount ?? 0} ready for initial</span>
+                            <span>·</span>
+                            <span>{finalDelibsCount ?? 0} ready for final</span>
+                          </div>
+                        )
                       }
                       defaultOpen={(initialDelibsCount ?? 0) > 0 || (finalDelibsCount ?? 0) > 0}
                     >
-                      <DelibsSection cycleId={cycle.id} domainId={assignment.domainId} sessions={delibsSessions ?? []} initialCount={initialDelibsCount ?? 0} finalCount={finalDelibsCount ?? 0} />
+                      {confidentialityRequired ? (
+                        <ConfidentialityGate
+                          cycleId={cycle.id}
+                          reason={confidentialityRequired}
+                          next="/domain-lead"
+                        />
+                      ) : (
+                        <DelibsSection cycleId={cycle.id} domainId={assignment.domainId} sessions={delibsSessions ?? []} initialCount={initialDelibsCount ?? 0} finalCount={finalDelibsCount ?? 0} />
+                      )}
                     </Section>
                   )}
 
                   {/* Interviews — show when any applicant has been invited */}
-                  {(() => {
+                  {confidentialityRequired && currentStatus === "UnderReview" ? (
+                    <Section
+                      title="Interviews"
+                      badge={<span className="text-xs text-muted-foreground">hidden</span>}
+                      defaultOpen={true}
+                    >
+                      <ConfidentialityGate
+                        cycleId={cycle.id}
+                        reason={confidentialityRequired}
+                        next="/domain-lead"
+                      />
+                    </Section>
+                  ) : confidentialityRequired ? null : (() => {
                     const invited = apps.filter((a: any) => {
                       const status = a.domainApplications?.[0]?.inferredStatus;
                       return status === "InvitedToInterview" || status === "InterviewScheduled" || status === "PostInterviewPending";

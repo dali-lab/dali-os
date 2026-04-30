@@ -3,6 +3,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { reassignInterviewer, isNoReplacementError } from "~/lib/scheduling";
+import { requireApiSignedOrForbidden } from "~/lib/confidentiality";
 
 export async function action({ request, params }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
@@ -14,6 +15,9 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (request.method !== "POST") {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
+
+  const gate = await requireApiSignedOrForbidden(auth.user.sub, params.cycleId!);
+  if (gate) return withCors(request, gate);
 
   const member = await prisma.dALIMember.findFirst({ where: { userId: auth.user.sub } });
   if (!member) {

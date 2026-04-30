@@ -2,6 +2,7 @@ import type { Route } from "./+types/api.cycles.$cycleId.domains.$domainId.auto-
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isHiringLead, isDomainLead } from "~/lib/roles";
+import { requireApiSignedOrForbidden } from "~/lib/confidentiality";
 
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
@@ -18,6 +19,9 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   const { cycleId, domainId } = params;
+
+  const gate = await requireApiSignedOrForbidden(auth.user.sub, cycleId!);
+  if (gate) return gate;
 
   const cycle = await prisma.applicationCycle.findUniqueOrThrow({
     where: { id: cycleId! },

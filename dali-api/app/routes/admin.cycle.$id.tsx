@@ -9,6 +9,8 @@ import { Modal } from "~/components/Modal";
 import { ChallengePreviewModal } from "~/components/ChallengePreviewModal";
 import { Settings, Users, Calendar, AlertTriangle, Trash2, Plus, CheckCircle, ArrowRight, Circle, ChevronRight, X, LayoutDashboard, Eye } from 'lucide-react'
 import { formatVersionLabel, buildVersionNumberMap } from "~/lib/formatVersion";
+import { getCycleConfidentialityState } from "~/lib/confidentiality";
+import { ConfidentialityGate } from "~/components/ConfidentialityGate";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -77,7 +79,16 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!auth.ok) return redirect("/login");
   if (!(await isHiringLead(auth.user.sub))) return redirect("/");
 
-  const cycle = await prisma.applicationCycle.findUniqueOrThrow({
+  // Hiring leads must be able to reach this page to bind a confidentiality
+  // agreement to the cycle, so we don't redirect when unsigned. Instead, the
+  // loader strips every sensitive payload — applicant identities, final
+  // decisions, review counts — and the UI shows a placeholder where those
+  // panels would be.
+  const confState = await getCycleConfidentialityState(auth.user.sub, params.id);
+  const confidentialityRequired =
+    confState.status === "signed" ? null : confState.status;
+
+  const cycleBase = await prisma.applicationCycle.findUniqueOrThrow({
     where: { id: params.id },
     include: {
       domains: {
@@ -85,7 +96,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       },
       statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
       challengeVersions: { include: { challengeVersion: { include: { domain: true, challenge: true, createdBy: { select: { firstName: true, lastName: true } } } } } },
-      applications: {
+    },
+  });
+  const applications = confidentialityRequired
+    ? []
+    : await prisma.application.findMany({
+        where: { applicationCycleId: params.id },
         include: {
           user: true,
           statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
@@ -93,9 +109,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
             include: { challengeVersion: { include: { domain: true } } },
           },
         },
-      },
-    },
-  });
+      });
+  const cycle = { ...cycleBase, applications };
 
   const allDomains = await prisma.domain.findMany({ orderBy: { name: "asc" } });
 
@@ -129,13 +144,20 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     orderBy: { signedAt: "asc" },
   });
 
-  const cycleApplicationReviewCount = await prisma.applicationReview.count({
-    where: {
-      domainApplication: {
-        application: { applicationCycleId: params.id },
-      },
-    },
-  });
+  // Even the count of reviews on this cycle is sensitive — it tells anyone
+  // pre-signature how far review has progressed. Zero it out when unsigned;
+  // the only reader is the rubric-locking UI, which fail-closed locks edits
+  // when reviews exist (count > 0). With confidentialityRequired set, the
+  // reviewer dashboard is gated anyway, so the rubric lock state is moot.
+  const cycleApplicationReviewCount = confidentialityRequired
+    ? 0
+    : await prisma.applicationReview.count({
+        where: {
+          domainApplication: {
+            application: { applicationCycleId: params.id },
+          },
+        },
+      });
 
   // Per-domain options + which domains already have reviews assigned (used to
   // gate rubric edits — once any domain application has a review, changing
@@ -150,16 +172,18 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     include: { rubric: { select: { name: true } }, createdBy: { select: { firstName: true, lastName: true } } },
     orderBy: { createdAt: "desc" },
   });
-  const reviewsForCycle = await prisma.applicationReview.findMany({
-    where: {
-      domainApplication: { application: { applicationCycleId: params.id } },
-    },
-    select: {
-      domainApplication: {
-        select: { challengeVersion: { select: { domainId: true } } },
-      },
-    },
-  });
+  const reviewsForCycle = confidentialityRequired
+    ? []
+    : await prisma.applicationReview.findMany({
+        where: {
+          domainApplication: { application: { applicationCycleId: params.id } },
+        },
+        select: {
+          domainApplication: {
+            select: { challengeVersion: { select: { domainId: true } } },
+          },
+        },
+      });
   const reviewedDomainIdSet = new Set<string>();
   for (const r of reviewsForCycle) {
     const did = r.domainApplication.challengeVersion.domainId;
@@ -171,25 +195,27 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // Exclude Finals that already have a Released child — Decision is append-only,
   // so released rows still match stage="Final" and would otherwise re-appear here
   // after the optimistic UI update is undone by a loader refetch.
-  const finalDecisions = await prisma.decision.findMany({
-    where: {
-      stage: "Final",
-      children: { none: { stage: "Released" } },
-      domainApplication: {
-        application: { applicationCycleId: params.id },
-      },
-    },
-    include: {
-      domainApplication: {
-        include: {
-          application: { include: { user: { select: { firstName: true, lastName: true, dartmouthEmail: true, netId: true } } } },
-          challengeVersion: { include: { domain: { select: { name: true } } } },
+  const finalDecisions = confidentialityRequired
+    ? []
+    : await prisma.decision.findMany({
+        where: {
+          stage: "Final",
+          children: { none: { stage: "Released" } },
+          domainApplication: {
+            application: { applicationCycleId: params.id },
+          },
         },
-      },
-      madeBy: { select: { firstName: true, lastName: true } },
-    },
-    orderBy: { createdAt: "desc" },
-  });
+        include: {
+          domainApplication: {
+            include: {
+              application: { include: { user: { select: { firstName: true, lastName: true, dartmouthEmail: true, netId: true } } } },
+              challengeVersion: { include: { domain: { select: { name: true } } } },
+            },
+          },
+          madeBy: { select: { firstName: true, lastName: true } },
+        },
+        orderBy: { createdAt: "desc" },
+      });
 
   // Email-template options + current per-cycle decision bindings + which
   // DecisionTypes already have a Released decision (used to lock those slots).
@@ -211,16 +237,18 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
   });
 
-  const releasedDecisions = await prisma.decision.findMany({
-    where: {
-      stage: "Released",
-      domainApplication: {
-        application: { applicationCycleId: params.id },
-      },
-    },
-    select: { type: true },
-    distinct: ["type"],
-  });
+  const releasedDecisions = confidentialityRequired
+    ? []
+    : await prisma.decision.findMany({
+        where: {
+          stage: "Released",
+          domainApplication: {
+            application: { applicationCycleId: params.id },
+          },
+        },
+        select: { type: true },
+        distinct: ["type"],
+      });
   const releasedDecisionTypes = releasedDecisions.map((d) => d.type);
 
   // ChallengeVersion has no `versionNumber` column on the schema, so derive
@@ -266,6 +294,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     confidentialityAgreementOptions,
     currentConfidentialityBinding,
     confidentialitySignatures,
+    confidentialityRequired,
   };
 }
 
@@ -1412,7 +1441,13 @@ export default function AdminCycleDetails() {
       )}
 
       {/* ── Interview Dashboard Tab ── */}
-      {tab === 'dashboard' && (
+      {tab === 'dashboard' && loaderData?.confidentialityRequired ? (
+        <ConfidentialityGate
+          cycleId={cycleId ?? ''}
+          reason={loaderData.confidentialityRequired}
+          next={`/admin/cycle/${cycleId}?tab=dashboard`}
+        />
+      ) : tab === 'dashboard' && (
         <div className="space-y-4">
           <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
@@ -1515,7 +1550,13 @@ export default function AdminCycleDetails() {
       )}
 
       {/* ── Decisions Tab ── */}
-      {tab === 'decisions' && (
+      {tab === 'decisions' && loaderData?.confidentialityRequired ? (
+        <ConfidentialityGate
+          cycleId={cycleId ?? ''}
+          reason={loaderData.confidentialityRequired}
+          next={`/admin/cycle/${cycleId}?tab=decisions`}
+        />
+      ) : tab === 'decisions' && (
         <div className="space-y-4">
           <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
             <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-border bg-muted/50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
