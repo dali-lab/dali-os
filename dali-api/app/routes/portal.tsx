@@ -302,35 +302,12 @@ function StageIndicator({ stage }: { stage: DomainApplicationStatus | "Applicati
     { label: "Decision", keys: ["Accepted", "Rejected", "Waitlisted"] },
   ];
 
-  const currentStepIdx = steps.findIndex(s => s.keys.includes(stage));
+  const currentStep = steps.find(s => s.keys.includes(stage));
+  if (!currentStep) return null;
 
   return (
-    <div className="flex items-center gap-1">
-      {steps.map((s, i) => {
-        const isActive = i === currentStepIdx;
-        const isPast = i < currentStepIdx;
-        return (
-          <div key={s.label} className="flex items-center gap-1">
-            <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
-              isActive
-                ? "bg-accent-coral text-white"
-                : isPast
-                  ? "bg-accent-coral/20 text-accent-coral"
-                  : "bg-muted text-muted-foreground/70"
-            }`}>
-              {isPast && (
-                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                </svg>
-              )}
-              {s.label}
-            </div>
-            {i < steps.length - 1 && (
-              <div className={`w-4 h-px ${isPast ? "bg-accent-coral/40" : "bg-muted"}`} />
-            )}
-          </div>
-        );
-      })}
+    <div className="px-2.5 py-1 rounded-full text-xs font-medium bg-accent-teal text-white">
+      {currentStep.label}
     </div>
   );
 }
