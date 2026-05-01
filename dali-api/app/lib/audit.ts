@@ -9,7 +9,8 @@ export type AuditAction =
   | "role.change"
   | "decision.finalize"
   | "decision.release"
-  | "email.send";
+  | "email.send"
+  | "confidentiality.sign";
 
 export type AuditEvent = {
   action: AuditAction;

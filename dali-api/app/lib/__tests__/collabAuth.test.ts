@@ -5,6 +5,7 @@ vi.mock("~/lib/db", () => ({
     applicationReview: { findUnique: vi.fn() },
     dALIMember: { findFirst: vi.fn() },
     interviewAssignment: { findFirst: vi.fn() },
+    interview: { findUnique: vi.fn() },
   },
 }));
 
@@ -13,17 +14,24 @@ vi.mock("~/lib/roles", () => ({
   isHiringLead: vi.fn().mockResolvedValue(false),
 }));
 
+vi.mock("~/hiring/lib/confidentiality", () => ({
+  getCycleConfidentialityState: vi.fn().mockResolvedValue({ status: "signed", activeVersionId: "v1" }),
+}));
+
 import { prisma } from "~/lib/db";
 import { isDomainLead, isHiringLead } from "~/lib/roles";
+import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { authorizeCollabDoc, hydrateAuthors } from "../collabAuth";
 
 const mockPrisma = prisma as any;
 
 beforeEach(() => {
   vi.resetAllMocks();
-  // Restore default: non-lead unless overridden per test
+  // Restore defaults
   (isDomainLead as any).mockResolvedValue(false);
   (isHiringLead as any).mockResolvedValue(false);
+  (getCycleConfidentialityState as any).mockResolvedValue({ status: "signed", activeVersionId: "v1" });
+  (prisma as any).interview.findUnique.mockResolvedValue({ applicationCycleId: "cycle1" });
 });
 
 describe("authorizeCollabDoc", () => {

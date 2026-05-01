@@ -2,7 +2,7 @@ import { Outlet, redirect, useLoaderData } from 'react-router'
 import { Layout } from '~/components/Layout'
 import { requireAuth, withAuth } from '~/lib/auth'
 import { getUserRoles } from '~/lib/roles'
-import { getActiveCycle } from '~/lib/cycles'
+import { getActiveCycle } from '~/hiring/lib/cycles'
 import { prisma } from '~/lib/db'
 import type { Route } from './+types/layout'
 

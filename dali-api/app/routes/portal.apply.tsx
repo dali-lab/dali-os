@@ -3,21 +3,21 @@ import { redirect, useLoaderData, useFetcher } from "react-router";
 import type { Route } from "./+types/portal.apply";
 import { prisma } from "~/lib/db";
 import { requireAuth, withAuth } from "~/lib/auth";
-import { getActiveCycle } from "~/lib/cycles";
-import { checkGitHubUrl, checkFigmaUrl, checkDriveUrl } from "~/lib/submission-check";
-import type { SubmissionCheckResult } from "~/lib/submission-check";
+import { getActiveCycle } from "~/hiring/lib/cycles";
+import { checkGitHubUrl, checkFigmaUrl, checkDriveUrl } from "~/hiring/lib/submission-check";
+import type { SubmissionCheckResult } from "~/hiring/lib/submission-check";
 import { validateWordLimits } from "~/lib/word-count";
 import type { WordCountViolation } from "~/lib/word-count";
-import { isSkillsRatingComplete } from "~/lib/skills-rating";
+import { isSkillsRatingComplete } from "~/hiring/lib/skills-rating";
 import type { Question } from "~/types";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 import { Modal } from "~/components/Modal";
-import { QuestionList } from "~/components/ApplicationAnswers";
+import { QuestionList } from "~/hiring/components/ApplicationAnswers";
 import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
 import {
   ChallengeQuestionField,
   type UrlCheckState,
-} from "~/components/ChallengeQuestionField";
+} from "~/hiring/components/ChallengeQuestionField";
 
 export const meta: Route.MetaFunction = () => [{ title: "Apply · DALI OS" }];
 

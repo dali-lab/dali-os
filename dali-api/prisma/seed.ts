@@ -1880,6 +1880,49 @@ async function main() {
     },
   });
 
+  // ── Confidentiality agreement (Fall 2026) ────────────────────────────────
+  // Bind a signed agreement to the active cycle so domain leads and the hiring
+  // lead can access confidentiality-gated pages in E2E tests.
+  await prisma.confidentialityAgreement.upsert({
+    where: { id: "ca-fall-2026" },
+    update: {},
+    create: { id: "ca-fall-2026", name: "Fall 2026 Hiring Confidentiality Agreement" },
+  });
+  await prisma.confidentialityAgreementVersion.upsert({
+    where: { id: "cav-fall-2026-v1" },
+    update: {},
+    create: {
+      id: "cav-fall-2026-v1",
+      versionNumber: 1,
+      body: { type: "doc", content: [] },
+      agreementId: "ca-fall-2026",
+      createdById: jordanMember.id,
+    },
+  });
+  await prisma.cycleConfidentialityAgreement.upsert({
+    where: { applicationCycleId: cycle.id },
+    update: {},
+    create: {
+      applicationCycleId: cycle.id,
+      confidentialityAgreementVersionId: "cav-fall-2026-v1",
+    },
+  });
+  for (const [sigId, userId] of [
+    ["cas-eng-lead", engLead.id],
+    ["cas-jordan", jordan.id],
+  ] as [string, string][]) {
+    await prisma.confidentialityAgreementSignature.upsert({
+      where: { userId_applicationCycleId: { userId, applicationCycleId: cycle.id } },
+      update: {},
+      create: {
+        id: sigId,
+        userId,
+        applicationCycleId: cycle.id,
+        confidentialityAgreementVersionId: "cav-fall-2026-v1",
+      },
+    });
+  }
+
   // ── Interview config ──────────────────────────────────────────────────────
   const today = new Date();
   const interviewStart = new Date(today);
@@ -1915,13 +1958,15 @@ async function main() {
   // ── Reviewers + Interviewers ──────────────────────────────────────────────
   // Two reviewers+interviewers per domain so every domain app has enough
   // review coverage and invited applicants see real slot options.
+  // reviewer3 and pm.lead intentionally left unsigned to seed the "pending"
+  // state visible in the hiring-lead signatures list.
   const reviewerData = [
-    { email: "reviewer1@dali.dartmouth.edu", first: "Riley", last: "Okonkwo", domainId: engDomain.id },
-    { email: "reviewer2@dali.dartmouth.edu", first: "Sam", last: "Alvarez", domainId: designDomain.id },
-    { email: "reviewer3@dali.dartmouth.edu", first: "Pat", last: "Mikhailov", domainId: pmDomain.id },
-    { email: "eng.lead@dali.dartmouth.edu", first: "Mira", last: "Chen", domainId: engDomain.id },
-    { email: "design.lead@dali.dartmouth.edu", first: "Isabela", last: "Ferreira", domainId: designDomain.id },
-    { email: "pm.lead@dali.dartmouth.edu", first: "Theo", last: "Abernathy", domainId: pmDomain.id },
+    { email: "reviewer1@dali.dartmouth.edu", first: "Riley", last: "Okonkwo", domainId: engDomain.id, signed: true },
+    { email: "reviewer2@dali.dartmouth.edu", first: "Sam", last: "Alvarez", domainId: designDomain.id, signed: true },
+    { email: "reviewer3@dali.dartmouth.edu", first: "Pat", last: "Mikhailov", domainId: pmDomain.id, signed: false },
+    { email: "eng.lead@dali.dartmouth.edu", first: "Mira", last: "Chen", domainId: engDomain.id, signed: true },
+    { email: "design.lead@dali.dartmouth.edu", first: "Isabela", last: "Ferreira", domainId: designDomain.id, signed: true },
+    { email: "pm.lead@dali.dartmouth.edu", first: "Theo", last: "Abernathy", domainId: pmDomain.id, signed: false },
   ];
 
   const reviewerMembers: Array<{ id: string; domainId: string }> = [];
@@ -1981,6 +2026,18 @@ async function main() {
         domainId: r.domainId,
       },
     });
+
+    if (r.signed) {
+      await prisma.confidentialityAgreementSignature.upsert({
+        where: { userId_applicationCycleId: { userId: user.id, applicationCycleId: cycle.id } },
+        update: {},
+        create: {
+          userId: user.id,
+          applicationCycleId: cycle.id,
+          confidentialityAgreementVersionId: "cav-fall-2026-v1",
+        },
+      });
+    }
   }
 
   // ── Engineering reviewers for Winter 2027 ──────────────────────────────────
