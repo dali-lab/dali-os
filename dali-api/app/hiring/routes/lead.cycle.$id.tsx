@@ -446,7 +446,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         },
       });
     }
-    return withAuth(auth, redirect(`/hiring-lead-admin/cycle/${params.id}`));
+    return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}`));
   }
 
   if (intent === "link-general-form") {
