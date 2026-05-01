@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { Link, redirect, useLoaderData } from "react-router";
-import type { Route } from "./+types/admin-console.accounts";
+import type { Route } from "./+types/admin-console.non-members";
 import { prisma } from "~/lib/db";
 import { requireAuth, withAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
 import { UserCircle, ExternalLink } from "lucide-react";
 
-export const meta: Route.MetaFunction = () => [{ title: "Accounts · Admin console · DALI OS" }];
+export const meta: Route.MetaFunction = () => [{ title: "Non-Members · Admin console · DALI OS" }];
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -43,7 +43,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   return withAuth(auth, { accounts: users });
 }
 
-export default function AdminConsoleAccounts() {
+export default function AdminConsoleNonMembers() {
   const { accounts } = useLoaderData<typeof loader>();
   const [search, setSearch] = useState("");
 
@@ -61,7 +61,7 @@ export default function AdminConsoleAccounts() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <UserCircle className="w-6 h-6 text-foreground/80" />
-          <h1 className="text-2xl font-bold text-foreground">Accounts</h1>
+          <h1 className="text-2xl font-bold text-foreground">Non-Members</h1>
           <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground">
             {filtered.length}{filtered.length !== accounts.length ? ` of ${accounts.length}` : ""} accounts
           </span>

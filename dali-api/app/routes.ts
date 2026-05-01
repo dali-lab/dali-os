@@ -29,7 +29,7 @@ export default [
     // Admin console (top-level, not hiring)
     route("admin-console", "routes/admin-console.tsx"),
     route("admin-console/members", "routes/admin-console.members.tsx"),
-    route("admin-console/accounts", "routes/admin-console.accounts.tsx"),
+    route("admin-console/non-members", "routes/admin-console.non-members.tsx"),
     route("admin-console/domains", "routes/admin-console.domains.tsx"),
     route("admin-console/party", "routes/admin-console.party.tsx"),
   ]),
