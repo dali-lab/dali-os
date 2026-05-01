@@ -8,6 +8,9 @@ primary_region = "iad"
   # See issue #101.
   release_command = "sh -c 'n=0; until npx prisma migrate deploy; do n=$((n+1)); [ $n -ge 4 ] && exit 1; sleep $n; done; npx prisma db seed'"
 
+[env]
+  NODE_ENV = "development"
+
 [build.args]
   OMIT_DEV = "false"
 
