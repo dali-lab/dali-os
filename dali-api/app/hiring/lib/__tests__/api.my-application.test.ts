@@ -29,7 +29,7 @@ const mockPrisma = prisma as unknown as {
     create: ReturnType<typeof vi.fn>;
   };
   user: { findUnique: ReturnType<typeof vi.fn> };
-  legacyEmailTemplate: { findFirst: ReturnType<typeof vi.fn> };
+  cycleNotificationEmail: { findUnique: ReturnType<typeof vi.fn> };
   $transaction: ReturnType<typeof vi.fn>;
 };
 
@@ -61,7 +61,7 @@ beforeEach(() => {
     create: vi.fn().mockResolvedValue({}),
   };
   (mockPrisma as any).user = { findUnique: vi.fn().mockResolvedValue(null) };
-  (mockPrisma as any).legacyEmailTemplate = { findFirst: vi.fn().mockResolvedValue(null) };
+  (mockPrisma as any).cycleNotificationEmail = { findUnique: vi.fn().mockResolvedValue(null) };
   (mockPrisma as any).$transaction = vi.fn(async (cb: any) =>
     cb(prisma as any),
   );
@@ -215,6 +215,35 @@ describe("POST /api/hiring/my-application", () => {
 
     expect((res as Response).status).toBe(400);
     expect(mockPrisma.application.upsert).not.toHaveBeenCalled();
+  });
+
+  it("submits successfully when no ApplicationReceived binding is set for the cycle", async () => {
+    mockPrisma.applicationCycle.findFirst.mockResolvedValue(openCycleResult());
+    mockPrisma.application.findUnique.mockResolvedValue(null);
+    mockPrisma.application.upsert.mockResolvedValue({ id: APP_ID });
+    mockPrisma.applicationStatusUpdate.findFirst.mockResolvedValue(null);
+    // gmail user + applicant user are both populated, so the binding lookup runs.
+    (mockPrisma as any).user.findUnique
+      .mockResolvedValueOnce({ googleRefreshToken: "rt" })
+      .mockResolvedValueOnce({ id: USER_ID, firstName: "Ada", dartmouthEmail: "ada@dartmouth.edu" });
+    (mockPrisma as any).cycleNotificationEmail.findUnique.mockResolvedValue(null);
+
+    const res = await action({
+      request: makeRequest({ answers: { name: "Ada" } }),
+      params: {},
+      context: {},
+    } as any);
+
+    expect((res as Response).status).toBe(200);
+    expect(mockPrisma.cycleNotificationEmail.findUnique).toHaveBeenCalledWith({
+      where: {
+        applicationCycleId_notificationType: {
+          applicationCycleId: CYCLE_ID,
+          notificationType: "ApplicationReceived",
+        },
+      },
+      include: { emailTemplateVersion: true },
+    });
   });
 
   it("rejects when applications are not Open for the cycle", async () => {

@@ -197,16 +197,19 @@ export async function action({ request }: Route.ActionArgs) {
     if (gmailUser?.googleRefreshToken && user) {
       const to = user.dartmouthEmail ?? user.daliEmail ?? "";
       if (to) {
-        // ApplicationReceived still uses the legacy global-by-type lookup —
-        // out of scope for the rubric-pattern refactor (decision emails only).
-        const template = await prisma.legacyEmailTemplate.findFirst({
-          where: { type: "ApplicationReceived" },
-          orderBy: { createdAt: "desc" },
+        const binding = await prisma.cycleNotificationEmail.findUnique({
+          where: {
+            applicationCycleId_notificationType: {
+              applicationCycleId: cycle.id,
+              notificationType: "ApplicationReceived",
+            },
+          },
+          include: { emailTemplateVersion: true },
         });
-        if (template) {
+        if (binding) {
           // ApplicationReceived isn't tied to a single domain (an applicant
           // may apply to multiple), so {{domain}} resolves to empty here.
-          const { subject, html } = renderEmail(template, { firstName: user.firstName });
+          const { subject, html } = renderEmail(binding.emailTemplateVersion, { firstName: user.firstName });
           await sendEmail({ refreshToken: gmailUser.googleRefreshToken, to, subject, html });
         }
       }

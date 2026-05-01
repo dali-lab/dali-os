@@ -237,6 +237,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
   });
 
+  const currentNotificationEmails = await prisma.cycleNotificationEmail.findMany({
+    where: { applicationCycleId: params.id },
+    include: {
+      emailTemplateVersion: { include: { template: { select: { name: true } } } },
+    },
+  });
+
   const releasedDecisions = confidentialityRequired
     ? []
     : await prisma.decision.findMany({
@@ -287,6 +294,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       generalChallengeVersions: generalChallengeVersions.map(withCvNumber),
       emailTemplates,
       currentDecisionEmails,
+      currentNotificationEmails,
       releasedDecisionTypes,
       domainChallengeVersions: domainChallengeVersions.map(withCvNumber),
       domainRubricVersions,
@@ -402,6 +410,39 @@ export async function action({ request, params }: Route.ActionArgs) {
         where: {
           applicationCycleId: params.id,
           decisionType: decisionType as (typeof validTypes)[number],
+        },
+      });
+    }
+    return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}`));
+  }
+
+  if (intent === "set-notification-email") {
+    const notificationType = formData.get("notificationType") as string;
+    const emailTemplateVersionId = (formData.get("emailTemplateVersionId") as string) || null;
+    const validTypes = ["ApplicationReceived", "InterviewInviteMentor"] as const;
+    if (!validTypes.includes(notificationType as (typeof validTypes)[number])) {
+      return withAuth(auth, new Response(JSON.stringify({ error: "Invalid notification type" }), { status: 400, headers: { "Content-Type": "application/json" } }));
+    }
+    if (emailTemplateVersionId) {
+      await prisma.cycleNotificationEmail.upsert({
+        where: {
+          applicationCycleId_notificationType: {
+            applicationCycleId: params.id,
+            notificationType: notificationType as (typeof validTypes)[number],
+          },
+        },
+        update: { emailTemplateVersionId },
+        create: {
+          applicationCycleId: params.id,
+          notificationType: notificationType as (typeof validTypes)[number],
+          emailTemplateVersionId,
+        },
+      });
+    } else {
+      await prisma.cycleNotificationEmail.deleteMany({
+        where: {
+          applicationCycleId: params.id,
+          notificationType: notificationType as (typeof validTypes)[number],
         },
       });
     }
@@ -1185,6 +1226,12 @@ export default function HiringLeadCycleDetails() {
             emailTemplates={loaderData?.emailTemplates ?? []}
             currentDecisionEmails={loaderData?.currentDecisionEmails ?? []}
             releasedDecisionTypes={loaderData?.releasedDecisionTypes ?? []}
+          />
+
+          {/* Non-decision notification email bindings */}
+          <NotificationEmailsSection
+            emailTemplates={loaderData?.emailTemplates ?? []}
+            currentNotificationEmails={loaderData?.currentNotificationEmails ?? []}
           />
         </div>
       )}
@@ -2672,6 +2719,121 @@ function DecisionEmailPicker({ slot, binding, emailTemplates, locked }: {
         <Form method="post" preventScrollReset className="flex items-end gap-2 flex-wrap" onSubmit={() => setEditing(false)}>
           <input type="hidden" name="intent" value="set-decision-email" />
           <input type="hidden" name="decisionType" value={slot.type} />
+          <div className="flex-1 min-w-[14rem]">
+            <select
+              name="emailTemplateVersionId"
+              defaultValue={currentVersionId ?? ""}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            >
+              <option value="">No template (skip email)</option>
+              {emailTemplates
+                .filter((t: any) => t.versions.length > 0)
+                .flatMap((t: any) =>
+                  t.versions.map((v: any) => (
+                    <option key={v.id} value={v.id}>
+                      {t.name} — v{v.versionNumber}
+                    </option>
+                  ))
+                )}
+            </select>
+          </div>
+          <button
+            type="submit"
+            className="px-3 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition"
+          >
+            Save
+          </button>
+          <button
+            type="button"
+            onClick={() => setEditing(false)}
+            className="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground"
+          >
+            Cancel
+          </button>
+        </Form>
+      )}
+    </div>
+  );
+}
+
+const NOTIFICATION_EMAIL_SLOTS = [
+  { type: "ApplicationReceived", label: "Application Received", description: "Sent to the applicant when they first submit their application." },
+  { type: "InterviewInviteMentor", label: "Interview Invite (Mentor)", description: "Sent to the assigned mentor/reviewer when an interview is scheduled." },
+] as const;
+
+function NotificationEmailsSection({ emailTemplates, currentNotificationEmails }: {
+  emailTemplates: any[];
+  currentNotificationEmails: any[];
+}) {
+  return (
+    <div className="bg-card rounded-xl border border-border shadow-sm p-6 space-y-4">
+      <div>
+        <h3 className="text-sm font-bold text-foreground/80">Notification Emails</h3>
+        <p className="text-xs text-muted-foreground">
+          Pick which template fires for each notification slot. Slots without a binding will not send an email.
+        </p>
+      </div>
+      <div className="space-y-3">
+        {NOTIFICATION_EMAIL_SLOTS.map((slot) => {
+          const binding = currentNotificationEmails.find((b: any) => b.notificationType === slot.type);
+          return (
+            <NotificationEmailPicker
+              key={slot.type}
+              slot={slot}
+              binding={binding ?? null}
+              emailTemplates={emailTemplates}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function NotificationEmailPicker({ slot, binding, emailTemplates }: {
+  slot: { type: string; label: string; description: string };
+  binding: any | null;
+  emailTemplates: any[];
+}) {
+  const [editing, setEditing] = useState(false);
+  const currentVersionId: string | null = binding?.emailTemplateVersionId ?? null;
+  const currentLabel = binding
+    ? `${binding.emailTemplateVersion.template.name} — v${binding.emailTemplateVersion.versionNumber}`
+    : null;
+
+  return (
+    <div className="border border-border rounded-lg p-4 space-y-2">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h4 className="text-sm font-bold text-foreground">{slot.label}</h4>
+          <p className="text-xs text-muted-foreground">{slot.description}</p>
+        </div>
+        {!editing && (
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="text-xs text-blue-600 hover:text-blue-800 font-medium shrink-0"
+          >
+            {currentLabel ? "Change" : "Assign"}
+          </button>
+        )}
+      </div>
+
+      {!editing ? (
+        currentLabel ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <CheckCircle className="w-4 h-4 text-green-600" />
+            <span>{currentLabel}</span>
+          </div>
+        ) : (
+          <div className="text-sm text-orange-700 bg-orange-50 border border-orange-200 rounded px-2 py-1">
+            No template assigned — this notification will not send an email.
+          </div>
+        )
+      ) : (
+        <Form method="post" preventScrollReset className="flex items-end gap-2 flex-wrap" onSubmit={() => setEditing(false)}>
+          <input type="hidden" name="intent" value="set-notification-email" />
+          <input type="hidden" name="notificationType" value={slot.type} />
           <div className="flex-1 min-w-[14rem]">
             <select
               name="emailTemplateVersionId"
