@@ -18,7 +18,7 @@ export function DomainFilter({ allDomains, selectedDomainIds, userDomainIds }: P
     } else {
       params.set("domains", domainIds.join(","));
     }
-    navigate(`/analytics?${params.toString()}`);
+    navigate(`/hiring/analytics?${params.toString()}`);
   }
 
   function toggleDomain(domainId: string) {

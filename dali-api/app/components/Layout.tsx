@@ -108,10 +108,10 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
     },
     {
       label: 'Analytics',
-      to: '/analytics',
+      to: '/hiring/analytics',
       icon: BarChart3,
       show: isHiringLead || isDomainLead,
-      active: path.startsWith('/analytics'),
+      active: path.startsWith('/hiring/analytics'),
       sub: null,
     },
     {

@@ -3,7 +3,7 @@ import type { Route } from "./+types/analytics";
 import { prisma } from "~/lib/db";
 import { requireAuth, withAuth } from "~/lib/auth";
 import { getUserRoles } from "~/lib/roles";
-import { getReviewStatus } from "~/lib/review-status";
+import { getReviewStatus } from "~/hiring/lib/review-status";
 import { StatCard } from "~/components/analytics/StatCard";
 import { CycleSelector } from "~/components/analytics/CycleSelector";
 import { DomainFilter } from "~/components/analytics/DomainFilter";
