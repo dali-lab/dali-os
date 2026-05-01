@@ -6,6 +6,7 @@ import { getUserRoles } from "~/lib/roles";
 import { getReviewStatus } from "~/lib/review-status";
 import { StatCard } from "~/components/analytics/StatCard";
 import { CycleSelector } from "~/components/analytics/CycleSelector";
+import { DomainFilter } from "~/components/analytics/DomainFilter";
 import { FunnelChart } from "~/components/analytics/FunnelChart";
 import { ReviewProgressChart } from "~/components/analytics/ReviewProgressChart";
 import { DecisionBreakdownChart } from "~/components/analytics/DecisionBreakdownChart";
@@ -22,15 +23,19 @@ export async function loader({ request }: Route.LoaderArgs) {
   const roles = await getUserRoles(auth.user.sub);
   if (!roles.isHiringLead && !roles.isDomainLead) return withAuth(auth, redirect("/"));
 
-  // Resolve domain scope for domain leads
-  let domainIds: string[] | null = null; // null = all domains (hiring lead)
-  if (!roles.isHiringLead && roles.isDomainLead && roles.memberId) {
+  // Resolve user's assigned domains (for default filter + domain-lead-only access)
+  let userDomainIds: string[] = [];
+  if (roles.isDomainLead && roles.memberId) {
     const assignments = await prisma.domainLeadAssignment.findMany({
       where: { memberId: roles.memberId },
-      select: { domainId: true, domain: { select: { name: true } } },
+      select: { domainId: true },
     });
-    domainIds = assignments.map((a) => a.domainId);
-    if (domainIds.length === 0) return withAuth(auth, redirect("/"));
+    userDomainIds = assignments.map((a) => a.domainId);
+  }
+
+  // Domain-lead-only users must have at least one assignment
+  if (!roles.isHiringLead && userDomainIds.length === 0) {
+    return withAuth(auth, redirect("/"));
   }
 
   // Load all cycles for the selector
@@ -42,32 +47,29 @@ export async function loader({ request }: Route.LoaderArgs) {
     orderBy: { createdAt: "desc" },
   });
 
-  // Filter cycles to those containing the domain lead's domains (if scoped)
-  const filteredCycles = domainIds
-    ? allCycles.filter((c) => c.domains.some((d) => domainIds!.includes(d.domainId)))
-    : allCycles;
-
-  const cycles = filteredCycles.map((c) => ({
+  const cycles = allCycles.map((c) => ({
     id: c.id,
     name: c.name,
     status: c.statusUpdates[0]?.newStatus ?? "Draft",
   }));
 
-  if (cycles.length === 0) {
-    return withAuth(auth, {
-      cycles: [],
-      selectedCycleId: "",
-      cycleStatus: "",
-      isHiringLead: roles.isHiringLead,
-      domainScope: null,
-      kpis: { totalApplications: 0, totalSubmitted: 0, totalDomainApplications: 0, reviewsCompleted: 0, reviewsTotal: 0, interviewsScheduled: 0, interviewsCompleted: 0, decisionsReleased: 0 },
-      funnel: [],
-      reviewProgress: { byStatus: { notStarted: 0, inProgress: 0, submitted: 0 }, byRecommendation: {}, byReviewer: [] },
-      decisions: { byDomain: [], byStage: { draft: 0, final: 0, released: 0 } },
-      interviews: { scheduled: 0, completed: 0, cancelled: 0, pendingInvite: 0 },
-      timeline: [],
-    });
-  }
+  const emptyData = {
+    cycles,
+    selectedCycleId: "",
+    cycleStatus: "",
+    isHiringLead: roles.isHiringLead,
+    allDomains: [] as Array<{ id: string; name: string }>,
+    selectedDomainIds: [] as string[],
+    userDomainIds,
+    kpis: { totalApplications: 0, totalSubmitted: 0, totalDomainApplications: 0, reviewsCompleted: 0, reviewsTotal: 0, interviewsScheduled: 0, interviewsCompleted: 0, decisionsReleased: 0 },
+    funnel: [],
+    reviewProgress: { byStatus: { notStarted: 0, inProgress: 0, submitted: 0 }, byRecommendation: {}, byReviewer: [] },
+    decisions: { byDomain: [], byStage: { draft: 0, final: 0, released: 0 } },
+    interviews: { scheduled: 0, completed: 0, cancelled: 0, pendingInvite: 0 },
+    timeline: [],
+  };
+
+  if (cycles.length === 0) return withAuth(auth, emptyData);
 
   // Pick selected cycle
   const url = new URL(request.url);
@@ -79,19 +81,42 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const cycleId = selectedCycle.id;
 
+  // Load all domains in this cycle (for the filter UI)
+  const cycleDomains = await prisma.domainApplicationCycle.findMany({
+    where: { applicationCycleId: cycleId },
+    include: { domain: { select: { id: true, name: true } } },
+  });
+  const allDomains = cycleDomains.map((d) => ({ id: d.domain.id, name: d.domain.name }));
+
+  // Resolve domain filter from URL, with smart defaults
+  const domainsParam = url.searchParams.get("domains");
+  let domainIds: string[] | null = null; // null = all domains
+  if (domainsParam) {
+    // Explicit filter from URL — intersect with available domains
+    const requested = domainsParam.split(",").filter(Boolean);
+    const available = new Set(allDomains.map((d) => d.id));
+    const valid = requested.filter((id) => available.has(id));
+    if (valid.length > 0) domainIds = valid;
+  } else if (!roles.isHiringLead && userDomainIds.length > 0) {
+    // Domain-lead-only defaults to their assigned domains
+    domainIds = userDomainIds;
+  }
+  // Hiring leads (including dual-role) default to null = all domains
+
+  const selectedDomainIds = domainIds ?? allDomains.map((d) => d.id);
+
   // Domain filter for Prisma queries
   const domainFilter = domainIds ? { domainId: { in: domainIds } } : {};
   const cvDomainFilter = domainIds ? { challengeVersion: { domainId: { in: domainIds } } } : {};
 
   // ─── Parallel data fetch ───────────────────────────────────────────────────
-  const [domains, applications, reviews, interviewRows] = await Promise.all([
-    // 1. Domains in this cycle (for labels)
-    prisma.domainApplicationCycle.findMany({
-      where: { applicationCycleId: cycleId, ...domainFilter },
-      include: { domain: { select: { id: true, name: true } } },
-    }),
+  // Filtered domains for aggregation (subset of allDomains based on filter)
+  const domains = domainIds
+    ? cycleDomains.filter((d) => domainIds!.includes(d.domain.id))
+    : cycleDomains;
 
-    // 2. Applications with domain applications, reviews, decisions, interviews
+  const [applications, reviews, interviewRows] = await Promise.all([
+    // 1. Applications with domain applications, reviews, decisions, interviews
     prisma.application.findMany({
       where: { applicationCycleId: cycleId },
       include: {
@@ -150,9 +175,6 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   // ─── Build domain name map ─────────────────────────────────────────────────
   const domainNameMap = new Map(domains.map((d) => [d.domain.id, d.domain.name]));
-  const domainScope = domainIds
-    ? domains.map((d) => ({ id: d.domain.id, name: d.domain.name }))
-    : null;
 
   // ─── Aggregate: Applications ───────────────────────────────────────────────
   const submittedApps = applications.filter(
@@ -374,7 +396,9 @@ export async function loader({ request }: Route.LoaderArgs) {
     selectedCycleId: cycleId,
     cycleStatus: selectedCycle.status,
     isHiringLead: roles.isHiringLead,
-    domainScope,
+    allDomains,
+    selectedDomainIds,
+    userDomainIds,
     kpis: {
       totalApplications: applications.length,
       totalSubmitted: submittedApps.length,
@@ -421,15 +445,17 @@ export default function AnalyticsDashboard() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-2xl font-bold text-foreground">Analytics</h1>
-        <div className="flex items-center gap-3">
-          {data.domainScope && (
-            <span className="text-sm text-muted-foreground">
-              {data.domainScope.map((d: any) => d.name).join(", ")}
-            </span>
-          )}
-          <CycleSelector cycles={data.cycles} selectedCycleId={data.selectedCycleId} />
-        </div>
+        <CycleSelector cycles={data.cycles} selectedCycleId={data.selectedCycleId} />
       </div>
+
+      {/* Domain filter */}
+      {data.allDomains.length > 1 && (
+        <DomainFilter
+          allDomains={data.allDomains}
+          selectedDomainIds={data.selectedDomainIds}
+          userDomainIds={data.userDomainIds}
+        />
+      )}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
