@@ -32,7 +32,7 @@ export function ReviewerWorkloadChart({ data }: { data: ReviewerRow[] }) {
         <YAxis type="category" dataKey="name" tick={{ fontSize: 12 }} width={110} />
         <Tooltip />
         <Legend iconSize={10} wrapperStyle={{ fontSize: 12 }} />
-        <Bar dataKey="assigned" name="Assigned" fill={colors.pink} radius={[0, 3, 3, 0]} />
+        <Bar dataKey="assigned" name="Assigned" fill={colors.teal} fillOpacity={0.25} radius={[0, 3, 3, 0]} />
         <Bar dataKey="completed" name="Completed" fill={colors.teal} radius={[0, 3, 3, 0]} />
       </BarChart>
     </ResponsiveContainer>
