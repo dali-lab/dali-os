@@ -7,6 +7,9 @@ primary_region = "iad"
   # 10s pg_advisory_lock timeout (P1002). Issue #101.
   release_command = "sh -c 'n=0; until npx prisma migrate deploy; do n=$((n+1)); [ $n -ge 4 ] && exit 1; sleep $n; done'"
 
+[env]
+  NODE_ENV = "production"
+
 [build]
 
 [http_service]
