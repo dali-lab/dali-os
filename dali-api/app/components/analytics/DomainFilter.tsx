@@ -1,4 +1,6 @@
+import { useState, useRef, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router";
+import { ChevronDown, Check } from "lucide-react";
 
 interface Props {
   allDomains: Array<{ id: string; name: string }>;
@@ -9,7 +11,30 @@ interface Props {
 export function DomainFilter({ allDomains, selectedDomainIds, userDomainIds }: Props) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
   const allSelected = selectedDomainIds.length === allDomains.length;
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return;
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
+
+  // Close on Escape
+  useEffect(() => {
+    if (!open) return;
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [open]);
 
   function applyFilter(domainIds: string[] | null) {
     const params = new URLSearchParams(searchParams);
@@ -25,56 +50,74 @@ export function DomainFilter({ allDomains, selectedDomainIds, userDomainIds }: P
     const current = new Set(selectedDomainIds);
     if (current.has(domainId)) {
       current.delete(domainId);
-      if (current.size === 0) return; // don't allow empty selection
+      if (current.size === 0) return;
     } else {
       current.add(domainId);
     }
     applyFilter(Array.from(current));
   }
 
+  // Label for the trigger button
+  const label = allSelected
+    ? "All Domains"
+    : selectedDomainIds.length === 1
+      ? allDomains.find((d) => d.id === selectedDomainIds[0])?.name ?? "1 domain"
+      : `${selectedDomainIds.length} domains`;
+
   return (
-    <div className="flex items-center gap-2 flex-wrap">
-      <span className="text-xs text-muted-foreground mr-1">Domains:</span>
+    <div className="relative" ref={ref}>
       <button
-        onClick={() => applyFilter(null)}
-        className={`px-2.5 py-1 text-xs font-medium rounded-full border transition-colors ${
-          allSelected
-            ? "bg-blue-600 text-white border-blue-600"
-            : "bg-card text-muted-foreground border-border hover:border-blue-300"
-        }`}
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-border rounded-md bg-card text-foreground hover:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
       >
-        All
+        {label}
+        <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
-      {userDomainIds.length > 0 && !allSelected && (
-        <button
-          onClick={() => applyFilter(userDomainIds)}
-          className={`px-2.5 py-1 text-xs font-medium rounded-full border transition-colors ${
-            userDomainIds.length === selectedDomainIds.length &&
-            userDomainIds.every((id) => selectedDomainIds.includes(id))
-              ? "bg-blue-600 text-white border-blue-600"
-              : "bg-card text-muted-foreground border-border hover:border-blue-300"
-          }`}
-        >
-          My Domains
-        </button>
-      )}
-      {allDomains.map((d) => {
-        const isSelected = selectedDomainIds.includes(d.id);
-        const isUserDomain = userDomainIds.includes(d.id);
-        return (
+
+      {open && (
+        <div className="absolute left-0 top-full mt-1 z-30 w-56 bg-card border border-border rounded-lg shadow-lg py-1">
+          {/* All Domains */}
           <button
-            key={d.id}
-            onClick={() => toggleDomain(d.id)}
-            className={`px-2.5 py-1 text-xs font-medium rounded-full border transition-colors ${
-              isSelected
-                ? "bg-blue-100 text-blue-700 border-blue-300"
-                : "bg-card text-muted-foreground border-border hover:border-blue-300"
-            } ${isUserDomain && !allSelected ? "ring-1 ring-blue-400/40" : ""}`}
+            onClick={() => applyFilter(null)}
+            className="flex items-center justify-between w-full px-3 py-2 text-sm hover:bg-muted/50 transition-colors"
           >
-            {d.name}
+            <span className="font-medium">All Domains</span>
+            {allSelected && <Check className="w-4 h-4 text-blue-600" />}
           </button>
-        );
-      })}
+
+          {/* My Domains (only if user has assignments and it's not redundant) */}
+          {userDomainIds.length > 0 && userDomainIds.length < allDomains.length && (
+            <button
+              onClick={() => applyFilter(userDomainIds)}
+              className="flex items-center justify-between w-full px-3 py-2 text-sm hover:bg-muted/50 transition-colors"
+            >
+              <span className="font-medium">My Domains</span>
+              {!allSelected &&
+                userDomainIds.length === selectedDomainIds.length &&
+                userDomainIds.every((id) => selectedDomainIds.includes(id)) && (
+                  <Check className="w-4 h-4 text-blue-600" />
+                )}
+            </button>
+          )}
+
+          <div className="border-t border-border my-1" />
+
+          {/* Individual domains */}
+          {allDomains.map((d) => {
+            const checked = selectedDomainIds.includes(d.id);
+            return (
+              <button
+                key={d.id}
+                onClick={() => toggleDomain(d.id)}
+                className="flex items-center justify-between w-full px-3 py-2 text-sm hover:bg-muted/50 transition-colors"
+              >
+                <span>{d.name}</span>
+                {checked && <Check className="w-4 h-4 text-blue-600" />}
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

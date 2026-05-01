@@ -445,17 +445,17 @@ export default function AnalyticsDashboard() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-2xl font-bold text-foreground">Analytics</h1>
-        <CycleSelector cycles={data.cycles} selectedCycleId={data.selectedCycleId} />
+        <div className="flex items-center gap-2">
+          {data.allDomains.length > 1 && (
+            <DomainFilter
+              allDomains={data.allDomains}
+              selectedDomainIds={data.selectedDomainIds}
+              userDomainIds={data.userDomainIds}
+            />
+          )}
+          <CycleSelector cycles={data.cycles} selectedCycleId={data.selectedCycleId} />
+        </div>
       </div>
-
-      {/* Domain filter */}
-      {data.allDomains.length > 1 && (
-        <DomainFilter
-          allDomains={data.allDomains}
-          selectedDomainIds={data.selectedDomainIds}
-          userDomainIds={data.userDomainIds}
-        />
-      )}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
