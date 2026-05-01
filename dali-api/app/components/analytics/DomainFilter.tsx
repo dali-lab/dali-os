@@ -3,20 +3,18 @@ import { useNavigate, useSearchParams } from "react-router";
 import { ChevronDown, Check } from "lucide-react";
 
 interface Props {
-  allDomains: Array<{ id: string; name: string }>;
+  domains: Array<{ id: string; name: string }>;
   selectedDomainIds: string[];
-  userDomainIds: string[];
 }
 
-export function DomainFilter({ allDomains, selectedDomainIds, userDomainIds }: Props) {
+export function DomainFilter({ domains, selectedDomainIds }: Props) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
-  const allSelected = selectedDomainIds.length === allDomains.length;
+  const allSelected = selectedDomainIds.length === domains.length;
 
-  // Close on outside click
   useEffect(() => {
     if (!open) return;
     function handleClick(e: MouseEvent) {
@@ -26,7 +24,6 @@ export function DomainFilter({ allDomains, selectedDomainIds, userDomainIds }: P
     return () => document.removeEventListener("mousedown", handleClick);
   }, [open]);
 
-  // Close on Escape
   useEffect(() => {
     if (!open) return;
     function handleKey(e: KeyboardEvent) {
@@ -38,7 +35,7 @@ export function DomainFilter({ allDomains, selectedDomainIds, userDomainIds }: P
 
   function applyFilter(domainIds: string[] | null) {
     const params = new URLSearchParams(searchParams);
-    if (domainIds === null || domainIds.length === allDomains.length) {
+    if (domainIds === null || domainIds.length === domains.length) {
       params.delete("domains");
     } else {
       params.set("domains", domainIds.join(","));
@@ -57,11 +54,10 @@ export function DomainFilter({ allDomains, selectedDomainIds, userDomainIds }: P
     applyFilter(Array.from(current));
   }
 
-  // Label for the trigger button
   const label = allSelected
     ? "All Domains"
     : selectedDomainIds.length === 1
-      ? allDomains.find((d) => d.id === selectedDomainIds[0])?.name ?? "1 domain"
+      ? domains.find((d) => d.id === selectedDomainIds[0])?.name ?? "1 domain"
       : `${selectedDomainIds.length} domains`;
 
   return (
@@ -75,8 +71,7 @@ export function DomainFilter({ allDomains, selectedDomainIds, userDomainIds }: P
       </button>
 
       {open && (
-        <div className="absolute left-0 top-full mt-1 z-30 w-56 bg-card border border-border rounded-lg shadow-lg py-1">
-          {/* All Domains */}
+        <div className="absolute left-0 top-full mt-1 z-30 w-52 bg-card border border-border rounded-lg shadow-lg py-1">
           <button
             onClick={() => applyFilter(null)}
             className="flex items-center justify-between w-full px-3 py-2 text-sm hover:bg-muted/50 transition-colors"
@@ -85,25 +80,9 @@ export function DomainFilter({ allDomains, selectedDomainIds, userDomainIds }: P
             {allSelected && <Check className="w-4 h-4 text-blue-600" />}
           </button>
 
-          {/* My Domains (only if user has assignments and it's not redundant) */}
-          {userDomainIds.length > 0 && userDomainIds.length < allDomains.length && (
-            <button
-              onClick={() => applyFilter(userDomainIds)}
-              className="flex items-center justify-between w-full px-3 py-2 text-sm hover:bg-muted/50 transition-colors"
-            >
-              <span className="font-medium">My Domains</span>
-              {!allSelected &&
-                userDomainIds.length === selectedDomainIds.length &&
-                userDomainIds.every((id) => selectedDomainIds.includes(id)) && (
-                  <Check className="w-4 h-4 text-blue-600" />
-                )}
-            </button>
-          )}
-
           <div className="border-t border-border my-1" />
 
-          {/* Individual domains */}
-          {allDomains.map((d) => {
+          {domains.map((d) => {
             const checked = selectedDomainIds.includes(d.id);
             return (
               <button

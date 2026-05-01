@@ -57,10 +57,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     cycles,
     selectedCycleId: "",
     cycleStatus: "",
-    isHiringLead: roles.isHiringLead,
-    allDomains: [] as Array<{ id: string; name: string }>,
+    accessibleDomains: [] as Array<{ id: string; name: string }>,
     selectedDomainIds: [] as string[],
-    userDomainIds,
     kpis: { totalApplications: 0, totalSubmitted: 0, totalDomainApplications: 0, reviewsCompleted: 0, reviewsTotal: 0, interviewsScheduled: 0, interviewsCompleted: 0, decisionsReleased: 0 },
     funnel: [],
     reviewProgress: { byStatus: { notStarted: 0, inProgress: 0, submitted: 0 }, byRecommendation: {}, byReviewer: [] },
@@ -81,39 +79,38 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const cycleId = selectedCycle.id;
 
-  // Load all domains in this cycle (for the filter UI)
+  // Load all domains in this cycle
   const cycleDomains = await prisma.domainApplicationCycle.findMany({
     where: { applicationCycleId: cycleId },
     include: { domain: { select: { id: true, name: true } } },
   });
-  const allDomains = cycleDomains.map((d) => ({ id: d.domain.id, name: d.domain.name }));
+  const allCycleDomains = cycleDomains.map((d) => ({ id: d.domain.id, name: d.domain.name }));
 
-  // Resolve domain filter from URL, with smart defaults
+  // Domains this user can access: hiring leads see all, domain leads see only theirs
+  const accessibleDomains = roles.isHiringLead
+    ? allCycleDomains
+    : allCycleDomains.filter((d) => userDomainIds.includes(d.id));
+
+  // Resolve domain filter from URL, constrained to accessible domains
   const domainsParam = url.searchParams.get("domains");
-  let domainIds: string[] | null = null; // null = all domains
+  let domainIds: string[] | null = null; // null = all accessible domains
   if (domainsParam) {
-    // Explicit filter from URL — intersect with available domains
     const requested = domainsParam.split(",").filter(Boolean);
-    const available = new Set(allDomains.map((d) => d.id));
-    const valid = requested.filter((id) => available.has(id));
-    if (valid.length > 0) domainIds = valid;
-  } else if (!roles.isHiringLead && userDomainIds.length > 0) {
-    // Domain-lead-only defaults to their assigned domains
-    domainIds = userDomainIds;
+    const accessible = new Set(accessibleDomains.map((d) => d.id));
+    const valid = requested.filter((id) => accessible.has(id));
+    if (valid.length > 0 && valid.length < accessibleDomains.length) domainIds = valid;
   }
-  // Hiring leads (including dual-role) default to null = all domains
 
-  const selectedDomainIds = domainIds ?? allDomains.map((d) => d.id);
+  const selectedDomainIds = domainIds ?? accessibleDomains.map((d) => d.id);
 
-  // Domain filter for Prisma queries
-  const domainFilter = domainIds ? { domainId: { in: domainIds } } : {};
-  const cvDomainFilter = domainIds ? { challengeVersion: { domainId: { in: domainIds } } } : {};
+  // Domain filter for Prisma queries — always constrain to accessible domains
+  const queryDomainIds = domainIds ?? accessibleDomains.map((d) => d.id);
+  const domainFilter = { domainId: { in: queryDomainIds } };
+  const cvDomainFilter = { challengeVersion: { domainId: { in: queryDomainIds } } };
 
   // ─── Parallel data fetch ───────────────────────────────────────────────────
-  // Filtered domains for aggregation (subset of allDomains based on filter)
-  const domains = domainIds
-    ? cycleDomains.filter((d) => domainIds!.includes(d.domain.id))
-    : cycleDomains;
+  // Filtered domains for aggregation
+  const domains = cycleDomains.filter((d) => queryDomainIds.includes(d.domain.id));
 
   const [applications, reviews, interviewRows] = await Promise.all([
     // 1. Applications with domain applications, reviews, decisions, interviews
@@ -167,7 +164,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     prisma.interview.findMany({
       where: {
         applicationCycleId: cycleId,
-        ...(domainIds ? { domainApplication: { challengeVersion: { domainId: { in: domainIds } } } } : {}),
+        domainApplication: { challengeVersion: { domainId: { in: queryDomainIds } } },
       },
       select: { status: true },
     }),
@@ -395,10 +392,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     cycles,
     selectedCycleId: cycleId,
     cycleStatus: selectedCycle.status,
-    isHiringLead: roles.isHiringLead,
-    allDomains,
+    accessibleDomains,
     selectedDomainIds,
-    userDomainIds,
     kpis: {
       totalApplications: applications.length,
       totalSubmitted: submittedApps.length,
@@ -446,11 +441,10 @@ export default function AnalyticsDashboard() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-2xl font-bold text-foreground">Analytics</h1>
         <div className="flex items-center gap-2">
-          {data.allDomains.length > 1 && (
+          {data.accessibleDomains.length > 1 && (
             <DomainFilter
-              allDomains={data.allDomains}
+              domains={data.accessibleDomains}
               selectedDomainIds={data.selectedDomainIds}
-              userDomainIds={data.userDomainIds}
             />
           )}
           <CycleSelector cycles={data.cycles} selectedCycleId={data.selectedCycleId} />
