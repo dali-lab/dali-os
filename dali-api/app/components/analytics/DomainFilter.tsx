@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router";
-import { ChevronDown, Check } from "lucide-react";
+import { ChevronDown, Square, CheckSquare } from "lucide-react";
 
 interface Props {
   domains: Array<{ id: string; name: string }>;
@@ -54,6 +54,10 @@ export function DomainFilter({ domains, selectedDomainIds }: Props) {
     applyFilter(Array.from(current));
   }
 
+  function toggleAll() {
+    applyFilter(allSelected ? [domains[0].id] : null);
+  }
+
   const label = allSelected
     ? "All Domains"
     : selectedDomainIds.length === 1
@@ -73,11 +77,15 @@ export function DomainFilter({ domains, selectedDomainIds }: Props) {
       {open && (
         <div className="absolute left-0 top-full mt-1 z-30 w-52 bg-card border border-border rounded-lg shadow-lg py-1">
           <button
-            onClick={() => applyFilter(null)}
-            className="flex items-center justify-between w-full px-3 py-2 text-sm hover:bg-muted/50 transition-colors"
+            onClick={toggleAll}
+            className="flex items-center gap-2.5 w-full px-3 py-2 text-sm hover:bg-muted/50 transition-colors"
           >
-            <span className="font-medium">All Domains</span>
-            {allSelected && <Check className="w-4 h-4 text-blue-600" />}
+            {allSelected ? (
+              <CheckSquare className="w-4 h-4 text-blue-600 flex-shrink-0" />
+            ) : (
+              <Square className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+            )}
+            <span>Select all</span>
           </button>
 
           <div className="border-t border-border my-1" />
@@ -88,10 +96,14 @@ export function DomainFilter({ domains, selectedDomainIds }: Props) {
               <button
                 key={d.id}
                 onClick={() => toggleDomain(d.id)}
-                className="flex items-center justify-between w-full px-3 py-2 text-sm hover:bg-muted/50 transition-colors"
+                className="flex items-center gap-2.5 w-full px-3 py-2 text-sm hover:bg-muted/50 transition-colors"
               >
+                {checked ? (
+                  <CheckSquare className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                ) : (
+                  <Square className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                )}
                 <span>{d.name}</span>
-                {checked && <Check className="w-4 h-4 text-blue-600" />}
               </button>
             );
           })}
