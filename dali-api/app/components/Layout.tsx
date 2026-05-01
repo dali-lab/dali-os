@@ -74,7 +74,7 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
       show: isAdmin,
       active: path.startsWith('/admin-console'),
     },
-  ]
+  ].filter((a) => a.show)
   const activeAreaKey: 'hiring' | 'admin-console' | null =
     path.startsWith('/admin-console') ? 'admin-console'
     : path.startsWith('/hiring') ? 'hiring'
@@ -211,16 +211,11 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
                 <Link
                   key={area.key}
                   to={area.to}
-                  aria-disabled={!area.show}
-                  tabIndex={area.show ? 0 : -1}
                   className={`px-2.5 py-1 text-xs font-heading font-semibold rounded-md transition-colors whitespace-nowrap ${
                     area.active
                       ? 'bg-white/15 text-white'
-                      : area.show
-                        ? 'text-white/60 hover:text-white hover:bg-white/5'
-                        : 'text-white/25 cursor-not-allowed'
+                      : 'text-white/60 hover:text-white hover:bg-white/5'
                   }`}
-                  onClick={(e) => { if (!area.show) e.preventDefault() }}
                 >
                   {area.label}
                 </Link>
@@ -331,15 +326,10 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
                 <Link
                   key={area.key}
                   to={area.to}
-                  aria-disabled={!area.show}
-                  tabIndex={area.show ? 0 : -1}
-                  onClick={(e) => { if (!area.show) e.preventDefault() }}
                   className={`px-2.5 py-1 text-xs font-heading font-semibold rounded-md transition-colors ${
                     area.active
                       ? 'bg-accent-coral/10 text-accent-coral'
-                      : area.show
-                        ? 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                        : 'text-muted-foreground/40 cursor-not-allowed'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                   }`}
                 >
                   {area.label}
