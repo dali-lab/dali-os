@@ -76,7 +76,7 @@ export async function requireMember(userId: string) {
  */
 export async function hasCycleAccess(userId: string, cycleId: string): Promise<boolean> {
   const roles = await getUserRoles(userId);
-  if (roles.isHiringLead || roles.isDomainLead) return true;
+  if (roles.isAdmin || roles.isHiringLead || roles.isDomainLead) return true;
   if (!roles.memberId) return false;
 
   const [reviewer, interviewer] = await Promise.all([

@@ -50,6 +50,17 @@ describe("hasCycleAccess", () => {
     expect(mockPrisma.cycleReviewer.findFirst).not.toHaveBeenCalled();
   });
 
+  it("returns true for an admin", async () => {
+    mockPrisma.dALIMember.findFirst.mockResolvedValue({
+      id: "m-admin",
+      roles: ["Admin"],
+      domainLeadAssignments: [],
+    });
+
+    expect(await hasCycleAccess("user-admin", CYCLE_ID)).toBe(true);
+    expect(mockPrisma.cycleReviewer.findFirst).not.toHaveBeenCalled();
+  });
+
   it("returns true for a domain lead", async () => {
     mockPrisma.dALIMember.findFirst.mockResolvedValue({
       id: "m3",
