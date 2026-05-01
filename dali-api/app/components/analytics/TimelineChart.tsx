@@ -7,6 +7,7 @@ import {
   ResponsiveContainer,
   Legend,
 } from "recharts";
+import { useChartColors } from "./useChartColors";
 
 interface TimelineRow {
   date: string;
@@ -15,6 +16,7 @@ interface TimelineRow {
 }
 
 export function TimelineChart({ data }: { data: TimelineRow[] }) {
+  const colors = useChartColors();
   if (data.length === 0) {
     return (
       <div className="flex items-center justify-center h-48 text-sm text-muted-foreground">
@@ -43,16 +45,18 @@ export function TimelineChart({ data }: { data: TimelineRow[] }) {
           type="monotone"
           dataKey="submissions"
           name="Submissions"
-          stroke="#3b82f6"
-          fill="#bfdbfe"
+          stroke={colors.teal}
+          fill={colors.teal}
+          fillOpacity={0.2}
           strokeWidth={2}
         />
         <Area
           type="monotone"
           dataKey="reviewsCompleted"
           name="Reviews"
-          stroke="#16a34a"
-          fill="#bbf7d0"
+          stroke={colors.green}
+          fill={colors.green}
+          fillOpacity={0.2}
           strokeWidth={2}
         />
       </AreaChart>

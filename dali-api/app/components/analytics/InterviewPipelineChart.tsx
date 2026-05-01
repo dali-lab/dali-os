@@ -1,4 +1,5 @@
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
+import { useChartColors } from "./useChartColors";
 
 interface Props {
   scheduled: number;
@@ -7,14 +8,15 @@ interface Props {
   pendingInvite: number;
 }
 
-const COLORS: Record<string, string> = {
-  Scheduled: "#3b82f6",
-  Completed: "#16a34a",
-  "Pending Invite": "#f59e0b",
-  Cancelled: "#d1d5db",
-};
-
 export function InterviewPipelineChart({ data }: { data: Props }) {
+  const colors = useChartColors();
+
+  const COLORS: Record<string, string> = {
+    Scheduled: colors.teal,
+    Completed: colors.green,
+    "Pending Invite": colors.pink,
+    Cancelled: colors.border,
+  };
   const total = data.scheduled + data.completed + data.cancelled + data.pendingInvite;
 
   if (total === 0) {

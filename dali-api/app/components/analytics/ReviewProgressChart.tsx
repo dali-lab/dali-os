@@ -9,17 +9,12 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { useChartColors } from "./useChartColors";
 
 interface Props {
   byStatus: { notStarted: number; inProgress: number; submitted: number };
   byRecommendation: Record<string, number>;
 }
-
-const STATUS_COLORS: Record<string, string> = {
-  "Not Started": "#d1d5db",
-  "In Progress": "#f59e0b",
-  Submitted: "#16a34a",
-};
 
 const RECOMMENDATION_ORDER = [
   "Strong Hire",
@@ -29,15 +24,22 @@ const RECOMMENDATION_ORDER = [
   "No Hire",
 ];
 
-const RECOMMENDATION_COLORS: Record<string, string> = {
-  "Strong Hire": "#16a34a",
-  Hire: "#22c55e",
-  "Lean Hire": "#f59e0b",
-  "Lean No Hire": "#f97316",
-  "No Hire": "#dc2626",
-};
-
 export function ReviewProgressChart({ byStatus, byRecommendation }: Props) {
+  const colors = useChartColors();
+
+  const STATUS_COLORS: Record<string, string> = {
+    "Not Started": colors.border,
+    "In Progress": colors.pink,
+    Submitted: colors.green,
+  };
+
+  const RECOMMENDATION_COLORS: Record<string, string> = {
+    "Strong Hire": colors.green,
+    Hire: colors.teal,
+    "Lean Hire": colors.pink,
+    "Lean No Hire": colors.coralLight,
+    "No Hire": colors.coral,
+  };
   const total = byStatus.notStarted + byStatus.inProgress + byStatus.submitted;
 
   if (total === 0) {

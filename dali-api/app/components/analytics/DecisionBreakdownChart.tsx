@@ -7,6 +7,7 @@ import {
   ResponsiveContainer,
   Legend,
 } from "recharts";
+import { useChartColors } from "./useChartColors";
 
 interface DecisionRow {
   domain: string;
@@ -18,6 +19,8 @@ interface DecisionRow {
 }
 
 export function DecisionBreakdownChart({ data }: { data: DecisionRow[] }) {
+  const colors = useChartColors();
+
   if (data.length === 0 || data.every((d) => d.accepted + d.rejected + d.waitlisted + d.invitedToInterview + d.pending === 0)) {
     return (
       <div className="flex items-center justify-center h-48 text-sm text-muted-foreground">
@@ -33,11 +36,11 @@ export function DecisionBreakdownChart({ data }: { data: DecisionRow[] }) {
         <YAxis type="category" dataKey="domain" tick={{ fontSize: 12 }} width={90} />
         <Tooltip />
         <Legend iconSize={10} wrapperStyle={{ fontSize: 12 }} />
-        <Bar dataKey="accepted" name="Accepted" fill="#16a34a" stackId="a" />
-        <Bar dataKey="waitlisted" name="Waitlisted" fill="#d97706" stackId="a" />
-        <Bar dataKey="invitedToInterview" name="Interview" fill="#3b82f6" stackId="a" />
-        <Bar dataKey="rejected" name="Rejected" fill="#dc2626" stackId="a" />
-        <Bar dataKey="pending" name="Pending" fill="#d1d5db" stackId="a" />
+        <Bar dataKey="accepted" name="Accepted" fill={colors.green} stackId="a" />
+        <Bar dataKey="waitlisted" name="Waitlisted" fill={colors.pink} stackId="a" />
+        <Bar dataKey="invitedToInterview" name="Interview" fill={colors.teal} stackId="a" />
+        <Bar dataKey="rejected" name="Rejected" fill={colors.coral} stackId="a" />
+        <Bar dataKey="pending" name="Pending" fill={colors.border} stackId="a" />
       </BarChart>
     </ResponsiveContainer>
   );

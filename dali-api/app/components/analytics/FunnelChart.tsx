@@ -7,6 +7,7 @@ import {
   ResponsiveContainer,
   Legend,
 } from "recharts";
+import { useChartColors } from "./useChartColors";
 
 interface FunnelRow {
   domain: string;
@@ -20,6 +21,8 @@ interface FunnelRow {
 }
 
 export function FunnelChart({ data }: { data: FunnelRow[] }) {
+  const colors = useChartColors();
+
   if (data.length === 0 || data.every((d) => d.submitted === 0)) {
     return <EmptyState />;
   }
@@ -31,13 +34,13 @@ export function FunnelChart({ data }: { data: FunnelRow[] }) {
         <YAxis type="category" dataKey="domain" tick={{ fontSize: 12 }} width={90} />
         <Tooltip />
         <Legend iconSize={10} wrapperStyle={{ fontSize: 12 }} />
-        <Bar dataKey="submitted" name="Submitted" fill="#9ca3af" stackId="a" />
-        <Bar dataKey="reviewed" name="Reviewed" fill="#3b82f6" stackId="b" />
-        <Bar dataKey="interviewed" name="Interviewed" fill="#f59e0b" stackId="c" />
-        <Bar dataKey="accepted" name="Accepted" fill="#16a34a" stackId="d" />
-        <Bar dataKey="waitlisted" name="Waitlisted" fill="#d97706" stackId="d" />
-        <Bar dataKey="rejected" name="Rejected" fill="#dc2626" stackId="d" />
-        <Bar dataKey="pending" name="Pending" fill="#d1d5db" stackId="d" />
+        <Bar dataKey="submitted" name="Submitted" fill={colors.border} stackId="a" />
+        <Bar dataKey="reviewed" name="Reviewed" fill={colors.teal} stackId="b" />
+        <Bar dataKey="interviewed" name="Interviewed" fill={colors.pink} stackId="c" />
+        <Bar dataKey="accepted" name="Accepted" fill={colors.green} stackId="d" />
+        <Bar dataKey="waitlisted" name="Waitlisted" fill={colors.yellow} stackId="d" />
+        <Bar dataKey="rejected" name="Rejected" fill={colors.coral} stackId="d" />
+        <Bar dataKey="pending" name="Pending" fill={colors.border} stackId="d" />
       </BarChart>
     </ResponsiveContainer>
   );
