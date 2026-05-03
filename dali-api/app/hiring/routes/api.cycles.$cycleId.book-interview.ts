@@ -13,6 +13,7 @@ const BookInterviewSchema = z
     slotStart: z.string().datetime({ offset: true }),
     slotEnd: z.string().datetime({ offset: true }),
     domainApplicationId: z.string().min(1).max(100),
+    mode: z.enum(["in-person", "online"]).optional(),
   })
   .refine((v) => new Date(v.slotEnd) > new Date(v.slotStart), {
     message: "slotEnd must be after slotStart",
@@ -56,7 +57,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withAuth(auth, withCors(request, Response.json({ error: "Not your application" }, { status: 403 })));
   }
 
-  const applicantDomainIds = [domainApplication.challengeVersion.domainId];
+  const applicantDomainIds = [domainApplication.challengeVersion.domainId].filter((id): id is string => id !== null);
 
   try {
     const interview = await assignInterviewers(

@@ -235,63 +235,6 @@ function DeadlineLine({ closeDate }: { closeDate: string }) {
   );
 }
 
-function formatDeadline(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", {
-    timeZone: "UTC",
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
-function formatRemaining(iso: string): { label: string; tone: "urgent" | "warn" | "ok" } | null {
-  const ms = new Date(iso).getTime() - Date.now();
-  if (ms <= 0) return null;
-  if (ms > 7 * 86_400_000) return null;
-  const days = Math.floor(ms / 86_400_000);
-  const hours = Math.floor(ms / 3_600_000);
-  if (days >= 2) return { label: `${days} days remaining`, tone: "ok" };
-  if (hours >= 24) return { label: "1 day remaining", tone: "warn" };
-  if (hours >= 1) return { label: `Closes in ${hours} hour${hours === 1 ? "" : "s"}`, tone: "urgent" };
-  const mins = Math.max(1, Math.floor(ms / 60_000));
-  return { label: `Closes in ${mins} minute${mins === 1 ? "" : "s"}`, tone: "urgent" };
-}
-
-// Deadline rendering happens after hydration so toLocaleString uses the
-// browser's locale/timezone without producing an SSR/CSR text mismatch.
-function DeadlineLine({ closeDate }: { closeDate: string }) {
-  const [label, setLabel] = useState<string>("");
-  const [remaining, setRemaining] = useState<{ label: string; tone: "urgent" | "warn" | "ok" } | null>(null);
-  useEffect(() => {
-    setLabel(formatDeadline(closeDate));
-    const tick = () => setRemaining(formatRemaining(closeDate));
-    tick();
-    const id = setInterval(tick, 60_000);
-    return () => clearInterval(id);
-  }, [closeDate]);
-  if (!label) return null;
-  const toneStyles: Record<"urgent" | "warn" | "ok", string> = {
-    urgent: "text-red-700",
-    warn: "text-yellow-800",
-    ok: "text-muted-foreground",
-  };
-  return (
-    <div className={`text-sm mt-2 flex items-center gap-2 flex-wrap ${remaining ? toneStyles[remaining.tone] : "text-muted-foreground"}`}>
-      <span>Applications close on {label}</span>
-      {remaining && (
-        <span className={`text-xs px-2.5 py-0.5 rounded-full font-semibold ${
-          remaining.tone === "urgent" ? "bg-red-100 text-red-700" :
-          remaining.tone === "warn" ? "bg-yellow-100 text-yellow-800" :
-          "bg-blue-100 text-blue-700"
-        }`}>
-          {remaining.label}
-        </span>
-      )}
-    </div>
-  );
-}
-
 // ─── Shared UI ───────────────────────────────────────────────────────────────
 
 const cardBg = "bg-[#E8F4FA]";

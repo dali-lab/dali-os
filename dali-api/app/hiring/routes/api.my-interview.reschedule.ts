@@ -12,6 +12,7 @@ const RescheduleSchema = z
     newStart: z.string().datetime({ offset: true }),
     newEnd: z.string().datetime({ offset: true }),
     domainApplicationId: z.string().min(1).max(100),
+    mode: z.enum(["in-person", "online"]).optional(),
   })
   .refine((v) => new Date(v.newEnd) > new Date(v.newStart), {
     message: "newEnd must be after newStart",

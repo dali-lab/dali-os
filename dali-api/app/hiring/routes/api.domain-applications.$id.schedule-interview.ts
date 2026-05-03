@@ -8,6 +8,7 @@ import { parseJson } from "~/lib/validate";
 
 const ScheduleInterviewSchema = z.object({
   startTime: z.string().datetime({ offset: true }),
+  mode: z.enum(["in-person", "online"]).optional(),
 });
 
 export async function action({ request, params }: Route.ActionArgs) {

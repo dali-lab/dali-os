@@ -16,6 +16,8 @@ const InterviewConfigSchema = z
     interviewStartDate: z.string().datetime({ offset: true }),
     interviewEndDate: z.string().datetime({ offset: true }),
     timezone: z.string().min(1).max(100).optional(),
+    rescheduleNoticeHours: z.number().int().min(0).max(168).optional(),
+    cancelNoticeHours: z.number().int().min(0).max(168).optional(),
   })
   .refine(
     (v) =>
