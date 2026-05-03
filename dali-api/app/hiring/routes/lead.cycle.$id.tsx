@@ -1603,7 +1603,11 @@ export default function HiringLeadCycleDetails() {
                             placeholder="Paste meeting link"
                             defaultValue={interview.zoomJoinUrl ?? ''}
                             onBlur={async (e) => {
-                              const meetingUrl = e.target.value.trim()
+                              let meetingUrl = e.target.value.trim()
+                              if (meetingUrl && !/^https?:\/\//i.test(meetingUrl)) {
+                                meetingUrl = `https://${meetingUrl}`
+                                e.target.value = meetingUrl
+                              }
                               if (meetingUrl === (interview.zoomJoinUrl ?? '')) return
                               const res = await fetch(`/api/hiring/interviews/${interview.id}/location`, {
                                 method: 'PATCH',
