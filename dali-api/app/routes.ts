@@ -77,7 +77,6 @@ export default [
   route("api/hiring/cycles/:cycleId/my-interviews/:interviewId/decline", "hiring/routes/api.cycles.$cycleId.my-interviews.$interviewId.decline.ts"),
   route("api/hiring/cycles/:cycleId/my-interviews/:interviewId/notes", "hiring/routes/api.cycles.$cycleId.my-interviews.$interviewId.notes.ts"),
   route("api/hiring/cycles/:cycleId/available-slots", "hiring/routes/api.cycles.$cycleId.available-slots.ts"),
-  route("api/hiring/cycles/:cycleId/book-interview", "hiring/routes/api.cycles.$cycleId.book-interview.ts"),
   route("api/hiring/cycles/:cycleId/interviews", "hiring/routes/api.cycles.$cycleId.interviews.ts"),
   route("api/hiring/cycles/:cycleId/interviewers", "hiring/routes/api.cycles.$cycleId.interviewers.ts"),
   route("api/hiring/cycles/:cycleId/delibs", "hiring/routes/api.cycles.$cycleId.delibs.ts"),

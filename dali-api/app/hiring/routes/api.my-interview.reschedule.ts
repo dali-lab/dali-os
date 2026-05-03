@@ -6,6 +6,7 @@ import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import { assignInterviewers } from "~/hiring/lib/scheduling";
 // import { provisionZoomMeeting, deprovisionZoomMeeting } from "~/lib/zoom"; // S2S Zoom not configured yet
+import { sendInterviewCancelEmails, sendInterviewInviteEmails } from "~/hiring/lib/interview-emails";
 
 const RescheduleSchema = z
   .object({
@@ -38,7 +39,7 @@ export async function action({ request }: Route.ActionArgs) {
   // If assignInterviewers throws (no free interviewers at the new slot), the
   // whole transaction rolls back and the old interview stays Scheduled.
   try {
-    const { newInterview, oldZoomMeetingId, durationMinutes } = await prisma.$transaction(
+    const { newInterview, oldInterviewId, oldZoomMeetingId, durationMinutes } = await prisma.$transaction(
       async (tx) => {
         const current = await tx.interview.findFirst({
           where: {
@@ -93,6 +94,7 @@ export async function action({ request }: Route.ActionArgs) {
 
         return {
           newInterview: created,
+          oldInterviewId: current.id,
           oldZoomMeetingId: current.zoomMeetingId,
           durationMinutes: config?.slotDurationMinutes ?? 30,
         };
@@ -108,6 +110,10 @@ export async function action({ request }: Route.ActionArgs) {
     //   try { await provisionZoomMeeting(newInterview.id, "DALI Lab Interview", new Date(newStart), durationMinutes); }
     //   catch (err) { console.error("Failed to provision Zoom meeting:", err); }
     // }
+
+    // Best-effort: cancel old calendar event + send new invite
+    sendInterviewCancelEmails(oldInterviewId, domainApplicationId).catch(() => {});
+    sendInterviewInviteEmails(newInterview.id, domainApplicationId).catch(() => {});
 
     return withAuth(auth, withCors(request, Response.json(newInterview, { status: 201 })));
   } catch (err: any) {

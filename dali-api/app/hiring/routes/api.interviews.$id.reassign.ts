@@ -5,6 +5,7 @@ import { requireAuth, withAuth } from "~/lib/auth";
 import { isHiringLead } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
+import { sendReassignmentEmails } from "~/hiring/lib/interview-emails";
 
 const ReassignSchema = z.object({
   assignmentId: z.string().min(1).max(100),
@@ -12,12 +13,13 @@ const ReassignSchema = z.object({
 });
 
 export async function action({ request, params }: Route.ActionArgs) {
-  if (request.method !== "POST") {
-    return Response.json({ error: "Method not allowed" }, { status: 405 });
-  }
-
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
+
+  if (request.method !== "POST") {
+    return withAuth(auth, Response.json({ error: "Method not allowed" }, { status: 405 }));
+  }
+
   if (!(await isHiringLead(auth.user.sub))) {
     return withAuth(auth, Response.json({ error: "Forbidden" }, { status: 403 }));
   }
@@ -38,7 +40,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     auth.user.sub,
     assignment.interview.applicationCycleId,
   );
-  if (gate) return gate;
+  if (gate) return withAuth(auth, gate);
 
   const interview = assignment.interview;
 
@@ -50,7 +52,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     select: { daliMemberId: true },
   });
   if (!newCI) {
-    return Response.json({ error: "Interviewer not found" }, { status: 404 });
+    return withAuth(auth, Response.json({ error: "Interviewer not found" }, { status: 404 }));
   }
 
   // Conflict check + reassign in one serializable transaction to prevent
@@ -96,13 +98,21 @@ export async function action({ request, params }: Route.ActionArgs) {
     }, { isolationLevel: "Serializable" });
   } catch (err: any) {
     if (err?.message === "__CONFLICT__") {
-      return Response.json(
+      return withAuth(auth, Response.json(
         { error: "This interviewer is already assigned to another interview at this time" },
         { status: 409 },
-      );
+      ));
     }
     throw err;
   }
+
+  // Best-effort: notify old and new interviewers via email/calendar
+  sendReassignmentEmails(
+    interview.id,
+    interview.domainApplicationId,
+    assignment.cycleInterviewerId,
+    newCycleInterviewerId,
+  ).catch(() => {});
 
   return withAuth(auth, Response.json({ success: true }));
 }

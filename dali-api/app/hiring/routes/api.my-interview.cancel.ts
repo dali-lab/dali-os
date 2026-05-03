@@ -5,6 +5,7 @@ import { requireAuth, withAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 // import { deprovisionZoomMeeting } from "~/lib/zoom"; // S2S Zoom not configured yet
+import { sendInterviewCancelEmails } from "~/hiring/lib/interview-emails";
 
 const CancelSchema = z.object({
   domainApplicationId: z.string().min(1).max(100),
@@ -59,6 +60,9 @@ export async function action({ request }: Route.ActionArgs) {
   // S2S Zoom not configured yet — meeting links are set manually by admins
   // try { await deprovisionZoomMeeting(interview); }
   // catch (err) { console.error("Failed to delete Zoom meeting on cancel:", err); }
+
+  // Best-effort: send cancellation ICS to applicant + interviewers
+  sendInterviewCancelEmails(interview.id, domainApplicationId).catch(() => {});
 
   return withAuth(auth, withCors(request, Response.json(updated)));
 }

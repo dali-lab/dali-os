@@ -423,7 +423,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (intent === "set-notification-email") {
     const notificationType = formData.get("notificationType") as string;
     const emailTemplateVersionId = (formData.get("emailTemplateVersionId") as string) || null;
-    const validTypes = ["ApplicationReceived", "InterviewInviteMentor"] as const;
+    const validTypes = ["ApplicationReceived", "InterviewInviteMentor", "InterviewConfirmedApplicant", "InterviewCancelledApplicant", "InterviewCancelledInterviewer", "InterviewLocationChanged"] as const;
     if (!validTypes.includes(notificationType as (typeof validTypes)[number])) {
       return withAuth(auth, new Response(JSON.stringify({ error: "Invalid notification type" }), { status: 400, headers: { "Content-Type": "application/json" } }));
     }
@@ -2852,7 +2852,11 @@ function DecisionEmailPicker({ slot, binding, emailTemplates, locked }: {
 
 const NOTIFICATION_EMAIL_SLOTS = [
   { type: "ApplicationReceived", label: "Application Received", description: "Sent to the applicant when they first submit their application." },
-  { type: "InterviewInviteMentor", label: "Interview Invite (Mentor)", description: "Sent to the assigned mentor/reviewer when an interview is scheduled." },
+  { type: "InterviewInviteMentor", label: "Interview Invite (Interviewer)", description: "Sent to the assigned interviewer when an interview is booked or they are reassigned." },
+  { type: "InterviewConfirmedApplicant", label: "Interview Confirmed (Applicant)", description: "Sent to the applicant when their interview is booked. Supports {{time}}, {{location}}, {{meetingUrl}}." },
+  { type: "InterviewCancelledApplicant", label: "Interview Cancelled (Applicant)", description: "Sent to the applicant when their interview is cancelled. Supports {{time}}, {{location}}." },
+  { type: "InterviewCancelledInterviewer", label: "Interview Cancelled (Interviewer)", description: "Sent to the interviewer when an interview is cancelled or they are unassigned." },
+  { type: "InterviewLocationChanged", label: "Interview Location Changed", description: "Sent to both the applicant and interviewer(s) when the interview location is updated. Supports {{time}}, {{location}}, {{meetingUrl}}." },
 ] as const;
 
 function NotificationEmailsSection({ emailTemplates, currentNotificationEmails }: {

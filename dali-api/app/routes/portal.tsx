@@ -673,7 +673,7 @@ function InterviewScheduledView({
         )}
       </div>
 
-      <p className="text-sm text-muted-foreground mb-4">A calendar invite has been sent to your email.</p>
+      <p className="text-sm text-muted-foreground mb-4">A calendar invite has been sent to your Dartmouth email.</p>
 
       <div className="flex flex-wrap items-center gap-3">
         <button onClick={() => setRescheduling(true)} className="px-5 py-2.5 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-accent-coral hover:text-accent-coral transition">
