@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth, withAuth } from "~/lib/auth";
 import { assignInterviewers } from "~/hiring/lib/scheduling";
-import { provisionZoomMeeting } from "~/lib/zoom";
+// import { provisionZoomMeeting } from "~/lib/zoom"; // S2S Zoom not configured yet
 import { parseJson } from "~/lib/validate";
 
 const ScheduleInterviewSchema = z.object({
@@ -84,13 +84,14 @@ export async function action({ request, params }: Route.ActionArgs) {
       interviewMode,
     );
 
-    if (interview.location === "Online") {
-      try {
-        await provisionZoomMeeting(interview.id, "DALI Lab Interview", slotStart, config.slotDurationMinutes);
-      } catch (err) {
-        console.error("Failed to provision Zoom meeting:", err);
-      }
-    }
+    // S2S Zoom not configured yet — meeting links are set manually by admins
+    // if (interview.location === "Online") {
+    //   try {
+    //     await provisionZoomMeeting(interview.id, "DALI Lab Interview", slotStart, config.slotDurationMinutes);
+    //   } catch (err) {
+    //     console.error("Failed to provision Zoom meeting:", err);
+    //   }
+    // }
 
     return withAuth(auth, Response.json(interview, { status: 201 }));
   } catch (err: any) {

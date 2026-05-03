@@ -4,7 +4,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth, withAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
-import { deprovisionZoomMeeting } from "~/lib/zoom";
+// import { deprovisionZoomMeeting } from "~/lib/zoom"; // S2S Zoom not configured yet
 
 const CancelSchema = z.object({
   domainApplicationId: z.string().min(1).max(100),
@@ -56,8 +56,9 @@ export async function action({ request }: Route.ActionArgs) {
     data: { status: "CancelledByApplicant" },
   });
 
-  try { await deprovisionZoomMeeting(interview); }
-  catch (err) { console.error("Failed to delete Zoom meeting on cancel:", err); }
+  // S2S Zoom not configured yet — meeting links are set manually by admins
+  // try { await deprovisionZoomMeeting(interview); }
+  // catch (err) { console.error("Failed to delete Zoom meeting on cancel:", err); }
 
   return withAuth(auth, withCors(request, Response.json(updated)));
 }

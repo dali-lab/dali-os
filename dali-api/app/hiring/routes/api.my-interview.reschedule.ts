@@ -5,7 +5,7 @@ import { requireAuth, withAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import { assignInterviewers } from "~/hiring/lib/scheduling";
-import { provisionZoomMeeting, deprovisionZoomMeeting } from "~/lib/zoom";
+// import { provisionZoomMeeting, deprovisionZoomMeeting } from "~/lib/zoom"; // S2S Zoom not configured yet
 
 const RescheduleSchema = z
   .object({
@@ -100,14 +100,14 @@ export async function action({ request }: Route.ActionArgs) {
       { isolationLevel: "Serializable" },
     );
 
-    // Zoom cleanup + provisioning after transaction commits (best-effort)
-    try { await deprovisionZoomMeeting({ zoomMeetingId: oldZoomMeetingId }); }
-    catch (err) { console.error("Failed to delete old Zoom meeting:", err); }
-
-    if (newInterview.location === "Online") {
-      try { await provisionZoomMeeting(newInterview.id, "DALI Lab Interview", new Date(newStart), durationMinutes); }
-      catch (err) { console.error("Failed to provision Zoom meeting:", err); }
-    }
+    // S2S Zoom not configured yet — meeting links are set manually by admins
+    // try { await deprovisionZoomMeeting({ zoomMeetingId: oldZoomMeetingId }); }
+    // catch (err) { console.error("Failed to delete old Zoom meeting:", err); }
+    //
+    // if (newInterview.location === "Online") {
+    //   try { await provisionZoomMeeting(newInterview.id, "DALI Lab Interview", new Date(newStart), durationMinutes); }
+    //   catch (err) { console.error("Failed to provision Zoom meeting:", err); }
+    // }
 
     return withAuth(auth, withCors(request, Response.json(newInterview, { status: 201 })));
   } catch (err: any) {
