@@ -44,10 +44,10 @@ export async function action({ request }: Route.ActionArgs) {
   if (cancelNoticeHours > 0) {
     const cutoff = new Date(interview.startTime.getTime() - cancelNoticeHours * 60 * 60_000);
     if (new Date() > cutoff) {
-      return withCors(request, Response.json(
+      return withAuth(auth, withCors(request, Response.json(
         { error: "Too late to cancel — please contact the DALI team" },
         { status: 403 },
-      ));
+      )));
     }
   }
 

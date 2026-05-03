@@ -57,6 +57,13 @@ export async function action({ request, params }: Route.ActionArgs) {
   // two concurrent reassigns from both passing the overlap check.
   try {
     await prisma.$transaction(async (tx) => {
+      const config = await tx.interviewConfig.findUnique({
+        where: { applicationCycleId: interview.applicationCycleId },
+      });
+      const bufferMs = (config?.bufferMinutes ?? 15) * 60_000;
+      const bufferedStart = new Date(interview.startTime.getTime() - bufferMs);
+      const bufferedEnd = new Date(interview.endTime.getTime() + bufferMs);
+
       const conflict = await tx.interviewAssignment.findFirst({
         where: {
           status: "Active",
@@ -64,8 +71,8 @@ export async function action({ request, params }: Route.ActionArgs) {
           interview: {
             id: { not: interview.id },
             status: "Scheduled",
-            startTime: { lt: interview.endTime },
-            endTime: { gt: interview.startTime },
+            startTime: { lt: bufferedEnd },
+            endTime: { gt: bufferedStart },
           },
         },
       });

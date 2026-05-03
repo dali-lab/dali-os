@@ -85,7 +85,9 @@ export async function action({ request, params }: Route.ActionArgs) {
       } catch (err) { console.error("Failed to delete Zoom meeting on location change:", err); }
     }
 
-    return Response.json(updated);
+    // Re-fetch to include any Zoom field changes from provisioning above
+    const fresh = await prisma.interview.findUnique({ where: { id: params.id } });
+    return Response.json(fresh ?? updated);
   } catch (err: any) {
     if (err?.message === "__POD_OCCUPIED__") {
       return Response.json(

@@ -555,7 +555,8 @@ function InterviewScheduledView({
   useEffect(() => {
     if (!rescheduling) return;
     setLoadingRescheduleSlots(true);
-    fetch(`/api/hiring/cycles/${cycleId}/available-slots?domainId=${domainApp.domainId}&mode=in-person`, { credentials: "include" })
+    const mode = interview.location === "Online" ? "online" : "in-person";
+    fetch(`/api/hiring/cycles/${cycleId}/available-slots?domainId=${domainApp.domainId}&mode=${mode}`, { credentials: "include" })
       .then(r => r.ok ? r.json() : [])
       .then((apiSlots: { startTime: string; endTime: string }[]) => {
         setRescheduleSlots(
@@ -590,7 +591,7 @@ function InterviewScheduledView({
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ domainApplicationId: domainApp.id, newStart: newSlot.isoStart, newEnd, mode: "in-person" }),
+      body: JSON.stringify({ domainApplicationId: domainApp.id, newStart: newSlot.isoStart, newEnd, mode: interview.location === "Online" ? "online" : "in-person" }),
     });
     if (res.ok) {
       setRescheduling(false);

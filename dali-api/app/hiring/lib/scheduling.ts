@@ -291,10 +291,12 @@ async function assignInterviewersWithTx(
       select: { location: true },
     });
     const takenPods = new Set(overlapping.map((i) => i.location));
-    if (!takenPods.has("PodAppa")) {
-      location = "PodAppa";
-    } else if (!takenPods.has("PodMomo")) {
-      location = "PodMomo";
+    const pods: ("PodAppa" | "PodMomo")[] = Math.random() < 0.5
+      ? ["PodAppa", "PodMomo"]
+      : ["PodMomo", "PodAppa"];
+    const freePod = pods.find((p) => !takenPods.has(p));
+    if (freePod) {
+      location = freePod;
     } else {
       throw new Error("No pod available at this time");
     }
