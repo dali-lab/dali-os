@@ -113,6 +113,8 @@ export default [
   // Google calendar (cross-cutting — used by hiring scheduling but lives at top level)
   route("api/google-calendar/busy", "routes/api.google-calendar.busy.ts"),
 
+  route("api/hiring/interviews/:id/location", "hiring/routes/api.interviews.$id.location.ts"),
+
   // S3 file upload
   route("api/upload/presign", "routes/api.upload.presign.ts"),
   route("api/upload/url", "routes/api.upload.url.ts"),
