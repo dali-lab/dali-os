@@ -425,7 +425,7 @@ function InvitedToInterviewView({
   useEffect(() => {
     if (!domainApp.domainId) return;
     setLoadingSlots(true);
-    fetch(`/api/hiring/cycles/${cycleId}/available-slots?domainId=${domainApp.domainId}`, {
+    fetch(`/api/hiring/cycles/${cycleId}/available-slots?domainId=${domainApp.domainId}&mode=in-person`, {
       credentials: "include",
     })
       .then(r => r.ok ? r.json() : [])
@@ -448,7 +448,7 @@ function InvitedToInterviewView({
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ startTime: slot.isoStart }),
+        body: JSON.stringify({ startTime: slot.isoStart, mode: "in-person" }),
       });
       if (res.ok) {
         onBooked();
@@ -456,7 +456,7 @@ function InvitedToInterviewView({
         const body = await res.json().catch(() => ({}));
         setError(body.error ?? "Failed to book this slot. It may have been taken.");
         // Re-fetch slots since they may have changed
-        const slotsRes = await fetch(`/api/hiring/cycles/${cycleId}/available-slots?domainId=${domainApp.domainId}`, { credentials: "include" });
+        const slotsRes = await fetch(`/api/hiring/cycles/${cycleId}/available-slots?domainId=${domainApp.domainId}&mode=in-person`, { credentials: "include" });
         if (slotsRes.ok) {
           const freshSlots = await slotsRes.json();
           setSlots(freshSlots.map(apiSlotToTimeSlot));
@@ -555,7 +555,7 @@ function InterviewScheduledView({
   useEffect(() => {
     if (!rescheduling) return;
     setLoadingRescheduleSlots(true);
-    fetch(`/api/hiring/cycles/${cycleId}/available-slots?domainId=${domainApp.domainId}`, { credentials: "include" })
+    fetch(`/api/hiring/cycles/${cycleId}/available-slots?domainId=${domainApp.domainId}&mode=in-person`, { credentials: "include" })
       .then(r => r.ok ? r.json() : [])
       .then((apiSlots: { startTime: string; endTime: string }[]) => {
         setRescheduleSlots(
@@ -590,7 +590,7 @@ function InterviewScheduledView({
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ domainApplicationId: domainApp.id, newStart: newSlot.isoStart, newEnd }),
+      body: JSON.stringify({ domainApplicationId: domainApp.id, newStart: newSlot.isoStart, newEnd, mode: "in-person" }),
     });
     if (res.ok) {
       setRescheduling(false);
