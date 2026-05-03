@@ -28,15 +28,45 @@ function sanitizeHeader(value: string): string {
   return value.replace(/[\r\n]/g, '')
 }
 
-function makeRawEmail(to: string, subject: string, htmlBody: string): string {
+function makeRawEmail(to: string, subject: string, htmlBody: string, ics?: string): string {
+  if (!ics) {
+    const msg = [
+      `From: DALI Lab <${GMAIL_USER}>`,
+      `To: ${sanitizeHeader(to)}`,
+      `Subject: ${sanitizeHeader(subject)}`,
+      'MIME-Version: 1.0',
+      'Content-Type: text/html; charset=utf-8',
+      '',
+      htmlBody,
+    ].join('\r\n')
+    return Buffer.from(msg).toString('base64url')
+  }
+
+  // Extract METHOD from the ICS content (e.g. REQUEST or CANCEL)
+  const methodMatch = ics.match(/METHOD:(\w+)/)
+  const method = methodMatch?.[1] ?? 'REQUEST'
+  const boundary = `----=_Part_${Date.now()}`
+
   const msg = [
     `From: DALI Lab <${GMAIL_USER}>`,
     `To: ${sanitizeHeader(to)}`,
     `Subject: ${sanitizeHeader(subject)}`,
     'MIME-Version: 1.0',
+    `Content-Type: multipart/mixed; boundary="${boundary}"`,
+    '',
+    `--${boundary}`,
     'Content-Type: text/html; charset=utf-8',
     '',
     htmlBody,
+    '',
+    `--${boundary}`,
+    `Content-Type: text/calendar; charset=utf-8; method=${method}`,
+    'Content-Disposition: attachment; filename="invite.ics"',
+    'Content-Transfer-Encoding: base64',
+    '',
+    Buffer.from(ics).toString('base64'),
+    '',
+    `--${boundary}--`,
   ].join('\r\n')
   return Buffer.from(msg).toString('base64url')
 }
@@ -50,11 +80,13 @@ export async function sendEmail({
   to,
   subject,
   html,
+  ics,
 }: {
   refreshToken: string
   to: string
   subject: string
   html: string
+  ics?: string
 }) {
   const env = getAppEnv()
 
@@ -71,7 +103,7 @@ export async function sendEmail({
   }
 
   const accessToken = await getAccessToken(refreshToken)
-  const raw = makeRawEmail(actualTo, subject, actualHtml)
+  const raw = makeRawEmail(actualTo, subject, actualHtml, ics)
 
   const res = await fetch(
     `https://gmail.googleapis.com/gmail/v1/users/${GMAIL_USER}/messages/send`,

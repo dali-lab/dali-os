@@ -22,6 +22,8 @@ interface InterviewConfig {
   dayEndHour: number
   interviewStartDate: string
   interviewEndDate: string
+  rescheduleNoticeHours: number
+  cancelNoticeHours: number
   timezone: string
 }
 
@@ -36,6 +38,8 @@ interface InterviewRow {
   startTime: string
   endTime: string
   status: string
+  location: string
+  zoomJoinUrl: string | null
   domainApplication: {
     challengeVersion: { domain: { name: string } }
     application: { user: { firstName: string; lastName: string } }
@@ -419,7 +423,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (intent === "set-notification-email") {
     const notificationType = formData.get("notificationType") as string;
     const emailTemplateVersionId = (formData.get("emailTemplateVersionId") as string) || null;
-    const validTypes = ["ApplicationReceived", "InterviewInviteMentor"] as const;
+    const validTypes = ["ApplicationReceived", "InterviewInviteMentor", "InterviewConfirmedApplicant", "InterviewCancelledApplicant", "InterviewCancelledInterviewer", "InterviewLocationChanged"] as const;
     if (!validTypes.includes(notificationType as (typeof validTypes)[number])) {
       return withAuth(auth, new Response(JSON.stringify({ error: "Invalid notification type" }), { status: 400, headers: { "Content-Type": "application/json" } }));
     }
@@ -696,6 +700,8 @@ export default function HiringLeadCycleDetails() {
     dayEndHour: 18,
     interviewStartDate: '',
     interviewEndDate: '',
+    rescheduleNoticeHours: 12,
+    cancelNoticeHours: 0,
     timezone: 'America/New_York',
   })
   const [configSaved, setConfigSaved] = useState(false)
@@ -1306,6 +1312,26 @@ export default function HiringLeadCycleDetails() {
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
               />
             </div>
+            <div>
+              <label className="block text-sm font-bold text-foreground/80 mb-1">Reschedule Notice</label>
+              <select
+                value={config.rescheduleNoticeHours}
+                onChange={e => setConfig(c => ({ ...c, rescheduleNoticeHours: Number(e.target.value) }))}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              >
+                {[0, 2, 4, 6, 8, 12, 24, 48].map(h => <option key={h} value={h}>{h === 0 ? 'No minimum' : `${h} hours before`}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-bold text-foreground/80 mb-1">Cancel Notice</label>
+              <select
+                value={config.cancelNoticeHours}
+                onChange={e => setConfig(c => ({ ...c, cancelNoticeHours: Number(e.target.value) }))}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              >
+                {[0, 2, 4, 6, 8, 12, 24, 48].map(h => <option key={h} value={h}>{h === 0 ? 'Up until start' : `${h} hours before`}</option>)}
+              </select>
+            </div>
           </div>
 
           <div className="flex items-center gap-3 pt-2">
@@ -1505,6 +1531,7 @@ export default function HiringLeadCycleDetails() {
                   <th className="text-left px-4 py-3 font-bold text-foreground/80">Domain</th>
                   <th className="text-left px-4 py-3 font-bold text-foreground/80">Time</th>
                   <th className="text-left px-4 py-3 font-bold text-foreground/80">Status</th>
+                  <th className="text-left px-4 py-3 font-bold text-foreground/80">Location</th>
                   <th className="text-left px-4 py-3 font-bold text-foreground/80">Interviewers</th>
                   <th className="text-right px-4 py-3 font-bold text-foreground/80">Actions</th>
                 </tr>
@@ -1535,6 +1562,73 @@ export default function HiringLeadCycleDetails() {
                         }`}>
                           {interview.status}
                         </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        {isFuture && interview.status === 'Scheduled' ? (
+                          <select
+                            value={interview.location}
+                            onChange={async (e) => {
+                              const newLocation = e.target.value
+                              const res = await fetch(`/api/hiring/interviews/${interview.id}/location`, {
+                                method: 'PATCH',
+                                credentials: 'include',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ location: newLocation }),
+                              })
+                              if (res.ok) {
+                                const updated = await res.json()
+                                setInterviews(prev => prev.map(i =>
+                                  i.id === interview.id ? { ...i, location: newLocation, zoomJoinUrl: updated.zoomJoinUrl ?? null } : i
+                                ))
+                              } else {
+                                const body = await res.json().catch(() => ({}))
+                                alert(body.error ?? 'Failed to update location')
+                              }
+                            }}
+                            className="text-xs border border-border rounded px-1.5 py-0.5 bg-card"
+                          >
+                            <option value="PodAppa">Pod Appa</option>
+                            <option value="PodMomo">Pod Momo</option>
+                            <option value="Online">Online</option>
+                          </select>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">
+                            {interview.location === 'PodAppa' ? 'Pod Appa' :
+                             interview.location === 'PodMomo' ? 'Pod Momo' : 'Online'}
+                          </span>
+                        )}
+                        {interview.location === 'Online' && isFuture && interview.status === 'Scheduled' && (
+                          <input
+                            type="url"
+                            placeholder="Paste meeting link"
+                            defaultValue={interview.zoomJoinUrl ?? ''}
+                            onBlur={async (e) => {
+                              let meetingUrl = e.target.value.trim()
+                              if (meetingUrl && !/^https?:\/\//i.test(meetingUrl)) {
+                                meetingUrl = `https://${meetingUrl}`
+                                e.target.value = meetingUrl
+                              }
+                              if (meetingUrl === (interview.zoomJoinUrl ?? '')) return
+                              const res = await fetch(`/api/hiring/interviews/${interview.id}/location`, {
+                                method: 'PATCH',
+                                credentials: 'include',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ location: 'Online', meetingUrl }),
+                              })
+                              if (res.ok) {
+                                setInterviews(prev => prev.map(i =>
+                                  i.id === interview.id ? { ...i, zoomJoinUrl: meetingUrl || null } : i
+                                ))
+                              }
+                            }}
+                            onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                            className="block w-full text-xs border border-border rounded px-1.5 py-0.5 bg-card mt-1 placeholder:text-muted-foreground/50"
+                          />
+                        )}
+                        {interview.location === 'Online' && interview.zoomJoinUrl && !(isFuture && interview.status === 'Scheduled') && (
+                          <a href={interview.zoomJoinUrl} target="_blank" rel="noopener noreferrer"
+                             className="block text-xs text-blue-600 hover:underline mt-0.5">Meeting link</a>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-muted-foreground text-xs">
                         {interview.assignments
@@ -2758,7 +2852,11 @@ function DecisionEmailPicker({ slot, binding, emailTemplates, locked }: {
 
 const NOTIFICATION_EMAIL_SLOTS = [
   { type: "ApplicationReceived", label: "Application Received", description: "Sent to the applicant when they first submit their application." },
-  { type: "InterviewInviteMentor", label: "Interview Invite (Mentor)", description: "Sent to the assigned mentor/reviewer when an interview is scheduled." },
+  { type: "InterviewInviteMentor", label: "Interview Invite (Interviewer)", description: "Sent to the assigned interviewer when an interview is booked or they are reassigned." },
+  { type: "InterviewConfirmedApplicant", label: "Interview Confirmed (Applicant)", description: "Sent to the applicant when their interview is booked. Supports {{time}}, {{location}}, {{meetingUrl}}." },
+  { type: "InterviewCancelledApplicant", label: "Interview Cancelled (Applicant)", description: "Sent to the applicant when their interview is cancelled. Supports {{time}}, {{location}}." },
+  { type: "InterviewCancelledInterviewer", label: "Interview Cancelled (Interviewer)", description: "Sent to the interviewer when an interview is cancelled or they are unassigned." },
+  { type: "InterviewLocationChanged", label: "Interview Location Changed", description: "Sent to both the applicant and interviewer(s) when the interview location is updated. Supports {{time}}, {{location}}, {{meetingUrl}}." },
 ] as const;
 
 function NotificationEmailsSection({ emailTemplates, currentNotificationEmails }: {

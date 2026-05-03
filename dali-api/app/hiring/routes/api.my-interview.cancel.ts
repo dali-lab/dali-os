@@ -4,6 +4,8 @@ import { prisma } from "~/lib/db";
 import { requireAuth, withAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
+// import { deprovisionZoomMeeting } from "~/lib/zoom"; // S2S Zoom not configured yet
+import { sendInterviewCancelEmails } from "~/hiring/lib/interview-emails";
 
 const CancelSchema = z.object({
   domainApplicationId: z.string().min(1).max(100),
@@ -36,10 +38,31 @@ export async function action({ request }: Route.ActionArgs) {
     return withAuth(auth, withCors(request, Response.json({ error: "No active interview found" }, { status: 404 })));
   }
 
+  const config = await prisma.interviewConfig.findUnique({
+    where: { applicationCycleId: interview.applicationCycleId },
+  });
+  const cancelNoticeHours = config?.cancelNoticeHours ?? 0;
+  if (cancelNoticeHours > 0) {
+    const cutoff = new Date(interview.startTime.getTime() - cancelNoticeHours * 60 * 60_000);
+    if (new Date() > cutoff) {
+      return withAuth(auth, withCors(request, Response.json(
+        { error: "Too late to cancel — please contact the DALI team" },
+        { status: 403 },
+      )));
+    }
+  }
+
   const updated = await prisma.interview.update({
     where: { id: interview.id },
     data: { status: "CancelledByApplicant" },
   });
+
+  // S2S Zoom not configured yet — meeting links are set manually by admins
+  // try { await deprovisionZoomMeeting(interview); }
+  // catch (err) { console.error("Failed to delete Zoom meeting on cancel:", err); }
+
+  // Best-effort: send cancellation ICS to applicant + interviewers
+  sendInterviewCancelEmails(interview.id, domainApplicationId).catch(() => {});
 
   return withAuth(auth, withCors(request, Response.json(updated)));
 }
