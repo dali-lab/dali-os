@@ -755,6 +755,10 @@ model CycleDecisionEmail {
 enum NotificationType {
   ApplicationReceived
   InterviewInviteMentor
+  InterviewConfirmedApplicant
+  InterviewCancelledApplicant
+  InterviewCancelledInterviewer
+  InterviewLocationChanged
 }
 
 model CycleNotificationEmail {

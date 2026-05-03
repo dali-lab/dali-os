@@ -2637,7 +2637,7 @@ async function main() {
   console.log(`  ${reviewSpecs.length} ApplicationReviews + ${decisionSpecs.length * 3} Decisions + ${interviewBookings.length} booked interviews for Fall 2026`);
 
   // ── Email templates (versioned, keyed by EmailTemplateType) ─────────────────
-  const seedTemplates: { type: 'ApplicationReceived' | 'Rejected' | 'RejectedPostInterview' | 'InvitedToInterview' | 'InterviewInviteMentor' | 'Waitlisted' | 'Accepted'; subject: string; body: string }[] = [
+  const seedTemplates: { type: 'ApplicationReceived' | 'Rejected' | 'RejectedPostInterview' | 'InvitedToInterview' | 'InterviewInviteMentor' | 'InterviewConfirmedApplicant' | 'InterviewCancelledApplicant' | 'InterviewCancelledInterviewer' | 'InterviewLocationChanged' | 'Waitlisted' | 'Accepted'; subject: string; body: string }[] = [
     {
       type: 'ApplicationReceived',
       subject: 'We received your DALI application!',
@@ -2660,8 +2660,28 @@ async function main() {
     },
     {
       type: 'InterviewInviteMentor',
-      subject: 'DALI interview assigned to you',
-      body: `Hi {{firstName}},\n\nYou've been assigned to conduct an interview for the current DALI hiring cycle. Please log in to the reviewer dashboard to view your assigned applicant(s) and interview details.\n\nIf you have any conflicts or questions, please reach out to the hiring lead as soon as possible.\n\nThanks for your help making DALI hiring happen!\n\n— The DALI Team`,
+      subject: 'DALI interview assigned to you — {{domain}}',
+      body: `Hi {{firstName}},\n\nYou've been assigned to conduct a {{domain}} interview.\n\nWhen: {{time}}\nWhere: {{location}}\n\nPlease log in to the reviewer dashboard to view your assigned applicant(s) and interview details. A calendar event is attached to this email.\n\nIf you have any conflicts or questions, please reach out to the hiring lead as soon as possible.\n\nThanks for your help making DALI hiring happen!\n\n— The DALI Team`,
+    },
+    {
+      type: 'InterviewConfirmedApplicant',
+      subject: 'Your {{domain}} interview is confirmed!',
+      body: `Hi {{firstName}},\n\nYour interview for {{domain}} at DALI Lab is confirmed!\n\nWhen: {{time}}\nWhere: {{location}}\n\nA calendar event is attached to this email. If you need to reschedule, visit the applicant portal.\n\n— DALI Lab`,
+    },
+    {
+      type: 'InterviewCancelledApplicant',
+      subject: 'Your {{domain}} interview has been cancelled',
+      body: `Hi {{firstName}},\n\nYour {{domain}} interview scheduled for {{time}} has been cancelled. The calendar event has been removed.\n\n— DALI Lab`,
+    },
+    {
+      type: 'InterviewCancelledInterviewer',
+      subject: '{{domain}} interview cancelled',
+      body: `Hi {{firstName}},\n\nThe {{domain}} interview scheduled for {{time}} has been cancelled. The calendar event has been removed.\n\n— DALI Lab`,
+    },
+    {
+      type: 'InterviewLocationChanged',
+      subject: 'Interview location updated — {{domain}}',
+      body: `Hi {{firstName}},\n\nThe location for your {{domain}} interview on {{time}} has been updated.\n\nNew location: {{location}}\n\nAn updated calendar event is attached.\n\n— DALI Lab`,
     },
     {
       type: 'Waitlisted',
@@ -2678,12 +2698,14 @@ async function main() {
   // submit) and InterviewInviteMentor (manual batch only). The other 5 types
   // are no longer auto-keyed by type — they live as named EmailTemplate parents
   // and bind to a cycle via CycleDecisionEmail.
-  for (const t of seedTemplates) {
-    if (t.type !== 'ApplicationReceived' && t.type !== 'InterviewInviteMentor') continue
-    const existing = await prisma.legacyEmailTemplate.findFirst({ where: { type: t.type } })
+  const legacyTypes = ['ApplicationReceived', 'InterviewInviteMentor'] as const
+  for (const legacyType of legacyTypes) {
+    const t = seedTemplates.find((s) => s.type === legacyType)
+    if (!t) continue
+    const existing = await prisma.legacyEmailTemplate.findFirst({ where: { type: legacyType } })
     if (!existing) {
       await prisma.legacyEmailTemplate.create({
-        data: { ...t, version: 1, createdById: engLeadMember.id },
+        data: { type: legacyType, subject: t.subject, body: t.body, version: 1, createdById: engLeadMember.id },
       })
     }
   }
@@ -2738,8 +2760,8 @@ async function main() {
     }
   }
 
-  // Bind Fall 2026 to the two NotificationType slots.
-  for (const nt of ['ApplicationReceived', 'InterviewInviteMentor'] as const) {
+  // Bind Fall 2026 to all NotificationType slots.
+  for (const nt of ['ApplicationReceived', 'InterviewInviteMentor', 'InterviewConfirmedApplicant', 'InterviewCancelledApplicant', 'InterviewCancelledInterviewer', 'InterviewLocationChanged'] as const) {
     const version = await prisma.emailTemplateVersion.findFirst({
       where: { templateId: `tmpl_${nt.toLowerCase()}` },
       orderBy: { versionNumber: 'desc' },
