@@ -62,6 +62,7 @@ function buildMemberAggregations(
 export async function computeAvailableSlots(
   cycleId: string,
   applicantDomainIds: string[],
+  mode: "in-person" | "online" = "online",
 ): Promise<AvailableSlot[]> {
   const config = await prisma.interviewConfig.findUnique({
     where: { applicationCycleId: cycleId },
@@ -101,6 +102,20 @@ export async function computeAvailableSlots(
     bookedIntervals: memberIntervals.get(r.daliMemberId) ?? [],
   }));
 
+  // For in-person mode, load existing pod bookings so we can filter out
+  // slots where both Pod Appa and Pod Momo are already occupied.
+  let podBookings: { startTime: Date; endTime: Date; location: string }[] = [];
+  if (mode === "in-person") {
+    podBookings = await prisma.interview.findMany({
+      where: {
+        applicationCycleId: cycleId,
+        status: "Scheduled",
+        location: { in: ["PodAppa", "PodMomo"] },
+      },
+      select: { startTime: true, endTime: true, location: true },
+    });
+  }
+
   // Generate candidate slot start times
   const candidates = generateCandidateSlots(
     interviewStartDate,
@@ -124,6 +139,16 @@ export async function computeAvailableSlots(
     );
 
     if (inDomainFree && crossDomainFree) {
+      // For in-person mode, skip slots where both pods are occupied
+      if (mode === "in-person") {
+        const occupiedPods = new Set(
+          podBookings
+            .filter((b) => b.startTime < slotEnd && b.endTime > slotStart)
+            .map((b) => b.location),
+        );
+        if (occupiedPods.has("PodAppa") && occupiedPods.has("PodMomo")) continue;
+      }
+
       results.push({
         startTime: slotStart.toISOString(),
         endTime: slotEnd.toISOString(),
@@ -152,13 +177,14 @@ export async function assignInterviewers(
   slotStart: Date,
   slotEnd: Date,
   tx?: Prisma.TransactionClient,
+  mode: "in-person" | "online" = "online",
 ) {
   if (tx) {
-    return assignInterviewersWithTx(tx, cycleId, domainApplicationId, applicantDomainIds, slotStart, slotEnd);
+    return assignInterviewersWithTx(tx, cycleId, domainApplicationId, applicantDomainIds, slotStart, slotEnd, mode);
   }
   return prisma.$transaction(
     (innerTx) =>
-      assignInterviewersWithTx(innerTx, cycleId, domainApplicationId, applicantDomainIds, slotStart, slotEnd),
+      assignInterviewersWithTx(innerTx, cycleId, domainApplicationId, applicantDomainIds, slotStart, slotEnd, mode),
     { isolationLevel: "Serializable" },
   );
 }
@@ -170,6 +196,7 @@ async function assignInterviewersWithTx(
   applicantDomainIds: string[],
   slotStart: Date,
   slotEnd: Date,
+  mode: "in-person" | "online" = "online",
 ) {
   const config = await tx.interviewConfig.findUnique({
     where: { applicationCycleId: cycleId },
@@ -250,13 +277,29 @@ async function assignInterviewersWithTx(
     throw new Error("No cross-domain interviewer available for this slot");
   }
 
-  // Nested write: Prisma issues the parent Interview and both
-  // InterviewAssignment rows inside the same transaction `tx`, so a constraint
-  // failure on either assignment rolls the Interview back. Splitting this into
-  // separate `tx.interview.create` + `tx.interviewAssignment.create` calls
-  // would still rollback together, but only if the throw escapes `tx` — the
-  // post-create length check below guards against a future refactor that
-  // accidentally swallows the error.
+  // Determine location: auto-assign a pod for in-person, or Online
+  let location: "PodAppa" | "PodMomo" | "Online" = "Online";
+  if (mode === "in-person") {
+    const overlapping = await tx.interview.findMany({
+      where: {
+        applicationCycleId: cycleId,
+        status: "Scheduled",
+        location: { in: ["PodAppa", "PodMomo"] },
+        startTime: { lt: slotEnd },
+        endTime: { gt: slotStart },
+      },
+      select: { location: true },
+    });
+    const takenPods = new Set(overlapping.map((i) => i.location));
+    if (!takenPods.has("PodAppa")) {
+      location = "PodAppa";
+    } else if (!takenPods.has("PodMomo")) {
+      location = "PodMomo";
+    } else {
+      throw new Error("No pod available at this time");
+    }
+  }
+
   const interview = await tx.interview.create({
     data: {
       domainApplicationId,
@@ -264,6 +307,7 @@ async function assignInterviewersWithTx(
       startTime: slotStart,
       endTime: slotEnd,
       status: "Scheduled",
+      location,
       assignments: {
         create: [
           {

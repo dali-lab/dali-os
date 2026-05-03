@@ -33,7 +33,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     return withAuth(auth, withCors(request, Response.json({ error: "At least one domainId query param required" }, { status: 400 })));
   }
 
-  const slots = await computeAvailableSlots(params.cycleId, domainIds);
+  const mode = url.searchParams.get("mode") === "in-person" ? "in-person" as const : "online" as const;
+  const slots = await computeAvailableSlots(params.cycleId, domainIds, mode);
 
   return withAuth(auth, withCors(request, Response.json(slots)));
 }

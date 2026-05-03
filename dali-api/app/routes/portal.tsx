@@ -10,7 +10,6 @@ import {
 } from "~/hiring/lib/domain-application-status";
 import type { DomainApplicationStatus } from "~/types";
 import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
-import { InterviewSlotPicker } from "~/hiring/components/InterviewSlotPicker";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 import { formatInterviewDate, formatInterviewTimeRange } from "~/hiring/lib/interview-time";
 
@@ -115,7 +114,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       domainId: da.challengeVersion?.domainId,
       inferredStatus,
       interview: activeInterview
-        ? { id: activeInterview.id, startTime: activeInterview.startTime, endTime: activeInterview.endTime, status: activeInterview.status }
+        ? { id: activeInterview.id, startTime: activeInterview.startTime, endTime: activeInterview.endTime, status: activeInterview.status, location: activeInterview.location, zoomJoinUrl: activeInterview.zoomJoinUrl }
         : null,
     };
   });
@@ -139,7 +138,7 @@ interface DomainAppData {
   domainName: string;
   domainId: string;
   inferredStatus: DomainApplicationStatus;
-  interview: { id: string; startTime: string; endTime: string; status: string } | null;
+  interview: { id: string; startTime: string; endTime: string; status: string; location?: string; zoomJoinUrl?: string | null } | null;
 }
 
 interface TimeSlot {
@@ -172,21 +171,33 @@ function groupSlotsByDate(slots: TimeSlot[]): { date: string; slots: TimeSlot[] 
   return Array.from(map.entries()).map(([date, slots]) => ({ date, slots }));
 }
 
-function buildGoogleCalendarUrl(slot: TimeSlot, cycleName: string): string {
+function formatInterviewLocation(location?: string): string {
+  if (location === "PodAppa") return "Pod Appa, DALI Lab";
+  if (location === "PodMomo") return "Pod Momo, DALI Lab";
+  return "Online";
+}
+
+function buildGoogleCalendarUrl(slot: TimeSlot, cycleName: string, location?: string, zoomJoinUrl?: string | null): string {
   const fmt = (d: string | Date) => new Date(d).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+  const locStr = formatInterviewLocation(location);
+  let details = "Your interview with the DALI Lab team. Please arrive 5 minutes early.";
+  if (zoomJoinUrl) details += `\n\nJoin Zoom: ${zoomJoinUrl}`;
   const params = new URLSearchParams({
     action: "TEMPLATE",
     text: `DALI Lab Interview — ${cycleName}`,
     dates: `${fmt(slot.isoStart)}/${fmt(slot.isoEnd)}`,
-    details: "Your interview with the DALI Lab team. Please arrive 5 minutes early.",
-    location: "DALI Lab, 3rd Floor Sudikoff, Dartmouth College",
+    details,
+    location: zoomJoinUrl ? zoomJoinUrl : locStr,
   });
   return `https://calendar.google.com/calendar/render?${params.toString()}`;
 }
 
-function buildIcsContent(slot: TimeSlot, cycleName: string): string {
+function buildIcsContent(slot: TimeSlot, cycleName: string, location?: string, zoomJoinUrl?: string | null): string {
   const fmt = (d: string | Date) => new Date(d).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+  const locStr = zoomJoinUrl ? zoomJoinUrl : formatInterviewLocation(location);
   const uid = `dali-interview-${new Date(slot.isoStart).getTime()}@dali.dartmouth.edu`;
+  let description = "Your interview with the DALI Lab team. Please arrive 5 minutes early.";
+  if (zoomJoinUrl) description += `\\nJoin Zoom: ${zoomJoinUrl}`;
   return [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
@@ -196,15 +207,15 @@ function buildIcsContent(slot: TimeSlot, cycleName: string): string {
     `DTSTART:${fmt(slot.isoStart)}`,
     `DTEND:${fmt(slot.isoEnd)}`,
     `SUMMARY:DALI Lab Interview — ${cycleName}`,
-    "DESCRIPTION:Your interview with the DALI Lab team. Please arrive 5 minutes early.",
-    "LOCATION:DALI Lab\\, 3rd Floor Sudikoff\\, Dartmouth College",
+    `DESCRIPTION:${description}`,
+    `LOCATION:${locStr.replace(/\\/g, "\\\\").replace(/,/g, "\\,").replace(/;/g, "\\;")}`,
     "END:VEVENT",
     "END:VCALENDAR",
   ].join("\r\n");
 }
 
-function downloadIcs(slot: TimeSlot, cycleName: string): void {
-  const content = buildIcsContent(slot, cycleName);
+function downloadIcs(slot: TimeSlot, cycleName: string, location?: string, zoomJoinUrl?: string | null): void {
+  const content = buildIcsContent(slot, cycleName, location, zoomJoinUrl);
   const blob = new Blob([content], { type: "text/calendar" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -298,7 +309,7 @@ function StageIndicator({ stage }: { stage: DomainApplicationStatus | "Applicati
   const steps: { label: string; keys: (DomainApplicationStatus | "ApplicationsClosed")[] }[] = [
     { label: "Applied", keys: ["ApplicationOpen"] },
     { label: "Review", keys: ["Pending"] },
-    { label: "Interview", keys: ["InvitedToInterview", "InterviewScheduled", "PostInterviewPending"] },
+    { label: "Interview", keys: ["InvitedToInterview", "InterviewScheduled", "PostInterviewPending", "Withdrawn"] },
     { label: "Decision", keys: ["Accepted", "Rejected", "Waitlisted"] },
   ];
 
@@ -452,22 +463,28 @@ function InvitedToInterviewView({
   cycleName: string;
   onBooked: () => void;
 }) {
+  const [mode, setMode] = useState<"in-person" | "online" | null>(null);
   const [slots, setSlots] = useState<TimeSlot[]>([]);
+  const [loadingSlots, setLoadingSlots] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
   const [booking, setBooking] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!domainApp.domainId) return;
-    fetch(`/api/hiring/cycles/${cycleId}/available-slots?domainId=${domainApp.domainId}`, {
+    if (!mode || !domainApp.domainId) return;
+    setLoadingSlots(true);
+    setSlots([]);
+    setSelectedSlot(null);
+    fetch(`/api/hiring/cycles/${cycleId}/available-slots?domainId=${domainApp.domainId}&mode=${mode}`, {
       credentials: "include",
     })
       .then(r => r.ok ? r.json() : [])
       .then((apiSlots: { startTime: string; endTime: string }[]) => {
         setSlots(apiSlots.map(apiSlotToTimeSlot));
       })
-      .catch(() => {});
-  }, [cycleId, domainApp.domainId]);
+      .catch(() => {})
+      .finally(() => setLoadingSlots(false));
+  }, [mode, cycleId, domainApp.domainId]);
 
   const grouped = groupSlotsByDate(slots);
   const slot = slots.find(s => s.id === selectedSlot);
@@ -481,7 +498,7 @@ function InvitedToInterviewView({
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ startTime: slot.isoStart }),
+        body: JSON.stringify({ startTime: slot.isoStart, mode }),
       });
       if (res.ok) {
         onBooked();
@@ -489,7 +506,7 @@ function InvitedToInterviewView({
         const body = await res.json().catch(() => ({}));
         setError(body.error ?? "Failed to book this slot. It may have been taken.");
         // Re-fetch slots since they may have changed
-        const slotsRes = await fetch(`/api/hiring/cycles/${cycleId}/available-slots?domainId=${domainApp.domainId}`, { credentials: "include" });
+        const slotsRes = await fetch(`/api/hiring/cycles/${cycleId}/available-slots?domainId=${domainApp.domainId}&mode=${mode}`, { credentials: "include" });
         if (slotsRes.ok) {
           const freshSlots = await slotsRes.json();
           setSlots(freshSlots.map(apiSlotToTimeSlot));
@@ -521,28 +538,83 @@ function InvitedToInterviewView({
         </div>
       )}
 
-      {slots.length === 0 ? (
-        <div className={`px-6 py-8 rounded-2xl ${cardBg} text-center`}>
-          <p className="text-muted-foreground">No interview slots are available yet. The DALI team is still setting up interview times — check back soon.</p>
-        </div>
-      ) : (
-        <>
-          <div className="mb-8">
-            <InterviewSlotPicker
-              groups={grouped}
-              variant="selectable"
-              selectedSlotId={selectedSlot}
-              onSelect={(s) => setSelectedSlot(s.id)}
-            />
-          </div>
+      {/* Mode selector */}
+      <div className="grid grid-cols-2 gap-3">
+        <button
+          onClick={() => setMode("in-person")}
+          className={`flex flex-col items-center gap-2 p-5 rounded-2xl border-2 transition ${
+            mode === "in-person"
+              ? "border-accent-coral bg-accent-coral/5"
+              : "border-border hover:border-accent-coral/50"
+          }`}
+        >
+          <svg className={`w-6 h-6 ${mode === "in-person" ? "text-accent-coral" : "text-muted-foreground"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+          </svg>
+          <span className={`font-medium text-sm ${mode === "in-person" ? "text-accent-coral" : "text-dark-blue"}`}>In-Person</span>
+          <span className="text-xs text-muted-foreground">DALI Lab</span>
+        </button>
+        <button
+          onClick={() => setMode("online")}
+          className={`flex flex-col items-center gap-2 p-5 rounded-2xl border-2 transition ${
+            mode === "online"
+              ? "border-accent-coral bg-accent-coral/5"
+              : "border-border hover:border-accent-coral/50"
+          }`}
+        >
+          <svg className={`w-6 h-6 ${mode === "online" ? "text-accent-coral" : "text-muted-foreground"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+          </svg>
+          <span className={`font-medium text-sm ${mode === "online" ? "text-accent-coral" : "text-dark-blue"}`}>Online</span>
+          <span className="text-xs text-muted-foreground">Video call</span>
+        </button>
+      </div>
 
-          <button
-            onClick={handleConfirm}
-            disabled={!selectedSlot || booking}
-            className="px-6 py-2.5 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition disabled:opacity-50"
-          >
-            {booking ? "Booking..." : "Confirm Time"}
-          </button>
+      {/* Slots (shown after mode is selected) */}
+      {mode && (
+        <>
+          {loadingSlots ? (
+            <div className={`px-6 py-8 rounded-2xl ${cardBg} text-center`}>
+              <p className="text-muted-foreground">Loading available times...</p>
+            </div>
+          ) : slots.length === 0 ? (
+            <div className={`px-6 py-8 rounded-2xl ${cardBg} text-center`}>
+              <p className="text-muted-foreground">No interview slots are available yet. The DALI team is still setting up interview times — check back soon.</p>
+            </div>
+          ) : (
+            <>
+              <div className="space-y-6 mb-8">
+                {grouped.map(({ date, slots: dateSlots }) => (
+                  <div key={date}>
+                    <h4 className="text-sm font-bold text-dark-blue mb-2">{date}</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {dateSlots.map(s => (
+                        <button
+                          key={s.id}
+                          onClick={() => setSelectedSlot(s.id)}
+                          className={`px-4 py-3 rounded-xl text-sm font-medium border-2 transition-all text-left ${
+                            selectedSlot === s.id
+                              ? "border-accent-coral bg-accent-coral/5 text-accent-coral"
+                              : "border-border text-dark-blue hover:border-accent-coral/50"
+                          }`}
+                        >
+                          {s.time}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <button
+                onClick={handleConfirm}
+                disabled={!selectedSlot || booking}
+                className="px-6 py-2.5 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition disabled:opacity-50"
+              >
+                {booking ? "Booking..." : "Confirm Time"}
+              </button>
+            </>
+          )}
         </>
       )}
     </div>
@@ -567,21 +639,27 @@ function InterviewScheduledView({
   const interview = domainApp.interview!;
   const slot = apiSlotToTimeSlot(interview, 0);
   const [rescheduling, setRescheduling] = useState(false);
+  const [rescheduleMode, setRescheduleMode] = useState<"in-person" | "online" | null>(null);
   const [rescheduleSlots, setRescheduleSlots] = useState<TimeSlot[]>([]);
+  const [loadingRescheduleSlots, setLoadingRescheduleSlots] = useState(false);
   const [declining, setDeclining] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!rescheduling) return;
-    fetch(`/api/hiring/cycles/${cycleId}/available-slots?domainId=${domainApp.domainId}`, { credentials: "include" })
+    if (!rescheduling || !rescheduleMode) return;
+    setLoadingRescheduleSlots(true);
+    setRescheduleSlots([]);
+    fetch(`/api/hiring/cycles/${cycleId}/available-slots?domainId=${domainApp.domainId}&mode=${rescheduleMode}`, { credentials: "include" })
       .then(r => r.ok ? r.json() : [])
       .then((apiSlots: { startTime: string; endTime: string }[]) => {
         setRescheduleSlots(
           apiSlots.map(apiSlotToTimeSlot).filter(s => s.isoStart !== slot.isoStart),
         );
       })
-      .catch(() => {});
-  }, [rescheduling, cycleId, domainApp.domainId, slot.isoStart]);
+      .catch(() => {})
+      .finally(() => setLoadingRescheduleSlots(false));
+  }, [rescheduling, rescheduleMode, cycleId, domainApp.domainId, slot.isoStart]);
 
   async function handleCancel() {
     setCancelling(true);
@@ -591,7 +669,13 @@ function InterviewScheduledView({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ domainApplicationId: domainApp.id }),
     });
-    if (res.ok) onCancelled();
+    if (res.ok) {
+      onCancelled();
+    } else {
+      const body = await res.json().catch(() => ({}));
+      setCancelError(body.error ?? "Failed to cancel interview.");
+      setDeclining(false);
+    }
     setCancelling(false);
   }
 
@@ -601,7 +685,7 @@ function InterviewScheduledView({
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ domainApplicationId: domainApp.id, newStart: newSlot.isoStart, newEnd }),
+      body: JSON.stringify({ domainApplicationId: domainApp.id, newStart: newSlot.isoStart, newEnd, mode: rescheduleMode }),
     });
     if (res.ok) {
       setRescheduling(false);
@@ -615,16 +699,74 @@ function InterviewScheduledView({
       <div className="max-w-2xl mx-auto py-12">
         <h2 className="font-heading text-xl font-bold text-dark-blue mb-2">Reschedule Interview</h2>
         <p className="text-sm text-muted-foreground mb-6">
-          Currently scheduled: <strong>{slot.date}, {slot.time}</strong>. Pick a new time below.
+          Currently scheduled: <strong>{slot.date}, {slot.time}</strong> ({formatInterviewLocation(interview.location)}). Choose a format and new time.
         </p>
-        <div className="mb-8">
-          <InterviewSlotPicker
-            groups={grouped}
-            variant="reschedule"
-            onSelect={(s) => handleReschedule(s as any)}
-          />
+
+        {/* Mode selector */}
+        <div className="grid grid-cols-2 gap-3 mb-6">
+          <button
+            onClick={() => setRescheduleMode("in-person")}
+            className={`flex flex-col items-center gap-2 p-4 rounded-2xl border-2 transition ${
+              rescheduleMode === "in-person"
+                ? "border-accent-coral bg-accent-coral/5"
+                : "border-border hover:border-accent-coral/50"
+            }`}
+          >
+            <svg className={`w-5 h-5 ${rescheduleMode === "in-person" ? "text-accent-coral" : "text-muted-foreground"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+            </svg>
+            <span className={`font-medium text-sm ${rescheduleMode === "in-person" ? "text-accent-coral" : "text-dark-blue"}`}>In-Person</span>
+          </button>
+          <button
+            onClick={() => setRescheduleMode("online")}
+            className={`flex flex-col items-center gap-2 p-4 rounded-2xl border-2 transition ${
+              rescheduleMode === "online"
+                ? "border-accent-coral bg-accent-coral/5"
+                : "border-border hover:border-accent-coral/50"
+            }`}
+          >
+            <svg className={`w-5 h-5 ${rescheduleMode === "online" ? "text-accent-coral" : "text-muted-foreground"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+            </svg>
+            <span className={`font-medium text-sm ${rescheduleMode === "online" ? "text-accent-coral" : "text-dark-blue"}`}>Online</span>
+          </button>
         </div>
-        <button onClick={() => setRescheduling(false)} className="text-sm font-semibold text-muted-foreground hover:underline">
+
+        {/* Slots (shown after mode is selected) */}
+        {rescheduleMode && (
+          <>
+            {loadingRescheduleSlots ? (
+              <div className="px-6 py-8 rounded-2xl bg-muted/30 text-center mb-8">
+                <p className="text-muted-foreground">Loading available times...</p>
+              </div>
+            ) : rescheduleSlots.length === 0 ? (
+              <div className="px-6 py-8 rounded-2xl bg-muted/30 text-center mb-8">
+                <p className="text-muted-foreground">No slots available. Try the other format or check back later.</p>
+              </div>
+            ) : (
+              <div className="space-y-6 mb-8">
+                {grouped.map(({ date, slots: dateSlots }) => (
+                  <div key={date}>
+                    <h4 className="text-sm font-bold text-dark-blue mb-2">{date}</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {dateSlots.map(s => (
+                        <button
+                          key={s.id}
+                          onClick={() => handleReschedule(s)}
+                          className="px-4 py-3 rounded-xl text-sm font-medium border-2 border-border text-dark-blue hover:border-accent-coral/50 transition-all text-left"
+                        >
+                          {s.time}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        <button onClick={() => { setRescheduling(false); setRescheduleMode(null); }} className="text-sm font-semibold text-muted-foreground hover:underline">
           Cancel
         </button>
       </div>
@@ -656,13 +798,25 @@ function InterviewScheduledView({
         </div>
         <div className="pt-4 border-t border-border/60">
           <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Location</span>
-          <p className="text-sm text-dark-blue mt-1">DALI Lab, 3rd Floor Sudikoff, Dartmouth College</p>
+          <p className="text-sm text-dark-blue mt-1">{formatInterviewLocation(interview.location)}</p>
         </div>
+        {interview.location === "Online" && interview.zoomJoinUrl && (
+          <div className="pt-4 border-t border-border/60">
+            <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Meeting Link</span>
+            <a href={interview.zoomJoinUrl} target="_blank" rel="noopener noreferrer"
+               className="flex items-center gap-1.5 text-sm text-accent-coral hover:underline mt-1">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+              Join Zoom Meeting
+            </a>
+          </div>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
         <a
-          href={buildGoogleCalendarUrl(slot, cycleName)}
+          href={buildGoogleCalendarUrl(slot, cycleName, interview.location, interview.zoomJoinUrl)}
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition"
@@ -673,7 +827,7 @@ function InterviewScheduledView({
           Add to Google Calendar
         </a>
         <button
-          onClick={() => downloadIcs(slot, cycleName)}
+          onClick={() => downloadIcs(slot, cycleName, interview.location, interview.zoomJoinUrl)}
           className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-accent-coral hover:text-accent-coral transition"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -685,19 +839,43 @@ function InterviewScheduledView({
           Reschedule
         </button>
         {declining ? (
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">Cancel interview?</span>
-            <button onClick={handleCancel} disabled={cancelling} className="text-sm font-semibold text-red-500 hover:underline">
-              {cancelling ? "Cancelling..." : "Yes"}
-            </button>
-            <button onClick={() => setDeclining(false)} className="text-sm font-semibold text-muted-foreground hover:underline">No</button>
+          <div className="rounded-xl border-2 border-red-200 bg-red-50 px-4 py-3 text-left space-y-2">
+            <p className="text-sm font-semibold text-red-700">This action is final</p>
+            <p className="text-xs text-red-600/80">Cancelling your interview will withdraw you from the interview process for this domain. You will not be able to rebook.</p>
+            <div className="flex items-center gap-3 pt-1">
+              <button onClick={handleCancel} disabled={cancelling} className="px-4 py-1.5 rounded-full bg-red-600 text-white text-sm font-semibold hover:bg-red-700 transition disabled:opacity-50">
+                {cancelling ? "Cancelling..." : "Yes, withdraw"}
+              </button>
+              <button onClick={() => setDeclining(false)} className="text-sm font-semibold text-muted-foreground hover:underline">Go back</button>
+            </div>
           </div>
         ) : (
           <button onClick={() => setDeclining(true)} className="text-sm font-semibold text-muted-foreground hover:text-red-500 transition">
             Cancel Interview
           </button>
         )}
+        {cancelError && (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {cancelError}
+          </div>
+        )}
       </div>
+    </div>
+  );
+}
+
+function WithdrawnView() {
+  return (
+    <div className="max-w-2xl mx-auto py-12 text-center">
+      <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-gray-100 flex items-center justify-center">
+        <svg className="w-8 h-8 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+        </svg>
+      </div>
+      <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">Interview Cancelled</h2>
+      <p className="text-muted-foreground leading-relaxed">
+        You cancelled your interview for this domain. If you believe this was a mistake, please reach out to the DALI team.
+      </p>
     </div>
   );
 }
@@ -879,6 +1057,7 @@ function DomainApplicationCard({
               onRescheduled={onRevalidate}
             />
           )}
+          {stage === "Withdrawn" && <WithdrawnView />}
           {stage === "PostInterviewPending" && <PostInterviewPendingView />}
           {stage === "Accepted" && <AcceptedView cycleName={cycleName} />}
           {stage === "Waitlisted" && <WaitlistedView cycleName={cycleName} />}

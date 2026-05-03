@@ -4,6 +4,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth, withAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { assignInterviewers } from "~/hiring/lib/scheduling";
+import { provisionZoomMeeting } from "~/lib/zoom";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { parseJson } from "~/lib/validate";
 
@@ -36,7 +37,8 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const body = await parseJson(request, BookInterviewSchema);
   if (body instanceof Response) return withAuth(auth, withCors(request, body));
-  const { slotStart, slotEnd, domainApplicationId } = body;
+  const { slotStart, slotEnd, domainApplicationId, mode } = body;
+  const interviewMode = mode === "in-person" ? "in-person" as const : "online" as const;
 
   const domainApplication = await prisma.domainApplication.findUnique({
     where: { id: domainApplicationId },
@@ -63,7 +65,19 @@ export async function action({ request, params }: Route.ActionArgs) {
       applicantDomainIds,
       new Date(slotStart),
       new Date(slotEnd),
+      undefined,
+      interviewMode,
     );
+
+    if (interview.location === "Online") {
+      try {
+        const duration = Math.round((new Date(slotEnd).getTime() - new Date(slotStart).getTime()) / 60_000);
+        await provisionZoomMeeting(interview.id, "DALI Lab Interview", new Date(slotStart), duration);
+      } catch (err) {
+        console.error("Failed to provision Zoom meeting:", err);
+      }
+    }
+
     return withAuth(auth, withCors(request, Response.json(interview, { status: 201 })));
   } catch (err: any) {
     return withAuth(auth, withCors(request, Response.json({ error: err.message }, { status: 409 })));

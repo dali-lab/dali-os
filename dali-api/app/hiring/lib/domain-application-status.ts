@@ -29,14 +29,14 @@ export const domainApplicationStatusInclude = {
   decisions: {
     orderBy: { createdAt: "desc" as const },
   },
-  // A DomainApplication can accumulate historical Interview rows (Cancelled
-  // from previous attempts) alongside at most one Scheduled and optionally a
-  // Completed row. Only Scheduled and Completed rows affect the derived
-  // status — Cancelled rows are audit-only, so we filter them out at query
-  // time to keep the array small.
+  // A DomainApplication can accumulate historical Interview rows across
+  // attempts. We include Scheduled, Completed, and CancelledByApplicant rows
+  // so the status derivation can detect applicant withdrawals (cancelled
+  // with nothing rebooked). CancelledByAdmin rows are admin-initiated and
+  // don't count as withdrawal.
   interviews: {
     where: {
-      status: { in: ["Scheduled", "Completed"] as const },
+      status: { in: ["Scheduled", "Completed", "CancelledByApplicant"] as const },
     },
     orderBy: { createdAt: "desc" as const },
   },
@@ -66,6 +66,8 @@ type DomainApplicationWithStatusRelations = DomainApplicationGetPayload<{
  *     AND interview.status == Scheduled                     → InterviewScheduled
  *  6. interview.status == Completed
  *     AND latest Released decision == InvitedToInterview    → PostInterviewPending
+ *  6b. No Scheduled/Completed interview but a
+ *      CancelledByApplicant interview exists                → Withdrawn
  *  7. Latest Released decision type == Accepted             → Accepted
  *  8. Latest Released decision type == Waitlisted           → Waitlisted
  */
@@ -106,12 +108,11 @@ export function inferDomainApplicationStatus(
   }
 
   if (decisionType === "InvitedToInterview") {
-    // interviews[] is pre-filtered to Scheduled|Completed rows by the include
-    // fragment. There's at most one Scheduled row (partial unique index) and
-    // at most one Completed row per DA. Check Scheduled first because an
-    // applicant who rebooked after completing would have both.
+    // interviews[] is pre-filtered to Scheduled|Completed|CancelledByApplicant
+    // rows by the include fragment.
     const scheduled = interviews.find((i) => i.status === "Scheduled");
     const completed = interviews.find((i) => i.status === "Completed");
+    const cancelledByApplicant = interviews.find((i) => i.status === "CancelledByApplicant");
 
     if (scheduled) {
       // Step 5: a future interview is on the calendar
@@ -121,8 +122,11 @@ export function inferDomainApplicationStatus(
       // Step 6: interview happened, decision hasn't advanced
       return "PostInterviewPending";
     }
-    // Step 4: invited but nothing booked (includes the case where only
-    // historical Cancelled rows exist — those were filtered out of the array).
+    if (cancelledByApplicant) {
+      // Step 6b: applicant cancelled — treat as withdrawal
+      return "Withdrawn";
+    }
+    // Step 4: invited but nothing booked yet
     return "InvitedToInterview";
   }
 

@@ -74,6 +74,8 @@ export async function action({ request, params }: Route.ActionArgs) {
       dayEndHour: body.dayEndHour,
       interviewStartDate: new Date(body.interviewStartDate),
       interviewEndDate: new Date(body.interviewEndDate),
+      rescheduleNoticeHours: body.rescheduleNoticeHours ?? 12,
+      cancelNoticeHours: body.cancelNoticeHours ?? 0,
       timezone: body.timezone ?? "America/New_York",
     },
     create: {
@@ -84,6 +86,8 @@ export async function action({ request, params }: Route.ActionArgs) {
       dayEndHour: body.dayEndHour ?? 18,
       interviewStartDate: new Date(body.interviewStartDate),
       interviewEndDate: new Date(body.interviewEndDate),
+      rescheduleNoticeHours: body.rescheduleNoticeHours ?? 12,
+      cancelNoticeHours: body.cancelNoticeHours ?? 0,
       timezone: body.timezone ?? "America/New_York",
     },
   });
