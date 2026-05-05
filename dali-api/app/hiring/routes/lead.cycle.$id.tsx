@@ -776,7 +776,7 @@ export default function HiringLeadCycleDetails() {
   const loadReviewers = useCallback(async () => {
     if (!cycleId) return
     try {
-      const r = await fetch(`/api/hiring/cycles/${cycleId}/hiring/reviewers`, { credentials: 'include' })
+      const r = await fetch(`/api/hiring/cycles/${cycleId}/reviewers`, { credentials: 'include' })
       setReviewers(r.ok ? await r.json() : [])
     } catch {}
   }, [cycleId])
@@ -798,7 +798,7 @@ export default function HiringLeadCycleDetails() {
   const loadInterviewers = useCallback(async () => {
     if (!cycleId) return
     try {
-      const r = await fetch(`/api/hiring/cycles/${cycleId}/hiring/interviewers`, { credentials: 'include' })
+      const r = await fetch(`/api/hiring/cycles/${cycleId}/interviewers`, { credentials: 'include' })
       setInterviewers(r.ok ? await r.json() : [])
     } catch {}
   }, [cycleId])
@@ -877,7 +877,7 @@ export default function HiringLeadCycleDetails() {
 
   async function addReviewer() {
     if (!cycleId || !newMemberId || !newDomainId) return
-    const res = await fetch(`/api/hiring/cycles/${cycleId}/hiring/reviewers`, {
+    const res = await fetch(`/api/hiring/cycles/${cycleId}/reviewers`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
@@ -893,7 +893,7 @@ export default function HiringLeadCycleDetails() {
 
   async function removeReviewer(reviewerId: string) {
     if (!cycleId) return
-    const res = await fetch(`/api/hiring/cycles/${cycleId}/hiring/reviewers/${reviewerId}`, {
+    const res = await fetch(`/api/hiring/cycles/${cycleId}/reviewers/${reviewerId}`, {
       method: 'DELETE',
       credentials: 'include',
     })
@@ -904,7 +904,7 @@ export default function HiringLeadCycleDetails() {
 
   async function addInterviewer() {
     if (!cycleId || !newInterviewerMemberId || !newInterviewerDomainId) return
-    const res = await fetch(`/api/hiring/cycles/${cycleId}/hiring/interviewers`, {
+    const res = await fetch(`/api/hiring/cycles/${cycleId}/interviewers`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
@@ -921,7 +921,7 @@ export default function HiringLeadCycleDetails() {
 
   async function removeInterviewer(interviewerId: string) {
     if (!cycleId) return
-    const res = await fetch(`/api/hiring/cycles/${cycleId}/hiring/interviewers`, {
+    const res = await fetch(`/api/hiring/cycles/${cycleId}/interviewers`, {
       method: 'DELETE',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },

@@ -1216,7 +1216,7 @@ function ReviewerSection({ cycleId, domainId, initialReviewers }: {
 
   async function addReviewer() {
     if (!selectedMemberId) return;
-    const res = await fetch(`/api/hiring/cycles/${cycleId}/hiring/reviewers`, {
+    const res = await fetch(`/api/hiring/cycles/${cycleId}/reviewers`, {
       method: 'POST', credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ daliMemberId: selectedMemberId, domainId, isLead: false }),
@@ -1229,7 +1229,7 @@ function ReviewerSection({ cycleId, domainId, initialReviewers }: {
   }
 
   async function removeReviewer(reviewerId: string) {
-    const res = await fetch(`/api/hiring/cycles/${cycleId}/hiring/reviewers/${reviewerId}`, {
+    const res = await fetch(`/api/hiring/cycles/${cycleId}/reviewers/${reviewerId}`, {
       method: 'DELETE', credentials: 'include',
     });
     if (res.ok) setReviewers(prev => prev.filter(r => r.id !== reviewerId));
@@ -1374,7 +1374,7 @@ function InterviewerSection({ cycleId, domainId, initialInterviewers }: {
 
   async function addInterviewer() {
     if (!selectedMemberId) return;
-    const res = await fetch(`/api/hiring/cycles/${cycleId}/hiring/interviewers`, {
+    const res = await fetch(`/api/hiring/cycles/${cycleId}/interviewers`, {
       method: "POST", credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ daliMemberId: selectedMemberId, domainId }),
@@ -1388,7 +1388,7 @@ function InterviewerSection({ cycleId, domainId, initialInterviewers }: {
   }
 
   async function removeInterviewer(interviewerId: string) {
-    const res = await fetch(`/api/hiring/cycles/${cycleId}/hiring/interviewers`, {
+    const res = await fetch(`/api/hiring/cycles/${cycleId}/interviewers`, {
       method: "DELETE", credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ interviewerId }),
