@@ -11,6 +11,7 @@ import { Settings, Users, Calendar, AlertTriangle, Trash2, Plus, CheckCircle, Ar
 import { formatVersionLabel, buildVersionNumberMap } from "~/lib/formatVersion";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { ConfidentialityGate } from "~/hiring/components/ConfidentialityGate";
+import { zonedDayStartUtc } from "~/lib/timezone";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -860,11 +861,25 @@ export default function HiringLeadCycleDetails() {
     if (!cycleId) return
     setConfigSaving(true)
     try {
+      // Anchor the date inputs at midnight in the cycle's timezone — my-availability and slot generation expect this.
+      const toZonedMidnightIso = (ymd: string): string => {
+        const [y, m, d] = ymd.split('-').map(Number)
+        return zonedDayStartUtc(y, m, d, config.timezone).toISOString()
+      }
+      const payload = {
+        ...config,
+        interviewStartDate: config.interviewStartDate
+          ? toZonedMidnightIso(config.interviewStartDate)
+          : config.interviewStartDate,
+        interviewEndDate: config.interviewEndDate
+          ? toZonedMidnightIso(config.interviewEndDate)
+          : config.interviewEndDate,
+      }
       const res = await fetch(`/api/hiring/cycles/${cycleId}/interview-config`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config),
+        body: JSON.stringify(payload),
       })
       if (res.ok) {
         setConfigSaved(true)
