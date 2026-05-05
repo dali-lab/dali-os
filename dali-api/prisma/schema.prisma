@@ -103,6 +103,7 @@ model ApplicationCycle {
   interviews        Interview[]
   delibsSessions    DelibsSession[]
   decisionEmails    CycleDecisionEmail[]
+  notificationEmails CycleNotificationEmail[]
 
   confidentialityBinding   CycleConfidentialityAgreement?
   confidentialitySignatures ConfidentialityAgreementSignature[]
@@ -293,6 +294,9 @@ model InterviewConfig {
   interviewStartDate DateTime
   interviewEndDate   DateTime
 
+  rescheduleNoticeHours Int @default(12) // minimum hours before interview to allow reschedule
+  cancelNoticeHours     Int @default(0)  // minimum hours before interview to allow cancel (0 = up until start)
+
   timezone String @default("America/New_York")
 }
 
@@ -355,6 +359,12 @@ enum InterviewStatus {
   CancelledByAdmin
 }
 
+enum InterviewLocation {
+  PodAppa
+  PodMomo
+  Online
+}
+
 model Interview {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
@@ -373,6 +383,10 @@ model Interview {
   startTime DateTime
   endTime   DateTime
   status    InterviewStatus @default(Scheduled)
+  location  InterviewLocation @default(Online)
+
+  zoomMeetingId String?
+  zoomJoinUrl   String?
 
   // Joint outcome — set by either interviewer when marking complete.
   // recommendation values: 'Strong Hire' | 'Hire' | 'Lean Hire' | 'Lean No Hire' | 'No Hire'
@@ -714,7 +728,8 @@ model EmailTemplateVersion {
   createdById String
   createdBy   DALIMember @relation(fields: [createdById], references: [id])
 
-  cycleDecisionEmails CycleDecisionEmail[]
+  cycleDecisionEmails     CycleDecisionEmail[]
+  cycleNotificationEmails CycleNotificationEmail[]
 
   @@index([templateId, versionNumber])
 }
@@ -732,6 +747,30 @@ model CycleDecisionEmail {
   emailTemplateVersion   EmailTemplateVersion @relation(fields: [emailTemplateVersionId], references: [id])
 
   @@id([applicationCycleId, decisionType])
+}
+
+// Non-decision email slots managed per-cycle. Mirrors CycleDecisionEmail but
+// without the lock-on-release semantics — notification emails can be rebound
+// at any time.
+enum NotificationType {
+  ApplicationReceived
+  InterviewInviteMentor
+  InterviewConfirmedApplicant
+  InterviewCancelledApplicant
+  InterviewCancelledInterviewer
+  InterviewLocationChanged
+}
+
+model CycleNotificationEmail {
+  applicationCycleId String
+  applicationCycle   ApplicationCycle @relation(fields: [applicationCycleId], references: [id])
+
+  notificationType NotificationType
+
+  emailTemplateVersionId String
+  emailTemplateVersion   EmailTemplateVersion @relation(fields: [emailTemplateVersionId], references: [id])
+
+  @@id([applicationCycleId, notificationType])
 }
 
 // ─── Audit Logging ───────────────────────────────────────────────────────────

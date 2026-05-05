@@ -7,13 +7,19 @@ import DOMPurify from "isomorphic-dompurify";
 export type InterpolationVars = {
   firstName: string;
   domain?: string;
+  time?: string;
+  location?: string;
+  meetingUrl?: string;
 };
 
 export function interpolate(text: string, vars: InterpolationVars): string {
   // Function form so $& / $1 / $$ in the substituted values aren't treated as backrefs.
   return text
     .replace(/\{\{firstName\}\}/g, () => vars.firstName)
-    .replace(/\{\{domain\}\}/g, () => vars.domain ?? "");
+    .replace(/\{\{domain\}\}/g, () => vars.domain ?? "")
+    .replace(/\{\{time\}\}/g, () => vars.time ?? "")
+    .replace(/\{\{location\}\}/g, () => vars.location ?? "")
+    .replace(/\{\{meetingUrl\}\}/g, () => vars.meetingUrl ?? "");
 }
 
 // Sanitization is part of the contract: template bodies are user-authored

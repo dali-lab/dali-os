@@ -43,6 +43,7 @@ beforeEach(() => {
   (mockPrisma as any).decision = { findMany: vi.fn() };
   (mockPrisma as any).emailTemplate = { findMany: vi.fn() };
   (mockPrisma as any).cycleDecisionEmail = { findMany: vi.fn() };
+  (mockPrisma as any).cycleNotificationEmail = { findMany: vi.fn().mockResolvedValue([]) };
   // Default the gate to "signed" so the loader keeps calling decision.findMany
   // for finalDecisions — the assertion below depends on that query firing. The
   // confidentiality gating itself is exercised in dedicated tests.

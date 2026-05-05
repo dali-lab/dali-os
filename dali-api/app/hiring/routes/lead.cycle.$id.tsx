@@ -11,6 +11,7 @@ import { Settings, Users, Calendar, AlertTriangle, Trash2, Plus, CheckCircle, Ar
 import { formatVersionLabel, buildVersionNumberMap } from "~/lib/formatVersion";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { ConfidentialityGate } from "~/hiring/components/ConfidentialityGate";
+import { zonedDayStartUtc } from "~/lib/timezone";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -22,6 +23,8 @@ interface InterviewConfig {
   dayEndHour: number
   interviewStartDate: string
   interviewEndDate: string
+  rescheduleNoticeHours: number
+  cancelNoticeHours: number
   timezone: string
 }
 
@@ -36,6 +39,8 @@ interface InterviewRow {
   startTime: string
   endTime: string
   status: string
+  location: string
+  zoomJoinUrl: string | null
   domainApplication: {
     challengeVersion: { domain: { name: string } }
     application: { user: { firstName: string; lastName: string } }
@@ -237,6 +242,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
   });
 
+  const currentNotificationEmails = await prisma.cycleNotificationEmail.findMany({
+    where: { applicationCycleId: params.id },
+    include: {
+      emailTemplateVersion: { include: { template: { select: { name: true } } } },
+    },
+  });
+
   const releasedDecisions = confidentialityRequired
     ? []
     : await prisma.decision.findMany({
@@ -287,6 +299,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       generalChallengeVersions: generalChallengeVersions.map(withCvNumber),
       emailTemplates,
       currentDecisionEmails,
+      currentNotificationEmails,
       releasedDecisionTypes,
       domainChallengeVersions: domainChallengeVersions.map(withCvNumber),
       domainRubricVersions,
@@ -402,6 +415,39 @@ export async function action({ request, params }: Route.ActionArgs) {
         where: {
           applicationCycleId: params.id,
           decisionType: decisionType as (typeof validTypes)[number],
+        },
+      });
+    }
+    return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}`));
+  }
+
+  if (intent === "set-notification-email") {
+    const notificationType = formData.get("notificationType") as string;
+    const emailTemplateVersionId = (formData.get("emailTemplateVersionId") as string) || null;
+    const validTypes = ["ApplicationReceived", "InterviewInviteMentor", "InterviewConfirmedApplicant", "InterviewCancelledApplicant", "InterviewCancelledInterviewer", "InterviewLocationChanged"] as const;
+    if (!validTypes.includes(notificationType as (typeof validTypes)[number])) {
+      return withAuth(auth, new Response(JSON.stringify({ error: "Invalid notification type" }), { status: 400, headers: { "Content-Type": "application/json" } }));
+    }
+    if (emailTemplateVersionId) {
+      await prisma.cycleNotificationEmail.upsert({
+        where: {
+          applicationCycleId_notificationType: {
+            applicationCycleId: params.id,
+            notificationType: notificationType as (typeof validTypes)[number],
+          },
+        },
+        update: { emailTemplateVersionId },
+        create: {
+          applicationCycleId: params.id,
+          notificationType: notificationType as (typeof validTypes)[number],
+          emailTemplateVersionId,
+        },
+      });
+    } else {
+      await prisma.cycleNotificationEmail.deleteMany({
+        where: {
+          applicationCycleId: params.id,
+          notificationType: notificationType as (typeof validTypes)[number],
         },
       });
     }
@@ -655,6 +701,8 @@ export default function HiringLeadCycleDetails() {
     dayEndHour: 18,
     interviewStartDate: '',
     interviewEndDate: '',
+    rescheduleNoticeHours: 12,
+    cancelNoticeHours: 0,
     timezone: 'America/New_York',
   })
   const [configSaved, setConfigSaved] = useState(false)
@@ -729,7 +777,7 @@ export default function HiringLeadCycleDetails() {
   const loadReviewers = useCallback(async () => {
     if (!cycleId) return
     try {
-      const r = await fetch(`/api/hiring/cycles/${cycleId}/hiring/reviewers`, { credentials: 'include' })
+      const r = await fetch(`/api/hiring/cycles/${cycleId}/reviewers`, { credentials: 'include' })
       setReviewers(r.ok ? await r.json() : [])
     } catch {}
   }, [cycleId])
@@ -751,7 +799,7 @@ export default function HiringLeadCycleDetails() {
   const loadInterviewers = useCallback(async () => {
     if (!cycleId) return
     try {
-      const r = await fetch(`/api/hiring/cycles/${cycleId}/hiring/interviewers`, { credentials: 'include' })
+      const r = await fetch(`/api/hiring/cycles/${cycleId}/interviewers`, { credentials: 'include' })
       setInterviewers(r.ok ? await r.json() : [])
     } catch {}
   }, [cycleId])
@@ -813,11 +861,25 @@ export default function HiringLeadCycleDetails() {
     if (!cycleId) return
     setConfigSaving(true)
     try {
+      // Anchor the date inputs at midnight in the cycle's timezone — my-availability and slot generation expect this.
+      const toZonedMidnightIso = (ymd: string): string => {
+        const [y, m, d] = ymd.split('-').map(Number)
+        return zonedDayStartUtc(y, m, d, config.timezone).toISOString()
+      }
+      const payload = {
+        ...config,
+        interviewStartDate: config.interviewStartDate
+          ? toZonedMidnightIso(config.interviewStartDate)
+          : config.interviewStartDate,
+        interviewEndDate: config.interviewEndDate
+          ? toZonedMidnightIso(config.interviewEndDate)
+          : config.interviewEndDate,
+      }
       const res = await fetch(`/api/hiring/cycles/${cycleId}/interview-config`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config),
+        body: JSON.stringify(payload),
       })
       if (res.ok) {
         setConfigSaved(true)
@@ -830,7 +892,7 @@ export default function HiringLeadCycleDetails() {
 
   async function addReviewer() {
     if (!cycleId || !newMemberId || !newDomainId) return
-    const res = await fetch(`/api/hiring/cycles/${cycleId}/hiring/reviewers`, {
+    const res = await fetch(`/api/hiring/cycles/${cycleId}/reviewers`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
@@ -846,7 +908,7 @@ export default function HiringLeadCycleDetails() {
 
   async function removeReviewer(reviewerId: string) {
     if (!cycleId) return
-    const res = await fetch(`/api/hiring/cycles/${cycleId}/hiring/reviewers/${reviewerId}`, {
+    const res = await fetch(`/api/hiring/cycles/${cycleId}/reviewers/${reviewerId}`, {
       method: 'DELETE',
       credentials: 'include',
     })
@@ -857,7 +919,7 @@ export default function HiringLeadCycleDetails() {
 
   async function addInterviewer() {
     if (!cycleId || !newInterviewerMemberId || !newInterviewerDomainId) return
-    const res = await fetch(`/api/hiring/cycles/${cycleId}/hiring/interviewers`, {
+    const res = await fetch(`/api/hiring/cycles/${cycleId}/interviewers`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
@@ -874,7 +936,7 @@ export default function HiringLeadCycleDetails() {
 
   async function removeInterviewer(interviewerId: string) {
     if (!cycleId) return
-    const res = await fetch(`/api/hiring/cycles/${cycleId}/hiring/interviewers`, {
+    const res = await fetch(`/api/hiring/cycles/${cycleId}/interviewers`, {
       method: 'DELETE',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
@@ -1186,6 +1248,12 @@ export default function HiringLeadCycleDetails() {
             currentDecisionEmails={loaderData?.currentDecisionEmails ?? []}
             releasedDecisionTypes={loaderData?.releasedDecisionTypes ?? []}
           />
+
+          {/* Non-decision notification email bindings */}
+          <NotificationEmailsSection
+            emailTemplates={loaderData?.emailTemplates ?? []}
+            currentNotificationEmails={loaderData?.currentNotificationEmails ?? []}
+          />
         </div>
       )}
 
@@ -1258,6 +1326,26 @@ export default function HiringLeadCycleDetails() {
                 onChange={e => setConfig(c => ({ ...c, interviewEndDate: e.target.value }))}
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
               />
+            </div>
+            <div>
+              <label className="block text-sm font-bold text-foreground/80 mb-1">Reschedule Notice</label>
+              <select
+                value={config.rescheduleNoticeHours}
+                onChange={e => setConfig(c => ({ ...c, rescheduleNoticeHours: Number(e.target.value) }))}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              >
+                {[0, 2, 4, 6, 8, 12, 24, 48].map(h => <option key={h} value={h}>{h === 0 ? 'No minimum' : `${h} hours before`}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-bold text-foreground/80 mb-1">Cancel Notice</label>
+              <select
+                value={config.cancelNoticeHours}
+                onChange={e => setConfig(c => ({ ...c, cancelNoticeHours: Number(e.target.value) }))}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              >
+                {[0, 2, 4, 6, 8, 12, 24, 48].map(h => <option key={h} value={h}>{h === 0 ? 'Up until start' : `${h} hours before`}</option>)}
+              </select>
             </div>
           </div>
 
@@ -1458,6 +1546,7 @@ export default function HiringLeadCycleDetails() {
                   <th className="text-left px-4 py-3 font-bold text-foreground/80">Domain</th>
                   <th className="text-left px-4 py-3 font-bold text-foreground/80">Time</th>
                   <th className="text-left px-4 py-3 font-bold text-foreground/80">Status</th>
+                  <th className="text-left px-4 py-3 font-bold text-foreground/80">Location</th>
                   <th className="text-left px-4 py-3 font-bold text-foreground/80">Interviewers</th>
                   <th className="text-right px-4 py-3 font-bold text-foreground/80">Actions</th>
                 </tr>
@@ -1488,6 +1577,73 @@ export default function HiringLeadCycleDetails() {
                         }`}>
                           {interview.status}
                         </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        {isFuture && interview.status === 'Scheduled' ? (
+                          <select
+                            value={interview.location}
+                            onChange={async (e) => {
+                              const newLocation = e.target.value
+                              const res = await fetch(`/api/hiring/interviews/${interview.id}/location`, {
+                                method: 'PATCH',
+                                credentials: 'include',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ location: newLocation }),
+                              })
+                              if (res.ok) {
+                                const updated = await res.json()
+                                setInterviews(prev => prev.map(i =>
+                                  i.id === interview.id ? { ...i, location: newLocation, zoomJoinUrl: updated.zoomJoinUrl ?? null } : i
+                                ))
+                              } else {
+                                const body = await res.json().catch(() => ({}))
+                                alert(body.error ?? 'Failed to update location')
+                              }
+                            }}
+                            className="text-xs border border-border rounded px-1.5 py-0.5 bg-card"
+                          >
+                            <option value="PodAppa">Pod Appa</option>
+                            <option value="PodMomo">Pod Momo</option>
+                            <option value="Online">Online</option>
+                          </select>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">
+                            {interview.location === 'PodAppa' ? 'Pod Appa' :
+                             interview.location === 'PodMomo' ? 'Pod Momo' : 'Online'}
+                          </span>
+                        )}
+                        {interview.location === 'Online' && isFuture && interview.status === 'Scheduled' && (
+                          <input
+                            type="url"
+                            placeholder="Paste meeting link"
+                            defaultValue={interview.zoomJoinUrl ?? ''}
+                            onBlur={async (e) => {
+                              let meetingUrl = e.target.value.trim()
+                              if (meetingUrl && !/^https?:\/\//i.test(meetingUrl)) {
+                                meetingUrl = `https://${meetingUrl}`
+                                e.target.value = meetingUrl
+                              }
+                              if (meetingUrl === (interview.zoomJoinUrl ?? '')) return
+                              const res = await fetch(`/api/hiring/interviews/${interview.id}/location`, {
+                                method: 'PATCH',
+                                credentials: 'include',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ location: 'Online', meetingUrl }),
+                              })
+                              if (res.ok) {
+                                setInterviews(prev => prev.map(i =>
+                                  i.id === interview.id ? { ...i, zoomJoinUrl: meetingUrl || null } : i
+                                ))
+                              }
+                            }}
+                            onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                            className="block w-full text-xs border border-border rounded px-1.5 py-0.5 bg-card mt-1 placeholder:text-muted-foreground/50"
+                          />
+                        )}
+                        {interview.location === 'Online' && interview.zoomJoinUrl && !(isFuture && interview.status === 'Scheduled') && (
+                          <a href={interview.zoomJoinUrl} target="_blank" rel="noopener noreferrer"
+                             className="block text-xs text-blue-600 hover:underline mt-0.5">Meeting link</a>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-muted-foreground text-xs">
                         {interview.assignments
@@ -2672,6 +2828,125 @@ function DecisionEmailPicker({ slot, binding, emailTemplates, locked }: {
         <Form method="post" preventScrollReset className="flex items-end gap-2 flex-wrap" onSubmit={() => setEditing(false)}>
           <input type="hidden" name="intent" value="set-decision-email" />
           <input type="hidden" name="decisionType" value={slot.type} />
+          <div className="flex-1 min-w-[14rem]">
+            <select
+              name="emailTemplateVersionId"
+              defaultValue={currentVersionId ?? ""}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            >
+              <option value="">No template (skip email)</option>
+              {emailTemplates
+                .filter((t: any) => t.versions.length > 0)
+                .flatMap((t: any) =>
+                  t.versions.map((v: any) => (
+                    <option key={v.id} value={v.id}>
+                      {t.name} — v{v.versionNumber}
+                    </option>
+                  ))
+                )}
+            </select>
+          </div>
+          <button
+            type="submit"
+            className="px-3 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition"
+          >
+            Save
+          </button>
+          <button
+            type="button"
+            onClick={() => setEditing(false)}
+            className="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground"
+          >
+            Cancel
+          </button>
+        </Form>
+      )}
+    </div>
+  );
+}
+
+const NOTIFICATION_EMAIL_SLOTS = [
+  { type: "ApplicationReceived", label: "Application Received", description: "Sent to the applicant when they first submit their application." },
+  { type: "InterviewInviteMentor", label: "Interview Invite (Interviewer)", description: "Sent to the assigned interviewer when an interview is booked or they are reassigned." },
+  { type: "InterviewConfirmedApplicant", label: "Interview Confirmed (Applicant)", description: "Sent to the applicant when their interview is booked. Supports {{time}}, {{location}}, {{meetingUrl}}." },
+  { type: "InterviewCancelledApplicant", label: "Interview Cancelled (Applicant)", description: "Sent to the applicant when their interview is cancelled. Supports {{time}}, {{location}}." },
+  { type: "InterviewCancelledInterviewer", label: "Interview Cancelled (Interviewer)", description: "Sent to the interviewer when an interview is cancelled or they are unassigned." },
+  { type: "InterviewLocationChanged", label: "Interview Location Changed", description: "Sent to both the applicant and interviewer(s) when the interview location is updated. Supports {{time}}, {{location}}, {{meetingUrl}}." },
+] as const;
+
+function NotificationEmailsSection({ emailTemplates, currentNotificationEmails }: {
+  emailTemplates: any[];
+  currentNotificationEmails: any[];
+}) {
+  return (
+    <div className="bg-card rounded-xl border border-border shadow-sm p-6 space-y-4">
+      <div>
+        <h3 className="text-sm font-bold text-foreground/80">Notification Emails</h3>
+        <p className="text-xs text-muted-foreground">
+          Pick which template fires for each notification slot. Slots without a binding will not send an email.
+        </p>
+      </div>
+      <div className="space-y-3">
+        {NOTIFICATION_EMAIL_SLOTS.map((slot) => {
+          const binding = currentNotificationEmails.find((b: any) => b.notificationType === slot.type);
+          return (
+            <NotificationEmailPicker
+              key={slot.type}
+              slot={slot}
+              binding={binding ?? null}
+              emailTemplates={emailTemplates}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function NotificationEmailPicker({ slot, binding, emailTemplates }: {
+  slot: { type: string; label: string; description: string };
+  binding: any | null;
+  emailTemplates: any[];
+}) {
+  const [editing, setEditing] = useState(false);
+  const currentVersionId: string | null = binding?.emailTemplateVersionId ?? null;
+  const currentLabel = binding
+    ? `${binding.emailTemplateVersion.template.name} — v${binding.emailTemplateVersion.versionNumber}`
+    : null;
+
+  return (
+    <div className="border border-border rounded-lg p-4 space-y-2">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h4 className="text-sm font-bold text-foreground">{slot.label}</h4>
+          <p className="text-xs text-muted-foreground">{slot.description}</p>
+        </div>
+        {!editing && (
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="text-xs text-blue-600 hover:text-blue-800 font-medium shrink-0"
+          >
+            {currentLabel ? "Change" : "Assign"}
+          </button>
+        )}
+      </div>
+
+      {!editing ? (
+        currentLabel ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <CheckCircle className="w-4 h-4 text-green-600" />
+            <span>{currentLabel}</span>
+          </div>
+        ) : (
+          <div className="text-sm text-orange-700 bg-orange-50 border border-orange-200 rounded px-2 py-1">
+            No template assigned — this notification will not send an email.
+          </div>
+        )
+      ) : (
+        <Form method="post" preventScrollReset className="flex items-end gap-2 flex-wrap" onSubmit={() => setEditing(false)}>
+          <input type="hidden" name="intent" value="set-notification-email" />
+          <input type="hidden" name="notificationType" value={slot.type} />
           <div className="flex-1 min-w-[14rem]">
             <select
               name="emailTemplateVersionId"
