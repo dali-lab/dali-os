@@ -14,6 +14,7 @@ import {
   MessageSquare,
   Menu,
   X,
+  BarChart3,
 } from 'lucide-react'
 import { userInitials } from '~/lib/display'
 import { bumpLogoClick, hydrateRetroClass, logConsoleBootBanner } from '~/lib/party'
@@ -103,6 +104,14 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
       icon: Calendar,
       show: isHiringLead,
       active: path.startsWith('/hiring/lead'),
+      sub: null,
+    },
+    {
+      label: 'Analytics',
+      to: '/hiring/analytics',
+      icon: BarChart3,
+      show: isHiringLead || isDomainLead,
+      active: path.startsWith('/hiring/analytics'),
       sub: null,
     },
     {
