@@ -24,7 +24,6 @@ export default [
     route("hiring/cycles/:cycleId/confidentiality", "hiring/routes/cycles.$cycleId.confidentiality.tsx"),
     route("hiring/interviewer", "hiring/routes/interviewer.tsx"),
     route("hiring/interviewer/interview/:interviewId", "hiring/routes/interviewer.interview.$interviewId.tsx"),
-    route("hiring/schedule-interview", "hiring/routes/applicant.schedule-interview.tsx"),
     route("hiring/analytics", "hiring/routes/analytics.tsx"),
 
     // Admin console (top-level, not hiring)
