@@ -24,7 +24,7 @@ export default [
     route("hiring/cycles/:cycleId/confidentiality", "hiring/routes/cycles.$cycleId.confidentiality.tsx"),
     route("hiring/interviewer", "hiring/routes/interviewer.tsx"),
     route("hiring/interviewer/interview/:interviewId", "hiring/routes/interviewer.interview.$interviewId.tsx"),
-    route("hiring/schedule-interview", "hiring/routes/applicant.schedule-interview.tsx"),
+    route("hiring/analytics", "hiring/routes/analytics.tsx"),
 
     // Admin console (top-level, not hiring)
     route("admin-console", "routes/admin-console.tsx"),
@@ -78,7 +78,6 @@ export default [
   route("api/hiring/cycles/:cycleId/my-interviews/:interviewId/decline", "hiring/routes/api.cycles.$cycleId.my-interviews.$interviewId.decline.ts"),
   route("api/hiring/cycles/:cycleId/my-interviews/:interviewId/notes", "hiring/routes/api.cycles.$cycleId.my-interviews.$interviewId.notes.ts"),
   route("api/hiring/cycles/:cycleId/available-slots", "hiring/routes/api.cycles.$cycleId.available-slots.ts"),
-  route("api/hiring/cycles/:cycleId/book-interview", "hiring/routes/api.cycles.$cycleId.book-interview.ts"),
   route("api/hiring/cycles/:cycleId/interviews", "hiring/routes/api.cycles.$cycleId.interviews.ts"),
   route("api/hiring/cycles/:cycleId/interviewers", "hiring/routes/api.cycles.$cycleId.interviewers.ts"),
   route("api/hiring/cycles/:cycleId/delibs", "hiring/routes/api.cycles.$cycleId.delibs.ts"),
@@ -112,6 +111,8 @@ export default [
 
   // Google calendar (cross-cutting — used by hiring scheduling but lives at top level)
   route("api/google-calendar/busy", "routes/api.google-calendar.busy.ts"),
+
+  route("api/hiring/interviews/:id/location", "hiring/routes/api.interviews.$id.location.ts"),
 
   // S3 file upload
   route("api/upload/presign", "routes/api.upload.presign.ts"),

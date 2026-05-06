@@ -866,6 +866,7 @@ export default function DomainLeadDashboard() {
                                   <tr>
                                     <th className="px-4 py-2 text-left">Applicant</th>
                                     <th className="px-4 py-2 text-left">Time</th>
+                                    <th className="px-4 py-2 text-left">Location</th>
                                     <th className="px-4 py-2 text-left">Status</th>
                                     <th className="px-4 py-2 text-left">In-Domain</th>
                                     <th className="px-4 py-2 text-left">Cross-Domain</th>
@@ -898,6 +899,14 @@ export default function DomainLeadDashboard() {
                                           {start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}{' '}
                                           {start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} –{' '}
                                           {end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+                                        </td>
+                                        <td className="px-4 py-3 text-muted-foreground text-xs">
+                                          {interview.location === 'PodAppa' ? 'Pod Appa' :
+                                           interview.location === 'PodMomo' ? 'Pod Momo' : 'Online'}
+                                          {interview.location === 'Online' && interview.zoomJoinUrl && (
+                                            <a href={interview.zoomJoinUrl} target="_blank" rel="noopener noreferrer"
+                                               className="block text-xs text-blue-600 hover:underline mt-0.5">Zoom</a>
+                                          )}
                                         </td>
                                         <td className="px-4 py-3">
                                           <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${
@@ -1207,7 +1216,7 @@ function ReviewerSection({ cycleId, domainId, initialReviewers }: {
 
   async function addReviewer() {
     if (!selectedMemberId) return;
-    const res = await fetch(`/api/hiring/cycles/${cycleId}/hiring/reviewers`, {
+    const res = await fetch(`/api/hiring/cycles/${cycleId}/reviewers`, {
       method: 'POST', credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ daliMemberId: selectedMemberId, domainId, isLead: false }),
@@ -1220,7 +1229,7 @@ function ReviewerSection({ cycleId, domainId, initialReviewers }: {
   }
 
   async function removeReviewer(reviewerId: string) {
-    const res = await fetch(`/api/hiring/cycles/${cycleId}/hiring/reviewers/${reviewerId}`, {
+    const res = await fetch(`/api/hiring/cycles/${cycleId}/reviewers/${reviewerId}`, {
       method: 'DELETE', credentials: 'include',
     });
     if (res.ok) setReviewers(prev => prev.filter(r => r.id !== reviewerId));
@@ -1365,7 +1374,7 @@ function InterviewerSection({ cycleId, domainId, initialInterviewers }: {
 
   async function addInterviewer() {
     if (!selectedMemberId) return;
-    const res = await fetch(`/api/hiring/cycles/${cycleId}/hiring/interviewers`, {
+    const res = await fetch(`/api/hiring/cycles/${cycleId}/interviewers`, {
       method: "POST", credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ daliMemberId: selectedMemberId, domainId }),
@@ -1379,7 +1388,7 @@ function InterviewerSection({ cycleId, domainId, initialInterviewers }: {
   }
 
   async function removeInterviewer(interviewerId: string) {
-    const res = await fetch(`/api/hiring/cycles/${cycleId}/hiring/interviewers`, {
+    const res = await fetch(`/api/hiring/cycles/${cycleId}/interviewers`, {
       method: "DELETE", credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ interviewerId }),

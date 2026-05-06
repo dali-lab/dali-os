@@ -3,10 +3,13 @@ import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth, withAuth } from "~/lib/auth";
 import { assignInterviewers } from "~/hiring/lib/scheduling";
+// import { provisionZoomMeeting } from "~/lib/zoom"; // S2S Zoom not configured yet
 import { parseJson } from "~/lib/validate";
+import { sendInterviewInviteEmails } from "~/hiring/lib/interview-emails";
 
 const ScheduleInterviewSchema = z.object({
   startTime: z.string().datetime({ offset: true }),
+  mode: z.enum(["in-person", "online"]).optional(),
 });
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -19,7 +22,8 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const body = await parseJson(request, ScheduleInterviewSchema);
   if (body instanceof Response) return withAuth(auth, body);
-  const { startTime } = body;
+  const { startTime, mode } = body;
+  const interviewMode = mode === "in-person" ? "in-person" as const : "online" as const;
 
   const da = await prisma.domainApplication.findUnique({
     where: { id: params.id },
@@ -77,7 +81,22 @@ export async function action({ request, params }: Route.ActionArgs) {
       [da.challengeVersion.domainId],
       slotStart,
       slotEnd,
+      undefined,
+      interviewMode,
     );
+
+    // S2S Zoom not configured yet — meeting links are set manually by admins
+    // if (interview.location === "Online") {
+    //   try {
+    //     await provisionZoomMeeting(interview.id, "DALI Lab Interview", slotStart, config.slotDurationMinutes);
+    //   } catch (err) {
+    //     console.error("Failed to provision Zoom meeting:", err);
+    //   }
+    // }
+
+    // Best-effort: send calendar invites to applicant + interviewers
+    sendInterviewInviteEmails(interview.id, da.id).catch(() => {});
+
     return withAuth(auth, Response.json(interview, { status: 201 }));
   } catch (err: any) {
     return withAuth(auth, Response.json({ error: err.message }, { status: 409 }));

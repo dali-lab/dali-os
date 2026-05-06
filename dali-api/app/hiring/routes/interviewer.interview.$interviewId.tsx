@@ -10,6 +10,7 @@ import {
   AlertTriangle,
   ChevronDown,
   FileText,
+  MapPin,
   MessageSquare,
 } from 'lucide-react'
 import { prisma } from '~/lib/db'
@@ -316,6 +317,23 @@ export default function InterviewDetailPage() {
                 <span className="px-2 py-0.5 bg-muted text-foreground/80 rounded text-xs font-medium">
                   {domain}
                 </span>
+              )}
+              {interview.location && (
+                <span className="flex items-center">
+                  <MapPin className="w-4 h-4 mr-1 text-muted-foreground/70" />
+                  {interview.location === 'PodAppa'
+                    ? 'Pod Appa'
+                    : interview.location === 'PodMomo'
+                      ? 'Pod Momo'
+                      : 'Online'}
+                </span>
+              )}
+              {interview.location === 'Online' && interview.zoomJoinUrl && (
+                <a href={interview.zoomJoinUrl} target="_blank" rel="noopener noreferrer"
+                   className="flex items-center text-sm text-blue-600 hover:underline">
+                  <Video className="w-4 h-4 mr-1" />
+                  Join Zoom
+                </a>
               )}
               <span
                 className={`px-2 py-0.5 rounded text-xs font-medium ${

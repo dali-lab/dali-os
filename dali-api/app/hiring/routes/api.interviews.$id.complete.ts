@@ -4,6 +4,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth, withAuth } from "~/lib/auth";
 import { parseJson } from "~/lib/validate";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
+import { isHiringLead } from "~/lib/roles";
 
 const VALID_RECOMMENDATIONS = ["Strong Hire", "Hire", "Lean Hire", "Lean No Hire", "No Hire"] as const;
 
@@ -46,12 +47,15 @@ export async function action({ request, params }: Route.ActionArgs) {
     auth.user.sub,
     interview.applicationCycleId,
   );
-  if (gate) return gate;
+  if (gate) return withAuth(auth, gate);
 
   // DELETE = reopen a completed interview (flip status back to Scheduled).
   // Preserves recommendation + recommendationNotes so the interviewer can
   // re-submit the same values or edit them before marking complete again.
   if (request.method === "DELETE") {
+    if (!(await isHiringLead(auth.user.sub))) {
+      return withAuth(auth, Response.json({ error: "Only hiring leads can reopen interviews" }, { status: 403 }));
+    }
     if (interview.status !== "Completed") {
       return withAuth(auth, Response.json({ error: "Interview is not completed" }, { status: 409 }));
     }

@@ -74,7 +74,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     auth.user.sub,
     domainApp.application.applicationCycleId,
   );
-  if (gate) return gate;
+  if (gate) return withAuth(auth, gate);
 
   const binding = await prisma.cycleDecisionEmail.findUnique({
     where: {
