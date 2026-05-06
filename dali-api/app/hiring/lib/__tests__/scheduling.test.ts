@@ -368,6 +368,100 @@ describe("computeAvailableSlots", () => {
     const at930 = slots.find((s) => s.startTime === new Date("2030-04-15T13:30:00Z").toISOString());
     expect(at930).toBeDefined();
   });
+
+  // Regression for #436: a slot is only "available" if there exist two
+  // DISTINCT humans — one free in-domain and one free cross-domain. When the
+  // sole free in-domain row and sole free cross-domain row belong to the
+  // same member, the slot must not appear (assignInterviewers would reject
+  // it as "No cross-domain interviewer available for this slot").
+  it("does not surface slots where the only in-domain and cross-domain free rows are the same human", async () => {
+    mockPrisma.interviewConfig.findUnique.mockResolvedValue({
+      slotDurationMinutes: 30,
+      bufferMinutes: 0,
+      dayStartHour: 9,
+      dayEndHour: 10,
+      interviewStartDate: new Date("2030-04-15T04:00:00Z"),
+      interviewEndDate: new Date("2030-04-16T03:59:59Z"),
+      timezone: "America/New_York",
+    });
+
+    // Mira is the only interviewer in the cycle, cross-listed under Eng and
+    // Design. She'd be the only candidate for both seats — booking would
+    // fail with "No cross-domain interviewer available" — so no slot should
+    // be produced.
+    mockPrisma.cycleInterviewer.findMany.mockResolvedValue([
+      {
+        id: "r-mira-eng",
+        daliMemberId: "mira",
+        domainId: "domain1",
+        availabilityBlocks: [
+          { startTime: new Date("2030-04-15T00:00:00Z"), endTime: new Date("2030-04-15T23:59:59Z") },
+        ],
+        interviewAssignments: [],
+      },
+      {
+        id: "r-mira-design",
+        daliMemberId: "mira",
+        domainId: "domain-other",
+        availabilityBlocks: [
+          { startTime: new Date("2030-04-15T00:00:00Z"), endTime: new Date("2030-04-15T23:59:59Z") },
+        ],
+        interviewAssignments: [],
+      },
+    ]);
+
+    const slots = await computeAvailableSlots("cycle1", ["domain1"]);
+    expect(slots).toEqual([]);
+  });
+
+  it("surfaces a slot when the cross-domain row's member differs from the in-domain row's member", async () => {
+    mockPrisma.interviewConfig.findUnique.mockResolvedValue({
+      slotDurationMinutes: 30,
+      bufferMinutes: 0,
+      dayStartHour: 9,
+      dayEndHour: 10,
+      interviewStartDate: new Date("2030-04-15T04:00:00Z"),
+      interviewEndDate: new Date("2030-04-16T03:59:59Z"),
+      timezone: "America/New_York",
+    });
+
+    // Bob covers the in-domain seat; Mira's Design row covers the
+    // cross-domain seat. Two distinct humans → the 9:00 slot is available.
+    // (Mira's Eng row is also in-domain-free but irrelevant here.)
+    mockPrisma.cycleInterviewer.findMany.mockResolvedValue([
+      {
+        id: "r-bob",
+        daliMemberId: "bob",
+        domainId: "domain1",
+        availabilityBlocks: [
+          { startTime: new Date("2030-04-15T00:00:00Z"), endTime: new Date("2030-04-15T23:59:59Z") },
+        ],
+        interviewAssignments: [],
+      },
+      {
+        id: "r-mira-eng",
+        daliMemberId: "mira",
+        domainId: "domain1",
+        availabilityBlocks: [
+          { startTime: new Date("2030-04-15T00:00:00Z"), endTime: new Date("2030-04-15T23:59:59Z") },
+        ],
+        interviewAssignments: [],
+      },
+      {
+        id: "r-mira-design",
+        daliMemberId: "mira",
+        domainId: "domain-other",
+        availabilityBlocks: [
+          { startTime: new Date("2030-04-15T00:00:00Z"), endTime: new Date("2030-04-15T23:59:59Z") },
+        ],
+        interviewAssignments: [],
+      },
+    ]);
+
+    const slots = await computeAvailableSlots("cycle1", ["domain1"]);
+    const at9 = slots.find((s) => s.startTime === new Date("2030-04-15T13:00:00Z").toISOString());
+    expect(at9).toBeDefined();
+  });
 });
 
 // ─── assignInterviewers ────────────────────────────────────────────────────────
