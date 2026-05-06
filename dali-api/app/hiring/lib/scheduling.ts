@@ -131,14 +131,28 @@ export async function computeAvailableSlots(
   for (const slotStart of candidates) {
     const slotEnd = new Date(slotStart.getTime() + slotDurationMinutes * 60_000);
 
-    const inDomainFree = interviewerChecks.some(
-      (r) => applicantDomainIds.includes(r.domainId) && isInterviewerFree(r, slotStart, slotEnd),
-    );
-    const crossDomainFree = interviewerChecks.some(
-      (r) => !applicantDomainIds.includes(r.domainId) && isInterviewerFree(r, slotStart, slotEnd),
-    );
+    // Require two distinct humans — one free in-domain, one free cross-domain.
+    // assignInterviewers rejects same-human pairs (a member cross-listed in
+    // two domains can't fill both seats), so a slot whose only free in-domain
+    // and cross-domain rows belong to the same person would look bookable
+    // here but throw at booking time.
+    const inDomainFreeMembers = new Set<string>();
+    const crossDomainFreeMembers = new Set<string>();
+    for (const r of interviewerChecks) {
+      if (!isInterviewerFree(r, slotStart, slotEnd)) continue;
+      if (applicantDomainIds.includes(r.domainId)) {
+        inDomainFreeMembers.add(r.daliMemberId);
+      } else {
+        crossDomainFreeMembers.add(r.daliMemberId);
+      }
+    }
 
-    if (inDomainFree && crossDomainFree) {
+    const haveDistinctPair =
+      inDomainFreeMembers.size > 0 &&
+      crossDomainFreeMembers.size > 0 &&
+      new Set([...inDomainFreeMembers, ...crossDomainFreeMembers]).size >= 2;
+
+    if (haveDistinctPair) {
       // For in-person mode, skip slots where both pods are occupied
       if (mode === "in-person") {
         const occupiedPods = new Set(
