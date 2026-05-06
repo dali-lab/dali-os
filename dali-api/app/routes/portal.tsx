@@ -548,6 +548,9 @@ function InterviewScheduledView({
   const [rescheduling, setRescheduling] = useState(false);
   const [rescheduleSlots, setRescheduleSlots] = useState<TimeSlot[]>([]);
   const [loadingRescheduleSlots, setLoadingRescheduleSlots] = useState(false);
+  const [selectedRescheduleSlotId, setSelectedRescheduleSlotId] = useState<string | null>(null);
+  const [confirmingReschedule, setConfirmingReschedule] = useState(false);
+  const [rescheduleError, setRescheduleError] = useState<string | null>(null);
   const [declining, setDeclining] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
@@ -585,17 +588,44 @@ function InterviewScheduledView({
     setCancelling(false);
   }
 
-  async function handleReschedule(newSlot: TimeSlot) {
-    const newEnd = new Date(new Date(newSlot.isoStart).getTime() + slotDurationMinutes * 60_000).toISOString();
-    const res = await fetch("/api/hiring/my-interview/reschedule", {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ domainApplicationId: domainApp.id, newStart: newSlot.isoStart, newEnd, mode: interview.location === "Online" ? "online" : "in-person" }),
-    });
-    if (res.ok) {
-      setRescheduling(false);
-      onRescheduled();
+  function exitRescheduling() {
+    setRescheduling(false);
+    setSelectedRescheduleSlotId(null);
+    setRescheduleError(null);
+  }
+
+  async function handleConfirmReschedule() {
+    const newSlot = rescheduleSlots.find(s => s.id === selectedRescheduleSlotId);
+    if (!newSlot) return;
+    setConfirmingReschedule(true);
+    setRescheduleError(null);
+    const mode = interview.location === "Online" ? "online" : "in-person";
+    try {
+      const newEnd = new Date(new Date(newSlot.isoStart).getTime() + slotDurationMinutes * 60_000).toISOString();
+      const res = await fetch("/api/hiring/my-interview/reschedule", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ domainApplicationId: domainApp.id, newStart: newSlot.isoStart, newEnd, mode }),
+      });
+      if (res.ok) {
+        setSelectedRescheduleSlotId(null);
+        setRescheduling(false);
+        onRescheduled();
+      } else {
+        const body = await res.json().catch(() => ({}));
+        setRescheduleError(body.error ?? "Failed to reschedule. The slot may have been taken.");
+        const slotsRes = await fetch(`/api/hiring/cycles/${cycleId}/available-slots?domainId=${domainApp.domainId}&mode=${mode}`, { credentials: "include" });
+        if (slotsRes.ok) {
+          const freshSlots = await slotsRes.json();
+          setRescheduleSlots(
+            freshSlots.map(apiSlotToTimeSlot).filter((s: TimeSlot) => s.isoStart !== slot.isoStart),
+          );
+          setSelectedRescheduleSlotId(null);
+        }
+      }
+    } finally {
+      setConfirmingReschedule(false);
     }
   }
 
@@ -608,6 +638,12 @@ function InterviewScheduledView({
           Currently scheduled: <strong>{slot.date}, {slot.time}</strong> ({formatInterviewLocation(interview.location)}). Choose a format and new time.
         </p>
 
+        {rescheduleError && (
+          <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-800">
+            {rescheduleError}
+          </div>
+        )}
+
         {loadingRescheduleSlots ? (
           <div className="px-6 py-8 rounded-2xl bg-muted/30 text-center mb-8">
             <p className="text-muted-foreground">Loading available times...</p>
@@ -617,15 +653,26 @@ function InterviewScheduledView({
             <p className="text-muted-foreground">No slots available. Check back later.</p>
           </div>
         ) : (
-          <div className="mb-8">
-            <InterviewSlotPicker
-              groups={grouped}
-              variant="reschedule"
-              onSelect={(s) => handleReschedule(s as any)}
-            />
-          </div>
+          <>
+            <div className="mb-8">
+              <InterviewSlotPicker
+                groups={grouped}
+                variant="selectable"
+                selectedSlotId={selectedRescheduleSlotId}
+                onSelect={(s) => setSelectedRescheduleSlotId(s.id)}
+              />
+            </div>
+
+            <button
+              onClick={handleConfirmReschedule}
+              disabled={!selectedRescheduleSlotId || confirmingReschedule}
+              className="px-6 py-2.5 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition disabled:opacity-50 mr-3"
+            >
+              {confirmingReschedule ? "Rescheduling..." : "Confirm Reschedule"}
+            </button>
+          </>
         )}
-        <button onClick={() => setRescheduling(false)} className="text-sm font-semibold text-muted-foreground hover:underline">
+        <button onClick={exitRescheduling} className="text-sm font-semibold text-muted-foreground hover:underline">
           Cancel
         </button>
       </div>
