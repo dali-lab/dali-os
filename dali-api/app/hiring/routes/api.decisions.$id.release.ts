@@ -3,7 +3,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth, withAuth } from "~/lib/auth";
 import { isHiringLead } from "~/lib/roles";
 import { sendEmail } from "~/lib/gmail";
-import { renderEmail } from "~/lib/email";
+import { renderForSlot, decisionSlot } from "~/hiring/lib/email-variables";
 import { logAuditEvent } from "~/lib/audit";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
 
@@ -122,10 +122,14 @@ export async function action({ request, params }: Route.ActionArgs) {
       });
 
       if (gmailUser?.googleRefreshToken) {
-        const { subject, html } = renderEmail(binding.emailTemplateVersion, {
-          firstName: user.firstName,
-          domain: domainName,
-        });
+        const { subject, html } = renderForSlot(
+          decisionSlot(decision.type),
+          binding.emailTemplateVersion,
+          {
+            firstName: user.firstName,
+            domain: domainName,
+          },
+        );
 
         await sendEmail({
           refreshToken: gmailUser.googleRefreshToken,
