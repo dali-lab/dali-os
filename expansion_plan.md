@@ -101,7 +101,7 @@ model Domain {
 | `Videography` | Videography | no |
 | `Photography` | Photography | no |
 | `Production` | Production | no |
-| `PM` | Project Management | no |
+| `PM` | Product Management | no |
 | `DigitalArts` | Digital Arts Design | no |
 | `ERAS` | ERAS Intern | **yes** |
 | `EEJUST` | EE Just Intern | **yes** |
