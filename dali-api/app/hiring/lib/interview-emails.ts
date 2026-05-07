@@ -2,10 +2,11 @@
 // Email bodies come from per-cycle CycleNotificationEmail template bindings — no binding = no email.
 // All sends are best-effort — failures are logged but never block the booking flow.
 
-import type { NotificationType } from "@prisma/client";
+import type { NotificationType } from "~/generated/prisma/enums";
 import { prisma } from "~/lib/db";
 import { sendEmail } from "~/lib/gmail";
-import { renderEmail, type InterpolationVars } from "~/lib/email";
+import { type InterpolationVars } from "~/lib/email";
+import { renderForSlot, notificationSlot } from "./email-variables";
 import { buildInviteIcs, buildCancelIcs } from "./interview-ics";
 
 const GMAIL_USER = "applications@dali.dartmouth.edu";
@@ -98,7 +99,7 @@ async function renderFromBinding(
     include: { emailTemplateVersion: true },
   });
   if (!binding) return null;
-  return renderEmail(binding.emailTemplateVersion, vars);
+  return renderForSlot(notificationSlot(notificationType), binding.emailTemplateVersion, vars);
 }
 
 // ─── Public API ─────────────────────────────────────────────────────────────

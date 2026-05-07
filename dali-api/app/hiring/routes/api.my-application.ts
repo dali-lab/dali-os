@@ -4,7 +4,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth, withAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { sendEmail } from "~/lib/gmail";
-import { renderEmail } from "~/lib/email";
+import { renderForSlot, notificationSlot } from "~/hiring/lib/email-variables";
 import { parseJson } from "~/lib/validate";
 
 const GMAIL_USER = "applications@dali.dartmouth.edu";
@@ -208,8 +208,14 @@ export async function action({ request }: Route.ActionArgs) {
         });
         if (binding) {
           // ApplicationReceived isn't tied to a single domain (an applicant
-          // may apply to multiple), so {{domain}} resolves to empty here.
-          const { subject, html } = renderEmail(binding.emailTemplateVersion, { firstName: user.firstName });
+          // may apply to multiple), so {{domain}} is intentionally not passed
+          // here — the registry reflects this and the editor warns leads who
+          // try to use {{domain}} in this slot.
+          const { subject, html } = renderForSlot(
+            notificationSlot("ApplicationReceived"),
+            binding.emailTemplateVersion,
+            { firstName: user.firstName },
+          );
           await sendEmail({ refreshToken: gmailUser.googleRefreshToken, to, subject, html });
         }
       }

@@ -5,6 +5,15 @@ import { prisma } from "~/lib/db";
 import { requireAuth, withAuth } from "~/lib/auth";
 import { isHiringLead } from "~/lib/roles";
 import { renderEmail } from "~/lib/email";
+import {
+  TEMPLATE_VARIABLES,
+  decisionSlot,
+  notificationSlot,
+  lintTemplate,
+  type TemplateSlot,
+  type DecisionSlotType,
+  type NotificationSlotType,
+} from "~/hiring/lib/email-variables";
 import { Modal } from "~/components/Modal";
 import { ChallengePreviewModal } from "~/hiring/components/ChallengePreviewModal";
 import { Settings, Users, Calendar, AlertTriangle, Trash2, Plus, CheckCircle, ArrowRight, Circle, ChevronRight, X, LayoutDashboard, Eye } from 'lucide-react'
@@ -1836,6 +1845,41 @@ export default function HiringLeadCycleDetails() {
   )
 }
 
+function PreviewLintWarning({ unknown, unfilled }: { unknown: string[]; unfilled: string[] }) {
+  return (
+    <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 space-y-1">
+      <div className="flex items-center gap-1.5 font-semibold">
+        <AlertTriangle className="w-3.5 h-3.5" />
+        Template warnings
+      </div>
+      {unknown.length > 0 && (
+        <p>
+          Unknown placeholder{unknown.length > 1 ? 's' : ''}:{' '}
+          {unknown.map((t, i) => (
+            <span key={t}>
+              {i > 0 && ', '}
+              <code className="font-mono bg-amber-100 px-1 rounded">{`{{${t}}}`}</code>
+            </span>
+          ))}
+          . Will ship as literal text.
+        </p>
+      )}
+      {unfilled.length > 0 && (
+        <p>
+          Not populated for this slot:{' '}
+          {unfilled.map((t, i) => (
+            <span key={t}>
+              {i > 0 && ', '}
+              <code className="font-mono bg-amber-100 px-1 rounded">{`{{${t}}}`}</code>
+            </span>
+          ))}
+          . Will render as empty.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function DecisionEmailPreviewModal({ decision, binding, onClose }: {
   decision: any;
   binding: any | null;
@@ -1845,6 +1889,17 @@ function DecisionEmailPreviewModal({ decision, binding, onClose }: {
   const domain = decision.domainApplication.challengeVersion.domain.name ?? ''
   const tmpl = binding?.emailTemplateVersion ?? null
   const rendered = tmpl ? renderEmail(tmpl, { firstName, domain }) : null
+  const slot: TemplateSlot | undefined = decision.type ? decisionSlot(decision.type as DecisionSlotType) : undefined
+  const lint = tmpl
+    ? (() => {
+        const subj = lintTemplate(tmpl.subject, slot)
+        const body = lintTemplate(tmpl.body, slot)
+        return {
+          unknown: Array.from(new Set([...subj.unknown, ...body.unknown])),
+          unfilled: Array.from(new Set([...subj.unfilled, ...body.unfilled])),
+        }
+      })()
+    : null
 
   return (
     <div
@@ -1878,6 +1933,9 @@ function DecisionEmailPreviewModal({ decision, binding, onClose }: {
         <div className="px-4 sm:px-6 py-4 space-y-4">
           {tmpl ? (
             <>
+              {lint && (lint.unknown.length > 0 || lint.unfilled.length > 0) && (
+                <PreviewLintWarning unknown={lint.unknown} unfilled={lint.unfilled} />
+              )}
               <div>
                 <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">From</h3>
                 <p className="mt-1 text-sm text-foreground">applications@dali.dartmouth.edu</p>
@@ -2737,12 +2795,12 @@ function GeneralFormPicker({ currentCvId, currentCvLabel, options, locked }: {
   );
 }
 
-const DECISION_EMAIL_SLOTS = [
+const DECISION_EMAIL_SLOTS: ReadonlyArray<{ type: DecisionSlotType; label: string; description: string }> = [
   { type: "Rejected", label: "Rejected", description: "Sent when a Rejected decision is released to the applicant." },
   { type: "InvitedToInterview", label: "Invited to Interview", description: "Sent when an applicant is invited to interview." },
   { type: "Waitlisted", label: "Waitlisted", description: "Sent when an applicant is placed on the waitlist." },
   { type: "Accepted", label: "Accepted", description: "Sent when an applicant is offered a spot." },
-] as const;
+];
 
 function DecisionEmailsSection({ emailTemplates, currentDecisionEmails, releasedDecisionTypes }: {
   emailTemplates: any[];
@@ -2777,8 +2835,24 @@ function DecisionEmailsSection({ emailTemplates, currentDecisionEmails, released
   );
 }
 
+function SlotVariableHint({ slot }: { slot: TemplateSlot }) {
+  const vars = TEMPLATE_VARIABLES[slot];
+  return (
+    <p className="text-xs text-muted-foreground/80">
+      Supports{' '}
+      {vars.map((v, i) => (
+        <span key={v}>
+          {i > 0 && ', '}
+          <code className="font-mono bg-muted px-1 rounded">{`{{${v}}}`}</code>
+        </span>
+      ))}
+      .
+    </p>
+  );
+}
+
 function DecisionEmailPicker({ slot, binding, emailTemplates, locked }: {
-  slot: { type: string; label: string; description: string };
+  slot: { type: DecisionSlotType; label: string; description: string };
   binding: any | null;
   emailTemplates: any[];
   locked: boolean;
@@ -2795,6 +2869,7 @@ function DecisionEmailPicker({ slot, binding, emailTemplates, locked }: {
         <div className="min-w-0">
           <h4 className="text-sm font-bold text-foreground">{slot.label}</h4>
           <p className="text-xs text-muted-foreground">{slot.description}</p>
+          <SlotVariableHint slot={decisionSlot(slot.type)} />
         </div>
         {!editing && !locked && (
           <button
@@ -2865,14 +2940,14 @@ function DecisionEmailPicker({ slot, binding, emailTemplates, locked }: {
   );
 }
 
-const NOTIFICATION_EMAIL_SLOTS = [
+const NOTIFICATION_EMAIL_SLOTS: ReadonlyArray<{ type: NotificationSlotType; label: string; description: string }> = [
   { type: "ApplicationReceived", label: "Application Received", description: "Sent to the applicant when they first submit their application." },
   { type: "InterviewInviteMentor", label: "Interview Invite (Interviewer)", description: "Sent to the assigned interviewer when an interview is booked or they are reassigned." },
-  { type: "InterviewConfirmedApplicant", label: "Interview Confirmed (Applicant)", description: "Sent to the applicant when their interview is booked. Supports {{time}}, {{location}}, {{meetingUrl}}." },
-  { type: "InterviewCancelledApplicant", label: "Interview Cancelled (Applicant)", description: "Sent to the applicant when their interview is cancelled. Supports {{time}}, {{location}}." },
+  { type: "InterviewConfirmedApplicant", label: "Interview Confirmed (Applicant)", description: "Sent to the applicant when their interview is booked." },
+  { type: "InterviewCancelledApplicant", label: "Interview Cancelled (Applicant)", description: "Sent to the applicant when their interview is cancelled." },
   { type: "InterviewCancelledInterviewer", label: "Interview Cancelled (Interviewer)", description: "Sent to the interviewer when an interview is cancelled or they are unassigned." },
-  { type: "InterviewLocationChanged", label: "Interview Location Changed", description: "Sent to both the applicant and interviewer(s) when the interview location is updated. Supports {{time}}, {{location}}, {{meetingUrl}}." },
-] as const;
+  { type: "InterviewLocationChanged", label: "Interview Location Changed", description: "Sent to both the applicant and interviewer(s) when the interview location is updated." },
+];
 
 function NotificationEmailsSection({ emailTemplates, currentNotificationEmails }: {
   emailTemplates: any[];
@@ -2904,7 +2979,7 @@ function NotificationEmailsSection({ emailTemplates, currentNotificationEmails }
 }
 
 function NotificationEmailPicker({ slot, binding, emailTemplates }: {
-  slot: { type: string; label: string; description: string };
+  slot: { type: NotificationSlotType; label: string; description: string };
   binding: any | null;
   emailTemplates: any[];
 }) {
@@ -2920,6 +2995,7 @@ function NotificationEmailPicker({ slot, binding, emailTemplates }: {
         <div className="min-w-0">
           <h4 className="text-sm font-bold text-foreground">{slot.label}</h4>
           <p className="text-xs text-muted-foreground">{slot.description}</p>
+          <SlotVariableHint slot={notificationSlot(slot.type)} />
         </div>
         {!editing && (
           <button
