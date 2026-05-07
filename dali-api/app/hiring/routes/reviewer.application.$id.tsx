@@ -24,37 +24,61 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request)
   if (!auth.ok) return withAuth(auth, redirect('/login'))
 
-  const [application, reviewer, existingReview] = await Promise.all([
-    prisma.application.findUniqueOrThrow({
-      where: { id: params.id },
-      include: {
-        user: true,
-        generalChallengeVersion: true,
-        applicationCycle: {
-          include: {
-            statusUpdates: { orderBy: { createdAt: 'desc' }, take: 1 },
-            generalRubricVersion: { include: { rubric: true } },
-            domains: {
-              include: {
-                rubricVersion: { include: { rubric: true } },
-                domain: true,
-              },
-            },
-          },
-        },
-        domainApplications: {
-          include: {
-            challengeVersion: {
-              include: {
-                domain: true,
-                challenge: true,
-              },
+  const applicationBase = await prisma.application.findUniqueOrThrow({
+    where: { id: params.id },
+    include: {
+      user: true,
+      generalChallengeVersion: true,
+      applicationCycle: {
+        include: {
+          statusUpdates: { orderBy: { createdAt: 'desc' }, take: 1 },
+          generalRubricVersion: { include: { rubric: true } },
+          domains: {
+            include: {
+              rubricVersion: { include: { rubric: true } },
+              domain: true,
             },
           },
         },
       },
-    }),
+    },
+  })
+
+  if (!(await hasCycleAccess(auth.user.sub, applicationBase.applicationCycleId)))
+    throw redirect('/login')
+
+  const confRedirect = await requirePageSignedOrRedirect(
+    auth.user.sub,
+    applicationBase.applicationCycleId,
+    request,
+  )
+  if (confRedirect) return confRedirect
+
+  // Scope domainApplications to only the domains this reviewer is assigned to
+  // for this cycle. Reviewers assigned to one domain should not see that the
+  // applicant also applied to other domains.
+  const cycleReviewers = await prisma.cycleReviewer.findMany({
+    where: {
+      applicationCycleId: applicationBase.applicationCycleId,
+      daliMember: { userId: auth.user.sub },
+    },
+    select: { id: true, domainId: true },
+  })
+  const reviewerDomainIds = cycleReviewers.map((cr) => cr.domainId)
+
+  const [reviewer, domainApplications, existingReview] = await Promise.all([
     prisma.user.findUniqueOrThrow({ where: { id: auth.user.sub } }),
+    prisma.domainApplication.findMany({
+      where: {
+        applicationId: params.id,
+        challengeVersion: { domainId: { in: reviewerDomainIds } },
+      },
+      include: {
+        challengeVersion: {
+          include: { domain: true, challenge: true },
+        },
+      },
+    }),
     prisma.applicationReview.findFirst({
       where: {
         domainApplication: { applicationId: params.id },
@@ -63,15 +87,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     }),
   ])
 
-  if (!(await hasCycleAccess(auth.user.sub, application.applicationCycleId)))
-    throw redirect('/login')
-
-  const confRedirect = await requirePageSignedOrRedirect(
-    auth.user.sub,
-    application.applicationCycleId,
-    request,
-  )
-  if (confRedirect) return confRedirect
+  const application = { ...applicationBase, domainApplications }
 
   // If this reviewer is assigned to a domain on this application but no
   // ApplicationReview row exists yet, create one so the collaborative editors
@@ -80,41 +96,28 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // there is no save button for these fields (they save via collab sync).
   let review = existingReview
   if (!review) {
-    const member = await prisma.dALIMember.findFirst({
-      where: { userId: auth.user.sub },
-      select: { id: true },
-    })
-    if (member) {
-      const appDomainIds = application.domainApplications.map(
-        (da: any) => da.challengeVersion.domainId,
-      )
-      const cycleReviewer = await prisma.cycleReviewer.findFirst({
+    const cycleReviewer = cycleReviewers.find((cr) =>
+      domainApplications.some((da) => da.challengeVersion.domainId === cr.domainId),
+    )
+    const matchingDa = cycleReviewer
+      ? domainApplications.find(
+          (da) => da.challengeVersion.domainId === cycleReviewer.domainId,
+        )
+      : null
+    if (cycleReviewer && matchingDa) {
+      review = await prisma.applicationReview.upsert({
         where: {
-          daliMemberId: member.id,
-          applicationCycleId: application.applicationCycleId,
-          domainId: { in: appDomainIds },
-        },
-      })
-      const matchingDa = cycleReviewer
-        ? application.domainApplications.find(
-            (da: any) => da.challengeVersion.domainId === cycleReviewer.domainId,
-          )
-        : null
-      if (cycleReviewer && matchingDa) {
-        review = await prisma.applicationReview.upsert({
-          where: {
-            cycleReviewerId_domainApplicationId: {
-              cycleReviewerId: cycleReviewer.id,
-              domainApplicationId: matchingDa.id,
-            },
-          },
-          create: {
+          cycleReviewerId_domainApplicationId: {
             cycleReviewerId: cycleReviewer.id,
             domainApplicationId: matchingDa.id,
           },
-          update: {},
-        })
-      }
+        },
+        create: {
+          cycleReviewerId: cycleReviewer.id,
+          domainApplicationId: matchingDa.id,
+        },
+        update: {},
+      })
     }
   }
 
