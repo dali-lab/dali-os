@@ -1,7 +1,12 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { Link, Form, useLoaderData } from 'react-router'
-import { ArrowLeft, Plus, Clock, UserIcon, Pencil } from 'lucide-react'
+import { ArrowLeft, Plus, Clock, UserIcon, Pencil, AlertTriangle } from 'lucide-react'
 import type { loader } from '~/hiring/routes/email-templates.$id'
+import {
+  ALL_TEMPLATE_VARIABLES,
+  TEMPLATE_VARIABLE_DESCRIPTIONS,
+  lintTemplate,
+} from '~/hiring/lib/email-variables'
 
 function formatDateTime(iso: string | Date) {
   const d = new Date(iso)
@@ -15,6 +20,45 @@ function formatDateTime(iso: string | Date) {
 function memberLabel(m: { firstName: string | null; lastName: string | null } | null | undefined) {
   if (!m) return 'Unknown'
   return `${m.firstName ?? ''} ${m.lastName ?? ''}`.trim() || 'Unknown'
+}
+
+function VariableReferencePanel() {
+  return (
+    <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2">
+      <p className="text-xs font-medium text-blue-900">Available placeholders</p>
+      <p className="text-xs text-blue-900/80 mt-0.5">
+        Templates are bound to a slot on the cycle Setup tab; not every slot fills every variable. The
+        editor warns about unknown placeholders, and the cycle preview flags ones the bound slot won't fill.
+      </p>
+      <ul className="mt-2 space-y-0.5">
+        {ALL_TEMPLATE_VARIABLES.map((name) => (
+          <li key={name} className="text-xs text-blue-900">
+            <code className="font-mono bg-blue-100 px-1 rounded">{`{{${name}}}`}</code>
+            <span className="ml-2 text-blue-900/80">{TEMPLATE_VARIABLE_DESCRIPTIONS[name]}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function LintWarnings({ unknown, field }: { unknown: string[]; field: string }) {
+  if (unknown.length === 0) return null
+  return (
+    <div className="mt-1 flex items-start gap-1.5 text-xs text-amber-800">
+      <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+      <span>
+        {field} contains unknown placeholder{unknown.length > 1 ? 's' : ''}{' '}
+        {unknown.map((t, i) => (
+          <span key={t}>
+            {i > 0 && ', '}
+            <code className="font-mono bg-amber-100 px-1 rounded">{`{{${t}}}`}</code>
+          </span>
+        ))}
+        . These will ship as literal text. Check spelling — placeholders are case-sensitive.
+      </span>
+    </div>
+  )
 }
 
 export function EmailTemplateDetail() {
@@ -31,6 +75,9 @@ export function EmailTemplateDetail() {
   const [draftSubject, setDraftSubject] = useState(selectedVersion?.subject ?? '')
   const [draftBody, setDraftBody] = useState(selectedVersion?.body ?? '')
   const [draftName, setDraftName] = useState(template.name)
+
+  const subjectLint = useMemo(() => lintTemplate(draftSubject), [draftSubject])
+  const bodyLint = useMemo(() => lintTemplate(draftBody), [draftBody])
 
   const handleStartCreate = () => {
     setDraftSubject(selectedVersion?.subject ?? '')
@@ -151,6 +198,7 @@ export function EmailTemplateDetail() {
           {isCreatingVersion ? (
             <Form method="post" className="space-y-4" onSubmit={() => setIsCreatingVersion(false)}>
               <input type="hidden" name="intent" value="create-version" />
+              <VariableReferencePanel />
               <div>
                 <label className="block text-sm font-medium text-foreground/80 mb-1">Subject</label>
                 <input
@@ -161,12 +209,13 @@ export function EmailTemplateDetail() {
                   className="w-full px-3 py-2 text-sm text-foreground border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
                 />
+                <LintWarnings unknown={subjectLint.unknown} field="Subject" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-foreground/80 mb-1">
                   Body
                   <span className="ml-2 text-xs text-muted-foreground font-normal">
-                    Use {'{{firstName}}'} or {'{{domain}}'} to insert the applicant's first name or the domain they applied to. Double newlines split paragraphs.
+                    Double newlines split paragraphs. See the variable list above for {'{{...}}'} placeholders.
                   </span>
                 </label>
                 <textarea
@@ -177,6 +226,7 @@ export function EmailTemplateDetail() {
                   className="w-full px-3 py-2 text-sm text-foreground font-mono border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
                 />
+                <LintWarnings unknown={bodyLint.unknown} field="Body" />
               </div>
               <div className="flex justify-end gap-2">
                 <button
