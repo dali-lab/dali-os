@@ -4,7 +4,7 @@ import type { Route } from "./+types/portal.application";
 import { prisma } from "~/lib/db";
 import { requireAuth, withAuth } from "~/lib/auth";
 import { getActiveCycle } from "~/hiring/lib/cycles";
-import { getDownloadUrl } from "~/lib/s3";
+import { presignAnswers } from "~/hiring/lib/presign";
 import type { Question } from "~/types";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 import { Modal } from "~/components/Modal";
@@ -13,23 +13,6 @@ import { QuestionList } from "~/hiring/components/ApplicationAnswers";
 export const meta: Route.MetaFunction = () => [{ title: "My application · DALI OS" }];
 
 // ─── Loader ──────────────────────────────────────────────────────────────────
-
-async function presignAnswers(
-  questions: Question[],
-  answers: Record<string, string>,
-): Promise<Record<string, string>> {
-  const result = { ...answers };
-  for (const q of questions) {
-    if (q.type === "file" && answers[q.key]?.trim()) {
-      try {
-        result[q.key] = await getDownloadUrl(answers[q.key], 900);
-      } catch {
-        // If presign fails, keep the raw key so the UI can still show something
-      }
-    }
-  }
-  return result;
-}
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
