@@ -7,6 +7,8 @@ import {
   inferDomainApplicationStatus,
   domainApplicationStatusInclude,
 } from "~/hiring/lib/domain-application-status";
+import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
+import { ConfidentialityGate } from "~/hiring/components/ConfidentialityGate";
 import type { DomainApplicationStatus } from "~/types";
 import { CycleSelector } from "~/components/analytics/CycleSelector";
 import { DomainToggle } from "~/components/analytics/DomainToggle";
@@ -80,6 +82,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       selectedStatus: null,
       slices: [],
       rows: [],
+      confidentialityRequired: null as null | "no_agreement" | "unsigned",
     });
   }
 
@@ -124,6 +127,27 @@ export async function loader({ request }: Route.LoaderArgs) {
   const statusParam = url.searchParams.get("status") as AnalyticsStatus | null;
   const selectedStatus =
     statusParam && STATUS_ORDER.includes(statusParam) ? statusParam : null;
+
+  // Confidentiality gate: applicant identities + reviewer/interviewer
+  // assignments + per-status counts are all sensitive cycle data, so unsigned
+  // viewers see only the cycle/domain selectors and a gate placeholder.
+  const confState = await getCycleConfidentialityState(auth.user.sub, cycleId);
+  const confidentialityRequired =
+    confState.status === "signed" ? null : confState.status;
+
+  if (confidentialityRequired) {
+    return withAuth(auth, {
+      cycles,
+      selectedCycleId: cycleId,
+      cycleStatus,
+      accessibleDomains,
+      selectedDomainId,
+      selectedStatus: null,
+      slices: [],
+      rows: [],
+      confidentialityRequired,
+    });
+  }
 
   // ─── Fetch all selected domain applications with the relations needed
   //     for both status inference and the list rendering ────────────────
@@ -241,6 +265,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     selectedStatus,
     slices,
     rows,
+    confidentialityRequired: null as null | "no_agreement" | "unsigned",
   });
 }
 
@@ -262,6 +287,10 @@ export default function AnalyticsDashboard() {
     (s: StatusSlice) => s.status === data.selectedStatus,
   );
 
+  const nextParams = new URLSearchParams({ cycleId: data.selectedCycleId });
+  if (data.selectedDomainId) nextParams.set("domain", data.selectedDomainId);
+  const nextHref = `/hiring/analytics?${nextParams.toString()}`;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -277,23 +306,33 @@ export default function AnalyticsDashboard() {
         </div>
       </div>
 
-      <div className="bg-card border border-border rounded-lg p-4">
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-sm font-medium text-muted-foreground">
-            Applications by Status
-          </h3>
-          <span className="text-xs text-muted-foreground">
-            Click a slice to filter the list below
-          </span>
-        </div>
-        <StatusPie data={data.slices} selectedStatus={data.selectedStatus} />
-      </div>
+      {data.confidentialityRequired ? (
+        <ConfidentialityGate
+          cycleId={data.selectedCycleId}
+          reason={data.confidentialityRequired}
+          next={nextHref}
+        />
+      ) : (
+        <>
+          <div className="bg-card border border-border rounded-lg p-4">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium text-muted-foreground">
+                Applications by Status
+              </h3>
+              <span className="text-xs text-muted-foreground">
+                Click a slice to filter the list below
+              </span>
+            </div>
+            <StatusPie data={data.slices} selectedStatus={data.selectedStatus} />
+          </div>
 
-      <ApplicationList
-        rows={data.rows}
-        selectedStatusLabel={selectedSlice?.label ?? null}
-        selectedDomainName={selectedDomainName}
-      />
+          <ApplicationList
+            rows={data.rows}
+            selectedStatusLabel={selectedSlice?.label ?? null}
+            selectedDomainName={selectedDomainName}
+          />
+        </>
+      )}
     </div>
   );
 }
