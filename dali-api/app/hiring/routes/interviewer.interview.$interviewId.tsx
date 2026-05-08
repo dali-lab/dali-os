@@ -17,11 +17,14 @@ import { prisma } from '~/lib/db'
 import { requireAuth, withAuth } from '~/lib/auth'
 import { parseAccessToken } from '~/lib/cookies'
 import { requirePageSignedOrRedirect } from '~/hiring/lib/confidentiality'
+import { presignAnswers } from '~/hiring/lib/presign'
 import { CollaborativeEditor } from '~/components/CollaborativeEditor'
 import { PresenceProvider } from '~/components/collab/PresenceProvider'
 import { PresenceBar } from '~/components/collab/PresenceBar'
 import { RichTextViewer, isEmptyDoc } from '~/components/RichTextViewer'
+import { AnswerDisplay } from '~/hiring/components/ApplicationAnswers'
 import type { Route } from './+types/interviewer.interview.$interviewId'
+import type { Question } from '~/types'
 
 const RECOMMENDATION_OPTIONS = [
   'Strong Hire',
@@ -121,11 +124,37 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const collabToken = parseAccessToken(request)
 
+  // Presign file-type answers so interviewers can download uploads instead of
+  // staring at raw S3 keys.
+  const generalQuestions =
+    (interview.domainApplication.application.generalChallengeVersion?.questions as unknown as Question[]) ?? []
+  const challengeQuestions =
+    (interview.domainApplication.challengeVersion.questions as unknown as Question[]) ?? []
+  const presignedGeneralAnswers = await presignAnswers(
+    generalQuestions,
+    interview.domainApplication.application.answers as Record<string, string>,
+  )
+  const presignedChallengeAnswers = await presignAnswers(
+    challengeQuestions,
+    interview.domainApplication.answers as Record<string, string>,
+  )
+  const interviewWithPresignedAnswers = {
+    ...interview,
+    domainApplication: {
+      ...interview.domainApplication,
+      answers: presignedChallengeAnswers,
+      application: {
+        ...interview.domainApplication.application,
+        answers: presignedGeneralAnswers,
+      },
+    },
+  }
+
   // Build user display name for cursors
   const userName = [member.firstName, member.lastName].filter(Boolean).join(' ') || auth.user.email
 
   return withAuth(auth, {
-      interview,
+      interview: interviewWithPresignedAnswers,
       myAssignment,
       rubricCriteria,
       collabToken,
@@ -388,23 +417,16 @@ export default function InterviewDetailPage() {
                     <RichTextViewer content={application.generalChallengeVersion.description} />
                   </div>
                 )}
-                {generalQuestions.map((q: any) => {
-                  const answer = application?.answers?.[q.key]
-                  return (
-                    <div key={q.key}>
-                      <div className="text-sm font-medium text-foreground/80 mb-1">
-                        {q.data?.label ?? q.key}
-                      </div>
-                      <div className="text-sm text-foreground bg-muted/50 rounded p-3 whitespace-pre-wrap">
-                        {answer || (
-                          <span className="text-muted-foreground/70 italic">
-                            No answer provided
-                          </span>
-                        )}
-                      </div>
+                {generalQuestions.map((q: any) => (
+                  <div key={q.key}>
+                    <div className="text-sm font-medium text-foreground/80 mb-1">
+                      {q.data?.label ?? q.key}
                     </div>
-                  )
-                })}
+                    <div className="text-sm text-foreground bg-muted/50 rounded p-3">
+                      <AnswerDisplay question={q} answer={application?.answers?.[q.key] ?? ''} />
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
             {domainQuestions.length > 0 && (
@@ -417,23 +439,16 @@ export default function InterviewDetailPage() {
                     <RichTextViewer content={interview.domainApplication.challengeVersion.description} />
                   </div>
                 )}
-                {domainQuestions.map((q: any) => {
-                  const answer = interview.domainApplication?.answers?.[q.key]
-                  return (
-                    <div key={q.key}>
-                      <div className="text-sm font-medium text-foreground/80 mb-1">
-                        {q.data?.label ?? q.key}
-                      </div>
-                      <div className="text-sm text-foreground bg-muted/50 rounded p-3 whitespace-pre-wrap">
-                        {answer || (
-                          <span className="text-muted-foreground/70 italic">
-                            No answer provided
-                          </span>
-                        )}
-                      </div>
+                {domainQuestions.map((q: any) => (
+                  <div key={q.key}>
+                    <div className="text-sm font-medium text-foreground/80 mb-1">
+                      {q.data?.label ?? q.key}
                     </div>
-                  )
-                })}
+                    <div className="text-sm text-foreground bg-muted/50 rounded p-3">
+                      <AnswerDisplay question={q} answer={interview.domainApplication?.answers?.[q.key] ?? ''} />
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
