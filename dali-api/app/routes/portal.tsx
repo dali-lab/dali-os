@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { redirect, useLoaderData, useRevalidator, Link } from "react-router";
+import { redirect, useLoaderData, useRevalidator, useSearchParams, Link } from "react-router";
 import type { Route } from "./+types/portal";
 import { prisma } from "~/lib/db";
 import { requireAuth, withAuth } from "~/lib/auth";
@@ -12,6 +12,7 @@ import type { DomainApplicationStatus } from "~/types";
 import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
 import { InterviewSlotPicker } from "~/hiring/components/InterviewSlotPicker";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
+import { Confetti } from "~/components/Confetti";
 import { formatInterviewDate, formatInterviewTimeRange } from "~/hiring/lib/interview-time";
 
 export const meta: Route.MetaFunction = () => [{ title: "Applicant portal · DALI OS" }];
@@ -959,6 +960,16 @@ export default function Portal() {
     revalidator.revalidate();
   }, [revalidator]);
 
+  const [searchParams, setSearchParams] = useSearchParams();
+  const justSubmitted = searchParams.get("just-submitted") === "1";
+  const handleConfettiFire = useCallback(() => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.delete("just-submitted");
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
+
   if (!cycleId) {
     return (
       <div className="max-w-2xl mx-auto py-16 text-center px-6">
@@ -990,6 +1001,7 @@ export default function Portal() {
 
   return (
     <div>
+      <Confetti trigger={justSubmitted} onFire={handleConfettiFire} />
       {/* Header */}
       <div className="bg-[#E8F4FA] px-6 md:px-16 lg:px-24 py-10">
         <div className="max-w-3xl mx-auto">

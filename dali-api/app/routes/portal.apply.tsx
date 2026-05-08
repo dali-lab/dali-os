@@ -458,7 +458,9 @@ export async function action({ request }: Route.ActionArgs) {
       });
     }
 
-    return withAuth(auth, redirect("/portal"));
+    // Signal first-time submission so the portal can play a one-shot confetti.
+    // Subsequent edit-saves keep the plain redirect so the animation does not replay.
+    return withAuth(auth, redirect(existingSubmitted ? "/portal" : "/portal?just-submitted=1"));
   }
 
   return withAuth(auth, { error: "Unknown intent" });
