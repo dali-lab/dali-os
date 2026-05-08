@@ -15,6 +15,7 @@ import {
   Menu,
   X,
   BarChart3,
+  ScrollText,
 } from 'lucide-react'
 import { userInitials } from '~/lib/display'
 import { bumpLogoClick, hydrateRetroClass, logConsoleBootBanner } from '~/lib/party'
@@ -161,6 +162,14 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
       icon: Trophy,
       show: isAdmin,
       active: path.startsWith('/admin-console/party'),
+      sub: null,
+    },
+    {
+      label: 'Audit Logs',
+      to: '/admin-console/audit',
+      icon: ScrollText,
+      show: isAdmin,
+      active: path.startsWith('/admin-console/audit'),
       sub: null,
     },
   ]

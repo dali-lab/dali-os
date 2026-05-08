@@ -3,9 +3,13 @@ import { prisma } from "~/lib/db";
 import { requireAuth, withAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
-
-const MAX_LIMIT = 200;
-const DEFAULT_LIMIT = 50;
+import {
+  buildAuditWhere,
+  encodeCursor,
+  parseCursor,
+  parseFilters,
+  parseLimit,
+} from "~/lib/audit-query";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const preflight = handlePreflight(request);
@@ -17,17 +21,25 @@ export async function loader({ request }: Route.LoaderArgs) {
     return withAuth(auth, withCors(request, Response.json({ error: "Forbidden" }, { status: 403 })));
 
   const url = new URL(request.url);
-  const limit = Math.min(Number(url.searchParams.get("limit") ?? DEFAULT_LIMIT) || DEFAULT_LIMIT, MAX_LIMIT);
-  const offset = Math.max(Number(url.searchParams.get("offset") ?? 0) || 0, 0);
+  const limit = parseLimit(url.searchParams.get("limit"));
+  const cursor = parseCursor(url.searchParams.get("before"));
+  const filters = parseFilters(url.searchParams);
 
-  const [entries, total] = await Promise.all([
+  // take = limit + 1 so we can tell if a next page exists without count(*).
+  const [rows, actionGroups] = await Promise.all([
     prisma.auditLog.findMany({
-      orderBy: { createdAt: "desc" },
-      take: limit,
-      skip: offset,
+      where: buildAuditWhere(filters, cursor),
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: limit + 1,
     }),
-    prisma.auditLog.count(),
+    prisma.auditLog.groupBy({ by: ["action"], orderBy: { action: "asc" } }),
   ]);
 
-  return withAuth(auth, withCors(request, Response.json({ total, limit, offset, entries })));
+  const hasMore = rows.length > limit;
+  const entries = hasMore ? rows.slice(0, limit) : rows;
+  const last = entries[entries.length - 1];
+  const nextCursor = hasMore && last ? encodeCursor({ createdAt: last.createdAt, id: last.id }) : null;
+  const actions = actionGroups.map((g) => g.action);
+
+  return withAuth(auth, withCors(request, Response.json({ entries, actions, limit, nextCursor })));
 }

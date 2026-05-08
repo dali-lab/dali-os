@@ -31,6 +31,7 @@ export default [
     route("admin-console/members", "routes/admin-console.members.tsx"),
     route("admin-console/domains", "routes/admin-console.domains.tsx"),
     route("admin-console/party", "routes/admin-console.party.tsx"),
+    route("admin-console/audit", "routes/admin-console.audit.tsx"),
   ]),
 
   // Applicant portal (lightweight layout)
