@@ -4,13 +4,16 @@ import type { Route } from "./+types/domain-lead.application.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth, withAuth } from "~/lib/auth";
 import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
+import { presignAnswers } from "~/hiring/lib/presign";
 import { ChevronDown } from "lucide-react";
 import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
+import { AnswerDisplay } from "~/hiring/components/ApplicationAnswers";
 import {
   inferDomainApplicationStatus,
   domainApplicationStatusInclude,
 } from "~/hiring/lib/domain-application-status";
 import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
+import type { Question } from "~/types";
 
 const RECOMMENDATION_COLORS: Record<string, string> = {
   "Strong Hire": "bg-green-100 text-green-800",
@@ -144,9 +147,24 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     cycleStatus,
   );
 
+  // Presign file-type answers so reviewers see real download links rather
+  // than raw S3 keys.
+  const generalQuestions =
+    (da.application.generalChallengeVersion?.questions as unknown as Question[]) ?? [];
+  const challengeQuestions =
+    (da.challengeVersion.questions as unknown as Question[]) ?? [];
+  const presignedGeneralAnswers = await presignAnswers(
+    generalQuestions,
+    da.application.answers as Record<string, string>,
+  );
+  const presignedChallengeAnswers = await presignAnswers(
+    challengeQuestions,
+    da.answers as Record<string, string>,
+  );
+
   return withAuth(auth, {
-      domainApplication: da,
-      application: da.application,
+      domainApplication: { ...da, answers: presignedChallengeAnswers },
+      application: { ...da.application, answers: presignedGeneralAnswers },
       inferredStatus,
       domainRubricCriteria: (dac?.rubricVersion?.criteria as any[]) ?? [],
       generalRubricCriteria: (generalRubric?.generalRubricVersion?.criteria as any[]) ?? [],
@@ -201,17 +219,14 @@ export default function DomainLeadApplicationView() {
                   <RichTextViewer content={application.generalChallengeVersion.description} />
                 </div>
               )}
-              {generalQuestions.map((q: any) => {
-                const answer = application.answers?.[q.key];
-                return (
-                  <div key={q.key}>
-                    <div className="text-sm font-medium text-foreground/80 mb-1">{q.data.label}</div>
-                    <div className="text-sm text-foreground bg-muted/50 rounded p-3 whitespace-pre-wrap">
-                      {answer || <span className="text-muted-foreground/70 italic">No answer provided</span>}
-                    </div>
+              {generalQuestions.map((q: any) => (
+                <div key={q.key}>
+                  <div className="text-sm font-medium text-foreground/80 mb-1">{q.data.label}</div>
+                  <div className="text-sm text-foreground bg-muted/50 rounded p-3">
+                    <AnswerDisplay question={q} answer={application.answers?.[q.key] ?? ""} />
                   </div>
-                );
-              })}
+                </div>
+              ))}
             </section>
           )}
 
@@ -224,17 +239,14 @@ export default function DomainLeadApplicationView() {
                 <RichTextViewer content={da.challengeVersion.description} />
               </div>
             )}
-            {challengeQuestions.map((q: any) => {
-              const answer = da.answers?.[q.key];
-              return (
-                <div key={q.key}>
-                  <div className="text-sm font-medium text-foreground/80 mb-1">{q.data.label}</div>
-                  <div className="text-sm text-foreground bg-muted/50 rounded p-3 whitespace-pre-wrap">
-                    {answer || <span className="text-muted-foreground/70 italic">No answer provided</span>}
-                  </div>
+            {challengeQuestions.map((q: any) => (
+              <div key={q.key}>
+                <div className="text-sm font-medium text-foreground/80 mb-1">{q.data.label}</div>
+                <div className="text-sm text-foreground bg-muted/50 rounded p-3">
+                  <AnswerDisplay question={q} answer={da.answers?.[q.key] ?? ""} />
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </section>
         </div>
 

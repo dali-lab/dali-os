@@ -6,6 +6,7 @@ import { requireAuth, withAuth } from '~/lib/auth'
 import { hasCycleAccess } from '~/lib/roles'
 import { parseAccessToken } from '~/lib/cookies'
 import { requirePageSignedOrRedirect } from '~/hiring/lib/confidentiality'
+import { presignAnswers } from '~/hiring/lib/presign'
 import type { Route } from './+types/reviewer.application.$id'
 import { ApplicationViewer } from '~/hiring/components/ApplicationViewer'
 import { SaveStatusIndicator } from '~/hiring/components/SaveStatusIndicator'
@@ -87,7 +88,29 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     }),
   ])
 
-  const application = { ...applicationBase, domainApplications }
+  // Presign file-type answers so the viewer can render real download links
+  // instead of raw S3 keys.
+  const generalQuestionsForPresign =
+    (applicationBase.generalChallengeVersion?.questions as unknown as Question[]) ?? []
+  const presignedGeneralAnswers = await presignAnswers(
+    generalQuestionsForPresign,
+    applicationBase.answers as Record<string, string>,
+  )
+  const presignedDomainApplications = await Promise.all(
+    domainApplications.map(async (da: any) => ({
+      ...da,
+      answers: await presignAnswers(
+        (da.challengeVersion.questions as unknown as Question[]) ?? [],
+        da.answers as Record<string, string>,
+      ),
+    })),
+  )
+
+  const application = {
+    ...applicationBase,
+    answers: presignedGeneralAnswers,
+    domainApplications: presignedDomainApplications,
+  }
 
   // If this reviewer is assigned to a domain on this application but no
   // ApplicationReview row exists yet, create one so the collaborative editors
