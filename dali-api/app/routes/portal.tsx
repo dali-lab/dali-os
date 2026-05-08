@@ -345,7 +345,7 @@ function PendingView({ cycleName }: { cycleName: string }) {
     <div className="max-w-2xl mx-auto py-12">
       <div className="text-center mb-10">
         <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-yellow-100 flex items-center justify-center">
-          <svg className="w-8 h-8 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg className="w-8 h-8 text-yellow-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
         </div>
@@ -739,7 +739,7 @@ function InterviewScheduledView({
             </div>
           </div>
         ) : (
-          <button onClick={() => setDeclining(true)} className="text-sm font-semibold text-muted-foreground hover:text-red-500 transition">
+          <button onClick={() => setDeclining(true)} className="text-sm font-semibold text-muted-foreground hover:text-red-600 transition">
             Cancel Interview
           </button>
         )}
@@ -848,7 +848,7 @@ function WaitlistedView({ cycleName }: { cycleName: string }) {
     <div className="max-w-2xl mx-auto py-12">
       <div className="text-center mb-10">
         <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-yellow-100 flex items-center justify-center">
-          <svg className="w-8 h-8 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg className="w-8 h-8 text-yellow-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
         </div>

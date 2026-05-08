@@ -59,6 +59,7 @@
     "seed": "tsx prisma/seed.ts"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.10.2",
     "@playwright/test": "^1.59.1",
     "@react-router/dev": "7.14.0",
     "@tailwindcss/vite": "^4.2.2",

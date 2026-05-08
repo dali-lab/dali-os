@@ -28,7 +28,7 @@ export function ConfidentialityGate({
           (className ?? "")
         }
       >
-        <ShieldOff className="w-6 h-6 text-amber-500 mx-auto mb-2" />
+        <ShieldOff className="w-6 h-6 text-amber-700 mx-auto mb-2" />
         <p className="text-sm text-amber-900 font-medium">
           Sensitive data is hidden until the hiring lead binds a confidentiality
           agreement to this cycle.

@@ -26,14 +26,14 @@ export function UrlCheckIndicator({ state }: { state: UrlCheckState }) {
   if (state.status === "done" && state.result) {
     if (state.result.status === "valid") {
       return (
-        <span className="text-xs text-green-600 flex items-center gap-1 mt-1">
+        <span className="text-xs text-green-700 flex items-center gap-1 mt-1">
           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
           {state.result.message}
         </span>
       );
     }
     return (
-      <span className="text-xs text-amber-600 flex items-center gap-1 mt-1">
+      <span className="text-xs text-amber-700 flex items-center gap-1 mt-1">
         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
         {state.result.message}
       </span>
@@ -197,7 +197,7 @@ function FileUploadField({
           type="button"
           disabled={disabled}
           onClick={() => { if (disabled) return; onChange(""); if (fileRef.current) fileRef.current.value = ""; }}
-          className={`text-xs text-muted-foreground transition ${disabled ? "cursor-not-allowed" : "hover:text-red-500"}`}
+          className={`text-xs text-muted-foreground transition ${disabled ? "cursor-not-allowed" : "hover:text-red-700"}`}
         >
           Remove
         </button>
@@ -243,7 +243,7 @@ function FileUploadField({
         disabled={disabled}
         className="hidden"
       />
-      {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
+      {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
     </div>
   );
 }
@@ -284,7 +284,7 @@ export function ChallengeQuestionField({
           className={`${inputBase} resize-none${disabledClass}`}
           placeholder="Your answer"
         />
-        <p className={`text-xs mt-1 ${overLimit ? "text-red-500" : "text-muted-foreground"}`}>
+        <p className={`text-xs mt-1 ${overLimit ? "text-red-600" : "text-muted-foreground"}`}>
           {maxWords !== undefined ? `${wordCount} / ${maxWords} words` : `${wordCount} words`}
         </p>
       </div>

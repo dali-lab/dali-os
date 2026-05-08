@@ -165,7 +165,7 @@ export default function Challenges() {
               )}
               <div>
                 <label className="block text-sm font-medium text-foreground/80 mb-1">
-                  Challenge Name <span className="text-red-500">*</span>
+                  Challenge Name <span className="text-red-600">*</span>
                 </label>
                 <input
                   type="text"

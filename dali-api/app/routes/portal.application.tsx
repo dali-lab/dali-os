@@ -256,7 +256,7 @@ export default function PortalApplication() {
                 type="button"
                 onClick={() => setShowWithdrawModal(true)}
                 disabled={submittingWithdraw}
-                className="shrink-0 px-5 py-2 rounded-full border-2 border-red-500 text-red-500 text-sm font-semibold hover:bg-red-500 hover:text-white transition disabled:opacity-50"
+                className="shrink-0 px-5 py-2 rounded-full border-2 border-red-600 text-red-600 text-sm font-semibold hover:bg-red-600 hover:text-white transition disabled:opacity-50"
               >
                 Withdraw Application
               </button>

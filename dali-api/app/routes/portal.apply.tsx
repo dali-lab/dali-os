@@ -632,7 +632,7 @@ function SectionNavMobile({
             <span>{s.label}</span>
             {s.requiredCount > 0 && (
               isComplete ? (
-                <svg className="w-3.5 h-3.5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                <svg className="w-3.5 h-3.5 text-green-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                 </svg>
               ) : (
@@ -681,7 +681,7 @@ function SectionNavDesktop({
               <span className="flex-1 truncate">{s.label}</span>
               {s.requiredCount > 0 && (
                 isComplete ? (
-                  <svg className="w-4 h-4 text-green-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <svg className="w-4 h-4 text-green-700 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                   </svg>
                 ) : (
@@ -1279,7 +1279,7 @@ export default function PortalApply() {
         <div className="space-y-8">
           {renderDomainSelector()}
 
-          {error && <p className="text-sm text-red-500">{error}</p>}
+          {error && <p className="text-sm text-red-600">{error}</p>}
 
           <div>
             <button
@@ -1358,10 +1358,10 @@ export default function PortalApply() {
                     onUrlBlur={() => checkUrlField(q.key, answers[q.key] ?? "", q.type as "github_url" | "figma_url" | "drive_url")}
                   />
                   {urlWarnings[q.key] && (
-                    <p className="text-xs text-amber-600 mt-1">{urlWarnings[q.key]}</p>
+                    <p className="text-xs text-amber-700 mt-1">{urlWarnings[q.key]}</p>
                   )}
                   {wordCountErrors[q.key] && (
-                    <p className="text-xs text-red-500 mt-1">
+                    <p className="text-xs text-red-600 mt-1">
                       Over the {wordCountErrors[q.key].maxWords}-word limit ({wordCountErrors[q.key].wordCount} words).
                     </p>
                   )}
@@ -1390,7 +1390,7 @@ export default function PortalApply() {
                 <button
                   onClick={() => toggleDomain(domainId)}
                   aria-label={`Remove ${domain.name}`}
-                  className="w-6 h-6 rounded-full flex items-center justify-center text-muted-foreground hover:text-red-500 hover:bg-red-50 transition"
+                  className="w-6 h-6 rounded-full flex items-center justify-center text-muted-foreground hover:text-red-600 hover:bg-red-50 transition"
                 >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -1453,10 +1453,10 @@ export default function PortalApply() {
                         onUrlBlur={() => checkUrlField(q.key, domainAnswers[domainId]?.[q.key] ?? "", q.type as "github_url" | "figma_url" | "drive_url")}
                       />
                       {urlWarnings[q.key] && (
-                        <p className="text-xs text-amber-600 mt-1">{urlWarnings[q.key]}</p>
+                        <p className="text-xs text-amber-700 mt-1">{urlWarnings[q.key]}</p>
                       )}
                       {wordCountErrors[q.key] && (
-                        <p className="text-xs text-red-500 mt-1">
+                        <p className="text-xs text-red-600 mt-1">
                           Over the {wordCountErrors[q.key].maxWords}-word limit ({wordCountErrors[q.key].wordCount} words).
                         </p>
                       )}
@@ -1493,7 +1493,7 @@ export default function PortalApply() {
                     onChange={v => setAnswer(q.key, v)}
                   />
                   {wordCountErrors[q.key] && (
-                    <p className="text-xs text-red-500 mt-1">
+                    <p className="text-xs text-red-600 mt-1">
                       Over the {wordCountErrors[q.key].maxWords}-word limit ({wordCountErrors[q.key].wordCount} words).
                     </p>
                   )}
@@ -1503,7 +1503,7 @@ export default function PortalApply() {
           ) : null;
         })()}
 
-        {error && <p className="text-sm text-red-500">{error}</p>}
+        {error && <p className="text-sm text-red-600">{error}</p>}
 
         {/* Word-count errors banner — hard error, blocks submission */}
         {Object.keys(wordCountErrors).length > 0 && (
@@ -1558,7 +1558,7 @@ export default function PortalApply() {
               </>
             ) : hasSavedOnce ? (
               <>
-                <svg className="w-3.5 h-3.5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <svg className="w-3.5 h-3.5 text-green-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                 </svg>
                 Draft auto-saved

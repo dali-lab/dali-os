@@ -1366,7 +1366,7 @@ export default function HiringLeadCycleDetails() {
             >
               {configSaving ? 'Saving...' : configSaved ? 'Saved!' : 'Save Configuration'}
             </button>
-            {configSaved && <CheckCircle className="w-4 h-4 text-green-500" />}
+            {configSaved && <CheckCircle className="w-4 h-4 text-green-700" />}
           </div>
         </div>
         </div>
@@ -1440,7 +1440,7 @@ export default function HiringLeadCycleDetails() {
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">{r.domain.name}</td>
                     <td className="px-4 py-3 text-right">
-                      <button onClick={() => removeReviewer(r.id)} className="text-red-500 hover:text-red-700 transition">
+                      <button onClick={() => removeReviewer(r.id)} className="text-red-600 hover:text-red-800 transition">
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </td>
@@ -1520,7 +1520,7 @@ export default function HiringLeadCycleDetails() {
                       <td className="px-4 py-3 font-medium text-foreground">{name}</td>
                       <td className="px-4 py-3 text-muted-foreground">{i.domain?.name ?? ''}</td>
                       <td className="px-4 py-3 text-right">
-                        <button onClick={() => removeInterviewer(i.id)} className="text-red-500 hover:text-red-700 transition">
+                        <button onClick={() => removeInterviewer(i.id)} className="text-red-600 hover:text-red-800 transition">
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </td>
@@ -2353,7 +2353,7 @@ function DomainOverridePanel({
           <button
             type="button"
             onClick={() => setShowDeleteModal(true)}
-            className="text-red-500 hover:text-red-700 transition"
+            className="text-red-600 hover:text-red-800 transition"
             aria-label={`Remove ${domain.domain?.name ?? domain.domainId}`}
           >
             <Trash2 className="w-4 h-4" />

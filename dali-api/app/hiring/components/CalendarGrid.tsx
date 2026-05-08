@@ -411,7 +411,7 @@ export default function CalendarGrid({
         </div>
         <div className="flex items-center gap-3 sm:justify-end">
           {dirty && (
-            <span className="text-xs text-amber-600 font-medium">Unsaved changes</span>
+            <span className="text-xs text-amber-700 font-medium">Unsaved changes</span>
           )}
           <button
             onClick={handleSave}

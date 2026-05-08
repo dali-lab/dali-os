@@ -3,21 +3,26 @@
 @import "tailwindcss";
 
 @theme {
-  /* DALI brand colors */
-  --color-accent-coral: hsl(354 70% 61%);
+  /* DALI brand colors.
+     Coral and teal are tuned to pass WCAG AA (4.5:1) against white in light
+     mode — both as foreground (`text-accent-*`) and as button surfaces
+     (`bg-accent-* text-white`). Pale variants (`-light`, `-yellow`, `-pink`,
+     `-green`) are decorative-only — never use for text or state-conveying
+     icons. See app/STYLE.md. */
+  --color-accent-coral: hsl(354 75% 40%);
   --color-accent-coral-light: hsl(354 70% 75%);
-  --color-accent-teal: hsl(177 45% 51%);
+  --color-accent-teal: hsl(177 55% 28%);
   --color-accent-yellow: hsl(51 100% 88%);
   --color-accent-pink: hsl(344 64% 79%);
   --color-accent-green: hsl(97 49% 67%);
   --color-dark-blue: hsl(203 38% 23%);
   --color-nav-primary: hsl(203 38% 23%);
-  --color-dali-teal: hsl(177 45% 51%);
-  --color-dali-teal-dark: hsl(177 45% 38%);
+  --color-dali-teal: hsl(177 55% 28%);
+  --color-dali-teal-dark: hsl(177 55% 22%);
   --color-dali-green: hsl(80 45% 70%);
   --color-section-bg: hsl(205 100% 92%);
   --color-section-bg-alt: hsl(205 100% 92%);
-  --color-text-secondary: hsl(0 0% 40%);
+  --color-text-secondary: hsl(0 0% 35%);
 
   /* shadcn semantic tokens */
   --color-background: hsl(0 0% 100%);

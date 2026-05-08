@@ -115,7 +115,7 @@ export default function CycleConfidentialityPage() {
     return (
       <div className="max-w-3xl mx-auto py-10 space-y-6">
         <div className="flex items-center gap-3">
-          <AlertTriangle className="w-6 h-6 text-amber-500" />
+          <AlertTriangle className="w-6 h-6 text-amber-700" />
           <h1 className="text-2xl font-bold text-foreground">
             Confidentiality agreement unavailable
           </h1>

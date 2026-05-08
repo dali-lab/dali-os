@@ -647,7 +647,7 @@ export default function DomainLeadDashboard() {
                                       {cv.challenge?.name ?? "Linked"}
                                     </Link>
                                     {hasApplicationReviews && (
-                                      <span className="text-xs text-gray-400 ml-1">(locked — reviewers have been assigned)</span>
+                                      <span className="text-xs text-muted-foreground ml-1">(locked — reviewers have been assigned)</span>
                                     )}
                                   </div>
                                 </li>
@@ -1276,7 +1276,7 @@ function ReviewerSection({ cycleId, domainId, initialReviewers }: {
                 <span className="text-sm font-medium text-foreground">
                   {r.daliMember?.firstName && r.daliMember?.lastName ? `${r.daliMember.firstName} ${r.daliMember.lastName}` : r.daliMember?.daliEmail ?? r.daliMemberId}
                 </span>
-                <button onClick={() => removeReviewer(r.id)} className="text-red-500 hover:text-red-700">
+                <button onClick={() => removeReviewer(r.id)} className="text-red-600 hover:text-red-800">
                   <Trash2 className="w-4 h-4" />
                 </button>
               </div>
@@ -1456,7 +1456,7 @@ function InterviewerSection({ cycleId, domainId, initialInterviewers }: {
                       </span>
                     )}
                   </div>
-                  <button onClick={() => removeInterviewer(i.id)} className="text-red-500 hover:text-red-700">
+                  <button onClick={() => removeInterviewer(i.id)} className="text-red-600 hover:text-red-800">
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
@@ -1909,7 +1909,7 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
           status === "submitted" ? (
             <Check className="w-3 h-3 text-green-600 dark:text-green-400" />
           ) : status === "inProgress" ? (
-            <Clock className="w-3 h-3 text-yellow-600 dark:text-yellow-400" />
+            <Clock className="w-3 h-3 text-yellow-700 dark:text-yellow-400" />
           ) : (
             <CircleDashed className="w-3 h-3 text-muted-foreground/70" />
           );

@@ -233,7 +233,7 @@ export function FormBuilderTab({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="col-span-2">
             <label className="block text-sm font-medium text-foreground/80 mb-1">
-              Question Label <span className="text-red-500">*</span>
+              Question Label <span className="text-red-600">*</span>
             </label>
             <input
               type="text"

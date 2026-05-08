@@ -53,9 +53,9 @@ export default function EmailTemplatesList() {
           <Mail className="w-4 h-4 text-muted-foreground" />
           <span className="text-sm text-foreground/80">
             Gmail sending ({gmailConnected ? (
-              <span className="text-green-600 font-medium">connected</span>
+              <span className="text-green-700 font-medium">connected</span>
             ) : (
-              <span className="text-amber-600 font-medium">not connected</span>
+              <span className="text-amber-700 font-medium">not connected</span>
             )})
           </span>
         </div>

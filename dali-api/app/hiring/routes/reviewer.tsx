@@ -475,7 +475,7 @@ export default function ReviewerDashboard() {
               ))}
               {submittedReviews.length === 0 && (
                 <div className="py-6 text-center border-2 border-dashed border-green-200 rounded-lg bg-white/50">
-                  <p className="text-sm text-green-500 italic">No submitted reviews</p>
+                  <p className="text-sm text-muted-foreground italic">No submitted reviews</p>
                 </div>
               )}
             </div>
@@ -690,7 +690,7 @@ function Section({
         <div className="flex items-center gap-3">
           {badge}
           <ChevronDown
-            className={`w-4 h-4 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`}
+            className={`w-4 h-4 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`}
           />
         </div>
       </button>
@@ -779,7 +779,7 @@ function DelibsSessionView({
                       className="bg-white p-3 rounded-md border border-gray-200 shadow-sm flex items-center gap-2"
                     >
                       {!isInitial && col === 'Waitlist' && (
-                        <span className="text-gray-400 font-bold text-xs w-4">{i + 1}.</span>
+                        <span className="text-muted-foreground font-bold text-xs w-4">{i + 1}.</span>
                       )}
                       <span className="font-medium text-gray-900 text-sm">{label}</span>
                     </div>
@@ -817,7 +817,7 @@ function ReviewCard({ review, variant }: { review: any; variant: 'pending' | 'in
         <h4 className="font-bold text-foreground">
           {user?.firstName ?? '?'} {user?.lastName ?? ''}
         </h4>
-        {variant === 'submitted' && <CheckCircle className="w-4 h-4 text-green-500" />}
+        {variant === 'submitted' && <CheckCircle className="w-4 h-4 text-green-700" />}
       </div>
       <p className="text-xs text-muted-foreground mb-3">{domain?.name ?? 'Unknown Domain'}</p>
       {variant === 'submitted' && review.overallRecommendation && (
