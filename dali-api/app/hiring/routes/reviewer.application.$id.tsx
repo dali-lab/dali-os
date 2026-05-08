@@ -478,7 +478,7 @@ export default function ReviewerApplicationReview() {
       </div>
 
       {/* Floating rubric toggle */}
-      <div className="fixed bottom-8 right-8 flex flex-col gap-4 z-50">
+      <div className="fixed bottom-6 right-4 sm:bottom-8 sm:right-8 flex flex-col gap-4 z-50">
         <button
           onClick={() => setShowRubric(!showRubric)}
           className={`w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all ${showRubric ? 'bg-blue-600 text-white' : 'bg-card text-blue-600 hover:bg-blue-50 border border-border'}`}
@@ -489,7 +489,7 @@ export default function ReviewerApplicationReview() {
       </div>
 
       {showRubric && (
-        <div className="fixed bottom-24 right-8 w-80 bg-card rounded-xl shadow-2xl border border-border overflow-hidden z-50">
+        <div className="fixed bottom-20 right-4 sm:bottom-24 sm:right-8 w-80 max-w-[calc(100vw-2rem)] bg-card rounded-xl shadow-2xl border border-border overflow-hidden z-50">
           <div className="bg-blue-600 px-4 py-3 flex justify-between items-center">
             <h3 className="font-bold text-white flex items-center"><HelpCircle className="w-4 h-4 mr-2" />Scoring Guide</h3>
           </div>

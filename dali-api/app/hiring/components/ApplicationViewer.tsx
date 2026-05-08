@@ -203,7 +203,7 @@ function AnnotatableField({
         <>
           <div className="fixed inset-0 z-40" onClick={() => setPopover(null)} />
           <div
-            className="fixed z-50 bg-card rounded-xl shadow-xl border border-border p-3 w-64"
+            className="fixed z-50 bg-card rounded-xl shadow-xl border border-border p-3 w-64 max-w-[calc(100vw-2rem)]"
             style={{ left: Math.min(popover.x - 128, window.innerWidth - 272), top: popover.y }}
             onClick={(e) => e.stopPropagation()}
           >
