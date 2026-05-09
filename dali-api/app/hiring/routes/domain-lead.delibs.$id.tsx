@@ -52,6 +52,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const domainApplications = await prisma.domainApplication.findMany({
     where: {
+      selected: true,
       challengeVersion: { domainId: session.domainId },
       application: {
         applicationCycleId: session.applicationCycleId,

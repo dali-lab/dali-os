@@ -350,9 +350,10 @@ export async function action({ request }: Route.ActionArgs) {
       url: string;
       type: "github_url" | "figma_url" | "drive_url";
     }[];
+    const selectedDomainIds = JSON.parse(formData.get("selectedDomainIds") as string) as string[];
 
-    // Validate word limits server-side before any writes. Trust the questions
-    // from the ChallengeVersion record, not anything in the request payload.
+    // Validate server-side before any writes. Trust the questions from the
+    // ChallengeVersion record, not anything in the request payload.
     const application = await prisma.application.findUnique({
       where: { id: applicationId },
       select: {
@@ -366,27 +367,54 @@ export async function action({ request }: Route.ActionArgs) {
     const generalQuestions =
       (application.generalChallengeVersion.questions as unknown as Question[]) ?? [];
 
-    const domainApps = domainAnswers.length
-      ? await prisma.domainApplication.findMany({
-          where: { id: { in: domainAnswers.map(da => da.domainApplicationId) } },
-          select: {
-            id: true,
-            challengeVersion: { select: { questions: true } },
-          },
-        })
-      : [];
+    const allDas = await prisma.domainApplication.findMany({
+      where: { applicationId },
+      include: {
+        challengeVersion: { select: { domainId: true, questions: true } },
+      },
+    });
 
     const wordCountErrors: Record<string, WordCountViolation> = {
       ...validateWordLimits(generalQuestions, answers),
     };
     for (const da of domainAnswers) {
-      const dbDa = domainApps.find(d => d.id === da.domainApplicationId);
+      const dbDa = allDas.find(d => d.id === da.domainApplicationId);
       if (!dbDa) continue;
       const questions = (dbDa.challengeVersion.questions as unknown as Question[]) ?? [];
       Object.assign(wordCountErrors, validateWordLimits(questions, da.answers));
     }
     if (Object.keys(wordCountErrors).length > 0) {
       return withAuth(auth, { wordCountErrors });
+    }
+
+    // Required-question validation. Client gates the review modal on this, but
+    // we re-check server-side so the DB cannot end up with a submitted-but-empty
+    // domain via a stale state, manual replay, or future refactor that loosens
+    // the client gate.
+    const missingRequired: string[] = [];
+    for (const q of generalQuestions) {
+      if (q.required && !isAnswered(answers[q.key], q)) {
+        missingRequired.push(q.data.label || q.key);
+      }
+    }
+    for (const domainId of selectedDomainIds) {
+      const dbDa = allDas.find(d => d.challengeVersion.domainId === domainId);
+      if (!dbDa) {
+        missingRequired.push(`selected domain has no application record`);
+        continue;
+      }
+      const questions = (dbDa.challengeVersion.questions as unknown as Question[]) ?? [];
+      const submitted = domainAnswers.find(da => da.domainApplicationId === dbDa.id)?.answers ?? {};
+      for (const q of questions) {
+        if (q.required && !isAnswered(submitted[q.key], q)) {
+          missingRequired.push(q.data.label || q.key);
+        }
+      }
+    }
+    if (missingRequired.length > 0) {
+      return withAuth(auth, {
+        error: `Please answer all required questions before submitting (${missingRequired.length} unanswered).`,
+      });
     }
 
     // Save final answers
@@ -403,11 +431,6 @@ export async function action({ request }: Route.ActionArgs) {
     }
 
     // Persist final domain selection state
-    const selectedDomainIds = JSON.parse(formData.get("selectedDomainIds") as string) as string[];
-    const allDas = await prisma.domainApplication.findMany({
-      where: { applicationId },
-      include: { challengeVersion: { select: { domainId: true } } },
-    });
     const toSelect = allDas.filter(da => selectedDomainIds.includes(da.challengeVersion.domainId!) && !da.selected);
     const toDeselect = allDas.filter(da => !selectedDomainIds.includes(da.challengeVersion.domainId!) && da.selected);
     if (toSelect.length > 0) {
@@ -1210,10 +1233,14 @@ export default function PortalApply() {
     }
   }
 
-  // Handle submit response (urlWarnings, wordCountErrors) — redirects are handled automatically by React Router
+  // Handle submit response (urlWarnings, wordCountErrors, error) — redirects are handled automatically by React Router
   useEffect(() => {
     if (submitFetcher.state === "idle" && submitFetcher.data) {
       setSubmitting(false);
+      if (submitFetcher.data.error) {
+        alert(submitFetcher.data.error);
+        return;
+      }
       if (submitFetcher.data.wordCountErrors) {
         setWordCountErrors(submitFetcher.data.wordCountErrors);
         setTimeout(() => warningBannerRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 50);

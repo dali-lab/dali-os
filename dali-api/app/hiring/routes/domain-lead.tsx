@@ -85,7 +85,7 @@ export async function loader({ request }: Route.LoaderArgs) {
               user: true,
               statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
               domainApplications: {
-                where: { challengeVersion: { domainId: assignment.domainId } },
+                where: { selected: true, challengeVersion: { domainId: assignment.domainId } },
                 include: {
                   challengeVersion: { include: { domain: true } },
                   reviews: {
