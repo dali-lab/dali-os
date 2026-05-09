@@ -10,6 +10,8 @@ export type InterpolationVars = {
   time?: string;
   location?: string;
   meetingUrl?: string;
+  originalCloseDate?: string;
+  newCloseDate?: string;
 };
 
 export function interpolate(text: string, vars: InterpolationVars): string {
@@ -19,7 +21,9 @@ export function interpolate(text: string, vars: InterpolationVars): string {
     .replace(/\{\{domain\}\}/g, () => vars.domain ?? "")
     .replace(/\{\{time\}\}/g, () => vars.time ?? "")
     .replace(/\{\{location\}\}/g, () => vars.location ?? "")
-    .replace(/\{\{meetingUrl\}\}/g, () => vars.meetingUrl ?? "");
+    .replace(/\{\{meetingUrl\}\}/g, () => vars.meetingUrl ?? "")
+    .replace(/\{\{originalCloseDate\}\}/g, () => vars.originalCloseDate ?? "")
+    .replace(/\{\{newCloseDate\}\}/g, () => vars.newCloseDate ?? "");
 }
 
 // Sanitization is part of the contract: template bodies are user-authored

@@ -19,6 +19,7 @@ import { ChallengePreviewModal } from "~/hiring/components/ChallengePreviewModal
 import { Settings, Users, Calendar, AlertTriangle, Trash2, Plus, CheckCircle, ArrowRight, Circle, ChevronRight, X, LayoutDashboard, Eye } from 'lucide-react'
 import { formatVersionLabel, buildVersionNumberMap } from "~/lib/formatVersion";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
+import { sendExtensionNoticeIfDue, resendExtensionNotice } from "~/hiring/lib/extension-notice";
 import { ConfidentialityGate } from "~/hiring/components/ConfidentialityGate";
 import { zonedDayStartUtc, zonedDayEndUtc, getZonedYMD } from "~/lib/timezone";
 
@@ -104,6 +105,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const confState = await getCycleConfidentialityState(auth.user.sub, params.id);
   const confidentialityRequired =
     confState.status === "signed" ? null : confState.status;
+
+  // Lazy trigger for the deadline-extension notice blast (idempotent,
+  // best-effort). Mirrors how autoCloseIfExpired runs from the cycle status
+  // loader: leads loading their cycle page will wake up the blast if the
+  // original close has just passed.
+  await sendExtensionNoticeIfDue(params.id!);
 
   const cycleBase = await prisma.applicationCycle.findUniqueOrThrow({
     where: { id: params.id },
@@ -443,9 +450,37 @@ export async function action({ request, params }: Route.ActionArgs) {
     await prisma.applicationCycle.update({
       where: { id: params.id },
       // Snap back to the original deadline; clear the extension marker.
-      data: { closeDate: cycle.originalCloseDate, originalCloseDate: null },
+      // extensionNoticeSentAt is also cleared so a future re-extension can
+      // re-trigger the notice blast.
+      data: {
+        closeDate: cycle.originalCloseDate,
+        originalCloseDate: null,
+        extensionNoticeSentAt: null,
+      },
     });
     return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}?notice=extension-removed`));
+  }
+
+  if (intent === "resend-extension-notice") {
+    const result = await resendExtensionNotice(params.id!);
+    let notice: string;
+    if (result.outcome === "no_extension") {
+      notice = "extension-notice-no-extension";
+    } else if (result.outcome === "preflight_skipped") {
+      notice = "extension-notice-not-configured";
+    } else if (result.attempted === 0) {
+      notice = "extension-notice-noop";
+    } else if (result.succeeded === 0 && result.alreadySent === result.attempted) {
+      notice = "extension-notice-all-sent";
+    } else if (result.failed > 0) {
+      notice = "extension-notice-partial";
+    } else {
+      notice = "extension-notice-sent";
+    }
+    return withAuth(
+      auth,
+      redirect(`/hiring/lead/cycle/${params.id}?notice=${notice}&sent=${result.succeeded}&failed=${result.failed}&skipped=${result.alreadySent}`),
+    );
   }
 
   if (intent === "set-general-rubric") {
@@ -2558,6 +2593,12 @@ function CloseDateNotice() {
       tone: "warn",
     },
     "extension-removed": { text: "Extension removed — the close date is back to the original.", tone: "ok" },
+    "extension-notice-sent": { text: "Extension notice email sent to applicants who haven't submitted yet.", tone: "ok" },
+    "extension-notice-partial": { text: "Extension notice sent — some recipients failed (see server logs).", tone: "warn" },
+    "extension-notice-noop": { text: "No extension notice sent — no draft applicants in this cycle.", tone: "warn" },
+    "extension-notice-all-sent": { text: "Every draft applicant has already received the extension notice — nothing to resend.", tone: "ok" },
+    "extension-notice-no-extension": { text: "No extension is currently set on this cycle. Set an extension first.", tone: "warn" },
+    "extension-notice-not-configured": { text: "Extension notice not sent — no template is bound to the “Deadline Extension Notice” slot, or the gmail account isn't configured.", tone: "warn" },
   };
   const m = messages[notice];
   if (!m) return null;
@@ -2652,6 +2693,7 @@ function CloseDateCard({ cycle, cycleStatus }: { cycle: any; cycleStatus: string
             extensionMs={extensionMs}
             extensionActive={extensionActive}
             cycleStatus={cycleStatus}
+            extensionNoticeSentAt={cycle?.extensionNoticeSentAt ? new Date(cycle.extensionNoticeSentAt) : null}
           />
         </div>
       )}
@@ -2681,12 +2723,14 @@ function ExtensionSection({
   extensionMs,
   extensionActive,
   cycleStatus,
+  extensionNoticeSentAt,
 }: {
   cycleId: string;
   anchor: Date;
   extensionMs: number;
   extensionActive: boolean;
   cycleStatus: string;
+  extensionNoticeSentAt: Date | null;
 }) {
   const initial = describeExtension(extensionMs);
   const [amount, setAmount] = useState<number>(initial.amount);
@@ -2761,21 +2805,40 @@ function ExtensionSection({
         </div>
       </Form>
       {extensionActive && (
-        <Form
-          method="post"
-          preventScrollReset
-          ref={removeFormRef}
-          className="mt-2"
-          aria-label="Remove deadline extension"
-        >
-          <input type="hidden" name="intent" value="remove-extension" />
-          <button
-            type="submit"
-            className="text-xs text-red-700 hover:text-red-900 underline"
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+          <Form
+            method="post"
+            preventScrollReset
+            aria-label="Resend deadline-extension email to draft applicants"
           >
-            Remove extension
-          </button>
-        </Form>
+            <input type="hidden" name="intent" value="resend-extension-notice" />
+            <button
+              type="submit"
+              className="text-xs font-medium text-blue-700 hover:text-blue-900 underline"
+            >
+              {extensionNoticeSentAt ? "Resend extension notice" : "Send extension notice now"}
+            </button>
+          </Form>
+          {extensionNoticeSentAt && (
+            <span className="text-xs text-muted-foreground">
+              Last sent {formatCloseInstant(extensionNoticeSentAt)}
+            </span>
+          )}
+          <Form
+            method="post"
+            preventScrollReset
+            ref={removeFormRef}
+            aria-label="Remove deadline extension"
+          >
+            <input type="hidden" name="intent" value="remove-extension" />
+            <button
+              type="submit"
+              className="text-xs text-red-700 hover:text-red-900 underline"
+            >
+              Remove extension
+            </button>
+          </Form>
+        </div>
       )}
       {showConfirm && (
         <Modal
@@ -3607,6 +3670,7 @@ function DecisionEmailPicker({ slot, binding, emailTemplates, locked }: {
 
 const NOTIFICATION_EMAIL_SLOTS: ReadonlyArray<{ type: NotificationSlotType; label: string; description: string }> = [
   { type: "ApplicationReceived", label: "Application Received", description: "Sent to the applicant when they first submit their application." },
+  { type: "ApplicationExtensionNotice", label: "Deadline Extension Notice", description: "Sent once to applicants with a draft (unsubmitted) application after the original close passes, when an extension is in effect." },
   { type: "InterviewInviteMentor", label: "Interview Invite (Interviewer)", description: "Sent to the assigned interviewer when an interview is booked or they are reassigned." },
   { type: "InterviewConfirmedApplicant", label: "Interview Confirmed (Applicant)", description: "Sent to the applicant when their interview is booked." },
   { type: "InterviewCancelledApplicant", label: "Interview Cancelled (Applicant)", description: "Sent to the applicant when their interview is cancelled." },

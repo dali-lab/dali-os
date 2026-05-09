@@ -10,6 +10,7 @@ export type AuditAction =
   | "decision.finalize"
   | "decision.release"
   | "email.send"
+  | "email.extension_notice"
   | "confidentiality.sign";
 
 export type AuditEvent = {
