@@ -503,4 +503,70 @@ describe("admin.cycle.$id action — hiring lead overrides", () => {
       expect(mockPrisma.applicationCycle.update).not.toHaveBeenCalled();
     });
   });
+
+  describe("set-notification-email", () => {
+    const TEMPLATE_VERSION_ID = "tv-1";
+
+    beforeEach(() => {
+      mockPrisma.cycleNotificationEmail = {
+        upsert: vi.fn().mockResolvedValue({}),
+        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+      };
+    });
+
+    it("upserts an ApplicationExtensionNotice binding when a template is chosen", async () => {
+      // Regression: #470 — the slot was added to the UI in #467 but the action
+      // whitelist was not updated, so saves returned 400 silently.
+      const res = await callAction({
+        intent: "set-notification-email",
+        notificationType: "ApplicationExtensionNotice",
+        emailTemplateVersionId: TEMPLATE_VERSION_ID,
+      });
+
+      expect((res as Response).status).not.toBe(400);
+      expect(mockPrisma.cycleNotificationEmail.upsert).toHaveBeenCalledWith({
+        where: {
+          applicationCycleId_notificationType: {
+            applicationCycleId: CYCLE_ID,
+            notificationType: "ApplicationExtensionNotice",
+          },
+        },
+        update: { emailTemplateVersionId: TEMPLATE_VERSION_ID },
+        create: {
+          applicationCycleId: CYCLE_ID,
+          notificationType: "ApplicationExtensionNotice",
+          emailTemplateVersionId: TEMPLATE_VERSION_ID,
+        },
+      });
+      expect(mockPrisma.cycleNotificationEmail.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it("deletes the ApplicationExtensionNotice binding when the template is cleared", async () => {
+      await callAction({
+        intent: "set-notification-email",
+        notificationType: "ApplicationExtensionNotice",
+        emailTemplateVersionId: "",
+      });
+
+      expect(mockPrisma.cycleNotificationEmail.deleteMany).toHaveBeenCalledWith({
+        where: {
+          applicationCycleId: CYCLE_ID,
+          notificationType: "ApplicationExtensionNotice",
+        },
+      });
+      expect(mockPrisma.cycleNotificationEmail.upsert).not.toHaveBeenCalled();
+    });
+
+    it("rejects an unknown notification type with 400", async () => {
+      const res = await callAction({
+        intent: "set-notification-email",
+        notificationType: "NotARealType",
+        emailTemplateVersionId: TEMPLATE_VERSION_ID,
+      });
+
+      expect((res as Response).status).toBe(400);
+      expect(mockPrisma.cycleNotificationEmail.upsert).not.toHaveBeenCalled();
+      expect(mockPrisma.cycleNotificationEmail.deleteMany).not.toHaveBeenCalled();
+    });
+  });
 });
