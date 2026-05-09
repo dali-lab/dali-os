@@ -87,6 +87,13 @@ model ApplicationCycle {
   // Application due date; triggers auto-transition to UnderReview when passed.
   closeDate DateTime?
 
+  // The pre-extension closeDate, set the first time a hiring lead extends the
+  // deadline. Null on cycles that have never been extended (or whose deadline
+  // has been reset via the picker since the last extension). Used to surface
+  // an "extended deadline" banner to applicants between the original and
+  // current closeDate.
+  originalCloseDate DateTime?
+
   // Rubric for the general application form (reviewers score this alongside
   // the per-domain rubric set on DomainApplicationCycle).
   generalRubricVersionId String?

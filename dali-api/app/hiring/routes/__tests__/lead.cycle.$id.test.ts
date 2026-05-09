@@ -36,6 +36,10 @@ beforeEach(() => {
   mockPrisma.rubricVersion = { findUnique: vi.fn() };
   mockPrisma.applicationReview = { count: vi.fn() };
   mockPrisma.domainApplicationCycle = { upsert: vi.fn().mockResolvedValue({}) };
+  mockPrisma.applicationCycle = {
+    update: vi.fn().mockResolvedValue({}),
+    findUnique: vi.fn(),
+  };
 
   vi.mocked(requireAuth).mockResolvedValue({
     ok: true,
@@ -242,6 +246,89 @@ describe("admin.cycle.$id action — hiring lead overrides", () => {
         create: { domainId: DOMAIN_ID, applicationCycleId: CYCLE_ID, isReady: false },
       });
       expect(mockPrisma.challengeVersionApplicationCycle.count).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("set-close-date", () => {
+    it("clears originalCloseDate so a manual reset isn't shown as an extension", async () => {
+      await callAction({ intent: "set-close-date", closeDate: "2026-06-01" });
+
+      expect(mockPrisma.applicationCycle.update).toHaveBeenCalledWith({
+        where: { id: CYCLE_ID },
+        data: { closeDate: new Date("2026-06-01T23:59:59Z"), originalCloseDate: null },
+      });
+    });
+
+    it("clears originalCloseDate even when the close date is being unset", async () => {
+      await callAction({ intent: "set-close-date", closeDate: "" });
+
+      expect(mockPrisma.applicationCycle.update).toHaveBeenCalledWith({
+        where: { id: CYCLE_ID },
+        data: { closeDate: null, originalCloseDate: null },
+      });
+    });
+  });
+
+  describe("extend-close-date", () => {
+    it("captures the pre-extension close date on the first extension", async () => {
+      const closeDate = new Date("2026-05-15T23:59:59Z");
+      mockPrisma.applicationCycle.findUnique.mockResolvedValue({
+        id: CYCLE_ID,
+        closeDate,
+        originalCloseDate: null,
+      });
+
+      await callAction({ intent: "extend-close-date", amount: "48", unit: "hours" });
+
+      const expectedClose = new Date(closeDate.getTime() + 48 * 3_600_000);
+      expect(mockPrisma.applicationCycle.update).toHaveBeenCalledWith({
+        where: { id: CYCLE_ID },
+        data: { closeDate: expectedClose, originalCloseDate: closeDate },
+      });
+    });
+
+    it("preserves the original anchor on subsequent extensions", async () => {
+      const original = new Date("2026-05-15T23:59:59Z");
+      const alreadyExtended = new Date("2026-05-17T23:59:59Z");
+      mockPrisma.applicationCycle.findUnique.mockResolvedValue({
+        id: CYCLE_ID,
+        closeDate: alreadyExtended,
+        originalCloseDate: original,
+      });
+
+      await callAction({ intent: "extend-close-date", amount: "1", unit: "days" });
+
+      const expectedClose = new Date(alreadyExtended.getTime() + 86_400_000);
+      expect(mockPrisma.applicationCycle.update).toHaveBeenCalledWith({
+        where: { id: CYCLE_ID },
+        data: { closeDate: expectedClose, originalCloseDate: original },
+      });
+    });
+
+    it("rejects non-positive amounts without writing", async () => {
+      mockPrisma.applicationCycle.findUnique.mockResolvedValue({
+        id: CYCLE_ID,
+        closeDate: new Date("2026-05-15T23:59:59Z"),
+        originalCloseDate: null,
+      });
+
+      const res = await callAction({ intent: "extend-close-date", amount: "0", unit: "hours" });
+
+      expect((res as Response).status).toBe(400);
+      expect(mockPrisma.applicationCycle.update).not.toHaveBeenCalled();
+    });
+
+    it("refuses to extend when no close date is set", async () => {
+      mockPrisma.applicationCycle.findUnique.mockResolvedValue({
+        id: CYCLE_ID,
+        closeDate: null,
+        originalCloseDate: null,
+      });
+
+      const res = await callAction({ intent: "extend-close-date", amount: "48", unit: "hours" });
+
+      expect((res as Response).status).toBe(400);
+      expect(mockPrisma.applicationCycle.update).not.toHaveBeenCalled();
     });
   });
 });
