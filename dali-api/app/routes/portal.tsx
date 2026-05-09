@@ -28,6 +28,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     cycleId: null as string | null,
     cycleStatus: null as string | null,
     closeDate: null as string | null,
+    originalCloseDate: null as string | null,
     domainApplications: [] as any[],
     slotDurationMinutes: 30,
     hasApplication: false,
@@ -42,12 +43,14 @@ export async function loader({ request }: Route.LoaderArgs) {
   let cycleName: string;
   let cycleStatus: ApplicationCycleStatus;
   let closeDate: string | null = null;
+  let originalCloseDate: string | null = null;
 
   if (active) {
     cycleId = active.id;
     cycleName = active.name;
     cycleStatus = active.currentStatus as ApplicationCycleStatus;
     closeDate = active.closeDate ? active.closeDate.toISOString() : null;
+    originalCloseDate = active.originalCloseDate ? active.originalCloseDate.toISOString() : null;
   } else {
     const recentApp = await prisma.application.findFirst({
       where: { userId: auth.user.sub },
@@ -65,6 +68,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     cycleName = recentApp.applicationCycle.name;
     cycleStatus = (recentApp.applicationCycle.statusUpdates[0]?.newStatus ?? "Draft") as ApplicationCycleStatus;
     closeDate = recentApp.applicationCycle.closeDate ? recentApp.applicationCycle.closeDate.toISOString() : null;
+    originalCloseDate = recentApp.applicationCycle.originalCloseDate ? recentApp.applicationCycle.originalCloseDate.toISOString() : null;
   }
 
   const application = await prisma.application.findFirst({
@@ -126,6 +130,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       cycleId,
       cycleStatus,
       closeDate,
+      originalCloseDate,
       domainApplications,
       slotDurationMinutes: config?.slotDurationMinutes ?? 30,
       hasApplication: !!application,
@@ -204,16 +209,29 @@ function formatRemaining(iso: string): { label: string; tone: "urgent" | "warn" 
 
 // Deadline rendering happens after hydration so toLocaleString uses the
 // browser's locale/timezone without producing an SSR/CSR text mismatch.
-function DeadlineLine({ closeDate }: { closeDate: string }) {
+function DeadlineLine({ closeDate, originalCloseDate }: { closeDate: string; originalCloseDate?: string | null }) {
   const [label, setLabel] = useState<string>("");
   const [remaining, setRemaining] = useState<{ label: string; tone: "urgent" | "warn" | "ok" } | null>(null);
+  // Tracks whether the original deadline has passed but the extended one
+  // hasn't — only true on the client to avoid SSR/CSR mismatch.
+  const [inExtensionWindow, setInExtensionWindow] = useState(false);
   useEffect(() => {
     setLabel(formatDeadline(closeDate));
-    const tick = () => setRemaining(formatRemaining(closeDate));
+    const tick = () => {
+      setRemaining(formatRemaining(closeDate));
+      if (originalCloseDate) {
+        const orig = new Date(originalCloseDate).getTime();
+        const close = new Date(closeDate).getTime();
+        const now = Date.now();
+        setInExtensionWindow(orig < close && now > orig && now < close);
+      } else {
+        setInExtensionWindow(false);
+      }
+    };
     tick();
     const id = setInterval(tick, 60_000);
     return () => clearInterval(id);
-  }, [closeDate]);
+  }, [closeDate, originalCloseDate]);
   if (!label) return null;
   const toneStyles: Record<"urgent" | "warn" | "ok", string> = {
     urgent: "text-red-700",
@@ -223,6 +241,11 @@ function DeadlineLine({ closeDate }: { closeDate: string }) {
   return (
     <div className={`text-sm mt-2 flex items-center gap-2 flex-wrap ${remaining ? toneStyles[remaining.tone] : "text-muted-foreground"}`}>
       <span>Applications close on {label}</span>
+      {inExtensionWindow && (
+        <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-amber-100 text-amber-800">
+          Deadline extended
+        </span>
+      )}
       {remaining && (
         <span className={`text-xs px-2.5 py-0.5 rounded-full font-semibold ${
           remaining.tone === "urgent" ? "bg-red-100 text-red-700" :
@@ -949,6 +972,7 @@ export default function Portal() {
     cycleId,
     cycleStatus,
     closeDate,
+    originalCloseDate,
     domainApplications,
     slotDurationMinutes,
     hasApplication,
@@ -1008,7 +1032,7 @@ export default function Portal() {
           <h1 className="font-heading text-xl font-bold text-dark-blue">
             {cycleName} Application Portal
           </h1>
-          {cycleStatus === "Open" && closeDate && <DeadlineLine closeDate={closeDate} />}
+          {cycleStatus === "Open" && closeDate && <DeadlineLine closeDate={closeDate} originalCloseDate={originalCloseDate} />}
         </div>
       </div>
 
