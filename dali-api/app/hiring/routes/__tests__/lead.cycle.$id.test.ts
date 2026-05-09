@@ -275,6 +275,36 @@ describe("admin.cycle.$id action — hiring lead overrides", () => {
         data: { closeDate: null, originalCloseDate: null },
       });
     });
+
+    it("reopens the cycle when manually setting a future date on a closed cycle", async () => {
+      // Cycle that auto-closed (UnderReview materialized). Lead manually
+      // re-picks a future date instead of using the Extend button.
+      mockPrisma.applicationCycle.findUnique.mockResolvedValue({
+        id: CYCLE_ID,
+        statusUpdates: [{ newStatus: "UnderReview" }],
+      });
+      // Pick a date far enough in the future that it's clearly past `Date.now()`
+      // regardless of when this test runs.
+      const futureYear = new Date().getUTCFullYear() + 1;
+
+      await callAction({ intent: "set-close-date", closeDate: `${futureYear}-06-01` });
+
+      expect(mockPrisma.applicationCycleStatusUpdate.create).toHaveBeenCalledWith({
+        data: { applicationCycleId: CYCLE_ID, newStatus: "Open", userId: HIRING_LEAD_ID },
+      });
+    });
+
+    it("does not reopen on set-close-date when status is already Open", async () => {
+      mockPrisma.applicationCycle.findUnique.mockResolvedValue({
+        id: CYCLE_ID,
+        statusUpdates: [{ newStatus: "Open" }],
+      });
+      const futureYear = new Date().getUTCFullYear() + 1;
+
+      await callAction({ intent: "set-close-date", closeDate: `${futureYear}-06-01` });
+
+      expect(mockPrisma.applicationCycleStatusUpdate.create).not.toHaveBeenCalled();
+    });
   });
 
   describe("extend-close-date", () => {

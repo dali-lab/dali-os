@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Form, Link, useParams, useLoaderData, redirect } from 'react-router'
 import type { Route } from "./+types/lead.cycle.$id";
 import { prisma } from "~/lib/db";
@@ -325,6 +325,30 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
 // ─── Action ──────────────────────────────────────────────────────────────────
 
+/**
+ * If the cycle has materialized as UnderReview (auto-close ran or a lead
+ * force-closed) and the new closeDate is in the future, write a fresh Open
+ * status update so the applicant portal stops showing the closed view.
+ * Returns true if a reopen was written. Skips Completed (terminal) and Draft
+ * (cycle was never opened — bumping the date is enough on its own).
+ */
+async function reopenIfNeeded(
+  tx: any,
+  cycleId: string,
+  cycleSnapshot: { statusUpdates: { newStatus: string }[] } | null,
+  newCloseDate: Date | null,
+  userId: string,
+): Promise<boolean> {
+  if (!newCloseDate) return false;
+  if (newCloseDate.getTime() <= Date.now()) return false;
+  const latestStatus = cycleSnapshot?.statusUpdates[0]?.newStatus;
+  if (latestStatus !== "UnderReview") return false;
+  await tx.applicationCycleStatusUpdate.create({
+    data: { applicationCycleId: cycleId, newStatus: "Open", userId },
+  });
+  return true;
+}
+
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
@@ -345,14 +369,22 @@ export async function action({ request, params }: Route.ActionArgs) {
       const [y, m, d] = closeDate.split("-").map(Number);
       parsedClose = zonedDayEndUtc(y, m, d, APPLICATION_TZ);
     }
-    // Manually setting the date is treated as a reset — clear any prior
-    // extension marker so we don't show an "extended" banner relative to a
-    // deadline that no longer exists.
-    await prisma.applicationCycle.update({
+    const cycle = await prisma.applicationCycle.findUnique({
       where: { id: params.id },
-      data: { closeDate: parsedClose, originalCloseDate: null },
+      include: { statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 } },
     });
-    return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}`));
+    const reopened = await prisma.$transaction(async (tx) => {
+      await tx.applicationCycle.update({
+        where: { id: params.id },
+        // Manually setting the date is a reset — clear the extension marker.
+        data: { closeDate: parsedClose, originalCloseDate: null },
+      });
+      return await reopenIfNeeded(tx, params.id!, cycle, parsedClose, auth.user.sub);
+    });
+    const notice = parsedClose
+      ? (reopened ? "deadline-set-reopened" : "deadline-set")
+      : "deadline-cleared";
+    return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}?notice=${notice}`));
   }
 
   if (intent === "extend-close-date") {
@@ -374,14 +406,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
     const ms = unit === "hours" ? amount * 3_600_000 : amount * 86_400_000;
     const nextClose = new Date(cycle.closeDate.getTime() + ms);
-    const latestStatus = cycle.statusUpdates[0]?.newStatus;
-    // If the cycle already auto-closed (or the lead force-closed) and the
-    // extension pushes the deadline back into the future, the lead clearly
-    // wants applications open again — write a new Open status update so the
-    // portal stops showing the closed view. Skip on Completed (terminal) and
-    // Draft (cycle was never opened in the first place).
-    const shouldReopen = latestStatus === "UnderReview" && nextClose.getTime() > Date.now();
-    await prisma.$transaction(async (tx) => {
+    const reopened = await prisma.$transaction(async (tx) => {
       await tx.applicationCycle.update({
         where: { id: params.id },
         data: {
@@ -391,17 +416,10 @@ export async function action({ request, params }: Route.ActionArgs) {
           originalCloseDate: cycle.originalCloseDate ?? cycle.closeDate,
         },
       });
-      if (shouldReopen) {
-        await tx.applicationCycleStatusUpdate.create({
-          data: {
-            applicationCycleId: params.id!,
-            newStatus: "Open",
-            userId: auth.user.sub,
-          },
-        });
-      }
+      return await reopenIfNeeded(tx, params.id!, cycle, nextClose, auth.user.sub);
     });
-    return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}`));
+    const notice = reopened ? "extended-reopened" : "extended";
+    return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}?notice=${notice}`));
   }
 
   if (intent === "set-general-rubric") {
@@ -1020,6 +1038,8 @@ export default function HiringLeadCycleDetails() {
         <p className="text-muted-foreground mt-1">Configure interviews for cycle <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">{cycleId}</span></p>
       </div>
 
+      <CloseDateNotice />
+
       {/* Cycle Status */}
       <div className="bg-card rounded-xl border border-border shadow-sm p-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
@@ -1232,7 +1252,11 @@ export default function HiringLeadCycleDetails() {
               )}
             </div>
             {cycle?.closeDate && (
-              <ExtendDeadlineForm cycleId={cycle.id} />
+              <ExtendDeadlineForm
+                cycleId={cycle.id}
+                closeDate={new Date(cycle.closeDate)}
+                cycleStatus={cycleStatus}
+              />
             )}
           </div>
 
@@ -2529,71 +2553,202 @@ export function OpenApplicationsConfirmModal({
   );
 }
 
-function ExtendDeadlineForm({ cycleId }: { cycleId: string }) {
+function CloseDateNotice() {
+  const [notice, setNotice] = useState<string | null>(null);
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const n = url.searchParams.get("notice");
+    if (!n) return;
+    setNotice(n);
+    url.searchParams.delete("notice");
+    window.history.replaceState({}, "", url.toString());
+  }, []);
+  if (!notice) return null;
+  const messages: Record<string, { text: string; tone: "ok" | "warn" }> = {
+    "deadline-set": { text: "Close date saved.", tone: "ok" },
+    "deadline-set-reopened": {
+      text: "Close date saved and applications reopened — applicants can submit again until the new deadline.",
+      tone: "warn",
+    },
+    "deadline-cleared": { text: "Close date cleared.", tone: "ok" },
+    "extended": { text: "Deadline extended. Applicants will see an “Extended deadline” notice on the portal.", tone: "ok" },
+    "extended-reopened": {
+      text: "Deadline extended and applications reopened — applicants can submit again until the new deadline.",
+      tone: "warn",
+    },
+  };
+  const m = messages[notice];
+  if (!m) return null;
+  const toneCls = m.tone === "warn"
+    ? "bg-amber-50 border-amber-200 text-amber-900"
+    : "bg-green-50 border-green-200 text-green-900";
+  return (
+    <div className={`rounded-xl border px-4 py-3 flex items-start gap-3 ${toneCls}`} role="status">
+      <CheckCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+      <div className="flex-1 text-sm">{m.text}</div>
+      <button
+        type="button"
+        onClick={() => setNotice(null)}
+        className="text-xs text-foreground/60 hover:text-foreground"
+        aria-label="Dismiss"
+      >
+        <X className="w-4 h-4" />
+      </button>
+    </div>
+  );
+}
+
+function formatCloseInstant(d: Date): string {
+  return `${d.toLocaleString("en-US", {
+    timeZone: APPLICATION_TZ,
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  })} ${APPLICATION_TZ_LABEL}`;
+}
+
+function ExtendDeadlineForm({
+  cycleId,
+  closeDate,
+  cycleStatus,
+}: {
+  cycleId: string;
+  closeDate: Date;
+  cycleStatus: string;
+}) {
   const [amount, setAmount] = useState<number>(48);
   const [unit, setUnit] = useState<"hours" | "days">("hours");
-  const [confirming, setConfirming] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
+  const headingId = `extend-confirm-heading-${cycleId}`;
 
-  function onSubmit(e: React.FormEvent<HTMLFormElement>) {
-    if (!confirming) {
-      e.preventDefault();
-      setConfirming(true);
-    }
-  }
+  const ms = unit === "hours" ? amount * 3_600_000 : amount * 86_400_000;
+  const nextClose = new Date(closeDate.getTime() + ms);
+  const willReopen = cycleStatus === "UnderReview" && nextClose.getTime() > Date.now();
+  const stillInPast = nextClose.getTime() <= Date.now();
 
   return (
-    <Form
-      method="post"
-      preventScrollReset
-      onSubmit={onSubmit}
-      className="border-t border-border pt-4 space-y-2"
-      aria-label={`Extend deadline for cycle ${cycleId}`}
-    >
-      <input type="hidden" name="intent" value="extend-close-date" />
-      <h4 className="text-xs font-semibold text-foreground/70 uppercase tracking-wide">Extend Deadline</h4>
-      <div className="flex flex-col sm:flex-row sm:items-end gap-2">
-        <div className="flex items-end gap-2 flex-1">
-          <div className="w-24">
-            <label className="block text-xs text-muted-foreground mb-1" htmlFor="extend-amount">Amount</label>
-            <input
-              id="extend-amount"
-              type="number"
-              name="amount"
-              min={1}
-              step={1}
-              value={amount}
-              onChange={(e) => { setAmount(Number(e.target.value)); setConfirming(false); }}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-            />
+    <>
+      <Form
+        method="post"
+        preventScrollReset
+        ref={formRef}
+        onSubmit={(e) => {
+          e.preventDefault();
+          setShowConfirm(true);
+        }}
+        className="border-t border-border pt-4 space-y-2"
+        aria-label={`Extend deadline for cycle ${cycleId}`}
+      >
+        <input type="hidden" name="intent" value="extend-close-date" />
+        <h4 className="text-xs font-semibold text-foreground/70 uppercase tracking-wide">Extend Deadline</h4>
+        <div className="flex flex-col sm:flex-row sm:items-end gap-2">
+          <div className="flex items-end gap-2 flex-1">
+            <div className="w-24">
+              <label className="block text-xs text-muted-foreground mb-1" htmlFor="extend-amount">Amount</label>
+              <input
+                id="extend-amount"
+                type="number"
+                name="amount"
+                min={1}
+                step={1}
+                value={amount}
+                onChange={(e) => setAmount(Number(e.target.value))}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1" htmlFor="extend-unit">Unit</label>
+              <select
+                id="extend-unit"
+                name="unit"
+                value={unit}
+                onChange={(e) => setUnit(e.target.value as "hours" | "days")}
+                className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              >
+                <option value="hours">hours</option>
+                <option value="days">days</option>
+              </select>
+            </div>
           </div>
-          <div>
-            <label className="block text-xs text-muted-foreground mb-1" htmlFor="extend-unit">Unit</label>
-            <select
-              id="extend-unit"
-              name="unit"
-              value={unit}
-              onChange={(e) => { setUnit(e.target.value as "hours" | "days"); setConfirming(false); }}
-              className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
-            >
-              <option value="hours">hours</option>
-              <option value="days">days</option>
-            </select>
-          </div>
+          <button
+            type="submit"
+            disabled={!Number.isFinite(amount) || amount <= 0}
+            className="px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white transition"
+          >
+            Extend
+          </button>
         </div>
-        <button
-          type="submit"
-          className={`px-4 py-2 text-sm font-medium rounded-lg text-white transition ${
-            confirming ? "bg-amber-600 hover:bg-amber-700" : "bg-blue-600 hover:bg-blue-700"
-          }`}
+        <p className="text-xs text-muted-foreground">
+          Pushes the close date forward and shows applicants an &ldquo;extended deadline&rdquo; notice during
+          the extension window. Default is 48 hours.
+        </p>
+      </Form>
+      {showConfirm && (
+        <Modal
+          open
+          onClose={() => setShowConfirm(false)}
+          labelledBy={headingId}
+          containerClassName="bg-card rounded-2xl shadow-xl max-w-md w-full mx-4 p-6"
         >
-          {confirming ? `Confirm: extend by ${amount} ${unit}` : "Extend"}
-        </button>
-      </div>
-      <p className="text-xs text-muted-foreground">
-        Pushes the close date forward and shows applicants an &ldquo;extended deadline&rdquo; notice during the
-        extension window. Default is 48 hours.
-      </p>
-    </Form>
+          <div className="space-y-4">
+            <h2 id={headingId} className="text-lg font-bold text-foreground">
+              Extend deadline by {amount} {unit}?
+            </h2>
+            <div className="text-sm text-muted-foreground space-y-3">
+              <div className="bg-muted/40 rounded-lg p-3 text-xs space-y-1">
+                <div>
+                  <span className="font-medium text-foreground/80">Current close: </span>
+                  <span>{formatCloseInstant(closeDate)}</span>
+                </div>
+                <div>
+                  <span className="font-medium text-foreground/80">New close: </span>
+                  <span className="font-semibold text-foreground">{formatCloseInstant(nextClose)}</span>
+                </div>
+              </div>
+              {willReopen && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-900">
+                  This cycle is currently <span className="font-semibold">closed</span> (Under Review). Confirming
+                  will <span className="font-semibold">reopen applications</span> to applicants until the new
+                  close time.
+                </div>
+              )}
+              {stillInPast && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-900">
+                  The new close time is still in the past — this won&apos;t reopen applications. Pick a larger
+                  amount or set a fresh close date instead.
+                </div>
+              )}
+              <p>
+                Applicants in this window will see a &ldquo;Deadline extended&rdquo; notice on their portal.
+              </p>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowConfirm(false)}
+                className="px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-border rounded-md hover:bg-muted/50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowConfirm(false);
+                  formRef.current?.submit();
+                }}
+                className="px-3 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md"
+              >
+                Confirm extension
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </>
   );
 }
 
