@@ -84,7 +84,6 @@ export default [
   route("api/hiring/cycles/:cycleId/domains/:domainId/auto-assign", "hiring/routes/api.cycles.$cycleId.domains.$domainId.auto-assign.ts"),
   route("api/hiring/cycles/:cycleId/confidentiality/sign", "hiring/routes/api.cycles.$cycleId.confidentiality.sign.ts"),
 
-  route("api/hiring/my-application", "hiring/routes/api.my-application.ts"),
   route("api/hiring/my-interview", "hiring/routes/api.my-interview.ts"),
   route("api/hiring/my-interview/cancel", "hiring/routes/api.my-interview.cancel.ts"),
   route("api/hiring/my-interview/reschedule", "hiring/routes/api.my-interview.reschedule.ts"),

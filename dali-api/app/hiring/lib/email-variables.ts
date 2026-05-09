@@ -48,7 +48,7 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlot, readonly TemplateVariableN
   "decision:Accepted": ["firstName", "domain"],
   "decision:Waitlisted": ["firstName", "domain"],
 
-  // Application confirmation — api.my-application passes firstName only.
+  // Application confirmation — portal.apply passes firstName only.
   // {{domain}} is intentionally omitted: an applicant may apply to multiple
   // domains in one go, so a single per-application domain is meaningless.
   "notification:ApplicationReceived": ["firstName"],

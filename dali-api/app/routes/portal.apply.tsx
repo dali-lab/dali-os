@@ -3,6 +3,8 @@ import { redirect, useLoaderData, useFetcher } from "react-router";
 import type { Route } from "./+types/portal.apply";
 import { prisma } from "~/lib/db";
 import { requireAuth, withAuth } from "~/lib/auth";
+import { sendEmail } from "~/lib/gmail";
+import { renderForSlot, notificationSlot } from "~/hiring/lib/email-variables";
 import { getActiveCycle } from "~/hiring/lib/cycles";
 import { checkGitHubUrl, checkFigmaUrl, checkDriveUrl } from "~/hiring/lib/submission-check";
 import type { SubmissionCheckResult } from "~/hiring/lib/submission-check";
@@ -20,6 +22,8 @@ import {
 } from "~/hiring/components/ChallengeQuestionField";
 
 export const meta: Route.MetaFunction = () => [{ title: "Apply · DALI OS" }];
+
+const GMAIL_USER = "applications@dali.dartmouth.edu";
 
 // ─── Loader ──────────────────────────────────────────────────────────────────
 
@@ -352,6 +356,7 @@ export async function action({ request }: Route.ActionArgs) {
     const application = await prisma.application.findUnique({
       where: { id: applicationId },
       select: {
+        applicationCycleId: true,
         generalChallengeVersion: { select: { questions: true } },
       },
     });
@@ -456,6 +461,43 @@ export async function action({ request }: Route.ActionArgs) {
           userId: auth.user.sub,
         },
       });
+
+      // Best-effort confirmation email — Gmail failure must not block the submission.
+      try {
+        const gmailUser = await prisma.user.findUnique({
+          where: { daliEmail: GMAIL_USER },
+          select: { googleRefreshToken: true },
+        });
+        const user = await prisma.user.findUnique({ where: { id: auth.user.sub } });
+        if (gmailUser?.googleRefreshToken && user) {
+          const to = user.dartmouthEmail ?? user.daliEmail ?? "";
+          if (to) {
+            const binding = await prisma.cycleNotificationEmail.findUnique({
+              where: {
+                applicationCycleId_notificationType: {
+                  applicationCycleId: application.applicationCycleId,
+                  notificationType: "ApplicationReceived",
+                },
+              },
+              include: { emailTemplateVersion: true },
+            });
+            if (binding) {
+              // ApplicationReceived isn't tied to a single domain (an applicant
+              // may apply to multiple), so {{domain}} is intentionally not passed
+              // here — the registry reflects this and the editor warns leads who
+              // try to use {{domain}} in this slot.
+              const { subject, html } = renderForSlot(
+                notificationSlot("ApplicationReceived"),
+                binding.emailTemplateVersion,
+                { firstName: user.firstName },
+              );
+              await sendEmail({ refreshToken: gmailUser.googleRefreshToken, to, subject, html });
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Failed to send application confirmation email:", err);
+      }
     }
 
     // Signal first-time submission so the portal can play a one-shot confetti.
