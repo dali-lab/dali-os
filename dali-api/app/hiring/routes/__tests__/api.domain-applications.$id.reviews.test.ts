@@ -40,6 +40,7 @@ beforeEach(() => {
   (mockPrisma as any).domainApplication = {
     findUniqueOrThrow: vi.fn().mockResolvedValue({
       id: DA_ID,
+      selected: true,
       application: { applicationCycleId: CYCLE_ID },
       challengeVersion: { domainId: DOMAIN_ID },
     }),
@@ -143,6 +144,7 @@ describe("POST /api/hiring/domain-applications/:id/reviews", () => {
   it("rejects a domain lead for a different domain (403)", async () => {
     mockPrisma.domainApplication.findUniqueOrThrow.mockResolvedValueOnce({
       id: DA_ID,
+      selected: true,
       application: { applicationCycleId: CYCLE_ID },
       challengeVersion: { domainId: OTHER_DOMAIN_ID },
     });

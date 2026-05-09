@@ -59,9 +59,9 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const da = await prisma.domainApplication.findUnique({
     where: { id: params.id },
-    select: { application: { select: { applicationCycleId: true } } },
+    select: { selected: true, application: { select: { applicationCycleId: true } } },
   });
-  if (!da) return Response.json({ error: "Not found" }, { status: 404 });
+  if (!da || !da.selected) return Response.json({ error: "Not found" }, { status: 404 });
   const gate = await requireApiSignedOrForbidden(
     auth.user.sub,
     da.application.applicationCycleId,

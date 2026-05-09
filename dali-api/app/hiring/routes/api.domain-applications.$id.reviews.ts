@@ -62,6 +62,9 @@ export async function action({ request, params }: Route.ActionArgs) {
       challengeVersion: { select: { domainId: true } },
     },
   });
+  if (!domainApp.selected) {
+    return withAuth(auth, Response.json({ error: "Domain application is not active" }, { status: 404 }));
+  }
 
   const gate = await requireApiSignedOrForbidden(
     auth.user.sub,

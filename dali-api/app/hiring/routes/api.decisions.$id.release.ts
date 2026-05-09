@@ -63,7 +63,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       },
     },
   });
-  if (!domainApp) {
+  if (!domainApp || !domainApp.selected) {
     return withAuth(auth, Response.json(
           { error: "Domain application not found" },
           { status: 404 }

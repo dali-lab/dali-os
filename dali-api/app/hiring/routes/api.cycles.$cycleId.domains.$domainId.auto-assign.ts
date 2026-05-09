@@ -53,6 +53,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const domainApps = await prisma.domainApplication.findMany({
     where: {
+      selected: true,
       challengeVersion: { domainId: domainId! },
       application: {
         applicationCycleId: cycleId!,

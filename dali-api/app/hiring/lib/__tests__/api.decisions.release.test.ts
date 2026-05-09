@@ -56,6 +56,7 @@ function setupApplicantContext(opts: { domainName?: string | null } = {}) {
   const domainName = opts.domainName === undefined ? "Engineering" : opts.domainName;
   mockPrisma.domainApplication.findUnique.mockResolvedValue({
     id: "da-1",
+    selected: true,
     challengeVersion: { domain: domainName ? { name: domainName } : null },
     application: {
       applicationCycleId: CYCLE_ID,
@@ -211,6 +212,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     setupFinalDecision("InvitedToInterview");
     mockPrisma.domainApplication.findUnique.mockResolvedValue({
       id: "da-1",
+      selected: true,
       challengeVersion: { domain: { name: "Engineering" } },
       application: {
         applicationCycleId: CYCLE_ID,

@@ -90,6 +90,7 @@ describe("Decision lineage (parentDecisionId)", () => {
     });
     mockPrisma.decision.create.mockResolvedValue({ id: "dec-released" });
     mockPrisma.domainApplication.findUnique.mockResolvedValue({
+      selected: true,
       challengeVersion: { domain: null },
       application: {
         applicationCycleId: "cycle-1",
