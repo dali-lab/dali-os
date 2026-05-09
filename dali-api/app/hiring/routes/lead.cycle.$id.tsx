@@ -20,7 +20,10 @@ import { Settings, Users, Calendar, AlertTriangle, Trash2, Plus, CheckCircle, Ar
 import { formatVersionLabel, buildVersionNumberMap } from "~/lib/formatVersion";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { ConfidentialityGate } from "~/hiring/components/ConfidentialityGate";
-import { zonedDayStartUtc } from "~/lib/timezone";
+import { zonedDayStartUtc, zonedDayEndUtc, getZonedYMD } from "~/lib/timezone";
+
+const APPLICATION_TZ = "America/New_York";
+const APPLICATION_TZ_LABEL = "ET";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -337,8 +340,10 @@ export async function action({ request, params }: Route.ActionArgs) {
     const closeDate = formData.get("closeDate") as string;
     let parsedClose: Date | null = null;
     if (closeDate) {
-      // Store as end-of-day UTC so the deadline covers the entire selected date
-      parsedClose = new Date(closeDate + "T23:59:59Z");
+      // Deadline is 11:59:59 PM Eastern on the selected date so applicants get
+      // the full day in the lab's local time (not late evening UTC).
+      const [y, m, d] = closeDate.split("-").map(Number);
+      parsedClose = zonedDayEndUtc(y, m, d, APPLICATION_TZ);
     }
     await prisma.applicationCycle.update({
       where: { id: params.id },
@@ -1133,14 +1138,21 @@ export default function HiringLeadCycleDetails() {
         <div className="space-y-6">
           {/* Close Date */}
           <div className="bg-card rounded-xl border border-border shadow-sm p-4 sm:p-6">
-            <h3 className="text-sm font-bold text-foreground/80 mb-3">Application Close Date</h3>
+            <h3 className="text-sm font-bold text-foreground/80 mb-1">Application Close Date</h3>
+            <p className="text-xs text-muted-foreground mb-3">
+              Applications close at 11:59 PM {APPLICATION_TZ_LABEL} (Eastern Time) on the selected date.
+            </p>
             <Form method="post" preventScrollReset className="flex flex-col sm:flex-row sm:items-end gap-3">
               <input type="hidden" name="intent" value="set-close-date" />
               <div className="flex-1">
                 <input
                   type="date"
                   name="closeDate"
-                  defaultValue={cycle?.closeDate ? new Date(cycle.closeDate).toISOString().slice(0, 10) : ''}
+                  defaultValue={(() => {
+                    if (!cycle?.closeDate) return '';
+                    const { year, month, day } = getZonedYMD(new Date(cycle.closeDate), APPLICATION_TZ);
+                    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                  })()}
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
                 />
               </div>
@@ -2408,7 +2420,18 @@ export function OpenApplicationsConfirmModal({
           {closeDate && (
             <div className="bg-muted/40 rounded-lg p-3 text-xs">
               <span className="font-medium text-foreground/80">Applications close: </span>
-              <span>{closeDate.toLocaleDateString()}</span>
+              <span>
+                {closeDate.toLocaleString("en-US", {
+                  timeZone: APPLICATION_TZ,
+                  weekday: "short",
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                  hour: "numeric",
+                  minute: "2-digit",
+                })}{" "}
+                {APPLICATION_TZ_LABEL}
+              </span>
             </div>
           )}
         </div>
