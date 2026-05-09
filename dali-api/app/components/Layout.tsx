@@ -283,7 +283,7 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
 
       {/* Mobile section breadcrumb — visible below header on small screens */}
       {activeSection && (
-        <div className="md:hidden bg-card border-b border-border sticky top-14 z-10">
+        <div className="md:hidden bg-card border-b border-border">
           <div className="px-4 h-11 flex items-center gap-2 text-sm font-heading font-semibold text-foreground">
             <activeSection.icon className="w-4 h-4 text-accent-coral" />
             <span>{activeSection.label}</span>

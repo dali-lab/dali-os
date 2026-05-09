@@ -91,9 +91,9 @@ export function RubricDetail() {
         </div>
       </div>
 
-      <div className="flex gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-[16rem_1fr] gap-6">
         {/* Left Sidebar: Versions List */}
-        <div className="w-64 flex-shrink-0 space-y-4">
+        <div className="space-y-4">
           <div className="bg-card rounded-xl border border-border overflow-hidden shadow-sm">
             <div className="p-4 border-b border-border bg-muted/50">
               <h3 className="font-bold text-foreground">Version History</h3>
@@ -156,7 +156,7 @@ export function RubricDetail() {
         </div>
 
         {/* Right Content Area */}
-        <div className="flex-1">
+        <div className="min-w-0">
           {isCreatingVersion ? (
             <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden flex flex-col min-h-[600px]">
               <div className="p-4 border-b border-border bg-muted/50 flex justify-between items-center">

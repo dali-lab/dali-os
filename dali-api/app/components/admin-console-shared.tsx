@@ -56,7 +56,11 @@ export function RemoveDomainLeadButton({ assignmentId }: { assignmentId: string 
     <fetcher.Form method="post" className="inline">
       <input type="hidden" name="intent" value="remove-domain-lead" />
       <input type="hidden" name="assignmentId" value={assignmentId} />
-      <button type="submit" className="hover:text-purple-600 ml-0.5">
+      <button
+        type="submit"
+        aria-label="Remove domain lead assignment"
+        className="hover:text-purple-600 ml-0.5 p-2 -m-1.5 inline-flex items-center justify-center"
+      >
         <X className="w-3 h-3" />
       </button>
     </fetcher.Form>

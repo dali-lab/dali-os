@@ -1423,7 +1423,7 @@ export default function HiringLeadCycleDetails() {
 
           {/* Roster table */}
           <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-            <div className="overflow-x-auto">
+            <div className="hidden sm:block overflow-x-auto">
             <table className="w-full text-sm min-w-[480px]">
               <thead className="bg-muted/50 border-b border-border">
                 <tr>
@@ -1452,6 +1452,28 @@ export default function HiringLeadCycleDetails() {
               </tbody>
             </table>
             </div>
+            <ul className="sm:hidden divide-y divide-border">
+              {reviewers.map(r => (
+                <li key={r.id} className="px-4 py-3 flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="font-medium text-foreground truncate">
+                      {r.daliMember.user ? `${r.daliMember.user.firstName} ${r.daliMember.user.lastName}` : r.daliMember.id}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-0.5">{r.domain.name}</div>
+                  </div>
+                  <button
+                    onClick={() => removeReviewer(r.id)}
+                    aria-label="Remove reviewer"
+                    className="p-2 -m-2 text-red-500 hover:text-red-700 transition flex-shrink-0"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </li>
+              ))}
+              {reviewers.length === 0 && (
+                <li className="px-4 py-8 text-center text-sm text-muted-foreground/70">No reviewers assigned yet.</li>
+              )}
+            </ul>
           </div>
 
           {/* Add interviewer form */}
@@ -1502,7 +1524,7 @@ export default function HiringLeadCycleDetails() {
 
           {/* Interviewer roster table */}
           <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-            <div className="overflow-x-auto">
+            <div className="hidden sm:block overflow-x-auto">
             <table className="w-full text-sm min-w-[480px]">
               <thead className="bg-muted/50 border-b border-border">
                 <tr>
@@ -1533,6 +1555,30 @@ export default function HiringLeadCycleDetails() {
               </tbody>
             </table>
             </div>
+            <ul className="sm:hidden divide-y divide-border">
+              {interviewers.map((i: any) => {
+                const m = i.daliMember
+                const name = m?.firstName && m?.lastName ? `${m.firstName} ${m.lastName}` : m?.daliEmail ?? i.daliMemberId
+                return (
+                  <li key={i.id} className="px-4 py-3 flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-medium text-foreground truncate">{name}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5">{i.domain?.name ?? ''}</div>
+                    </div>
+                    <button
+                      onClick={() => removeInterviewer(i.id)}
+                      aria-label="Remove interviewer"
+                      className="p-2 -m-2 text-red-500 hover:text-red-700 transition flex-shrink-0"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </li>
+                )
+              })}
+              {interviewers.length === 0 && (
+                <li className="px-4 py-8 text-center text-sm text-muted-foreground/70">No interviewers assigned yet.</li>
+              )}
+            </ul>
           </div>
         </div>
       )}
@@ -1547,7 +1593,7 @@ export default function HiringLeadCycleDetails() {
       ) : tab === 'dashboard' && (
         <div className="space-y-4">
           <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-            <div className="overflow-x-auto">
+            <div className="hidden sm:block overflow-x-auto">
             <table className="w-full text-sm min-w-[820px]">
               <thead className="bg-muted/50 border-b border-border">
                 <tr>
@@ -1710,6 +1756,155 @@ export default function HiringLeadCycleDetails() {
               </tbody>
             </table>
             </div>
+            <ul className="sm:hidden divide-y divide-border">
+              {interviews.map(interview => {
+                const isFuture = new Date(interview.startTime) > new Date()
+                const domainName = interview.domainApplication.challengeVersion.domain.name
+                const start = new Date(interview.startTime)
+                const end = new Date(interview.endTime)
+                const editable = isFuture && interview.status === 'Scheduled'
+                return (
+                  <li key={interview.id} className="px-4 py-3 space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="font-medium text-foreground truncate">
+                          {interview.domainApplication.application.user.firstName} {interview.domainApplication.application.user.lastName}
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-0.5">{domainName || '—'}</div>
+                      </div>
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold flex-shrink-0 ${
+                        interview.status === 'Scheduled' ? 'bg-green-100 text-green-700' :
+                        interview.status === 'Completed' ? 'bg-blue-100 text-blue-700' :
+                        'bg-muted text-muted-foreground'
+                      }`}>
+                        {interview.status}
+                      </span>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}{' '}
+                      {start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} –{' '}
+                      {end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Location</div>
+                      {editable ? (
+                        <select
+                          value={interview.location}
+                          onChange={async (e) => {
+                            const newLocation = e.target.value
+                            const res = await fetch(`/api/hiring/interviews/${interview.id}/location`, {
+                              method: 'PATCH', credentials: 'include',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ location: newLocation }),
+                            })
+                            if (res.ok) {
+                              const updated = await res.json()
+                              setInterviews(prev => prev.map(i =>
+                                i.id === interview.id ? { ...i, location: newLocation, zoomJoinUrl: updated.zoomJoinUrl ?? null } : i
+                              ))
+                            } else {
+                              const body = await res.json().catch(() => ({}))
+                              alert(body.error ?? 'Failed to update location')
+                            }
+                          }}
+                          className="w-full text-xs border border-border rounded px-1.5 py-1 bg-card"
+                        >
+                          <option value="PodAppa">Pod Appa</option>
+                          <option value="PodMomo">Pod Momo</option>
+                          <option value="Online">Online</option>
+                        </select>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">
+                          {interview.location === 'PodAppa' ? 'Pod Appa' :
+                           interview.location === 'PodMomo' ? 'Pod Momo' : 'Online'}
+                        </span>
+                      )}
+                      {interview.location === 'Online' && editable && (
+                        <input
+                          type="url"
+                          placeholder="Paste meeting link"
+                          defaultValue={interview.zoomJoinUrl ?? ''}
+                          onBlur={async (e) => {
+                            let meetingUrl = e.target.value.trim()
+                            if (meetingUrl && !/^https?:\/\//i.test(meetingUrl)) {
+                              meetingUrl = `https://${meetingUrl}`
+                              e.target.value = meetingUrl
+                            }
+                            if (meetingUrl === (interview.zoomJoinUrl ?? '')) return
+                            const res = await fetch(`/api/hiring/interviews/${interview.id}/location`, {
+                              method: 'PATCH', credentials: 'include',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ location: 'Online', meetingUrl }),
+                            })
+                            if (res.ok) {
+                              setInterviews(prev => prev.map(i =>
+                                i.id === interview.id ? { ...i, zoomJoinUrl: meetingUrl || null } : i
+                              ))
+                            }
+                          }}
+                          onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                          className="block w-full text-xs border border-border rounded px-1.5 py-1 bg-card mt-1 placeholder:text-muted-foreground/50"
+                        />
+                      )}
+                      {interview.location === 'Online' && interview.zoomJoinUrl && !editable && (
+                        <a href={interview.zoomJoinUrl} target="_blank" rel="noopener noreferrer"
+                           className="block text-xs text-blue-600 hover:underline mt-0.5">Meeting link</a>
+                      )}
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Interviewers</div>
+                      <div className="space-y-1">
+                        {interview.assignments
+                          .filter((a: any) => a.status === 'Active')
+                          .map((a: any) => {
+                            const m = a.cycleInterviewer.daliMember
+                            const name = m.firstName && m.lastName
+                              ? `${m.firstName} ${m.lastName}`
+                              : m.daliEmail ?? '?'
+                            const roleLabel = a.role === 'InDomain' ? a.cycleInterviewer.domain.name : 'Cross'
+                            return (
+                              <div key={a.id} className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+                                <span>{name} ({roleLabel})</span>
+                                {editable && (
+                                  <select
+                                    className="text-xs border border-gray-300 rounded px-1.5 py-0.5"
+                                    aria-label={`Reassign ${a.role === 'InDomain' ? 'in-domain' : 'cross-domain'} interviewer`}
+                                    defaultValue=""
+                                    onChange={async (e) => {
+                                      if (!e.target.value) return
+                                      await fetch(`/api/hiring/interviews/${interview.id}/reassign`, {
+                                        method: 'POST', credentials: 'include',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ assignmentId: a.id, newCycleInterviewerId: e.target.value }),
+                                      })
+                                      window.location.reload()
+                                    }}
+                                  >
+                                    <option value="">Reassign...</option>
+                                    {interviewers
+                                      .filter((i: any) => a.role === 'InDomain'
+                                        ? i.domain?.name === a.cycleInterviewer.domain.name
+                                        : i.domain?.name !== domainName)
+                                      .filter((i: any) => i.id !== a.cycleInterviewerId)
+                                      .map((i: any) => {
+                                        const im = i.daliMember
+                                        const iName = im?.firstName && im?.lastName ? `${im.firstName} ${im.lastName}` : im?.daliEmail ?? i.id
+                                        return <option key={i.id} value={i.id}>{iName}</option>
+                                      })}
+                                  </select>
+                                )}
+                              </div>
+                            )
+                          })}
+                      </div>
+                    </div>
+                  </li>
+                )
+              })}
+              {interviews.length === 0 && (
+                <li className="px-4 py-8 text-center text-sm text-muted-foreground/70">No interviews scheduled yet.</li>
+              )}
+            </ul>
           </div>
         </div>
       )}
@@ -1754,7 +1949,7 @@ export default function HiringLeadCycleDetails() {
                 )
               })()}
             </div>
-            <div className="overflow-x-auto">
+            <div className="hidden sm:block overflow-x-auto">
             <table className="w-full text-sm min-w-[640px]">
               <thead className="bg-muted/50 border-b border-border">
                 <tr>
@@ -1826,6 +2021,69 @@ export default function HiringLeadCycleDetails() {
               </tbody>
             </table>
             </div>
+            <ul className="sm:hidden divide-y divide-border">
+              {pendingDecisions.map((d: any) => {
+                const hasBinding = (loaderData?.currentDecisionEmails ?? []).some(
+                  (b: any) => b.decisionType === d.type
+                )
+                return (
+                  <li key={d.id} className="px-4 py-3 space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="font-medium text-foreground truncate">
+                          {d.domainApplication.application.user.firstName} {d.domainApplication.application.user.lastName}
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          {d.domainApplication.challengeVersion.domain.name}
+                        </div>
+                      </div>
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold flex-shrink-0 ${
+                        d.type === 'Accepted' ? 'bg-green-100 text-green-700' :
+                        d.type === 'Rejected' ? 'bg-red-100 text-red-700' :
+                        d.type === 'Waitlisted' ? 'bg-yellow-100 text-yellow-700' :
+                        'bg-blue-100 text-blue-700'
+                      }`}>
+                        {d.type}
+                      </span>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Made by {d.madeBy.firstName} {d.madeBy.lastName}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setPreviewDecisionId(d.id)}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium rounded-lg border border-border bg-card hover:bg-muted/40 text-foreground transition"
+                        aria-label={`Preview email for ${d.domainApplication.application.user.firstName}`}
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        Preview
+                      </button>
+                      <button
+                        onClick={async () => {
+                          setReleasing(d.id)
+                          await fetch(`/api/hiring/decisions/${d.id}/release`, { method: 'POST', credentials: 'include' })
+                          setPendingDecisions(prev => prev.filter(p => p.id !== d.id))
+                          setReleasing(null)
+                        }}
+                        disabled={releasing === d.id || !hasBinding}
+                        title={
+                          !hasBinding
+                            ? `No email template bound to ${d.type} in this cycle. Bind one on the Setup tab → Decision Emails before releasing.`
+                            : undefined
+                        }
+                        className="px-3 py-1.5 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {releasing === d.id ? 'Releasing...' : 'Release'}
+                      </button>
+                    </div>
+                  </li>
+                )
+              })}
+              {pendingDecisions.length === 0 && (
+                <li className="px-4 py-8 text-center text-sm text-muted-foreground/70">No Final decisions awaiting release.</li>
+              )}
+            </ul>
           </div>
           {previewDecisionId && (() => {
             const d = pendingDecisions.find((x: any) => x.id === previewDecisionId)
