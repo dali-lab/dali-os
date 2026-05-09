@@ -463,14 +463,23 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   if (intent === "resend-extension-notice") {
     const result = await resendExtensionNotice(params.id!);
-    const notice = result.attempted === 0
-      ? "extension-notice-noop"
-      : result.failed > 0
-        ? "extension-notice-partial"
-        : "extension-notice-sent";
+    let notice: string;
+    if (result.outcome === "no_extension") {
+      notice = "extension-notice-no-extension";
+    } else if (result.outcome === "preflight_skipped") {
+      notice = "extension-notice-not-configured";
+    } else if (result.attempted === 0) {
+      notice = "extension-notice-noop";
+    } else if (result.succeeded === 0 && result.alreadySent === result.attempted) {
+      notice = "extension-notice-all-sent";
+    } else if (result.failed > 0) {
+      notice = "extension-notice-partial";
+    } else {
+      notice = "extension-notice-sent";
+    }
     return withAuth(
       auth,
-      redirect(`/hiring/lead/cycle/${params.id}?notice=${notice}&sent=${result.succeeded}&failed=${result.failed}`),
+      redirect(`/hiring/lead/cycle/${params.id}?notice=${notice}&sent=${result.succeeded}&failed=${result.failed}&skipped=${result.alreadySent}`),
     );
   }
 
@@ -2586,7 +2595,10 @@ function CloseDateNotice() {
     "extension-removed": { text: "Extension removed — the close date is back to the original.", tone: "ok" },
     "extension-notice-sent": { text: "Extension notice email sent to applicants who haven't submitted yet.", tone: "ok" },
     "extension-notice-partial": { text: "Extension notice sent — some recipients failed (see server logs).", tone: "warn" },
-    "extension-notice-noop": { text: "No extension notice sent — no draft applicants, or no template bound to this cycle.", tone: "warn" },
+    "extension-notice-noop": { text: "No extension notice sent — no draft applicants in this cycle.", tone: "warn" },
+    "extension-notice-all-sent": { text: "Every draft applicant has already received the extension notice — nothing to resend.", tone: "ok" },
+    "extension-notice-no-extension": { text: "No extension is currently set on this cycle. Set an extension first.", tone: "warn" },
+    "extension-notice-not-configured": { text: "Extension notice not sent — no template is bound to the “Deadline Extension Notice” slot, or the gmail account isn't configured.", tone: "warn" },
   };
   const m = messages[notice];
   if (!m) return null;

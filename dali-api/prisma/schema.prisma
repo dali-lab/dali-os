@@ -119,6 +119,7 @@ model ApplicationCycle {
   delibsSessions    DelibsSession[]
   decisionEmails    CycleDecisionEmail[]
   notificationEmails CycleNotificationEmail[]
+  notificationSends  CycleNotificationSend[]
 
   confidentialityBinding   CycleConfidentialityAgreement?
   confidentialitySignatures ConfidentialityAgreementSignature[]
@@ -163,6 +164,7 @@ model Application {
 
   statusUpdates      ApplicationStatusUpdate[]
   domainApplications DomainApplication[]
+  notificationSends  CycleNotificationSend[]
 
   @@unique([userId, applicationCycleId])
 }
@@ -787,6 +789,31 @@ model CycleNotificationEmail {
   emailTemplateVersion   EmailTemplateVersion @relation(fields: [emailTemplateVersionId], references: [id])
 
   @@id([applicationCycleId, notificationType])
+}
+
+// Per-recipient send tracking for one-shot notification blasts (today: just
+// ApplicationExtensionNotice). Created after a successful send so the resend
+// path skips recipients who already got the email — eliminates the
+// partial-failure-then-resend duplicate scenario.
+//
+// Keyed on applicationId rather than userId because Application is unique
+// per (userId, applicationCycleId), so this naturally guarantees one row
+// per applicant per cycle per notification type even though an applicant
+// can have multiple DomainApplications.
+model CycleNotificationSend {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  applicationCycleId String
+  applicationCycle   ApplicationCycle @relation(fields: [applicationCycleId], references: [id])
+
+  notificationType NotificationType
+
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id])
+
+  @@unique([applicationCycleId, notificationType, applicationId])
+  @@index([applicationCycleId, notificationType])
 }
 
 // ─── Audit Logging ───────────────────────────────────────────────────────────
