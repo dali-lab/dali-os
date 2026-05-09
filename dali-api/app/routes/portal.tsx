@@ -181,7 +181,7 @@ function formatInterviewLocation(location?: string): string {
 
 function formatDeadline(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", {
-    timeZone: "UTC",
+    timeZone: "America/New_York",
     weekday: "long",
     month: "long",
     day: "numeric",

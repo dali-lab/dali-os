@@ -26,6 +26,27 @@ export function getZonedYMD(
   };
 }
 
+/**
+ * UTC instant corresponding to the last second of `year-month-day` in
+ * `timezone` (i.e. 23:59:59 local). Computed as next-day midnight minus 1s so
+ * DST transition days resolve correctly.
+ */
+export function zonedDayEndUtc(
+  year: number,
+  month: number,
+  day: number,
+  timezone: string,
+): Date {
+  const next = new Date(Date.UTC(year, month - 1, day + 1));
+  const nextStart = zonedDayStartUtc(
+    next.getUTCFullYear(),
+    next.getUTCMonth() + 1,
+    next.getUTCDate(),
+    timezone,
+  );
+  return new Date(nextStart.getTime() - 1000);
+}
+
 /** UTC instant corresponding to local midnight on `year-month-day` in `timezone`. */
 export function zonedDayStartUtc(
   year: number,
