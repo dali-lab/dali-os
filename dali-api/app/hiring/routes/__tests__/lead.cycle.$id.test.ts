@@ -254,12 +254,16 @@ describe("admin.cycle.$id action — hiring lead overrides", () => {
   });
 
   describe("set-close-date", () => {
-    it("clears originalCloseDate so a manual reset isn't shown as an extension", async () => {
+    it("stores the picker date and leaves originalCloseDate null when no extension is active", async () => {
+      mockPrisma.applicationCycle.findUnique.mockResolvedValue({
+        id: CYCLE_ID,
+        closeDate: null,
+        originalCloseDate: null,
+        statusUpdates: [{ newStatus: "Draft" }],
+      });
+
       await callAction({ intent: "set-close-date", closeDate: "2026-06-01" });
 
-      // Close date is anchored to 11:59:59 PM Eastern (June is EDT, UTC-4)
-      // → 2026-06-02T03:59:59Z. Asserting the call shape rather than the
-      // exact instant keeps the test resilient to any future tz change.
       expect(mockPrisma.applicationCycle.update).toHaveBeenCalledTimes(1);
       const updateArgs = mockPrisma.applicationCycle.update.mock.calls[0][0];
       expect(updateArgs.where).toEqual({ id: CYCLE_ID });
@@ -267,7 +271,36 @@ describe("admin.cycle.$id action — hiring lead overrides", () => {
       expect(updateArgs.data.closeDate).toBeInstanceOf(Date);
     });
 
+    it("preserves the extension delta when picker is moved while extension is active", async () => {
+      // Original: 2026-06-01 23:59:59 EDT, currently extended by 48h.
+      const oldOriginal = new Date("2026-06-02T03:59:59Z");
+      const oldClose = new Date(oldOriginal.getTime() + 48 * 3_600_000);
+      mockPrisma.applicationCycle.findUnique.mockResolvedValue({
+        id: CYCLE_ID,
+        closeDate: oldClose,
+        originalCloseDate: oldOriginal,
+        statusUpdates: [{ newStatus: "Open" }],
+      });
+
+      await callAction({ intent: "set-close-date", closeDate: "2026-06-05" });
+
+      const updateArgs = mockPrisma.applicationCycle.update.mock.calls[0][0];
+      // New original is whatever zonedDayEndUtc(2026, 6, 5, "America/New_York") returns;
+      // the close should be that + the preserved 48h delta.
+      const newOriginal = updateArgs.data.originalCloseDate as Date;
+      const newClose = updateArgs.data.closeDate as Date;
+      expect(newOriginal).toBeInstanceOf(Date);
+      expect(newClose.getTime() - newOriginal.getTime()).toBe(48 * 3_600_000);
+    });
+
     it("clears originalCloseDate even when the close date is being unset", async () => {
+      mockPrisma.applicationCycle.findUnique.mockResolvedValue({
+        id: CYCLE_ID,
+        closeDate: new Date("2026-05-15T23:59:59Z"),
+        originalCloseDate: null,
+        statusUpdates: [{ newStatus: "Open" }],
+      });
+
       await callAction({ intent: "set-close-date", closeDate: "" });
 
       expect(mockPrisma.applicationCycle.update).toHaveBeenCalledWith({
@@ -308,7 +341,7 @@ describe("admin.cycle.$id action — hiring lead overrides", () => {
   });
 
   describe("extend-close-date", () => {
-    it("captures the pre-extension close date on the first extension", async () => {
+    it("anchors originalCloseDate to the current close on the first extension", async () => {
       const closeDate = new Date(Date.now() + 86_400_000); // tomorrow
       mockPrisma.applicationCycle.findUnique.mockResolvedValue({
         id: CYCLE_ID,
@@ -319,6 +352,8 @@ describe("admin.cycle.$id action — hiring lead overrides", () => {
 
       await callAction({ intent: "extend-close-date", amount: "48", unit: "hours" });
 
+      // Set-total semantics: closeDate = original + 48h (where original is
+      // the pre-extension close).
       const expectedClose = new Date(closeDate.getTime() + 48 * 3_600_000);
       expect(mockPrisma.applicationCycle.update).toHaveBeenCalledWith({
         where: { id: CYCLE_ID },
@@ -327,7 +362,10 @@ describe("admin.cycle.$id action — hiring lead overrides", () => {
       expect(mockPrisma.applicationCycleStatusUpdate.create).not.toHaveBeenCalled();
     });
 
-    it("preserves the original anchor on subsequent extensions", async () => {
+    it("replaces (not stacks) the extension on subsequent calls", async () => {
+      // Cycle has original=tomorrow, currently extended by 2 days. Lead saves
+      // a new extension of 1 day → final close should be original+1d, not
+      // alreadyExtended+1d.
       const original = new Date(Date.now() + 86_400_000);
       const alreadyExtended = new Date(original.getTime() + 2 * 86_400_000);
       mockPrisma.applicationCycle.findUnique.mockResolvedValue({
@@ -339,16 +377,37 @@ describe("admin.cycle.$id action — hiring lead overrides", () => {
 
       await callAction({ intent: "extend-close-date", amount: "1", unit: "days" });
 
-      const expectedClose = new Date(alreadyExtended.getTime() + 86_400_000);
+      const expectedClose = new Date(original.getTime() + 86_400_000);
       expect(mockPrisma.applicationCycle.update).toHaveBeenCalledWith({
         where: { id: CYCLE_ID },
         data: { closeDate: expectedClose, originalCloseDate: original },
       });
     });
 
+    it("is idempotent — calling extend(48h) twice ends at original+48h, not original+96h", async () => {
+      // Common scenario: lead clicks Save extension twice by accident, or
+      // re-saves the same extension after a page reload. The result must be
+      // the same as one save.
+      const original = new Date(Date.now() + 86_400_000);
+      const oldClose = new Date(original.getTime() + 48 * 3_600_000);
+      mockPrisma.applicationCycle.findUnique.mockResolvedValue({
+        id: CYCLE_ID,
+        closeDate: oldClose,
+        originalCloseDate: original,
+        statusUpdates: [{ newStatus: "Open" }],
+      });
+
+      await callAction({ intent: "extend-close-date", amount: "48", unit: "hours" });
+
+      expect(mockPrisma.applicationCycle.update).toHaveBeenCalledWith({
+        where: { id: CYCLE_ID },
+        data: { closeDate: oldClose, originalCloseDate: original },
+      });
+    });
+
     it("reopens the cycle when extending past now after auto-close", async () => {
-      // Cycle that auto-closed yesterday. Lead extends by 48h, pushing
-      // closeDate into the future — applications should reopen.
+      // Cycle that auto-closed yesterday. Lead sets a 48h extension from
+      // that past close, which lands in the future — applications reopen.
       const closeDateYesterday = new Date(Date.now() - 86_400_000);
       mockPrisma.applicationCycle.findUnique.mockResolvedValue({
         id: CYCLE_ID,
@@ -410,6 +469,37 @@ describe("admin.cycle.$id action — hiring lead overrides", () => {
       const res = await callAction({ intent: "extend-close-date", amount: "48", unit: "hours" });
 
       expect((res as Response).status).toBe(400);
+      expect(mockPrisma.applicationCycle.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("remove-extension", () => {
+    it("snaps closeDate back to originalCloseDate and clears the marker", async () => {
+      const original = new Date("2026-05-15T23:59:59Z");
+      const extended = new Date("2026-05-17T23:59:59Z");
+      mockPrisma.applicationCycle.findUnique.mockResolvedValue({
+        id: CYCLE_ID,
+        closeDate: extended,
+        originalCloseDate: original,
+      });
+
+      await callAction({ intent: "remove-extension" });
+
+      expect(mockPrisma.applicationCycle.update).toHaveBeenCalledWith({
+        where: { id: CYCLE_ID },
+        data: { closeDate: original, originalCloseDate: null },
+      });
+    });
+
+    it("no-ops when no extension is active", async () => {
+      mockPrisma.applicationCycle.findUnique.mockResolvedValue({
+        id: CYCLE_ID,
+        closeDate: new Date("2026-05-15T23:59:59Z"),
+        originalCloseDate: null,
+      });
+
+      await callAction({ intent: "remove-extension" });
+
       expect(mockPrisma.applicationCycle.update).not.toHaveBeenCalled();
     });
   });

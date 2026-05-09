@@ -373,13 +373,23 @@ export async function action({ request, params }: Route.ActionArgs) {
       where: { id: params.id },
       include: { statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 } },
     });
+    // The picker represents the lead's intended/original close date. If an
+    // extension is currently active, preserve the extension delta so the
+    // effective close moves with the picker. If not, the picker just becomes
+    // the close date.
+    let nextClose: Date | null = parsedClose;
+    let nextOriginal: Date | null = null;
+    if (parsedClose && cycle?.originalCloseDate && cycle?.closeDate) {
+      const deltaMs = cycle.closeDate.getTime() - cycle.originalCloseDate.getTime();
+      nextClose = new Date(parsedClose.getTime() + deltaMs);
+      nextOriginal = parsedClose;
+    }
     const reopened = await prisma.$transaction(async (tx) => {
       await tx.applicationCycle.update({
         where: { id: params.id },
-        // Manually setting the date is a reset — clear the extension marker.
-        data: { closeDate: parsedClose, originalCloseDate: null },
+        data: { closeDate: nextClose, originalCloseDate: nextOriginal },
       });
-      return await reopenIfNeeded(tx, params.id!, cycle, parsedClose, auth.user.sub);
+      return await reopenIfNeeded(tx, params.id!, cycle, nextClose, auth.user.sub);
     });
     const notice = parsedClose
       ? (reopened ? "deadline-set-reopened" : "deadline-set")
@@ -404,22 +414,38 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (!cycle?.closeDate) {
       return withAuth(auth, new Response(JSON.stringify({ error: "Set a close date before extending." }), { status: 400, headers: { "Content-Type": "application/json" } }));
     }
+    // Set-total semantics: the amount is the *total* extension from the
+    // original anchor, not additive. So calling extend(48h) twice in a row is
+    // idempotent — the deadline ends up 48h past the original, not 96h. This
+    // matches the UI which shows the current extension as state.
+    const anchor = cycle.originalCloseDate ?? cycle.closeDate;
     const ms = unit === "hours" ? amount * 3_600_000 : amount * 86_400_000;
-    const nextClose = new Date(cycle.closeDate.getTime() + ms);
+    const nextClose = new Date(anchor.getTime() + ms);
     const reopened = await prisma.$transaction(async (tx) => {
       await tx.applicationCycle.update({
         where: { id: params.id },
-        data: {
-          closeDate: nextClose,
-          // Preserve the pre-extension close date on the first extension only;
-          // subsequent extensions keep the original anchor.
-          originalCloseDate: cycle.originalCloseDate ?? cycle.closeDate,
-        },
+        data: { closeDate: nextClose, originalCloseDate: anchor },
       });
       return await reopenIfNeeded(tx, params.id!, cycle, nextClose, auth.user.sub);
     });
     const notice = reopened ? "extended-reopened" : "extended";
     return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}?notice=${notice}`));
+  }
+
+  if (intent === "remove-extension") {
+    const cycle = await prisma.applicationCycle.findUnique({
+      where: { id: params.id },
+    });
+    if (!cycle?.originalCloseDate) {
+      // No extension to remove — just no-op.
+      return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}`));
+    }
+    await prisma.applicationCycle.update({
+      where: { id: params.id },
+      // Snap back to the original deadline; clear the extension marker.
+      data: { closeDate: cycle.originalCloseDate, originalCloseDate: null },
+    });
+    return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}?notice=extension-removed`));
   }
 
   if (intent === "set-general-rubric") {
@@ -1208,57 +1234,12 @@ export default function HiringLeadCycleDetails() {
       {/* ── Cycle Setup Tab ── */}
       {tab === 'setup' && (
         <div className="space-y-6">
-          {/* Close Date */}
-          <div className="bg-card rounded-xl border border-border shadow-sm p-4 sm:p-6 space-y-4">
-            <div>
-              <h3 className="text-sm font-bold text-foreground/80 mb-1">Application Close Date</h3>
-              <p className="text-xs text-muted-foreground mb-3">
-                Applications close at 11:59 PM {APPLICATION_TZ_LABEL} (Eastern Time) on the selected date.
-              </p>
-              <Form method="post" preventScrollReset className="flex flex-col sm:flex-row sm:items-end gap-3">
-                <input type="hidden" name="intent" value="set-close-date" />
-                <div className="flex-1">
-                  <input
-                    type="date"
-                    name="closeDate"
-                    defaultValue={(() => {
-                      if (!cycle?.closeDate) return '';
-                      const { year, month, day } = getZonedYMD(new Date(cycle.closeDate), APPLICATION_TZ);
-                      return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                    })()}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  className="px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition"
-                >
-                  Save
-                </button>
-              </Form>
-              {cycle?.originalCloseDate && (
-                <p className="text-xs text-muted-foreground mt-2">
-                  Original deadline: {new Date(cycle.originalCloseDate).toLocaleString("en-US", {
-                    timeZone: APPLICATION_TZ,
-                    weekday: "short",
-                    month: "short",
-                    day: "numeric",
-                    year: "numeric",
-                    hour: "numeric",
-                    minute: "2-digit",
-                  })} {APPLICATION_TZ_LABEL} — applicants see an &ldquo;extended deadline&rdquo; notice between
-                  then and the current close date.
-                </p>
-              )}
-            </div>
-            {cycle?.closeDate && (
-              <ExtendDeadlineForm
-                cycleId={cycle.id}
-                closeDate={new Date(cycle.closeDate)}
-                cycleStatus={cycleStatus}
-              />
-            )}
-          </div>
+          {/* Close Date + Extension + Effective Close */}
+          <CloseDateCard
+            cycle={cycle}
+            cycleStatus={cycleStatus}
+          />
+
 
           {/* Domains */}
           <div className="bg-card rounded-xl border border-border shadow-sm p-6 space-y-4">
@@ -2571,11 +2552,12 @@ function CloseDateNotice() {
       tone: "warn",
     },
     "deadline-cleared": { text: "Close date cleared.", tone: "ok" },
-    "extended": { text: "Deadline extended. Applicants will see an “Extended deadline” notice on the portal.", tone: "ok" },
+    "extended": { text: "Extension saved. Applicants will see an “Extended deadline” notice on the portal during the window.", tone: "ok" },
     "extended-reopened": {
-      text: "Deadline extended and applications reopened — applicants can submit again until the new deadline.",
+      text: "Extension saved and applications reopened — applicants can submit again until the new effective close.",
       tone: "warn",
     },
+    "extension-removed": { text: "Extension removed — the close date is back to the original.", tone: "ok" },
   };
   const m = messages[notice];
   if (!m) return null;
@@ -2610,28 +2592,124 @@ function formatCloseInstant(d: Date): string {
   })} ${APPLICATION_TZ_LABEL}`;
 }
 
-function ExtendDeadlineForm({
+function describeExtension(deltaMs: number): { amount: number; unit: "hours" | "days" } {
+  if (deltaMs <= 0) return { amount: 48, unit: "hours" };
+  // Round to nearest hour, then express in days if it's a whole-day multiple.
+  const hours = Math.round(deltaMs / 3_600_000);
+  if (hours > 0 && hours % 24 === 0) return { amount: hours / 24, unit: "days" };
+  return { amount: hours, unit: "hours" };
+}
+
+function CloseDateCard({ cycle, cycleStatus }: { cycle: any; cycleStatus: string }) {
+  const closeDate = cycle?.closeDate ? new Date(cycle.closeDate) : null;
+  const originalCloseDate = cycle?.originalCloseDate ? new Date(cycle.originalCloseDate) : null;
+  const anchor = originalCloseDate ?? closeDate;
+  const extensionMs = originalCloseDate && closeDate
+    ? closeDate.getTime() - originalCloseDate.getTime()
+    : 0;
+  const extensionActive = extensionMs > 0;
+  const pickerDateValue = anchor
+    ? (() => {
+        const { year, month, day } = getZonedYMD(anchor, APPLICATION_TZ);
+        return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      })()
+    : "";
+
+  return (
+    <div className="bg-card rounded-xl border border-border shadow-sm p-4 sm:p-6 space-y-6">
+      {/* 1. Original close date */}
+      <div>
+        <h3 className="text-sm font-bold text-foreground/80 mb-1">Application Close Date</h3>
+        <p className="text-xs text-muted-foreground mb-3">
+          The intended close — applications stop at 11:59 PM {APPLICATION_TZ_LABEL} on this date. If an
+          extension is set below, saving a new date moves the extension along with it.
+        </p>
+        <Form method="post" preventScrollReset className="flex flex-col sm:flex-row sm:items-end gap-3">
+          <input type="hidden" name="intent" value="set-close-date" />
+          <div className="flex-1">
+            <input
+              type="date"
+              name="closeDate"
+              defaultValue={pickerDateValue}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            />
+          </div>
+          <button
+            type="submit"
+            className="px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition"
+          >
+            Save
+          </button>
+        </Form>
+      </div>
+
+      {/* 2. Extension */}
+      {closeDate && (
+        <div className="border-t border-border pt-4">
+          <ExtensionSection
+            cycleId={cycle.id}
+            anchor={anchor!}
+            extensionMs={extensionMs}
+            extensionActive={extensionActive}
+            cycleStatus={cycleStatus}
+          />
+        </div>
+      )}
+
+      {/* 3. Effective close (read-only) */}
+      {closeDate && (
+        <div className="border-t border-border pt-4">
+          <h4 className="text-xs font-semibold text-foreground/70 uppercase tracking-wide mb-1">Effective Close</h4>
+          <p className="text-base font-semibold text-foreground">
+            {formatCloseInstant(closeDate)}
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            When applications actually stop. Auto-closes the cycle (Open → Under Review) at this moment.
+            {extensionActive && originalCloseDate && (
+              <> Applicants see a &ldquo;Deadline extended&rdquo; notice between {formatCloseInstant(originalCloseDate)} and this time.</>
+            )}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ExtensionSection({
   cycleId,
-  closeDate,
+  anchor,
+  extensionMs,
+  extensionActive,
   cycleStatus,
 }: {
   cycleId: string;
-  closeDate: Date;
+  anchor: Date;
+  extensionMs: number;
+  extensionActive: boolean;
   cycleStatus: string;
 }) {
-  const [amount, setAmount] = useState<number>(48);
-  const [unit, setUnit] = useState<"hours" | "days">("hours");
+  const initial = describeExtension(extensionMs);
+  const [amount, setAmount] = useState<number>(initial.amount);
+  const [unit, setUnit] = useState<"hours" | "days">(initial.unit);
   const [showConfirm, setShowConfirm] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
+  const removeFormRef = useRef<HTMLFormElement>(null);
   const headingId = `extend-confirm-heading-${cycleId}`;
 
   const ms = unit === "hours" ? amount * 3_600_000 : amount * 86_400_000;
-  const nextClose = new Date(closeDate.getTime() + ms);
+  const nextClose = new Date(anchor.getTime() + ms);
   const willReopen = cycleStatus === "UnderReview" && nextClose.getTime() > Date.now();
   const stillInPast = nextClose.getTime() <= Date.now();
 
   return (
     <>
+      <h4 className="text-xs font-semibold text-foreground/70 uppercase tracking-wide mb-1">
+        Extension {extensionActive ? "(active)" : "(optional)"}
+      </h4>
+      <p className="text-xs text-muted-foreground mb-3">
+        Adds time after the close date. Applicants see a &ldquo;Deadline extended&rdquo; notice during the
+        extension window.
+      </p>
       <Form
         method="post"
         preventScrollReset
@@ -2640,17 +2718,16 @@ function ExtendDeadlineForm({
           e.preventDefault();
           setShowConfirm(true);
         }}
-        className="border-t border-border pt-4 space-y-2"
-        aria-label={`Extend deadline for cycle ${cycleId}`}
+        className="space-y-2"
+        aria-label={`Set deadline extension for cycle ${cycleId}`}
       >
         <input type="hidden" name="intent" value="extend-close-date" />
-        <h4 className="text-xs font-semibold text-foreground/70 uppercase tracking-wide">Extend Deadline</h4>
         <div className="flex flex-col sm:flex-row sm:items-end gap-2">
           <div className="flex items-end gap-2 flex-1">
             <div className="w-24">
-              <label className="block text-xs text-muted-foreground mb-1" htmlFor="extend-amount">Amount</label>
+              <label className="block text-xs text-muted-foreground mb-1" htmlFor={`extend-amount-${cycleId}`}>Amount</label>
               <input
-                id="extend-amount"
+                id={`extend-amount-${cycleId}`}
                 type="number"
                 name="amount"
                 min={1}
@@ -2661,9 +2738,9 @@ function ExtendDeadlineForm({
               />
             </div>
             <div>
-              <label className="block text-xs text-muted-foreground mb-1" htmlFor="extend-unit">Unit</label>
+              <label className="block text-xs text-muted-foreground mb-1" htmlFor={`extend-unit-${cycleId}`}>Unit</label>
               <select
-                id="extend-unit"
+                id={`extend-unit-${cycleId}`}
                 name="unit"
                 value={unit}
                 onChange={(e) => setUnit(e.target.value as "hours" | "days")}
@@ -2679,14 +2756,27 @@ function ExtendDeadlineForm({
             disabled={!Number.isFinite(amount) || amount <= 0}
             className="px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white transition"
           >
-            Extend
+            {extensionActive ? "Update extension" : "Set extension"}
           </button>
         </div>
-        <p className="text-xs text-muted-foreground">
-          Pushes the close date forward and shows applicants an &ldquo;extended deadline&rdquo; notice during
-          the extension window. Default is 48 hours.
-        </p>
       </Form>
+      {extensionActive && (
+        <Form
+          method="post"
+          preventScrollReset
+          ref={removeFormRef}
+          className="mt-2"
+          aria-label="Remove deadline extension"
+        >
+          <input type="hidden" name="intent" value="remove-extension" />
+          <button
+            type="submit"
+            className="text-xs text-red-700 hover:text-red-900 underline"
+          >
+            Remove extension
+          </button>
+        </Form>
+      )}
       {showConfirm && (
         <Modal
           open
@@ -2696,16 +2786,16 @@ function ExtendDeadlineForm({
         >
           <div className="space-y-4">
             <h2 id={headingId} className="text-lg font-bold text-foreground">
-              Extend deadline by {amount} {unit}?
+              {extensionActive ? "Update" : "Set"} extension to {amount} {unit}?
             </h2>
             <div className="text-sm text-muted-foreground space-y-3">
               <div className="bg-muted/40 rounded-lg p-3 text-xs space-y-1">
                 <div>
-                  <span className="font-medium text-foreground/80">Current close: </span>
-                  <span>{formatCloseInstant(closeDate)}</span>
+                  <span className="font-medium text-foreground/80">Original close: </span>
+                  <span>{formatCloseInstant(anchor)}</span>
                 </div>
                 <div>
-                  <span className="font-medium text-foreground/80">New close: </span>
+                  <span className="font-medium text-foreground/80">New effective close: </span>
                   <span className="font-semibold text-foreground">{formatCloseInstant(nextClose)}</span>
                 </div>
               </div>
@@ -2718,12 +2808,12 @@ function ExtendDeadlineForm({
               )}
               {stillInPast && (
                 <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-900">
-                  The new close time is still in the past — this won&apos;t reopen applications. Pick a larger
-                  amount or set a fresh close date instead.
+                  The new effective close is still in the past — applications will stay closed.
                 </div>
               )}
               <p>
-                Applicants in this window will see a &ldquo;Deadline extended&rdquo; notice on their portal.
+                Applicants will see a &ldquo;Deadline extended&rdquo; notice on the portal between the original
+                close and the new effective close.
               </p>
             </div>
             <div className="flex justify-end gap-2 pt-2">
@@ -2742,7 +2832,7 @@ function ExtendDeadlineForm({
                 }}
                 className="px-3 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md"
               >
-                Confirm extension
+                Confirm
               </button>
             </div>
           </div>
