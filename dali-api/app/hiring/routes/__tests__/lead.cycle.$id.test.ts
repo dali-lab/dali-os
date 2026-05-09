@@ -487,7 +487,7 @@ describe("admin.cycle.$id action — hiring lead overrides", () => {
 
       expect(mockPrisma.applicationCycle.update).toHaveBeenCalledWith({
         where: { id: CYCLE_ID },
-        data: { closeDate: original, originalCloseDate: null },
+        data: { closeDate: original, originalCloseDate: null, extensionNoticeSentAt: null },
       });
     });
 

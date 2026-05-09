@@ -14,6 +14,8 @@ export const TEMPLATE_VARIABLE_DESCRIPTIONS: Record<keyof InterpolationVars, str
   time: "Interview start time, formatted in Eastern Time.",
   location: "Interview location (Pod or online).",
   meetingUrl: "Zoom join URL for online interviews.",
+  originalCloseDate: "The cycle's original close date (pre-extension), formatted in Eastern Time.",
+  newCloseDate: "The cycle's new close date (post-extension), formatted in Eastern Time.",
 };
 
 export type TemplateVariableName = keyof InterpolationVars;
@@ -24,6 +26,8 @@ export const ALL_TEMPLATE_VARIABLES: readonly TemplateVariableName[] = [
   "time",
   "location",
   "meetingUrl",
+  "originalCloseDate",
+  "newCloseDate",
 ];
 
 export type DecisionSlotType = "Rejected" | "InvitedToInterview" | "Accepted" | "Waitlisted";
@@ -52,6 +56,12 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlot, readonly TemplateVariableN
   // {{domain}} is intentionally omitted: an applicant may apply to multiple
   // domains in one go, so a single per-application domain is meaningless.
   "notification:ApplicationReceived": ["firstName"],
+
+  // Deadline-extension nudge — sent to applicants with a draft application
+  // when the original close passes and an extension is in effect. {{domain}}
+  // is omitted for the same reason as ApplicationReceived (a draft can span
+  // multiple domains).
+  "notification:ApplicationExtensionNotice": ["firstName", "originalCloseDate", "newCloseDate"],
 
   // Interview invites — interview-emails sends with full vars.
   "notification:InterviewInviteMentor": ["firstName", "domain", "time", "location", "meetingUrl"],

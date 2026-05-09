@@ -4,6 +4,7 @@ import type { Route } from "./+types/portal";
 import { prisma } from "~/lib/db";
 import { requireAuth, withAuth } from "~/lib/auth";
 import { getActiveCycle } from "~/hiring/lib/cycles";
+import { sendExtensionNoticeIfDue } from "~/hiring/lib/extension-notice";
 import {
   inferDomainApplicationStatus,
   domainApplicationStatusInclude,
@@ -51,6 +52,11 @@ export async function loader({ request }: Route.LoaderArgs) {
     cycleStatus = active.currentStatus as ApplicationCycleStatus;
     closeDate = active.closeDate ? active.closeDate.toISOString() : null;
     originalCloseDate = active.originalCloseDate ? active.originalCloseDate.toISOString() : null;
+    // Lazy trigger for the extension-notice blast — fires the first time a
+    // request hits this loader after the original close has passed (and an
+    // extension is in effect). Idempotent and best-effort (errors swallowed
+    // inside the function so loader latency is the only cost).
+    await sendExtensionNoticeIfDue(active.id);
   } else {
     const recentApp = await prisma.application.findFirst({
       where: { userId: auth.user.sub },
@@ -211,21 +217,25 @@ function formatRemaining(iso: string): { label: string; tone: "urgent" | "warn" 
 // browser's locale/timezone without producing an SSR/CSR text mismatch.
 function DeadlineLine({ closeDate, originalCloseDate }: { closeDate: string; originalCloseDate?: string | null }) {
   const [label, setLabel] = useState<string>("");
+  const [originalLabel, setOriginalLabel] = useState<string>("");
   const [remaining, setRemaining] = useState<{ label: string; tone: "urgent" | "warn" | "ok" } | null>(null);
-  // Tracks whether the original deadline has passed but the extended one
-  // hasn't — only true on the client to avoid SSR/CSR mismatch.
-  const [inExtensionWindow, setInExtensionWindow] = useState(false);
+  // True whenever an extension is configured and the new close hasn't
+  // passed — covers both the pre-original-close window (so applicants don't
+  // see the deadline jump silently) and the post-original-close window.
+  // Only true on the client to avoid SSR/CSR mismatch on the strikethrough.
+  const [showExtension, setShowExtension] = useState(false);
   useEffect(() => {
     setLabel(formatDeadline(closeDate));
+    setOriginalLabel(originalCloseDate ? formatDeadline(originalCloseDate) : "");
     const tick = () => {
       setRemaining(formatRemaining(closeDate));
       if (originalCloseDate) {
         const orig = new Date(originalCloseDate).getTime();
         const close = new Date(closeDate).getTime();
         const now = Date.now();
-        setInExtensionWindow(orig < close && now > orig && now < close);
+        setShowExtension(orig < close && now < close);
       } else {
-        setInExtensionWindow(false);
+        setShowExtension(false);
       }
     };
     tick();
@@ -240,8 +250,18 @@ function DeadlineLine({ closeDate, originalCloseDate }: { closeDate: string; ori
   };
   return (
     <div className={`text-sm mt-2 flex items-center gap-2 flex-wrap ${remaining ? toneStyles[remaining.tone] : "text-muted-foreground"}`}>
-      <span>Applications close on {label}</span>
-      {inExtensionWindow && (
+      <span>
+        Applications close on{" "}
+        {showExtension && originalLabel ? (
+          <>
+            <span className="line-through text-muted-foreground/70 mr-1">{originalLabel}</span>
+            <span className="font-semibold">{label}</span>
+          </>
+        ) : (
+          label
+        )}
+      </span>
+      {showExtension && (
         <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-amber-100 text-amber-800">
           Deadline extended
         </span>

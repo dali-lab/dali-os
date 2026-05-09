@@ -94,6 +94,14 @@ model ApplicationCycle {
   // current closeDate.
   originalCloseDate DateTime?
 
+  // Set the first time the extension-notice email blast goes out for this
+  // cycle (either via the lazy trigger after originalCloseDate passes, or
+  // via the lead's manual "resend" button). Stays set across further
+  // extensions so a single cycle can't accidentally double-blast applicants.
+  // Cleared when an extension is removed so a future re-extension can
+  // re-trigger the notice.
+  extensionNoticeSentAt DateTime?
+
   // Rubric for the general application form (reviewers score this alongside
   // the per-domain rubric set on DomainApplicationCycle).
   generalRubricVersionId String?
@@ -761,6 +769,7 @@ model CycleDecisionEmail {
 // at any time.
 enum NotificationType {
   ApplicationReceived
+  ApplicationExtensionNotice
   InterviewInviteMentor
   InterviewConfirmedApplicant
   InterviewCancelledApplicant
