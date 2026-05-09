@@ -16,7 +16,9 @@ CREATE TABLE "CycleNotificationSend" (
     CONSTRAINT "CycleNotificationSend_pkey" PRIMARY KEY ("id")
 );
 
-CREATE UNIQUE INDEX "CycleNotificationSend_applicationCycleId_notificationType_applicationId_key"
+-- Prisma auto-generated name; matches the identifier the client expects
+-- (Postgres truncates identifiers to 63 chars).
+CREATE UNIQUE INDEX "CycleNotificationSend_applicationCycleId_notificationType_a_key"
   ON "CycleNotificationSend"("applicationCycleId", "notificationType", "applicationId");
 
 CREATE INDEX "CycleNotificationSend_applicationCycleId_notificationType_idx"
