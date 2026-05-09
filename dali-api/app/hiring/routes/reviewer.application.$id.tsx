@@ -72,6 +72,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     prisma.domainApplication.findMany({
       where: {
         applicationId: params.id,
+        selected: true,
         challengeVersion: { domainId: { in: reviewerDomainIds } },
       },
       include: {

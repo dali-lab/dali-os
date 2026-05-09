@@ -130,6 +130,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           user: true,
           statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
           domainApplications: {
+            where: { selected: true },
             include: { challengeVersion: { include: { domain: true } } },
           },
         },

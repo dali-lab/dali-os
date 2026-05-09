@@ -240,6 +240,62 @@ describe("POST /portal/apply (submit) word-count validation", () => {
   });
 });
 
+describe("POST /portal/apply (submit) required-question validation", () => {
+  it("rejects submission when a selected domain has unanswered required questions", async () => {
+    mockPrisma.application.findUnique.mockResolvedValue({
+      generalChallengeVersion: { questions: generalQuestions },
+    });
+    mockPrisma.domainApplication.findMany.mockResolvedValue([
+      {
+        id: DA_ID,
+        selected: true,
+        challengeVersion: { domainId: "domain-x", questions: domainQuestions },
+      },
+    ]);
+
+    const res = await action({
+      request: makeSubmitRequest({
+        answers: { story: "fine", name: "Ada" },
+        domainAnswers: [{ domainApplicationId: DA_ID, answers: {} }],
+        selectedDomainIds: ["domain-x"],
+      }),
+      params: {},
+      context: {},
+    } as any);
+
+    expect((res as any).error).toMatch(/required questions/i);
+    expect(mockPrisma.application.update).not.toHaveBeenCalled();
+    expect(mockPrisma.domainApplication.update).not.toHaveBeenCalled();
+    expect(mockPrisma.applicationStatusUpdate.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects submission when selected domain is omitted from domainAnswers entirely", async () => {
+    mockPrisma.application.findUnique.mockResolvedValue({
+      generalChallengeVersion: { questions: generalQuestions },
+    });
+    mockPrisma.domainApplication.findMany.mockResolvedValue([
+      {
+        id: DA_ID,
+        selected: true,
+        challengeVersion: { domainId: "domain-x", questions: domainQuestions },
+      },
+    ]);
+
+    const res = await action({
+      request: makeSubmitRequest({
+        answers: { story: "fine", name: "Ada" },
+        domainAnswers: [],
+        selectedDomainIds: ["domain-x"],
+      }),
+      params: {},
+      context: {},
+    } as any);
+
+    expect((res as any).error).toMatch(/required questions/i);
+    expect(mockPrisma.applicationStatusUpdate.create).not.toHaveBeenCalled();
+  });
+});
+
 // ─── create-draft / update-domains (multi-challenge support) ────────────────
 
 const CYCLE_ID = "cycle-1";
