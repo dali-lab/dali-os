@@ -1,6 +1,21 @@
 // POST /api/email/send
-// Sends a single email. Callers provide the final subject and HTML body directly.
-// Template interpolation / lookup happens upstream (release flow, batch sender UI).
+//
+// ⚠️  CURRENTLY UNUSED — kept intentionally.
+//
+// No client posts to this route today. It is preserved for a future ad-hoc
+// "send custom email to applicant" admin tool (e.g. requesting a corrected
+// portfolio link, one-off correspondence outside the cycle template flow).
+// All other email goes through purpose-specific routes that look up a
+// CycleNotificationEmail / CycleDecisionEmail binding before calling
+// sendEmail directly — see app/lib/gmail.ts for the chokepoint and
+// app/hiring/routes/api.decisions.$id.release.ts /
+// app/routes/portal.apply.tsx for the binding pattern.
+//
+// If this is still unused after the next hiring cycle, delete it (and the
+// ratelimit + audit-log scaffolding here) rather than letting it bitrot.
+//
+// Sends a single email. Callers provide the final subject and HTML body
+// directly — no template interpolation here.
 //
 // Body (JSON): { to: string, subject: string, html: string }
 //

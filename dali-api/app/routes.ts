@@ -76,16 +76,13 @@ export default [
   route("api/hiring/cycles/:cycleId/my-availability", "hiring/routes/api.cycles.$cycleId.my-availability.ts"),
   route("api/hiring/cycles/:cycleId/my-interviews", "hiring/routes/api.cycles.$cycleId.my-interviews.ts"),
   route("api/hiring/cycles/:cycleId/my-interviews/:interviewId/decline", "hiring/routes/api.cycles.$cycleId.my-interviews.$interviewId.decline.ts"),
-  route("api/hiring/cycles/:cycleId/my-interviews/:interviewId/notes", "hiring/routes/api.cycles.$cycleId.my-interviews.$interviewId.notes.ts"),
   route("api/hiring/cycles/:cycleId/available-slots", "hiring/routes/api.cycles.$cycleId.available-slots.ts"),
   route("api/hiring/cycles/:cycleId/interviews", "hiring/routes/api.cycles.$cycleId.interviews.ts"),
   route("api/hiring/cycles/:cycleId/interviewers", "hiring/routes/api.cycles.$cycleId.interviewers.ts"),
   route("api/hiring/cycles/:cycleId/delibs", "hiring/routes/api.cycles.$cycleId.delibs.ts"),
   route("api/hiring/cycles/:cycleId/domains/:domainId/auto-assign", "hiring/routes/api.cycles.$cycleId.domains.$domainId.auto-assign.ts"),
-  route("api/hiring/cycles/:cycleId/confidentiality/sign", "hiring/routes/api.cycles.$cycleId.confidentiality.sign.ts"),
 
   route("api/hiring/my-application", "hiring/routes/api.my-application.ts"),
-  route("api/hiring/my-interview", "hiring/routes/api.my-interview.ts"),
   route("api/hiring/my-interview/cancel", "hiring/routes/api.my-interview.cancel.ts"),
   route("api/hiring/my-interview/reschedule", "hiring/routes/api.my-interview.reschedule.ts"),
 
@@ -106,8 +103,6 @@ export default [
 
   route("api/hiring/delibs/:id", "hiring/routes/api.delibs.$id.ts"),
   route("api/hiring/delibs/:id/moves", "hiring/routes/api.delibs.$id.moves.ts"),
-
-  route("api/hiring/interview-assignments/:id/notes", "hiring/routes/api.interview-assignments.$id.notes.ts"),
 
   // Google calendar (cross-cutting — used by hiring scheduling but lives at top level)
   route("api/google-calendar/busy", "routes/api.google-calendar.busy.ts"),
