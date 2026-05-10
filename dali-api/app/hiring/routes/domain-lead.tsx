@@ -1340,6 +1340,11 @@ function ReviewerSection({ cycleId, domainId, initialReviewers }: {
   const [selectedMemberId, setSelectedMemberId] = useState('');
   const [pendingRemove, setPendingRemove] = useState<any | null>(null);
 
+  // Resync from props after the loader revalidates (e.g. bulk auto-assign in
+  // the Applications toolbar). Without this, optimistic local state lingers
+  // and the UI shows the pre-action snapshot until a hard reload.
+  useEffect(() => { setReviewers(initialReviewers); }, [initialReviewers]);
+
   useEffect(() => {
     fetch('/api/members', { credentials: 'include' })
       .then(r => r.ok ? r.json() : [])
@@ -1524,6 +1529,9 @@ function InterviewerSection({ cycleId, domainId, initialInterviewers }: {
   const [members, setMembers] = useState<any[]>([]);
   const [selectedMemberId, setSelectedMemberId] = useState("");
   const [pendingRemove, setPendingRemove] = useState<any | null>(null);
+
+  // Resync from props after the loader revalidates.
+  useEffect(() => { setInterviewers(initialInterviewers); }, [initialInterviewers]);
 
   useEffect(() => {
     fetch("/api/members", { credentials: "include" })
@@ -1848,7 +1856,11 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
   const revalidator = useRevalidator();
   const filter: "all" | "finalize" = searchParams.get("app_filter") === "finalize" ? "finalize" : "all";
   const query = searchParams.get("q") ?? "";
-  const sortKey: "name" | "reviewers" = searchParams.get("sort") === "reviewers" ? "reviewers" : "name";
+  // Default sort is "none" — preserves the loader's order (newest application
+  // first). Users opt into name/reviewer sort by clicking a column header.
+  const sortParam = searchParams.get("sort");
+  const sortKey: "none" | "name" | "reviewers" =
+    sortParam === "name" ? "name" : sortParam === "reviewers" ? "reviewers" : "none";
   const sortDir: "asc" | "desc" = searchParams.get("dir") === "desc" ? "desc" : "asc";
 
   const updateParam = (key: string, value: string | null) => {
@@ -1863,7 +1875,18 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
   const setQuery = (next: string) => updateParam("q", next.trim() === "" ? null : next);
   const toggleSort = (key: "name" | "reviewers") => {
     if (sortKey === key) {
-      updateParam("dir", sortDir === "asc" ? "desc" : "asc");
+      // Second click on the active column flips direction; a third click clears
+      // the sort and returns to loader order.
+      if (sortDir === "asc") {
+        updateParam("dir", "desc");
+      } else {
+        setSearchParams(prev => {
+          const sp = new URLSearchParams(prev);
+          sp.delete("sort");
+          sp.delete("dir");
+          return sp;
+        }, { preventScrollReset: true });
+      }
     } else {
       setSearchParams(prev => {
         const sp = new URLSearchParams(prev);
@@ -1920,17 +1943,19 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
     const submitted = reviews.filter((r: any) => r.submittedAt).length;
     return submitted * 10000 + reviews.length;
   };
-  const sortedApps = [...filteredApps].sort((a: any, b: any) => {
-    let cmp = 0;
-    if (sortKey === "name") {
-      const an = `${a.user.firstName ?? ""} ${a.user.lastName ?? ""}`.toLowerCase();
-      const bn = `${b.user.firstName ?? ""} ${b.user.lastName ?? ""}`.toLowerCase();
-      cmp = an.localeCompare(bn);
-    } else {
-      cmp = reviewerScore(a) - reviewerScore(b);
-    }
-    return sortDir === "asc" ? cmp : -cmp;
-  });
+  const sortedApps = sortKey === "none"
+    ? filteredApps
+    : [...filteredApps].sort((a: any, b: any) => {
+        let cmp = 0;
+        if (sortKey === "name") {
+          const an = `${a.user.firstName ?? ""} ${a.user.lastName ?? ""}`.toLowerCase();
+          const bn = `${b.user.firstName ?? ""} ${b.user.lastName ?? ""}`.toLowerCase();
+          cmp = an.localeCompare(bn);
+        } else {
+          cmp = reviewerScore(a) - reviewerScore(b);
+        }
+        return sortDir === "asc" ? cmp : -cmp;
+      });
   const displayedApps = sortedApps;
   const displayedDaIds: string[] = displayedApps
     .map((a: any) => a.domainApplications?.[0]?.id)
@@ -2093,7 +2118,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
             className="w-full pl-8 pr-3 py-1.5 text-sm rounded-md border border-border bg-card focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
-        {(query || sortKey !== "name" || sortDir !== "asc") && (
+        {(query || sortKey !== "none") && (
           <button
             type="button"
             onClick={() => {
@@ -2414,6 +2439,11 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
   const [openReview, setOpenReview] = useState<any | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
   const [pendingRemoveReview, setPendingRemoveReview] = useState<any | null>(null);
+
+  // Resync from props after the loader revalidates (e.g. when bulk auto-assign
+  // adds reviewers to this row). Without this, the pills shown here would lag
+  // behind server state until a hard reload.
+  useEffect(() => { setLocalReviews(reviews); }, [reviews]);
 
   const assignedReviewerIds = new Set(localReviews.map((r: any) => r.cycleReviewerId));
   const available = cycleReviewers.filter((cr: any) => !assignedReviewerIds.has(cr.id));

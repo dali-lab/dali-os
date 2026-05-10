@@ -21,9 +21,11 @@ test.describe('domain lead workflow', () => {
 
   test('shows collapsible sections', async ({ page }) => {
     await page.goto('/hiring/domain-lead');
-    await expect(page.getByText('Setup').first()).toBeVisible();
+    // The cycle in seed is Open, so the challenge section reads "Challenges (locked)".
+    // The old "Reviews" section was split into separate Rubric and Team sections.
+    await expect(page.getByText(/Challenges \((setup|locked)\)/).first()).toBeVisible();
+    await expect(page.getByText('Rubric').first()).toBeVisible();
     await expect(page.getByText('Team').first()).toBeVisible();
-    await expect(page.getByText('Reviews').first()).toBeVisible();
     await expect(page.getByText('Applications').first()).toBeVisible();
   });
 
