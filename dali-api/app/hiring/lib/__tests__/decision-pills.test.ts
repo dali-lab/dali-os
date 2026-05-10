@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   summarizeDecisionPills,
   synthesizePrePipelinePill,
+  currentDecisionId,
 } from "~/hiring/lib/decision-pills";
 import type { DecisionStage, DecisionType } from "~/types";
 
@@ -220,5 +221,39 @@ describe("synthesizePrePipelinePill", () => {
         decisions: [],
       }),
     ).toBe(null);
+  });
+});
+
+describe("currentDecisionId", () => {
+  it("returns null when there are no decisions", () => {
+    expect(currentDecisionId([])).toBeNull();
+  });
+
+  it("picks the highest stage across types", () => {
+    expect(
+      currentDecisionId([
+        { id: "draft-interview", ...row("InvitedToInterview", "Draft", "2025-01-01T10:00:00Z") },
+        { id: "final-reject", ...row("Rejected", "Final", "2025-01-02T10:00:00Z") },
+        { id: "draft-accept", ...row("Accepted", "Draft", "2025-01-03T10:00:00Z") },
+      ]),
+    ).toBe("final-reject");
+  });
+
+  it("breaks ties on stage by newest createdAt", () => {
+    expect(
+      currentDecisionId([
+        { id: "early-draft", ...row("InvitedToInterview", "Draft", "2025-01-01T10:00:00Z") },
+        { id: "late-draft", ...row("Rejected", "Draft", "2025-01-05T10:00:00Z") },
+      ]),
+    ).toBe("late-draft");
+  });
+
+  it("released beats final beats draft", () => {
+    expect(
+      currentDecisionId([
+        { id: "rel", ...row("Accepted", "Released", "2025-01-01T10:00:00Z") },
+        { id: "fin", ...row("Rejected", "Final", "2025-02-01T10:00:00Z") },
+      ]),
+    ).toBe("rel");
   });
 });

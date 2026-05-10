@@ -1,23 +1,26 @@
 import { useState, useEffect } from "react";
-import { Form, Link, useLoaderData } from "react-router";
+import { Form, Link, useLoaderData, useSearchParams, useRevalidator, useSubmit } from "react-router";
 import { redirect } from "react-router";
 import type { Route } from "./+types/domain-lead";
 import { prisma } from "~/lib/db";
 import { requireAuth, withAuth } from "~/lib/auth";
-import { CheckCircle, Plus, Trash2, Check, Clock, X, CircleDashed, ChevronDown, Eye } from "lucide-react";
+import { CheckCircle, Plus, Trash2, Check, Clock, X, CircleDashed, ChevronDown, Eye, Send, Search, ChevronUp } from "lucide-react";
 import { inferDomainApplicationStatus } from "~/hiring/lib/domain-application-status";
 import { getReviewStatus } from "~/hiring/lib/review-status";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { ConfidentialityGate } from "~/hiring/components/ConfidentialityGate";
 import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
+import { Modal } from "~/components/Modal";
 import { ChallengePreviewModal } from "~/hiring/components/ChallengePreviewModal";
 import {
   summarizeDecisionPills,
   synthesizePrePipelinePill,
+  currentDecisionId,
   type DecisionPill,
   type PrePipelinePill,
 } from "~/hiring/lib/decision-pills";
 import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
+import type { DecisionType } from "~/types";
 import { formatVersionLabel, buildVersionNumberMap } from "~/lib/formatVersion";
 
 const STATUS_LABELS: Record<string, string> = {
@@ -482,8 +485,9 @@ export async function action({ request }: Route.ActionArgs) {
   return redirect("/hiring/domain-lead");
 }
 
-function Section({ title, badge, defaultOpen = true, children }: {
+function Section({ title, subtitle, badge, defaultOpen = true, children }: {
   title: string;
+  subtitle?: string;
   badge?: React.ReactNode;
   defaultOpen?: boolean;
   children: React.ReactNode;
@@ -495,14 +499,63 @@ function Section({ title, badge, defaultOpen = true, children }: {
         onClick={() => setOpen(!open)}
         className="w-full px-5 py-3 flex items-center justify-between bg-muted/50 hover:bg-muted transition text-left"
       >
-        <span className="font-semibold text-foreground text-sm">{title}</span>
-        <div className="flex items-center gap-2">
+        <div className="min-w-0 flex-1">
+          <span className="font-semibold text-foreground text-sm">{title}</span>
+          {subtitle && (
+            <p className="text-xs text-muted-foreground mt-0.5 truncate">{subtitle}</p>
+          )}
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
           {badge}
           <ChevronDown className={`w-4 h-4 text-muted-foreground/70 transition-transform ${open ? "rotate-180" : ""}`} />
         </div>
       </button>
       {open && <div className="p-5 border-t border-border">{children}</div>}
     </div>
+  );
+}
+
+function ConfirmDialog({
+  open,
+  title,
+  body,
+  confirmLabel,
+  destructive = false,
+  onConfirm,
+  onCancel,
+}: {
+  open: boolean;
+  title: string;
+  body: React.ReactNode;
+  confirmLabel: string;
+  destructive?: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const titleId = "confirm-dialog-title";
+  return (
+    <Modal open={open} onClose={onCancel} labelledBy={titleId}>
+      <div className="space-y-4">
+        <h2 id={titleId} className="text-base font-semibold text-foreground">{title}</h2>
+        <div className="text-sm text-muted-foreground">{body}</div>
+        <div className="flex justify-end gap-2 pt-1">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="px-3 py-1.5 text-sm font-medium rounded-md border border-border bg-card hover:bg-muted/50 transition"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className={`px-3 py-1.5 text-sm font-medium rounded-md text-white transition ${destructive ? "bg-red-600 hover:bg-red-700" : "bg-blue-600 hover:bg-blue-700"}`}
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -593,7 +646,8 @@ export default function DomainLeadDashboard() {
                   {/* Setup — Draft only */}
                   {currentStatus === "Draft" && (
                     <Section
-                      title="Setup"
+                      title="Challenges (setup)"
+                      subtitle="Pick which challenge versions applicants answer."
                       badge={
                         isChallengeReady
                           ? <span className="text-xs text-green-700 bg-green-100 px-2 py-0.5 rounded-full font-medium">Ready</span>
@@ -621,7 +675,14 @@ export default function DomainLeadDashboard() {
                   {/* Setup — just the domain challenges (read-only after Draft) */}
                   {currentStatus !== "Draft" && (currentStatus === "Open" || currentStatus === "UnderReview") && (
                     <Section
-                      title="Setup"
+                      title="Challenges (locked)"
+                      subtitle={
+                        hasApplicationReviews
+                          ? "Reviewers assigned — challenges can no longer change."
+                          : currentStatus === "Open"
+                            ? "Cycle is open — challenges are frozen."
+                            : "Cycle under review — challenges are frozen."
+                      }
                       badge={
                         hasLinkedChallenge
                           ? <span className="text-xs text-green-700 bg-green-100 px-2 py-0.5 rounded-full font-medium">Configured</span>
@@ -672,51 +733,53 @@ export default function DomainLeadDashboard() {
                     </Section>
                   )}
 
-                  {/* Reviews — Team + Rubric (editable until reviewers are assigned) */}
+                  {/* Rubric — scoring criteria for this domain */}
                   <Section
-                    title="Reviews"
+                    title="Rubric"
+                    subtitle="Scoring criteria reviewers use for this domain."
                     badge={
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600">
-                        <span>{cycleReviewers.length} reviewers, {(interviewers ?? []).length} interviewers</span>
-                        {currentRubricVersionId
-                          ? <span className="text-green-700">· rubric set</span>
-                          : <span className="text-yellow-700">· no rubric</span>}
-                      </div>
+                      currentRubricVersionId
+                        ? <span className="text-xs text-green-700 bg-green-100 px-2 py-0.5 rounded-full font-medium">Set</span>
+                        : <span className="text-xs text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded-full font-medium">Not set</span>
                     }
-                    defaultOpen={currentStatus === "Draft" || currentStatus === "Open" || !currentRubricVersionId}
+                    defaultOpen={!currentRubricVersionId}
                   >
-                    <div className="space-y-6">
-                      {/* Domain Rubric */}
-                      <div>
-                        <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Domain Rubric</h4>
-                        <RubricPicker
-                          cycleId={cycle.id}
-                          domainId={assignment.domainId}
-                          options={rubricVersionOptions ?? []}
-                          selectedId={currentRubricVersionId}
-                          locked={hasApplicationReviews}
-                        />
-                        {!cycle.generalRubricVersionId && (
-                          <div className="mt-3 flex items-center gap-2 text-sm text-yellow-800 bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-2">
-                            <Clock className="w-4 h-4 flex-shrink-0" />
-                            <span>Waiting on hiring lead to set the general application rubric — reviewer assignment is blocked until both rubrics are set.</span>
-                          </div>
-                        )}
-                        <div className="mt-2">
-                          <Link to="/hiring/rubrics" className="text-xs text-blue-600 hover:text-blue-800 font-medium">
-                            All Rubrics →
-                          </Link>
+                    <div>
+                      <RubricPicker
+                        cycleId={cycle.id}
+                        domainId={assignment.domainId}
+                        options={rubricVersionOptions ?? []}
+                        selectedId={currentRubricVersionId}
+                        locked={hasApplicationReviews}
+                      />
+                      {!cycle.generalRubricVersionId && (
+                        <div className="mt-3 flex items-center gap-2 text-sm text-yellow-800 bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-2">
+                          <Clock className="w-4 h-4 flex-shrink-0" />
+                          <span>Waiting on hiring lead to set the general application rubric — reviewer assignment is blocked until both rubrics are set.</span>
                         </div>
+                      )}
+                      <div className="mt-2">
+                        <Link to="/hiring/rubrics" className="text-xs text-blue-600 hover:text-blue-800 font-medium">
+                          All Rubrics →
+                        </Link>
                       </div>
+                    </div>
+                  </Section>
 
-                      {/* Team — Reviewers + Interviewers */}
-                      <div>
-                        <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Team</h4>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <ReviewerSection cycleId={cycle.id} domainId={assignment.domainId} initialReviewers={cycleReviewers} />
-                          <InterviewerSection cycleId={cycle.id} domainId={assignment.domainId} initialInterviewers={interviewers ?? []} />
-                        </div>
-                      </div>
+                  {/* Team — Reviewers + Interviewers for this domain */}
+                  <Section
+                    title="Team"
+                    subtitle="Reviewers and interviewers assigned to this domain."
+                    badge={
+                      <span className="text-xs text-muted-foreground">
+                        {cycleReviewers.length} reviewer{cycleReviewers.length !== 1 ? "s" : ""}, {(interviewers ?? []).length} interviewer{(interviewers ?? []).length !== 1 ? "s" : ""}
+                      </span>
+                    }
+                    defaultOpen={currentStatus === "Draft" || currentStatus === "Open"}
+                  >
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <ReviewerSection cycleId={cycle.id} domainId={assignment.domainId} initialReviewers={cycleReviewers} />
+                      <InterviewerSection cycleId={cycle.id} domainId={assignment.domainId} initialInterviewers={interviewers ?? []} />
                     </div>
                   </Section>
 
@@ -1120,6 +1183,8 @@ function ChallengeSelector({ cycleId, domainId, options, linkedChallengeVersions
   const availableOptions = options.filter((cv: any) => !linkedIds.has(cv.id) && !linkedChallengeIds.has(cv.challengeId));
   const [pickerId, setPickerId] = useState<string>("");
   const [previewCvId, setPreviewCvId] = useState<string | null>(null);
+  const [pendingRemove, setPendingRemove] = useState<any | null>(null);
+  const submit = useSubmit();
   const previewCv = previewCvId
     ? linkedChallengeVersions.find((cv: any) => cv.id === previewCvId)
     : null;
@@ -1161,18 +1226,14 @@ function ChallengeSelector({ cycleId, domainId, options, linkedChallengeVersions
                       <Eye className="w-3.5 h-3.5" />
                       Preview
                     </button>
-                    <Form method="post" preventScrollReset>
-                      <input type="hidden" name="intent" value="remove-challenge" />
-                      <input type="hidden" name="cycleId" value={cycleId} />
-                      <input type="hidden" name="challengeVersionId" value={cv.id} />
-                      <button
-                        type="submit"
-                        aria-label={`Remove ${cv.challenge?.name ?? "challenge"}`}
-                        className="text-muted-foreground hover:text-red-600 transition"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </Form>
+                    <button
+                      type="button"
+                      onClick={() => setPendingRemove(cv)}
+                      aria-label={`Remove ${cv.challenge?.name ?? "challenge"}`}
+                      className="text-muted-foreground hover:text-red-600 transition"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
                 {!isEmptyDoc(cv.description) && (
@@ -1243,6 +1304,28 @@ function ChallengeSelector({ cycleId, domainId, options, linkedChallengeVersions
           onClose={() => setPreviewCvId(null)}
         />
       )}
+
+      <ConfirmDialog
+        open={!!pendingRemove}
+        title="Remove this challenge from the cycle?"
+        body={
+          <>
+            <p>Applicants will no longer see <strong>{pendingRemove?.challenge?.name ?? "this challenge"}</strong> when they apply to this domain.</p>
+            <p className="mt-2">If anyone has already started an application referencing it, the remove will be rejected by the server.</p>
+          </>
+        }
+        confirmLabel="Remove"
+        destructive
+        onCancel={() => setPendingRemove(null)}
+        onConfirm={() => {
+          const fd = new FormData();
+          fd.set("intent", "remove-challenge");
+          fd.set("cycleId", cycleId);
+          fd.set("challengeVersionId", pendingRemove.id);
+          submit(fd, { method: "post", preventScrollReset: true });
+          setPendingRemove(null);
+        }}
+      />
     </div>
   );
 }
@@ -1255,6 +1338,7 @@ function ReviewerSection({ cycleId, domainId, initialReviewers }: {
   const [reviewers, setReviewers] = useState(initialReviewers);
   const [members, setMembers] = useState<any[]>([]);
   const [selectedMemberId, setSelectedMemberId] = useState('');
+  const [pendingRemove, setPendingRemove] = useState<any | null>(null);
 
   useEffect(() => {
     fetch('/api/members', { credentials: 'include' })
@@ -1283,6 +1367,12 @@ function ReviewerSection({ cycleId, domainId, initialReviewers }: {
     });
     if (res.ok) setReviewers(prev => prev.filter(r => r.id !== reviewerId));
   }
+
+  const pendingName = pendingRemove
+    ? (pendingRemove.daliMember?.firstName && pendingRemove.daliMember?.lastName
+        ? `${pendingRemove.daliMember.firstName} ${pendingRemove.daliMember.lastName}`
+        : pendingRemove.daliMember?.daliEmail ?? "this reviewer")
+    : "";
 
   // Filter out members already assigned as reviewers for this domain
   const existingMemberIds = new Set(reviewers.map((r: any) => r.daliMemberId));
@@ -1325,7 +1415,11 @@ function ReviewerSection({ cycleId, domainId, initialReviewers }: {
                 <span className="text-sm font-medium text-foreground">
                   {r.daliMember?.firstName && r.daliMember?.lastName ? `${r.daliMember.firstName} ${r.daliMember.lastName}` : r.daliMember?.daliEmail ?? r.daliMemberId}
                 </span>
-                <button onClick={() => removeReviewer(r.id)} className="text-red-500 hover:text-red-700">
+                <button
+                  onClick={() => setPendingRemove(r)}
+                  aria-label="Remove reviewer"
+                  className="text-red-500 hover:text-red-700"
+                >
                   <Trash2 className="w-4 h-4" />
                 </button>
               </div>
@@ -1334,6 +1428,22 @@ function ReviewerSection({ cycleId, domainId, initialReviewers }: {
         ) : (
           <p className="text-sm text-muted-foreground/70 text-center py-3">No reviewers assigned yet.</p>
         )}
+        <ConfirmDialog
+          open={!!pendingRemove}
+          title={`Remove ${pendingName} as a reviewer?`}
+          body={
+            <p>
+              They will no longer be assignable to applicants in this domain. Any reviews they've already submitted for this cycle will be deleted.
+            </p>
+          }
+          confirmLabel="Remove reviewer"
+          destructive
+          onCancel={() => setPendingRemove(null)}
+          onConfirm={() => {
+            if (pendingRemove) removeReviewer(pendingRemove.id);
+            setPendingRemove(null);
+          }}
+        />
       </div>
     </div>
   );
@@ -1413,6 +1523,7 @@ function InterviewerSection({ cycleId, domainId, initialInterviewers }: {
   const [interviewers, setInterviewers] = useState(initialInterviewers);
   const [members, setMembers] = useState<any[]>([]);
   const [selectedMemberId, setSelectedMemberId] = useState("");
+  const [pendingRemove, setPendingRemove] = useState<any | null>(null);
 
   useEffect(() => {
     fetch("/api/members", { credentials: "include" })
@@ -1447,6 +1558,11 @@ function InterviewerSection({ cycleId, domainId, initialInterviewers }: {
 
   const existingMemberIds = new Set(interviewers.map((i: any) => i.daliMemberId));
   const availableMembers = members.filter(m => !existingMemberIds.has(m.id));
+  const pendingName = pendingRemove
+    ? (pendingRemove.daliMember?.firstName && pendingRemove.daliMember?.lastName
+        ? `${pendingRemove.daliMember.firstName} ${pendingRemove.daliMember.lastName}`
+        : pendingRemove.daliMember?.daliEmail ?? "this interviewer")
+    : "";
 
   return (
     <div className="bg-card border border-border rounded-lg overflow-hidden">
@@ -1505,7 +1621,11 @@ function InterviewerSection({ cycleId, domainId, initialInterviewers }: {
                       </span>
                     )}
                   </div>
-                  <button onClick={() => removeInterviewer(i.id)} className="text-red-500 hover:text-red-700">
+                  <button
+                    onClick={() => setPendingRemove(i)}
+                    aria-label="Remove interviewer"
+                    className="text-red-500 hover:text-red-700"
+                  >
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
@@ -1515,6 +1635,22 @@ function InterviewerSection({ cycleId, domainId, initialInterviewers }: {
         ) : (
           <p className="text-sm text-muted-foreground/70 text-center py-3">No interviewers assigned yet.</p>
         )}
+        <ConfirmDialog
+          open={!!pendingRemove}
+          title={`Remove ${pendingName} as an interviewer?`}
+          body={
+            <p>
+              They will no longer be assignable to interviews for this domain. Their availability blocks for this cycle will also be removed.
+            </p>
+          }
+          confirmLabel="Remove interviewer"
+          destructive
+          onCancel={() => setPendingRemove(null)}
+          onConfirm={() => {
+            if (pendingRemove) removeInterviewer(pendingRemove.id);
+            setPendingRemove(null);
+          }}
+        />
       </div>
     </div>
   );
@@ -1630,15 +1766,36 @@ const STAGE_TREATMENT: Record<DecisionPill["stage"], string> = {
   Released: "",
 };
 
-function DecisionPillBadge({ pill }: { pill: DecisionPill }) {
+const DECISION_TOOLTIPS: Record<DecisionPill["stage"], (typeLabel: string) => string> = {
+  Draft: (t) => `Draft ${t} — not yet finalized. Click Finalize to lock in.`,
+  Final: (t) => `Final ${t} — decision locked. Will be released to the applicant by the hiring lead.`,
+  Released: (t) => `Released ${t} — applicant has been notified.`,
+};
+
+const DECISION_ICONS: Record<DecisionType, React.ComponentType<{ className?: string }>> = {
+  Rejected: X,
+  InvitedToInterview: Send,
+  Accepted: Check,
+  Waitlisted: Clock,
+};
+
+function DecisionPillBadge({ pill, isCurrent = false }: { pill: DecisionPill; isCurrent?: boolean }) {
   const baseLabel = DECISION_LABELS[pill.type] ?? pill.type;
   const rankSuffix =
     pill.type === "Waitlisted" && pill.waitlistRank != null
       ? ` #${pill.waitlistRank}`
       : "";
   const stageSuffix = ` (${pill.stage.toLowerCase()})`;
+  const Icon = DECISION_ICONS[pill.type];
+  const tooltip = DECISION_TOOLTIPS[pill.stage](`${baseLabel}${rankSuffix}`);
+  const accent = isCurrent ? "ring-2 ring-offset-1 ring-foreground/30" : "";
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${DECISION_COLORS[pill.type] ?? "bg-muted text-muted-foreground"} ${STAGE_TREATMENT[pill.stage]}`}>
+    <span
+      title={tooltip}
+      aria-label={tooltip}
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold ${DECISION_COLORS[pill.type] ?? "bg-muted text-muted-foreground"} ${STAGE_TREATMENT[pill.stage]} ${accent}`}
+    >
+      {Icon && <Icon className="w-3 h-3" />}
       {baseLabel}{rankSuffix}{stageSuffix}
     </span>
   );
@@ -1650,9 +1807,27 @@ const PRE_PIPELINE_LABELS: Record<PrePipelinePill, string> = {
   PostInterview: "Post-interview",
 };
 
+const PRE_PIPELINE_TOOLTIPS: Record<PrePipelinePill, string> = {
+  Reviewing: "Reviewers are evaluating this application. No decision has been made yet.",
+  InterviewScheduled: "Applicant has booked an interview. Decision is pending until after the interview.",
+  PostInterview: "Interview is complete. Waiting on final delibs to decide.",
+};
+
+const PRE_PIPELINE_ICONS: Record<PrePipelinePill, React.ComponentType<{ className?: string }>> = {
+  Reviewing: Eye,
+  InterviewScheduled: Clock,
+  PostInterview: CircleDashed,
+};
+
 function PrePipelinePillBadge({ pill }: { pill: PrePipelinePill }) {
+  const Icon = PRE_PIPELINE_ICONS[pill];
   return (
-    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground">
+    <span
+      title={PRE_PIPELINE_TOOLTIPS[pill]}
+      aria-label={PRE_PIPELINE_TOOLTIPS[pill]}
+      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground"
+    >
+      <Icon className="w-3 h-3" />
       {PRE_PIPELINE_LABELS[pill]}
     </span>
   );
@@ -1669,7 +1844,35 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
   rubricCriteria: any[];
 }) {
   const isUnderReview = currentStatus === "UnderReview";
-  const [filter, setFilter] = useState<"all" | "finalize">("all");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const revalidator = useRevalidator();
+  const filter: "all" | "finalize" = searchParams.get("app_filter") === "finalize" ? "finalize" : "all";
+  const query = searchParams.get("q") ?? "";
+  const sortKey: "name" | "reviewers" = searchParams.get("sort") === "reviewers" ? "reviewers" : "name";
+  const sortDir: "asc" | "desc" = searchParams.get("dir") === "desc" ? "desc" : "asc";
+
+  const updateParam = (key: string, value: string | null) => {
+    setSearchParams(prev => {
+      const sp = new URLSearchParams(prev);
+      if (!value) sp.delete(key);
+      else sp.set(key, value);
+      return sp;
+    }, { preventScrollReset: true });
+  };
+  const setFilter = (next: "all" | "finalize") => updateParam("app_filter", next === "all" ? null : next);
+  const setQuery = (next: string) => updateParam("q", next.trim() === "" ? null : next);
+  const toggleSort = (key: "name" | "reviewers") => {
+    if (sortKey === key) {
+      updateParam("dir", sortDir === "asc" ? "desc" : "asc");
+    } else {
+      setSearchParams(prev => {
+        const sp = new URLSearchParams(prev);
+        sp.set("sort", key);
+        sp.delete("dir");
+        return sp;
+      }, { preventScrollReset: true });
+    }
+  };
 
   const draftDecisionAppIds = new Set(
     draftDecisions
@@ -1698,7 +1901,106 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
     });
   });
 
-  const displayedApps = filter === "finalize" ? finalizableApps : apps;
+  // Bulk-selection state — set of DomainApplication ids the lead has ticked.
+  // Local React state (not URL) so a refresh resets it; pairs with revalidator.
+  const [selectedDaIds, setSelectedDaIds] = useState<Set<string>>(new Set());
+  const [bulkReviewerId, setBulkReviewerId] = useState("");
+  const [bulkBusy, setBulkBusy] = useState<"assign" | "auto" | null>(null);
+
+  const baseApps = filter === "finalize" ? finalizableApps : apps;
+  const lowerQuery = query.trim().toLowerCase();
+  const filteredApps = lowerQuery === ""
+    ? baseApps
+    : baseApps.filter((app: any) => {
+        const name = `${app.user.firstName ?? ""} ${app.user.lastName ?? ""}`.toLowerCase();
+        return name.includes(lowerQuery);
+      });
+  const reviewerScore = (app: any) => {
+    const reviews = app.domainApplications?.[0]?.reviews ?? [];
+    const submitted = reviews.filter((r: any) => r.submittedAt).length;
+    return submitted * 10000 + reviews.length;
+  };
+  const sortedApps = [...filteredApps].sort((a: any, b: any) => {
+    let cmp = 0;
+    if (sortKey === "name") {
+      const an = `${a.user.firstName ?? ""} ${a.user.lastName ?? ""}`.toLowerCase();
+      const bn = `${b.user.firstName ?? ""} ${b.user.lastName ?? ""}`.toLowerCase();
+      cmp = an.localeCompare(bn);
+    } else {
+      cmp = reviewerScore(a) - reviewerScore(b);
+    }
+    return sortDir === "asc" ? cmp : -cmp;
+  });
+  const displayedApps = sortedApps;
+  const displayedDaIds: string[] = displayedApps
+    .map((a: any) => a.domainApplications?.[0]?.id)
+    .filter((v: any): v is string => typeof v === "string");
+  const allVisibleSelected = displayedDaIds.length > 0 && displayedDaIds.every((id) => selectedDaIds.has(id));
+  const someVisibleSelected = displayedDaIds.some((id) => selectedDaIds.has(id));
+  const toggleSelected = (daId: string) => {
+    setSelectedDaIds(prev => {
+      const next = new Set(prev);
+      if (next.has(daId)) next.delete(daId);
+      else next.add(daId);
+      return next;
+    });
+  };
+  const toggleSelectAllVisible = () => {
+    setSelectedDaIds(prev => {
+      const next = new Set(prev);
+      if (allVisibleSelected) {
+        for (const id of displayedDaIds) next.delete(id);
+      } else {
+        for (const id of displayedDaIds) next.add(id);
+      }
+      return next;
+    });
+  };
+  const clearSelection = () => setSelectedDaIds(new Set());
+
+  async function bulkAssignReviewer() {
+    if (!bulkReviewerId || selectedDaIds.size === 0) return;
+    setBulkBusy("assign");
+    const ids = Array.from(selectedDaIds);
+    let okCount = 0;
+    let skipCount = 0;
+    for (const daId of ids) {
+      const res = await fetch(`/api/hiring/domain-applications/${daId}/reviews`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cycleReviewerId: bulkReviewerId }),
+      });
+      if (res.ok) okCount++;
+      else skipCount++;
+    }
+    setBulkBusy(null);
+    setBulkReviewerId("");
+    clearSelection();
+    revalidator.revalidate();
+    if (skipCount > 0) {
+      alert(`Assigned ${okCount} of ${ids.length} applicants. ${skipCount} skipped (likely already assigned).`);
+    }
+  }
+
+  async function bulkAutoAssign() {
+    if (selectedDaIds.size === 0) return;
+    setBulkBusy("auto");
+    const res = await fetch(`/api/hiring/cycles/${cycleId}/domains/${domainId}/auto-assign`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ applicationIds: Array.from(selectedDaIds) }),
+    });
+    setBulkBusy(null);
+    if (res.ok) {
+      clearSelection();
+      revalidator.revalidate();
+    } else {
+      const body = await res.json().catch(() => ({}));
+      alert(body.error ?? "Auto-assign failed. Check that rubrics are set and reviewers are added.");
+    }
+  }
 
   return (
     <div className="bg-card border border-border rounded-lg overflow-hidden">
@@ -1744,7 +2046,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                     await fetch(`/api/hiring/decisions/${draft.id}/finalize`, { method: "POST", credentials: "include" });
                   }
                 }
-                window.location.reload();
+                revalidator.revalidate();
               }}
               className="px-3 py-1.5 text-xs font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition"
             >
@@ -1758,7 +2060,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                   method: "POST", credentials: "include",
                 });
                 if (res.ok) {
-                  window.location.reload();
+                  revalidator.revalidate();
                 } else {
                   const body = await res.json().catch(() => ({}));
                   alert(body.error ?? "Auto-assign failed. Check that rubrics are set and reviewers are added.");
@@ -1779,12 +2081,130 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
           )}
         </div>
       </div>
+      <div className="px-4 sm:px-6 py-3 border-b border-border bg-card flex items-center gap-2">
+        <div className="relative flex-1 max-w-xs">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/70 pointer-events-none" />
+          <input
+            type="search"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder="Search applicants..."
+            aria-label="Search applicants by name"
+            className="w-full pl-8 pr-3 py-1.5 text-sm rounded-md border border-border bg-card focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+        {(query || sortKey !== "name" || sortDir !== "asc") && (
+          <button
+            type="button"
+            onClick={() => {
+              setSearchParams(prev => {
+                const sp = new URLSearchParams(prev);
+                sp.delete("q");
+                sp.delete("sort");
+                sp.delete("dir");
+                return sp;
+              }, { preventScrollReset: true });
+            }}
+            className="text-xs text-muted-foreground hover:text-foreground/80"
+          >
+            Reset
+          </button>
+        )}
+        <span className="text-xs text-muted-foreground ml-auto">
+          {displayedApps.length} of {baseApps.length}
+        </span>
+      </div>
+      {isUnderReview && selectedDaIds.size > 0 && canAssignReviewers && (
+        <div className="sticky top-0 z-10 px-4 sm:px-6 py-2 border-b border-border bg-blue-50 dark:bg-blue-900/20 flex flex-wrap items-center gap-2">
+          <span className="text-sm font-medium text-foreground">
+            {selectedDaIds.size} selected
+          </span>
+          <button
+            type="button"
+            onClick={clearSelection}
+            className="text-xs text-muted-foreground hover:text-foreground/80 underline"
+          >
+            Clear
+          </button>
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            <select
+              value={bulkReviewerId}
+              onChange={e => setBulkReviewerId(e.target.value)}
+              className="rounded-md border border-border bg-card px-2 py-1 text-xs"
+              aria-label="Reviewer to assign to selected applicants"
+              disabled={bulkBusy !== null}
+            >
+              <option value="">Assign reviewer…</option>
+              {cycleReviewersForDomain.map((cr: any) => {
+                const m = cr.daliMember;
+                const label = m?.firstName && m?.lastName
+                  ? `${m.firstName} ${m.lastName}`
+                  : m?.daliEmail ?? cr.id;
+                return <option key={cr.id} value={cr.id}>{label}</option>;
+              })}
+            </select>
+            <button
+              type="button"
+              onClick={bulkAssignReviewer}
+              disabled={!bulkReviewerId || bulkBusy !== null}
+              className="px-3 py-1 text-xs font-medium rounded-md bg-blue-600 hover:bg-blue-700 text-white transition disabled:opacity-50"
+            >
+              {bulkBusy === "assign" ? "Assigning..." : "Assign"}
+            </button>
+            <button
+              type="button"
+              onClick={bulkAutoAssign}
+              disabled={bulkBusy !== null || cycleReviewersForDomain.length === 0}
+              title={cycleReviewersForDomain.length === 0 ? "Add reviewers to this domain first" : "Auto-fill reviewer slots on selected applicants"}
+              className="px-3 py-1 text-xs font-medium rounded-md bg-blue-600 hover:bg-blue-700 text-white transition disabled:opacity-50"
+            >
+              {bulkBusy === "auto" ? "Assigning..." : "Auto-assign to selected"}
+            </button>
+          </div>
+        </div>
+      )}
       <div className="hidden sm:block overflow-x-auto">
       <table className="w-full text-sm min-w-[640px]">
         <thead className="bg-muted/50 text-xs font-medium text-muted-foreground uppercase tracking-wide">
           <tr>
-            <th className="px-6 py-3 text-left">Applicant</th>
-            <th className="px-6 py-3 text-left">Reviewers</th>
+            {isUnderReview && canAssignReviewers && (
+              <th className="pl-6 pr-2 py-3 w-8">
+                <input
+                  type="checkbox"
+                  aria-label="Select all visible applicants"
+                  checked={allVisibleSelected}
+                  ref={el => { if (el) el.indeterminate = !allVisibleSelected && someVisibleSelected; }}
+                  onChange={toggleSelectAllVisible}
+                  className="h-4 w-4 rounded border-border"
+                />
+              </th>
+            )}
+            <th className="px-6 py-3 text-left">
+              <button
+                type="button"
+                onClick={() => toggleSort("name")}
+                className="inline-flex items-center gap-1 uppercase tracking-wide hover:text-foreground/80"
+                aria-label={`Sort by applicant name (${sortKey === "name" ? (sortDir === "asc" ? "ascending" : "descending") : "not sorted"})`}
+              >
+                Applicant
+                {sortKey === "name" && (sortDir === "asc"
+                  ? <ChevronUp className="w-3 h-3" />
+                  : <ChevronDown className="w-3 h-3" />)}
+              </button>
+            </th>
+            <th className="px-6 py-3 text-left">
+              <button
+                type="button"
+                onClick={() => toggleSort("reviewers")}
+                className="inline-flex items-center gap-1 uppercase tracking-wide hover:text-foreground/80"
+                aria-label={`Sort by reviewer progress (${sortKey === "reviewers" ? (sortDir === "asc" ? "ascending" : "descending") : "not sorted"})`}
+              >
+                Reviewers
+                {sortKey === "reviewers" && (sortDir === "asc"
+                  ? <ChevronUp className="w-3 h-3" />
+                  : <ChevronDown className="w-3 h-3" />)}
+              </button>
+            </th>
             <th className="px-6 py-3 text-left">Decisions</th>
             <th className="px-6 py-3 text-right">Actions</th>
           </tr>
@@ -1803,6 +2223,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
             const pills = da
               ? summarizeDecisionPills({ decisions })
               : [];
+            const currentId = currentDecisionId(decisions);
             const prePill = da && pills.length === 0
               ? synthesizePrePipelinePill({
                   application: { statusUpdates: app.statusUpdates ?? [] },
@@ -1810,8 +2231,22 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                   decisions,
                 })
               : null;
+            const daId = da?.id as string | undefined;
+            const isSelected = daId ? selectedDaIds.has(daId) : false;
             return (
-              <tr key={app.id} className="hover:bg-muted/50">
+              <tr key={app.id} className={`hover:bg-muted/50 ${isSelected ? "bg-blue-50/50 dark:bg-blue-900/10" : ""}`}>
+                {isUnderReview && canAssignReviewers && (
+                  <td className="pl-6 pr-2 py-4 w-8">
+                    <input
+                      type="checkbox"
+                      aria-label={`Select ${app.user.firstName} ${app.user.lastName}`}
+                      checked={isSelected}
+                      disabled={!daId}
+                      onChange={() => daId && toggleSelected(daId)}
+                      className="h-4 w-4 rounded border-border"
+                    />
+                  </td>
+                )}
                 <td className="px-6 py-4 font-medium text-foreground">
                   {app.user.firstName} {app.user.lastName}
                 </td>
@@ -1828,7 +2263,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                   {pills.length > 0 ? (
                     <div className="flex flex-wrap gap-1">
                       {pills.map((pill, i) => (
-                        <DecisionPillBadge key={i} pill={pill} />
+                        <DecisionPillBadge key={i} pill={pill} isCurrent={!!pill.id && pill.id === currentId} />
                       ))}
                     </div>
                   ) : prePill ? (
@@ -1843,7 +2278,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                     <button
                       onClick={async () => {
                         await fetch(`/api/hiring/decisions/${draftToFinalize.id}/finalize`, { method: "POST", credentials: "include" });
-                        window.location.reload();
+                        revalidator.revalidate();
                       }}
                       className="px-2 py-1 text-xs font-medium rounded bg-green-600 hover:bg-green-700 text-white transition"
                     >
@@ -1862,7 +2297,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
             );
           })}
           {displayedApps.length === 0 && (
-            <tr><td colSpan={4} className="px-6 py-8 text-center text-muted-foreground/70 text-sm">
+            <tr><td colSpan={isUnderReview && canAssignReviewers ? 5 : 4} className="px-6 py-8 text-center text-muted-foreground/70 text-sm">
               {filter === "finalize" ? "No applications need finalization." : "No applications."}
             </td></tr>
           )}
@@ -1883,6 +2318,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
           const pills = da
             ? summarizeDecisionPills({ decisions })
             : [];
+          const currentId = currentDecisionId(decisions);
           const prePill = da && pills.length === 0
             ? synthesizePrePipelinePill({
                 application: { statusUpdates: app.statusUpdates ?? [] },
@@ -1890,10 +2326,24 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                 decisions,
               })
             : null;
+          const daId = da?.id as string | undefined;
+          const isSelected = daId ? selectedDaIds.has(daId) : false;
           return (
-            <li key={app.id} className="px-4 py-3 space-y-2">
-              <div className="font-medium text-foreground">
-                {app.user.firstName} {app.user.lastName}
+            <li key={app.id} className={`px-4 py-3 space-y-2 ${isSelected ? "bg-blue-50/50 dark:bg-blue-900/10" : ""}`}>
+              <div className="flex items-center gap-2">
+                {isUnderReview && canAssignReviewers && (
+                  <input
+                    type="checkbox"
+                    aria-label={`Select ${app.user.firstName} ${app.user.lastName}`}
+                    checked={isSelected}
+                    disabled={!daId}
+                    onChange={() => daId && toggleSelected(daId)}
+                    className="h-4 w-4 rounded border-border flex-shrink-0"
+                  />
+                )}
+                <div className="font-medium text-foreground">
+                  {app.user.firstName} {app.user.lastName}
+                </div>
               </div>
               <div>
                 <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Reviewers</div>
@@ -1910,7 +2360,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                 {pills.length > 0 ? (
                   <div className="flex flex-wrap gap-1">
                     {pills.map((pill, i) => (
-                      <DecisionPillBadge key={i} pill={pill} />
+                      <DecisionPillBadge key={i} pill={pill} isCurrent={!!pill.id && pill.id === currentId} />
                     ))}
                   </div>
                 ) : prePill ? (
@@ -1924,7 +2374,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                   <button
                     onClick={async () => {
                       await fetch(`/api/hiring/decisions/${draftToFinalize.id}/finalize`, { method: "POST", credentials: "include" });
-                      window.location.reload();
+                      revalidator.revalidate();
                     }}
                     className="px-2 py-1 text-xs font-medium rounded bg-green-600 hover:bg-green-700 text-white transition"
                   >
@@ -1963,6 +2413,7 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
   const [selectedReviewerId, setSelectedReviewerId] = useState("");
   const [openReview, setOpenReview] = useState<any | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
+  const [pendingRemoveReview, setPendingRemoveReview] = useState<any | null>(null);
 
   const assignedReviewerIds = new Set(localReviews.map((r: any) => r.cycleReviewerId));
   const available = cycleReviewers.filter((cr: any) => !assignedReviewerIds.has(cr.id));
@@ -1992,11 +2443,7 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
     }
   }
 
-  async function removeReview(reviewId: string, wasSubmitted: boolean) {
-    if (wasSubmitted) {
-      const ok = confirm("This reviewer has already submitted their review. Removing them will delete their scores and feedback. Continue?");
-      if (!ok) return;
-    }
+  async function performRemoveReview(reviewId: string) {
     setRemoving(reviewId);
     try {
       const res = await fetch(`/api/hiring/reviews/${reviewId}`, {
@@ -2018,13 +2465,27 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
     }
   }
 
+  function requestRemoveReview(review: any) {
+    if (getReviewStatus(review) === "submitted") {
+      setPendingRemoveReview(review);
+    } else {
+      performRemoveReview(review.id);
+    }
+  }
+
+  const cellClass = editable && adding
+    ? "flex flex-wrap items-center gap-1 border-2 border-blue-400/50 bg-blue-50 dark:bg-blue-900/20 rounded-md p-1"
+    : "flex flex-wrap items-center gap-1";
   return (
-    <div className="flex flex-wrap items-center gap-1">
+    <div className={cellClass}>
       {localReviews.map((r: any) => {
         const m = r.cycleReviewer?.daliMember;
         const name = m?.firstName && m?.lastName
           ? `${m.firstName} ${m.lastName[0]}.`
           : m?.daliEmail ?? "?";
+        const fullName = m?.firstName && m?.lastName
+          ? `${m.firstName} ${m.lastName}`
+          : m?.daliEmail ?? "Reviewer";
         const status = getReviewStatus(r);
         const pillClass =
           status === "submitted"
@@ -2040,6 +2501,13 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
           ) : (
             <CircleDashed className="w-3 h-3 text-muted-foreground/70" />
           );
+        const recommendation = r.overallRecommendation ? `, recommends ${r.overallRecommendation.toLowerCase()}` : "";
+        const tooltip =
+          status === "submitted"
+            ? `${fullName} — submitted${recommendation}. Click to view scores and feedback.`
+            : status === "inProgress"
+              ? `${fullName} — review in progress. Click to view partial scores.`
+              : `${fullName} — assigned but not started yet.`;
         return (
           <span
             key={r.id}
@@ -2052,6 +2520,8 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
                 setOpenReview(r);
               }
             }}
+            title={tooltip}
+            aria-label={tooltip}
             className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs border cursor-pointer hover:brightness-95 transition ${pillClass}`}
           >
             {icon}
@@ -2060,7 +2530,7 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  removeReview(r.id, status === "submitted");
+                  requestRemoveReview(r);
                 }}
                 disabled={removing === r.id}
                 className="ml-0.5 text-muted-foreground/70 hover:text-red-500 transition"
@@ -2074,10 +2544,14 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
       })}
       {editable && adding ? (
         <div className="inline-flex items-center gap-1">
+          <span className="text-[10px] uppercase tracking-wide font-bold text-blue-700 dark:text-blue-300">
+            Adding reviewer
+          </span>
           <select
             value={selectedReviewerId}
             onChange={e => setSelectedReviewerId(e.target.value)}
             className="rounded border border-border bg-card text-card-foreground px-1.5 py-0.5 text-xs"
+            autoFocus
           >
             <option value="">Select...</option>
             {available.map((cr: any) => {
@@ -2096,10 +2570,11 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
             Add
           </button>
           <button
+            type="button"
             onClick={() => { setAdding(false); setSelectedReviewerId(""); }}
-            className="text-muted-foreground/70 hover:text-muted-foreground"
+            className="px-1.5 py-0.5 text-xs font-medium rounded border border-border bg-card text-foreground hover:bg-muted/50"
           >
-            <Trash2 className="w-3 h-3" />
+            Cancel
           </button>
         </div>
       ) : editable ? (
@@ -2118,6 +2593,30 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
           onClose={() => setOpenReview(null)}
         />
       )}
+      <ConfirmDialog
+        open={!!pendingRemoveReview}
+        title="Remove this reviewer's submitted review?"
+        body={
+          <p>
+            <strong>
+              {(() => {
+                const m = pendingRemoveReview?.cycleReviewer?.daliMember;
+                if (!m) return "This reviewer";
+                return m.firstName && m.lastName ? `${m.firstName} ${m.lastName}` : (m.daliEmail ?? "This reviewer");
+              })()}
+            </strong>{" "}
+            has already submitted their review. Removing them will permanently delete their scores and feedback.
+          </p>
+        }
+        confirmLabel="Remove and delete review"
+        destructive
+        onCancel={() => setPendingRemoveReview(null)}
+        onConfirm={() => {
+          const r = pendingRemoveReview;
+          setPendingRemoveReview(null);
+          if (r) performRemoveReview(r.id);
+        }}
+      />
     </div>
   );
 }

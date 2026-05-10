@@ -9,6 +9,7 @@ const STAGE_RANK: Record<DecisionStage, number> = {
 };
 
 export type DecisionPill = {
+  id?: string;
   type: DecisionType;
   stage: DecisionStage;
   waitlistRank: number | null;
@@ -16,6 +17,7 @@ export type DecisionPill = {
 };
 
 type DecisionRow = {
+  id?: string;
   type: DecisionType;
   stage: DecisionStage;
   waitlistRank?: number | null;
@@ -51,12 +53,33 @@ export function summarizeDecisionPills(da: SummarizeInput): DecisionPill[] {
 
   return Array.from(byType.values())
     .map((row): DecisionPill => ({
+      id: row.id,
       type: row.type,
       stage: row.stage,
       waitlistRank: row.waitlistRank ?? null,
       createdAt: toDate(row.createdAt),
     }))
     .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+}
+
+// The "current" decision is the single row with the highest stage rank across
+// all types (ties broken by newest createdAt). Reject overrides Interview when
+// both exist at the same stage, since Reject is the terminal outcome — but we
+// don't need a special tie-break: the latest-stamped row wins. Callers use this
+// id to draw the "current" emphasis on the decision pill row.
+export function currentDecisionId(decisions: DecisionRow[]): string | null {
+  if (decisions.length === 0) return null;
+  let best: DecisionRow | null = null;
+  for (const row of decisions) {
+    if (!best) { best = row; continue; }
+    const rowRank = STAGE_RANK[row.stage];
+    const bestRank = STAGE_RANK[best.stage];
+    if (rowRank > bestRank) { best = row; continue; }
+    if (rowRank === bestRank && toDate(row.createdAt) > toDate(best.createdAt)) {
+      best = row;
+    }
+  }
+  return best?.id ?? null;
 }
 
 export type PrePipelinePill = "Reviewing" | "InterviewScheduled" | "PostInterview";
