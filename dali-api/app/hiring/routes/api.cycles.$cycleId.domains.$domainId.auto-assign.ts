@@ -23,6 +23,19 @@ export async function action({ request, params }: Route.ActionArgs) {
   const gate = await requireApiSignedOrForbidden(auth.user.sub, cycleId!);
   if (gate) return gate;
 
+  // Optional subset filter: when present, auto-assignment is restricted to
+  // these DomainApplication ids. Used by the bulk-assign toolbar so a domain
+  // lead can fill reviewer slots on just the rows they've selected. When
+  // absent (the original behavior), every Submitted application qualifies.
+  let applicationIdsFilter: string[] | null = null;
+  if (request.headers.get("content-type")?.includes("application/json")) {
+    const body = await request.json().catch(() => null) as { applicationIds?: unknown } | null;
+    if (body && Array.isArray(body.applicationIds)) {
+      const ids = body.applicationIds.filter((v): v is string => typeof v === "string" && v.length > 0);
+      applicationIdsFilter = ids;
+    }
+  }
+
   const cycle = await prisma.applicationCycle.findUniqueOrThrow({
     where: { id: cycleId! },
   });
@@ -58,6 +71,9 @@ export async function action({ request, params }: Route.ActionArgs) {
         applicationCycleId: cycleId!,
         statusUpdates: { some: { newStatus: "Submitted" } },
       },
+      ...(applicationIdsFilter && applicationIdsFilter.length > 0
+        ? { id: { in: applicationIdsFilter } }
+        : {}),
     },
     include: {
       reviews: { select: { cycleReviewerId: true } },
