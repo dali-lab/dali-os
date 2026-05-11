@@ -7,6 +7,7 @@ import { isDomainLead } from "~/lib/roles";
 import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
 import { ArrowLeft, GripVertical, X, Check } from "lucide-react";
 import { INITIAL_COLUMNS, FINAL_COLUMNS } from "~/hiring/lib/delibs";
+import { inReviewPipelineFilter } from "~/hiring/lib/application-pipeline-filter";
 import { ApplicantContextModal } from "~/hiring/components/delibs/ApplicantContextModal";
 
 export const meta: Route.MetaFunction = ({ data }) => {
@@ -56,7 +57,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       challengeVersion: { domainId: session.domainId },
       application: {
         applicationCycleId: session.applicationCycleId,
-        statusUpdates: { some: { newStatus: "Submitted" } },
+        ...inReviewPipelineFilter,
       },
       ...qualifyingFilter,
     },

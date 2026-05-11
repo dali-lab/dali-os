@@ -3,6 +3,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth, withAuth } from "~/lib/auth";
 import { isHiringLead, isDomainLead } from "~/lib/roles";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
+import { inReviewPipelineFilter } from "~/hiring/lib/application-pipeline-filter";
 
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
@@ -69,7 +70,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       challengeVersion: { domainId: domainId! },
       application: {
         applicationCycleId: cycleId!,
-        statusUpdates: { some: { newStatus: "Submitted" } },
+        ...inReviewPipelineFilter,
       },
       ...(applicationIdsFilter && applicationIdsFilter.length > 0
         ? { id: { in: applicationIdsFilter } }
