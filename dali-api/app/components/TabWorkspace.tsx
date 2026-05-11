@@ -188,6 +188,128 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
     onActiveUrlChange(tab?.url ?? null)
   }, [state, onActiveUrlChange])
 
+  // --- Keyboard shortcuts -------------------------------------------------
+  //
+  // We support shortcuts whether focus is in the outer page or inside a
+  // workspace iframe. Because the iframes are same-origin we can attach a
+  // listener to each iframe's contentDocument once it loads.
+  //
+  // Avoiding browser-claimed combos: Cmd/Ctrl+W and Cmd/Ctrl+1..9 are reserved
+  // for browser-tab control and can't be reliably intercepted by a page, so
+  // we use Cmd/Ctrl+Alt+... variants instead.
+  //
+  //   mod+alt+ArrowRight   next tab in focused pane
+  //   mod+alt+ArrowLeft    previous tab in focused pane
+  //   mod+alt+1 .. 9       jump to Nth tab in focused pane
+  //   mod+alt+0            jump to last tab in focused pane
+  //   mod+shift+k          close active tab in focused pane (mnemonic: kill)
+  //   mod+\                split: open active tab to the side, or close side
+  //
+  // We keep the state and callbacks in a ref so the shortcut handler stays
+  // stable for the lifetime of the component — that way we don't have to
+  // detach/re-attach from each iframe on every state change.
+  const handlersRef = useRef<{
+    onShortcut: (e: KeyboardEvent) => void
+  } | null>(null)
+
+  const stateRef = useRef(state)
+  useEffect(() => {
+    stateRef.current = state
+  }, [state])
+
+  if (!handlersRef.current) {
+    handlersRef.current = {
+      onShortcut: (e: KeyboardEvent) => {
+        const mod = e.metaKey || e.ctrlKey
+        if (!mod) return
+
+        const s = stateRef.current
+        const focusedPane = s.panes.find((p) => p.id === s.focusedPaneId) ?? s.panes[0]
+        if (!focusedPane) return
+
+        // mod + alt + arrow / number — pane navigation
+        if (e.altKey && !e.shiftKey) {
+          const tabs = focusedPane.tabs
+          if (tabs.length === 0) return
+          const activeIdx = tabs.findIndex((t) => t.id === focusedPane.activeTabId)
+          const idx = activeIdx < 0 ? 0 : activeIdx
+
+          if (e.key === 'ArrowRight') {
+            e.preventDefault()
+            const next = tabs[(idx + 1) % tabs.length]
+            setActiveTab(focusedPane.id, next.id)
+            return
+          }
+          if (e.key === 'ArrowLeft') {
+            e.preventDefault()
+            const prev = tabs[(idx - 1 + tabs.length) % tabs.length]
+            setActiveTab(focusedPane.id, prev.id)
+            return
+          }
+          if (e.key >= '1' && e.key <= '9') {
+            const n = parseInt(e.key, 10) - 1
+            if (n < tabs.length) {
+              e.preventDefault()
+              setActiveTab(focusedPane.id, tabs[n].id)
+            }
+            return
+          }
+          if (e.key === '0') {
+            e.preventDefault()
+            setActiveTab(focusedPane.id, tabs[tabs.length - 1].id)
+            return
+          }
+        }
+
+        // mod + shift + k — close active tab
+        if (e.shiftKey && (e.key === 'k' || e.key === 'K')) {
+          if (focusedPane.activeTabId) {
+            e.preventDefault()
+            closeTab(focusedPane.id, focusedPane.activeTabId)
+          }
+          return
+        }
+
+        // mod + \ — toggle split
+        if (!e.altKey && !e.shiftKey && e.key === '\\') {
+          if (s.panes.length >= 2) {
+            // Close the non-focused pane.
+            const other = s.panes.find((p) => p.id !== focusedPane.id)
+            if (other) {
+              e.preventDefault()
+              closePane(other.id)
+            }
+          } else if (focusedPane.activeTabId) {
+            // Split the current tab out.
+            e.preventDefault()
+            openTabToSide(focusedPane.id, focusedPane.activeTabId)
+          }
+          return
+        }
+      },
+    }
+  }
+
+  // Attach the shortcut listener to window.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => handlersRef.current?.onShortcut(e)
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [])
+
+  // Ref-callback for each iframe: attach the shortcut listener to its
+  // contentDocument so shortcuts work when focus is inside the embedded page.
+  // Re-runs on each iframe load (e.g., when the user navigates a link inside
+  // the iframe), at which point contentDocument is a fresh Document object.
+  const onIframeLoad = (e: React.SyntheticEvent<HTMLIFrameElement>) => {
+    const doc = e.currentTarget.contentDocument
+    if (!doc) return
+    const handler = (ev: Event) => handlersRef.current?.onShortcut(ev as KeyboardEvent)
+    // The previous document — if any — is gone with the previous navigation,
+    // so its listener is gone with it. No need to remove first.
+    doc.addEventListener('keydown', handler)
+  }
+
   // Close context menu on click-anywhere.
   useEffect(() => {
     if (!contextMenu) return
@@ -391,6 +513,7 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
                   src={addEmbedParam(activeTab.url)}
                   title={activeTab.label}
                   className="w-full h-full border-0"
+                  onLoad={onIframeLoad}
                 />
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-muted-foreground/60 text-sm">
