@@ -65,9 +65,11 @@ export interface TabWorkspaceProps {
   initialTabs?: OpenTabRequest[]
   /** Exposes the imperative `openTab` API to the parent. */
   apiRef?: React.MutableRefObject<TabWorkspaceHandle | null>
+  /** Notified when the focused pane's active tab URL changes (null when no tab). */
+  onActiveUrlChange?: (url: string | null) => void
 }
 
-export function TabWorkspace({ initialTabs, apiRef }: TabWorkspaceProps) {
+export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWorkspaceProps) {
   const [state, setState] = useState<WorkspaceState>(emptyState)
   const [contextMenu, setContextMenu] = useState<
     | { paneId: string; tabId: string; x: number; y: number }
@@ -132,6 +134,14 @@ export function TabWorkspace({ initialTabs, apiRef }: TabWorkspaceProps) {
       },
     }
   }, [apiRef])
+
+  // Notify parent when the focused pane's active tab URL changes.
+  useEffect(() => {
+    if (!onActiveUrlChange) return
+    const pane = state.panes.find((p) => p.id === state.focusedPaneId) ?? state.panes[0]
+    const tab = pane?.tabs.find((t) => t.id === pane.activeTabId) ?? null
+    onActiveUrlChange(tab?.url ?? null)
+  }, [state, onActiveUrlChange])
 
   // Close context menu on click-anywhere.
   useEffect(() => {

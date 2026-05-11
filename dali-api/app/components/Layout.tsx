@@ -42,7 +42,10 @@ type AreaKey = 'hiring' | 'projects' | 'members' | 'partners' | 'admin-console'
 
 export function Layout({ children, user, isHiringLead = false, isAdmin = false, isDomainLead = false, isInterviewer = false }: LayoutProps) {
   const location = useLocation()
-  const path = location.pathname
+  const [focusedTabUrl, setFocusedTabUrl] = useState<string | null>(null)
+  // Sidebar highlight follows the focused workspace tab when one is open;
+  // otherwise it falls back to the parent route.
+  const path = focusedTabUrl ?? location.pathname
   const [collapsed, setCollapsed] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [userExpanded, setUserExpanded] = useState<Record<AreaKey, boolean | undefined>>({
@@ -503,6 +506,7 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
           <TabWorkspace
             apiRef={workspaceRef}
             initialTabs={activeSection ? [{ url: activeSection.to, label: activeSection.label }] : []}
+            onActiveUrlChange={setFocusedTabUrl}
           />
         ) : (
           // Outside areas (home, etc.) — render the route directly
