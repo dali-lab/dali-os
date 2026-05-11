@@ -6,6 +6,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth, withAuth } from "~/lib/auth";
 import { CheckCircle, Plus, Trash2, Check, Clock, X, CircleDashed, ChevronDown, Eye, Send, Search, ChevronUp } from "lucide-react";
 import { inferDomainApplicationStatus } from "~/hiring/lib/domain-application-status";
+import { inReviewPipelineFilter } from "~/hiring/lib/application-pipeline-filter";
 import { getReviewStatus } from "~/hiring/lib/review-status";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { ConfidentialityGate } from "~/hiring/components/ConfidentialityGate";
@@ -228,7 +229,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         ? await prisma.domainApplication.count({
             where: {
               challengeVersion: { domainId: assignment.domainId },
-              application: { applicationCycleId: cycle.id, statusUpdates: { some: { newStatus: "Submitted" } } },
+              application: { applicationCycleId: cycle.id, ...inReviewPipelineFilter },
               reviews: { every: { submittedAt: { not: null } }, some: {} },
               decisions: { none: { stage: { in: ["Final", "Released"] } } },
             },
@@ -239,7 +240,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         ? await prisma.domainApplication.count({
             where: {
               challengeVersion: { domainId: assignment.domainId },
-              application: { applicationCycleId: cycle.id, statusUpdates: { some: { newStatus: "Submitted" } } },
+              application: { applicationCycleId: cycle.id, ...inReviewPipelineFilter },
               interviews: { some: { status: "Completed" } },
             },
           })

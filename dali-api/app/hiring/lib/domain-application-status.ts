@@ -58,6 +58,7 @@ type DomainApplicationWithStatusRelations = DomainApplicationGetPayload<{
  *
  * Decision tree (evaluated in order):
  *  1. cycle Open  AND  no Submitted status update          → ApplicationOpen
+ *  1b. Application has a Withdrawn status update            → Withdrawn
  *  2. Has Submitted update AND no Released decision         → Pending
  *  3. Latest Released decision type == Rejected             → Rejected
  *  4. Latest Released decision type == InvitedToInterview
@@ -80,10 +81,20 @@ export function inferDomainApplicationStatus(
   const hasSubmitted = application.statusUpdates.some(
     (u) => u.newStatus === "Submitted",
   );
+  const hasWithdrawn = application.statusUpdates.some(
+    (u) => u.newStatus === "Withdrawn",
+  );
 
   // Step 1: cycle is open and application has not been submitted yet
   if (cycleStatus === "Open" && !hasSubmitted) {
     return "ApplicationOpen";
+  }
+
+  // Step 1b: applicant withdrew after submission. Withdrawal is terminal
+  // today (see portal.application.tsx), so this short-circuits before any
+  // decision/interview-derived branches.
+  if (hasWithdrawn) {
+    return "Withdrawn";
   }
 
   // Decisions are ordered desc by createdAt, so the first Released entry is the latest.

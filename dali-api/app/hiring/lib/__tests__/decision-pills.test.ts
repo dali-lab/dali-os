@@ -222,6 +222,36 @@ describe("synthesizePrePipelinePill", () => {
       }),
     ).toBe(null);
   });
+
+  it("returns null when applicant has withdrawn (even if Submitted is also present)", () => {
+    expect(
+      synthesizePrePipelinePill({
+        application: {
+          statusUpdates: [
+            { newStatus: "Submitted" },
+            { newStatus: "Withdrawn" },
+          ],
+        },
+        interviews: [],
+        decisions: [],
+      }),
+    ).toBe(null);
+  });
+
+  it("returns null when withdrawn even if an interview was Scheduled before the withdrawal", () => {
+    expect(
+      synthesizePrePipelinePill({
+        application: {
+          statusUpdates: [
+            { newStatus: "Submitted" },
+            { newStatus: "Withdrawn" },
+          ],
+        },
+        interviews: [{ status: "Scheduled" }],
+        decisions: [],
+      }),
+    ).toBe(null);
+  });
 });
 
 describe("currentDecisionId", () => {
