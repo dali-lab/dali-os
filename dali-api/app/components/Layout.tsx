@@ -501,19 +501,21 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
       )}
 
       <main className={`flex-1 min-w-0 flex flex-col ${collapsed ? 'md:pl-16' : 'md:pl-64'} pt-14 md:pt-0 transition-[padding] duration-200`}>
-        {activeAreaKey ? (
-          // Inside an area — use the tabbed workspace
-          <TabWorkspace
-            apiRef={workspaceRef}
-            initialTabs={activeSection ? [{ url: activeSection.to, label: activeSection.label }] : []}
-            onActiveUrlChange={setFocusedTabUrl}
-          />
-        ) : (
-          // Outside areas (home, etc.) — render the route directly
-          <div className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-8 lg:px-12 py-6 md:py-8">
-            {children}
-          </div>
-        )}
+        {/* Always render the tabbed workspace. The Home tab is the default
+            landing surface and stays available alongside section tabs.
+            Use the actual current URL (not activeSection.to) for the section
+            tab so deep links like /hiring/domain-lead/application/:id open in
+            the iframe instead of the section root. */}
+        <TabWorkspace
+          apiRef={workspaceRef}
+          initialTabs={[
+            { url: '/', label: 'Home' },
+            ...(activeSection && location.pathname !== '/'
+              ? [{ url: location.pathname + location.search, label: activeSection.label }]
+              : []),
+          ]}
+          onActiveUrlChange={setFocusedTabUrl}
+        />
       </main>
     </div>
   )

@@ -143,12 +143,15 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
         id: newId(),
         label: t.label,
         url: t.url,
-        // Stagger so the first seeded tab is the most recent (it's the active one).
-        lastActivatedAt: seedTime - i,
+        // Stagger so the last seeded tab is the most recent (it's the active
+        // one). The caller orders initial tabs from "anchor" (Home) to
+        // "most specific" (the section the user actually navigated to), so
+        // the last entry is what should be visible on first paint.
+        lastActivatedAt: seedTime - (initialTabs.length - 1 - i),
       }))
       const paneId = loaded.panes[0]?.id ?? newId()
       setState({
-        panes: [{ id: paneId, tabs, activeTabId: tabs[0]?.id ?? null }],
+        panes: [{ id: paneId, tabs, activeTabId: tabs[tabs.length - 1]?.id ?? null }],
         focusedPaneId: paneId,
       })
     } else {
