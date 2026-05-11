@@ -27,7 +27,6 @@ import { userInitials } from '~/lib/display'
 import { TabWorkspace, type TabWorkspaceHandle, type OpenTabRequest } from '~/components/TabWorkspace'
 
 interface LayoutProps {
-  children: React.ReactNode
   user: { email: string; firstName?: string; lastName?: string }
   isHiringLead?: boolean
   isAdmin?: boolean
@@ -40,7 +39,7 @@ const EXPANDED_AREAS_KEY = 'dali:sidebar:expanded-areas'
 
 type AreaKey = 'hiring' | 'projects' | 'members' | 'partners' | 'admin-console'
 
-export function Layout({ children, user, isHiringLead = false, isAdmin = false, isDomainLead = false, isInterviewer = false }: LayoutProps) {
+export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLead = false, isInterviewer = false }: LayoutProps) {
   const location = useLocation()
   const [focusedTabUrl, setFocusedTabUrl] = useState<string | null>(null)
   // Sidebar highlight follows the focused workspace tab when one is open;
@@ -298,8 +297,7 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
           </div>
           {!collapsed && (
             <span className="font-heading font-bold text-lg text-white tracking-tight truncate">
-              <span className="text-accent-coral/80">D</span>
-              <sup className="text-accent-coral/80 text-[0.5em]">3</sup>ALI OS
+              DALI OS
             </span>
           )}
         </Link>
@@ -329,6 +327,22 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
 
       {/* Areas + nested sections */}
       <nav className="flex-1 overflow-y-auto py-3 px-2 flex flex-col gap-0.5">
+        {(() => {
+          const calendarActive = path.startsWith('/calendar')
+          return (
+            <button
+              type="button"
+              title={collapsed ? 'Calendar' : undefined}
+              onClick={() => openInWorkspace({ url: '/calendar', label: 'Calendar' })}
+              className={`flex items-center gap-3 rounded-md ${collapsed ? 'px-3 py-2 justify-center' : 'px-3 py-2'} text-sm font-heading font-semibold text-left transition-colors hover:bg-white/5 ${
+                calendarActive ? 'text-white' : 'text-white/65 hover:text-white'
+              }`}
+            >
+              <Calendar className="w-4 h-4 flex-shrink-0" />
+              {!collapsed && <span className="truncate">Calendar</span>}
+            </button>
+          )
+        })()}
         {areas.map((area) => {
           // Default: active area is expanded, inactive is collapsed. User toggle overrides.
           const expanded = userExpanded[area.key] ?? area.active
@@ -393,20 +407,29 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
 
       {/* Footer — user + logout */}
       <div className="border-t border-white/10 p-2 flex-shrink-0">
-        <div className={`flex items-center gap-2 px-2 py-2 ${collapsed ? 'justify-center' : ''}`}>
-          <div className="w-8 h-8 rounded-full bg-accent-coral text-white flex items-center justify-center font-bold text-xs flex-shrink-0">
-            {initials}
-          </div>
-          {!collapsed && (
-            <div className="flex-1 min-w-0">
-              <div className="text-xs text-white/80 truncate">{user.email}</div>
+        <div className={`flex items-center gap-1 px-1 py-1 ${collapsed ? 'justify-center' : ''}`}>
+          <button
+            type="button"
+            onClick={() => openInWorkspace({ url: '/', label: 'Home' })}
+            title={collapsed ? 'Open profile' : undefined}
+            aria-label="Open profile"
+            className={`flex items-center gap-2 rounded-md hover:bg-white/5 transition-colors ${
+              collapsed ? 'p-1.5' : 'flex-1 min-w-0 px-2 py-1.5 text-left'
+            }`}
+          >
+            <div className="w-8 h-8 rounded-full bg-accent-coral text-white flex items-center justify-center font-bold text-xs flex-shrink-0">
+              {initials}
             </div>
-          )}
+            {!collapsed && (
+              <span className="text-xs text-white/80 truncate min-w-0">{user.email}</span>
+            )}
+          </button>
           {!collapsed && (
             <a
               href="/logout"
-              className="text-white/40 hover:text-white/70 transition flex-shrink-0"
+              className="p-1.5 text-white/40 hover:text-white/70 hover:bg-white/5 rounded-md transition flex-shrink-0"
               title="Log out"
+              aria-label="Log out"
             >
               <LogOut className="w-4 h-4" />
             </a>
@@ -443,8 +466,7 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
               <span className="text-white font-bold text-base leading-none font-heading">D</span>
             </div>
             <span className="font-heading font-bold text-lg text-white tracking-tight">
-              <span className="text-accent-coral/80">D</span>
-              <sup className="text-accent-coral/80 text-[0.5em]">3</sup>ALI OS
+              DALI OS
             </span>
           </Link>
         </div>
@@ -503,19 +525,18 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
       )}
 
       <main className={`flex-1 min-w-0 flex flex-col ${collapsed ? 'md:pl-16' : 'md:pl-64'} pt-14 md:pt-0 transition-[padding] duration-200`}>
-        {activeAreaKey ? (
-          // Inside an area — use the tabbed workspace
-          <TabWorkspace
-            apiRef={workspaceRef}
-            initialTabs={activeSection ? [{ url: activeSection.to, label: activeSection.label }] : []}
-            onActiveUrlChange={setFocusedTabUrl}
-          />
-        ) : (
-          // Outside areas (home, etc.) — render the route directly
-          <div className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-8 lg:px-12 py-6 md:py-8">
-            {children}
-          </div>
-        )}
+        {/* Always render the tabbed workspace. The Home tab is the default
+            landing surface and stays available alongside section tabs. */}
+        <TabWorkspace
+          apiRef={workspaceRef}
+          initialTabs={[
+            { url: '/', label: 'Home' },
+            ...(activeSection && activeSection.to !== '/'
+              ? [{ url: activeSection.to, label: activeSection.label }]
+              : []),
+          ]}
+          onActiveUrlChange={setFocusedTabUrl}
+        />
       </main>
     </div>
   )

@@ -42,7 +42,7 @@ export default function AppLayoutRoute() {
   if (isEmbedded || searchParams.get('embed') === '1') {
     return (
       <div className="min-h-screen bg-section-bg">
-        <div className="max-w-7xl w-full mx-auto px-4 sm:px-8 lg:px-12 py-6 md:py-8">
+        <div className="w-full px-6 lg:px-10 pt-10 md:pt-12 pb-8">
           <Outlet />
         </div>
       </div>
@@ -50,8 +50,6 @@ export default function AppLayoutRoute() {
   }
 
   return (
-    <Layout user={user} isHiringLead={isHiringLead} isAdmin={isAdmin} isDomainLead={isDomainLead} isInterviewer={isInterviewer}>
-      <Outlet />
-    </Layout>
+    <Layout user={user} isHiringLead={isHiringLead} isAdmin={isAdmin} isDomainLead={isDomainLead} isInterviewer={isInterviewer} />
   )
 }
