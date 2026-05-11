@@ -475,7 +475,7 @@ CREATE TABLE "StaffingAssignment" (
     "termId" TEXT NOT NULL,
     "domainId" TEXT NOT NULL,
     "level" "Level" NOT NULL,
-    "status" "AssignmentStatus" NOT NULL DEFAULT 'Proposed',
+    "status" "AssignmentStatus" NOT NULL,
     "assignedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "assignedById" TEXT,
 
