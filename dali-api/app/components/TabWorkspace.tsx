@@ -15,6 +15,7 @@ interface Tab {
   id: string
   label: string
   url: string
+  lastActivatedAt: number
 }
 
 interface Pane {
@@ -28,10 +29,14 @@ interface WorkspaceState {
   focusedPaneId: string
 }
 
-const STORAGE_KEY = 'dali:tabworkspace'
+const STORAGE_KEY = 'dali:tabworkspace:v2'
 
 function newId() {
   return Math.random().toString(36).slice(2, 10)
+}
+
+function now() {
+  return Date.now()
 }
 
 function emptyState(): WorkspaceState {
@@ -39,13 +44,33 @@ function emptyState(): WorkspaceState {
   return { panes: [{ id: paneId, tabs: [], activeTabId: null }], focusedPaneId: paneId }
 }
 
+function isValidState(s: unknown): s is WorkspaceState {
+  if (!s || typeof s !== 'object') return false
+  const v = s as WorkspaceState
+  if (!Array.isArray(v.panes) || v.panes.length === 0) return false
+  for (const p of v.panes) {
+    if (typeof p?.id !== 'string') return false
+    if (!Array.isArray(p.tabs)) return false
+    for (const t of p.tabs) {
+      if (
+        typeof t?.id !== 'string' ||
+        typeof t.label !== 'string' ||
+        typeof t.url !== 'string' ||
+        typeof t.lastActivatedAt !== 'number'
+      )
+        return false
+    }
+  }
+  return typeof v.focusedPaneId === 'string'
+}
+
 function loadState(): WorkspaceState {
   if (typeof window === 'undefined') return emptyState()
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY)
     if (!raw) return emptyState()
-    const parsed = JSON.parse(raw) as WorkspaceState
-    if (!parsed.panes || parsed.panes.length === 0) return emptyState()
+    const parsed = JSON.parse(raw)
+    if (!isValidState(parsed)) return emptyState()
     return parsed
   } catch {
     return emptyState()
@@ -82,7 +107,14 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
     const loaded = loadState()
     // Seed if storage is empty AND we have initial tabs
     if (loaded.panes.every((p) => p.tabs.length === 0) && initialTabs && initialTabs.length > 0) {
-      const tabs = initialTabs.map((t) => ({ id: newId(), label: t.label, url: t.url }))
+      const seedTime = now()
+      const tabs = initialTabs.map((t, i) => ({
+        id: newId(),
+        label: t.label,
+        url: t.url,
+        // Stagger so the first seeded tab is the most recent (it's the active one).
+        lastActivatedAt: seedTime - i,
+      }))
       const paneId = loaded.panes[0]?.id ?? newId()
       setState({
         panes: [{ id: paneId, tabs, activeTabId: tabs[0]?.id ?? null }],
@@ -117,11 +149,24 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
               ...prev,
               focusedPaneId: existing.paneId,
               panes: prev.panes.map((p) =>
-                p.id === existing.paneId ? { ...p, activeTabId: existing.tabId } : p,
+                p.id === existing.paneId
+                  ? {
+                      ...p,
+                      activeTabId: existing.tabId,
+                      tabs: p.tabs.map((t) =>
+                        t.id === existing.tabId ? { ...t, lastActivatedAt: now() } : t,
+                      ),
+                    }
+                  : p,
               ),
             }
           }
-          const newTab: Tab = { id: newId(), label: req.label, url: req.url }
+          const newTab: Tab = {
+            id: newId(),
+            label: req.label,
+            url: req.url,
+            lastActivatedAt: now(),
+          }
           return {
             ...prev,
             panes: prev.panes.map((p) =>
@@ -159,7 +204,17 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
     setState((prev) => ({
       ...prev,
       focusedPaneId: paneId,
-      panes: prev.panes.map((p) => (p.id === paneId ? { ...p, activeTabId: tabId } : p)),
+      panes: prev.panes.map((p) =>
+        p.id === paneId
+          ? {
+              ...p,
+              activeTabId: tabId,
+              tabs: p.tabs.map((t) =>
+                t.id === tabId ? { ...t, lastActivatedAt: now() } : t,
+              ),
+            }
+          : p,
+      ),
     }))
   }
 
@@ -200,8 +255,9 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
     setState((prev) => {
       const sourcePane = prev.panes.find((p) => p.id === paneId)
       if (!sourcePane) return prev
-      const tab = sourcePane.tabs.find((t) => t.id === tabId)
-      if (!tab) return prev
+      const sourceTab = sourcePane.tabs.find((t) => t.id === tabId)
+      if (!sourceTab) return prev
+      const tab: Tab = { ...sourceTab, lastActivatedAt: now() }
       if (prev.panes.length >= 2) {
         // Already split — move the tab to the other pane instead of creating a third.
         const otherPane = prev.panes.find((p) => p.id !== paneId)!
