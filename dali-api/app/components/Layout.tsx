@@ -453,6 +453,33 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
         </div>
       </div>
 
+      {/* Mobile section breadcrumb — visible below header on small screens */}
+      {activeSection && (
+        <div className="md:hidden bg-card border-b border-border">
+          <div className="px-4 h-11 flex items-center gap-2 text-sm font-heading font-semibold text-foreground">
+            <activeSection.icon className="w-4 h-4 text-accent-coral" />
+            <span>{activeSection.label}</span>
+            {activeSection.sub && (
+              <nav className="flex items-center gap-0.5 ml-auto overflow-x-auto">
+                {activeSection.sub.map((item) => (
+                  <Link
+                    key={item.to}
+                    to={item.to}
+                    className={`px-2 py-1 text-xs font-medium rounded-full transition-colors whitespace-nowrap ${
+                      item.active
+                        ? 'bg-accent-coral/10 text-accent-coral'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                    }`}
+                  >
+                    {item.label}
+                  </Link>
+                ))}
+              </nav>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Mobile drawer */}
       {mobileNavOpen && (
         <>
