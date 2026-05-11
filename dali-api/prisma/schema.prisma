@@ -33,6 +33,19 @@ model User {
   googleRefreshToken   String?
   googleTokenExpiresAt DateTime?
 
+  // ─── Profile additions (expansion v0) ──────────────────────────────────────
+  classYear    Int?
+  graduatedAt  DateTime?
+  pronouns     String?
+  photoUrl     String?
+  bioDocId     String?
+  major        String?
+  hometown     String?
+  linkedinUrl  String?
+  githubUrl    String?
+  personalSite String?
+  timeZone     String?
+
   daliMember                    DALIMember?
   applicationCycleStatusUpdates ApplicationCycleStatusUpdate[]
   challengeVersions             ChallengeVersion[]
@@ -42,6 +55,25 @@ model User {
   refreshTokens                 RefreshToken[]
   rubricVersions                RubricVersion[]
   confidentialitySignatures     ConfidentialityAgreementSignature[]
+
+  // ─── Expansion role-model relations ────────────────────────────────────────
+  domainEligibilities    DomainEligibility[]
+  projectAssignments     ProjectAssignment[]
+  menteePairs            MentorshipPair[]      @relation("MenteePairs")
+  mentorPairs            MentorshipPair[]      @relation("MentorPairs")
+  coreAssignments        CoreAssignment[]
+  instructorAssignments  InstructorAssignment[]
+  adminMembership        AdminMembership?
+  educationApplications  EducationApplication[]
+  taskAssignments        TaskAssignee[]
+  staffingPreferences    StaffingPreference[]
+  essentialityFormsAsPM  EssentialityForm[]
+  essentialityRatings    EssentialityRating[]
+  staffingAssignments    StaffingAssignment[]
+  calendarLink           UserCalendarLink?
+  scheduledMeetings      ScheduledMeeting[]
+  notificationEvents     NotificationEvent[]
+  notificationPreferences NotificationPreference[]
 }
 
 // A DALI lab member. userId is optional because a member may be known (e.g. via daliEmail)
@@ -62,7 +94,6 @@ model DALIMember {
 
   roles MemberRole[] @default([])
 
-  domainLeadAssignments DomainLeadAssignment[]
   cycleReviewers        CycleReviewer[]
   cycleInterviewers     CycleInterviewer[]
   decisions             Decision[]
@@ -71,6 +102,7 @@ model DALIMember {
   legacyEmailTemplates  LegacyEmailTemplate[]
   emailTemplateVersions EmailTemplateVersion[]
   confidentialityAgreementVersions ConfidentialityAgreementVersion[]
+  domainLeadAssignments DomainLeadAssignment[]
 }
 
 model ApplicationCycle {
@@ -86,19 +118,13 @@ model ApplicationCycle {
   // Application due date; triggers auto-transition to UnderReview when passed.
   closeDate DateTime?
 
-  // The pre-extension closeDate, set the first time a hiring lead extends the
-  // deadline. Null on cycles that have never been extended (or whose deadline
-  // has been reset via the picker since the last extension). Used to surface
-  // an "extended deadline" banner to applicants between the original and
-  // current closeDate.
+  // Pre-extension closeDate. Set on first extension; cleared when the lead
+  // resets the close date via the picker. Nullable, no backfill needed.
   originalCloseDate DateTime?
 
-  // Set the first time the extension-notice email blast goes out for this
-  // cycle (either via the lazy trigger after originalCloseDate passes, or
-  // via the lead's manual "resend" button). Stays set across further
-  // extensions so a single cycle can't accidentally double-blast applicants.
-  // Cleared when an extension is removed so a future re-extension can
-  // re-trigger the notice.
+  // Idempotency marker for the extension-notice blast. Set when the notice
+  // is sent; cleared when the extension is removed so re-extending later
+  // can re-trigger the notice.
   extensionNoticeSentAt DateTime?
 
   // Rubric for the general application form (reviewers score this alongside
@@ -144,6 +170,18 @@ model ApplicationStatusUpdate {
   user          User              @relation(fields: [userId], references: [id])
 }
 
+// Distinguishes the app's purpose. Standard = regular DALI hire cycle.
+// Intern = shorter form for ERAS / EEJUST / WISP intern programs.
+// InternToFull = shorter form taken by current interns applying for
+// regular hire after their intern term. Transfer = informal internal
+// domain transfer (no dedicated form yet — placeholder for later).
+enum ApplicationType {
+  Standard
+  Intern
+  InternToFull
+  Transfer
+}
+
 model Application {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
@@ -152,6 +190,8 @@ model Application {
   // answers: map of question UUID key -> answer value (JSON). Saved incrementally
   // as the applicant fills out the form; finalized on submission.
   answers Json
+
+  applicationType ApplicationType @default(Standard)
 
   userId                    String
   user                      User             @relation(fields: [userId], references: [id])
@@ -210,12 +250,24 @@ model Domain {
 
   name String
 
+  // ─── Expansion fields ──────────────────────────────────────────────────────
+  code            String?  @unique
+  displayName     String?
+  isInternProgram Boolean  @default(false)
+  active          Boolean  @default(true)
+
   challengeVersions     ChallengeVersion[]
   applicationCycles     DomainApplicationCycle[]
   domainLeadAssignments DomainLeadAssignment[]
   cycleReviewers        CycleReviewer[]
   cycleInterviewers     CycleInterviewer[]
   delibsSessions        DelibsSession[]
+
+  // ─── Expansion role-model back-refs ────────────────────────────────────────
+  eligibilities       DomainEligibility[]
+  projectAssignments  ProjectAssignment[]
+  mentorshipPairs     MentorshipPair[]
+  projectRoleRequests ProjectRoleRequest[]
 }
 
 // Immutable snapshot of a challenge. Never update rows in this table —
@@ -420,10 +472,14 @@ enum AssignmentRole {
   CrossDomain
 }
 
+// Existing assignment status for InterviewAssignment + new staffing flow.
 enum AssignmentStatus {
   Active
   Declined
   Replaced
+  // Staffing-flow values (StaffingAssignment.status). Not used by InterviewAssignment.
+  Proposed
+  Confirmed
 }
 
 enum MemberRole {
@@ -790,13 +846,7 @@ model CycleNotificationEmail {
   @@id([applicationCycleId, notificationType])
 }
 
-// Per-recipient send tracking for one-shot notification blasts (today: just
-// ApplicationExtensionNotice). Created after a successful send so the resend
-// path skips recipients who already got the email — eliminates the
-// partial-failure-then-resend duplicate scenario.
-//
-// Keyed on applicationId rather than userId because Application is unique
-// per (userId, applicationCycleId), so this naturally guarantees one row
+// One row per (cycle, notificationType, applicant). Enforces single-send
 // per applicant per cycle per notification type even though an applicant
 // can have multiple DomainApplications.
 model CycleNotificationSend {
@@ -834,17 +884,6 @@ model AuditLog {
   @@index([userId])
   @@index([action])
   @@index([createdAt])
-}
-
-// Which domains a DALIMember leads (permanent assignment, not cycle-scoped)
-model DomainLeadAssignment {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-
-  memberId String
-  member   DALIMember @relation(fields: [memberId], references: [id])
-  domainId String
-  domain   Domain     @relation(fields: [domainId], references: [id])
 }
 
 // ─── Confidentiality Agreements ──────────────────────────────────────────────
@@ -913,4 +952,901 @@ model ConfidentialityAgreementSignature {
 
   @@unique([userId, applicationCycleId])
   @@index([applicationCycleId])
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// EXPANSION v0 — Foundational Schema
+// Per expansion_plan.md. Adds role model, projects, education, staffing,
+// page tree, partners, calendar/scheduling, mentor notes, and notifications.
+// ════════════════════════════════════════════════════════════════════════════
+
+// ─── Term ────────────────────────────────────────────────────────────────────
+
+model Term {
+  id        String   @id @default(cuid())
+  code      String   @unique // "26S", "26X", "27F", etc.
+  year      Int
+  season    Season
+  // sortKey enables chronological sort. Alphabetical sort of `code` breaks
+  // because within a year the seasons go W → S → X → F, not alphabetic.
+  sortKey   Int      @unique // year * 10 + (W=1, S=2, X=3, F=4)
+  startDate DateTime
+  endDate   DateTime
+
+  projectAssignments    ProjectAssignment[]
+  mentorshipPairs       MentorshipPair[]
+  domainLeadAssignments DomainLeadAssignment[]
+  coreAssignments       CoreAssignment[]
+  instructorAssignments InstructorAssignment[]
+  staffingCycles        StaffingCycle[]
+  projectTermStatuses   ProjectTermStatus[]
+  projectRoleRequests   ProjectRoleRequest[]
+
+  @@index([sortKey])
+}
+
+enum Season {
+  W // winter
+  S // spring
+  X // summer
+  F // fall
+}
+
+// ─── Domain Eligibility ──────────────────────────────────────────────────────
+
+// Tracks qualifications, independent of active assignments.
+model DomainEligibility {
+  id         String   @id @default(cuid())
+  userId     String
+  domainId   String
+  // Eligibility is monotonic in v1: only goes up.
+  level      Level
+  promotedAt DateTime @default(now())
+  // Actor: a Domain Lead, Core member, or Admin who promoted them.
+  promotedBy String?
+
+  user   User   @relation(fields: [userId], references: [id])
+  domain Domain @relation(fields: [domainId], references: [id])
+
+  @@unique([userId, domainId])
+}
+
+enum Level {
+  P1 // Learner
+  P2 // Doer
+  P3 // Mentor
+}
+
+// ─── Project Assignments / Mentorship Pairs ──────────────────────────────────
+
+model ProjectAssignment {
+  id        String   @id @default(cuid())
+  userId    String
+  projectId String
+  termId    String
+  domainId  String
+  // App-level constraint: assignment.level <= the matching
+  // DomainEligibility.level for (userId, domainId).
+  level     Level
+  createdAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id])
+  project Project @relation(fields: [projectId], references: [id])
+  term    Term    @relation(fields: [termId], references: [id])
+  domain  Domain  @relation(fields: [domainId], references: [id])
+
+  @@unique([userId, projectId, termId, domainId])
+  @@index([userId, termId])
+  @@index([projectId, termId])
+}
+
+model MentorshipPair {
+  id           String @id @default(cuid())
+  menteeUserId String
+  mentorUserId String
+  projectId    String
+  termId       String
+  domainId     String
+
+  mentee  User    @relation("MenteePairs", fields: [menteeUserId], references: [id])
+  mentor  User    @relation("MentorPairs", fields: [mentorUserId], references: [id])
+  project Project @relation(fields: [projectId], references: [id])
+  term    Term    @relation(fields: [termId], references: [id])
+  domain  Domain  @relation(fields: [domainId], references: [id])
+
+  @@unique([menteeUserId, projectId, termId, domainId])
+}
+
+// ─── DomainLeadAssignment ────────────────────────────────────────────────────
+// Refactored from DALIMember-keyed timeless rows to User-keyed term-scoped rows.
+// v0 migration: rename memberId → userId via DALIMember.userId; add termId
+// (backfill to current term).
+
+model DomainLeadAssignment {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  memberId String
+  domainId String
+  termId   String
+
+  member DALIMember @relation(fields: [memberId], references: [id])
+  domain Domain     @relation(fields: [domainId], references: [id])
+  term   Term       @relation(fields: [termId], references: [id])
+
+  @@unique([memberId, domainId, termId])
+  @@index([domainId, termId])
+}
+
+// ─── Core / Instructor / Admin ───────────────────────────────────────────────
+
+model CoreAssignment {
+  id        String  @id @default(cuid())
+  userId    String
+  termId    String
+  // Display label only; never appears in permission checks.
+  leadTitle String?
+
+  user User @relation(fields: [userId], references: [id])
+  term Term @relation(fields: [termId], references: [id])
+
+  @@index([userId, termId])
+  @@index([termId, leadTitle])
+}
+
+model InstructorAssignment {
+  id         String @id @default(cuid())
+  userId     String
+  offeringId String
+  termId     String
+
+  user     User              @relation(fields: [userId], references: [id])
+  offering EducationOffering @relation(fields: [offeringId], references: [id])
+  term     Term              @relation(fields: [termId], references: [id])
+
+  @@unique([userId, offeringId])
+}
+
+model AdminMembership {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  grantedAt DateTime @default(now())
+  grantedBy String?
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+// ─── JobCodeLookup ───────────────────────────────────────────────────────────
+
+model JobCodeLookup {
+  id             String         @id @default(cuid())
+  // Match against (assignmentType, level, domainId). Nullable fields act
+  // as wildcards in the lookup.
+  assignmentType AssignmentType
+  level          Level?
+  domainId       String?
+  jobCode        String
+  payRateUsdHour Decimal?
+  notes          String?
+}
+
+enum AssignmentType {
+  Project
+  Core
+  Instructor
+  DomainLead
+  Admin
+}
+
+// ─── Projects ────────────────────────────────────────────────────────────────
+
+model Project {
+  id            String        @id @default(cuid())
+  name          String
+  // Project-owned Google Workspace identity.
+  calendarEmail String?
+  // Term the project was first activated.
+  firstTermId   String?
+  status        ProjectStatus @default(Active)
+
+  // Auto-created on Project creation.
+  overviewPageId String? @unique
+  overviewPage   Page?   @relation("ProjectOverview", fields: [overviewPageId], references: [id])
+
+  partners        ProjectPartner[]
+  termStatuses    ProjectTermStatus[]
+  assignments     ProjectAssignment[]
+  roleRequests    ProjectRoleRequest[]
+  mentorshipPairs MentorshipPair[]
+  sprints         Sprint[]
+  epics           Epic[]
+  tasks           Task[]
+  essentialityForms EssentialityForm[]
+  mentorNotes      MentorNote[]
+
+  createdAt DateTime @default(now())
+}
+
+enum ProjectStatus {
+  Active
+  Paused
+  Archived
+}
+
+model ProjectTermStatus {
+  id           String   @id @default(cuid())
+  projectId    String
+  termId       String
+  isContinuing Boolean
+  setBy        String?
+  setAt        DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id])
+  term    Term    @relation(fields: [termId], references: [id])
+
+  @@unique([projectId, termId])
+}
+
+model Epic {
+  id               String     @id @default(cuid())
+  projectId        String
+  title            String
+  descriptionDocId String?
+  status           EpicStatus @default(Open)
+  targetTermId     String?
+  position         Int        @default(0)
+
+  project Project @relation(fields: [projectId], references: [id])
+  tasks   Task[]
+
+  createdAt DateTime @default(now())
+}
+
+enum EpicStatus {
+  Open
+  InProgress
+  Done
+  Cancelled
+}
+
+model Sprint {
+  id        String       @id @default(cuid())
+  projectId String
+  name      String
+  startsAt  DateTime
+  endsAt    DateTime
+  goalDocId String?
+  status    SprintStatus @default(Planned)
+
+  project Project @relation(fields: [projectId], references: [id])
+  tasks   Task[]
+
+  @@index([projectId, status])
+}
+
+enum SprintStatus {
+  Planned
+  Active
+  Closed
+}
+
+model Task {
+  id               String     @id @default(cuid())
+  projectId        String
+  // Null sprintId = backlog.
+  sprintId         String?
+  epicId           String?
+
+  title            String
+  descriptionDocId String?
+  status           TaskStatus @default(Todo)
+  priority         Priority   @default(Normal)
+  position         Int        @default(0)
+
+  // Subtasks: simple checklist field.
+  // JSON shape: [{ "text": "...", "done": false }]
+  checklist        Json?
+
+  project   Project        @relation(fields: [projectId], references: [id])
+  sprint    Sprint?        @relation(fields: [sprintId], references: [id])
+  epic      Epic?          @relation(fields: [epicId], references: [id])
+  assignees TaskAssignee[]
+  comments  TaskComment[]
+
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([projectId, sprintId])
+}
+
+enum TaskStatus {
+  Todo
+  InProgress
+  InReview
+  Done
+  Cancelled
+}
+
+enum Priority {
+  Low
+  Normal
+  High
+  Urgent
+}
+
+model TaskAssignee {
+  taskId String
+  userId String
+
+  task Task @relation(fields: [taskId], references: [id])
+  user User @relation(fields: [userId], references: [id])
+
+  @@id([taskId, userId])
+}
+
+model TaskComment {
+  id        String   @id @default(cuid())
+  taskId    String
+  authorId  String
+  body      String
+  createdAt DateTime @default(now())
+
+  task Task @relation(fields: [taskId], references: [id])
+}
+
+// ─── Education ───────────────────────────────────────────────────────────────
+
+model EducationOffering {
+  id                   String         @id @default(cuid())
+  type                 OfferingType
+  title                String
+  descriptionDocId     String?
+  capacity             Int
+  registrationOpensAt  DateTime
+  registrationClosesAt DateTime
+  startsAt             DateTime
+  endsAt               DateTime
+  status               OfferingStatus @default(Draft)
+  requiresReview       Boolean
+  calendarEmail        String?
+
+  instructors          InstructorAssignment[]
+  sessions             EducationSession[]
+  applications         EducationApplication[]
+  applicationQuestions EducationApplicationQuestion[]
+  assignments          EducationAssignment[]
+  announcements        EducationAnnouncement[]
+
+  createdAt DateTime @default(now())
+}
+
+enum OfferingType {
+  Miniseries
+  Workshop
+}
+
+enum OfferingStatus {
+  Draft
+  Published
+  Archived
+}
+
+model EducationSession {
+  id             String   @id @default(cuid())
+  offeringId     String
+  sequence       Int
+  datetime       DateTime
+  location       String?
+  materialsDocId String?
+  recordingUrl   String?
+
+  offering    EducationOffering     @relation(fields: [offeringId], references: [id])
+  attendances EducationAttendance[]
+  assignments EducationAssignment[]
+
+  @@index([offeringId, sequence])
+}
+
+model EducationApplication {
+  id          String               @id @default(cuid())
+  studentId   String
+  offeringId  String
+  status      EduApplicationStatus
+  submittedAt DateTime             @default(now())
+  reviewedAt  DateTime?
+  reviewedBy  String?
+
+  student     User                         @relation(fields: [studentId], references: [id])
+  offering    EducationOffering            @relation(fields: [offeringId], references: [id])
+  answers     EducationApplicationAnswer[]
+  attendances EducationAttendance[]
+
+  @@unique([studentId, offeringId])
+}
+
+enum EduApplicationStatus {
+  Submitted
+  Approved
+  Rejected
+  Waitlisted
+  Withdrawn
+}
+
+model EducationApplicationQuestion {
+  id         String  @id @default(cuid())
+  offeringId String
+  prompt     String
+  position   Int
+  required   Boolean @default(true)
+
+  offering EducationOffering            @relation(fields: [offeringId], references: [id])
+  answers  EducationApplicationAnswer[]
+
+  @@index([offeringId, position])
+}
+
+model EducationApplicationAnswer {
+  id            String @id @default(cuid())
+  applicationId String
+  questionId    String
+  content       String
+
+  application EducationApplication         @relation(fields: [applicationId], references: [id])
+  question    EducationApplicationQuestion @relation(fields: [questionId], references: [id])
+
+  @@unique([applicationId, questionId])
+}
+
+model EducationAttendance {
+  id            String           @id @default(cuid())
+  applicationId String
+  sessionId     String
+  status        AttendanceStatus
+
+  application EducationApplication @relation(fields: [applicationId], references: [id])
+  session     EducationSession     @relation(fields: [sessionId], references: [id])
+
+  @@unique([applicationId, sessionId])
+}
+
+enum AttendanceStatus {
+  Present
+  Absent
+  Excused
+}
+
+model EducationAssignment {
+  id                String         @id @default(cuid())
+  // Exactly one of offeringId/sessionId should be set (app-level).
+  offeringId        String?
+  sessionId         String?
+  title             String
+  instructionsDocId String?
+  dueAt             DateTime?
+  submissionType    SubmissionType
+
+  offering    EducationOffering?    @relation(fields: [offeringId], references: [id])
+  session     EducationSession?     @relation(fields: [sessionId], references: [id])
+  submissions EducationSubmission[]
+}
+
+enum SubmissionType {
+  Text
+  File
+  Mixed
+}
+
+model EducationSubmission {
+  id            String    @id @default(cuid())
+  assignmentId  String
+  studentId     String
+  contentDocId  String?
+  files         Json?
+  submittedAt   DateTime?
+  gradedAt      DateTime?
+  feedbackDocId String?
+
+  assignment EducationAssignment @relation(fields: [assignmentId], references: [id])
+
+  @@unique([assignmentId, studentId])
+}
+
+model EducationAnnouncement {
+  id         String   @id @default(cuid())
+  offeringId String
+  authorId   String
+  body       String
+  sentAt     DateTime @default(now())
+
+  offering EducationOffering @relation(fields: [offeringId], references: [id])
+}
+
+// ─── Staffing ────────────────────────────────────────────────────────────────
+
+model StaffingCycle {
+  id                      String         @id @default(cuid())
+  termId                  String
+  name                    String
+  opensAt                 DateTime
+  closesAt                DateTime
+  maxPreferencesPerMember Int            @default(3)
+  status                  StaffingStatus @default(Draft)
+
+  term              Term                 @relation(fields: [termId], references: [id])
+  preferences       StaffingPreference[]
+  essentialityForms EssentialityForm[]
+  assignments       StaffingAssignment[]
+}
+
+enum StaffingStatus {
+  Draft
+  OpenToCoreFirst
+  OpenToMembers
+  Assigning
+  Closed
+}
+
+model ProjectRoleRequest {
+  id         String  @id @default(cuid())
+  projectId  String
+  termId     String
+  domainId   String
+  level      Level
+  slots      Int
+  notesDocId String?
+
+  project Project @relation(fields: [projectId], references: [id])
+  term    Term    @relation(fields: [termId], references: [id])
+  domain  Domain  @relation(fields: [domainId], references: [id])
+
+  @@index([projectId, termId])
+}
+
+model StaffingPreference {
+  id              String  @id @default(cuid())
+  userId          String
+  staffingCycleId String
+  projectId       String
+  domainId        String
+  level           Level
+  preferenceRank  Int
+  notes           String?
+
+  user          User          @relation(fields: [userId], references: [id])
+  staffingCycle StaffingCycle @relation(fields: [staffingCycleId], references: [id])
+
+  @@unique([userId, staffingCycleId, projectId, domainId, level])
+  @@index([staffingCycleId, userId])
+}
+
+model EssentialityForm {
+  id              String    @id @default(cuid())
+  projectId       String
+  staffingCycleId String
+  pmUserId        String
+  submittedAt     DateTime?
+
+  project       Project              @relation(fields: [projectId], references: [id])
+  staffingCycle StaffingCycle        @relation(fields: [staffingCycleId], references: [id])
+  pmUser        User                 @relation(fields: [pmUserId], references: [id])
+  ratings       EssentialityRating[]
+
+  @@unique([projectId, staffingCycleId])
+}
+
+model EssentialityRating {
+  id                 String            @id @default(cuid())
+  essentialityFormId String
+  userId             String
+  rating             EssentialityLevel
+  notes              String?
+
+  form EssentialityForm @relation(fields: [essentialityFormId], references: [id])
+  user User             @relation(fields: [userId], references: [id])
+
+  @@unique([essentialityFormId, userId])
+}
+
+enum EssentialityLevel {
+  Critical
+  Important
+  NiceToHave
+  NotNeeded
+}
+
+model StaffingAssignment {
+  id              String           @id @default(cuid())
+  userId          String
+  staffingCycleId String
+  projectId       String
+  termId          String
+  domainId        String
+  level           Level
+  status          AssignmentStatus @default(Proposed)
+  assignedAt      DateTime         @default(now())
+  assignedById    String?
+
+  user          User          @relation(fields: [userId], references: [id])
+  staffingCycle StaffingCycle @relation(fields: [staffingCycleId], references: [id])
+
+  @@index([userId, termId])
+  @@index([projectId, termId])
+}
+
+// ─── Calendar / Scheduling ───────────────────────────────────────────────────
+
+model UserCalendarLink {
+  id             String      @id @default(cuid())
+  userId         String      @unique
+  provider       CalProvider
+  externalEmail  String
+  // Encrypted at rest; never logged.
+  oauthTokens    String
+  primary        Boolean     @default(true)
+  subCalendarIds String[]
+  linkedAt       DateTime    @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+enum CalProvider {
+  Google
+  Outlook
+}
+
+model ScheduledMeeting {
+  id                 String        @id @default(cuid())
+  organizerId        String
+  organizer          User          @relation(fields: [organizerId], references: [id])
+  title              String
+  descriptionDocId   String?
+  durationMinutes    Int
+
+  scopeType          ScopeType
+  // Untyped at DB layer — dispatched in app code by scopeType.
+  scopeId            String?
+
+  participantUserIds String[]
+  selectedAt         DateTime?
+  externalEventId    String?
+  status             MeetingStatus @default(Searching)
+
+  // RFC 5545 RRULE for recurring meetings.
+  recurrenceRule     String?
+
+  // Resolved at create-time from scopeType/scopeId.
+  ownerCalendarEmail String
+
+  exceptions MeetingException[]
+
+  createdAt DateTime @default(now())
+}
+
+enum ScopeType {
+  Project
+  Group
+  UserList
+  Series
+  None
+}
+
+enum MeetingStatus {
+  Searching
+  Confirmed
+  Cancelled
+}
+
+model GroupDefinition {
+  id              String    @id @default(cuid())
+  name            String
+  type            GroupType
+  // For dynamic groups: structured query identifier (e.g. "core:current-term").
+  dynamicQuery    String?
+  // For static groups: explicit member list.
+  staticMemberIds String[]
+
+  createdAt DateTime @default(now())
+}
+
+enum GroupType {
+  Static
+  Dynamic
+}
+
+model MeetingException {
+  id                  String   @id @default(cuid())
+  scheduledMeetingId  String
+  // The original occurrence start time being overridden.
+  originalStart       DateTime
+  overrideStart       DateTime?
+  overrideDurationMin Int?
+  overrideTitle       String?
+  cancelled           Boolean  @default(false)
+
+  meeting ScheduledMeeting @relation(fields: [scheduledMeetingId], references: [id])
+
+  @@unique([scheduledMeetingId, originalStart])
+}
+
+// ─── Page Tree ───────────────────────────────────────────────────────────────
+
+model Page {
+  id            String        @id @default(cuid())
+  workspaceType WorkspaceType
+  // Null for Lab workspace. Otherwise FK to Project / EducationOffering.
+  workspaceId   String?
+  // Null for top-level pages. App-level constraint enforces 2-level cap.
+  parentPageId  String?
+  title         String
+  kind          PageKind      @default(FreeForm)
+  // Collab doc reference for FreeForm pages. Null for Structured pages.
+  contentDocId  String?
+  position      Int           @default(0)
+
+  iconEmoji     String?
+  coverImageUrl String?
+
+  lastEditedById String?
+
+  // Soft delete.
+  archivedAt DateTime?
+
+  parent   Page?  @relation("PageTree", fields: [parentPageId], references: [id])
+  children Page[] @relation("PageTree")
+
+  // Reverse of Project.overviewPage.
+  projectAsOverview Project? @relation("ProjectOverview")
+
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([workspaceType, workspaceId, parentPageId])
+  @@index([archivedAt])
+}
+
+enum WorkspaceType {
+  Lab
+  Project
+  EducationOffering
+}
+
+enum PageKind {
+  FreeForm
+  Structured
+}
+
+model PageTemplate {
+  id             String          @id @default(cuid())
+  name           String
+  description    String?
+  // Empty array = available everywhere.
+  workspaceTypes WorkspaceType[]
+  // On Page create, new page's contentDoc is initialized from a clone.
+  contentDocId   String
+  iconEmoji      String?
+  isDefault      Boolean         @default(false)
+  createdBy      String?
+  createdAt      DateTime        @default(now())
+}
+
+// ─── Mentorship ──────────────────────────────────────────────────────────────
+
+model MentorNote {
+  id           String   @id @default(cuid())
+  mentorId     String
+  menteeId     String
+  projectId    String
+  termId       String
+  domainId     String
+  // Start-of-week (Monday) the note covers. App enforces uniqueness per week.
+  weekOf       DateTime
+  // Note body as collab doc.
+  contentDocId String
+
+  project Project @relation(fields: [projectId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([mentorId, menteeId, projectId, termId, domainId, weekOf])
+}
+
+model MentorNoteTemplate {
+  id            String   @id @default(cuid())
+  name          String
+  contentDocId  String
+  isDefault     Boolean  @default(false)
+  lastUpdatedBy String?
+  updatedAt     DateTime @updatedAt
+}
+
+// ─── Notifications ───────────────────────────────────────────────────────────
+
+model NotificationEvent {
+  id             String    @id @default(cuid())
+  // Typed event identifier (e.g. "interview_scheduled", "sprint_due").
+  type           String
+  recipientId    String
+  payload        Json
+  readAt         DateTime?
+  inAppDelivered Boolean   @default(false)
+  emailDelivered Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+
+  recipient User @relation(fields: [recipientId], references: [id])
+
+  @@index([recipientId, readAt])
+  @@index([recipientId, createdAt])
+}
+
+model NotificationPreference {
+  id              String     @id @default(cuid())
+  userId          String
+  // Matches NotificationEvent.type, or "*" for the user's global default.
+  eventType       String
+  inApp           Boolean    @default(true)
+  email           Boolean    @default(true)
+  digestFrequency DigestFreq @default(Instant)
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, eventType])
+}
+
+enum DigestFreq {
+  Instant
+  Daily
+  Weekly
+  Off
+}
+
+// ─── Partner Portal ──────────────────────────────────────────────────────────
+
+model PartnerOrg {
+  id               String   @id @default(cuid())
+  name             String
+  logoUrl          String?
+  website          String?
+  // Optional designated primary contact (FK to PartnerUser within this org).
+  primaryContactId String?
+  // True for solo-individual partners modeled as a single-user org.
+  isIndividual     Boolean  @default(false)
+
+  users    PartnerUser[]
+  projects ProjectPartner[]
+
+  createdAt DateTime @default(now())
+}
+
+model PartnerUser {
+  id           String              @id @default(cuid())
+  partnerOrgId String
+  name         String
+  email        String              @unique
+  displayRole  String?
+  authProvider PartnerAuthProvider
+
+  partnerOrg PartnerOrg @relation(fields: [partnerOrgId], references: [id])
+
+  createdAt DateTime @default(now())
+}
+
+enum PartnerAuthProvider {
+  MagicLink
+  Google
+}
+
+model ProjectPartner {
+  id           String    @id @default(cuid())
+  projectId    String
+  partnerOrgId String
+  startedAt    DateTime?
+  endedAt      DateTime?
+
+  project    Project    @relation(fields: [projectId], references: [id])
+  partnerOrg PartnerOrg @relation(fields: [partnerOrgId], references: [id])
+
+  @@unique([projectId, partnerOrgId])
 }

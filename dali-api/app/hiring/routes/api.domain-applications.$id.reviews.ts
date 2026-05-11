@@ -63,6 +63,14 @@ export async function action({ request, params }: Route.ActionArgs) {
     },
   });
 
+  // ChallengeVersion.domainId is nullable because the general application form
+  // is also a ChallengeVersion. A DomainApplication should never reference one,
+  // so this is a data invariant error rather than a user-facing condition.
+  const domainId = domainApp.challengeVersion.domainId;
+  if (!domainId) {
+    return withAuth(auth, Response.json({ error: "Domain application is linked to a non-domain challenge version" }, { status: 500 }));
+  }
+
   const gate = await requireApiSignedOrForbidden(
     auth.user.sub,
     domainApp.application.applicationCycleId,
@@ -73,7 +81,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     const domainLeadForThisDomain = await prisma.dALIMember.findFirst({
       where: {
         userId: auth.user.sub,
-        domainLeadAssignments: { some: { domainId: domainApp.challengeVersion.domainId } },
+        domainLeadAssignments: { some: { domainId } },
       },
       select: { id: true },
     });
@@ -90,7 +98,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   const domainCycle = await prisma.domainApplicationCycle.findUnique({
-    where: { domainId_applicationCycleId: { domainId: domainApp.challengeVersion.domainId, applicationCycleId: cycle.id } },
+    where: { domainId_applicationCycleId: { domainId, applicationCycleId: cycle.id } },
   });
   if (!domainCycle?.rubricVersionId) {
     return withAuth(auth, Response.json({ error: "A domain rubric must be set before assigning reviewers to applications in this domain" }, { status: 400 }));

@@ -47,6 +47,23 @@ async function main() {
     }),
   ]);
 
+  // ── Terms ──────────────────────────────────────────────────────────────────
+  // Minimal seed: one current term so DomainLeadAssignment etc. have a target.
+  // Real lifecycle (W/S/X/F per year) is populated via a separate task.
+  const currentTerm = await prisma.term.upsert({
+    where: { code: "26F" },
+    update: {},
+    create: {
+      id: "term-26f",
+      code: "26F",
+      year: 2026,
+      season: "F",
+      sortKey: 2026 * 10 + 4,
+      startDate: new Date("2026-09-01"),
+      endDate: new Date("2026-11-30"),
+    },
+  });
+
   // ── Challenges ─────────────────────────────────────────────────────────────
   const [designChallenge, engChallenge, pmChallenge] = await Promise.all([
     prisma.challenge.upsert({
@@ -1832,7 +1849,7 @@ async function main() {
 
   const engLeadMember = await prisma.dALIMember.update({
     where: { daliEmail: "eng.lead@dali.dartmouth.edu" },
-    data: { firstName: "Mira", lastName: "Chen" },
+    data: { firstName: "Mira", lastName: "Chen", userId: engLead.id },
   });
 
   await prisma.domainLeadAssignment.upsert({
@@ -1842,6 +1859,7 @@ async function main() {
       id: "dla-eng-lead",
       memberId: engLeadMember.id,
       domainId: engDomain.id,
+      termId: currentTerm.id,
     },
   });
 
@@ -1867,7 +1885,7 @@ async function main() {
 
   const jordanMember = await prisma.dALIMember.update({
     where: { daliEmail: "jordan.taylor@dali.dartmouth.edu" },
-    data: { firstName: "Jordan", lastName: "Taylor" },
+    data: { firstName: "Jordan", lastName: "Taylor", userId: jordan.id },
   });
 
   await prisma.domainLeadAssignment.upsert({
@@ -1877,6 +1895,7 @@ async function main() {
       id: "dla-jordan-eng",
       memberId: jordanMember.id,
       domainId: engDomain.id,
+      termId: currentTerm.id,
     },
   });
 
