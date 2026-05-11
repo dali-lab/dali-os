@@ -94,6 +94,17 @@ export interface TabWorkspaceProps {
   onActiveUrlChange?: (url: string | null) => void
 }
 
+interface DragSource {
+  paneId: string
+  tabId: string
+}
+
+interface DragOver {
+  paneId: string
+  /** Index in the target pane's tabs[] where the dragged tab would land. */
+  index: number
+}
+
 export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWorkspaceProps) {
   const [state, setState] = useState<WorkspaceState>(emptyState)
   const [contextMenu, setContextMenu] = useState<
@@ -101,6 +112,8 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
     | null
   >(null)
   const hydrated = useRef(false)
+  const dragSourceRef = useRef<DragSource | null>(null)
+  const [dragOver, setDragOver] = useState<DragOver | null>(null)
 
   // Hydrate from localStorage on first client render.
   useEffect(() => {
@@ -430,6 +443,71 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
     })
   }
 
+  // Move a tab to (targetPaneId, targetIndex). targetIndex is the insertion
+  // point in the destination pane's tabs[] AFTER the source tab has been
+  // removed from its origin pane — callers can pass an index computed against
+  // the visible target list and we'll adjust for the within-pane case.
+  const moveTab = (source: DragSource, target: { paneId: string; index: number }) => {
+    setState((prev) => {
+      const sourcePane = prev.panes.find((p) => p.id === source.paneId)
+      if (!sourcePane) return prev
+      const tab = sourcePane.tabs.find((t) => t.id === source.tabId)
+      if (!tab) return prev
+
+      const sameP = source.paneId === target.paneId
+      if (sameP) {
+        const fromIdx = sourcePane.tabs.findIndex((t) => t.id === source.tabId)
+        // If dropping where it already is (or just after itself), no-op.
+        if (target.index === fromIdx || target.index === fromIdx + 1) return prev
+        const without = sourcePane.tabs.filter((t) => t.id !== source.tabId)
+        // Adjust index since we removed an earlier element.
+        const adjustedIdx = target.index > fromIdx ? target.index - 1 : target.index
+        const next = [
+          ...without.slice(0, adjustedIdx),
+          tab,
+          ...without.slice(adjustedIdx),
+        ]
+        return {
+          ...prev,
+          panes: prev.panes.map((p) =>
+            p.id === source.paneId ? { ...p, tabs: next, activeTabId: tab.id } : p,
+          ),
+          focusedPaneId: source.paneId,
+        }
+      }
+
+      // Cross-pane move.
+      const mapped = prev.panes.map((p) => {
+        if (p.id === source.paneId) {
+          const tabs = p.tabs.filter((t) => t.id !== source.tabId)
+          return {
+            ...p,
+            tabs,
+            activeTabId:
+              p.activeTabId === source.tabId ? (tabs[0]?.id ?? null) : p.activeTabId,
+          }
+        }
+        if (p.id === target.paneId) {
+          const tabs = [
+            ...p.tabs.slice(0, target.index),
+            tab,
+            ...p.tabs.slice(target.index),
+          ]
+          return { ...p, tabs, activeTabId: tab.id }
+        }
+        return p
+      })
+      // Drop emptied panes unless we'd be left with zero.
+      const nonEmpty = mapped.filter((p) => p.tabs.length > 0)
+      const panes = nonEmpty.length > 0 ? nonEmpty : mapped.slice(0, 1)
+
+      return {
+        panes,
+        focusedPaneId: target.paneId,
+      }
+    })
+  }
+
   return (
     <div className="flex-1 flex min-h-0">
       {state.panes.map((pane, idx) => {
@@ -446,13 +524,81 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
           >
             {/* Tab bar */}
             <div className="flex items-stretch h-10 bg-section-bg border-b border-border">
-              <div className="flex-1 flex items-stretch overflow-x-auto">
-                {pane.tabs.map((tab) => {
+              <div
+                className="flex-1 flex items-stretch overflow-x-auto"
+                onDragOver={(e) => {
+                  // Allow drop on the empty area at the end of the strip.
+                  if (dragSourceRef.current) {
+                    e.preventDefault()
+                    e.dataTransfer.dropEffect = 'move'
+                    const current = dragOver
+                    if (current?.paneId !== pane.id || current.index !== pane.tabs.length) {
+                      setDragOver({ paneId: pane.id, index: pane.tabs.length })
+                    }
+                  }
+                }}
+                onDrop={(e) => {
+                  if (!dragSourceRef.current) return
+                  e.preventDefault()
+                  const src = dragSourceRef.current
+                  const tgt = dragOver ?? { paneId: pane.id, index: pane.tabs.length }
+                  moveTab(src, tgt)
+                  dragSourceRef.current = null
+                  setDragOver(null)
+                }}
+              >
+                {pane.tabs.map((tab, tabIdx) => {
                   const isActive = tab.id === pane.activeTabId
+                  const indicatorBefore =
+                    dragOver?.paneId === pane.id && dragOver.index === tabIdx
+                  const indicatorAfter =
+                    dragOver?.paneId === pane.id &&
+                    dragOver.index === tabIdx + 1 &&
+                    tabIdx === pane.tabs.length - 1
                   return (
                     <button
                       key={tab.id}
                       type="button"
+                      draggable
+                      onDragStart={(e) => {
+                        dragSourceRef.current = { paneId: pane.id, tabId: tab.id }
+                        e.dataTransfer.effectAllowed = 'move'
+                        // Firefox requires some dataTransfer data to start a drag.
+                        try {
+                          e.dataTransfer.setData('text/plain', tab.id)
+                        } catch {
+                          // ignore
+                        }
+                      }}
+                      onDragEnd={() => {
+                        dragSourceRef.current = null
+                        setDragOver(null)
+                      }}
+                      onDragOver={(e) => {
+                        if (!dragSourceRef.current) return
+                        e.preventDefault()
+                        e.stopPropagation()
+                        e.dataTransfer.dropEffect = 'move'
+                        const rect = e.currentTarget.getBoundingClientRect()
+                        const midpoint = rect.left + rect.width / 2
+                        const insertIdx = e.clientX < midpoint ? tabIdx : tabIdx + 1
+                        if (
+                          dragOver?.paneId !== pane.id ||
+                          dragOver.index !== insertIdx
+                        ) {
+                          setDragOver({ paneId: pane.id, index: insertIdx })
+                        }
+                      }}
+                      onDrop={(e) => {
+                        if (!dragSourceRef.current) return
+                        e.preventDefault()
+                        e.stopPropagation()
+                        const src = dragSourceRef.current
+                        const tgt = dragOver ?? { paneId: pane.id, index: tabIdx }
+                        moveTab(src, tgt)
+                        dragSourceRef.current = null
+                        setDragOver(null)
+                      }}
                       onClick={(e) => {
                         e.stopPropagation()
                         setActiveTab(pane.id, tab.id)
@@ -462,13 +608,13 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
                         e.stopPropagation()
                         setContextMenu({ paneId: pane.id, tabId: tab.id, x: e.clientX, y: e.clientY })
                       }}
-                      className={`group flex items-center gap-2 px-3 border-r border-border text-xs font-medium whitespace-nowrap transition-colors ${
+                      className={`group relative flex items-center gap-2 px-3 border-r border-border text-xs font-medium whitespace-nowrap transition-colors ${
                         isActive
                           ? 'bg-card text-foreground'
                           : 'text-muted-foreground hover:text-foreground hover:bg-card/50'
-                      }`}
+                      } ${indicatorBefore ? 'before:absolute before:left-0 before:top-0 before:bottom-0 before:w-0.5 before:bg-accent-coral' : ''} ${indicatorAfter ? 'after:absolute after:right-0 after:top-0 after:bottom-0 after:w-0.5 after:bg-accent-coral' : ''}`}
                     >
-                      <span className="truncate max-w-[160px]">{tab.label}</span>
+                      <span className="truncate max-w-[160px] pointer-events-none">{tab.label}</span>
                       <span
                         role="button"
                         aria-label={`Close ${tab.label}`}
