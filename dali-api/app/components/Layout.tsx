@@ -526,13 +526,16 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
 
       <main className={`flex-1 min-w-0 flex flex-col ${collapsed ? 'md:pl-16' : 'md:pl-64'} pt-14 md:pt-0 transition-[padding] duration-200`}>
         {/* Always render the tabbed workspace. The Home tab is the default
-            landing surface and stays available alongside section tabs. */}
+            landing surface and stays available alongside section tabs.
+            Use the actual current URL (not activeSection.to) for the section
+            tab so deep links like /hiring/domain-lead/application/:id open in
+            the iframe instead of the section root. */}
         <TabWorkspace
           apiRef={workspaceRef}
           initialTabs={[
             { url: '/', label: 'Home' },
-            ...(activeSection && activeSection.to !== '/'
-              ? [{ url: activeSection.to, label: activeSection.label }]
+            ...(activeSection && location.pathname !== '/'
+              ? [{ url: location.pathname + location.search, label: activeSection.label }]
               : []),
           ]}
           onActiveUrlChange={setFocusedTabUrl}
