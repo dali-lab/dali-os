@@ -8,15 +8,17 @@ test.describe('navigation for hiring lead', () => {
   test('shows hiring lead and domain lead nav tabs', async ({ page }) => {
     await page.goto('/hiring/reviewer');
     const nav = page.locator('nav');
-    await expect(nav.getByRole('link', { name: 'Reviews' })).toBeVisible();
-    await expect(nav.getByRole('link', { name: 'Domain' })).toBeVisible();
-    await expect(nav.getByRole('link', { name: 'Cycles' })).toBeVisible();
+    await expect(nav.getByRole('button', { name: 'Reviews' })).toBeVisible();
+    await expect(nav.getByRole('button', { name: 'Domain' })).toBeVisible();
+    await expect(nav.getByRole('button', { name: 'Cycles' })).toBeVisible();
   });
 
   test('can navigate to cycles page', async ({ page }) => {
     await page.goto('/hiring/lead');
     await expect(page).toHaveURL(/\/hiring\/lead/);
-    await expect(page.getByRole('heading', { name: 'Hiring Cycles' })).toBeVisible();
+    // The heading lives inside the workspace iframe for the Cycles section.
+    const frame = page.frameLocator('iframe[title="Cycles"]');
+    await expect(frame.getByRole('heading', { name: 'Hiring Cycles' })).toBeVisible();
   });
 });
 
@@ -28,9 +30,9 @@ test.describe('navigation for domain lead', () => {
   test('shows domain lead tab but not cycles', async ({ page }) => {
     await page.goto('/hiring/reviewer');
     const nav = page.locator('nav');
-    await expect(nav.getByRole('link', { name: 'Reviews' })).toBeVisible();
-    await expect(nav.getByRole('link', { name: 'Domain' })).toBeVisible();
-    await expect(nav.getByRole('link', { name: 'Cycles' })).not.toBeVisible();
+    await expect(nav.getByRole('button', { name: 'Reviews' })).toBeVisible();
+    await expect(nav.getByRole('button', { name: 'Domain' })).toBeVisible();
+    await expect(nav.getByRole('button', { name: 'Cycles' })).not.toBeVisible();
   });
 });
 
@@ -42,8 +44,8 @@ test.describe('navigation for reviewer', () => {
   test('shows reviews tab only', async ({ page }) => {
     await page.goto('/hiring/reviewer');
     const nav = page.locator('nav');
-    await expect(nav.getByRole('link', { name: 'Reviews' })).toBeVisible();
-    await expect(nav.getByRole('link', { name: 'Domain' })).not.toBeVisible();
-    await expect(nav.getByRole('link', { name: 'Cycles' })).not.toBeVisible();
+    await expect(nav.getByRole('button', { name: 'Reviews' })).toBeVisible();
+    await expect(nav.getByRole('button', { name: 'Domain' })).not.toBeVisible();
+    await expect(nav.getByRole('button', { name: 'Cycles' })).not.toBeVisible();
   });
 });
