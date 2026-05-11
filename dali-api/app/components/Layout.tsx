@@ -448,6 +448,13 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-full bg-accent-coral text-white flex items-center justify-center font-bold text-xs">
             {initials}
+          </div>
+          <a href="/logout" className="text-white/40 hover:text-white/70 transition" title="Log out">
+            <LogOut className="w-4 h-4" />
+          </a>
+        </div>
+      </div>
+
       {/* Mobile section breadcrumb — visible below header on small screens */}
       {activeSection && (
         <div className="md:hidden bg-card border-b border-border">
@@ -472,11 +479,8 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
               </nav>
             )}
           </div>
-          <a href="/logout" className="text-white/40 hover:text-white/70 transition" title="Log out">
-            <LogOut className="w-4 h-4" />
-          </a>
         </div>
-      </div>
+      )}
 
       {/* Mobile drawer */}
       {mobileNavOpen && (
