@@ -200,8 +200,7 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
                 <span className="text-white font-bold text-base leading-none font-heading">D</span>
               </div>
               <span className="font-heading font-bold text-lg text-white tracking-tight truncate">
-                <span className="text-accent-coral/80">D</span>
-                <sup className="text-accent-coral/80 text-[0.5em]">3</sup>ALI OS
+                <span className="text-accent-coral/80">D</span>ALI OS
               </span>
             </button>
 
