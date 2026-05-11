@@ -30,6 +30,7 @@ interface WorkspaceState {
 }
 
 const STORAGE_KEY = 'dali:tabworkspace:v2'
+const MAX_TABS_PER_PANE = 10
 
 function newId() {
   return Math.random().toString(36).slice(2, 10)
@@ -75,6 +76,23 @@ function loadState(): WorkspaceState {
   } catch {
     return emptyState()
   }
+}
+
+// Enforces MAX_TABS_PER_PANE by evicting the least-recently-activated tab
+// (excluding `protectedTabId`, which is typically the tab we just opened).
+function appendWithLruCap(tabs: Tab[], protectedTabId: string): Tab[] {
+  if (tabs.length <= MAX_TABS_PER_PANE) return tabs
+  let victimIdx = -1
+  let victimTime = Infinity
+  for (let i = 0; i < tabs.length; i++) {
+    if (tabs[i].id === protectedTabId) continue
+    if (tabs[i].lastActivatedAt < victimTime) {
+      victimTime = tabs[i].lastActivatedAt
+      victimIdx = i
+    }
+  }
+  if (victimIdx < 0) return tabs
+  return [...tabs.slice(0, victimIdx), ...tabs.slice(victimIdx + 1)]
 }
 
 function findTabPane(state: WorkspaceState, url: string): { paneId: string; tabId: string } | null {
@@ -184,7 +202,11 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
             ...prev,
             panes: prev.panes.map((p) =>
               p.id === prev.focusedPaneId
-                ? { ...p, tabs: [...p.tabs, newTab], activeTabId: newTab.id }
+                ? {
+                    ...p,
+                    tabs: appendWithLruCap([...p.tabs, newTab], newTab.id),
+                    activeTabId: newTab.id,
+                  }
                 : p,
             ),
           }
@@ -409,7 +431,11 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
               }
             }
             if (p.id === otherPane.id) {
-              return { ...p, tabs: [...p.tabs, tab], activeTabId: tab.id }
+              return {
+                ...p,
+                tabs: appendWithLruCap([...p.tabs, tab], tab.id),
+                activeTabId: tab.id,
+              }
             }
             return p
           }).filter((p) => p.tabs.length > 0),
@@ -488,12 +514,16 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
           }
         }
         if (p.id === target.paneId) {
-          const tabs = [
+          const inserted = [
             ...p.tabs.slice(0, target.index),
             tab,
             ...p.tabs.slice(target.index),
           ]
-          return { ...p, tabs, activeTabId: tab.id }
+          return {
+            ...p,
+            tabs: appendWithLruCap(inserted, tab.id),
+            activeTabId: tab.id,
+          }
         }
         return p
       })
