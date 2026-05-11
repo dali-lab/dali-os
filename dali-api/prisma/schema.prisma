@@ -41,7 +41,6 @@ model User {
   oauthSessions                 OAuthSession[]
   refreshTokens                 RefreshToken[]
   rubricVersions                RubricVersion[]
-  partyEvents                   PartyEvent[]
   confidentialitySignatures     ConfidentialityAgreementSignature[]
 }
 
@@ -835,38 +834,6 @@ model AuditLog {
   @@index([userId])
   @@index([action])
   @@index([createdAt])
-}
-
-// ─── Party Analytics ────────────────────────────────────────────────────────
-
-enum PartyEventType {
-  PARTY_VISIT
-  CODE_UNLOCK_SUCCESS
-  CODE_UNLOCK_FAILURE
-  DINO_REWARD_EARNED
-  LOGO_TRAIL_TRIGGERED
-}
-
-enum PartyAudience {
-  member
-  applicant
-}
-
-// Append-only telemetry for the /party launch-party easter egg. Kept
-// separate from AuditLog so the security audit trail isn't mixed with
-// cosmetic-feature analytics.
-model PartyEvent {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-
-  userId    String?
-  user      User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
-  audience  PartyAudience
-  eventType PartyEventType
-  metadata  Json?
-
-  @@index([eventType, createdAt])
-  @@index([userId])
 }
 
 // Which domains a DALIMember leads (permanent assignment, not cycle-scoped)

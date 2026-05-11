@@ -1,24 +1,30 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { Link, useLocation } from 'react-router'
 import {
-  LayoutDashboard,
-  Trophy,
-  ClipboardList,
   LogOut,
   Users,
   Calendar,
   Shield,
-  Video,
   Mail,
   FileText,
   MessageSquare,
   Menu,
   X,
   BarChart3,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
+  Briefcase,
+  Settings,
+  FolderKanban,
+  UsersRound,
+  Handshake,
+  List,
+  UserPlus,
+  Building2,
 } from 'lucide-react'
 import { userInitials } from '~/lib/display'
-import { bumpLogoClick, hydrateRetroClass, logConsoleBootBanner } from '~/lib/party'
-import { RetroExitPill } from '~/components/RetroExitPill'
+import { TabWorkspace, type TabWorkspaceHandle, type OpenTabRequest } from '~/components/TabWorkspace'
 
 interface LayoutProps {
   children: React.ReactNode
@@ -29,58 +35,74 @@ interface LayoutProps {
   isInterviewer?: boolean
 }
 
+const SIDEBAR_COLLAPSED_KEY = 'dali:sidebar:collapsed'
+const EXPANDED_AREAS_KEY = 'dali:sidebar:expanded-areas'
+
+type AreaKey = 'hiring' | 'projects' | 'members' | 'partners' | 'admin-console'
+
 export function Layout({ children, user, isHiringLead = false, isAdmin = false, isDomainLead = false, isInterviewer = false }: LayoutProps) {
   const location = useLocation()
   const path = location.pathname
-  const [showStats, setShowStats] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const [userExpanded, setUserExpanded] = useState<Record<AreaKey, boolean | undefined>>({
+    hiring: undefined,
+    projects: undefined,
+    members: undefined,
+    partners: undefined,
+    'admin-console': undefined,
+  })
+  const workspaceRef = useRef<TabWorkspaceHandle | null>(null)
 
-  const handleLogoClick = () => {
-    bumpLogoClick()
+  const openInWorkspace = (req: OpenTabRequest) => {
+    workspaceRef.current?.openTab(req)
   }
 
   useEffect(() => {
-    hydrateRetroClass()
-    logConsoleBootBanner()
-
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'd' || e.key === 'D')) {
-        e.preventDefault()
-        setShowStats(s => !s)
-      }
+    if (typeof window === 'undefined') return
+    setCollapsed(window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1')
+    try {
+      const raw = window.localStorage.getItem(EXPANDED_AREAS_KEY)
+      if (raw) setUserExpanded(JSON.parse(raw))
+    } catch {
+      // ignore — bad JSON just means we use defaults
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
   }, [])
 
   useEffect(() => {
     setMobileNavOpen(false)
   }, [path])
 
-  // Tier 1 — top-level sections (always shown).
-  const hasHiringAccess = true // every authenticated, non-applicant user can use hiring views
-  const areas = [
-    {
-      key: 'hiring' as const,
-      label: 'Hiring',
-      to: '/hiring/reviewer',
-      show: hasHiringAccess,
-      active: path.startsWith('/hiring'),
-    },
-    {
-      key: 'admin-console' as const,
-      label: 'Admin Console',
-      to: '/admin-console',
-      show: isAdmin,
-      active: path.startsWith('/admin-console'),
-    },
-  ].filter((a) => a.show)
-  const activeAreaKey: 'hiring' | 'admin-console' | null =
+  const toggleCollapsed = () => {
+    setCollapsed((prev) => {
+      const next = !prev
+      if (typeof window !== 'undefined') {
+        if (next) window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, '1')
+        else window.localStorage.removeItem(SIDEBAR_COLLAPSED_KEY)
+      }
+      return next
+    })
+  }
+
+  const toggleAreaExpanded = (key: AreaKey, defaultExpanded: boolean) => {
+    setUserExpanded((prev) => {
+      const current = prev[key] ?? defaultExpanded
+      const next = { ...prev, [key]: !current }
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(EXPANDED_AREAS_KEY, JSON.stringify(next))
+      }
+      return next
+    })
+  }
+
+  const activeAreaKey: AreaKey | null =
     path.startsWith('/admin-console') ? 'admin-console'
     : path.startsWith('/hiring') ? 'hiring'
+    : path.startsWith('/projects') ? 'projects'
+    : path.startsWith('/members') ? 'members'
+    : path.startsWith('/partners') ? 'partners'
     : null
 
-  // Tier 2 — section nav, depends on active area.
   const hiringSections = [
     {
       label: 'Domain',
@@ -88,7 +110,7 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
       icon: Shield,
       show: isDomainLead,
       active: path.startsWith('/hiring/domain-lead'),
-      sub: null,
+      sub: null as { label: string; to: string; active: boolean }[] | null,
     },
     {
       label: 'Reviews',
@@ -115,19 +137,28 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
       sub: null,
     },
     {
-      label: 'Library',
+      label: 'Challenges',
       to: '/hiring/challenges',
       icon: FileText,
       show: isHiringLead || isDomainLead || isAdmin,
-      active:
-        path.startsWith('/hiring/challenges') ||
-        path.startsWith('/hiring/rubrics') ||
-        path.startsWith('/hiring/confidentiality-agreements'),
-      sub: [
-        { label: 'Challenges', to: '/hiring/challenges', active: path.startsWith('/hiring/challenges') },
-        { label: 'Rubrics', to: '/hiring/rubrics', active: path.startsWith('/hiring/rubrics') },
-        { label: 'Confidentiality Agreements', to: '/hiring/confidentiality-agreements', active: path.startsWith('/hiring/confidentiality-agreements') },
-      ],
+      active: path.startsWith('/hiring/challenges'),
+      sub: null,
+    },
+    {
+      label: 'Rubrics',
+      to: '/hiring/rubrics',
+      icon: FileText,
+      show: isHiringLead || isDomainLead || isAdmin,
+      active: path.startsWith('/hiring/rubrics'),
+      sub: null,
+    },
+    {
+      label: 'Agreements',
+      to: '/hiring/confidentiality-agreements',
+      icon: FileText,
+      show: isHiringLead || isDomainLead || isAdmin,
+      active: path.startsWith('/hiring/confidentiality-agreements'),
+      sub: null,
     },
     {
       label: 'Emails',
@@ -135,8 +166,9 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
       icon: Mail,
       show: isHiringLead,
       active: path.startsWith('/hiring/emails'),
+      sub: null,
     },
-  ]
+  ].filter((s) => s.show)
 
   const adminSections = [
     {
@@ -145,7 +177,7 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
       icon: Users,
       show: true,
       active: path.startsWith('/admin-console/members'),
-      sub: null,
+      sub: null as { label: string; to: string; active: boolean }[] | null,
     },
     {
       label: 'Domains',
@@ -155,272 +187,303 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
       active: path.startsWith('/admin-console/domains'),
       sub: null,
     },
+  ].filter((s) => s.show)
+
+  const projectsSections = [
     {
-      label: 'Party',
-      to: '/admin-console/party',
-      icon: Trophy,
-      show: isAdmin,
-      active: path.startsWith('/admin-console/party'),
+      label: 'List',
+      to: '/projects/list',
+      icon: List,
+      show: true,
+      active: path.startsWith('/projects/list'),
+      sub: null as { label: string; to: string; active: boolean }[] | null,
+    },
+    {
+      label: 'Staffing',
+      to: '/projects/staffing',
+      icon: UserPlus,
+      show: true,
+      active: path.startsWith('/projects/staffing'),
       sub: null,
     },
-  ]
+  ].filter((s) => s.show)
 
-  const sections = (
-    activeAreaKey === 'admin-console' ? adminSections
-    : activeAreaKey === 'hiring' ? hiringSections
-    : hiringSections
-  ).filter((s) => s.show)
+  const membersSections = [
+    {
+      label: 'Directory',
+      to: '/members',
+      icon: UsersRound,
+      show: true,
+      active: path === '/members' || path.startsWith('/members/'),
+      sub: null as { label: string; to: string; active: boolean }[] | null,
+    },
+  ].filter((s) => s.show)
 
-  const activeSection = sections.find((s) => s.active)
+  const partnersSections = [
+    {
+      label: 'Organizations',
+      to: '/partners',
+      icon: Building2,
+      show: true,
+      active: path === '/partners' || path.startsWith('/partners/'),
+      sub: null as { label: string; to: string; active: boolean }[] | null,
+    },
+  ].filter((s) => s.show)
+
+  const hasHiringAccess = true
+  const areas = [
+    {
+      key: 'hiring' as AreaKey,
+      label: 'Hiring',
+      to: '/hiring/reviewer',
+      icon: Briefcase,
+      show: hasHiringAccess,
+      active: activeAreaKey === 'hiring',
+      sections: hiringSections,
+    },
+    {
+      key: 'projects' as AreaKey,
+      label: 'Projects',
+      to: '/projects/list',
+      icon: FolderKanban,
+      show: true,
+      active: activeAreaKey === 'projects',
+      sections: projectsSections,
+    },
+    {
+      key: 'members' as AreaKey,
+      label: 'Members',
+      to: '/members',
+      icon: UsersRound,
+      show: true,
+      active: activeAreaKey === 'members',
+      sections: membersSections,
+    },
+    {
+      key: 'partners' as AreaKey,
+      label: 'Partners',
+      to: '/partners',
+      icon: Handshake,
+      show: true,
+      active: activeAreaKey === 'partners',
+      sections: partnersSections,
+    },
+    {
+      key: 'admin-console' as AreaKey,
+      label: 'Admin Console',
+      to: '/admin-console',
+      icon: Settings,
+      show: isAdmin,
+      active: activeAreaKey === 'admin-console',
+      sections: adminSections,
+    },
+  ].filter((a) => a.show)
+
+  const activeArea = areas.find((a) => a.active)
+  const activeSection = activeArea?.sections.find((s) => s.active)
+
   const initials = userInitials(user)
+  const sidebarWidth = collapsed ? 'w-16' : 'w-64'
 
-  return (
-    <div className="min-h-screen bg-section-bg flex flex-col">
-      {/* Top bar — dark DALI header */}
-      <div className="bg-[hsl(203,38%,23%)] dark:bg-[hsl(215,35%,10%)] sticky top-0 z-20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-14">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <button
-              type="button"
-              className="md:hidden p-1.5 -ml-1.5 text-white/70 hover:text-white"
-              aria-label={mobileNavOpen ? 'Close navigation menu' : 'Open navigation menu'}
-              aria-expanded={mobileNavOpen}
-              aria-controls="mobile-nav-panel"
-              onClick={() => setMobileNavOpen((v) => !v)}
-            >
-              {mobileNavOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-            </button>
-            <button
-              type="button"
-              onClick={handleLogoClick}
-              className="flex items-center gap-2.5 focus:outline-none min-w-0"
-              title="DALI"
-            >
-              <div className="w-7 h-7 bg-accent-coral rounded-md flex items-center justify-center flex-shrink-0">
-                <span className="text-white font-bold text-base leading-none font-heading">D</span>
-              </div>
-              <span className="font-heading font-bold text-lg text-white tracking-tight truncate">
-                <span className="text-accent-coral/80">D</span>ALI OS
-              </span>
-            </button>
-
-            {/* Tier 1 — section switcher, inline with brand on desktop */}
-            <nav className="hidden md:flex items-center gap-0.5 ml-4 pl-4 border-l border-white/10">
-              {areas.map((area) => (
-                <Link
-                  key={area.key}
-                  to={area.to}
-                  className={`px-2.5 py-1 text-xs font-heading font-semibold rounded-md transition-colors whitespace-nowrap ${
-                    area.active
-                      ? 'bg-white/15 text-white'
-                      : 'text-white/60 hover:text-white hover:bg-white/5'
-                  }`}
-                >
-                  {area.label}
-                </Link>
-              ))}
-            </nav>
+  const sidebarContent = (
+    <>
+      {/* Brand */}
+      <div className={`h-14 flex items-center flex-shrink-0 ${collapsed ? 'justify-center px-2' : 'justify-between px-3 gap-2'}`}>
+        <Link to="/" className="flex items-center gap-2.5 min-w-0 focus:outline-none" title="DALI">
+          <div className="w-7 h-7 bg-accent-coral rounded-md flex items-center justify-center flex-shrink-0">
+            <span className="text-white font-bold text-base leading-none font-heading">D</span>
           </div>
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-white/50 hidden sm:block truncate max-w-[200px]">{user.email}</span>
-            <div className="w-8 h-8 rounded-full bg-accent-coral text-white flex items-center justify-center font-bold text-xs flex-shrink-0">
-              {initials}
-            </div>
-            <a href="/logout" className="text-white/40 hover:text-white/70 transition" title="Log out">
-              <LogOut className="w-4 h-4" />
-            </a>
-          </div>
-        </div>
+          {!collapsed && (
+            <span className="font-heading font-bold text-lg text-white tracking-tight truncate">
+              <span className="text-accent-coral/80">D</span>ALI OS
+            </span>
+          )}
+        </Link>
+        {!collapsed && (
+          <button
+            type="button"
+            onClick={toggleCollapsed}
+            className="hidden md:flex p-1.5 text-white/40 hover:text-white/80 hover:bg-white/5 rounded-md transition flex-shrink-0"
+            aria-label="Collapse sidebar"
+            title="Collapse sidebar"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+        )}
       </div>
-
-      {/* Desktop navigation bar — primary tabs + sub-tabs inline */}
-      <div className="hidden md:block bg-card border-b border-border sticky top-14 z-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-6 h-11">
-            {/* Primary tabs */}
-            <nav className="flex items-center gap-1 -mb-px h-full">
-              {sections.map((section) => (
-                <Link
-                  key={section.to}
-                  to={section.to}
-                  className={`inline-flex items-center gap-1.5 px-3 h-full border-b-2 text-sm font-heading font-semibold transition-colors whitespace-nowrap ${
-                    section.active
-                      ? 'border-accent-coral text-foreground'
-                      : 'border-transparent text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  <section.icon className="w-3.5 h-3.5" />
-                  {section.label}
-                </Link>
-              ))}
-            </nav>
-
-            {/* Separator + sub-tabs (if active section has them) */}
-            {activeSection?.sub && (
-              <>
-                <div className="w-px h-5 bg-border" />
-                <nav className="flex items-center gap-0.5">
-                  {activeSection.sub.map((item) => (
-                    <Link
-                      key={item.to}
-                      to={item.to}
-                      className={`px-2.5 py-1 text-xs font-medium rounded-full transition-colors ${
-                        item.active
-                          ? 'bg-accent-coral/10 text-accent-coral'
-                          : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                      }`}
-                    >
-                      {item.label}
-                    </Link>
-                  ))}
-                </nav>
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Mobile section breadcrumb — visible below header on small screens */}
-      {activeSection && (
-        <div className="md:hidden bg-card border-b border-border">
-          <div className="px-4 h-11 flex items-center gap-2 text-sm font-heading font-semibold text-foreground">
-            <activeSection.icon className="w-4 h-4 text-accent-coral" />
-            <span>{activeSection.label}</span>
-            {activeSection.sub && (
-              <nav className="flex items-center gap-0.5 ml-auto overflow-x-auto">
-                {activeSection.sub.map((item) => (
-                  <Link
-                    key={item.to}
-                    to={item.to}
-                    className={`px-2 py-1 text-xs font-medium rounded-full transition-colors whitespace-nowrap ${
-                      item.active
-                        ? 'bg-accent-coral/10 text-accent-coral'
-                        : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                    }`}
-                  >
-                    {item.label}
-                  </Link>
-                ))}
-              </nav>
-            )}
-          </div>
-        </div>
+      {collapsed && (
+        <button
+          type="button"
+          onClick={toggleCollapsed}
+          className="hidden md:flex mx-2 mt-2 p-1.5 items-center justify-center text-white/40 hover:text-white/80 hover:bg-white/5 rounded-md transition"
+          aria-label="Expand sidebar"
+          title="Expand sidebar"
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
       )}
 
-      {/* Mobile nav panel — slide-down list */}
+      {/* Areas + nested sections */}
+      <nav className="flex-1 overflow-y-auto py-3 px-2 flex flex-col gap-0.5">
+        {areas.map((area) => {
+          // Default: active area is expanded, inactive is collapsed. User toggle overrides.
+          const expanded = userExpanded[area.key] ?? area.active
+          const showSections = !collapsed && expanded && area.sections.length > 0
+          return (
+            <div key={area.key} className="flex flex-col">
+              {/* Area row — chevron toggles expand; label/icon navigates */}
+              <div
+                className={`flex items-stretch rounded-md hover:bg-white/5 ${collapsed ? 'justify-center' : ''}`}
+              >
+                <button
+                  type="button"
+                  title={collapsed ? area.label : undefined}
+                  aria-expanded={expanded}
+                  onClick={() => toggleAreaExpanded(area.key, area.active)}
+                  className={`flex-1 flex items-center gap-3 ${collapsed ? 'px-3 py-2 justify-center' : 'pl-3 pr-1 py-2'} text-sm font-heading font-semibold text-left transition-colors ${
+                    area.active ? 'text-white' : 'text-white/65 hover:text-white'
+                  }`}
+                >
+                  <area.icon className="w-4 h-4 flex-shrink-0" />
+                  {!collapsed && <span className="truncate">{area.label}</span>}
+                </button>
+                {!collapsed && (
+                  <button
+                    type="button"
+                    onClick={() => toggleAreaExpanded(area.key, area.active)}
+                    aria-label={expanded ? `Collapse ${area.label}` : `Expand ${area.label}`}
+                    aria-expanded={expanded}
+                    className="flex items-center justify-center w-7 text-white/40 hover:text-white/80 transition flex-shrink-0"
+                  >
+                    <ChevronDown
+                      className={`w-3.5 h-3.5 transition-transform ${expanded ? '' : '-rotate-90'}`}
+                    />
+                  </button>
+                )}
+              </div>
+
+              {/* Nested sections */}
+              {showSections && (
+                <div className="mt-1 mb-1 ml-4 pl-2 border-l border-white/10 flex flex-col gap-0.5">
+                  {area.sections.map((section) => (
+                    <button
+                      key={section.to}
+                      type="button"
+                      onClick={() => openInWorkspace({ url: section.to, label: section.label })}
+                      className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] font-medium text-left transition-colors ${
+                        section.active
+                          ? 'bg-accent-coral/20 text-white'
+                          : 'text-white/55 hover:text-white hover:bg-white/5'
+                      }`}
+                    >
+                      <section.icon className="w-3.5 h-3.5 flex-shrink-0" />
+                      <span className="truncate">{section.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </nav>
+
+      {/* Footer — user + logout */}
+      <div className="border-t border-white/10 p-2 flex-shrink-0">
+        <div className={`flex items-center gap-2 px-2 py-2 ${collapsed ? 'justify-center' : ''}`}>
+          <div className="w-8 h-8 rounded-full bg-accent-coral text-white flex items-center justify-center font-bold text-xs flex-shrink-0">
+            {initials}
+          </div>
+          {!collapsed && (
+            <div className="flex-1 min-w-0">
+              <div className="text-xs text-white/80 truncate">{user.email}</div>
+            </div>
+          )}
+          {!collapsed && (
+            <a
+              href="/logout"
+              className="text-white/40 hover:text-white/70 transition flex-shrink-0"
+              title="Log out"
+            >
+              <LogOut className="w-4 h-4" />
+            </a>
+          )}
+        </div>
+      </div>
+    </>
+  )
+
+  return (
+    <div className="min-h-screen bg-section-bg flex">
+      {/* Desktop sidebar */}
+      <aside
+        className={`hidden md:flex flex-col fixed inset-y-0 left-0 z-20 ${sidebarWidth} bg-[hsl(203,38%,23%)] dark:bg-[hsl(215,35%,10%)] transition-[width] duration-200`}
+      >
+        {sidebarContent}
+      </aside>
+
+      {/* Mobile top bar */}
+      <div className="md:hidden fixed inset-x-0 top-0 z-20 h-14 bg-[hsl(203,38%,23%)] dark:bg-[hsl(215,35%,10%)] flex items-center justify-between px-3">
+        <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            className="p-1.5 -ml-1.5 text-white/70 hover:text-white"
+            aria-label={mobileNavOpen ? 'Close navigation menu' : 'Open navigation menu'}
+            aria-expanded={mobileNavOpen}
+            aria-controls="mobile-nav-panel"
+            onClick={() => setMobileNavOpen((v) => !v)}
+          >
+            {mobileNavOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </button>
+          <Link to="/" className="flex items-center gap-2.5">
+            <div className="w-7 h-7 bg-accent-coral rounded-md flex items-center justify-center flex-shrink-0">
+              <span className="text-white font-bold text-base leading-none font-heading">D</span>
+            </div>
+            <span className="font-heading font-bold text-lg text-white tracking-tight">
+              <span className="text-accent-coral/80">D</span>ALI OS
+            </span>
+          </Link>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-full bg-accent-coral text-white flex items-center justify-center font-bold text-xs">
+            {initials}
+          </div>
+          <a href="/logout" className="text-white/40 hover:text-white/70 transition" title="Log out">
+            <LogOut className="w-4 h-4" />
+          </a>
+        </div>
+      </div>
+
+      {/* Mobile drawer */}
       {mobileNavOpen && (
         <>
           <div
-            className="md:hidden fixed inset-0 top-14 z-10 bg-black/40"
+            className="md:hidden fixed inset-0 z-30 bg-black/40"
             onClick={() => setMobileNavOpen(false)}
             aria-hidden="true"
           />
-          <div
+          <aside
             id="mobile-nav-panel"
-            className="md:hidden fixed inset-x-0 top-14 z-20 bg-card border-b border-border shadow-lg max-h-[calc(100vh-3.5rem)] overflow-y-auto"
+            className="md:hidden fixed inset-y-0 left-0 z-40 w-64 bg-[hsl(203,38%,23%)] dark:bg-[hsl(215,35%,10%)] flex flex-col shadow-xl"
           >
-            {/* Tier 1 — section switcher (always shown) */}
-            <div className="flex items-center gap-1 px-3 py-2 border-b border-border bg-muted/30">
-              {areas.map((area) => (
-                <Link
-                  key={area.key}
-                  to={area.to}
-                  className={`px-2.5 py-1 text-xs font-heading font-semibold rounded-md transition-colors ${
-                    area.active
-                      ? 'bg-accent-coral/10 text-accent-coral'
-                      : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                  }`}
-                >
-                  {area.label}
-                </Link>
-              ))}
-            </div>
-            <nav className="py-2">
-              {sections.map((section) => (
-                <div key={section.to} className="border-b border-border last:border-b-0">
-                  <Link
-                    to={section.to}
-                    className={`flex items-center gap-3 px-4 py-3 text-sm font-heading font-semibold ${
-                      section.active
-                        ? 'bg-accent-coral/5 text-accent-coral'
-                        : 'text-foreground hover:bg-muted'
-                    }`}
-                  >
-                    <section.icon className="w-4 h-4" />
-                    {section.label}
-                  </Link>
-                  {section.sub && section.active && (
-                    <div className="bg-muted/30">
-                      {section.sub.map((item) => (
-                        <Link
-                          key={item.to}
-                          to={item.to}
-                          className={`flex items-center gap-3 pl-12 pr-4 py-2.5 text-xs font-medium ${
-                            item.active
-                              ? 'text-accent-coral'
-                              : 'text-muted-foreground hover:text-foreground'
-                          }`}
-                        >
-                          {item.label}
-                        </Link>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </nav>
-          </div>
+            {sidebarContent}
+          </aside>
         </>
       )}
 
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-8">
-        {children}
+      <main className={`flex-1 min-w-0 flex flex-col ${collapsed ? 'md:pl-16' : 'md:pl-64'} pt-14 md:pt-0 transition-[padding] duration-200`}>
+        {activeAreaKey ? (
+          // Inside an area — use the tabbed workspace
+          <TabWorkspace
+            apiRef={workspaceRef}
+            initialTabs={activeSection ? [{ url: activeSection.to, label: activeSection.label }] : []}
+          />
+        ) : (
+          // Outside areas (home, etc.) — render the route directly
+          <div className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-8 lg:px-12 py-6 md:py-8">
+            {children}
+          </div>
+        )}
       </main>
-
-      {showStats && <StatsModal onClose={() => setShowStats(false)} />}
-      <RetroExitPill />
-    </div>
-  )
-}
-
-function StatsModal({ onClose }: { onClose: () => void }) {
-  const stats: [string, string][] = [
-    ['Cycles run', '7'],
-    ['Applications reviewed', '1,284'],
-    ['Challenges written', '42'],
-    ['Interviews scheduled', '318'],
-    ['Lines of code', '~48k'],
-    ['Coffees consumed', '∞'],
-    ['Launch year', '2026'],
-  ]
-  return (
-    <div
-      onClick={onClose}
-      className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
-    >
-      <div
-        onClick={e => e.stopPropagation()}
-        className="bg-card rounded-xl border border-border shadow-2xl w-full max-w-md p-6 relative"
-      >
-        <button
-          onClick={onClose}
-          className="absolute top-3 right-3 text-muted-foreground hover:text-foreground transition"
-          aria-label="Close"
-        >
-          <X className="w-4 h-4" />
-        </button>
-        <h2 className="font-heading text-xl font-bold text-foreground mb-1">DALI OS · Stats</h2>
-        <p className="text-xs text-muted-foreground mb-4">A little snapshot of the party we've been throwing.</p>
-        <dl className="divide-y divide-border">
-          {stats.map(([label, value]) => (
-            <div key={label} className="flex items-center justify-between py-2">
-              <dt className="text-sm text-muted-foreground">{label}</dt>
-              <dd className="text-sm font-mono font-semibold text-foreground">{value}</dd>
-            </div>
-          ))}
-        </dl>
-        <p className="mt-4 text-[10px] uppercase tracking-wider text-muted-foreground/70">⌘⇧D to toggle</p>
-      </div>
     </div>
   )
 }

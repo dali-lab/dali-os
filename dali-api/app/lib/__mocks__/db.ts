@@ -40,13 +40,6 @@ export const prisma = {
   auditLog: {
     create: vi.fn(),
   },
-  partyEvent: {
-    create: vi.fn(),
-    findFirst: vi.fn(),
-    findMany: vi.fn(),
-    groupBy: vi.fn(),
-    count: vi.fn(),
-  },
   confidentialityAgreement: {
     findMany: vi.fn().mockResolvedValue([]),
   },
