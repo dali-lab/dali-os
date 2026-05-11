@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { Outlet, redirect, useLoaderData, useSearchParams } from 'react-router'
 import { Layout } from '~/components/Layout'
 import { requireAuth, withAuth } from '~/lib/auth'
@@ -36,10 +37,24 @@ export default function AppLayoutRoute() {
   const { user, isHiringLead, isAdmin, isDomainLead, isInterviewer, isEmbedded } = useLoaderData<typeof loader>()
   const [searchParams] = useSearchParams()
 
+  // After a client-side navigation inside the workspace iframe, the loader
+  // re-runs via fetch — which carries `Sec-Fetch-Dest: empty`, not `iframe` —
+  // and `?embed=1` is stripped from the URL by the navigation. Both server
+  // signals go stale, so we also check on the client: if our window isn't the
+  // top window, we're embedded. Initialized post-mount to avoid a hydration
+  // mismatch (the initial document load is correctly resolved by the loader).
+  const [isClientEmbedded, setIsClientEmbedded] = useState(false)
+  useEffect(() => {
+    try {
+      setIsClientEmbedded(window.self !== window.top)
+    } catch {
+      // Cross-origin access throws → we're embedded somewhere we can't see.
+      setIsClientEmbedded(true)
+    }
+  }, [])
+
   // Skip the sidebar shell when rendered inside a TabWorkspace iframe.
-  // Prefer the server-detected `isEmbedded` (works after redirects); fall back
-  // to the `?embed=1` query param for clients that don't send Sec-Fetch-Dest.
-  if (isEmbedded || searchParams.get('embed') === '1') {
+  if (isEmbedded || isClientEmbedded || searchParams.get('embed') === '1') {
     return (
       <div className="min-h-screen bg-section-bg">
         <div className="w-full px-6 lg:px-10 pt-10 md:pt-12 pb-8">
