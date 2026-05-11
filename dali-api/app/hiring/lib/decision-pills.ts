@@ -98,6 +98,13 @@ export function synthesizePrePipelinePill(
 ): PrePipelinePill | null {
   if (da.decisions.length > 0) return null;
 
+  // Withdrawn applications drop out of the active review pipeline, so the
+  // pre-pipeline pill ("Reviewing"/"PostInterview"/etc.) should not surface.
+  const hasWithdrawn = da.application.statusUpdates.some(
+    (u) => u.newStatus === "Withdrawn",
+  );
+  if (hasWithdrawn) return null;
+
   if (da.interviews.some((i) => i.status === "Scheduled")) {
     return "InterviewScheduled";
   }
