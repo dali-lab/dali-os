@@ -2,6 +2,10 @@ import { test, expect } from './fixtures';
 
 const ADMIN_EMAIL = 'admin@dali.dartmouth.edu';
 
+// /admin-console/domains renders inside the workspace iframe titled "Domains".
+const domainsFrame = (page: import('@playwright/test').Page) =>
+  page.frameLocator('iframe[title="Domains"]');
+
 test.describe('admin domain management', () => {
   test.beforeEach(async ({ loginAs }) => {
     await loginAs({ daliEmail: ADMIN_EMAIL });
@@ -11,12 +15,13 @@ test.describe('admin domain management', () => {
     const name = `E2E Domain ${Date.now()}`;
 
     await page.goto('/admin-console/domains');
-    await expect(page.getByText(/^Domains \(/)).toBeVisible();
+    const frame = domainsFrame(page);
+    await expect(frame.getByText(/^Domains \(/)).toBeVisible();
 
-    await page.getByLabel('New domain name').fill(name);
-    await page.getByRole('button', { name: 'Create' }).click();
+    await frame.getByLabel('New domain name').fill(name);
+    await frame.getByRole('button', { name: 'Create' }).click();
 
-    const row = page.getByRole('listitem').filter({ hasText: name });
+    const row = frame.getByRole('listitem').filter({ hasText: name });
     await expect(row).toBeVisible();
     await expect(row.getByText(/Not in use/)).toBeVisible();
 
@@ -26,8 +31,9 @@ test.describe('admin domain management', () => {
 
   test('delete is disabled for a seeded domain that is in use', async ({ page }) => {
     await page.goto('/admin-console/domains');
+    const frame = domainsFrame(page);
 
-    const engRow = page.getByRole('listitem').filter({ hasText: /^Engineering/ });
+    const engRow = frame.getByRole('listitem').filter({ hasText: /^Engineering/ });
     await expect(engRow).toBeVisible();
     await expect(engRow.getByText(/In use by/)).toBeVisible();
     await expect(engRow.getByRole('button', { name: 'Delete' })).toBeDisabled();
