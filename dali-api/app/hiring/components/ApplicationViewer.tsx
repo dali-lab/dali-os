@@ -2,6 +2,19 @@ import { useState, useRef, useCallback } from 'react'
 import { X } from 'lucide-react'
 import type { Question } from '~/types'
 import { RichTextViewer, isEmptyDoc } from '~/components/RichTextViewer'
+import { AnswerDisplay } from '~/hiring/components/ApplicationAnswers'
+
+// Question types where the answer is a URL or structured value rather than
+// freeform prose. We render these via AnswerDisplay (download links, etc.)
+// instead of AnnotatableField — annotating an S3 path or a github URL is
+// never useful.
+const NON_ANNOTATABLE_TYPES: ReadonlyArray<Question['type']> = [
+  'file',
+  'github_url',
+  'figma_url',
+  'drive_url',
+  'skills_rating',
+]
 
 type HighlightColor = 'yellow' | 'green' | 'red' | 'blue'
 
@@ -190,7 +203,7 @@ function AnnotatableField({
         <>
           <div className="fixed inset-0 z-40" onClick={() => setPopover(null)} />
           <div
-            className="fixed z-50 bg-card rounded-xl shadow-xl border border-border p-3 w-64"
+            className="fixed z-50 bg-card rounded-xl shadow-xl border border-border p-3 w-64 max-w-[calc(100vw-2rem)]"
             style={{ left: Math.min(popover.x - 128, window.innerWidth - 272), top: popover.y }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -251,6 +264,12 @@ export interface ApplicationViewerProps {
   onAnnotationsChange?: (annotations: object[]) => void
 }
 
+function buildQuestionMap(questions: Question[]): Record<string, Question> {
+  const map: Record<string, Question> = {}
+  for (const q of questions) map[q.key] = q
+  return map
+}
+
 export function ApplicationViewer({ application, questionLabels, initialAnnotations, onAnnotationsChange }: ApplicationViewerProps) {
   const [annotations, setAnnotations] = useState<Annotation[]>((initialAnnotations as Annotation[]) ?? [])
 
@@ -280,6 +299,10 @@ export function ApplicationViewer({ application, questionLabels, initialAnnotati
 
   const fieldProps = { annotations, onAddAnnotation: addAnnotation, onUpdateAnnotation: updateAnnotation, onDeleteAnnotation: deleteAnnotation }
 
+  const generalQuestions =
+    (application.generalChallengeVersion?.questions as unknown as Question[] | undefined) ?? []
+  const generalQuestionsByKey = buildQuestionMap(generalQuestions)
+
   return (
     <div className="space-y-6">
       {/* General answers */}
@@ -293,14 +316,20 @@ export function ApplicationViewer({ application, questionLabels, initialAnnotati
               <RichTextViewer content={application.generalChallengeVersion!.description} />
             </div>
           )}
-          {Object.entries(application.answers as Record<string, unknown>).map(([key, value]) => (
-            <div key={key}>
-              <h3 className="text-sm font-medium text-muted-foreground mb-1">
-                {questionLabels[key] ?? key}
-              </h3>
-              <AnnotatableField fieldKey={key} value={String(value ?? '')} {...fieldProps} />
-            </div>
-          ))}
+          {Object.entries(application.answers as Record<string, unknown>).map(([key, value]) => {
+            const question = generalQuestionsByKey[key]
+            const label = question?.data.label ?? questionLabels[key] ?? key
+            return (
+              <div key={key}>
+                <h3 className="text-sm font-medium text-muted-foreground mb-1">{label}</h3>
+                {question && NON_ANNOTATABLE_TYPES.includes(question.type) ? (
+                  <AnswerDisplay question={question} answer={String(value ?? '')} />
+                ) : (
+                  <AnnotatableField fieldKey={key} value={String(value ?? '')} {...fieldProps} />
+                )}
+              </div>
+            )
+          })}
         </div>
       </div>
 
@@ -308,6 +337,7 @@ export function ApplicationViewer({ application, questionLabels, initialAnnotati
       {application.domainApplications.map((dapp) => {
         const domainName = dapp.challengeVersion.domain.name
         const challengeQuestions = dapp.challengeVersion.questions as unknown as Question[]
+        const challengeQuestionsByKey = buildQuestionMap(challengeQuestions)
         return (
           <div key={dapp.id} className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
             <div className="px-6 py-4 border-b border-border bg-muted/50 flex items-center justify-between">
@@ -320,11 +350,16 @@ export function ApplicationViewer({ application, questionLabels, initialAnnotati
                 </div>
               )}
               {Object.entries(dapp.answers as Record<string, unknown>).map(([key, value]) => {
-                const label = challengeQuestions.find((q) => q.key === key)?.data.label ?? questionLabels[key] ?? key
+                const question = challengeQuestionsByKey[key]
+                const label = question?.data.label ?? questionLabels[key] ?? key
                 return (
                   <div key={key}>
                     <h3 className="text-sm font-medium text-muted-foreground mb-1">{label}</h3>
-                    <AnnotatableField fieldKey={`${dapp.id}:${key}`} value={String(value ?? '')} {...fieldProps} />
+                    {question && NON_ANNOTATABLE_TYPES.includes(question.type) ? (
+                      <AnswerDisplay question={question} answer={String(value ?? '')} />
+                    ) : (
+                      <AnnotatableField fieldKey={`${dapp.id}:${key}`} value={String(value ?? '')} {...fieldProps} />
+                    )}
                   </div>
                 )
               })}

@@ -32,6 +32,33 @@ describe("interpolate", () => {
   it("does not interpret regex characters in domain as a pattern", () => {
     expect(interpolate("Domain: {{domain}}", { firstName: "x", domain: "$1" })).toBe("Domain: $1");
   });
+
+  it("substitutes {{time}}, {{location}}, {{meetingUrl}} when provided", () => {
+    expect(
+      interpolate(
+        "{{firstName}} — {{time}} at {{location}} ({{meetingUrl}})",
+        {
+          firstName: "Ada",
+          time: "Mon 3:00 PM",
+          location: "Pod Appa",
+          meetingUrl: "https://zoom.us/j/abc",
+        },
+      ),
+    ).toBe("Ada — Mon 3:00 PM at Pod Appa (https://zoom.us/j/abc)");
+  });
+
+  it("substitutes optional vars with empty string when not provided", () => {
+    expect(
+      interpolate("{{time}}|{{location}}|{{meetingUrl}}", { firstName: "x" }),
+    ).toBe("||");
+  });
+
+  it("leaves unknown placeholders as literal text (lint flags these via email-variables)", () => {
+    // Regression: a typo like `{{firstname}}` was shipping verbatim — the
+    // editor's lint surface now warns about it, but the interpolator itself
+    // is still strict about which tokens it replaces.
+    expect(interpolate("Hi {{firstname}}", { firstName: "Ada" })).toBe("Hi {{firstname}}");
+  });
 });
 
 describe("bodyToHtml", () => {

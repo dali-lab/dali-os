@@ -6,6 +6,7 @@ import { requireAuth, withAuth } from '~/lib/auth'
 import { hasCycleAccess } from '~/lib/roles'
 import { parseAccessToken } from '~/lib/cookies'
 import { requirePageSignedOrRedirect } from '~/hiring/lib/confidentiality'
+import { presignAnswers } from '~/hiring/lib/presign'
 import type { Route } from './+types/reviewer.application.$id'
 import { ApplicationViewer } from '~/hiring/components/ApplicationViewer'
 import { SaveStatusIndicator } from '~/hiring/components/SaveStatusIndicator'
@@ -24,37 +25,62 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request)
   if (!auth.ok) return withAuth(auth, redirect('/login'))
 
-  const [application, reviewer, existingReview] = await Promise.all([
-    prisma.application.findUniqueOrThrow({
-      where: { id: params.id },
-      include: {
-        user: true,
-        generalChallengeVersion: true,
-        applicationCycle: {
-          include: {
-            statusUpdates: { orderBy: { createdAt: 'desc' }, take: 1 },
-            generalRubricVersion: { include: { rubric: true } },
-            domains: {
-              include: {
-                rubricVersion: { include: { rubric: true } },
-                domain: true,
-              },
-            },
-          },
-        },
-        domainApplications: {
-          include: {
-            challengeVersion: {
-              include: {
-                domain: true,
-                challenge: true,
-              },
+  const applicationBase = await prisma.application.findUniqueOrThrow({
+    where: { id: params.id },
+    include: {
+      user: true,
+      generalChallengeVersion: true,
+      applicationCycle: {
+        include: {
+          statusUpdates: { orderBy: { createdAt: 'desc' }, take: 1 },
+          generalRubricVersion: { include: { rubric: true } },
+          domains: {
+            include: {
+              rubricVersion: { include: { rubric: true } },
+              domain: true,
             },
           },
         },
       },
-    }),
+    },
+  })
+
+  if (!(await hasCycleAccess(auth.user.sub, applicationBase.applicationCycleId)))
+    throw redirect('/login')
+
+  const confRedirect = await requirePageSignedOrRedirect(
+    auth.user.sub,
+    applicationBase.applicationCycleId,
+    request,
+  )
+  if (confRedirect) return confRedirect
+
+  // Scope domainApplications to only the domains this reviewer is assigned to
+  // for this cycle. Reviewers assigned to one domain should not see that the
+  // applicant also applied to other domains.
+  const cycleReviewers = await prisma.cycleReviewer.findMany({
+    where: {
+      applicationCycleId: applicationBase.applicationCycleId,
+      daliMember: { userId: auth.user.sub },
+    },
+    select: { id: true, domainId: true },
+  })
+  const reviewerDomainIds = cycleReviewers.map((cr) => cr.domainId)
+
+  const [reviewer, domainApplications, existingReview] = await Promise.all([
     prisma.user.findUniqueOrThrow({ where: { id: auth.user.sub } }),
+    prisma.domainApplication.findMany({
+      where: {
+        applicationId: params.id,
+        selected: true,
+        challengeVersion: { domainId: { in: reviewerDomainIds } },
+      },
+      include: {
+        challengeVersion: {
+          include: { domain: true, challenge: true },
+        },
+      },
+    }),
     prisma.applicationReview.findFirst({
       where: {
         domainApplication: { applicationId: params.id },
@@ -63,15 +89,29 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     }),
   ])
 
-  if (!(await hasCycleAccess(auth.user.sub, application.applicationCycleId)))
-    throw redirect('/login')
-
-  const confRedirect = await requirePageSignedOrRedirect(
-    auth.user.sub,
-    application.applicationCycleId,
-    request,
+  // Presign file-type answers so the viewer can render real download links
+  // instead of raw S3 keys.
+  const generalQuestionsForPresign =
+    (applicationBase.generalChallengeVersion?.questions as unknown as Question[]) ?? []
+  const presignedGeneralAnswers = await presignAnswers(
+    generalQuestionsForPresign,
+    applicationBase.answers as Record<string, string>,
   )
-  if (confRedirect) return confRedirect
+  const presignedDomainApplications = await Promise.all(
+    domainApplications.map(async (da: any) => ({
+      ...da,
+      answers: await presignAnswers(
+        (da.challengeVersion.questions as unknown as Question[]) ?? [],
+        da.answers as Record<string, string>,
+      ),
+    })),
+  )
+
+  const application = {
+    ...applicationBase,
+    answers: presignedGeneralAnswers,
+    domainApplications: presignedDomainApplications,
+  }
 
   // If this reviewer is assigned to a domain on this application but no
   // ApplicationReview row exists yet, create one so the collaborative editors
@@ -80,41 +120,28 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // there is no save button for these fields (they save via collab sync).
   let review = existingReview
   if (!review) {
-    const member = await prisma.dALIMember.findFirst({
-      where: { userId: auth.user.sub },
-      select: { id: true },
-    })
-    if (member) {
-      const appDomainIds = application.domainApplications.map(
-        (da: any) => da.challengeVersion.domainId,
-      )
-      const cycleReviewer = await prisma.cycleReviewer.findFirst({
+    const cycleReviewer = cycleReviewers.find((cr) =>
+      domainApplications.some((da) => da.challengeVersion.domainId === cr.domainId),
+    )
+    const matchingDa = cycleReviewer
+      ? domainApplications.find(
+          (da) => da.challengeVersion.domainId === cycleReviewer.domainId,
+        )
+      : null
+    if (cycleReviewer && matchingDa) {
+      review = await prisma.applicationReview.upsert({
         where: {
-          daliMemberId: member.id,
-          applicationCycleId: application.applicationCycleId,
-          domainId: { in: appDomainIds },
-        },
-      })
-      const matchingDa = cycleReviewer
-        ? application.domainApplications.find(
-            (da: any) => da.challengeVersion.domainId === cycleReviewer.domainId,
-          )
-        : null
-      if (cycleReviewer && matchingDa) {
-        review = await prisma.applicationReview.upsert({
-          where: {
-            cycleReviewerId_domainApplicationId: {
-              cycleReviewerId: cycleReviewer.id,
-              domainApplicationId: matchingDa.id,
-            },
-          },
-          create: {
+          cycleReviewerId_domainApplicationId: {
             cycleReviewerId: cycleReviewer.id,
             domainApplicationId: matchingDa.id,
           },
-          update: {},
-        })
-      }
+        },
+        create: {
+          cycleReviewerId: cycleReviewer.id,
+          domainApplicationId: matchingDa.id,
+        },
+        update: {},
+      })
     }
   }
 
@@ -452,7 +479,7 @@ export default function ReviewerApplicationReview() {
       </div>
 
       {/* Floating rubric toggle */}
-      <div className="fixed bottom-8 right-8 flex flex-col gap-4 z-50">
+      <div className="fixed bottom-6 right-4 sm:bottom-8 sm:right-8 flex flex-col gap-4 z-50">
         <button
           onClick={() => setShowRubric(!showRubric)}
           className={`w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all ${showRubric ? 'bg-blue-600 text-white' : 'bg-card text-blue-600 hover:bg-blue-50 border border-border'}`}
@@ -463,7 +490,7 @@ export default function ReviewerApplicationReview() {
       </div>
 
       {showRubric && (
-        <div className="fixed bottom-24 right-8 w-80 bg-card rounded-xl shadow-2xl border border-border overflow-hidden z-50">
+        <div className="fixed bottom-20 right-4 sm:bottom-24 sm:right-8 w-80 max-w-[calc(100vw-2rem)] bg-card rounded-xl shadow-2xl border border-border overflow-hidden z-50">
           <div className="bg-blue-600 px-4 py-3 flex justify-between items-center">
             <h3 className="font-bold text-white flex items-center"><HelpCircle className="w-4 h-4 mr-2" />Scoring Guide</h3>
           </div>

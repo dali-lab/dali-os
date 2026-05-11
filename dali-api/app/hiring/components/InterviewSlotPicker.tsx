@@ -22,7 +22,7 @@ interface InterviewSlotPickerProps {
   /** Called when a slot is clicked. */
   onSelect: (slot: Slot) => void;
   /** Visual / interaction variant. */
-  variant: "schedule" | "selectable" | "reschedule";
+  variant: "schedule" | "selectable";
   /** Per-slot loading id — shows "Booking..." on that button (schedule variant). */
   loadingSlotId?: string | null;
   /** Whether all buttons should be disabled (e.g. while a booking request is in-flight). */
@@ -77,28 +77,15 @@ export function InterviewSlotPicker({
                   );
                 }
 
-                if (variant === "selectable") {
-                  return (
-                    <button
-                      key={slot.id}
-                      onClick={() => onSelect(slot)}
-                      className={`px-4 py-3 rounded-xl text-sm font-medium border-2 transition-all text-left ${
-                        isSelected
-                          ? "border-accent-coral bg-accent-coral/5 text-accent-coral"
-                          : "border-border text-dark-blue hover:border-accent-coral/50"
-                      }`}
-                    >
-                      {slot.time}
-                    </button>
-                  );
-                }
-
-                // reschedule
                 return (
                   <button
                     key={slot.id}
                     onClick={() => onSelect(slot)}
-                    className="px-4 py-3 rounded-xl text-sm font-medium border-2 border-border text-dark-blue hover:border-accent-coral/50 transition-all text-left"
+                    className={`px-4 py-3 rounded-xl text-sm font-medium border-2 transition-all text-left ${
+                      isSelected
+                        ? "border-accent-coral bg-accent-coral/5 text-accent-coral"
+                        : "border-border text-dark-blue hover:border-accent-coral/50"
+                    }`}
                   >
                     {slot.time}
                   </button>

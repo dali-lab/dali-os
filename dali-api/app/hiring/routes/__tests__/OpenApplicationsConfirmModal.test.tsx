@@ -55,9 +55,12 @@ describe("OpenApplicationsConfirmModal", () => {
       }),
     );
     expect(html).toContain("Applications close:");
-    // toLocaleDateString output varies by env locale, but the year/month
-    // should appear in any common format — assert a stable substring.
+    // toLocaleString output varies by env locale, but the year should appear
+    // in any common format — assert a stable substring.
     expect(html).toMatch(/2026/);
+    // Deadline must be labeled with the Eastern Time zone so leads aren't
+    // misled by a localized rendering that drops the timezone.
+    expect(html).toMatch(/ ET/);
   });
 
   it("renders the dialog with role and aria-labelledby (a11y)", () => {

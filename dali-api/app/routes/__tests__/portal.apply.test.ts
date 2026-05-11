@@ -10,9 +10,20 @@ vi.mock("~/hiring/lib/submission-check", () => ({
   checkGitHubUrl: vi.fn(),
   checkFigmaUrl: vi.fn(),
 }));
+vi.mock("~/lib/gmail", () => ({ sendEmail: vi.fn() }));
+vi.mock("~/hiring/lib/email-variables", async () => {
+  const actual = await vi.importActual<typeof import("~/hiring/lib/email-variables")>(
+    "~/hiring/lib/email-variables",
+  );
+  return {
+    ...actual,
+    renderForSlot: vi.fn(() => ({ subject: "subj", html: "<p>hi</p>" })),
+  };
+});
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
+import { sendEmail } from "~/lib/gmail";
 import { action } from "~/routes/portal.apply";
 
 const mockPrisma = prisma as unknown as {
@@ -35,6 +46,8 @@ const mockPrisma = prisma as unknown as {
   challengeVersionApplicationCycle: {
     findMany: ReturnType<typeof vi.fn>;
   };
+  user: { findUnique: ReturnType<typeof vi.fn> };
+  cycleNotificationEmail: { findUnique: ReturnType<typeof vi.fn> };
 };
 
 const USER_ID = "user-1";
@@ -91,6 +104,10 @@ beforeEach(() => {
   };
   (mockPrisma as any).challengeVersionApplicationCycle = {
     findMany: vi.fn().mockResolvedValue([]),
+  };
+  (mockPrisma as any).user = { findUnique: vi.fn().mockResolvedValue(null) };
+  (mockPrisma as any).cycleNotificationEmail = {
+    findUnique: vi.fn().mockResolvedValue(null),
   };
   vi.mocked(requireAuth).mockResolvedValue({
     ok: true,
@@ -223,6 +240,62 @@ describe("POST /portal/apply (submit) word-count validation", () => {
   });
 });
 
+describe("POST /portal/apply (submit) required-question validation", () => {
+  it("rejects submission when a selected domain has unanswered required questions", async () => {
+    mockPrisma.application.findUnique.mockResolvedValue({
+      generalChallengeVersion: { questions: generalQuestions },
+    });
+    mockPrisma.domainApplication.findMany.mockResolvedValue([
+      {
+        id: DA_ID,
+        selected: true,
+        challengeVersion: { domainId: "domain-x", questions: domainQuestions },
+      },
+    ]);
+
+    const res = await action({
+      request: makeSubmitRequest({
+        answers: { story: "fine", name: "Ada" },
+        domainAnswers: [{ domainApplicationId: DA_ID, answers: {} }],
+        selectedDomainIds: ["domain-x"],
+      }),
+      params: {},
+      context: {},
+    } as any);
+
+    expect((res as any).error).toMatch(/required questions/i);
+    expect(mockPrisma.application.update).not.toHaveBeenCalled();
+    expect(mockPrisma.domainApplication.update).not.toHaveBeenCalled();
+    expect(mockPrisma.applicationStatusUpdate.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects submission when selected domain is omitted from domainAnswers entirely", async () => {
+    mockPrisma.application.findUnique.mockResolvedValue({
+      generalChallengeVersion: { questions: generalQuestions },
+    });
+    mockPrisma.domainApplication.findMany.mockResolvedValue([
+      {
+        id: DA_ID,
+        selected: true,
+        challengeVersion: { domainId: "domain-x", questions: domainQuestions },
+      },
+    ]);
+
+    const res = await action({
+      request: makeSubmitRequest({
+        answers: { story: "fine", name: "Ada" },
+        domainAnswers: [],
+        selectedDomainIds: ["domain-x"],
+      }),
+      params: {},
+      context: {},
+    } as any);
+
+    expect((res as any).error).toMatch(/required questions/i);
+    expect(mockPrisma.applicationStatusUpdate.create).not.toHaveBeenCalled();
+  });
+});
+
 // ─── create-draft / update-domains (multi-challenge support) ────────────────
 
 const CYCLE_ID = "cycle-1";
@@ -263,6 +336,121 @@ function makeUpdateDomainsRequest(
     body: body.toString(),
   });
 }
+
+describe("POST /portal/apply (submit) confirmation email", () => {
+  const CYCLE_ID = "cycle-1";
+
+  function mockApplicantsAndGmail() {
+    (mockPrisma as any).user.findUnique
+      .mockResolvedValueOnce({ googleRefreshToken: "rt" })
+      .mockResolvedValueOnce({
+        id: USER_ID,
+        firstName: "Ada",
+        dartmouthEmail: "ada@dartmouth.edu",
+        daliEmail: null,
+      });
+  }
+
+  it("sends a confirmation email on first submission when a binding exists", async () => {
+    mockPrisma.application.findUnique.mockResolvedValue({
+      applicationCycleId: CYCLE_ID,
+      generalChallengeVersion: { questions: [] },
+    });
+    mockPrisma.domainApplication.findMany.mockResolvedValue([]);
+    mockPrisma.applicationStatusUpdate.findFirst.mockResolvedValue(null);
+    mockApplicantsAndGmail();
+    (mockPrisma as any).cycleNotificationEmail.findUnique.mockResolvedValue({
+      emailTemplateVersion: { subject: "s", body: "b" },
+    });
+
+    const res = await action({
+      request: makeSubmitRequest({ answers: {} }),
+      params: {},
+      context: {},
+    } as any);
+
+    expect((res as Response).status).toBe(302);
+    expect(mockPrisma.cycleNotificationEmail.findUnique).toHaveBeenCalledWith({
+      where: {
+        applicationCycleId_notificationType: {
+          applicationCycleId: CYCLE_ID,
+          notificationType: "ApplicationReceived",
+        },
+      },
+      include: { emailTemplateVersion: true },
+    });
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+    expect(sendEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ refreshToken: "rt", to: "ada@dartmouth.edu" }),
+    );
+  });
+
+  it("does not send on resubmit (existing Submitted status update)", async () => {
+    mockPrisma.application.findUnique.mockResolvedValue({
+      applicationCycleId: CYCLE_ID,
+      generalChallengeVersion: { questions: [] },
+    });
+    mockPrisma.domainApplication.findMany.mockResolvedValue([]);
+    mockPrisma.applicationStatusUpdate.findFirst.mockResolvedValue({
+      newStatus: "Submitted",
+    });
+
+    const res = await action({
+      request: makeSubmitRequest({ answers: {} }),
+      params: {},
+      context: {},
+    } as any);
+
+    expect((res as Response).status).toBe(302);
+    expect(mockPrisma.applicationStatusUpdate.create).not.toHaveBeenCalled();
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it("submits successfully when no ApplicationReceived binding is set", async () => {
+    mockPrisma.application.findUnique.mockResolvedValue({
+      applicationCycleId: CYCLE_ID,
+      generalChallengeVersion: { questions: [] },
+    });
+    mockPrisma.domainApplication.findMany.mockResolvedValue([]);
+    mockPrisma.applicationStatusUpdate.findFirst.mockResolvedValue(null);
+    mockApplicantsAndGmail();
+    (mockPrisma as any).cycleNotificationEmail.findUnique.mockResolvedValue(null);
+
+    const res = await action({
+      request: makeSubmitRequest({ answers: {} }),
+      params: {},
+      context: {},
+    } as any);
+
+    expect((res as Response).status).toBe(302);
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it("does not block the redirect when sendEmail throws", async () => {
+    mockPrisma.application.findUnique.mockResolvedValue({
+      applicationCycleId: CYCLE_ID,
+      generalChallengeVersion: { questions: [] },
+    });
+    mockPrisma.domainApplication.findMany.mockResolvedValue([]);
+    mockPrisma.applicationStatusUpdate.findFirst.mockResolvedValue(null);
+    mockApplicantsAndGmail();
+    (mockPrisma as any).cycleNotificationEmail.findUnique.mockResolvedValue({
+      emailTemplateVersion: { subject: "s", body: "b" },
+    });
+    vi.mocked(sendEmail).mockRejectedValueOnce(new Error("Gmail send failed: 401"));
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const res = await action({
+      request: makeSubmitRequest({ answers: {} }),
+      params: {},
+      context: {},
+    } as any);
+
+    expect((res as Response).status).toBe(302);
+    expect(mockPrisma.applicationStatusUpdate.create).toHaveBeenCalledTimes(1);
+    errSpy.mockRestore();
+  });
+});
 
 describe("POST /portal/apply (create-draft) — multi-challenge", () => {
   it("creates one DomainApplication per (domain, picked CV) pair", async () => {

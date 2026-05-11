@@ -10,6 +10,8 @@ export type InterpolationVars = {
   time?: string;
   location?: string;
   meetingUrl?: string;
+  originalCloseDate?: string;
+  newCloseDate?: string;
 };
 
 export function interpolate(text: string, vars: InterpolationVars): string {
@@ -19,7 +21,9 @@ export function interpolate(text: string, vars: InterpolationVars): string {
     .replace(/\{\{domain\}\}/g, () => vars.domain ?? "")
     .replace(/\{\{time\}\}/g, () => vars.time ?? "")
     .replace(/\{\{location\}\}/g, () => vars.location ?? "")
-    .replace(/\{\{meetingUrl\}\}/g, () => vars.meetingUrl ?? "");
+    .replace(/\{\{meetingUrl\}\}/g, () => vars.meetingUrl ?? "")
+    .replace(/\{\{originalCloseDate\}\}/g, () => vars.originalCloseDate ?? "")
+    .replace(/\{\{newCloseDate\}\}/g, () => vars.newCloseDate ?? "");
 }
 
 // Sanitization is part of the contract: template bodies are user-authored
@@ -35,7 +39,7 @@ export function bodyToHtml(body: string): string {
 }
 
 // Single render path shared by the actual send (api.decisions.$id.release,
-// api.my-application) and the cycle-admin Preview modal. Any future addition
+// portal.apply) and the cycle-admin Preview modal. Any future addition
 // to the pipeline — sanitization, footer/signature, locale handling — should
 // live here so the preview never drifts from what actually goes out.
 export function renderEmail(

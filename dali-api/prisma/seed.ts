@@ -2637,11 +2637,16 @@ async function main() {
   console.log(`  ${reviewSpecs.length} ApplicationReviews + ${decisionSpecs.length * 3} Decisions + ${interviewBookings.length} booked interviews for Fall 2026`);
 
   // ── Email templates (versioned, keyed by EmailTemplateType) ─────────────────
-  const seedTemplates: { type: 'ApplicationReceived' | 'Rejected' | 'RejectedPostInterview' | 'InvitedToInterview' | 'InterviewInviteMentor' | 'InterviewConfirmedApplicant' | 'InterviewCancelledApplicant' | 'InterviewCancelledInterviewer' | 'InterviewLocationChanged' | 'Waitlisted' | 'Accepted'; subject: string; body: string }[] = [
+  const seedTemplates: { type: 'ApplicationReceived' | 'ApplicationExtensionNotice' | 'Rejected' | 'RejectedPostInterview' | 'InvitedToInterview' | 'InterviewInviteMentor' | 'InterviewConfirmedApplicant' | 'InterviewCancelledApplicant' | 'InterviewCancelledInterviewer' | 'InterviewLocationChanged' | 'Waitlisted' | 'Accepted'; subject: string; body: string }[] = [
     {
       type: 'ApplicationReceived',
       subject: 'We received your DALI application!',
       body: `Hi {{firstName}},\n\nThank you for applying to DALI! We've received your application and our team will be reviewing it over the coming weeks.\n\nWe'll reach out with updates as decisions are made. In the meantime, feel free to reach out to us at applications@dali.dartmouth.edu if you have any questions.\n\nBest,\nThe DALI Team`,
+    },
+    {
+      type: 'ApplicationExtensionNotice',
+      subject: 'DALI application deadline extended — finish your submission',
+      body: `Hi {{firstName}},\n\nWe noticed you started a DALI application but haven't submitted yet. Good news — the application deadline has been extended.\n\nOriginal deadline: {{originalCloseDate}}\nNew deadline: {{newCloseDate}}\n\nLog back into the portal to finish and submit your application before the new deadline. If you have any questions, reach out to us at applications@dali.dartmouth.edu.\n\nBest,\nThe DALI Team`,
     },
     {
       type: 'Rejected',
@@ -2761,7 +2766,7 @@ async function main() {
   }
 
   // Bind Fall 2026 to all NotificationType slots.
-  for (const nt of ['ApplicationReceived', 'InterviewInviteMentor', 'InterviewConfirmedApplicant', 'InterviewCancelledApplicant', 'InterviewCancelledInterviewer', 'InterviewLocationChanged'] as const) {
+  for (const nt of ['ApplicationReceived', 'ApplicationExtensionNotice', 'InterviewInviteMentor', 'InterviewConfirmedApplicant', 'InterviewCancelledApplicant', 'InterviewCancelledInterviewer', 'InterviewLocationChanged'] as const) {
     const version = await prisma.emailTemplateVersion.findFirst({
       where: { templateId: `tmpl_${nt.toLowerCase()}` },
       orderBy: { versionNumber: 'desc' },

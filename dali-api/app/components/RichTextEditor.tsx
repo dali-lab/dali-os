@@ -133,7 +133,7 @@ function Toolbar({ editor }: { editor: Editor }) {
   if (!hasSelection && !isLinkActive) return null;
 
   return (
-    <div className="flex items-center gap-1 border-b border-gray-200 px-2 py-1">
+    <div className="flex flex-wrap items-center gap-1 gap-y-1 border-b border-gray-200 px-2 py-1">
       <button
         type="button"
         onClick={setLink}

@@ -116,8 +116,9 @@ test.describe('portal: pre-submit review modal', () => {
     await expect(dialog2).toBeVisible();
     await dialog2.getByRole('button', { name: /confirm submission/i }).click();
 
-    // After Confirm, the action redirects to /portal.
-    await page.waitForURL(/\/portal$/);
+    // After Confirm, the action redirects to /portal (with a transient
+    // ?just-submitted=1 flag that the client strips after firing confetti).
+    await page.waitForURL(/\/portal(?:\?|$)/);
 
     // Verify a Submitted status update was actually created.
     const result = await withClient(async client => {

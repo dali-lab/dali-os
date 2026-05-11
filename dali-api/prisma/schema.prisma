@@ -86,6 +86,21 @@ model ApplicationCycle {
   // Application due date; triggers auto-transition to UnderReview when passed.
   closeDate DateTime?
 
+  // The pre-extension closeDate, set the first time a hiring lead extends the
+  // deadline. Null on cycles that have never been extended (or whose deadline
+  // has been reset via the picker since the last extension). Used to surface
+  // an "extended deadline" banner to applicants between the original and
+  // current closeDate.
+  originalCloseDate DateTime?
+
+  // Set the first time the extension-notice email blast goes out for this
+  // cycle (either via the lazy trigger after originalCloseDate passes, or
+  // via the lead's manual "resend" button). Stays set across further
+  // extensions so a single cycle can't accidentally double-blast applicants.
+  // Cleared when an extension is removed so a future re-extension can
+  // re-trigger the notice.
+  extensionNoticeSentAt DateTime?
+
   // Rubric for the general application form (reviewers score this alongside
   // the per-domain rubric set on DomainApplicationCycle).
   generalRubricVersionId String?
@@ -103,6 +118,7 @@ model ApplicationCycle {
   delibsSessions    DelibsSession[]
   decisionEmails    CycleDecisionEmail[]
   notificationEmails CycleNotificationEmail[]
+  notificationSends  CycleNotificationSend[]
 
   confidentialityBinding   CycleConfidentialityAgreement?
   confidentialitySignatures ConfidentialityAgreementSignature[]
@@ -147,6 +163,7 @@ model Application {
 
   statusUpdates      ApplicationStatusUpdate[]
   domainApplications DomainApplication[]
+  notificationSends  CycleNotificationSend[]
 
   @@unique([userId, applicationCycleId])
 }
@@ -753,6 +770,7 @@ model CycleDecisionEmail {
 // at any time.
 enum NotificationType {
   ApplicationReceived
+  ApplicationExtensionNotice
   InterviewInviteMentor
   InterviewConfirmedApplicant
   InterviewCancelledApplicant
@@ -770,6 +788,31 @@ model CycleNotificationEmail {
   emailTemplateVersion   EmailTemplateVersion @relation(fields: [emailTemplateVersionId], references: [id])
 
   @@id([applicationCycleId, notificationType])
+}
+
+// Per-recipient send tracking for one-shot notification blasts (today: just
+// ApplicationExtensionNotice). Created after a successful send so the resend
+// path skips recipients who already got the email — eliminates the
+// partial-failure-then-resend duplicate scenario.
+//
+// Keyed on applicationId rather than userId because Application is unique
+// per (userId, applicationCycleId), so this naturally guarantees one row
+// per applicant per cycle per notification type even though an applicant
+// can have multiple DomainApplications.
+model CycleNotificationSend {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  applicationCycleId String
+  applicationCycle   ApplicationCycle @relation(fields: [applicationCycleId], references: [id])
+
+  notificationType NotificationType
+
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id])
+
+  @@unique([applicationCycleId, notificationType, applicationId])
+  @@index([applicationCycleId, notificationType])
 }
 
 // ─── Audit Logging ───────────────────────────────────────────────────────────

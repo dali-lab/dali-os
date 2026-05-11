@@ -85,7 +85,7 @@ export async function loader({ request }: Route.LoaderArgs) {
               user: true,
               statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
               domainApplications: {
-                where: { challengeVersion: { domainId: assignment.domainId } },
+                where: { selected: true, challengeVersion: { domainId: assignment.domainId } },
                 include: {
                   challengeVersion: { include: { domain: true } },
                   reviews: {
@@ -860,7 +860,7 @@ export default function DomainLeadDashboard() {
                           {interviews.length > 0 && (
                             <div>
                               <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">Booked Interviews</h4>
-                              <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+                              <div className="hidden sm:block overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
                               <table className="w-full text-sm border border-border rounded-lg overflow-hidden min-w-[640px]">
                                 <thead className="bg-muted/50 text-xs font-medium text-muted-foreground uppercase tracking-wide">
                                   <tr>
@@ -923,6 +923,55 @@ export default function DomainLeadDashboard() {
                                 </tbody>
                               </table>
                               </div>
+                              <ul className="sm:hidden space-y-2">
+                                {interviews.map((interview: any) => {
+                                  const start = new Date(interview.startTime);
+                                  const end = new Date(interview.endTime);
+                                  const formatAssignment = (a: any) => {
+                                    const m = a.cycleInterviewer.daliMember;
+                                    return m.firstName && m.lastName
+                                      ? `${m.firstName} ${m.lastName}`
+                                      : m.daliEmail ?? '?';
+                                  };
+                                  const inDomain = interview.assignments
+                                    .filter((a: any) => a.role === 'InDomain' && a.status === 'Active')
+                                    .map(formatAssignment)
+                                    .join(', ') || '—';
+                                  const crossDomain = interview.assignments
+                                    .filter((a: any) => a.role === 'CrossDomain' && a.status === 'Active')
+                                    .map((a: any) => `${formatAssignment(a)} (${a.cycleInterviewer.domain.name})`)
+                                    .join(', ') || '—';
+                                  return (
+                                    <li key={interview.id} className="border border-border rounded-lg p-3 space-y-1.5">
+                                      <div className="flex items-start justify-between gap-2">
+                                        <div className="font-medium text-foreground min-w-0 truncate">
+                                          {interview.domainApplication.application.user.firstName} {interview.domainApplication.application.user.lastName}
+                                        </div>
+                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold flex-shrink-0 ${
+                                          interview.status === "Completed" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"
+                                        }`}>
+                                          {interview.status}
+                                        </span>
+                                      </div>
+                                      <div className="text-xs text-muted-foreground">
+                                        {start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}{' '}
+                                        {start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} –{' '}
+                                        {end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+                                      </div>
+                                      <div className="text-xs text-muted-foreground">
+                                        {interview.location === 'PodAppa' ? 'Pod Appa' :
+                                         interview.location === 'PodMomo' ? 'Pod Momo' : 'Online'}
+                                        {interview.location === 'Online' && interview.zoomJoinUrl && (
+                                          <a href={interview.zoomJoinUrl} target="_blank" rel="noopener noreferrer"
+                                             className="ml-2 text-blue-600 hover:underline">Zoom</a>
+                                        )}
+                                      </div>
+                                      <div className="text-xs text-muted-foreground"><span className="font-medium">In-Domain:</span> {inDomain}</div>
+                                      <div className="text-xs text-muted-foreground"><span className="font-medium">Cross-Domain:</span> {crossDomain}</div>
+                                    </li>
+                                  );
+                                })}
+                              </ul>
                             </div>
                           )}
                         </div>
@@ -1730,7 +1779,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
           )}
         </div>
       </div>
-      <div className="overflow-x-auto">
+      <div className="hidden sm:block overflow-x-auto">
       <table className="w-full text-sm min-w-[640px]">
         <thead className="bg-muted/50 text-xs font-medium text-muted-foreground uppercase tracking-wide">
           <tr>
@@ -1820,6 +1869,84 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
         </tbody>
       </table>
       </div>
+      <ul className="sm:hidden divide-y divide-gray-100">
+        {displayedApps.map((app: any) => {
+          const da = app.domainApplications[0];
+          const reviews = da?.reviews ?? [];
+          const decisions = da?.decisions ?? [];
+          const draftToFinalize = decisions.find((d: any) => {
+            if (d.stage !== "Draft") return false;
+            return !decisions.some(
+              (other: any) => other.type === d.type && (other.stage === "Final" || other.stage === "Released")
+            );
+          });
+          const pills = da
+            ? summarizeDecisionPills({ decisions })
+            : [];
+          const prePill = da && pills.length === 0
+            ? synthesizePrePipelinePill({
+                application: { statusUpdates: app.statusUpdates ?? [] },
+                interviews: da.interviews ?? [],
+                decisions,
+              })
+            : null;
+          return (
+            <li key={app.id} className="px-4 py-3 space-y-2">
+              <div className="font-medium text-foreground">
+                {app.user.firstName} {app.user.lastName}
+              </div>
+              <div>
+                <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Reviewers</div>
+                <ReviewerAssignmentCell
+                  domainApplicationId={da?.id}
+                  reviews={reviews}
+                  cycleReviewers={cycleReviewersForDomain}
+                  editable={isUnderReview && canAssignReviewers}
+                  rubricCriteria={rubricCriteria}
+                />
+              </div>
+              <div>
+                <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Decisions</div>
+                {pills.length > 0 ? (
+                  <div className="flex flex-wrap gap-1">
+                    {pills.map((pill, i) => (
+                      <DecisionPillBadge key={i} pill={pill} />
+                    ))}
+                  </div>
+                ) : prePill ? (
+                  <PrePipelinePillBadge pill={prePill} />
+                ) : (
+                  <span className="text-xs text-muted-foreground">—</span>
+                )}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {isUnderReview && draftToFinalize && (
+                  <button
+                    onClick={async () => {
+                      await fetch(`/api/hiring/decisions/${draftToFinalize.id}/finalize`, { method: "POST", credentials: "include" });
+                      window.location.reload();
+                    }}
+                    className="px-2 py-1 text-xs font-medium rounded bg-green-600 hover:bg-green-700 text-white transition"
+                  >
+                    Finalize
+                  </button>
+                )}
+                <Link
+                  to={`/hiring/domain-lead/application/${da?.id}`}
+                  className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                >
+                  Review →
+                </Link>
+              </div>
+            </li>
+          );
+        })}
+        {displayedApps.length === 0 && (
+          <li className="px-6 py-8 text-center text-muted-foreground/70 text-sm">
+            {filter === "finalize" ? "No applications need finalization." : "No applications."}
+          </li>
+        )}
+      </ul>
     </div>
   );
 }

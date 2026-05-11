@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
-import { redirect, useLoaderData, useRevalidator, Link } from "react-router";
+import { redirect, useLoaderData, useRevalidator, useSearchParams, Link } from "react-router";
 import type { Route } from "./+types/portal";
 import { prisma } from "~/lib/db";
 import { requireAuth, withAuth } from "~/lib/auth";
 import { getActiveCycle } from "~/hiring/lib/cycles";
+import { sendExtensionNoticeIfDue } from "~/hiring/lib/extension-notice";
 import {
   inferDomainApplicationStatus,
   domainApplicationStatusInclude,
@@ -12,6 +13,7 @@ import type { DomainApplicationStatus } from "~/types";
 import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
 import { InterviewSlotPicker } from "~/hiring/components/InterviewSlotPicker";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
+import { Confetti } from "~/components/Confetti";
 import { formatInterviewDate, formatInterviewTimeRange } from "~/hiring/lib/interview-time";
 
 export const meta: Route.MetaFunction = () => [{ title: "Applicant portal · DALI OS" }];
@@ -27,6 +29,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     cycleId: null as string | null,
     cycleStatus: null as string | null,
     closeDate: null as string | null,
+    originalCloseDate: null as string | null,
     domainApplications: [] as any[],
     slotDurationMinutes: 30,
     hasApplication: false,
@@ -41,12 +44,19 @@ export async function loader({ request }: Route.LoaderArgs) {
   let cycleName: string;
   let cycleStatus: ApplicationCycleStatus;
   let closeDate: string | null = null;
+  let originalCloseDate: string | null = null;
 
   if (active) {
     cycleId = active.id;
     cycleName = active.name;
     cycleStatus = active.currentStatus as ApplicationCycleStatus;
     closeDate = active.closeDate ? active.closeDate.toISOString() : null;
+    originalCloseDate = active.originalCloseDate ? active.originalCloseDate.toISOString() : null;
+    // Lazy trigger for the extension-notice blast — fires the first time a
+    // request hits this loader after the original close has passed (and an
+    // extension is in effect). Idempotent and best-effort (errors swallowed
+    // inside the function so loader latency is the only cost).
+    await sendExtensionNoticeIfDue(active.id);
   } else {
     const recentApp = await prisma.application.findFirst({
       where: { userId: auth.user.sub },
@@ -64,6 +74,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     cycleName = recentApp.applicationCycle.name;
     cycleStatus = (recentApp.applicationCycle.statusUpdates[0]?.newStatus ?? "Draft") as ApplicationCycleStatus;
     closeDate = recentApp.applicationCycle.closeDate ? recentApp.applicationCycle.closeDate.toISOString() : null;
+    originalCloseDate = recentApp.applicationCycle.originalCloseDate ? recentApp.applicationCycle.originalCloseDate.toISOString() : null;
   }
 
   const application = await prisma.application.findFirst({
@@ -125,6 +136,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       cycleId,
       cycleStatus,
       closeDate,
+      originalCloseDate,
       domainApplications,
       slotDurationMinutes: config?.slotDurationMinutes ?? 30,
       hasApplication: !!application,
@@ -180,7 +192,7 @@ function formatInterviewLocation(location?: string): string {
 
 function formatDeadline(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", {
-    timeZone: "UTC",
+    timeZone: "America/New_York",
     weekday: "long",
     month: "long",
     day: "numeric",
@@ -203,16 +215,33 @@ function formatRemaining(iso: string): { label: string; tone: "urgent" | "warn" 
 
 // Deadline rendering happens after hydration so toLocaleString uses the
 // browser's locale/timezone without producing an SSR/CSR text mismatch.
-function DeadlineLine({ closeDate }: { closeDate: string }) {
+function DeadlineLine({ closeDate, originalCloseDate }: { closeDate: string; originalCloseDate?: string | null }) {
   const [label, setLabel] = useState<string>("");
+  const [originalLabel, setOriginalLabel] = useState<string>("");
   const [remaining, setRemaining] = useState<{ label: string; tone: "urgent" | "warn" | "ok" } | null>(null);
+  // True whenever an extension is configured and the new close hasn't
+  // passed — covers both the pre-original-close window (so applicants don't
+  // see the deadline jump silently) and the post-original-close window.
+  // Only true on the client to avoid SSR/CSR mismatch on the strikethrough.
+  const [showExtension, setShowExtension] = useState(false);
   useEffect(() => {
     setLabel(formatDeadline(closeDate));
-    const tick = () => setRemaining(formatRemaining(closeDate));
+    setOriginalLabel(originalCloseDate ? formatDeadline(originalCloseDate) : "");
+    const tick = () => {
+      setRemaining(formatRemaining(closeDate));
+      if (originalCloseDate) {
+        const orig = new Date(originalCloseDate).getTime();
+        const close = new Date(closeDate).getTime();
+        const now = Date.now();
+        setShowExtension(orig < close && now < close);
+      } else {
+        setShowExtension(false);
+      }
+    };
     tick();
     const id = setInterval(tick, 60_000);
     return () => clearInterval(id);
-  }, [closeDate]);
+  }, [closeDate, originalCloseDate]);
   if (!label) return null;
   const toneStyles: Record<"urgent" | "warn" | "ok", string> = {
     urgent: "text-red-700",
@@ -221,7 +250,22 @@ function DeadlineLine({ closeDate }: { closeDate: string }) {
   };
   return (
     <div className={`text-sm mt-2 flex items-center gap-2 flex-wrap ${remaining ? toneStyles[remaining.tone] : "text-muted-foreground"}`}>
-      <span>Applications close on {label}</span>
+      <span>
+        Applications close on{" "}
+        {showExtension && originalLabel ? (
+          <>
+            <span className="line-through text-muted-foreground/70 mr-1">{originalLabel}</span>
+            <span className="font-semibold">{label}</span>
+          </>
+        ) : (
+          label
+        )}
+      </span>
+      {showExtension && (
+        <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-amber-100 text-amber-800">
+          Deadline extended
+        </span>
+      )}
       {remaining && (
         <span className={`text-xs px-2.5 py-0.5 rounded-full font-semibold ${
           remaining.tone === "urgent" ? "bg-red-100 text-red-700" :
@@ -548,6 +592,9 @@ function InterviewScheduledView({
   const [rescheduling, setRescheduling] = useState(false);
   const [rescheduleSlots, setRescheduleSlots] = useState<TimeSlot[]>([]);
   const [loadingRescheduleSlots, setLoadingRescheduleSlots] = useState(false);
+  const [selectedRescheduleSlotId, setSelectedRescheduleSlotId] = useState<string | null>(null);
+  const [confirmingReschedule, setConfirmingReschedule] = useState(false);
+  const [rescheduleError, setRescheduleError] = useState<string | null>(null);
   const [declining, setDeclining] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
@@ -585,17 +632,44 @@ function InterviewScheduledView({
     setCancelling(false);
   }
 
-  async function handleReschedule(newSlot: TimeSlot) {
-    const newEnd = new Date(new Date(newSlot.isoStart).getTime() + slotDurationMinutes * 60_000).toISOString();
-    const res = await fetch("/api/hiring/my-interview/reschedule", {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ domainApplicationId: domainApp.id, newStart: newSlot.isoStart, newEnd, mode: interview.location === "Online" ? "online" : "in-person" }),
-    });
-    if (res.ok) {
-      setRescheduling(false);
-      onRescheduled();
+  function exitRescheduling() {
+    setRescheduling(false);
+    setSelectedRescheduleSlotId(null);
+    setRescheduleError(null);
+  }
+
+  async function handleConfirmReschedule() {
+    const newSlot = rescheduleSlots.find(s => s.id === selectedRescheduleSlotId);
+    if (!newSlot) return;
+    setConfirmingReschedule(true);
+    setRescheduleError(null);
+    const mode = interview.location === "Online" ? "online" : "in-person";
+    try {
+      const newEnd = new Date(new Date(newSlot.isoStart).getTime() + slotDurationMinutes * 60_000).toISOString();
+      const res = await fetch("/api/hiring/my-interview/reschedule", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ domainApplicationId: domainApp.id, newStart: newSlot.isoStart, newEnd, mode }),
+      });
+      if (res.ok) {
+        setSelectedRescheduleSlotId(null);
+        setRescheduling(false);
+        onRescheduled();
+      } else {
+        const body = await res.json().catch(() => ({}));
+        setRescheduleError(body.error ?? "Failed to reschedule. The slot may have been taken.");
+        const slotsRes = await fetch(`/api/hiring/cycles/${cycleId}/available-slots?domainId=${domainApp.domainId}&mode=${mode}`, { credentials: "include" });
+        if (slotsRes.ok) {
+          const freshSlots = await slotsRes.json();
+          setRescheduleSlots(
+            freshSlots.map(apiSlotToTimeSlot).filter((s: TimeSlot) => s.isoStart !== slot.isoStart),
+          );
+          setSelectedRescheduleSlotId(null);
+        }
+      }
+    } finally {
+      setConfirmingReschedule(false);
     }
   }
 
@@ -608,6 +682,12 @@ function InterviewScheduledView({
           Currently scheduled: <strong>{slot.date}, {slot.time}</strong> ({formatInterviewLocation(interview.location)}). Choose a format and new time.
         </p>
 
+        {rescheduleError && (
+          <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-800">
+            {rescheduleError}
+          </div>
+        )}
+
         {loadingRescheduleSlots ? (
           <div className="px-6 py-8 rounded-2xl bg-muted/30 text-center mb-8">
             <p className="text-muted-foreground">Loading available times...</p>
@@ -617,15 +697,26 @@ function InterviewScheduledView({
             <p className="text-muted-foreground">No slots available. Check back later.</p>
           </div>
         ) : (
-          <div className="mb-8">
-            <InterviewSlotPicker
-              groups={grouped}
-              variant="reschedule"
-              onSelect={(s) => handleReschedule(s as any)}
-            />
-          </div>
+          <>
+            <div className="mb-8">
+              <InterviewSlotPicker
+                groups={grouped}
+                variant="selectable"
+                selectedSlotId={selectedRescheduleSlotId}
+                onSelect={(s) => setSelectedRescheduleSlotId(s.id)}
+              />
+            </div>
+
+            <button
+              onClick={handleConfirmReschedule}
+              disabled={!selectedRescheduleSlotId || confirmingReschedule}
+              className="px-6 py-2.5 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition disabled:opacity-50 mr-3"
+            >
+              {confirmingReschedule ? "Rescheduling..." : "Confirm Reschedule"}
+            </button>
+          </>
         )}
-        <button onClick={() => setRescheduling(false)} className="text-sm font-semibold text-muted-foreground hover:underline">
+        <button onClick={exitRescheduling} className="text-sm font-semibold text-muted-foreground hover:underline">
           Cancel
         </button>
       </div>
@@ -901,6 +992,7 @@ export default function Portal() {
     cycleId,
     cycleStatus,
     closeDate,
+    originalCloseDate,
     domainApplications,
     slotDurationMinutes,
     hasApplication,
@@ -911,6 +1003,16 @@ export default function Portal() {
   const handleRevalidate = useCallback(() => {
     revalidator.revalidate();
   }, [revalidator]);
+
+  const [searchParams, setSearchParams] = useSearchParams();
+  const justSubmitted = searchParams.get("just-submitted") === "1";
+  const handleConfettiFire = useCallback(() => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.delete("just-submitted");
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
 
   if (!cycleId) {
     return (
@@ -943,13 +1045,14 @@ export default function Portal() {
 
   return (
     <div>
+      <Confetti trigger={justSubmitted} onFire={handleConfettiFire} />
       {/* Header */}
       <div className="bg-[#E8F4FA] px-6 md:px-16 lg:px-24 py-10">
         <div className="max-w-3xl mx-auto">
           <h1 className="font-heading text-xl font-bold text-dark-blue">
             {cycleName} Application Portal
           </h1>
-          {cycleStatus === "Open" && closeDate && <DeadlineLine closeDate={closeDate} />}
+          {cycleStatus === "Open" && closeDate && <DeadlineLine closeDate={closeDate} originalCloseDate={originalCloseDate} />}
         </div>
       </div>
 

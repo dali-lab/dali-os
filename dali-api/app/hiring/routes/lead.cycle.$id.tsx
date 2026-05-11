@@ -1,17 +1,30 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Form, Link, useParams, useLoaderData, redirect } from 'react-router'
 import type { Route } from "./+types/lead.cycle.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth, withAuth } from "~/lib/auth";
 import { isHiringLead } from "~/lib/roles";
 import { renderEmail } from "~/lib/email";
+import {
+  TEMPLATE_VARIABLES,
+  decisionSlot,
+  notificationSlot,
+  lintTemplate,
+  type TemplateSlot,
+  type DecisionSlotType,
+  type NotificationSlotType,
+} from "~/hiring/lib/email-variables";
 import { Modal } from "~/components/Modal";
 import { ChallengePreviewModal } from "~/hiring/components/ChallengePreviewModal";
 import { Settings, Users, Calendar, AlertTriangle, Trash2, Plus, CheckCircle, ArrowRight, Circle, ChevronRight, X, LayoutDashboard, Eye } from 'lucide-react'
 import { formatVersionLabel, buildVersionNumberMap } from "~/lib/formatVersion";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
+import { sendExtensionNoticeIfDue, resendExtensionNotice } from "~/hiring/lib/extension-notice";
 import { ConfidentialityGate } from "~/hiring/components/ConfidentialityGate";
-import { zonedDayStartUtc } from "~/lib/timezone";
+import { zonedDayStartUtc, zonedDayEndUtc, getZonedYMD } from "~/lib/timezone";
+
+const APPLICATION_TZ = "America/New_York";
+const APPLICATION_TZ_LABEL = "ET";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -93,6 +106,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const confidentialityRequired =
     confState.status === "signed" ? null : confState.status;
 
+  // Lazy trigger for the deadline-extension notice blast (idempotent,
+  // best-effort). Mirrors how autoCloseIfExpired runs from the cycle status
+  // loader: leads loading their cycle page will wake up the blast if the
+  // original close has just passed.
+  await sendExtensionNoticeIfDue(params.id!);
+
   const cycleBase = await prisma.applicationCycle.findUniqueOrThrow({
     where: { id: params.id },
     include: {
@@ -111,6 +130,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           user: true,
           statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
           domainApplications: {
+            where: { selected: true },
             include: { challengeVersion: { include: { domain: true } } },
           },
         },
@@ -313,6 +333,30 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
 // ─── Action ──────────────────────────────────────────────────────────────────
 
+/**
+ * If the cycle has materialized as UnderReview (auto-close ran or a lead
+ * force-closed) and the new closeDate is in the future, write a fresh Open
+ * status update so the applicant portal stops showing the closed view.
+ * Returns true if a reopen was written. Skips Completed (terminal) and Draft
+ * (cycle was never opened — bumping the date is enough on its own).
+ */
+async function reopenIfNeeded(
+  tx: any,
+  cycleId: string,
+  cycleSnapshot: { statusUpdates: { newStatus: string }[] } | null,
+  newCloseDate: Date | null,
+  userId: string,
+): Promise<boolean> {
+  if (!newCloseDate) return false;
+  if (newCloseDate.getTime() <= Date.now()) return false;
+  const latestStatus = cycleSnapshot?.statusUpdates[0]?.newStatus;
+  if (latestStatus !== "UnderReview") return false;
+  await tx.applicationCycleStatusUpdate.create({
+    data: { applicationCycleId: cycleId, newStatus: "Open", userId },
+  });
+  return true;
+}
+
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
@@ -328,14 +372,116 @@ export async function action({ request, params }: Route.ActionArgs) {
     const closeDate = formData.get("closeDate") as string;
     let parsedClose: Date | null = null;
     if (closeDate) {
-      // Store as end-of-day UTC so the deadline covers the entire selected date
-      parsedClose = new Date(closeDate + "T23:59:59Z");
+      // Deadline is 11:59:59 PM Eastern on the selected date so applicants get
+      // the full day in the lab's local time (not late evening UTC).
+      const [y, m, d] = closeDate.split("-").map(Number);
+      parsedClose = zonedDayEndUtc(y, m, d, APPLICATION_TZ);
+    }
+    const cycle = await prisma.applicationCycle.findUnique({
+      where: { id: params.id },
+      include: { statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 } },
+    });
+    // The picker represents the lead's intended/original close date. If an
+    // extension is currently active, preserve the extension delta so the
+    // effective close moves with the picker. If not, the picker just becomes
+    // the close date.
+    let nextClose: Date | null = parsedClose;
+    let nextOriginal: Date | null = null;
+    if (parsedClose && cycle?.originalCloseDate && cycle?.closeDate) {
+      const deltaMs = cycle.closeDate.getTime() - cycle.originalCloseDate.getTime();
+      nextClose = new Date(parsedClose.getTime() + deltaMs);
+      nextOriginal = parsedClose;
+    }
+    const reopened = await prisma.$transaction(async (tx) => {
+      await tx.applicationCycle.update({
+        where: { id: params.id },
+        data: { closeDate: nextClose, originalCloseDate: nextOriginal },
+      });
+      return await reopenIfNeeded(tx, params.id!, cycle, nextClose, auth.user.sub);
+    });
+    const notice = parsedClose
+      ? (reopened ? "deadline-set-reopened" : "deadline-set")
+      : "deadline-cleared";
+    return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}?notice=${notice}`));
+  }
+
+  if (intent === "extend-close-date") {
+    const amountRaw = formData.get("amount") as string;
+    const unit = formData.get("unit") as string;
+    const amount = Number(amountRaw);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return withAuth(auth, new Response(JSON.stringify({ error: "Extension amount must be positive." }), { status: 400, headers: { "Content-Type": "application/json" } }));
+    }
+    if (unit !== "hours" && unit !== "days") {
+      return withAuth(auth, new Response(JSON.stringify({ error: "Extension unit must be hours or days." }), { status: 400, headers: { "Content-Type": "application/json" } }));
+    }
+    const cycle = await prisma.applicationCycle.findUnique({
+      where: { id: params.id },
+      include: { statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 } },
+    });
+    if (!cycle?.closeDate) {
+      return withAuth(auth, new Response(JSON.stringify({ error: "Set a close date before extending." }), { status: 400, headers: { "Content-Type": "application/json" } }));
+    }
+    // Set-total semantics: the amount is the *total* extension from the
+    // original anchor, not additive. So calling extend(48h) twice in a row is
+    // idempotent — the deadline ends up 48h past the original, not 96h. This
+    // matches the UI which shows the current extension as state.
+    const anchor = cycle.originalCloseDate ?? cycle.closeDate;
+    const ms = unit === "hours" ? amount * 3_600_000 : amount * 86_400_000;
+    const nextClose = new Date(anchor.getTime() + ms);
+    const reopened = await prisma.$transaction(async (tx) => {
+      await tx.applicationCycle.update({
+        where: { id: params.id },
+        data: { closeDate: nextClose, originalCloseDate: anchor },
+      });
+      return await reopenIfNeeded(tx, params.id!, cycle, nextClose, auth.user.sub);
+    });
+    const notice = reopened ? "extended-reopened" : "extended";
+    return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}?notice=${notice}`));
+  }
+
+  if (intent === "remove-extension") {
+    const cycle = await prisma.applicationCycle.findUnique({
+      where: { id: params.id },
+    });
+    if (!cycle?.originalCloseDate) {
+      // No extension to remove — just no-op.
+      return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}`));
     }
     await prisma.applicationCycle.update({
       where: { id: params.id },
-      data: { closeDate: parsedClose },
+      // Snap back to the original deadline; clear the extension marker.
+      // extensionNoticeSentAt is also cleared so a future re-extension can
+      // re-trigger the notice blast.
+      data: {
+        closeDate: cycle.originalCloseDate,
+        originalCloseDate: null,
+        extensionNoticeSentAt: null,
+      },
     });
-    return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}`));
+    return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}?notice=extension-removed`));
+  }
+
+  if (intent === "resend-extension-notice") {
+    const result = await resendExtensionNotice(params.id!);
+    let notice: string;
+    if (result.outcome === "no_extension") {
+      notice = "extension-notice-no-extension";
+    } else if (result.outcome === "preflight_skipped") {
+      notice = "extension-notice-not-configured";
+    } else if (result.attempted === 0) {
+      notice = "extension-notice-noop";
+    } else if (result.succeeded === 0 && result.alreadySent === result.attempted) {
+      notice = "extension-notice-all-sent";
+    } else if (result.failed > 0) {
+      notice = "extension-notice-partial";
+    } else {
+      notice = "extension-notice-sent";
+    }
+    return withAuth(
+      auth,
+      redirect(`/hiring/lead/cycle/${params.id}?notice=${notice}&sent=${result.succeeded}&failed=${result.failed}&skipped=${result.alreadySent}`),
+    );
   }
 
   if (intent === "set-general-rubric") {
@@ -424,7 +570,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (intent === "set-notification-email") {
     const notificationType = formData.get("notificationType") as string;
     const emailTemplateVersionId = (formData.get("emailTemplateVersionId") as string) || null;
-    const validTypes = ["ApplicationReceived", "InterviewInviteMentor", "InterviewConfirmedApplicant", "InterviewCancelledApplicant", "InterviewCancelledInterviewer", "InterviewLocationChanged"] as const;
+    const validTypes = ["ApplicationReceived", "ApplicationExtensionNotice", "InterviewInviteMentor", "InterviewConfirmedApplicant", "InterviewCancelledApplicant", "InterviewCancelledInterviewer", "InterviewLocationChanged"] as const;
     if (!validTypes.includes(notificationType as (typeof validTypes)[number])) {
       return withAuth(auth, new Response(JSON.stringify({ error: "Invalid notification type" }), { status: 400, headers: { "Content-Type": "application/json" } }));
     }
@@ -954,6 +1100,8 @@ export default function HiringLeadCycleDetails() {
         <p className="text-muted-foreground mt-1">Configure interviews for cycle <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">{cycleId}</span></p>
       </div>
 
+      <CloseDateNotice />
+
       {/* Cycle Status */}
       <div className="bg-card rounded-xl border border-border shadow-sm p-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
@@ -1122,27 +1270,12 @@ export default function HiringLeadCycleDetails() {
       {/* ── Cycle Setup Tab ── */}
       {tab === 'setup' && (
         <div className="space-y-6">
-          {/* Close Date */}
-          <div className="bg-card rounded-xl border border-border shadow-sm p-4 sm:p-6">
-            <h3 className="text-sm font-bold text-foreground/80 mb-3">Application Close Date</h3>
-            <Form method="post" preventScrollReset className="flex flex-col sm:flex-row sm:items-end gap-3">
-              <input type="hidden" name="intent" value="set-close-date" />
-              <div className="flex-1">
-                <input
-                  type="date"
-                  name="closeDate"
-                  defaultValue={cycle?.closeDate ? new Date(cycle.closeDate).toISOString().slice(0, 10) : ''}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                />
-              </div>
-              <button
-                type="submit"
-                className="px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition"
-              >
-                Save
-              </button>
-            </Form>
-          </div>
+          {/* Close Date + Extension + Effective Close */}
+          <CloseDateCard
+            cycle={cycle}
+            cycleStatus={cycleStatus}
+          />
+
 
           {/* Domains */}
           <div className="bg-card rounded-xl border border-border shadow-sm p-6 space-y-4">
@@ -1414,7 +1547,7 @@ export default function HiringLeadCycleDetails() {
 
           {/* Roster table */}
           <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-            <div className="overflow-x-auto">
+            <div className="hidden sm:block overflow-x-auto">
             <table className="w-full text-sm min-w-[480px]">
               <thead className="bg-muted/50 border-b border-border">
                 <tr>
@@ -1443,6 +1576,28 @@ export default function HiringLeadCycleDetails() {
               </tbody>
             </table>
             </div>
+            <ul className="sm:hidden divide-y divide-border">
+              {reviewers.map(r => (
+                <li key={r.id} className="px-4 py-3 flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="font-medium text-foreground truncate">
+                      {r.daliMember.user ? `${r.daliMember.user.firstName} ${r.daliMember.user.lastName}` : r.daliMember.id}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-0.5">{r.domain.name}</div>
+                  </div>
+                  <button
+                    onClick={() => removeReviewer(r.id)}
+                    aria-label="Remove reviewer"
+                    className="p-2 -m-2 text-red-500 hover:text-red-700 transition flex-shrink-0"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </li>
+              ))}
+              {reviewers.length === 0 && (
+                <li className="px-4 py-8 text-center text-sm text-muted-foreground/70">No reviewers assigned yet.</li>
+              )}
+            </ul>
           </div>
 
           {/* Add interviewer form */}
@@ -1493,7 +1648,7 @@ export default function HiringLeadCycleDetails() {
 
           {/* Interviewer roster table */}
           <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-            <div className="overflow-x-auto">
+            <div className="hidden sm:block overflow-x-auto">
             <table className="w-full text-sm min-w-[480px]">
               <thead className="bg-muted/50 border-b border-border">
                 <tr>
@@ -1524,6 +1679,30 @@ export default function HiringLeadCycleDetails() {
               </tbody>
             </table>
             </div>
+            <ul className="sm:hidden divide-y divide-border">
+              {interviewers.map((i: any) => {
+                const m = i.daliMember
+                const name = m?.firstName && m?.lastName ? `${m.firstName} ${m.lastName}` : m?.daliEmail ?? i.daliMemberId
+                return (
+                  <li key={i.id} className="px-4 py-3 flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-medium text-foreground truncate">{name}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5">{i.domain?.name ?? ''}</div>
+                    </div>
+                    <button
+                      onClick={() => removeInterviewer(i.id)}
+                      aria-label="Remove interviewer"
+                      className="p-2 -m-2 text-red-500 hover:text-red-700 transition flex-shrink-0"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </li>
+                )
+              })}
+              {interviewers.length === 0 && (
+                <li className="px-4 py-8 text-center text-sm text-muted-foreground/70">No interviewers assigned yet.</li>
+              )}
+            </ul>
           </div>
         </div>
       )}
@@ -1538,7 +1717,7 @@ export default function HiringLeadCycleDetails() {
       ) : tab === 'dashboard' && (
         <div className="space-y-4">
           <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-            <div className="overflow-x-auto">
+            <div className="hidden sm:block overflow-x-auto">
             <table className="w-full text-sm min-w-[820px]">
               <thead className="bg-muted/50 border-b border-border">
                 <tr>
@@ -1701,6 +1880,155 @@ export default function HiringLeadCycleDetails() {
               </tbody>
             </table>
             </div>
+            <ul className="sm:hidden divide-y divide-border">
+              {interviews.map(interview => {
+                const isFuture = new Date(interview.startTime) > new Date()
+                const domainName = interview.domainApplication.challengeVersion.domain.name
+                const start = new Date(interview.startTime)
+                const end = new Date(interview.endTime)
+                const editable = isFuture && interview.status === 'Scheduled'
+                return (
+                  <li key={interview.id} className="px-4 py-3 space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="font-medium text-foreground truncate">
+                          {interview.domainApplication.application.user.firstName} {interview.domainApplication.application.user.lastName}
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-0.5">{domainName || '—'}</div>
+                      </div>
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold flex-shrink-0 ${
+                        interview.status === 'Scheduled' ? 'bg-green-100 text-green-700' :
+                        interview.status === 'Completed' ? 'bg-blue-100 text-blue-700' :
+                        'bg-muted text-muted-foreground'
+                      }`}>
+                        {interview.status}
+                      </span>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}{' '}
+                      {start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} –{' '}
+                      {end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Location</div>
+                      {editable ? (
+                        <select
+                          value={interview.location}
+                          onChange={async (e) => {
+                            const newLocation = e.target.value
+                            const res = await fetch(`/api/hiring/interviews/${interview.id}/location`, {
+                              method: 'PATCH', credentials: 'include',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ location: newLocation }),
+                            })
+                            if (res.ok) {
+                              const updated = await res.json()
+                              setInterviews(prev => prev.map(i =>
+                                i.id === interview.id ? { ...i, location: newLocation, zoomJoinUrl: updated.zoomJoinUrl ?? null } : i
+                              ))
+                            } else {
+                              const body = await res.json().catch(() => ({}))
+                              alert(body.error ?? 'Failed to update location')
+                            }
+                          }}
+                          className="w-full text-xs border border-border rounded px-1.5 py-1 bg-card"
+                        >
+                          <option value="PodAppa">Pod Appa</option>
+                          <option value="PodMomo">Pod Momo</option>
+                          <option value="Online">Online</option>
+                        </select>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">
+                          {interview.location === 'PodAppa' ? 'Pod Appa' :
+                           interview.location === 'PodMomo' ? 'Pod Momo' : 'Online'}
+                        </span>
+                      )}
+                      {interview.location === 'Online' && editable && (
+                        <input
+                          type="url"
+                          placeholder="Paste meeting link"
+                          defaultValue={interview.zoomJoinUrl ?? ''}
+                          onBlur={async (e) => {
+                            let meetingUrl = e.target.value.trim()
+                            if (meetingUrl && !/^https?:\/\//i.test(meetingUrl)) {
+                              meetingUrl = `https://${meetingUrl}`
+                              e.target.value = meetingUrl
+                            }
+                            if (meetingUrl === (interview.zoomJoinUrl ?? '')) return
+                            const res = await fetch(`/api/hiring/interviews/${interview.id}/location`, {
+                              method: 'PATCH', credentials: 'include',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ location: 'Online', meetingUrl }),
+                            })
+                            if (res.ok) {
+                              setInterviews(prev => prev.map(i =>
+                                i.id === interview.id ? { ...i, zoomJoinUrl: meetingUrl || null } : i
+                              ))
+                            }
+                          }}
+                          onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                          className="block w-full text-xs border border-border rounded px-1.5 py-1 bg-card mt-1 placeholder:text-muted-foreground/50"
+                        />
+                      )}
+                      {interview.location === 'Online' && interview.zoomJoinUrl && !editable && (
+                        <a href={interview.zoomJoinUrl} target="_blank" rel="noopener noreferrer"
+                           className="block text-xs text-blue-600 hover:underline mt-0.5">Meeting link</a>
+                      )}
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Interviewers</div>
+                      <div className="space-y-1">
+                        {interview.assignments
+                          .filter((a: any) => a.status === 'Active')
+                          .map((a: any) => {
+                            const m = a.cycleInterviewer.daliMember
+                            const name = m.firstName && m.lastName
+                              ? `${m.firstName} ${m.lastName}`
+                              : m.daliEmail ?? '?'
+                            const roleLabel = a.role === 'InDomain' ? a.cycleInterviewer.domain.name : 'Cross'
+                            return (
+                              <div key={a.id} className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+                                <span>{name} ({roleLabel})</span>
+                                {editable && (
+                                  <select
+                                    className="text-xs border border-gray-300 rounded px-1.5 py-0.5"
+                                    aria-label={`Reassign ${a.role === 'InDomain' ? 'in-domain' : 'cross-domain'} interviewer`}
+                                    defaultValue=""
+                                    onChange={async (e) => {
+                                      if (!e.target.value) return
+                                      await fetch(`/api/hiring/interviews/${interview.id}/reassign`, {
+                                        method: 'POST', credentials: 'include',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ assignmentId: a.id, newCycleInterviewerId: e.target.value }),
+                                      })
+                                      window.location.reload()
+                                    }}
+                                  >
+                                    <option value="">Reassign...</option>
+                                    {interviewers
+                                      .filter((i: any) => a.role === 'InDomain'
+                                        ? i.domain?.name === a.cycleInterviewer.domain.name
+                                        : i.domain?.name !== domainName)
+                                      .filter((i: any) => i.id !== a.cycleInterviewerId)
+                                      .map((i: any) => {
+                                        const im = i.daliMember
+                                        const iName = im?.firstName && im?.lastName ? `${im.firstName} ${im.lastName}` : im?.daliEmail ?? i.id
+                                        return <option key={i.id} value={i.id}>{iName}</option>
+                                      })}
+                                  </select>
+                                )}
+                              </div>
+                            )
+                          })}
+                      </div>
+                    </div>
+                  </li>
+                )
+              })}
+              {interviews.length === 0 && (
+                <li className="px-4 py-8 text-center text-sm text-muted-foreground/70">No interviews scheduled yet.</li>
+              )}
+            </ul>
           </div>
         </div>
       )}
@@ -1745,7 +2073,7 @@ export default function HiringLeadCycleDetails() {
                 )
               })()}
             </div>
-            <div className="overflow-x-auto">
+            <div className="hidden sm:block overflow-x-auto">
             <table className="w-full text-sm min-w-[640px]">
               <thead className="bg-muted/50 border-b border-border">
                 <tr>
@@ -1817,6 +2145,69 @@ export default function HiringLeadCycleDetails() {
               </tbody>
             </table>
             </div>
+            <ul className="sm:hidden divide-y divide-border">
+              {pendingDecisions.map((d: any) => {
+                const hasBinding = (loaderData?.currentDecisionEmails ?? []).some(
+                  (b: any) => b.decisionType === d.type
+                )
+                return (
+                  <li key={d.id} className="px-4 py-3 space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="font-medium text-foreground truncate">
+                          {d.domainApplication.application.user.firstName} {d.domainApplication.application.user.lastName}
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          {d.domainApplication.challengeVersion.domain.name}
+                        </div>
+                      </div>
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold flex-shrink-0 ${
+                        d.type === 'Accepted' ? 'bg-green-100 text-green-700' :
+                        d.type === 'Rejected' ? 'bg-red-100 text-red-700' :
+                        d.type === 'Waitlisted' ? 'bg-yellow-100 text-yellow-700' :
+                        'bg-blue-100 text-blue-700'
+                      }`}>
+                        {d.type}
+                      </span>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Made by {d.madeBy.firstName} {d.madeBy.lastName}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setPreviewDecisionId(d.id)}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium rounded-lg border border-border bg-card hover:bg-muted/40 text-foreground transition"
+                        aria-label={`Preview email for ${d.domainApplication.application.user.firstName}`}
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        Preview
+                      </button>
+                      <button
+                        onClick={async () => {
+                          setReleasing(d.id)
+                          await fetch(`/api/hiring/decisions/${d.id}/release`, { method: 'POST', credentials: 'include' })
+                          setPendingDecisions(prev => prev.filter(p => p.id !== d.id))
+                          setReleasing(null)
+                        }}
+                        disabled={releasing === d.id || !hasBinding}
+                        title={
+                          !hasBinding
+                            ? `No email template bound to ${d.type} in this cycle. Bind one on the Setup tab → Decision Emails before releasing.`
+                            : undefined
+                        }
+                        className="px-3 py-1.5 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {releasing === d.id ? 'Releasing...' : 'Release'}
+                      </button>
+                    </div>
+                  </li>
+                )
+              })}
+              {pendingDecisions.length === 0 && (
+                <li className="px-4 py-8 text-center text-sm text-muted-foreground/70">No Final decisions awaiting release.</li>
+              )}
+            </ul>
           </div>
           {previewDecisionId && (() => {
             const d = pendingDecisions.find((x: any) => x.id === previewDecisionId)
@@ -1836,6 +2227,41 @@ export default function HiringLeadCycleDetails() {
   )
 }
 
+function PreviewLintWarning({ unknown, unfilled }: { unknown: string[]; unfilled: string[] }) {
+  return (
+    <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 space-y-1">
+      <div className="flex items-center gap-1.5 font-semibold">
+        <AlertTriangle className="w-3.5 h-3.5" />
+        Template warnings
+      </div>
+      {unknown.length > 0 && (
+        <p>
+          Unknown placeholder{unknown.length > 1 ? 's' : ''}:{' '}
+          {unknown.map((t, i) => (
+            <span key={t}>
+              {i > 0 && ', '}
+              <code className="font-mono bg-amber-100 px-1 rounded">{`{{${t}}}`}</code>
+            </span>
+          ))}
+          . Will ship as literal text.
+        </p>
+      )}
+      {unfilled.length > 0 && (
+        <p>
+          Not populated for this slot:{' '}
+          {unfilled.map((t, i) => (
+            <span key={t}>
+              {i > 0 && ', '}
+              <code className="font-mono bg-amber-100 px-1 rounded">{`{{${t}}}`}</code>
+            </span>
+          ))}
+          . Will render as empty.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function DecisionEmailPreviewModal({ decision, binding, onClose }: {
   decision: any;
   binding: any | null;
@@ -1845,6 +2271,17 @@ function DecisionEmailPreviewModal({ decision, binding, onClose }: {
   const domain = decision.domainApplication.challengeVersion.domain.name ?? ''
   const tmpl = binding?.emailTemplateVersion ?? null
   const rendered = tmpl ? renderEmail(tmpl, { firstName, domain }) : null
+  const slot: TemplateSlot | undefined = decision.type ? decisionSlot(decision.type as DecisionSlotType) : undefined
+  const lint = tmpl
+    ? (() => {
+        const subj = lintTemplate(tmpl.subject, slot)
+        const body = lintTemplate(tmpl.body, slot)
+        return {
+          unknown: Array.from(new Set([...subj.unknown, ...body.unknown])),
+          unfilled: Array.from(new Set([...subj.unfilled, ...body.unfilled])),
+        }
+      })()
+    : null
 
   return (
     <div
@@ -1878,6 +2315,9 @@ function DecisionEmailPreviewModal({ decision, binding, onClose }: {
         <div className="px-4 sm:px-6 py-4 space-y-4">
           {tmpl ? (
             <>
+              {lint && (lint.unknown.length > 0 || lint.unfilled.length > 0) && (
+                <PreviewLintWarning unknown={lint.unknown} unfilled={lint.unfilled} />
+              )}
               <div>
                 <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">From</h3>
                 <p className="mt-1 text-sm text-foreground">applications@dali.dartmouth.edu</p>
@@ -2092,7 +2532,18 @@ export function OpenApplicationsConfirmModal({
           {closeDate && (
             <div className="bg-muted/40 rounded-lg p-3 text-xs">
               <span className="font-medium text-foreground/80">Applications close: </span>
-              <span>{closeDate.toLocaleDateString()}</span>
+              <span>
+                {closeDate.toLocaleString("en-US", {
+                  timeZone: APPLICATION_TZ,
+                  weekday: "short",
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                  hour: "numeric",
+                  minute: "2-digit",
+                })}{" "}
+                {APPLICATION_TZ_LABEL}
+              </span>
             </div>
           )}
         </div>
@@ -2116,6 +2567,342 @@ export function OpenApplicationsConfirmModal({
         </div>
       </div>
     </Modal>
+  );
+}
+
+function CloseDateNotice() {
+  const [notice, setNotice] = useState<string | null>(null);
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const n = url.searchParams.get("notice");
+    if (!n) return;
+    setNotice(n);
+    url.searchParams.delete("notice");
+    window.history.replaceState({}, "", url.toString());
+  }, []);
+  if (!notice) return null;
+  const messages: Record<string, { text: string; tone: "ok" | "warn" }> = {
+    "deadline-set": { text: "Close date saved.", tone: "ok" },
+    "deadline-set-reopened": {
+      text: "Close date saved and applications reopened — applicants can submit again until the new deadline.",
+      tone: "warn",
+    },
+    "deadline-cleared": { text: "Close date cleared.", tone: "ok" },
+    "extended": { text: "Extension saved. Applicants will see an “Extended deadline” notice on the portal during the window.", tone: "ok" },
+    "extended-reopened": {
+      text: "Extension saved and applications reopened — applicants can submit again until the new effective close.",
+      tone: "warn",
+    },
+    "extension-removed": { text: "Extension removed — the close date is back to the original.", tone: "ok" },
+    "extension-notice-sent": { text: "Extension notice email sent to applicants who haven't submitted yet.", tone: "ok" },
+    "extension-notice-partial": { text: "Extension notice sent — some recipients failed (see server logs).", tone: "warn" },
+    "extension-notice-noop": { text: "No extension notice sent — no draft applicants in this cycle.", tone: "warn" },
+    "extension-notice-all-sent": { text: "Every draft applicant has already received the extension notice — nothing to resend.", tone: "ok" },
+    "extension-notice-no-extension": { text: "No extension is currently set on this cycle. Set an extension first.", tone: "warn" },
+    "extension-notice-not-configured": { text: "Extension notice not sent — no template is bound to the “Deadline Extension Notice” slot, or the gmail account isn't configured.", tone: "warn" },
+  };
+  const m = messages[notice];
+  if (!m) return null;
+  const toneCls = m.tone === "warn"
+    ? "bg-amber-50 border-amber-200 text-amber-900"
+    : "bg-green-50 border-green-200 text-green-900";
+  return (
+    <div className={`rounded-xl border px-4 py-3 flex items-start gap-3 ${toneCls}`} role="status">
+      <CheckCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+      <div className="flex-1 text-sm">{m.text}</div>
+      <button
+        type="button"
+        onClick={() => setNotice(null)}
+        className="text-xs text-foreground/60 hover:text-foreground"
+        aria-label="Dismiss"
+      >
+        <X className="w-4 h-4" />
+      </button>
+    </div>
+  );
+}
+
+function formatCloseInstant(d: Date): string {
+  return `${d.toLocaleString("en-US", {
+    timeZone: APPLICATION_TZ,
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  })} ${APPLICATION_TZ_LABEL}`;
+}
+
+function describeExtension(deltaMs: number): { amount: number; unit: "hours" | "days" } {
+  if (deltaMs <= 0) return { amount: 48, unit: "hours" };
+  // Round to nearest hour, then express in days if it's a whole-day multiple.
+  const hours = Math.round(deltaMs / 3_600_000);
+  if (hours > 0 && hours % 24 === 0) return { amount: hours / 24, unit: "days" };
+  return { amount: hours, unit: "hours" };
+}
+
+function CloseDateCard({ cycle, cycleStatus }: { cycle: any; cycleStatus: string }) {
+  const closeDate = cycle?.closeDate ? new Date(cycle.closeDate) : null;
+  const originalCloseDate = cycle?.originalCloseDate ? new Date(cycle.originalCloseDate) : null;
+  const anchor = originalCloseDate ?? closeDate;
+  const extensionMs = originalCloseDate && closeDate
+    ? closeDate.getTime() - originalCloseDate.getTime()
+    : 0;
+  const extensionActive = extensionMs > 0;
+  const pickerDateValue = anchor
+    ? (() => {
+        const { year, month, day } = getZonedYMD(anchor, APPLICATION_TZ);
+        return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      })()
+    : "";
+
+  return (
+    <div className="bg-card rounded-xl border border-border shadow-sm p-4 sm:p-6 space-y-6">
+      {/* 1. Original close date */}
+      <div>
+        <h3 className="text-sm font-bold text-foreground/80 mb-1">Application Close Date</h3>
+        <p className="text-xs text-muted-foreground mb-3">
+          The intended close — applications stop at 11:59 PM {APPLICATION_TZ_LABEL} on this date. If an
+          extension is set below, saving a new date moves the extension along with it.
+        </p>
+        <Form method="post" preventScrollReset className="flex flex-col sm:flex-row sm:items-end gap-3">
+          <input type="hidden" name="intent" value="set-close-date" />
+          <div className="flex-1">
+            <input
+              type="date"
+              name="closeDate"
+              defaultValue={pickerDateValue}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            />
+          </div>
+          <button
+            type="submit"
+            className="px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition"
+          >
+            Save
+          </button>
+        </Form>
+      </div>
+
+      {/* 2. Extension */}
+      {closeDate && (
+        <div className="border-t border-border pt-4">
+          <ExtensionSection
+            cycleId={cycle.id}
+            anchor={anchor!}
+            extensionMs={extensionMs}
+            extensionActive={extensionActive}
+            cycleStatus={cycleStatus}
+            extensionNoticeSentAt={cycle?.extensionNoticeSentAt ? new Date(cycle.extensionNoticeSentAt) : null}
+          />
+        </div>
+      )}
+
+      {/* 3. Effective close (read-only) */}
+      {closeDate && (
+        <div className="border-t border-border pt-4">
+          <h4 className="text-xs font-semibold text-foreground/70 uppercase tracking-wide mb-1">Effective Close</h4>
+          <p className="text-base font-semibold text-foreground">
+            {formatCloseInstant(closeDate)}
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            When applications actually stop. Auto-closes the cycle (Open → Under Review) at this moment.
+            {extensionActive && originalCloseDate && (
+              <> Applicants see a &ldquo;Deadline extended&rdquo; notice between {formatCloseInstant(originalCloseDate)} and this time.</>
+            )}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ExtensionSection({
+  cycleId,
+  anchor,
+  extensionMs,
+  extensionActive,
+  cycleStatus,
+  extensionNoticeSentAt,
+}: {
+  cycleId: string;
+  anchor: Date;
+  extensionMs: number;
+  extensionActive: boolean;
+  cycleStatus: string;
+  extensionNoticeSentAt: Date | null;
+}) {
+  const initial = describeExtension(extensionMs);
+  const [amount, setAmount] = useState<number>(initial.amount);
+  const [unit, setUnit] = useState<"hours" | "days">(initial.unit);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
+  const removeFormRef = useRef<HTMLFormElement>(null);
+  const headingId = `extend-confirm-heading-${cycleId}`;
+
+  const ms = unit === "hours" ? amount * 3_600_000 : amount * 86_400_000;
+  const nextClose = new Date(anchor.getTime() + ms);
+  const willReopen = cycleStatus === "UnderReview" && nextClose.getTime() > Date.now();
+  const stillInPast = nextClose.getTime() <= Date.now();
+
+  return (
+    <>
+      <h4 className="text-xs font-semibold text-foreground/70 uppercase tracking-wide mb-1">
+        Extension {extensionActive ? "(active)" : "(optional)"}
+      </h4>
+      <p className="text-xs text-muted-foreground mb-3">
+        Adds time after the close date. Applicants see a &ldquo;Deadline extended&rdquo; notice during the
+        extension window.
+      </p>
+      <Form
+        method="post"
+        preventScrollReset
+        ref={formRef}
+        onSubmit={(e) => {
+          e.preventDefault();
+          setShowConfirm(true);
+        }}
+        className="space-y-2"
+        aria-label={`Set deadline extension for cycle ${cycleId}`}
+      >
+        <input type="hidden" name="intent" value="extend-close-date" />
+        <div className="flex flex-col sm:flex-row sm:items-end gap-2">
+          <div className="flex items-end gap-2 flex-1">
+            <div className="w-24">
+              <label className="block text-xs text-muted-foreground mb-1" htmlFor={`extend-amount-${cycleId}`}>Amount</label>
+              <input
+                id={`extend-amount-${cycleId}`}
+                type="number"
+                name="amount"
+                min={1}
+                step={1}
+                value={amount}
+                onChange={(e) => setAmount(Number(e.target.value))}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1" htmlFor={`extend-unit-${cycleId}`}>Unit</label>
+              <select
+                id={`extend-unit-${cycleId}`}
+                name="unit"
+                value={unit}
+                onChange={(e) => setUnit(e.target.value as "hours" | "days")}
+                className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              >
+                <option value="hours">hours</option>
+                <option value="days">days</option>
+              </select>
+            </div>
+          </div>
+          <button
+            type="submit"
+            disabled={!Number.isFinite(amount) || amount <= 0}
+            className="px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white transition"
+          >
+            {extensionActive ? "Update extension" : "Set extension"}
+          </button>
+        </div>
+      </Form>
+      {extensionActive && (
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+          <Form
+            method="post"
+            preventScrollReset
+            aria-label="Resend deadline-extension email to draft applicants"
+          >
+            <input type="hidden" name="intent" value="resend-extension-notice" />
+            <button
+              type="submit"
+              className="text-xs font-medium text-blue-700 hover:text-blue-900 underline"
+            >
+              {extensionNoticeSentAt ? "Resend extension notice" : "Send extension notice now"}
+            </button>
+          </Form>
+          {extensionNoticeSentAt && (
+            <span className="text-xs text-muted-foreground">
+              Last sent {formatCloseInstant(extensionNoticeSentAt)}
+            </span>
+          )}
+          <Form
+            method="post"
+            preventScrollReset
+            ref={removeFormRef}
+            aria-label="Remove deadline extension"
+          >
+            <input type="hidden" name="intent" value="remove-extension" />
+            <button
+              type="submit"
+              className="text-xs text-red-700 hover:text-red-900 underline"
+            >
+              Remove extension
+            </button>
+          </Form>
+        </div>
+      )}
+      {showConfirm && (
+        <Modal
+          open
+          onClose={() => setShowConfirm(false)}
+          labelledBy={headingId}
+          containerClassName="bg-card rounded-2xl shadow-xl max-w-md w-full mx-4 p-6"
+        >
+          <div className="space-y-4">
+            <h2 id={headingId} className="text-lg font-bold text-foreground">
+              {extensionActive ? "Update" : "Set"} extension to {amount} {unit}?
+            </h2>
+            <div className="text-sm text-muted-foreground space-y-3">
+              <div className="bg-muted/40 rounded-lg p-3 text-xs space-y-1">
+                <div>
+                  <span className="font-medium text-foreground/80">Original close: </span>
+                  <span>{formatCloseInstant(anchor)}</span>
+                </div>
+                <div>
+                  <span className="font-medium text-foreground/80">New effective close: </span>
+                  <span className="font-semibold text-foreground">{formatCloseInstant(nextClose)}</span>
+                </div>
+              </div>
+              {willReopen && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-900">
+                  This cycle is currently <span className="font-semibold">closed</span> (Under Review). Confirming
+                  will <span className="font-semibold">reopen applications</span> to applicants until the new
+                  close time.
+                </div>
+              )}
+              {stillInPast && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-900">
+                  The new effective close is still in the past — applications will stay closed.
+                </div>
+              )}
+              <p>
+                Applicants will see a &ldquo;Deadline extended&rdquo; notice on the portal between the original
+                close and the new effective close.
+              </p>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowConfirm(false)}
+                className="px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-border rounded-md hover:bg-muted/50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowConfirm(false);
+                  formRef.current?.submit();
+                }}
+                className="px-3 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md"
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </>
   );
 }
 
@@ -2737,12 +3524,12 @@ function GeneralFormPicker({ currentCvId, currentCvLabel, options, locked }: {
   );
 }
 
-const DECISION_EMAIL_SLOTS = [
+const DECISION_EMAIL_SLOTS: ReadonlyArray<{ type: DecisionSlotType; label: string; description: string }> = [
   { type: "Rejected", label: "Rejected", description: "Sent when a Rejected decision is released to the applicant." },
   { type: "InvitedToInterview", label: "Invited to Interview", description: "Sent when an applicant is invited to interview." },
   { type: "Waitlisted", label: "Waitlisted", description: "Sent when an applicant is placed on the waitlist." },
   { type: "Accepted", label: "Accepted", description: "Sent when an applicant is offered a spot." },
-] as const;
+];
 
 function DecisionEmailsSection({ emailTemplates, currentDecisionEmails, releasedDecisionTypes }: {
   emailTemplates: any[];
@@ -2777,8 +3564,24 @@ function DecisionEmailsSection({ emailTemplates, currentDecisionEmails, released
   );
 }
 
+function SlotVariableHint({ slot }: { slot: TemplateSlot }) {
+  const vars = TEMPLATE_VARIABLES[slot];
+  return (
+    <p className="text-xs text-muted-foreground/80">
+      Supports{' '}
+      {vars.map((v, i) => (
+        <span key={v}>
+          {i > 0 && ', '}
+          <code className="font-mono bg-muted px-1 rounded">{`{{${v}}}`}</code>
+        </span>
+      ))}
+      .
+    </p>
+  );
+}
+
 function DecisionEmailPicker({ slot, binding, emailTemplates, locked }: {
-  slot: { type: string; label: string; description: string };
+  slot: { type: DecisionSlotType; label: string; description: string };
   binding: any | null;
   emailTemplates: any[];
   locked: boolean;
@@ -2795,6 +3598,7 @@ function DecisionEmailPicker({ slot, binding, emailTemplates, locked }: {
         <div className="min-w-0">
           <h4 className="text-sm font-bold text-foreground">{slot.label}</h4>
           <p className="text-xs text-muted-foreground">{slot.description}</p>
+          <SlotVariableHint slot={decisionSlot(slot.type)} />
         </div>
         {!editing && !locked && (
           <button
@@ -2865,14 +3669,15 @@ function DecisionEmailPicker({ slot, binding, emailTemplates, locked }: {
   );
 }
 
-const NOTIFICATION_EMAIL_SLOTS = [
+const NOTIFICATION_EMAIL_SLOTS: ReadonlyArray<{ type: NotificationSlotType; label: string; description: string }> = [
   { type: "ApplicationReceived", label: "Application Received", description: "Sent to the applicant when they first submit their application." },
+  { type: "ApplicationExtensionNotice", label: "Deadline Extension Notice", description: "Sent once to applicants with a draft (unsubmitted) application after the original close passes, when an extension is in effect." },
   { type: "InterviewInviteMentor", label: "Interview Invite (Interviewer)", description: "Sent to the assigned interviewer when an interview is booked or they are reassigned." },
-  { type: "InterviewConfirmedApplicant", label: "Interview Confirmed (Applicant)", description: "Sent to the applicant when their interview is booked. Supports {{time}}, {{location}}, {{meetingUrl}}." },
-  { type: "InterviewCancelledApplicant", label: "Interview Cancelled (Applicant)", description: "Sent to the applicant when their interview is cancelled. Supports {{time}}, {{location}}." },
+  { type: "InterviewConfirmedApplicant", label: "Interview Confirmed (Applicant)", description: "Sent to the applicant when their interview is booked." },
+  { type: "InterviewCancelledApplicant", label: "Interview Cancelled (Applicant)", description: "Sent to the applicant when their interview is cancelled." },
   { type: "InterviewCancelledInterviewer", label: "Interview Cancelled (Interviewer)", description: "Sent to the interviewer when an interview is cancelled or they are unassigned." },
-  { type: "InterviewLocationChanged", label: "Interview Location Changed", description: "Sent to both the applicant and interviewer(s) when the interview location is updated. Supports {{time}}, {{location}}, {{meetingUrl}}." },
-] as const;
+  { type: "InterviewLocationChanged", label: "Interview Location Changed", description: "Sent to both the applicant and interviewer(s) when the interview location is updated." },
+];
 
 function NotificationEmailsSection({ emailTemplates, currentNotificationEmails }: {
   emailTemplates: any[];
@@ -2904,7 +3709,7 @@ function NotificationEmailsSection({ emailTemplates, currentNotificationEmails }
 }
 
 function NotificationEmailPicker({ slot, binding, emailTemplates }: {
-  slot: { type: string; label: string; description: string };
+  slot: { type: NotificationSlotType; label: string; description: string };
   binding: any | null;
   emailTemplates: any[];
 }) {
@@ -2920,6 +3725,7 @@ function NotificationEmailPicker({ slot, binding, emailTemplates }: {
         <div className="min-w-0">
           <h4 className="text-sm font-bold text-foreground">{slot.label}</h4>
           <p className="text-xs text-muted-foreground">{slot.description}</p>
+          <SlotVariableHint slot={notificationSlot(slot.type)} />
         </div>
         {!editing && (
           <button

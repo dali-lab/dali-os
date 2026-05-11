@@ -3,6 +3,8 @@ import { redirect, useLoaderData, useFetcher } from "react-router";
 import type { Route } from "./+types/portal.apply";
 import { prisma } from "~/lib/db";
 import { requireAuth, withAuth } from "~/lib/auth";
+import { sendEmail } from "~/lib/gmail";
+import { renderForSlot, notificationSlot } from "~/hiring/lib/email-variables";
 import { getActiveCycle } from "~/hiring/lib/cycles";
 import { checkGitHubUrl, checkFigmaUrl, checkDriveUrl } from "~/hiring/lib/submission-check";
 import type { SubmissionCheckResult } from "~/hiring/lib/submission-check";
@@ -20,6 +22,8 @@ import {
 } from "~/hiring/components/ChallengeQuestionField";
 
 export const meta: Route.MetaFunction = () => [{ title: "Apply · DALI OS" }];
+
+const GMAIL_USER = "applications@dali.dartmouth.edu";
 
 // ─── Loader ──────────────────────────────────────────────────────────────────
 
@@ -346,12 +350,14 @@ export async function action({ request }: Route.ActionArgs) {
       url: string;
       type: "github_url" | "figma_url" | "drive_url";
     }[];
+    const selectedDomainIds = JSON.parse(formData.get("selectedDomainIds") as string) as string[];
 
-    // Validate word limits server-side before any writes. Trust the questions
-    // from the ChallengeVersion record, not anything in the request payload.
+    // Validate server-side before any writes. Trust the questions from the
+    // ChallengeVersion record, not anything in the request payload.
     const application = await prisma.application.findUnique({
       where: { id: applicationId },
       select: {
+        applicationCycleId: true,
         generalChallengeVersion: { select: { questions: true } },
       },
     });
@@ -361,27 +367,54 @@ export async function action({ request }: Route.ActionArgs) {
     const generalQuestions =
       (application.generalChallengeVersion.questions as unknown as Question[]) ?? [];
 
-    const domainApps = domainAnswers.length
-      ? await prisma.domainApplication.findMany({
-          where: { id: { in: domainAnswers.map(da => da.domainApplicationId) } },
-          select: {
-            id: true,
-            challengeVersion: { select: { questions: true } },
-          },
-        })
-      : [];
+    const allDas = await prisma.domainApplication.findMany({
+      where: { applicationId },
+      include: {
+        challengeVersion: { select: { domainId: true, questions: true } },
+      },
+    });
 
     const wordCountErrors: Record<string, WordCountViolation> = {
       ...validateWordLimits(generalQuestions, answers),
     };
     for (const da of domainAnswers) {
-      const dbDa = domainApps.find(d => d.id === da.domainApplicationId);
+      const dbDa = allDas.find(d => d.id === da.domainApplicationId);
       if (!dbDa) continue;
       const questions = (dbDa.challengeVersion.questions as unknown as Question[]) ?? [];
       Object.assign(wordCountErrors, validateWordLimits(questions, da.answers));
     }
     if (Object.keys(wordCountErrors).length > 0) {
       return withAuth(auth, { wordCountErrors });
+    }
+
+    // Required-question validation. Client gates the review modal on this, but
+    // we re-check server-side so the DB cannot end up with a submitted-but-empty
+    // domain via a stale state, manual replay, or future refactor that loosens
+    // the client gate.
+    const missingRequired: string[] = [];
+    for (const q of generalQuestions) {
+      if (q.required && !isAnswered(answers[q.key], q)) {
+        missingRequired.push(q.data.label || q.key);
+      }
+    }
+    for (const domainId of selectedDomainIds) {
+      const dbDa = allDas.find(d => d.challengeVersion.domainId === domainId);
+      if (!dbDa) {
+        missingRequired.push(`selected domain has no application record`);
+        continue;
+      }
+      const questions = (dbDa.challengeVersion.questions as unknown as Question[]) ?? [];
+      const submitted = domainAnswers.find(da => da.domainApplicationId === dbDa.id)?.answers ?? {};
+      for (const q of questions) {
+        if (q.required && !isAnswered(submitted[q.key], q)) {
+          missingRequired.push(q.data.label || q.key);
+        }
+      }
+    }
+    if (missingRequired.length > 0) {
+      return withAuth(auth, {
+        error: `Please answer all required questions before submitting (${missingRequired.length} unanswered).`,
+      });
     }
 
     // Save final answers
@@ -398,11 +431,6 @@ export async function action({ request }: Route.ActionArgs) {
     }
 
     // Persist final domain selection state
-    const selectedDomainIds = JSON.parse(formData.get("selectedDomainIds") as string) as string[];
-    const allDas = await prisma.domainApplication.findMany({
-      where: { applicationId },
-      include: { challengeVersion: { select: { domainId: true } } },
-    });
     const toSelect = allDas.filter(da => selectedDomainIds.includes(da.challengeVersion.domainId!) && !da.selected);
     const toDeselect = allDas.filter(da => !selectedDomainIds.includes(da.challengeVersion.domainId!) && da.selected);
     if (toSelect.length > 0) {
@@ -456,9 +484,48 @@ export async function action({ request }: Route.ActionArgs) {
           userId: auth.user.sub,
         },
       });
+
+      // Best-effort confirmation email — Gmail failure must not block the submission.
+      try {
+        const gmailUser = await prisma.user.findUnique({
+          where: { daliEmail: GMAIL_USER },
+          select: { googleRefreshToken: true },
+        });
+        const user = await prisma.user.findUnique({ where: { id: auth.user.sub } });
+        if (gmailUser?.googleRefreshToken && user) {
+          const to = user.dartmouthEmail ?? user.daliEmail ?? "";
+          if (to) {
+            const binding = await prisma.cycleNotificationEmail.findUnique({
+              where: {
+                applicationCycleId_notificationType: {
+                  applicationCycleId: application.applicationCycleId,
+                  notificationType: "ApplicationReceived",
+                },
+              },
+              include: { emailTemplateVersion: true },
+            });
+            if (binding) {
+              // ApplicationReceived isn't tied to a single domain (an applicant
+              // may apply to multiple), so {{domain}} is intentionally not passed
+              // here — the registry reflects this and the editor warns leads who
+              // try to use {{domain}} in this slot.
+              const { subject, html } = renderForSlot(
+                notificationSlot("ApplicationReceived"),
+                binding.emailTemplateVersion,
+                { firstName: user.firstName },
+              );
+              await sendEmail({ refreshToken: gmailUser.googleRefreshToken, to, subject, html });
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Failed to send application confirmation email:", err);
+      }
     }
 
-    return withAuth(auth, redirect("/portal"));
+    // Signal first-time submission so the portal can play a one-shot confetti.
+    // Subsequent edit-saves keep the plain redirect so the animation does not replay.
+    return withAuth(auth, redirect(existingSubmitted ? "/portal" : "/portal?just-submitted=1"));
   }
 
   return withAuth(auth, { error: "Unknown intent" });
@@ -1166,10 +1233,14 @@ export default function PortalApply() {
     }
   }
 
-  // Handle submit response (urlWarnings, wordCountErrors) — redirects are handled automatically by React Router
+  // Handle submit response (urlWarnings, wordCountErrors, error) — redirects are handled automatically by React Router
   useEffect(() => {
     if (submitFetcher.state === "idle" && submitFetcher.data) {
       setSubmitting(false);
+      if (submitFetcher.data.error) {
+        alert(submitFetcher.data.error);
+        return;
+      }
       if (submitFetcher.data.wordCountErrors) {
         setWordCountErrors(submitFetcher.data.wordCountErrors);
         setTimeout(() => warningBannerRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 50);
