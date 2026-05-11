@@ -28,6 +28,7 @@ function isoToLocalMidnightInTz(iso: string, timezone: string): Date {
 }
 import { prisma } from '~/lib/db'
 import { requireAuth, withAuth } from '~/lib/auth'
+import { inReviewPipelineFilter } from '~/hiring/lib/application-pipeline-filter'
 import type { Route } from './+types/reviewer'
 
 export const meta: Route.MetaFunction = () => [{ title: "Reviewer · DALI OS" }]
@@ -77,8 +78,14 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Only load applicant names when the user has signed the cycle's
   // confidentiality agreement. Otherwise return empty arrays and surface a
   // gate placeholder in the component.
+  // Withdrawn applications stay in the DB (audit log) but should drop out of
+  // the active reviewer queue. Filter the parent `application` relation so the
+  // ApplicationReview rows themselves remain queryable from analytics paths.
   const myReviews = confidentialityRequired ? [] : await prisma.applicationReview.findMany({
-    where: { cycleReviewerId: { in: reviewerIds } },
+    where: {
+      cycleReviewerId: { in: reviewerIds },
+      domainApplication: { application: inReviewPipelineFilter },
+    },
     include: {
       domainApplication: {
         include: {
@@ -171,7 +178,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         challengeVersion: { domainId: session.domainId },
         application: {
           applicationCycleId: session.applicationCycleId,
-          statusUpdates: { some: { newStatus: "Submitted" } },
+          ...inReviewPipelineFilter,
         },
         ...qualifyingFilter,
       },

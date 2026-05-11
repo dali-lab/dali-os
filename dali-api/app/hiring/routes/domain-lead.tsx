@@ -6,6 +6,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth, withAuth } from "~/lib/auth";
 import { CheckCircle, Plus, Trash2, Check, Clock, X, CircleDashed, ChevronDown, Eye, Send, Search, ChevronUp } from "lucide-react";
 import { inferDomainApplicationStatus } from "~/hiring/lib/domain-application-status";
+import { inReviewPipelineFilter } from "~/hiring/lib/application-pipeline-filter";
 import { getReviewStatus } from "~/hiring/lib/review-status";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { ConfidentialityGate } from "~/hiring/components/ConfidentialityGate";
@@ -228,7 +229,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         ? await prisma.domainApplication.count({
             where: {
               challengeVersion: { domainId: assignment.domainId },
-              application: { applicationCycleId: cycle.id, statusUpdates: { some: { newStatus: "Submitted" } } },
+              application: { applicationCycleId: cycle.id, ...inReviewPipelineFilter },
               reviews: { every: { submittedAt: { not: null } }, some: {} },
               decisions: { none: { stage: { in: ["Final", "Released"] } } },
             },
@@ -239,7 +240,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         ? await prisma.domainApplication.count({
             where: {
               challengeVersion: { domainId: assignment.domainId },
-              application: { applicationCycleId: cycle.id, statusUpdates: { some: { newStatus: "Submitted" } } },
+              application: { applicationCycleId: cycle.id, ...inReviewPipelineFilter },
               interviews: { some: { status: "Completed" } },
             },
           })
@@ -1367,10 +1368,21 @@ function ReviewerSection({ cycleId, domainId, initialReviewers }: {
   }
 
   async function removeReviewer(reviewerId: string) {
-    const res = await fetch(`/api/hiring/cycles/${cycleId}/reviewers/${reviewerId}`, {
-      method: 'DELETE', credentials: 'include',
-    });
-    if (res.ok) setReviewers(prev => prev.filter(r => r.id !== reviewerId));
+    try {
+      const res = await fetch(`/api/hiring/cycles/${cycleId}/reviewers/${reviewerId}`, {
+        method: 'DELETE', credentials: 'include',
+      });
+      if (res.ok) {
+        setReviewers(prev => prev.filter(r => r.id !== reviewerId));
+      } else {
+        const err = await res.json().catch(() => ({}));
+        console.error("Failed to remove reviewer:", res.status, err);
+        alert(`Failed to remove reviewer: ${err.error ?? res.statusText}`);
+      }
+    } catch (e) {
+      console.error("Failed to remove reviewer:", e);
+      alert(`Failed to remove reviewer: ${e instanceof Error ? e.message : String(e)}`);
+    }
   }
 
   const pendingName = pendingRemove
@@ -1556,12 +1568,23 @@ function InterviewerSection({ cycleId, domainId, initialInterviewers }: {
   }
 
   async function removeInterviewer(interviewerId: string) {
-    const res = await fetch(`/api/hiring/cycles/${cycleId}/interviewers`, {
-      method: "DELETE", credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ interviewerId }),
-    });
-    if (res.ok) setInterviewers(prev => prev.filter(i => i.id !== interviewerId));
+    try {
+      const res = await fetch(`/api/hiring/cycles/${cycleId}/interviewers`, {
+        method: "DELETE", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ interviewerId }),
+      });
+      if (res.ok) {
+        setInterviewers(prev => prev.filter(i => i.id !== interviewerId));
+      } else {
+        const err = await res.json().catch(() => ({}));
+        console.error("Failed to remove interviewer:", res.status, err);
+        alert(`Failed to remove interviewer: ${err.error ?? res.statusText}`);
+      }
+    } catch (e) {
+      console.error("Failed to remove interviewer:", e);
+      alert(`Failed to remove interviewer: ${e instanceof Error ? e.message : String(e)}`);
+    }
   }
 
   const existingMemberIds = new Set(interviewers.map((i: any) => i.daliMemberId));
