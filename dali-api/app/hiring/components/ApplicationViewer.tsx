@@ -30,10 +30,29 @@ interface Annotation {
 interface Popover {
   x: number
   y: number
+  anchorTop: number
   start: number
   end: number
   fieldKey: string
   annotationId?: string
+}
+
+const POPOVER_WIDTH = 256
+const POPOVER_ESTIMATED_HEIGHT = 220
+const VIEWPORT_MARGIN = 8
+
+function clampPopoverPosition(x: number, y: number, anchorTop: number) {
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+  const left = Math.max(
+    VIEWPORT_MARGIN,
+    Math.min(x - POPOVER_WIDTH / 2, vw - POPOVER_WIDTH - VIEWPORT_MARGIN),
+  )
+  const flipsAbove = y + POPOVER_ESTIMATED_HEIGHT + VIEWPORT_MARGIN > vh
+  const top = flipsAbove
+    ? Math.max(VIEWPORT_MARGIN, anchorTop - POPOVER_ESTIMATED_HEIGHT - VIEWPORT_MARGIN)
+    : y
+  return { left, top }
 }
 
 const COLOR_CLASSES: Record<HighlightColor, string> = {
@@ -159,7 +178,7 @@ function AnnotatableField({
     const end = start + range.toString().length
     if (start === end) return
     const rect = range.getBoundingClientRect()
-    setPopover({ x: rect.left + rect.width / 2, y: rect.bottom + window.scrollY + 8, start, end, fieldKey })
+    setPopover({ x: rect.left + rect.width / 2, y: rect.bottom + 8, anchorTop: rect.top, start, end, fieldKey })
     setPendingComment('')
     setPendingColor('yellow')
     sel.removeAllRanges()
@@ -169,7 +188,7 @@ function AnnotatableField({
     (annotationId: string, x: number, y: number) => {
       const ann = annotations.find((a) => a.id === annotationId)
       if (!ann) return
-      setPopover({ x, y: y + window.scrollY + 8, start: ann.start, end: ann.end, fieldKey, annotationId })
+      setPopover({ x, y: y + 8, anchorTop: y, start: ann.start, end: ann.end, fieldKey, annotationId })
       setPendingComment(ann.comment)
       setPendingColor(ann.color)
     },
@@ -204,7 +223,7 @@ function AnnotatableField({
           <div className="fixed inset-0 z-40" onClick={() => setPopover(null)} />
           <div
             className="fixed z-50 bg-card rounded-xl shadow-xl border border-border p-3 w-64 max-w-[calc(100vw-2rem)]"
-            style={{ left: Math.min(popover.x - 128, window.innerWidth - 272), top: popover.y }}
+            style={clampPopoverPosition(popover.x, popover.y, popover.anchorTop)}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-2">
