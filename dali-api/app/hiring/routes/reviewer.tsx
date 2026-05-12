@@ -658,7 +658,6 @@ export default function ReviewerDashboard() {
           </div>
         )}
       </Section>
-      <p className="text-center text-xs text-section-bg select-all font-mono">1:0x43</p>
     </div>
   )
 }

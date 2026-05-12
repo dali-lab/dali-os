@@ -1126,9 +1126,8 @@ export default function Portal() {
           </div>
         )}
       </div>
-      <div className="relative px-6 md:px-16 lg:px-24 py-6 text-center text-xs text-muted-foreground/70">
+      <div className="px-6 md:px-16 lg:px-24 py-6 text-center text-xs text-muted-foreground/70">
         Made with ❤️ at the DALI Lab.
-        <span className="absolute right-2 bottom-2 text-section-bg select-all font-mono">1:f-2</span>
       </div>
     </div>
   );

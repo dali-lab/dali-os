@@ -27,7 +27,6 @@ import { userInitials } from '~/lib/display'
 import { TabWorkspace, type TabWorkspaceHandle, type OpenTabRequest } from '~/components/TabWorkspace'
 
 interface LayoutProps {
-  children: React.ReactNode
   user: { email: string; firstName?: string; lastName?: string }
   isHiringLead?: boolean
   isAdmin?: boolean
@@ -40,7 +39,7 @@ const EXPANDED_AREAS_KEY = 'dali:sidebar:expanded-areas'
 
 type AreaKey = 'hiring' | 'projects' | 'members' | 'partners' | 'admin-console'
 
-export function Layout({ children, user, isHiringLead = false, isAdmin = false, isDomainLead = false, isInterviewer = false }: LayoutProps) {
+export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLead = false, isInterviewer = false }: LayoutProps) {
   const location = useLocation()
   const [focusedTabUrl, setFocusedTabUrl] = useState<string | null>(null)
   // Sidebar highlight follows the focused workspace tab when one is open;
@@ -328,6 +327,22 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
 
       {/* Areas + nested sections */}
       <nav className="flex-1 overflow-y-auto py-3 px-2 flex flex-col gap-0.5">
+        {(() => {
+          const calendarActive = path.startsWith('/calendar')
+          return (
+            <button
+              type="button"
+              title={collapsed ? 'Calendar' : undefined}
+              onClick={() => openInWorkspace({ url: '/calendar', label: 'Calendar' })}
+              className={`flex items-center gap-3 rounded-md ${collapsed ? 'px-3 py-2 justify-center' : 'px-3 py-2'} text-sm font-heading font-semibold text-left transition-colors hover:bg-white/5 ${
+                calendarActive ? 'text-white' : 'text-white/65 hover:text-white'
+              }`}
+            >
+              <Calendar className="w-4 h-4 flex-shrink-0" />
+              {!collapsed && <span className="truncate">Calendar</span>}
+            </button>
+          )
+        })()}
         {areas.map((area) => {
           // Default: active area is expanded, inactive is collapsed. User toggle overrides.
           const expanded = userExpanded[area.key] ?? area.active
@@ -392,20 +407,29 @@ export function Layout({ children, user, isHiringLead = false, isAdmin = false, 
 
       {/* Footer — user + logout */}
       <div className="border-t border-white/10 p-2 flex-shrink-0">
-        <div className={`flex items-center gap-2 px-2 py-2 ${collapsed ? 'justify-center' : ''}`}>
-          <div className="w-8 h-8 rounded-full bg-accent-coral text-white flex items-center justify-center font-bold text-xs flex-shrink-0">
-            {initials}
-          </div>
-          {!collapsed && (
-            <div className="flex-1 min-w-0">
-              <div className="text-xs text-white/80 truncate">{user.email}</div>
+        <div className={`flex items-center gap-1 px-1 py-1 ${collapsed ? 'justify-center' : ''}`}>
+          <button
+            type="button"
+            onClick={() => openInWorkspace({ url: '/', label: 'Home' })}
+            title={collapsed ? 'Open profile' : undefined}
+            aria-label="Open profile"
+            className={`flex items-center gap-2 rounded-md hover:bg-white/5 transition-colors ${
+              collapsed ? 'p-1.5' : 'flex-1 min-w-0 px-2 py-1.5 text-left'
+            }`}
+          >
+            <div className="w-8 h-8 rounded-full bg-accent-coral text-white flex items-center justify-center font-bold text-xs flex-shrink-0">
+              {initials}
             </div>
-          )}
+            {!collapsed && (
+              <span className="text-xs text-white/80 truncate min-w-0">{user.email}</span>
+            )}
+          </button>
           {!collapsed && (
             <a
               href="/logout"
-              className="text-white/40 hover:text-white/70 transition flex-shrink-0"
+              className="p-1.5 text-white/40 hover:text-white/70 hover:bg-white/5 rounded-md transition flex-shrink-0"
               title="Log out"
+              aria-label="Log out"
             >
               <LogOut className="w-4 h-4" />
             </a>

@@ -4,6 +4,7 @@ export default [
   // UI routes wrapped in the app layout (navbar + view toggle)
   layout("routes/layout.tsx", [
     index("routes/home.tsx"),
+    route("calendar", "routes/calendar.tsx"),
 
     // Hiring section
     route("hiring/reviewer", "hiring/routes/reviewer.tsx"),

@@ -2,7 +2,7 @@ import { redirect } from "react-router";
 import type { Route } from "./+types/challenges";
 import { prisma } from "~/lib/db";
 import { requireAuth, withAuth } from "~/lib/auth";
-import { isHiringLead, isDomainLead } from "~/lib/roles";
+import { isHiringLead, isDomainLead, isAdmin } from "~/lib/roles";
 import Challenges from "~/hiring/components/Challenges";
 
 export const meta: Route.MetaFunction = () => [{ title: "Challenges · DALI OS" }];
@@ -10,7 +10,7 @@ export const meta: Route.MetaFunction = () => [{ title: "Challenges · DALI OS" 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return withAuth(auth, redirect("/login"));
-  if (!(await isHiringLead(auth.user.sub)) && !(await isDomainLead(auth.user.sub))) return withAuth(auth, redirect("/"));
+  if (!(await isHiringLead(auth.user.sub)) && !(await isDomainLead(auth.user.sub)) && !(await isAdmin(auth.user.sub))) return withAuth(auth, redirect("/"));
   const [domains, challenges] = await Promise.all([
     prisma.domain.findMany({ orderBy: { name: "asc" } }),
     prisma.challenge.findMany({
@@ -29,7 +29,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return withAuth(auth, redirect("/login"));
-  if (!(await isHiringLead(auth.user.sub)) && !(await isDomainLead(auth.user.sub))) return withAuth(auth, redirect("/"));
+  if (!(await isHiringLead(auth.user.sub)) && !(await isDomainLead(auth.user.sub)) && !(await isAdmin(auth.user.sub))) return withAuth(auth, redirect("/"));
 
   const formData = await request.formData();
   const intent = formData.get("intent") as string;
