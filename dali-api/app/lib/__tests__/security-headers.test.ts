@@ -38,7 +38,7 @@ describe("securityHeaders / contentSecurityPolicy", () => {
     expect(csp).toContain("object-src 'none'");
     expect(csp).toContain("base-uri 'self'");
     expect(csp).toContain("form-action 'self'");
-    expect(csp).toContain("frame-ancestors 'none'");
+    expect(csp).toContain("frame-ancestors 'self'");
   });
 
   it("preserves single-quoted CSP keywords like 'self' and 'none'", async () => {
@@ -105,7 +105,7 @@ describe("securityHeaders / contentSecurityPolicy", () => {
     const { securityHeaders } = await loadHeaders({ NODE_ENV: "test" });
     const h = securityHeaders();
     expect(h["X-Content-Type-Options"]).toBe("nosniff");
-    expect(h["X-Frame-Options"]).toBe("DENY");
+    expect(h["X-Frame-Options"]).toBe("SAMEORIGIN");
     expect(h["Referrer-Policy"]).toBe("strict-origin-when-cross-origin");
     expect(h["Permissions-Policy"]).toContain("camera=()");
   });

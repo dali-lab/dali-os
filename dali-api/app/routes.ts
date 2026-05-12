@@ -4,6 +4,7 @@ export default [
   // UI routes wrapped in the app layout (navbar + view toggle)
   layout("routes/layout.tsx", [
     index("routes/home.tsx"),
+    route("calendar", "routes/calendar.tsx"),
 
     // Hiring section
     route("hiring/reviewer", "hiring/routes/reviewer.tsx"),
@@ -30,7 +31,16 @@ export default [
     route("admin-console", "routes/admin-console.tsx"),
     route("admin-console/members", "routes/admin-console.members.tsx"),
     route("admin-console/domains", "routes/admin-console.domains.tsx"),
-    route("admin-console/party", "routes/admin-console.party.tsx"),
+
+    // Projects
+    route("projects/list", "routes/projects.list.tsx"),
+    route("projects/staffing", "routes/projects.staffing.tsx"),
+
+    // Members directory (separate from admin-console/members)
+    route("members", "routes/members.tsx"),
+
+    // Partners
+    route("partners", "routes/partners.tsx"),
   ]),
 
   // Applicant portal (lightweight layout)
@@ -39,9 +49,6 @@ export default [
     route("portal/apply", "routes/portal.apply.tsx"),
     route("portal/application", "routes/portal.application.tsx"),
   ]),
-
-  // Party route (authed, no layout — full-page easter egg)
-  route("party", "routes/party.tsx"),
 
   // Login (no layout)
   route("login", "routes/login.tsx"),
@@ -123,9 +130,6 @@ export default [
 
   // Email sending
   route("api/email/send", "routes/api.email.send.ts"),
-
-  // Party launch-event analytics
-  route("api/party/events", "routes/api.party.events.ts"),
 
   // Submission URL checking
   route("api/check-url", "routes/api.check-url.ts"),

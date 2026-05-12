@@ -39,7 +39,7 @@ function cspDirectives(): Directives {
     "object-src": ["'none'"],
     "base-uri": ["'self'"],
     "form-action": ["'self'"],
-    "frame-ancestors": ["'none'"],
+    "frame-ancestors": ["'self'"],
   };
 
   if (isProduction) {
@@ -74,7 +74,7 @@ function cspHeaderName(): string {
 export function securityHeaders(): Record<string, string> {
   const headers: Record<string, string> = {
     "X-Content-Type-Options": "nosniff",
-    "X-Frame-Options": "DENY",
+    "X-Frame-Options": "SAMEORIGIN",
     "Referrer-Policy": "strict-origin-when-cross-origin",
     "X-DNS-Prefetch-Control": "off",
     "Permissions-Policy": "camera=(), microphone=(), geolocation=()",

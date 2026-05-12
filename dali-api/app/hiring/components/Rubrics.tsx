@@ -26,20 +26,20 @@ export default function RubricsList() {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-6">
         {rubrics.map((rubric) => (
           <Link
             key={rubric.id}
             to={`/hiring/rubrics/${rubric.id}`}
             className="bg-card rounded-xl border border-border p-6 shadow-sm hover:shadow-md transition-shadow group block"
           >
-            <div className="flex items-start justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-purple-100 text-purple-600 rounded-lg">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                <div className="p-2 bg-purple-100 text-purple-600 rounded-lg flex-shrink-0">
                   <ListOrdered className="w-6 h-6" />
                 </div>
-                <div>
-                  <h3 className="font-bold text-foreground group-hover:text-blue-600 transition-colors">
+                <div className="min-w-0 flex-1">
+                  <h3 className="font-bold text-foreground group-hover:text-blue-600 transition-colors break-words">
                     {rubric.name}
                   </h3>
                   <div className="flex items-center gap-2 mt-1">
@@ -49,7 +49,7 @@ export default function RubricsList() {
                   </div>
                 </div>
               </div>
-              <ChevronRight className="w-5 h-5 text-muted-foreground/70 group-hover:text-blue-500" />
+              <ChevronRight className="w-5 h-5 text-muted-foreground/70 group-hover:text-blue-500 flex-shrink-0" />
             </div>
           </Link>
         ))}

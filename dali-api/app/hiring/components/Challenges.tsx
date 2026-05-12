@@ -20,51 +20,28 @@ export default function Challenges() {
   const activeDomainName = isGeneral ? 'General' : (domains.find((d: any) => d.id === activeTab)?.name ?? '')
 
   return (
-    <div className="flex gap-8">
-      {/* Side Navbar */}
-      <nav className="w-48 flex-shrink-0">
-        <p className="text-xs font-semibold text-muted-foreground/70 uppercase tracking-wider mb-3">Domain</p>
-        <ul className="space-y-1">
-          <li>
-            <button
-              onClick={() => setActiveTab(GENERAL_TAB_ID)}
-              className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                isGeneral
-                  ? 'bg-blue-50 text-blue-700'
-                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-              }`}
-            >
-              General
-            </button>
-          </li>
-          {(domains as any[]).map((domain: any) => (
-            <li key={domain.id}>
-              <button
-                onClick={() => setActiveTab(domain.id)}
-                className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  activeTab === domain.id
-                    ? 'bg-blue-50 text-blue-700'
-                    : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-                }`}
-              >
-                {domain.name}
-              </button>
-            </li>
-          ))}
-        </ul>
-      </nav>
-
-      {/* Main Content */}
-      <div className="flex-1 space-y-8">
-        <div className="flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">{activeDomainName} Challenges</h1>
-            <p className="mt-1 text-muted-foreground">
-              {isGeneral
-                ? 'Manage the general application form and its versions.'
-                : 'Manage domain challenges and their versions independently of hiring cycles.'}
-            </p>
-          </div>
+    <div className="space-y-8">
+      <div className="flex justify-between items-start gap-4 flex-wrap">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-bold text-foreground">{activeDomainName} Challenges</h1>
+          <p className="mt-1 text-muted-foreground">
+            {isGeneral
+              ? 'Manage the general application form and its versions.'
+              : 'Manage domain challenges and their versions independently of hiring cycles.'}
+          </p>
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <select
+            value={activeTab}
+            onChange={(e) => setActiveTab(e.target.value)}
+            aria-label="Domain"
+            className="px-3 py-2 rounded-lg border border-border bg-card text-sm font-medium text-foreground hover:bg-muted/50 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+          >
+            <option value={GENERAL_TAB_ID}>General</option>
+            {(domains as any[]).map((domain: any) => (
+              <option key={domain.id} value={domain.id}>{domain.name}</option>
+            ))}
+          </select>
           <button
             onClick={() => setShowModal(true)}
             className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 shadow-sm"
@@ -73,8 +50,9 @@ export default function Challenges() {
             New Challenge
           </button>
         </div>
+      </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-6">
           {filtered.map((challenge: any) => {
             const domainVersionCount = challenge.versions.filter(
               (v: any) => isGeneral ? v.domainId === null : v.domainId === activeTab
@@ -85,13 +63,13 @@ export default function Challenges() {
                 to={`/hiring/challenges/${challenge.id}`}
                 className="bg-card rounded-xl border border-border p-6 shadow-sm hover:shadow-md transition-shadow group block"
               >
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-blue-50 rounded-lg text-blue-600">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <div className="p-2 bg-blue-50 rounded-lg text-blue-600 flex-shrink-0">
                       <FileText className="w-6 h-6" />
                     </div>
-                    <div>
-                      <h3 className="text-lg font-bold text-foreground group-hover:text-blue-600 transition-colors">
+                    <div className="min-w-0 flex-1">
+                      <h3 className="text-lg font-bold text-foreground group-hover:text-blue-600 transition-colors break-words">
                         {challenge.name}
                       </h3>
                       <p className="text-sm text-muted-foreground mt-1">
@@ -99,7 +77,7 @@ export default function Challenges() {
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1 flex-shrink-0">
                     <Form method="post" onClick={(e) => e.stopPropagation()}>
                       <input type="hidden" name="intent" value="delete" />
                       <input type="hidden" name="id" value={challenge.id} />
@@ -121,11 +99,10 @@ export default function Challenges() {
             )
           })}
           {filtered.length === 0 && (
-            <div className="col-span-3 text-center py-12 text-muted-foreground/70 text-sm">
+            <div className="col-span-full text-center py-12 text-muted-foreground/70 text-sm">
               No challenges for this domain yet.
             </div>
           )}
-        </div>
       </div>
 
       {/* New Challenge Modal */}
