@@ -1,4 +1,4 @@
-import { redirect, useLoaderData } from "react-router";
+import { redirect, useFetcher, useLoaderData } from "react-router";
 import { useState } from "react";
 import {
   ChevronLeft,
@@ -15,19 +15,354 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { requireAuth, withAuth } from "~/lib/auth";
+import { prisma } from "~/lib/db";
+import { computeFreeIntervals, type Interval } from "~/lib/availability";
+import { CalendarActionSchema } from "~/lib/calendar-schemas";
+import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
 import type { Route } from "./+types/calendar";
+
+const DEFAULT_TIMEZONE = "America/New_York";
+const DEFAULT_BUFFER_MIN = 15;
+const DEFAULT_WORK_START_MIN = 9 * 60;
+const DEFAULT_WORK_END_MIN = 17 * 60;
+
+type WhDay = {
+  dayOfWeek: number;
+  enabled: boolean;
+  startMinute: number;
+  endMinute: number;
+  location: "InPerson" | "Remote";
+};
+
+type ManualBlockDTO = {
+  id: string;
+  title: string;
+  startTime: string;
+  endTime: string;
+  recurrenceRule: string | null;
+};
+
+type LoaderData = {
+  timezone: string;
+  defaultEventBufferMin: number;
+  workingHours: WhDay[];
+  manualBlocks: ManualBlockDTO[];
+  weekStartIso: string;
+  weekEndIso: string;
+  busyIntervals: { startIso: string; endIso: string }[];
+};
+
+function defaultWorkingHours(): WhDay[] {
+  // Mon–Fri 9–5 InPerson, weekends disabled.
+  return Array.from({ length: 7 }).map((_, dow) => ({
+    dayOfWeek: dow,
+    enabled: dow >= 1 && dow <= 5,
+    startMinute: DEFAULT_WORK_START_MIN,
+    endMinute: DEFAULT_WORK_END_MIN,
+    location: "InPerson",
+  }));
+}
+
+// Window for the visible week grid. We compute Sunday→following Sunday in the
+// user's timezone (the grid renders Sun..Sat columns).
+function currentWeekWindow(timezone: string): { start: Date; end: Date } {
+  const now = new Date();
+  const ymd = getZonedYMD(now, timezone);
+  const todayUtcMidnight = new Date(Date.UTC(ymd.year, ymd.month - 1, ymd.day));
+  const dow = todayUtcMidnight.getUTCDay();
+  const sundayUtc = new Date(todayUtcMidnight.getTime() - dow * 86_400_000);
+  const start = zonedDayStartUtc(
+    sundayUtc.getUTCFullYear(),
+    sundayUtc.getUTCMonth() + 1,
+    sundayUtc.getUTCDate(),
+    timezone,
+  );
+  const nextSundayUtc = new Date(sundayUtc.getTime() + 7 * 86_400_000);
+  const end = zonedDayStartUtc(
+    nextSundayUtc.getUTCFullYear(),
+    nextSundayUtc.getUTCMonth() + 1,
+    nextSundayUtc.getUTCDate(),
+    timezone,
+  );
+  return { start, end };
+}
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return withAuth(auth, redirect("/login"));
   if (auth.user.type === "applicant") return withAuth(auth, redirect("/portal"));
-  return withAuth(auth, { user: auth.user });
+
+  const userId = auth.user.sub;
+
+  const [settings, whRows, blocks] = await Promise.all([
+    prisma.userAvailabilitySettings.findUnique({ where: { userId } }),
+    prisma.workingHoursDay.findMany({ where: { userId } }),
+    prisma.manualBlock.findMany({
+      where: { userId },
+      orderBy: { startTime: "asc" },
+      take: 200,
+    }),
+  ]);
+
+  const timezone = settings?.timezone ?? DEFAULT_TIMEZONE;
+  const bufferMin = settings?.defaultEventBufferMin ?? DEFAULT_BUFFER_MIN;
+
+  // Fill missing days with defaults so the UI always has 7 rows.
+  const byDow = new Map(whRows.map((r) => [r.dayOfWeek, r]));
+  const workingHours: WhDay[] = defaultWorkingHours().map((d) => {
+    const row = byDow.get(d.dayOfWeek);
+    if (!row) return d;
+    return {
+      dayOfWeek: row.dayOfWeek,
+      enabled: row.enabled,
+      startMinute: row.startMinute,
+      endMinute: row.endMinute,
+      location: row.location,
+    };
+  });
+
+  const { start: weekStart, end: weekEnd } = currentWeekWindow(timezone);
+  const { busy } = computeFreeIntervals({
+    windowStart: weekStart,
+    windowEnd: weekEnd,
+    workingHours,
+    manualBlocks: blocks.map((b) => ({
+      startTime: b.startTime,
+      endTime: b.endTime,
+      recurrenceRule: b.recurrenceRule,
+    })),
+    externalBusy: [],
+    bufferMin,
+    timezone,
+  });
+
+  const data: LoaderData = {
+    timezone,
+    defaultEventBufferMin: bufferMin,
+    workingHours,
+    manualBlocks: blocks.map((b) => ({
+      id: b.id,
+      title: b.title,
+      startTime: b.startTime.toISOString(),
+      endTime: b.endTime.toISOString(),
+      recurrenceRule: b.recurrenceRule,
+    })),
+    weekStartIso: weekStart.toISOString(),
+    weekEndIso: weekEnd.toISOString(),
+    busyIntervals: busy.map((i: Interval) => ({
+      startIso: i.start.toISOString(),
+      endIso: i.end.toISOString(),
+    })),
+  };
+  return withAuth(auth, data);
+}
+
+export async function action({ request }: Route.ActionArgs) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
+  if (auth.user.type === "applicant")
+    return withAuth(auth, Response.json({ error: "Forbidden" }, { status: 403 }));
+
+  const userId = auth.user.sub;
+  const form = await request.formData();
+  const raw = Object.fromEntries(form.entries());
+
+  // Coerce string-encoded fields into the shape Zod expects.
+  const candidate = coerceFormToAction(raw);
+  const parsed = CalendarActionSchema.safeParse(candidate);
+  if (!parsed.success) {
+    return withAuth(
+      auth,
+      Response.json({ error: "Invalid input", details: parsed.error.flatten() }, { status: 400 }),
+    );
+  }
+  const input = parsed.data;
+
+  switch (input.intent) {
+    case "update-working-hours-day": {
+      if (input.enabled && input.startMinute >= input.endMinute) {
+        return withAuth(
+          auth,
+          Response.json({ error: "startMinute must be < endMinute" }, { status: 400 }),
+        );
+      }
+      await prisma.workingHoursDay.upsert({
+        where: { userId_dayOfWeek: { userId, dayOfWeek: input.dayOfWeek } },
+        create: {
+          userId,
+          dayOfWeek: input.dayOfWeek,
+          enabled: input.enabled,
+          startMinute: input.startMinute,
+          endMinute: input.endMinute,
+          location: input.location,
+        },
+        update: {
+          enabled: input.enabled,
+          startMinute: input.startMinute,
+          endMinute: input.endMinute,
+          location: input.location,
+        },
+      });
+      return withAuth(auth, null);
+    }
+
+    case "copy-weekdays": {
+      const monday = await prisma.workingHoursDay.findUnique({
+        where: { userId_dayOfWeek: { userId, dayOfWeek: 1 } },
+      });
+      if (!monday) return withAuth(auth, null);
+      const tuesToFri = [2, 3, 4, 5];
+      await Promise.all(
+        tuesToFri.map((dow) =>
+          prisma.workingHoursDay.upsert({
+            where: { userId_dayOfWeek: { userId, dayOfWeek: dow } },
+            create: {
+              userId,
+              dayOfWeek: dow,
+              enabled: monday.enabled,
+              startMinute: monday.startMinute,
+              endMinute: monday.endMinute,
+              location: monday.location,
+            },
+            update: {
+              enabled: monday.enabled,
+              startMinute: monday.startMinute,
+              endMinute: monday.endMinute,
+              location: monday.location,
+            },
+          }),
+        ),
+      );
+      return withAuth(auth, null);
+    }
+
+    case "reset-working-hours": {
+      await prisma.workingHoursDay.deleteMany({ where: { userId } });
+      return withAuth(auth, null);
+    }
+
+    case "set-event-buffer": {
+      await prisma.userAvailabilitySettings.upsert({
+        where: { userId },
+        create: { userId, defaultEventBufferMin: input.defaultEventBufferMin },
+        update: { defaultEventBufferMin: input.defaultEventBufferMin },
+      });
+      return withAuth(auth, null);
+    }
+
+    case "add-manual-block": {
+      const startTime = new Date(input.startTime);
+      const endTime = new Date(input.endTime);
+      if (endTime <= startTime) {
+        return withAuth(
+          auth,
+          Response.json({ error: "endTime must be after startTime" }, { status: 400 }),
+        );
+      }
+      await prisma.manualBlock.create({
+        data: {
+          userId,
+          title: input.title,
+          startTime,
+          endTime,
+          allDay: input.allDay,
+          recurrenceRule: input.recurrenceRule ?? null,
+        },
+      });
+      return withAuth(auth, null);
+    }
+
+    case "update-manual-block": {
+      const existing = await prisma.manualBlock.findUnique({ where: { id: input.id } });
+      if (!existing || existing.userId !== userId) {
+        return withAuth(auth, Response.json({ error: "Not found" }, { status: 404 }));
+      }
+      const startTime = input.startTime ? new Date(input.startTime) : existing.startTime;
+      const endTime = input.endTime ? new Date(input.endTime) : existing.endTime;
+      if (endTime <= startTime) {
+        return withAuth(
+          auth,
+          Response.json({ error: "endTime must be after startTime" }, { status: 400 }),
+        );
+      }
+      await prisma.manualBlock.update({
+        where: { id: input.id },
+        data: {
+          title: input.title ?? existing.title,
+          startTime,
+          endTime,
+          allDay: input.allDay ?? existing.allDay,
+          recurrenceRule:
+            input.recurrenceRule === undefined ? existing.recurrenceRule : input.recurrenceRule,
+        },
+      });
+      return withAuth(auth, null);
+    }
+
+    case "remove-manual-block": {
+      const existing = await prisma.manualBlock.findUnique({ where: { id: input.id } });
+      if (!existing || existing.userId !== userId) {
+        return withAuth(auth, Response.json({ error: "Not found" }, { status: 404 }));
+      }
+      await prisma.manualBlock.delete({ where: { id: input.id } });
+      return withAuth(auth, null);
+    }
+  }
+}
+
+// FormData arrives as strings; convert to the typed shapes Zod expects.
+function coerceFormToAction(raw: Record<string, FormDataEntryValue>): unknown {
+  const get = (k: string) => (typeof raw[k] === "string" ? (raw[k] as string) : undefined);
+  const intent = get("intent");
+  const asBool = (v: string | undefined) => v === "true";
+  const asInt = (v: string | undefined) => (v === undefined ? undefined : parseInt(v, 10));
+
+  switch (intent) {
+    case "update-working-hours-day":
+      return {
+        intent,
+        dayOfWeek: asInt(get("dayOfWeek")),
+        enabled: asBool(get("enabled")),
+        startMinute: asInt(get("startMinute")),
+        endMinute: asInt(get("endMinute")),
+        location: get("location"),
+      };
+    case "copy-weekdays":
+    case "reset-working-hours":
+      return { intent };
+    case "set-event-buffer":
+      return { intent, defaultEventBufferMin: asInt(get("defaultEventBufferMin")) };
+    case "add-manual-block":
+      return {
+        intent,
+        title: get("title"),
+        startTime: get("startTime"),
+        endTime: get("endTime"),
+        allDay: get("allDay") ? asBool(get("allDay")) : false,
+        recurrenceRule: get("recurrenceRule") || null,
+      };
+    case "update-manual-block":
+      return {
+        intent,
+        id: get("id"),
+        title: get("title"),
+        startTime: get("startTime"),
+        endTime: get("endTime"),
+        allDay: get("allDay") === undefined ? undefined : asBool(get("allDay")),
+        recurrenceRule:
+          get("recurrenceRule") === undefined ? undefined : get("recurrenceRule") || null,
+      };
+    case "remove-manual-block":
+      return { intent, id: get("id") };
+    default:
+      return raw;
+  }
 }
 
 type Tab = "availability" | "schedule";
 
 export default function CalendarPage() {
-  useLoaderData<typeof loader>();
+  const data = useLoaderData<typeof loader>() as LoaderData;
   const [tab, setTab] = useState<Tab>("availability");
 
   return (
@@ -41,7 +376,7 @@ export default function CalendarPage() {
         </PillButton>
       </div>
 
-      {tab === "availability" ? <AvailabilityView /> : <ScheduleView />}
+      {tab === "availability" ? <AvailabilityView data={data} /> : <ScheduleView />}
     </div>
   );
 }
@@ -74,7 +409,7 @@ function PillButton({
 /* Availability view                                                   */
 /* ------------------------------------------------------------------ */
 
-function AvailabilityView() {
+function AvailabilityView({ data }: { data: LoaderData }) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-6">
       <aside className="flex flex-col gap-6">
@@ -85,15 +420,16 @@ function AvailabilityView() {
           </p>
         </header>
         <CalendarIntegrationsCard />
-        <WorkingHoursCard />
-        <EventBuffersCard />
-        <ManualBlocksCard />
+        <WorkingHoursCard workingHours={data.workingHours} />
+        <EventBuffersCard bufferMin={data.defaultEventBufferMin} />
+        <ManualBlocksCard blocks={data.manualBlocks} timezone={data.timezone} />
       </aside>
-      <AvailabilityWeekGrid />
+      <AvailabilityWeekGrid data={data} />
     </div>
   );
 }
 
+// Static stub: Phase 2 wires this to real UserCalendarLink rows + OAuth.
 function CalendarIntegrationsCard() {
   return (
     <section>
@@ -104,123 +440,24 @@ function CalendarIntegrationsCard() {
         </h2>
         <button
           type="button"
-          className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-md border border-border hover:bg-muted transition-colors"
+          disabled
+          title="Coming soon"
+          className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-md border border-border text-muted-foreground/60 cursor-not-allowed"
         >
           <Plus className="w-3.5 h-3.5" />
           Add Account
         </button>
       </div>
-      <div className="flex flex-col gap-3">
-        <ProviderBlock
-          accent="border-l-accent-teal"
-          headerBg="bg-accent-teal/10"
-          icon={<GoogleIcon />}
-          name="Google Calendar"
-          calendars={[
-            { name: "Work", color: "bg-accent-teal", enabled: true },
-            { name: "Personal", color: "bg-accent-pink", enabled: false },
-            { name: "DALI Lab", color: "bg-accent-green", enabled: true },
-          ]}
-        />
-        <ProviderBlock
-          accent="border-l-dark-blue"
-          headerBg="bg-muted"
-          icon={<AppleIcon />}
-          name="Apple Calendar"
-          calendars={[
-            { name: "Personal", color: "bg-accent-pink", enabled: true },
-            { name: "Birthdays", color: "bg-accent-yellow", enabled: false },
-          ]}
-        />
-        <ProviderBlock
-          accent="border-l-accent-green"
-          headerBg="bg-accent-green/10"
-          icon={<OutlookIcon />}
-          name="Outlook"
-          calendars={[{ name: "Dartmouth", color: "bg-accent-green", enabled: true }]}
-        />
+      <div className="bg-card border border-border rounded-md p-3 text-xs text-muted-foreground">
+        Connect Google or Outlook to ingest external events. Coming soon.
       </div>
     </section>
   );
 }
 
-function ProviderBlock({
-  accent,
-  headerBg,
-  icon,
-  name,
-  calendars,
-}: {
-  accent: string;
-  headerBg: string;
-  icon: React.ReactNode;
-  name: string;
-  calendars: { name: string; color: string; enabled: boolean }[];
-}) {
-  return (
-    <div className={`bg-card border border-border border-l-4 ${accent} rounded-md overflow-hidden`}>
-      <div className={`flex items-center justify-between px-3 py-2 ${headerBg}`}>
-        <div className="flex items-center gap-2">
-          {icon}
-          <span className="font-semibold text-sm text-foreground">{name}</span>
-        </div>
-        <button
-          type="button"
-          aria-label={`Remove ${name}`}
-          className="p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"
-        >
-          <Trash2 className="w-3.5 h-3.5" />
-        </button>
-      </div>
-      <div className="px-3 py-3 flex flex-col gap-2">
-        <p className="text-xs text-muted-foreground">Select which calendars should block your availability:</p>
-        {calendars.map((c) => (
-          <CalendarRow key={c.name} {...c} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function CalendarRow({ name, color, enabled }: { name: string; color: string; enabled: boolean }) {
-  const [on, setOn] = useState(enabled);
-  return (
-    <button
-      type="button"
-      onClick={() => setOn((v) => !v)}
-      className="flex items-center justify-between text-left hover:bg-muted/50 rounded-md px-1 py-1 transition-colors"
-    >
-      <div className="flex items-center gap-2">
-        <span className={`w-2 h-2 rounded-full ${color}`} />
-        <span className="text-sm text-foreground">{name}</span>
-      </div>
-      <span
-        className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors ${
-          on
-            ? "bg-accent-coral border-accent-coral text-white"
-            : "border-border bg-background"
-        }`}
-      >
-        {on && (
-          <svg viewBox="0 0 16 16" className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="3">
-            <path d="M3 8.5l3.5 3.5L13 5" />
-          </svg>
-        )}
-      </span>
-    </button>
-  );
-}
-
-function WorkingHoursCard() {
-  const days = [
-    { key: "Mon", enabled: true },
-    { key: "Tue", enabled: true },
-    { key: "Wed", enabled: true },
-    { key: "Thu", enabled: true },
-    { key: "Fri", enabled: true },
-    { key: "Sat", enabled: false },
-    { key: "Sun", enabled: false },
-  ];
+function WorkingHoursCard({ workingHours }: { workingHours: WhDay[] }) {
+  const copyFetcher = useFetcher();
+  const resetFetcher = useFetcher();
   return (
     <section>
       <div className="flex items-center justify-between mb-3">
@@ -229,59 +466,113 @@ function WorkingHoursCard() {
           Working Hours
         </h2>
         <div className="flex items-center gap-1">
-          <button
-            type="button"
-            className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors text-muted-foreground"
-          >
-            <Copy className="w-3 h-3" />
-            Weekdays
-          </button>
-          <button
-            type="button"
-            aria-label="Reset"
-            className="p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
+          <copyFetcher.Form method="post">
+            <input type="hidden" name="intent" value="copy-weekdays" />
+            <button
+              type="submit"
+              title="Copy Monday's hours to Tue–Fri"
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors text-muted-foreground"
+            >
+              <Copy className="w-3 h-3" />
+              Weekdays
+            </button>
+          </copyFetcher.Form>
+          <resetFetcher.Form method="post">
+            <input type="hidden" name="intent" value="reset-working-hours" />
+            <button
+              type="submit"
+              aria-label="Reset working hours to defaults"
+              title="Reset to defaults"
+              className="p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </resetFetcher.Form>
         </div>
       </div>
       <div className="bg-card border border-border rounded-md p-3 flex flex-col gap-2">
-        {days.map((d) => (
-          <DayRow key={d.key} day={d.key} enabled={d.enabled} />
+        {workingHours.map((d) => (
+          <DayRow key={d.dayOfWeek} day={d} />
         ))}
       </div>
     </section>
   );
 }
 
-function DayRow({ day, enabled }: { day: string; enabled: boolean }) {
-  const [on, setOn] = useState(enabled);
-  const [loc, setLoc] = useState<"in" | "remote">("in");
+const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function DayRow({ day }: { day: WhDay }) {
+  const fetcher = useFetcher();
+  // Optimistic state: while a submit is pending, render the in-flight values
+  // rather than the stale loader values so toggles feel instant.
+  const pending = fetcher.formData;
+  const enabled = pending ? pending.get("enabled") === "true" : day.enabled;
+  const startMinute = pending ? Number(pending.get("startMinute")) : day.startMinute;
+  const endMinute = pending ? Number(pending.get("endMinute")) : day.endMinute;
+  const location =
+    (pending ? (pending.get("location") as string) : day.location) === "Remote" ? "Remote" : "InPerson";
+
+  const submit = (partial: { enabled?: boolean; startMinute?: number; endMinute?: number; location?: "InPerson" | "Remote" }) => {
+    const next = {
+      enabled: partial.enabled ?? enabled,
+      startMinute: partial.startMinute ?? startMinute,
+      endMinute: partial.endMinute ?? endMinute,
+      location: partial.location ?? location,
+    };
+    fetcher.submit(
+      {
+        intent: "update-working-hours-day",
+        dayOfWeek: String(day.dayOfWeek),
+        enabled: String(next.enabled),
+        startMinute: String(next.startMinute),
+        endMinute: String(next.endMinute),
+        location: next.location,
+      },
+      { method: "post" },
+    );
+  };
+
   return (
     <div className="flex items-center gap-2">
       <button
         type="button"
-        onClick={() => setOn((v) => !v)}
+        onClick={() => submit({ enabled: !enabled })}
         className={`w-4 h-4 rounded border flex items-center justify-center transition-colors flex-shrink-0 ${
-          on ? "bg-accent-coral border-accent-coral text-white" : "border-border bg-background"
+          enabled ? "bg-accent-coral border-accent-coral text-white" : "border-border bg-background"
         }`}
-        aria-label={`${day} enabled`}
+        aria-label={`${DAY_LABELS[day.dayOfWeek]} enabled`}
       >
-        {on && (
+        {enabled && (
           <svg viewBox="0 0 16 16" className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="3">
             <path d="M3 8.5l3.5 3.5L13 5" />
           </svg>
         )}
       </button>
-      <span className="text-sm font-medium text-foreground w-9">{day}</span>
-      {on ? (
+      <span className="text-sm font-medium text-foreground w-9">{DAY_LABELS[day.dayOfWeek]}</span>
+      {enabled ? (
         <>
-          <TimeField defaultValue="09:00 AM" />
+          <TimeField
+            valueMin={startMinute}
+            onCommit={(min) => submit({ startMinute: min })}
+            aria-label={`${DAY_LABELS[day.dayOfWeek]} start time`}
+          />
           <span className="text-muted-foreground text-sm">–</span>
-          <TimeField defaultValue="05:00 PM" />
+          <TimeField
+            valueMin={endMinute}
+            onCommit={(min) => submit({ endMinute: min })}
+            aria-label={`${DAY_LABELS[day.dayOfWeek]} end time`}
+          />
           <div className="flex items-center gap-0.5 ml-auto">
-            <LocButton active={loc === "in"} onClick={() => setLoc("in")} icon={<Building2 className="w-3.5 h-3.5" />} />
-            <LocButton active={loc === "remote"} onClick={() => setLoc("remote")} icon={<Wifi className="w-3.5 h-3.5" />} />
+            <LocButton
+              active={location === "InPerson"}
+              onClick={() => submit({ location: "InPerson" })}
+              icon={<Building2 className="w-3.5 h-3.5" />}
+            />
+            <LocButton
+              active={location === "Remote"}
+              onClick={() => submit({ location: "Remote" })}
+              icon={<Wifi className="w-3.5 h-3.5" />}
+            />
           </div>
         </>
       ) : (
@@ -291,17 +582,55 @@ function DayRow({ day, enabled }: { day: string; enabled: boolean }) {
   );
 }
 
-function TimeField({ defaultValue }: { defaultValue: string }) {
+function TimeField({
+  valueMin,
+  onCommit,
+  ...rest
+}: { valueMin: number; onCommit: (min: number) => void } & React.AriaAttributes) {
+  const [text, setText] = useState(formatTime(valueMin));
+  // Keep text in sync if the canonical value changes externally (e.g. after submit).
+  // Using a key on the parent would be cleaner, but a defaultValue + onBlur commit
+  // is enough for this UI.
   return (
     <div className="relative">
       <input
+        {...rest}
         type="text"
-        defaultValue={defaultValue}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={() => {
+          const parsed = parseTime(text);
+          if (parsed === null || parsed === valueMin) {
+            setText(formatTime(valueMin));
+            return;
+          }
+          onCommit(parsed);
+        }}
         className="w-[88px] pl-2 pr-6 py-1 text-xs border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
       />
       <Clock className="absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground pointer-events-none" />
     </div>
   );
+}
+
+function formatTime(minOfDay: number): string {
+  const h = Math.floor(minOfDay / 60);
+  const m = minOfDay % 60;
+  const period = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${String(h12).padStart(2, "0")}:${String(m).padStart(2, "0")} ${period}`;
+}
+
+function parseTime(input: string): number | null {
+  const m = input.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
+  if (!m) return null;
+  let h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  if (Number.isNaN(h) || Number.isNaN(min) || h < 0 || h > 23 || min < 0 || min > 59) return null;
+  const period = m[3]?.toUpperCase();
+  if (period === "PM" && h < 12) h += 12;
+  if (period === "AM" && h === 12) h = 0;
+  return h * 60 + min;
 }
 
 function LocButton({ active, onClick, icon }: { active: boolean; onClick: () => void; icon: React.ReactNode }) {
@@ -318,9 +647,19 @@ function LocButton({ active, onClick, icon }: { active: boolean; onClick: () => 
   );
 }
 
-function EventBuffersCard() {
-  const options = ["None", "5m", "10m", "15m", "30m", "45m", "60m"];
-  const [selected, setSelected] = useState("15m");
+function EventBuffersCard({ bufferMin }: { bufferMin: number }) {
+  const fetcher = useFetcher();
+  const pending = fetcher.formData;
+  const selectedMin = pending ? Number(pending.get("defaultEventBufferMin")) : bufferMin;
+  const options: { label: string; value: number }[] = [
+    { label: "None", value: 0 },
+    { label: "5m", value: 5 },
+    { label: "10m", value: 10 },
+    { label: "15m", value: 15 },
+    { label: "30m", value: 30 },
+    { label: "45m", value: 45 },
+    { label: "60m", value: 60 },
+  ];
   return (
     <section>
       <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground mb-3">
@@ -334,30 +673,36 @@ function EventBuffersCard() {
         <div className="flex flex-wrap gap-2">
           {options.map((o) => (
             <button
-              key={o}
+              key={o.value}
               type="button"
-              onClick={() => setSelected(o)}
+              onClick={() =>
+                fetcher.submit(
+                  { intent: "set-event-buffer", defaultEventBufferMin: String(o.value) },
+                  { method: "post" },
+                )
+              }
               className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
-                selected === o
+                selectedMin === o.value
                   ? "bg-accent-coral text-white"
                   : "bg-background text-foreground border border-border hover:bg-muted"
               }`}
             >
-              {o}
+              {o.label}
             </button>
           ))}
         </div>
         <p className="text-xs text-muted-foreground mt-3">
-          {selected === "None"
+          {selectedMin === 0
             ? "No buffer will be added between events."
-            : `A ${selected.replace("m", "-minute")} buffer will be added before and after every event.`}
+            : `A ${selectedMin}-minute buffer will be added before and after every event.`}
         </p>
       </div>
     </section>
   );
 }
 
-function ManualBlocksCard() {
+function ManualBlocksCard({ blocks, timezone }: { blocks: ManualBlockDTO[]; timezone: string }) {
+  const [adding, setAdding] = useState(false);
   return (
     <section>
       <div className="flex items-center justify-between mb-3">
@@ -367,48 +712,160 @@ function ManualBlocksCard() {
         </h2>
         <button
           type="button"
+          onClick={() => setAdding((v) => !v)}
           className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-md border border-border hover:bg-muted transition-colors"
         >
           <Plus className="w-3.5 h-3.5" />
-          Add Block
+          {adding ? "Cancel" : "Add Block"}
         </button>
       </div>
+      {adding && <AddManualBlockForm onDone={() => setAdding(false)} />}
       <div className="flex flex-col gap-2">
-        <div className="bg-card border border-border border-l-4 border-l-accent-coral rounded-md px-3 py-2 flex items-start justify-between">
-          <div>
-            <div className="text-sm font-medium text-foreground">Dentist</div>
-            <div className="text-xs text-muted-foreground mt-0.5">2026-05-11 · 13:00 – 14:30</div>
-          </div>
-          <button
-            type="button"
-            aria-label="Remove block"
-            className="p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
-        </div>
+        {blocks.length === 0 && !adding && (
+          <div className="text-xs text-muted-foreground italic">No manual blocks.</div>
+        )}
+        {blocks.map((b) => (
+          <ManualBlockRow key={b.id} block={b} timezone={timezone} />
+        ))}
       </div>
     </section>
   );
+}
+
+function AddManualBlockForm({ onDone }: { onDone: () => void }) {
+  const fetcher = useFetcher();
+  return (
+    <fetcher.Form
+      method="post"
+      onSubmit={() => {
+        // Optimistically close the form; the loader revalidation will reveal the new row.
+        queueMicrotask(onDone);
+      }}
+      className="bg-card border border-border rounded-md p-3 mb-2 flex flex-col gap-2"
+    >
+      <input type="hidden" name="intent" value="add-manual-block" />
+      <input
+        name="title"
+        placeholder="Title (e.g. Dentist)"
+        required
+        className="px-2 py-1 text-sm border border-border rounded-md bg-background text-foreground"
+      />
+      <div className="flex gap-2">
+        <label className="flex-1 text-xs text-muted-foreground flex flex-col gap-1">
+          Start
+          <input
+            type="datetime-local"
+            name="startTimeLocal"
+            required
+            className="px-2 py-1 text-sm border border-border rounded-md bg-background text-foreground"
+            onChange={(e) => {
+              const dt = e.currentTarget.value ? new Date(e.currentTarget.value).toISOString() : "";
+              const hidden = e.currentTarget.form?.querySelector<HTMLInputElement>('input[name="startTime"]');
+              if (hidden) hidden.value = dt;
+            }}
+          />
+          <input type="hidden" name="startTime" />
+        </label>
+        <label className="flex-1 text-xs text-muted-foreground flex flex-col gap-1">
+          End
+          <input
+            type="datetime-local"
+            name="endTimeLocal"
+            required
+            className="px-2 py-1 text-sm border border-border rounded-md bg-background text-foreground"
+            onChange={(e) => {
+              const dt = e.currentTarget.value ? new Date(e.currentTarget.value).toISOString() : "";
+              const hidden = e.currentTarget.form?.querySelector<HTMLInputElement>('input[name="endTime"]');
+              if (hidden) hidden.value = dt;
+            }}
+          />
+          <input type="hidden" name="endTime" />
+        </label>
+      </div>
+      <input
+        name="recurrenceRule"
+        placeholder="Recurrence (RRULE, optional, e.g. FREQ=WEEKLY;BYDAY=MO)"
+        className="px-2 py-1 text-xs border border-border rounded-md bg-background text-foreground"
+      />
+      <div className="flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={onDone}
+          className="px-3 py-1 text-xs font-medium rounded-md border border-border hover:bg-muted"
+        >
+          Cancel
+        </button>
+        <button
+          type="submit"
+          className="px-3 py-1 text-xs font-semibold rounded-md bg-accent-coral text-white hover:bg-accent-coral/90"
+        >
+          Add
+        </button>
+      </div>
+    </fetcher.Form>
+  );
+}
+
+function ManualBlockRow({ block, timezone }: { block: ManualBlockDTO; timezone: string }) {
+  const fetcher = useFetcher();
+  const removing = fetcher.state !== "idle";
+  return (
+    <div
+      className={`bg-card border border-border border-l-4 border-l-accent-coral rounded-md px-3 py-2 flex items-start justify-between ${
+        removing ? "opacity-50" : ""
+      }`}
+    >
+      <div>
+        <div className="text-sm font-medium text-foreground">{block.title}</div>
+        <div className="text-xs text-muted-foreground mt-0.5">
+          {formatBlockRange(block.startTime, block.endTime, timezone)}
+          {block.recurrenceRule && (
+            <span className="ml-1 italic">· {block.recurrenceRule}</span>
+          )}
+        </div>
+      </div>
+      <fetcher.Form method="post">
+        <input type="hidden" name="intent" value="remove-manual-block" />
+        <input type="hidden" name="id" value={block.id} />
+        <button
+          type="submit"
+          aria-label={`Remove ${block.title}`}
+          disabled={removing}
+          className="p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+      </fetcher.Form>
+    </div>
+  );
+}
+
+function formatBlockRange(startIso: string, endIso: string, timezone: string): string {
+  const start = new Date(startIso);
+  const end = new Date(endIso);
+  const date = new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(start);
+  const t = (d: Date) =>
+    new Intl.DateTimeFormat("en-US", { timeZone: timezone, hour: "2-digit", minute: "2-digit", hour12: false }).format(d);
+  return `${date} · ${t(start)} – ${t(end)}`;
 }
 
 /* ------------------------------------------------------------------ */
 /* Week grids                                                          */
 /* ------------------------------------------------------------------ */
 
-function WeekToolbar({ legend }: { legend: { color: string; label: string }[] }) {
+function WeekToolbar({ legend, monthLabel }: { legend: { color: string; label: string }[]; monthLabel: string }) {
   return (
     <div className="flex items-center justify-between mb-3">
       <div className="flex items-center gap-3">
-        <h2 className="font-heading text-lg font-bold text-foreground">May 2026</h2>
+        <h2 className="font-heading text-lg font-bold text-foreground">{monthLabel}</h2>
         <div className="flex items-center gap-1">
-          <button type="button" aria-label="Previous week" className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
+          <button type="button" aria-label="Previous week" disabled className="p-1.5 rounded-md text-muted-foreground/40">
             <ChevronLeft className="w-4 h-4" />
           </button>
           <button type="button" className="px-3 py-1 text-xs font-semibold rounded-md border border-border hover:bg-muted transition-colors">
             Today
           </button>
-          <button type="button" aria-label="Next week" className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
+          <button type="button" aria-label="Next week" disabled className="p-1.5 rounded-md text-muted-foreground/40">
             <ChevronRight className="w-4 h-4" />
           </button>
         </div>
@@ -426,50 +883,75 @@ function WeekToolbar({ legend }: { legend: { color: string; label: string }[] })
 }
 
 const HOURS = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
-const DAYS = [
-  { key: "SUN", num: 10 },
-  { key: "MON", num: 11 },
-  { key: "TUE", num: 12 },
-  { key: "WED", num: 13 },
-  { key: "THU", num: 14 },
-  { key: "FRI", num: 15 },
-  { key: "SAT", num: 16 },
-];
-
 const HOUR_PX = 56;
 
-function hoursBetween(startHour: number, endHour: number, startMin = 0, endMin = 0) {
-  return endHour - startHour + (endMin - startMin) / 60;
-}
+function AvailabilityWeekGrid({ data }: { data: LoaderData }) {
+  const weekStart = new Date(data.weekStartIso);
+  const days = Array.from({ length: 7 }).map((_, i) => {
+    const d = new Date(weekStart.getTime() + i * 86_400_000);
+    return { dayOfWeek: d.getUTCDay(), num: d.getUTCDate(), dateUtc: d };
+  });
 
-function AvailabilityWeekGrid() {
+  // Build per-day event blocks from busy intervals.
+  const eventsByDay: Record<number, EventBlock[]> = {};
+  for (const b of data.busyIntervals) {
+    const start = new Date(b.startIso);
+    const end = new Date(b.endIso);
+    const ymd = getZonedYMD(start, data.timezone);
+    const dayMidnight = zonedDayStartUtc(ymd.year, ymd.month, ymd.day, data.timezone);
+    const startHour = (start.getTime() - dayMidnight.getTime()) / 3_600_000;
+    const duration = (end.getTime() - start.getTime()) / 3_600_000;
+    const dayIdx = days.findIndex(
+      (d) => d.dateUtc.getUTCFullYear() === ymd.year && d.dateUtc.getUTCMonth() + 1 === ymd.month && d.dateUtc.getUTCDate() === ymd.day,
+    );
+    if (dayIdx < 0) continue;
+    if (!eventsByDay[dayIdx]) eventsByDay[dayIdx] = [];
+    eventsByDay[dayIdx].push({
+      startHour,
+      duration,
+      label: "Busy",
+      className: EVENT_CORAL,
+      borderClassName: "border-accent-coral-light",
+    });
+  }
+
+  const monthLabel = new Intl.DateTimeFormat("en-US", {
+    timeZone: data.timezone,
+    month: "long",
+    year: "numeric",
+  }).format(weekStart);
+
   return (
     <section className="bg-card border border-border rounded-lg p-4 flex flex-col">
       <WeekToolbar
+        monthLabel={monthLabel}
         legend={[
           { color: "bg-accent-green", label: "Available" },
           { color: "bg-muted", label: "Outside Hours" },
-          { color: "bg-accent-yellow", label: "Buffer" },
           { color: "bg-accent-coral", label: "Busy" },
         ]}
       />
       <WeekGrid
+        days={days}
         showProviderRow
         backgroundLayer={(dayIdx) => {
-          const isWeekend = dayIdx === 0 || dayIdx === 6;
-          if (isWeekend) return <DayBg style={STRIPE_STYLE} />;
+          const dow = days[dayIdx].dayOfWeek;
+          const wh = data.workingHours.find((w) => w.dayOfWeek === dow);
+          if (!wh || !wh.enabled) return <DayBg style={STRIPE_STYLE} />;
+          const startH = wh.startMinute / 60;
+          const endH = wh.endMinute / 60;
           return (
             <>
-              {/* before 9am */}
-              <BlockBlock topHour={8} startHour={8} duration={1} style={STRIPE_STYLE} />
-              {/* after 5pm */}
-              <BlockBlock topHour={8} startHour={17} duration={3} style={STRIPE_STYLE} />
+              {/* before working hours */}
+              <BlockBlock topHour={HOURS[0]} startHour={HOURS[0]} duration={Math.max(0, startH - HOURS[0])} style={STRIPE_STYLE} />
+              {/* after working hours */}
+              <BlockBlock topHour={HOURS[0]} startHour={endH} duration={Math.max(0, HOURS[HOURS.length - 1] + 1 - endH)} style={STRIPE_STYLE} />
               {/* working hours wash */}
-              <BlockBlock topHour={8} startHour={9} duration={8} className="bg-accent-green/20 dark:bg-accent-green/15" />
+              <BlockBlock topHour={HOURS[0]} startHour={startH} duration={endH - startH} className="bg-accent-green/20 dark:bg-accent-green/15" />
             </>
           );
         }}
-        eventsByDay={availabilityEvents}
+        eventsByDay={eventsByDay}
       />
     </section>
   );
@@ -478,54 +960,11 @@ function AvailabilityWeekGrid() {
 // Hard-coded dark text that doesn't flip in dark mode (the dark-blue token does).
 const EVENT_TEXT = "text-[hsl(203_38%_18%)]";
 const EVENT_CORAL = `bg-accent-coral-light ${EVENT_TEXT}`;
-const EVENT_GREEN = `bg-accent-green ${EVENT_TEXT}`;
-const EVENT_TEAL = `bg-accent-teal ${EVENT_TEXT}`;
 const MATCH_CLS = `bg-accent-coral-light ${EVENT_TEXT}`;
 const NEAR_MISS_CLS = `bg-accent-green ${EVENT_TEXT}`;
 
-const BUFFER = 0.25; // 15 minutes
-
-const availabilityEvents: Record<number, EventBlock[]> = {
-  1: [
-    {
-      startHour: 13,
-      duration: 1.5,
-      label: "Dentist",
-      className: EVENT_CORAL,
-      borderClassName: "border-accent-coral-light",
-      bufferClassName: "bg-accent-coral-light/30",
-      bufferBefore: BUFFER,
-      bufferAfter: BUFFER,
-    },
-  ],
-  2: [
-    {
-      startHour: 16,
-      duration: 2,
-      label: "DALI Lab",
-      className: EVENT_GREEN,
-      borderClassName: "border-accent-green",
-      bufferClassName: "bg-accent-green/30",
-      bufferBefore: BUFFER,
-      bufferAfter: BUFFER,
-    },
-  ],
-  3: [
-    {
-      startHour: 10,
-      duration: 2,
-      label: "Work",
-      className: EVENT_TEAL,
-      borderClassName: "border-accent-teal",
-      bufferClassName: "bg-accent-teal/30",
-      bufferBefore: BUFFER,
-      bufferAfter: BUFFER,
-    },
-  ],
-};
-
 /* ------------------------------------------------------------------ */
-/* Schedule view                                                       */
+/* Schedule view (Phase 3 will wire to a backend search)               */
 /* ------------------------------------------------------------------ */
 
 type PersonRow = { id: string; label: string };
@@ -711,41 +1150,28 @@ function AddBtn({ label, onClick, size = "md" }: { label: string; onClick: () =>
 }
 
 function ScheduleWeekGrid() {
+  // Phase 3 will replace this with a real /api/calendar/search result.
+  const placeholderDays = Array.from({ length: 7 }).map((_, i) => ({ dayOfWeek: i, num: 10 + i, dateUtc: new Date() }));
   return (
     <section className="bg-card border border-border rounded-lg p-4 flex flex-col">
       <WeekToolbar
+        monthLabel="(Schedule preview)"
         legend={[
-          { color: "bg-accent-coral", label: "Match (24)" },
-          { color: "bg-accent-green", label: "Near Miss (24)" },
+          { color: "bg-accent-coral", label: "Match" },
+          { color: "bg-accent-green", label: "Near Miss" },
         ]}
       />
-      <WeekGrid eventsByDay={scheduleEvents} />
+      <WeekGrid days={placeholderDays} eventsByDay={schedulePlaceholder} />
     </section>
   );
 }
 
-const scheduleEvents: Record<number, EventBlock[]> = {
+const schedulePlaceholder: Record<number, EventBlock[]> = {
   2: [
-    // Tue
     { startHour: 9, duration: 1.5, label: "~50% match", className: NEAR_MISS_CLS, borderClassName: "border-accent-green" },
     { startHour: 10.5, duration: 1, label: "✓ Available", className: MATCH_CLS },
-    { startHour: 13, duration: 1, label: "✓ Available", className: MATCH_CLS },
-    { startHour: 14, duration: 3, label: "✓ Available", className: MATCH_CLS },
   ],
-  3: [
-    // Wed
-    { startHour: 9, duration: 2.5, label: "~50% match", className: NEAR_MISS_CLS, borderClassName: "border-accent-green" },
-    { startHour: 12.5, duration: 1.5, label: "~50% match", className: NEAR_MISS_CLS, borderClassName: "border-accent-green" },
-    { startHour: 14, duration: 1, label: "✓ Available", className: MATCH_CLS },
-  ],
-  4: [
-    // Thu
-    { startHour: 9, duration: 1.5, label: "~50% match", className: NEAR_MISS_CLS, borderClassName: "border-accent-green" },
-    { startHour: 10.5, duration: 1, label: "✓ Available", className: MATCH_CLS },
-    { startHour: 12.5, duration: 1.5, label: "~50% match", className: NEAR_MISS_CLS, borderClassName: "border-accent-green" },
-    { startHour: 14, duration: 1.5, label: "~50% match", className: NEAR_MISS_CLS, borderClassName: "border-accent-green" },
-    { startHour: 15.5, duration: 1.5, label: "~50% match", className: NEAR_MISS_CLS, borderClassName: "border-accent-green" },
-  ],
+  3: [{ startHour: 9, duration: 2.5, label: "~50% match", className: NEAR_MISS_CLS, borderClassName: "border-accent-green" }],
 };
 
 /* ------------------------------------------------------------------ */
@@ -768,11 +1194,15 @@ type EventBlock = {
   bufferAfter?: number;
 };
 
+const DAY_KEYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+
 function WeekGrid({
+  days,
   eventsByDay,
   backgroundLayer,
   showProviderRow = false,
 }: {
+  days: { dayOfWeek: number; num: number; dateUtc: Date }[];
   eventsByDay: Record<number, EventBlock[]>;
   backgroundLayer?: (dayIdx: number) => React.ReactNode;
   showProviderRow?: boolean;
@@ -789,10 +1219,10 @@ function WeekGrid({
         ))}
       </div>
       {/* Day columns */}
-      {DAYS.map((d, idx) => (
-        <div key={d.key} className="flex-1 min-w-0 border-r last:border-r-0 border-border flex flex-col">
+      {days.map((d, idx) => (
+        <div key={idx} className="flex-1 min-w-0 border-r last:border-r-0 border-border flex flex-col">
           <div className={`flex flex-col items-center justify-center border-b border-border ${showProviderRow ? "h-16" : "h-9"}`}>
-            <div className="text-[10px] font-semibold text-muted-foreground tracking-wide">{d.key}</div>
+            <div className="text-[10px] font-semibold text-muted-foreground tracking-wide">{DAY_KEYS[d.dayOfWeek]}</div>
             <div className="text-sm font-bold text-foreground">{d.num}</div>
             {showProviderRow && (
               <div className="flex items-center gap-0.5 mt-0.5 text-muted-foreground/50">
@@ -802,7 +1232,6 @@ function WeekGrid({
             )}
           </div>
           <div className="relative" style={{ height: HOURS.length * HOUR_PX }}>
-            {/* gridlines */}
             {HOURS.map((_, i) => (
               <div
                 key={i}
@@ -810,9 +1239,7 @@ function WeekGrid({
                 style={{ top: i * HOUR_PX }}
               />
             ))}
-            {/* background layer (working hours / weekend) */}
             {backgroundLayer?.(idx)}
-            {/* events */}
             {(eventsByDay[idx] ?? []).map((e, i) => {
               const bufferBefore = e.bufferBefore ?? 0;
               const bufferAfter = e.bufferAfter ?? 0;
@@ -876,6 +1303,7 @@ function BlockBlock({
   className?: string;
   style?: React.CSSProperties;
 }) {
+  if (duration <= 0) return null;
   return (
     <div
       className={`absolute left-0 right-0 ${className ?? ""}`}
@@ -888,36 +1316,3 @@ function BlockBlock({
   );
 }
 
-/* ------------------------------------------------------------------ */
-/* Provider icons                                                      */
-/* ------------------------------------------------------------------ */
-
-function GoogleIcon() {
-  return (
-    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none">
-      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4" />
-      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
-      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18A10.96 10.96 0 001 12c0 1.77.42 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05" />
-      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
-    </svg>
-  );
-}
-
-function AppleIcon() {
-  return (
-    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z" />
-    </svg>
-  );
-}
-
-function OutlookIcon() {
-  return (
-    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none">
-      <path d="M24 7.387v10.478c0 .23-.08.424-.238.576a.806.806 0 01-.588.234h-8.42v-8.07l1.2.9 1.705-1.4V7.387h6.103c.23 0 .424.08.588.234.159.152.238.346.238.576z" fill="#0364B8" />
-      <path d="M16.754 10.105l-1.705 1.4-1.2-.9v8.07h-5.1V7.387h6.103c.23 0 .424.08.588.234.159.152.238.346.238.576v1.908z" fill="#0A2767" />
-      <rect x="1" y="5" width="12" height="14" rx="1" fill="#0078D4" />
-      <ellipse cx="7" cy="12" rx="3.5" ry="3.5" fill="white" />
-    </svg>
-  );
-}

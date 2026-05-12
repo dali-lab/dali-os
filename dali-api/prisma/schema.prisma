@@ -72,6 +72,9 @@ model User {
   staffingAssignments    StaffingAssignment[]
   calendarLink           UserCalendarLink?
   scheduledMeetings      ScheduledMeeting[]
+  availabilitySettings   UserAvailabilitySettings?
+  workingHoursDays       WorkingHoursDay[]
+  manualBlocks           ManualBlock[]
   notificationEvents     NotificationEvent[]
   notificationPreferences NotificationPreference[]
 }
@@ -1667,6 +1670,61 @@ model MeetingException {
   meeting ScheduledMeeting @relation(fields: [scheduledMeetingId], references: [id])
 
   @@unique([scheduledMeetingId, originalStart])
+}
+
+// Per-user calendar preferences. Lazily upserted on first write.
+model UserAvailabilitySettings {
+  id                    String   @id @default(cuid())
+  userId                String   @unique
+  // IANA zone, e.g. "America/New_York". Working hours are interpreted in this zone.
+  timezone              String   @default("America/New_York")
+  defaultEventBufferMin Int      @default(15)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+// One row per user per weekday. startMinute/endMinute are minutes-from-local-midnight
+// (0–1440), applied in the user's UserAvailabilitySettings.timezone.
+model WorkingHoursDay {
+  id          String       @id @default(cuid())
+  userId      String
+  dayOfWeek   Int          // 0=Sunday .. 6=Saturday
+  enabled     Boolean      @default(true)
+  startMinute Int          @default(540)  // 9:00
+  endMinute   Int          @default(1020) // 17:00
+  location    WorkLocation @default(InPerson)
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, dayOfWeek])
+  @@index([userId])
+}
+
+enum WorkLocation {
+  InPerson
+  Remote
+}
+
+// User-defined busy blocks, optionally recurring (RFC 5545 RRULE).
+model ManualBlock {
+  id              String   @id @default(cuid())
+  userId          String
+  title           String
+  startTime       DateTime
+  endTime         DateTime
+  allDay          Boolean  @default(false)
+  // Nullable: a one-off block has no rule. When set, startTime/endTime define
+  // the first occurrence; subsequent ones are expanded by rrule.
+  recurrenceRule  String?
+  // Optional cached UNTIL for query bounds; not authoritative.
+  recurrenceUntil DateTime?
+  createdAt       DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, startTime])
 }
 
 // ─── Page Tree ───────────────────────────────────────────────────────────────
