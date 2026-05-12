@@ -297,7 +297,7 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
           </div>
           {!collapsed && (
             <span className="font-heading font-bold text-lg text-white tracking-tight truncate">
-              <span className="text-accent-coral/80">D</span>ALI OS
+              DALI OS
             </span>
           )}
         </Link>
@@ -466,7 +466,7 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
               <span className="text-white font-bold text-base leading-none font-heading">D</span>
             </div>
             <span className="font-heading font-bold text-lg text-white tracking-tight">
-              <span className="text-accent-coral/80">D</span>ALI OS
+              DALI OS
             </span>
           </Link>
         </div>
