@@ -4,6 +4,10 @@ import { resetCycleStatus } from './helpers';
 const cycleId = 'cycle-fall-2026';
 const baseURL = 'http://localhost:3001';
 
+// Reviewer pages render inside the workspace iframe titled "Reviews".
+const reviewsFrame = (page: import('@playwright/test').Page) =>
+  page.frameLocator('iframe[title="Reviews"]');
+
 /** Log in as hiring lead and advance the cycle to the given status. */
 async function advanceCycleTo(browser: any, status: string) {
   const ctx = await browser.newContext({ baseURL });
@@ -26,8 +30,9 @@ test.describe.serial('reviewer workflow', () => {
 
     test('dashboard loads', async ({ page }) => {
       await page.goto('/hiring/reviewer');
-      await expect(page.getByRole('heading', { name: 'Reviewer Dashboard' })).toBeVisible();
-      await expect(page.getByText('Assigned Written Applications')).toBeVisible({ timeout: 10_000 });
+      const frame = reviewsFrame(page);
+      await expect(frame.getByRole('heading', { name: 'Reviewer Dashboard' })).toBeVisible();
+      await expect(frame.getByText('Assigned Written Applications')).toBeVisible({ timeout: 10_000 });
     });
 
   });
@@ -43,39 +48,43 @@ test.describe.serial('reviewer workflow', () => {
 
     test('dashboard shows review columns', async ({ page }) => {
       await page.goto('/hiring/reviewer');
-      await expect(page.getByRole('heading', { name: 'Reviewer Dashboard' })).toBeVisible();
-      await expect(page.getByRole('heading', { name: /Pending/ })).toBeVisible({ timeout: 10_000 });
-      await expect(page.getByRole('heading', { name: /Submitted/ })).toBeVisible();
+      const frame = reviewsFrame(page);
+      await expect(frame.getByRole('heading', { name: 'Reviewer Dashboard' })).toBeVisible();
+      await expect(frame.getByRole('heading', { name: /Pending/ })).toBeVisible({ timeout: 10_000 });
+      await expect(frame.getByRole('heading', { name: /Submitted/ })).toBeVisible();
     });
 
     test('shows assigned applicant reviews', async ({ page }) => {
       await page.goto('/hiring/reviewer');
-      await expect(page.getByText('Alice Johnson')).toBeVisible({ timeout: 10_000 });
-      await expect(page.getByText('Diego Rivera')).toBeVisible();
+      const frame = reviewsFrame(page);
+      await expect(frame.getByText('Alice Johnson')).toBeVisible({ timeout: 10_000 });
+      await expect(frame.getByText('Diego Rivera')).toBeVisible();
     });
 
     test('review detail page shows scoring form', async ({ page }) => {
       // Get the review link href and navigate directly to avoid hydration
       // timing issues with client-side router click handling on CI.
       await page.goto('/hiring/reviewer');
-      const reviewLink = page.getByRole('link', { name: /View Review|Continue Review|Start Review/ }).first();
+      const frame = reviewsFrame(page);
+      const reviewLink = frame.getByRole('link', { name: /View Review|Continue Review|Start Review/ }).first();
       await reviewLink.waitFor({ state: 'visible', timeout: 15_000 });
       const href = await reviewLink.getAttribute('href');
       expect(href).toMatch(/\/hiring\/reviewer\/application\/.+/);
       await page.goto(href!);
 
-      await expect(page.getByText('Your Review')).toBeVisible({ timeout: 10_000 });
+      // The application detail also renders inside the Reviews iframe.
+      await expect(frame.getByText('Your Review')).toBeVisible({ timeout: 10_000 });
 
       // Engineering rubric criteria from seed data
-      await expect(page.getByText('Technical Depth')).toBeVisible();
-      await expect(page.getByText('Problem Solving')).toBeVisible();
+      await expect(frame.getByText('Technical Depth')).toBeVisible();
+      await expect(frame.getByText('Problem Solving')).toBeVisible();
 
       // Recommendation options
-      await expect(page.getByText('Strong Hire')).toBeVisible();
-      await expect(page.getByText('No Hire', { exact: true })).toBeVisible();
+      await expect(frame.getByText('Strong Hire')).toBeVisible();
+      await expect(frame.getByText('No Hire', { exact: true })).toBeVisible();
 
       // Internal Feedback collaborative editor section
-      await expect(page.getByRole('heading', { name: 'Internal Feedback' })).toBeVisible();
+      await expect(frame.getByRole('heading', { name: 'Internal Feedback' })).toBeVisible();
     });
   });
 
