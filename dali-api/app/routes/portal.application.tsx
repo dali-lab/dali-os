@@ -9,6 +9,7 @@ import type { Question } from "~/types";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 import { Modal } from "~/components/Modal";
 import { QuestionList } from "~/hiring/components/ApplicationAnswers";
+import { sendInterviewCancelEmails } from "~/hiring/lib/interview-emails";
 
 export const meta: Route.MetaFunction = () => [{ title: "My application · DALI OS" }];
 
@@ -122,13 +123,42 @@ export async function action({ request }: Route.ActionArgs) {
         ));
   }
 
-  await prisma.applicationStatusUpdate.create({
-    data: {
-      applicationId: application.id,
-      userId: auth.user.sub,
-      newStatus: "Withdrawn",
-    },
+  const cancelledInterviews = await prisma.$transaction(async (tx) => {
+    await tx.applicationStatusUpdate.create({
+      data: {
+        applicationId: application.id,
+        userId: auth.user.sub,
+        newStatus: "Withdrawn",
+      },
+    });
+
+    const scheduled = await tx.interview.findMany({
+      where: {
+        status: "Scheduled",
+        applicationCycleId: active.id,
+        domainApplication: { applicationId: application.id },
+      },
+      select: { id: true, domainApplicationId: true },
+    });
+
+    if (scheduled.length > 0) {
+      const ids = scheduled.map((i) => i.id);
+      await tx.interview.updateMany({
+        where: { id: { in: ids } },
+        data: { status: "CancelledByApplicant" },
+      });
+      await tx.interviewAssignment.updateMany({
+        where: { interviewId: { in: ids }, status: "Active" },
+        data: { status: "Declined" },
+      });
+    }
+
+    return scheduled;
   });
+
+  for (const { id, domainApplicationId } of cancelledInterviews) {
+    sendInterviewCancelEmails(id, domainApplicationId).catch(() => {});
+  }
 
   return withAuth(auth, Response.json({ ok: true }));
 }

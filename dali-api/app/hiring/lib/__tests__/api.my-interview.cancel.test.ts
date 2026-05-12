@@ -9,16 +9,27 @@ vi.mock("~/lib/cors", () => ({
   handlePreflight: () => null,
   withCors: (_req: Request, res: Response) => res,
 }));
+vi.mock("~/hiring/lib/interview-emails", () => ({
+  sendInterviewCancelEmails: vi.fn().mockResolvedValue(undefined),
+}));
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { action } from "~/hiring/routes/api.my-interview.cancel";
 
-const mockPrisma = prisma as unknown as {
+const mockTx: any = {
   interview: {
-    findFirst: ReturnType<typeof vi.fn>;
-    update: ReturnType<typeof vi.fn>;
-  };
+    update: vi.fn(),
+  },
+  interviewAssignment: {
+    updateMany: vi.fn(),
+  },
+};
+
+const mockPrisma = prisma as unknown as {
+  interview: { findFirst: ReturnType<typeof vi.fn> };
+  interviewConfig: { findUnique: ReturnType<typeof vi.fn> };
+  $transaction: ReturnType<typeof vi.fn>;
 };
 
 const USER_ID = "user-1";
@@ -27,10 +38,14 @@ const DA_ID_B = "da-engineering";
 
 beforeEach(() => {
   vi.clearAllMocks();
-  (mockPrisma as any).interview = {
-    findFirst: vi.fn(),
-    update: vi.fn(),
-  };
+  (mockPrisma as any).interview = { findFirst: vi.fn() };
+  (mockPrisma as any).interviewConfig = { findUnique: vi.fn().mockResolvedValue(null) };
+
+  mockTx.interview.update = vi.fn();
+  mockTx.interviewAssignment.updateMany = vi.fn().mockResolvedValue({ count: 0 });
+
+  (mockPrisma as any).$transaction = vi.fn(async (cb: any) => cb(mockTx));
+
   vi.mocked(requireAuth).mockResolvedValue({
     ok: true,
     user: { sub: USER_ID },
@@ -58,8 +73,10 @@ describe("POST /api/hiring/my-interview/cancel", () => {
       id: "int-1",
       domainApplicationId: DA_ID_A,
       status: "Scheduled",
+      startTime: new Date(Date.now() + 48 * 60 * 60_000),
+      applicationCycleId: "cycle-1",
     });
-    mockPrisma.interview.update.mockResolvedValue({
+    mockTx.interview.update.mockResolvedValue({
       id: "int-1",
       status: "CancelledByApplicant",
     });
@@ -84,8 +101,10 @@ describe("POST /api/hiring/my-interview/cancel", () => {
       id: "int-design",
       domainApplicationId: DA_ID_A,
       status: "Scheduled",
+      startTime: new Date(Date.now() + 48 * 60 * 60_000),
+      applicationCycleId: "cycle-1",
     });
-    mockPrisma.interview.update.mockResolvedValue({
+    mockTx.interview.update.mockResolvedValue({
       id: "int-design",
       status: "CancelledByApplicant",
     });
@@ -97,9 +116,35 @@ describe("POST /api/hiring/my-interview/cancel", () => {
     } as any);
 
     expect(res.status).toBe(200);
-    expect(mockPrisma.interview.update).toHaveBeenCalledWith({
+    expect(mockTx.interview.update).toHaveBeenCalledWith({
       where: { id: "int-design" },
       data: { status: "CancelledByApplicant" },
+    });
+  });
+
+  it("flips all Active assignments for that interview to Declined", async () => {
+    mockPrisma.interview.findFirst.mockResolvedValue({
+      id: "int-design",
+      domainApplicationId: DA_ID_A,
+      status: "Scheduled",
+      startTime: new Date(Date.now() + 48 * 60 * 60_000),
+      applicationCycleId: "cycle-1",
+    });
+    mockTx.interview.update.mockResolvedValue({
+      id: "int-design",
+      status: "CancelledByApplicant",
+    });
+    mockTx.interviewAssignment.updateMany.mockResolvedValue({ count: 2 });
+
+    await action({
+      request: makeRequest({ domainApplicationId: DA_ID_A }),
+      params: {},
+      context: {},
+    } as any);
+
+    expect(mockTx.interviewAssignment.updateMany).toHaveBeenCalledWith({
+      where: { interviewId: "int-design", status: "Active" },
+      data: { status: "Declined" },
     });
   });
 
@@ -113,5 +158,6 @@ describe("POST /api/hiring/my-interview/cancel", () => {
     } as any);
 
     expect(res.status).toBe(404);
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
   });
 });
