@@ -52,9 +52,16 @@ export async function action({ request }: Route.ActionArgs) {
     }
   }
 
-  const updated = await prisma.interview.update({
-    where: { id: interview.id },
-    data: { status: "CancelledByApplicant" },
+  const updated = await prisma.$transaction(async (tx) => {
+    const interviewUpdate = await tx.interview.update({
+      where: { id: interview.id },
+      data: { status: "CancelledByApplicant" },
+    });
+    await tx.interviewAssignment.updateMany({
+      where: { interviewId: interview.id, status: "Active" },
+      data: { status: "Declined" },
+    });
+    return interviewUpdate;
   });
 
   // S2S Zoom not configured yet — meeting links are set manually by admins
