@@ -46,13 +46,11 @@ test.describe('domain lead workflow', () => {
     await expect(frame.getByText('Engineering Challenge')).toBeVisible();
   });
 
-  test('Library nav links domain lead to challenges and rubrics', async ({ page }) => {
+  test('domain lead can reach Rubrics from the sidebar', async ({ page }) => {
     await page.goto('/hiring/domain-lead');
-    // Library is a link inside the Domain section. Clicking navigates the
-    // iframe to /hiring/challenges; the workspace tab title stays "Domain".
-    const frame = domainFrame(page);
-    await frame.getByRole('link', { name: 'Library' }).click();
-    await frame.getByRole('link', { name: 'Rubrics' }).click();
-    await expect(frame.getByRole('heading', { name: 'Evaluation Rubrics' })).toBeVisible();
+    // Sidebar Rubrics button opens a new "Rubrics" tab in the workspace.
+    await page.getByRole('button', { name: 'Rubrics' }).click();
+    const rubricsFrame = page.frameLocator('iframe[title="Rubrics"]');
+    await expect(rubricsFrame.getByRole('heading', { name: 'Evaluation Rubrics' })).toBeVisible();
   });
 });
