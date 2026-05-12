@@ -15,7 +15,7 @@ vi.mock("~/lib/cors", () => ({
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
-import { action } from "~/routes/api.members.$memberId.roles";
+import { action } from "~/admin-console/routes/api.members.$memberId.roles";
 
 const ADMIN_ID = "admin-1";
 const MEMBER_ID = "member-1";

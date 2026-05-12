@@ -10,7 +10,7 @@ vi.mock("~/lib/roles");
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
-import { action, describeDomainUsage } from "~/routes/api.domains.$domainId";
+import { action, describeDomainUsage } from "~/admin-console/routes/api.domains.$domainId";
 
 const mockPrisma = prisma as unknown as {
   $transaction: ReturnType<typeof vi.fn>;

@@ -10,12 +10,12 @@ import {
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { ConfidentialityGate } from "~/hiring/components/ConfidentialityGate";
 import type { DomainApplicationStatus } from "~/types";
-import { CycleSelector } from "~/components/analytics/CycleSelector";
-import { DomainToggle } from "~/components/analytics/DomainToggle";
-import { StatusPie } from "~/components/analytics/StatusPie";
-import type { StatusSlice } from "~/components/analytics/StatusPie";
-import { ApplicationList } from "~/components/analytics/ApplicationList";
-import type { ApplicationRow } from "~/components/analytics/ApplicationList";
+import { CycleSelector } from "~/hiring/components/analytics/CycleSelector";
+import { DomainToggle } from "~/hiring/components/analytics/DomainToggle";
+import { StatusPie } from "~/hiring/components/analytics/StatusPie";
+import type { StatusSlice } from "~/hiring/components/analytics/StatusPie";
+import { ApplicationList } from "~/hiring/components/analytics/ApplicationList";
+import type { ApplicationRow } from "~/hiring/components/analytics/ApplicationList";
 
 export const meta: Route.MetaFunction = () => [{ title: "Analytics · DALI OS" }];
 

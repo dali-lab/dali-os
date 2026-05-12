@@ -11,7 +11,7 @@ import {
   type Member,
   memberLabel,
   RemoveDomainLeadButton,
-} from "~/components/admin-console-shared";
+} from "~/admin-console/components/admin-console-shared";
 
 export const meta: Route.MetaFunction = () => [{ title: "Domains · Admin console · DALI OS" }];
 
