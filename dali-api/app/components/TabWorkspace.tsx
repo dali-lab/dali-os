@@ -136,8 +136,9 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
   // Hydrate from localStorage on first client render.
   useEffect(() => {
     const loaded = loadState()
-    // Seed if storage is empty AND we have initial tabs
-    if (loaded.panes.every((p) => p.tabs.length === 0) && initialTabs && initialTabs.length > 0) {
+    const isEmpty = loaded.panes.every((p) => p.tabs.length === 0)
+    if (isEmpty && initialTabs && initialTabs.length > 0) {
+      // First-ever mount: seed both anchor + section tabs from initialTabs.
       const seedTime = now()
       const tabs = initialTabs.map((t, i) => ({
         id: newId(),
@@ -154,6 +155,49 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
         panes: [{ id: paneId, tabs, activeTabId: tabs[tabs.length - 1]?.id ?? null }],
         focusedPaneId: paneId,
       })
+    } else if (!isEmpty && initialTabs && initialTabs.length > 1) {
+      // Storage already has tabs. Ensure the "specific" tab from initialTabs
+      // (last entry — the URL the user navigated to) is opened and focused,
+      // so a direct nav to a deep link opens its section tab instead of
+      // re-using whatever was active last.
+      const target = initialTabs[initialTabs.length - 1]
+      const existing = findTabPane(loaded, target.url)
+      if (existing) {
+        setState({
+          ...loaded,
+          focusedPaneId: existing.paneId,
+          panes: loaded.panes.map((p) =>
+            p.id === existing.paneId
+              ? {
+                  ...p,
+                  activeTabId: existing.tabId,
+                  tabs: p.tabs.map((t) =>
+                    t.id === existing.tabId ? { ...t, lastActivatedAt: now() } : t,
+                  ),
+                }
+              : p,
+          ),
+        })
+      } else {
+        const newTab: Tab = {
+          id: newId(),
+          label: target.label,
+          url: target.url,
+          lastActivatedAt: now(),
+        }
+        setState({
+          ...loaded,
+          panes: loaded.panes.map((p) =>
+            p.id === loaded.focusedPaneId
+              ? {
+                  ...p,
+                  tabs: appendWithLruCap([...p.tabs, newTab], newTab.id),
+                  activeTabId: newTab.id,
+                }
+              : p,
+          ),
+        })
+      }
     } else {
       setState(loaded)
     }
