@@ -80,58 +80,60 @@ export function StatusPie({ data, selectedStatus }: Props) {
   }
 
   return (
-    <ResponsiveContainer width="100%" height={480}>
-      <PieChart>
-        <Pie
-          data={filtered}
-          dataKey="count"
-          nameKey="label"
-          cx="50%"
-          cy="50%"
-          outerRadius={180}
-          label={renderSliceLabel}
-          labelLine={{ stroke: "var(--color-muted-foreground)" }}
-          onClick={(_, idx) => handleClick(filtered[idx])}
-          isAnimationActive={false}
-        >
-          {filtered.map((slice, i) => {
-            const isSelected = selectedStatus === slice.status;
-            const isDimmed = selectedStatus !== null && !isSelected;
-            return (
-              <Cell
-                key={slice.status}
-                fill={colorFor(slice.status, i)}
-                stroke={isSelected ? "#000" : "#fff"}
-                strokeWidth={isSelected ? 3 : 1}
-                opacity={isDimmed ? 0.35 : 1}
-                style={{ cursor: "pointer" }}
-              />
-            );
-          })}
-        </Pie>
-        <Tooltip
-          contentStyle={{
-            backgroundColor: "var(--color-card)",
-            border: "1px solid var(--color-border)",
-            borderRadius: 6,
-            color: "var(--color-foreground)",
-          }}
-          labelStyle={{ color: "var(--color-foreground)" }}
-          itemStyle={{ color: "var(--color-foreground)" }}
-          formatter={((value: any, _name: any, props: any) => [
-            `${value} (${(((value as number) / total) * 100).toFixed(0)}%)`,
-            props.payload.label,
-          ]) as any}
-        />
-        <Legend
-          iconSize={10}
-          wrapperStyle={{ fontSize: 12, cursor: "pointer" }}
-          onClick={(entry: any) => {
-            const slice = filtered.find((s) => s.label === entry.value);
-            if (slice) handleClick(slice);
-          }}
-        />
-      </PieChart>
-    </ResponsiveContainer>
+    <div className="w-full h-80 sm:h-[480px] overflow-hidden">
+      <ResponsiveContainer width="100%" height="100%">
+        <PieChart>
+          <Pie
+            data={filtered}
+            dataKey="count"
+            nameKey="label"
+            cx="50%"
+            cy="50%"
+            outerRadius="60%"
+            label={renderSliceLabel}
+            labelLine={{ stroke: "var(--color-muted-foreground)" }}
+            onClick={(_, idx) => handleClick(filtered[idx])}
+            isAnimationActive={false}
+          >
+            {filtered.map((slice, i) => {
+              const isSelected = selectedStatus === slice.status;
+              const isDimmed = selectedStatus !== null && !isSelected;
+              return (
+                <Cell
+                  key={slice.status}
+                  fill={colorFor(slice.status, i)}
+                  stroke={isSelected ? "#000" : "#fff"}
+                  strokeWidth={isSelected ? 3 : 1}
+                  opacity={isDimmed ? 0.35 : 1}
+                  style={{ cursor: "pointer" }}
+                />
+              );
+            })}
+          </Pie>
+          <Tooltip
+            contentStyle={{
+              backgroundColor: "var(--color-card)",
+              border: "1px solid var(--color-border)",
+              borderRadius: 6,
+              color: "var(--color-foreground)",
+            }}
+            labelStyle={{ color: "var(--color-foreground)" }}
+            itemStyle={{ color: "var(--color-foreground)" }}
+            formatter={((value: any, _name: any, props: any) => [
+              `${value} (${(((value as number) / total) * 100).toFixed(0)}%)`,
+              props.payload.label,
+            ]) as any}
+          />
+          <Legend
+            iconSize={10}
+            wrapperStyle={{ fontSize: 12, cursor: "pointer" }}
+            onClick={(entry: any) => {
+              const slice = filtered.find((s) => s.label === entry.value);
+              if (slice) handleClick(slice);
+            }}
+          />
+        </PieChart>
+      </ResponsiveContainer>
+    </div>
   );
 }
