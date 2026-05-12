@@ -3,7 +3,6 @@ import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/admin-console.members";
 import { prisma } from "~/lib/db";
 import { requireAuth, withAuth } from "~/lib/auth";
-import { getCurrentTermId } from "~/lib/terms";
 import { isAdmin } from "~/lib/roles";
 import { Users, Check } from "lucide-react";
 import {
@@ -78,8 +77,7 @@ export async function action({ request }: Route.ActionArgs) {
   if (intent === "add-domain-lead") {
     const memberId = formData.get("memberId") as string;
     const domainId = formData.get("domainId") as string;
-    const termId = await getCurrentTermId();
-    await prisma.domainLeadAssignment.create({ data: { memberId, domainId, termId } });
+    await prisma.domainLeadAssignment.create({ data: { memberId, domainId } });
     return withAuth(auth, null);
   }
 
