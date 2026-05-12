@@ -1,5 +1,4 @@
--- Set the `StaffingAssignment.status` default to 'Proposed'. This has to
--- happen in a separate migration because 'Proposed' was added to the
--- AssignmentStatus enum in the previous migration and Postgres requires
--- new enum values to be committed before they can be referenced in DDL.
-ALTER TABLE "StaffingAssignment" ALTER COLUMN "status" SET DEFAULT 'Proposed';
+-- Intentionally empty. Originally set StaffingAssignment.status default to
+-- 'Proposed', but StaffingAssignment was dropped when the v0 schema was
+-- rolled back. File preserved (not deleted) to keep migration-check.yml's
+-- "no deleted migrations" guarantee.
