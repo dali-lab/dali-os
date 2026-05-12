@@ -240,8 +240,8 @@ export default function InterviewerDashboard() {
             <p className="text-muted-foreground">No interviews assigned yet.</p>
           </div>
         ) : (
-          <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-            <table className="w-full text-sm">
+          <div className="bg-card rounded-xl border border-border shadow-sm overflow-x-auto">
+            <table className="w-full text-sm min-w-[720px]">
               <thead>
                 <tr className="bg-muted/50 border-b border-border">
                   <th className="px-4 py-3 text-left font-medium text-muted-foreground">
