@@ -978,7 +978,6 @@ model Term {
 
   projectAssignments    ProjectAssignment[]
   mentorshipPairs       MentorshipPair[]
-  domainLeadAssignments DomainLeadAssignment[]
   coreAssignments       CoreAssignment[]
   instructorAssignments InstructorAssignment[]
   staffingCycles        StaffingCycle[]
@@ -1071,14 +1070,12 @@ model DomainLeadAssignment {
 
   memberId String
   domainId String
-  termId   String
 
   member DALIMember @relation(fields: [memberId], references: [id])
   domain Domain     @relation(fields: [domainId], references: [id])
-  term   Term       @relation(fields: [termId], references: [id])
 
-  @@unique([memberId, domainId, termId])
-  @@index([domainId, termId])
+  @@unique([memberId, domainId])
+  @@index([domainId])
 }
 
 // ─── Core / Instructor / Admin ───────────────────────────────────────────────

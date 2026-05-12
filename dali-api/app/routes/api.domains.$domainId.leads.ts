@@ -3,7 +3,6 @@ import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth, withAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
-import { getCurrentTermId } from "~/lib/terms";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 
@@ -43,10 +42,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     const postBody = await parseJson(request, AddLeadSchema);
     if (postBody instanceof Response) return withAuth(auth, withCors(request, postBody));
     const { memberId } = postBody;
-    const termId = await getCurrentTermId();
 
     const assignment = await prisma.domainLeadAssignment.create({
-      data: { memberId, domainId: params.domainId!, termId },
+      data: { memberId, domainId: params.domainId! },
       include: { member: { include: { user: true } }, domain: true },
     });
     return withAuth(auth, withCors(request, Response.json(assignment, { status: 201 })));

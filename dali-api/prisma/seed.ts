@@ -1859,7 +1859,6 @@ async function main() {
       id: "dla-eng-lead",
       memberId: engLeadMember.id,
       domainId: engDomain.id,
-      termId: currentTerm.id,
     },
   });
 
@@ -1895,7 +1894,6 @@ async function main() {
       id: "dla-jordan-eng",
       memberId: jordanMember.id,
       domainId: engDomain.id,
-      termId: currentTerm.id,
     },
   });
 
