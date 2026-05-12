@@ -43,7 +43,12 @@ interface InterviewConfig {
 
 interface CycleReviewer {
   id: string
-  daliMember: { id: string; user?: { id: string; firstName: string; lastName: string } | null }
+  daliMember: {
+    id: string
+    firstName: string | null
+    lastName: string | null
+    daliEmail: string | null
+  }
   domain: { id: string; name: string }
 }
 
@@ -1557,11 +1562,12 @@ export default function HiringLeadCycleDetails() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {reviewers.map(r => (
+                {reviewers.map(r => {
+                  const m = r.daliMember
+                  const name = m?.firstName && m?.lastName ? `${m.firstName} ${m.lastName}` : m?.daliEmail ?? r.daliMember.id
+                  return (
                   <tr key={r.id} className="hover:bg-muted/50 transition">
-                    <td className="px-4 py-3 font-medium text-foreground">
-                      {r.daliMember.user ? `${r.daliMember.user.firstName} ${r.daliMember.user.lastName}` : r.daliMember.id}
-                    </td>
+                    <td className="px-4 py-3 font-medium text-foreground">{name}</td>
                     <td className="px-4 py-3 text-muted-foreground">{r.domain.name}</td>
                     <td className="px-4 py-3 text-right">
                       <button onClick={() => removeReviewer(r.id)} className="text-red-500 hover:text-red-700 transition">
@@ -1569,7 +1575,8 @@ export default function HiringLeadCycleDetails() {
                       </button>
                     </td>
                   </tr>
-                ))}
+                  )
+                })}
                 {reviewers.length === 0 && (
                   <tr><td colSpan={4} className="px-4 py-8 text-center text-muted-foreground/70"><span className="sr-only">Table empty: </span>No reviewers assigned yet.</td></tr>
                 )}
@@ -1577,12 +1584,13 @@ export default function HiringLeadCycleDetails() {
             </table>
             </div>
             <ul className="sm:hidden divide-y divide-border">
-              {reviewers.map(r => (
+              {reviewers.map(r => {
+                const m = r.daliMember
+                const name = m?.firstName && m?.lastName ? `${m.firstName} ${m.lastName}` : m?.daliEmail ?? r.daliMember.id
+                return (
                 <li key={r.id} className="px-4 py-3 flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="font-medium text-foreground truncate">
-                      {r.daliMember.user ? `${r.daliMember.user.firstName} ${r.daliMember.user.lastName}` : r.daliMember.id}
-                    </div>
+                    <div className="font-medium text-foreground truncate">{name}</div>
                     <div className="text-xs text-muted-foreground mt-0.5">{r.domain.name}</div>
                   </div>
                   <button
@@ -1593,7 +1601,8 @@ export default function HiringLeadCycleDetails() {
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </li>
-              ))}
+                )
+              })}
               {reviewers.length === 0 && (
                 <li className="px-4 py-8 text-center text-sm text-muted-foreground/70">No reviewers assigned yet.</li>
               )}
