@@ -1993,6 +1993,14 @@ async function main() {
     });
     reviewerMembers.push({ id: user.daliMember.id, domainId: r.domainId });
 
+    // Grant domain eligibility so the reviewer/lead shows up in the
+    // domain-scoped reviewer picker in the hiring/domain-lead UIs.
+    await prisma.domainEligibility.upsert({
+      where: { userId_domainId: { userId: user.id, domainId: r.domainId } },
+      update: {},
+      create: { userId: user.id, domainId: r.domainId, level: "P2" },
+    });
+
     // CycleReviewer (for written reviews)
     await prisma.cycleReviewer.upsert({
       where: {

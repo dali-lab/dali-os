@@ -48,6 +48,24 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (body instanceof Response) return withAuth(auth, withCors(request, body));
   const { daliMemberId, domainId } = body;
 
+  // Reviewers must belong to the domain they're reviewing — either via
+  // DomainEligibility on the linked user, or a DomainLeadAssignment for that
+  // domain. Interviewers are not gated this way.
+  const member = await prisma.dALIMember.findUnique({
+    where: { id: daliMemberId },
+    select: {
+      userId: true,
+      domainLeadAssignments: { where: { domainId }, select: { id: true } },
+      user: { select: { domainEligibilities: { where: { domainId }, select: { id: true } } } },
+    },
+  });
+  if (!member) return withAuth(auth, withCors(request, Response.json({ error: "Member not found" }, { status: 404 })));
+  const hasEligibility = (member.user?.domainEligibilities.length ?? 0) > 0;
+  const isLeadForDomain = member.domainLeadAssignments.length > 0;
+  if (!hasEligibility && !isLeadForDomain) {
+    return withAuth(auth, withCors(request, Response.json({ error: "Member does not belong to this domain" }, { status: 400 })));
+  }
+
   // Ensure domain is linked to cycle
   await prisma.domainApplicationCycle.upsert({
     where: { domainId_applicationCycleId: { domainId, applicationCycleId: params.cycleId! } },
