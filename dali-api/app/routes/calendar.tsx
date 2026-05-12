@@ -520,8 +520,10 @@ function PillButton({
 
 function AvailabilityView({ data }: { data: LoaderData }) {
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-6">
-      <aside className="flex flex-col gap-6">
+    // lg:h-[80vh] caps the row so the aside can scroll while the grid stays put.
+    // Below lg we fall back to single-column natural flow.
+    <div className="grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-6 lg:h-[80vh] lg:min-h-0">
+      <aside className="flex flex-col gap-6 lg:overflow-y-auto lg:pr-2 lg:min-h-0">
         <header>
           <h1 className="font-heading text-2xl font-bold text-foreground">Availability</h1>
           <p className="text-sm text-muted-foreground mt-1">
@@ -533,7 +535,9 @@ function AvailabilityView({ data }: { data: LoaderData }) {
         <EventBuffersCard bufferMin={data.defaultEventBufferMin} />
         <ManualBlocksCard blocks={data.manualBlocks} timezone={data.timezone} />
       </aside>
-      <AvailabilityWeekGrid data={data} />
+      <div className="lg:overflow-hidden lg:min-h-0">
+        <AvailabilityWeekGrid data={data} />
+      </div>
     </div>
   );
 }
@@ -1243,8 +1247,8 @@ function ScheduleView() {
     }));
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-6">
-      <aside className="flex flex-col gap-4">
+    <div className="grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-6 lg:h-[80vh] lg:min-h-0">
+      <aside className="flex flex-col gap-4 lg:overflow-y-auto lg:pr-2 lg:min-h-0">
         <header>
           <h1 className="font-heading text-2xl font-bold text-foreground">Schedule Meeting</h1>
           <p className="text-sm text-muted-foreground mt-1">
@@ -1277,7 +1281,9 @@ function ScheduleView() {
           </div>
         </div>
       </aside>
-      <ScheduleWeekGrid />
+      <div className="lg:overflow-hidden lg:min-h-0">
+        <ScheduleWeekGrid />
+      </div>
     </div>
   );
 }
