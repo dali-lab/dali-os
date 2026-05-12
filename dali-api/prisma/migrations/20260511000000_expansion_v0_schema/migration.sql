@@ -92,9 +92,6 @@ ADD COLUMN     "displayName" TEXT,
 ADD COLUMN     "isInternProgram" BOOLEAN NOT NULL DEFAULT false;
 
 -- AlterTable
-ALTER TABLE "DomainLeadAssignment" ADD COLUMN     "termId" TEXT NOT NULL;
-
--- AlterTable
 ALTER TABLE "User" ADD COLUMN     "bioDocId" TEXT,
 ADD COLUMN     "classYear" INTEGER,
 ADD COLUMN     "githubUrl" TEXT,
@@ -788,12 +785,6 @@ CREATE UNIQUE INDEX "ProjectPartner_projectId_partnerOrgId_key" ON "ProjectPartn
 -- CreateIndex
 CREATE UNIQUE INDEX "Domain_code_key" ON "Domain"("code");
 
--- CreateIndex
-CREATE INDEX "DomainLeadAssignment_domainId_termId_idx" ON "DomainLeadAssignment"("domainId", "termId");
-
--- CreateIndex
-CREATE UNIQUE INDEX "DomainLeadAssignment_memberId_domainId_termId_key" ON "DomainLeadAssignment"("memberId", "domainId", "termId");
-
 -- AddForeignKey
 ALTER TABLE "DomainEligibility" ADD CONSTRAINT "DomainEligibility_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
@@ -826,9 +817,6 @@ ALTER TABLE "MentorshipPair" ADD CONSTRAINT "MentorshipPair_termId_fkey" FOREIGN
 
 -- AddForeignKey
 ALTER TABLE "MentorshipPair" ADD CONSTRAINT "MentorshipPair_domainId_fkey" FOREIGN KEY ("domainId") REFERENCES "Domain"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "DomainLeadAssignment" ADD CONSTRAINT "DomainLeadAssignment_termId_fkey" FOREIGN KEY ("termId") REFERENCES "Term"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "CoreAssignment" ADD CONSTRAINT "CoreAssignment_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
