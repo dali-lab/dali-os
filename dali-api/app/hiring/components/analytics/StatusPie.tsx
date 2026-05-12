@@ -80,7 +80,8 @@ export function StatusPie({ data, selectedStatus }: Props) {
   }
 
   return (
-    <ResponsiveContainer width="100%" height={480}>
+    <div className="h-72 sm:h-[480px]">
+    <ResponsiveContainer width="100%" height="100%">
       <PieChart>
         <Pie
           data={filtered}
@@ -88,7 +89,7 @@ export function StatusPie({ data, selectedStatus }: Props) {
           nameKey="label"
           cx="50%"
           cy="50%"
-          outerRadius={180}
+          outerRadius="75%"
           label={renderSliceLabel}
           labelLine={{ stroke: "var(--color-muted-foreground)" }}
           onClick={(_, idx) => handleClick(filtered[idx])}
@@ -133,5 +134,6 @@ export function StatusPie({ data, selectedStatus }: Props) {
         />
       </PieChart>
     </ResponsiveContainer>
+    </div>
   );
 }

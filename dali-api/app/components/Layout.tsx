@@ -440,7 +440,7 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
   )
 
   return (
-    <div className="min-h-screen bg-section-bg flex">
+    <div className="min-h-screen min-h-dvh bg-section-bg flex">
       {/* Desktop sidebar */}
       <aside
         className={`hidden md:flex flex-col fixed inset-y-0 left-0 z-20 ${sidebarWidth} bg-[hsl(203,38%,23%)] dark:bg-[hsl(215,35%,10%)] transition-[width] duration-200`}
