@@ -22,7 +22,6 @@ export async function loader({ request }: Route.LoaderArgs) {
       lastName: true,
       roles: true,
       domainLeadAssignments: { select: { id: true, domain: { select: { id: true, name: true } } } },
-      user: { select: { domainEligibilities: { select: { domainId: true } } } },
     },
   });
 

@@ -1391,16 +1391,9 @@ function ReviewerSection({ cycleId, domainId, initialReviewers }: {
         : pendingRemove.daliMember?.daliEmail ?? "this reviewer")
     : "";
 
-  // Filter out members already assigned as reviewers for this domain, and
-  // restrict to members who belong to this domain (DomainEligibility or
-  // DomainLeadAssignment).
+  // Filter out members already assigned as reviewers for this domain
   const existingMemberIds = new Set(reviewers.map((r: any) => r.daliMemberId));
-  const availableMembers = members.filter(m => {
-    if (existingMemberIds.has(m.id)) return false;
-    const eligible = (m.user?.domainEligibilities ?? []).some((e: any) => e.domainId === domainId);
-    const lead = (m.domainLeadAssignments ?? []).some((a: any) => a.domain?.id === domainId);
-    return eligible || lead;
-  });
+  const availableMembers = members.filter(m => !existingMemberIds.has(m.id));
 
   return (
     <div className="bg-card border border-border rounded-lg overflow-hidden">

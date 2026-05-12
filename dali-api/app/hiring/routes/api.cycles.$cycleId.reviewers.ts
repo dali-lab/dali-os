@@ -2,7 +2,7 @@ import type { Route } from "./+types/api.cycles.$cycleId.reviewers";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth, withAuth } from "~/lib/auth";
-import { isHiringLead, isDomainLead, hasCycleAccess } from "~/lib/roles";
+import { isHiringLead, hasCycleAccess } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 
@@ -38,7 +38,6 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const auth = await requireAuth(request);
   if (!auth.ok) return withCors(request, auth.response);
-  if (!(await isHiringLead(auth.user.sub)) && !(await isDomainLead(auth.user.sub))) return withAuth(auth, withCors(request, Response.json({ error: "Forbidden" }, { status: 403 })));
 
   if (request.method !== "POST") {
     return withAuth(auth, withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 })));
@@ -48,22 +47,19 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (body instanceof Response) return withAuth(auth, withCors(request, body));
   const { daliMemberId, domainId } = body;
 
-  // Reviewers must belong to the domain they're reviewing — either via
-  // DomainEligibility on the linked user, or a DomainLeadAssignment for that
-  // domain. Interviewers are not gated this way.
-  const member = await prisma.dALIMember.findUnique({
-    where: { id: daliMemberId },
-    select: {
-      userId: true,
-      domainLeadAssignments: { where: { domainId }, select: { id: true } },
-      user: { select: { domainEligibilities: { where: { domainId }, select: { id: true } } } },
-    },
-  });
-  if (!member) return withAuth(auth, withCors(request, Response.json({ error: "Member not found" }, { status: 404 })));
-  const hasEligibility = (member.user?.domainEligibilities.length ?? 0) > 0;
-  const isLeadForDomain = member.domainLeadAssignments.length > 0;
-  if (!hasEligibility && !isLeadForDomain) {
-    return withAuth(auth, withCors(request, Response.json({ error: "Member does not belong to this domain" }, { status: 400 })));
+  // Authority gate: hiring leads can add reviewers in any domain; domain leads
+  // can only add reviewers in domains they actually lead. Interviewers are
+  // handled separately.
+  const hiringLead = await isHiringLead(auth.user.sub);
+  if (!hiringLead) {
+    const callerMember = await prisma.dALIMember.findFirst({
+      where: { userId: auth.user.sub },
+      select: { domainLeadAssignments: { where: { domainId }, select: { id: true } } },
+    });
+    const leadsThisDomain = (callerMember?.domainLeadAssignments.length ?? 0) > 0;
+    if (!leadsThisDomain) {
+      return withAuth(auth, withCors(request, Response.json({ error: "Forbidden" }, { status: 403 })));
+    }
   }
 
   // Ensure domain is linked to cycle

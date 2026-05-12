@@ -1993,14 +1993,6 @@ async function main() {
     });
     reviewerMembers.push({ id: user.daliMember.id, domainId: r.domainId });
 
-    // Grant domain eligibility so the reviewer/lead shows up in the
-    // domain-scoped reviewer picker in the hiring/domain-lead UIs.
-    await prisma.domainEligibility.upsert({
-      where: { userId_domainId: { userId: user.id, domainId: r.domainId } },
-      update: {},
-      create: { userId: user.id, domainId: r.domainId, level: "P2" },
-    });
-
     // CycleReviewer (for written reviews)
     await prisma.cycleReviewer.upsert({
       where: {
@@ -2064,40 +2056,6 @@ async function main() {
         applicationCycleId: cycleWinter2027.id,
         domainId: engDomain.id,
       },
-    });
-  }
-
-  // ── Domain-eligible members (non-reviewer) ───────────────────────────────
-  // Seed a couple of members per domain who have DomainEligibility but are
-  // NOT already CycleReviewers, so the new domain-scoped reviewer picker has
-  // options to choose from when testing locally.
-  const eligibleOnly = [
-    { email: "kai.eligible@dali.dartmouth.edu", first: "Kai", last: "Nakamura", domainId: engDomain.id },
-    { email: "rose.eligible@dali.dartmouth.edu", first: "Rose", last: "Delacroix", domainId: engDomain.id },
-    { email: "june.eligible@dali.dartmouth.edu", first: "June", last: "Park", domainId: designDomain.id },
-    { email: "amir.eligible@dali.dartmouth.edu", first: "Amir", last: "Haddad", domainId: designDomain.id },
-    { email: "nora.eligible@dali.dartmouth.edu", first: "Nora", last: "Ibarra", domainId: pmDomain.id },
-    { email: "elan.eligible@dali.dartmouth.edu", first: "Elan", last: "Voss", domainId: pmDomain.id },
-  ];
-  for (const m of eligibleOnly) {
-    const u = await prisma.user.upsert({
-      where: { daliEmail: m.email },
-      update: { firstName: m.first, lastName: m.last },
-      create: {
-        daliEmail: m.email,
-        firstName: m.first,
-        lastName: m.last,
-        daliMember: { create: { daliEmail: m.email, firstName: m.first, lastName: m.last } },
-      },
-    });
-    await prisma.dALIMember.update({
-      where: { daliEmail: m.email },
-      data: { firstName: m.first, lastName: m.last, userId: u.id },
-    });
-    await prisma.domainEligibility.upsert({
-      where: { userId_domainId: { userId: u.id, domainId: m.domainId } },
-      update: {},
-      create: { userId: u.id, domainId: m.domainId, level: "P2" },
     });
   }
 
