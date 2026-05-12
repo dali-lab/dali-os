@@ -9,7 +9,7 @@ import {
   AdminToggle,
   DomainLeadPicker,
   HiringLeadToggle,
-} from "~/components/admin-console-shared";
+} from "~/admin-console/components/admin-console-shared";
 
 export const meta: Route.MetaFunction = () => [{ title: "Members · Admin console · DALI OS" }];
 

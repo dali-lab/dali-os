@@ -4,7 +4,7 @@ export default [
   // UI routes wrapped in the app layout (navbar + view toggle)
   layout("routes/layout.tsx", [
     index("routes/home.tsx"),
-    route("calendar", "routes/calendar.tsx"),
+    route("calendar", "calendar/routes/calendar.tsx"),
 
     // Hiring section
     route("hiring/reviewer", "hiring/routes/reviewer.tsx"),
@@ -28,19 +28,19 @@ export default [
     route("hiring/analytics", "hiring/routes/analytics.tsx"),
 
     // Admin console (top-level, not hiring)
-    route("admin-console", "routes/admin-console.tsx"),
-    route("admin-console/members", "routes/admin-console.members.tsx"),
-    route("admin-console/domains", "routes/admin-console.domains.tsx"),
+    route("admin-console", "admin-console/routes/admin-console.tsx"),
+    route("admin-console/members", "admin-console/routes/admin-console.members.tsx"),
+    route("admin-console/domains", "admin-console/routes/admin-console.domains.tsx"),
 
     // Projects
-    route("projects/list", "routes/projects.list.tsx"),
-    route("projects/staffing", "routes/projects.staffing.tsx"),
+    route("projects/list", "projects/routes/projects.list.tsx"),
+    route("projects/staffing", "projects/routes/projects.staffing.tsx"),
 
     // Members directory (separate from admin-console/members)
-    route("members", "routes/members.tsx"),
+    route("members", "members/routes/members.tsx"),
 
     // Partners
-    route("partners", "routes/partners.tsx"),
+    route("partners", "partners/routes/partners.tsx"),
   ]),
 
   // Applicant portal (lightweight layout)
@@ -67,14 +67,14 @@ export default [
   route("oauth/calendar/google/start", "routes/oauth.calendar.google.start.ts"),
 
   // Authenticated API endpoints (no layout)
-  route("users/:id", "routes/users.$id.ts"),
+  route("users/:id", "members/routes/users.$id.ts"),
 
-  // Domain & member management API (cross-cutting)
-  route("api/domains", "routes/api.domains.ts"),
-  route("api/domains/:domainId", "routes/api.domains.$domainId.ts"),
-  route("api/domains/:domainId/leads", "routes/api.domains.$domainId.leads.ts"),
-  route("api/members", "routes/api.members.ts"),
-  route("api/members/:memberId/roles", "routes/api.members.$memberId.roles.ts"),
+  // Domain & member management API
+  route("api/domains", "admin-console/routes/api.domains.ts"),
+  route("api/domains/:domainId", "admin-console/routes/api.domains.$domainId.ts"),
+  route("api/domains/:domainId/leads", "admin-console/routes/api.domains.$domainId.leads.ts"),
+  route("api/members", "admin-console/routes/api.members.ts"),
+  route("api/members/:memberId/roles", "admin-console/routes/api.members.$memberId.roles.ts"),
 
   // Hiring API — cycles, scheduling, applications, reviews, decisions, interviews, delibs
   route("api/hiring/cycles/:cycleId/status", "hiring/routes/api.cycles.$cycleId.status.ts"),
@@ -116,8 +116,8 @@ export default [
 
   route("api/hiring/interview-assignments/:id/notes", "hiring/routes/api.interview-assignments.$id.notes.ts"),
 
-  // Google calendar (cross-cutting — used by hiring scheduling but lives at top level)
-  route("api/google-calendar/busy", "routes/api.google-calendar.busy.ts"),
+  // Google calendar (cross-cutting — used by hiring scheduling)
+  route("api/google-calendar/busy", "calendar/routes/api.google-calendar.busy.ts"),
 
   route("api/hiring/interviews/:id/location", "hiring/routes/api.interviews.$id.location.ts"),
 
@@ -136,7 +136,7 @@ export default [
   route("api/check-url", "routes/api.check-url.ts"),
 
   // Audit logs (admin)
-  route("api/audit-logs", "routes/api.audit-logs.ts"),
+  route("api/audit-logs", "admin-console/routes/api.audit-logs.ts"),
 
   // Collaborative editing version history
   route("api/collab/versions", "routes/api.collab.versions.ts"),
