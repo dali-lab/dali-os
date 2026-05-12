@@ -10,24 +10,26 @@ test.describe('calendar settings persistence', () => {
     await page.goto('/calendar?embed=1');
     await expect(page.getByRole('heading', { name: 'Availability' })).toBeVisible();
 
-    const mondayToggle = page.getByRole('button', { name: /Mon enabled/i });
-    await expect(mondayToggle).toBeVisible();
-
-    // Monday is enabled by default → show times.
-    await expect(page.getByLabel('Mon start time')).toBeVisible();
+    // Normalize: ensure Monday is enabled before the actual test.
+    if ((await page.getByLabel('Mon start time').count()) === 0) {
+      await page.getByRole('button', { name: /Mon enabled/i }).click();
+      await expect(page.getByLabel('Mon start time')).toBeVisible();
+      await page.waitForLoadState('networkidle');
+    }
 
     // Disable Monday.
-    await mondayToggle.click();
-    // The times disappear; "Unavailable" label shows.
+    await page.getByRole('button', { name: /Mon enabled/i }).click();
     await expect(page.getByLabel('Mon start time')).toHaveCount(0);
+    await page.waitForLoadState('networkidle');
 
     // Reload and assert state persists.
     await page.reload();
     await expect(page.getByLabel('Mon start time')).toHaveCount(0);
 
-    // Toggle back on.
+    // Toggle back on (leaves DB in enabled state for next run).
     await page.getByRole('button', { name: /Mon enabled/i }).click();
     await expect(page.getByLabel('Mon start time')).toBeVisible();
+    await page.waitForLoadState('networkidle');
   });
 
   test('event buffer selection persists', async ({ page }) => {
@@ -41,10 +43,20 @@ test.describe('calendar settings persistence', () => {
     await expect(page.getByText(/45-minute buffer will be added/)).toBeVisible();
   });
 
+  test('Add Google Account link is present and points at OAuth start', async ({ page }) => {
+    await page.goto('/calendar?embed=1');
+    const link = page.getByRole('link', { name: /Add Google Account/i });
+    await expect(link).toBeVisible();
+    await expect(link).toHaveAttribute('href', '/oauth/calendar/google/start');
+    // Must break out of the workspace iframe so Google's auth page isn't blocked
+    // by X-Frame-Options: DENY.
+    await expect(link).toHaveAttribute('target', '_top');
+  });
+
   test('manual block can be added and removed', async ({ page }) => {
     await page.goto('/calendar?embed=1');
 
-    await page.getByRole('button', { name: /Add Block/i }).click();
+    await page.getByRole('button', { name: 'Add Block', exact: true }).click();
     await page.getByPlaceholder(/Title/i).fill('Test Block');
 
     // Pick a start/end ~1 week out so it doesn't collide with the rendered week.

@@ -70,7 +70,7 @@ model User {
   essentialityFormsAsPM  EssentialityForm[]
   essentialityRatings    EssentialityRating[]
   staffingAssignments    StaffingAssignment[]
-  calendarLink           UserCalendarLink?
+  calendarLinks          UserCalendarLink[]
   scheduledMeetings      ScheduledMeeting[]
   availabilitySettings   UserAvailabilitySettings?
   workingHoursDays       WorkingHoursDay[]
@@ -1581,16 +1581,25 @@ model StaffingAssignment {
 
 model UserCalendarLink {
   id             String      @id @default(cuid())
-  userId         String      @unique
+  userId         String
   provider       CalProvider
   externalEmail  String
-  // Encrypted at rest; never logged.
+  displayName    String?
+  // Encrypted at rest; never logged. AES-256-GCM ciphertext via app/lib/calendar-crypto.ts.
   oauthTokens    String
   primary        Boolean     @default(true)
+  enabled        Boolean     @default(true)
+  // Sub-calendar IDs (from the provider) that should contribute to busy.
+  // If empty, the link's primary calendar is used.
   subCalendarIds String[]
   linkedAt       DateTime    @default(now())
+  lastSyncedAt   DateTime?
+  syncError      String?
 
   user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, provider, externalEmail])
+  @@index([userId])
 }
 
 enum CalProvider {

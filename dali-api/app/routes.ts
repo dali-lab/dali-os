@@ -64,6 +64,7 @@ export default [
   route("oauth/callback/cas", "routes/oauth.callback.cas.ts"),
   route("oauth/token", "routes/oauth.token.ts"),
   route("oauth/revoke", "routes/oauth.revoke.ts"),
+  route("oauth/calendar/google/start", "routes/oauth.calendar.google.start.ts"),
 
   // Authenticated API endpoints (no layout)
   route("users/:id", "routes/users.$id.ts"),

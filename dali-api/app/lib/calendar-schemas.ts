@@ -61,6 +61,18 @@ export const RemoveManualBlockSchema = z.object({
   id: z.string().min(1),
 });
 
+export const RemoveCalendarLinkSchema = z.object({
+  intent: z.literal("remove-calendar-link"),
+  linkId: z.string().min(1),
+});
+
+export const ToggleSubCalendarSchema = z.object({
+  intent: z.literal("toggle-sub-calendar"),
+  linkId: z.string().min(1),
+  calendarId: z.string().min(1),
+  enabled: z.boolean(),
+});
+
 export const CalendarActionSchema = z.discriminatedUnion("intent", [
   UpdateWorkingHoursDaySchema,
   CopyWeekdaysSchema,
@@ -69,6 +81,8 @@ export const CalendarActionSchema = z.discriminatedUnion("intent", [
   AddManualBlockSchema,
   UpdateManualBlockSchema,
   RemoveManualBlockSchema,
+  RemoveCalendarLinkSchema,
+  ToggleSubCalendarSchema,
 ]);
 
 export type CalendarAction = z.infer<typeof CalendarActionSchema>;

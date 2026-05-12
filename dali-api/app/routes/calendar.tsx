@@ -18,6 +18,7 @@ import { requireAuth, withAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { computeFreeIntervals, type Interval } from "~/lib/availability";
 import { CalendarActionSchema } from "~/lib/calendar-schemas";
+import { fetchBusyEvents, listCalendarsForLink } from "~/lib/google-calendar";
 import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
 import type { Route } from "./+types/calendar";
 
@@ -42,14 +43,36 @@ type ManualBlockDTO = {
   recurrenceRule: string | null;
 };
 
+type SubCalendarDTO = {
+  id: string;
+  summary: string;
+  primary: boolean;
+  color: string | null;
+  enabled: boolean;
+};
+
+type CalendarLinkDTO = {
+  id: string;
+  provider: "Google" | "Outlook";
+  externalEmail: string;
+  displayName: string | null;
+  enabled: boolean;
+  primary: boolean;
+  syncError: string | null;
+  // null when the upstream list call failed; the UI shows a degraded card.
+  subCalendars: SubCalendarDTO[] | null;
+};
+
 type LoaderData = {
   timezone: string;
   defaultEventBufferMin: number;
   workingHours: WhDay[];
   manualBlocks: ManualBlockDTO[];
+  calendarLinks: CalendarLinkDTO[];
   weekStartIso: string;
   weekEndIso: string;
   busyIntervals: { startIso: string; endIso: string }[];
+  ingestionError: string | null;
 };
 
 function defaultWorkingHours(): WhDay[] {
@@ -94,7 +117,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const userId = auth.user.sub;
 
-  const [settings, whRows, blocks] = await Promise.all([
+  const [settings, whRows, blocks, links] = await Promise.all([
     prisma.userAvailabilitySettings.findUnique({ where: { userId } }),
     prisma.workingHoursDay.findMany({ where: { userId } }),
     prisma.manualBlock.findMany({
@@ -102,12 +125,15 @@ export async function loader({ request }: Route.LoaderArgs) {
       orderBy: { startTime: "asc" },
       take: 200,
     }),
+    prisma.userCalendarLink.findMany({
+      where: { userId },
+      orderBy: { linkedAt: "asc" },
+    }),
   ]);
 
   const timezone = settings?.timezone ?? DEFAULT_TIMEZONE;
   const bufferMin = settings?.defaultEventBufferMin ?? DEFAULT_BUFFER_MIN;
 
-  // Fill missing days with defaults so the UI always has 7 rows.
   const byDow = new Map(whRows.map((r) => [r.dayOfWeek, r]));
   const workingHours: WhDay[] = defaultWorkingHours().map((d) => {
     const row = byDow.get(d.dayOfWeek);
@@ -122,6 +148,54 @@ export async function loader({ request }: Route.LoaderArgs) {
   });
 
   const { start: weekStart, end: weekEnd } = currentWeekWindow(timezone);
+
+  // Fetch external busy + sub-calendar lists in parallel. Don't fail the page
+  // if a single link errors — surface the error on the link card.
+  let ingestionError: string | null = null;
+  const [externalBusyRaw, calendarLinks] = await Promise.all([
+    fetchBusyEvents(userId, weekStart, weekEnd).catch((err) => {
+      ingestionError = err instanceof Error ? err.message : "Failed to fetch external busy";
+      return [] as { start: string; end: string }[];
+    }),
+    Promise.all(
+      links.map(async (l): Promise<CalendarLinkDTO> => {
+        const base = {
+          id: l.id,
+          provider: l.provider,
+          externalEmail: l.externalEmail,
+          displayName: l.displayName,
+          enabled: l.enabled,
+          primary: l.primary,
+          syncError: l.syncError,
+        };
+        if (l.provider !== "Google") {
+          return { ...base, subCalendars: null };
+        }
+        try {
+          const items = await listCalendarsForLink(l.id);
+          const enabledSet = new Set(l.subCalendarIds);
+          // When subCalendarIds is empty, treat the primary as the only one in use.
+          const subCalendars: SubCalendarDTO[] = items.map((it) => ({
+            id: it.id,
+            summary: it.summary,
+            primary: it.primary === true,
+            color: it.backgroundColor ?? null,
+            enabled:
+              l.subCalendarIds.length === 0 ? it.primary === true : enabledSet.has(it.id),
+          }));
+          return { ...base, subCalendars };
+        } catch {
+          return { ...base, subCalendars: null };
+        }
+      }),
+    ),
+  ]);
+
+  const externalBusy: Interval[] = externalBusyRaw.map((b) => ({
+    start: new Date(b.start),
+    end: new Date(b.end),
+  }));
+
   const { busy } = computeFreeIntervals({
     windowStart: weekStart,
     windowEnd: weekEnd,
@@ -131,7 +205,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       endTime: b.endTime,
       recurrenceRule: b.recurrenceRule,
     })),
-    externalBusy: [],
+    externalBusy,
     bufferMin,
     timezone,
   });
@@ -147,12 +221,14 @@ export async function loader({ request }: Route.LoaderArgs) {
       endTime: b.endTime.toISOString(),
       recurrenceRule: b.recurrenceRule,
     })),
+    calendarLinks,
     weekStartIso: weekStart.toISOString(),
     weekEndIso: weekEnd.toISOString(),
     busyIntervals: busy.map((i: Interval) => ({
       startIso: i.start.toISOString(),
       endIso: i.end.toISOString(),
     })),
+    ingestionError,
   };
   return withAuth(auth, data);
 }
@@ -307,6 +383,30 @@ export async function action({ request }: Route.ActionArgs) {
       await prisma.manualBlock.delete({ where: { id: input.id } });
       return withAuth(auth, null);
     }
+
+    case "remove-calendar-link": {
+      const link = await prisma.userCalendarLink.findUnique({ where: { id: input.linkId } });
+      if (!link || link.userId !== userId) {
+        return withAuth(auth, Response.json({ error: "Not found" }, { status: 404 }));
+      }
+      await prisma.userCalendarLink.delete({ where: { id: input.linkId } });
+      return withAuth(auth, null);
+    }
+
+    case "toggle-sub-calendar": {
+      const link = await prisma.userCalendarLink.findUnique({ where: { id: input.linkId } });
+      if (!link || link.userId !== userId) {
+        return withAuth(auth, Response.json({ error: "Not found" }, { status: 404 }));
+      }
+      const current = new Set(link.subCalendarIds);
+      if (input.enabled) current.add(input.calendarId);
+      else current.delete(input.calendarId);
+      await prisma.userCalendarLink.update({
+        where: { id: input.linkId },
+        data: { subCalendarIds: Array.from(current) },
+      });
+      return withAuth(auth, null);
+    }
   }
 }
 
@@ -354,6 +454,15 @@ function coerceFormToAction(raw: Record<string, FormDataEntryValue>): unknown {
       };
     case "remove-manual-block":
       return { intent, id: get("id") };
+    case "remove-calendar-link":
+      return { intent, linkId: get("linkId") };
+    case "toggle-sub-calendar":
+      return {
+        intent,
+        linkId: get("linkId"),
+        calendarId: get("calendarId"),
+        enabled: asBool(get("enabled")),
+      };
     default:
       return raw;
   }
@@ -419,7 +528,7 @@ function AvailabilityView({ data }: { data: LoaderData }) {
             Configure when you're available for meetings and pairing.
           </p>
         </header>
-        <CalendarIntegrationsCard />
+        <CalendarIntegrationsCard links={data.calendarLinks} ingestionError={data.ingestionError} />
         <WorkingHoursCard workingHours={data.workingHours} />
         <EventBuffersCard bufferMin={data.defaultEventBufferMin} />
         <ManualBlocksCard blocks={data.manualBlocks} timezone={data.timezone} />
@@ -429,8 +538,13 @@ function AvailabilityView({ data }: { data: LoaderData }) {
   );
 }
 
-// Static stub: Phase 2 wires this to real UserCalendarLink rows + OAuth.
-function CalendarIntegrationsCard() {
+function CalendarIntegrationsCard({
+  links,
+  ingestionError,
+}: {
+  links: CalendarLinkDTO[];
+  ingestionError: string | null;
+}) {
   return (
     <section>
       <div className="flex items-center justify-between mb-3">
@@ -438,20 +552,140 @@ function CalendarIntegrationsCard() {
           <CalendarDays className="w-4 h-4 text-accent-coral" />
           Calendar Integrations
         </h2>
-        <button
-          type="button"
-          disabled
-          title="Coming soon"
-          className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-md border border-border text-muted-foreground/60 cursor-not-allowed"
+        {/* `<a target="_top">` — Google's auth page sends X-Frame-Options: DENY, so
+            it can't render inside the workspace iframe. Break out to the top window. */}
+        <a
+          href="/oauth/calendar/google/start"
+          target="_top"
+          rel="noopener"
+          className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-md border border-border hover:bg-muted transition-colors"
         >
           <Plus className="w-3.5 h-3.5" />
-          Add Account
-        </button>
+          Add Google Account
+        </a>
       </div>
-      <div className="bg-card border border-border rounded-md p-3 text-xs text-muted-foreground">
-        Connect Google or Outlook to ingest external events. Coming soon.
+      {ingestionError && (
+        <div className="bg-destructive/10 border border-destructive/30 text-destructive text-xs rounded-md px-3 py-2 mb-2">
+          Couldn't refresh external events: {ingestionError}
+        </div>
+      )}
+      <div className="flex flex-col gap-3">
+        {links.length === 0 && (
+          <div className="bg-card border border-border rounded-md p-3 text-xs text-muted-foreground">
+            No external calendars connected. Click <em>Add Google Account</em> above to link one.
+          </div>
+        )}
+        {links.map((l) => (
+          <CalendarLinkBlock key={l.id} link={l} />
+        ))}
       </div>
     </section>
+  );
+}
+
+function CalendarLinkBlock({ link }: { link: CalendarLinkDTO }) {
+  const removeFetcher = useFetcher();
+  return (
+    <div className="bg-card border border-border border-l-4 border-l-accent-teal rounded-md overflow-hidden">
+      <div className="flex items-center justify-between px-3 py-2 bg-accent-teal/10">
+        <div className="flex items-center gap-2 min-w-0">
+          <GoogleIcon />
+          <span className="font-semibold text-sm text-foreground truncate">
+            {link.displayName ?? link.externalEmail}
+          </span>
+        </div>
+        <removeFetcher.Form method="post">
+          <input type="hidden" name="intent" value="remove-calendar-link" />
+          <input type="hidden" name="linkId" value={link.id} />
+          <button
+            type="submit"
+            aria-label={`Remove ${link.externalEmail}`}
+            className="p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </removeFetcher.Form>
+      </div>
+      <div className="px-3 py-3 flex flex-col gap-2">
+        {link.syncError && (
+          <div className="text-[11px] text-destructive">Sync error: {link.syncError}</div>
+        )}
+        <p className="text-xs text-muted-foreground">
+          Select which calendars should block your availability:
+        </p>
+        {link.subCalendars === null ? (
+          <div className="text-xs text-muted-foreground italic">
+            Couldn't load this account's calendars.
+          </div>
+        ) : link.subCalendars.length === 0 ? (
+          <div className="text-xs text-muted-foreground italic">No calendars found.</div>
+        ) : (
+          link.subCalendars.map((cal) => (
+            <SubCalendarRow key={cal.id} linkId={link.id} cal={cal} />
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function GoogleIcon() {
+  return (
+    <svg className="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24" fill="none">
+      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4" />
+      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18A10.96 10.96 0 001 12c0 1.77.42 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05" />
+      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
+    </svg>
+  );
+}
+
+function SubCalendarRow({ linkId, cal }: { linkId: string; cal: SubCalendarDTO }) {
+  const fetcher = useFetcher();
+  const pending = fetcher.formData;
+  const enabled = pending ? pending.get("enabled") === "true" : cal.enabled;
+  return (
+    <button
+      type="button"
+      onClick={() =>
+        fetcher.submit(
+          {
+            intent: "toggle-sub-calendar",
+            linkId,
+            calendarId: cal.id,
+            enabled: String(!enabled),
+          },
+          { method: "post" },
+        )
+      }
+      className="flex items-center justify-between text-left hover:bg-muted/50 rounded-md px-1 py-1 transition-colors"
+    >
+      <div className="flex items-center gap-2 min-w-0">
+        <span
+          className="w-2 h-2 rounded-full flex-shrink-0"
+          style={{ backgroundColor: cal.color ?? "var(--accent-coral)" }}
+        />
+        <span className="text-sm text-foreground truncate">{cal.summary}</span>
+        {cal.primary && (
+          <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+            Primary
+          </span>
+        )}
+      </div>
+      <span
+        className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors flex-shrink-0 ${
+          enabled
+            ? "bg-accent-coral border-accent-coral text-white"
+            : "border-border bg-background"
+        }`}
+      >
+        {enabled && (
+          <svg viewBox="0 0 16 16" className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="3">
+            <path d="M3 8.5l3.5 3.5L13 5" />
+          </svg>
+        )}
+      </span>
+    </button>
   );
 }
 
