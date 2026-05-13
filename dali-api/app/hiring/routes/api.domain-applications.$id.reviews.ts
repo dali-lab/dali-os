@@ -63,6 +63,12 @@ export async function action({ request, params }: Route.ActionArgs) {
     },
   });
 
+  // Refuse to assign reviewers to a domain the applicant deselected — the
+  // record only persists to preserve answers in case they re-select.
+  if (!domainApp.selected) {
+    return withAuth(auth, Response.json({ error: "Cannot assign reviewer to a deselected domain application" }, { status: 409 }));
+  }
+
   // ChallengeVersion.domainId is nullable because the general application form
   // is also a ChallengeVersion. A DomainApplication should never reference one,
   // so this is a data invariant error rather than a user-facing condition.
