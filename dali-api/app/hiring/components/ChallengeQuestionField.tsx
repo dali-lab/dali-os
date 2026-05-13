@@ -76,7 +76,7 @@ function SkillsRatingField({
               onChange={e => setRating(skill, e.target.value)}
               disabled={disabled}
               aria-disabled={disabled || undefined}
-              className={`w-14 shrink-0 rounded-md border border-border bg-card text-sm text-center text-dark-blue py-1 focus:outline-none focus:border-accent-coral ${disabled ? "cursor-not-allowed" : ""}`}
+              className={`w-14 shrink-0 rounded-md border border-border bg-card text-base sm:text-sm text-center text-dark-blue py-1 focus:outline-none focus:border-accent-coral ${disabled ? "cursor-not-allowed" : ""}`}
             >
               {showUnrated && (
                 <option value={SKILLS_RATING_UNRATED}>{SKILLS_RATING_UNRATED}</option>
@@ -266,7 +266,7 @@ export function ChallengeQuestionField({
   disabled = false,
 }: ChallengeQuestionFieldProps) {
   const inputBase =
-    "w-full rounded-lg border border-border bg-card text-sm text-dark-blue placeholder:text-muted-foreground/70 focus:outline-none focus:border-accent-coral px-4 py-2";
+    "w-full rounded-lg border border-border bg-card text-base sm:text-sm text-dark-blue placeholder:text-muted-foreground/70 focus:outline-none focus:border-accent-coral px-4 py-2";
   const disabledClass = disabled ? " opacity-60 cursor-not-allowed" : "";
 
   if (question.type === "textarea") {

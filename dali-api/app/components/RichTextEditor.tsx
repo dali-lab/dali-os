@@ -137,7 +137,7 @@ function Toolbar({ editor }: { editor: Editor }) {
       <button
         type="button"
         onClick={setLink}
-        className={`rounded px-2 py-1 text-xs font-medium ${
+        className={`rounded p-2 text-sm font-medium sm:px-2 sm:py-1 sm:text-xs ${
           isLinkActive
             ? "bg-blue-100 text-blue-800"
             : "text-gray-700 hover:bg-gray-100"
@@ -150,7 +150,7 @@ function Toolbar({ editor }: { editor: Editor }) {
         <button
           type="button"
           onClick={unsetLink}
-          className="rounded px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-100"
+          className="rounded p-2 text-sm font-medium text-gray-700 hover:bg-gray-100 sm:px-2 sm:py-1 sm:text-xs"
           aria-label="Remove link"
         >
           Remove link
