@@ -228,6 +228,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       const initialDelibsCount = cycle
         ? await prisma.domainApplication.count({
             where: {
+              selected: true,
               challengeVersion: { domainId: assignment.domainId },
               application: { applicationCycleId: cycle.id, ...inReviewPipelineFilter },
               reviews: { every: { submittedAt: { not: null } }, some: {} },
@@ -239,6 +240,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       const finalDelibsCount = cycle
         ? await prisma.domainApplication.count({
             where: {
+              selected: true,
               challengeVersion: { domainId: assignment.domainId },
               application: { applicationCycleId: cycle.id, ...inReviewPipelineFilter },
               interviews: { some: { status: "Completed" } },

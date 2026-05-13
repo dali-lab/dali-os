@@ -4,6 +4,7 @@ import { parseJson } from "~/lib/validate";
 import { requireAuth, withAuth } from "~/lib/auth";
 import { isHiringLead, hasCycleAccess } from "~/lib/roles";
 import { autoCloseIfExpired, findOtherActiveCycleId } from "~/hiring/lib/cycles";
+import { inReviewPipelineFilter } from "~/hiring/lib/application-pipeline-filter";
 import type { Route } from "./+types/api.cycles.$cycleId.status";
 
 const STATUS_ORDER = ["Draft", "Open", "UnderReview", "Completed"] as const;
@@ -115,7 +116,8 @@ export async function action({ request, params }: Route.ActionArgs) {
     });
     const undecided = await prisma.domainApplication.count({
       where: {
-        application: { applicationCycleId: params.cycleId! },
+        selected: true,
+        application: { applicationCycleId: params.cycleId!, ...inReviewPipelineFilter },
         decisions: {
           none: { stage: "Released", type: { in: ["Accepted", "Waitlisted", "Rejected"] } },
         },
