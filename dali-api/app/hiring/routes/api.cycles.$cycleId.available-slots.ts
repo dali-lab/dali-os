@@ -17,6 +17,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!(await hasCycleAccess(auth.user.sub, params.cycleId!))) {
     const invited = await prisma.domainApplication.findFirst({
       where: {
+        selected: true,
         application: { userId: auth.user.sub, applicationCycleId: params.cycleId },
         decisions: { some: { type: "InvitedToInterview" } },
       },
