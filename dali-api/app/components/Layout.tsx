@@ -440,7 +440,7 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
   )
 
   return (
-    <div className="min-h-screen min-h-dvh bg-section-bg flex">
+    <div className="min-h-screen min-h-dvh bg-section-bg flex flex-col md:flex-row pt-14 md:pt-0">
       {/* Desktop sidebar */}
       <aside
         className={`hidden md:flex flex-col fixed inset-y-0 left-0 z-20 ${sidebarWidth} bg-[hsl(203,38%,23%)] dark:bg-[hsl(215,35%,10%)] transition-[width] duration-200`}
@@ -524,7 +524,7 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
         </>
       )}
 
-      <main className={`flex-1 min-w-0 flex flex-col ${collapsed ? 'md:pl-16' : 'md:pl-64'} pt-14 md:pt-0 transition-[padding] duration-200`}>
+      <main className={`flex-1 min-w-0 flex flex-col ${collapsed ? 'md:pl-16' : 'md:pl-64'} transition-[padding] duration-200`}>
         {/* Always render the tabbed workspace. The Home tab is the default
             landing surface and stays available alongside section tabs.
             Use the actual current URL (not activeSection.to) for the section

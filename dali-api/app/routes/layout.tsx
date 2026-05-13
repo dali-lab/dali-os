@@ -56,7 +56,7 @@ export default function AppLayoutRoute() {
   // Skip the sidebar shell when rendered inside a TabWorkspace iframe.
   if (isEmbedded || isClientEmbedded || searchParams.get('embed') === '1') {
     return (
-      <div className="min-h-dvh bg-section-bg">
+      <div className="min-h-dvh bg-section-bg overflow-x-hidden">
         <div className="w-full px-3 sm:px-6 lg:px-10 pt-4 sm:pt-8 md:pt-12 pb-6 sm:pb-8">
           <Outlet />
         </div>

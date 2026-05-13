@@ -14,4 +14,5 @@ prisma/data/
 
 # Playwright
 /e2e/test-results/
+/e2e/.mobile-audit/
 /playwright-report/

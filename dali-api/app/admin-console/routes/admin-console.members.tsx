@@ -109,7 +109,7 @@ export default function AdminConsoleMembers() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <Users className="w-6 h-6 text-foreground/80" />
           <h1 className="text-2xl font-bold text-foreground">DALI Members</h1>
@@ -117,7 +117,7 @@ export default function AdminConsoleMembers() {
             {filtered.length}{filtered.length !== members.length ? ` of ${members.length}` : ""} members
           </span>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
           <div role="group" aria-label="Filter members by role" className="flex rounded-md border border-border overflow-hidden text-sm">
             {(["all", "admin", "hiringLead"] as RoleFilter[]).map((f) => (
               <button
@@ -141,13 +141,13 @@ export default function AdminConsoleMembers() {
             placeholder="Search by name or email…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-56 px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            className="w-full sm:w-56 px-3 py-2 text-base sm:text-sm border border-border rounded-md bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
           />
         </div>
       </div>
 
-      <div className="bg-card border border-border rounded-lg overflow-hidden">
-        <table className="w-full text-sm">
+      <div className="bg-card border border-border rounded-lg overflow-x-auto">
+        <table className="w-full text-sm min-w-[760px]">
           <thead>
             <tr className="border-b border-border bg-muted/50">
               <th className="text-left px-4 py-3 font-medium text-muted-foreground">Name</th>
