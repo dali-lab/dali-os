@@ -1511,32 +1511,33 @@ export default function HiringLeadCycleDetails() {
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
               <div>
-                <label htmlFor="reviewer-member-select" className="block text-xs font-medium text-muted-foreground mb-1">DALI Member</label>
-                <select
-                  id="reviewer-member-select"
-                  value={newMemberId}
-                  onChange={e => setNewMemberId(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                >
-                  <option value="">Select member...</option>
-                  {allMembers.map(m => (
-                    <option key={m.id} value={m.id}>
-                      {m.firstName && m.lastName ? `${m.firstName} ${m.lastName}` : m.daliEmail}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
                 <label htmlFor="reviewer-domain-select" className="block text-xs font-medium text-muted-foreground mb-1">Domain</label>
                 <select
                   id="reviewer-domain-select"
                   value={newDomainId}
-                  onChange={e => setNewDomainId(e.target.value)}
+                  onChange={e => { setNewDomainId(e.target.value); setNewMemberId(''); }}
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
                 >
                   <option value="">Select domain...</option>
                   {allDomains.map(d => (
                     <option key={d.id} value={d.id}>{d.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="reviewer-member-select" className="block text-xs font-medium text-muted-foreground mb-1">DALI Member</label>
+                <select
+                  id="reviewer-member-select"
+                  value={newMemberId}
+                  onChange={e => setNewMemberId(e.target.value)}
+                  disabled={!newDomainId}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm disabled:opacity-50"
+                >
+                  <option value="">{newDomainId ? 'Select member...' : 'Pick a domain first'}</option>
+                  {allMembers.map(m => (
+                    <option key={m.id} value={m.id}>
+                      {m.firstName && m.lastName ? `${m.firstName} ${m.lastName}` : m.daliEmail}
+                    </option>
                   ))}
                 </select>
               </div>
