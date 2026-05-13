@@ -40,6 +40,7 @@ beforeEach(() => {
   (mockPrisma as any).domainApplication = {
     findUniqueOrThrow: vi.fn().mockResolvedValue({
       id: DA_ID,
+      selected: true,
       application: { applicationCycleId: CYCLE_ID },
       challengeVersion: { domainId: DOMAIN_ID },
     }),
@@ -143,6 +144,7 @@ describe("POST /api/hiring/domain-applications/:id/reviews", () => {
   it("rejects a domain lead for a different domain (403)", async () => {
     mockPrisma.domainApplication.findUniqueOrThrow.mockResolvedValueOnce({
       id: DA_ID,
+      selected: true,
       application: { applicationCycleId: CYCLE_ID },
       challengeVersion: { domainId: OTHER_DOMAIN_ID },
     });
@@ -176,6 +178,25 @@ describe("POST /api/hiring/domain-applications/:id/reviews", () => {
     } as any);
 
     expect(res.status).toBe(403);
+    expect(mockPrisma.applicationReview.create).not.toHaveBeenCalled();
+  });
+
+  it("returns 409 when the domain application is deselected", async () => {
+    vi.mocked(isHiringLead).mockResolvedValue(true);
+    mockPrisma.domainApplication.findUniqueOrThrow.mockResolvedValueOnce({
+      id: DA_ID,
+      selected: false,
+      application: { applicationCycleId: CYCLE_ID },
+      challengeVersion: { domainId: DOMAIN_ID },
+    });
+
+    const res = await action({
+      request: makeRequest(),
+      params: { id: DA_ID },
+      context: {},
+    } as any);
+
+    expect(res.status).toBe(409);
     expect(mockPrisma.applicationReview.create).not.toHaveBeenCalled();
   });
 
