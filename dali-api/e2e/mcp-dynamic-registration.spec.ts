@@ -15,6 +15,15 @@ function pkcePair() {
   return { verifier, challenge };
 }
 
+// Each test gets a unique X-Forwarded-For so the /oauth/register
+// rate-limit bucket (5/hour/IP) doesn't bleed between tests or retries.
+function freshIpHeaders(): Record<string, string> {
+  const ip = `10.${Math.floor(Math.random() * 256)}.${Math.floor(
+    Math.random() * 256,
+  )}.${Math.floor(Math.random() * 256)}`;
+  return { 'X-Forwarded-For': ip };
+}
+
 test('DCR: register → authorize → consent → token → /mcp whoami', async ({
   page,
   loginAs,
@@ -23,6 +32,7 @@ test('DCR: register → authorize → consent → token → /mcp whoami', async 
   // 1) Register a new client.
   const redirectUri = 'http://127.0.0.1:54113/callback';
   const regRes = await request.post('/oauth/register', {
+    headers: freshIpHeaders(),
     data: {
       redirect_uris: [redirectUri],
       client_name: 'Claude Code E2E',
@@ -122,6 +132,7 @@ test('DCR: register → authorize → consent → token → /mcp whoami', async 
 
 test('DCR: rejects non-loopback redirect_uri (https)', async ({ request }) => {
   const res = await request.post('/oauth/register', {
+    headers: freshIpHeaders(),
     data: { redirect_uris: ['https://example.com/callback'] },
   });
   expect(res.status()).toBe(400);
@@ -131,6 +142,7 @@ test('DCR: rejects non-loopback redirect_uri (https)', async ({ request }) => {
 
 test('DCR: rejects 0.0.0.0 as a redirect_uri host', async ({ request }) => {
   const res = await request.post('/oauth/register', {
+    headers: freshIpHeaders(),
     data: { redirect_uris: ['http://0.0.0.0/callback'] },
   });
   expect(res.status()).toBe(400);
@@ -142,6 +154,7 @@ test('DCR: rejects unsupported token_endpoint_auth_method', async ({
   request,
 }) => {
   const res = await request.post('/oauth/register', {
+    headers: freshIpHeaders(),
     data: {
       redirect_uris: ['http://127.0.0.1/callback'],
       token_endpoint_auth_method: 'client_secret_basic',

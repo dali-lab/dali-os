@@ -35,17 +35,32 @@ test('MCP OAuth foundation: discovery, authorize, consent, token, whoami', async
   // 2) Log in as a seeded member (dev-login → __dali_sid cookie).
   await loginAs({ daliEmail: 'admin@dali.dartmouth.edu' });
 
-  // 3) Hit /oauth/authorize. Existing-session shortcut + no prior grant →
+  // 3) Register an MCP client via RFC 7591 DCR. There are no seeded MCP
+  //    OAuthClient rows — clients self-register.
+  const redirectUri = 'http://127.0.0.1:51999/callback';
+  const regIp = `10.${Math.floor(Math.random() * 256)}.${Math.floor(
+    Math.random() * 256,
+  )}.${Math.floor(Math.random() * 256)}`;
+  const regRes = await request.post('/oauth/register', {
+    headers: { 'X-Forwarded-For': regIp },
+    data: {
+      redirect_uris: [redirectUri],
+      client_name: 'Claude Code',
+    },
+  });
+  expect(regRes.status()).toBe(200);
+  const clientId = (await regRes.json()).client_id as string;
+
+  // 4) Hit /oauth/authorize. Existing-session shortcut + no prior grant →
   //    redirects to /oauth/consent.
   const { verifier, challenge } = pkcePair();
   const state = randomBytes(8).toString('hex');
-  const redirectUri = 'http://127.0.0.1:51999/callback';
 
   const authorizeUrl =
     `/oauth/authorize?` +
     new URLSearchParams({
       response_type: 'code',
-      client_id: 'claude-code',
+      client_id: clientId,
       redirect_uri: redirectUri,
       state,
       code_challenge: challenge,
@@ -85,7 +100,7 @@ test('MCP OAuth foundation: discovery, authorize, consent, token, whoami', async
       code: code!,
       code_verifier: verifier,
       redirect_uri: redirectUri,
-      client_id: 'claude-code',
+      client_id: clientId,
     },
   });
   expect(tokenRes.ok()).toBe(true);
