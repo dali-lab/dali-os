@@ -3,21 +3,13 @@ import type { SlackThreadMessage } from "./slack-client";
 const TITLE_MAX = 80;
 const TITLE_PREFIX = "[Slack] ";
 
-export type UploadedAsset = {
-  // Original filename, used for the alt text.
-  filename: string;
-  // Public URL (e.g. raw.githubusercontent.com) that GitHub can render.
-  url: string;
-};
-
 export type FormatIssueInput = {
   thread: SlackThreadMessage[];
-  // Slack permalink for the parent message. Linked in the issue header.
+  // Slack permalink for the parent message. Linked in the issue header so
+  // readers can click through to see any attached images/files in Slack.
   permalink: string | null;
   // The user who @-mentioned the bot.
   requestedBySlackUserId: string;
-  // Images already uploaded somewhere GitHub can render them, keyed by Slack file id.
-  assetsByFileId: Record<string, UploadedAsset>;
 };
 
 export type FormatIssueResult = { title: string; body: string };
@@ -47,7 +39,7 @@ function tsToIso(ts: string): string {
 }
 
 export function formatIssue(input: FormatIssueInput): FormatIssueResult {
-  const { thread, permalink, requestedBySlackUserId, assetsByFileId } = input;
+  const { thread, permalink, requestedBySlackUserId } = input;
   const parent = thread[0];
   if (!parent) {
     return { title: `${TITLE_PREFIX}(empty thread)`, body: "(empty Slack thread)" };
@@ -76,17 +68,10 @@ export function formatIssue(input: FormatIssueInput): FormatIssueResult {
       lines.push("");
     }
 
+    // Attachments aren't uploaded to GitHub — we link readers back to the
+    // Slack thread (via `permalink` above) where the original images live.
     for (const f of msg.files) {
-      const asset = assetsByFileId[f.id];
-      if (asset && f.mimetype.startsWith("image/")) {
-        lines.push(`![${asset.filename}](${asset.url})`);
-      } else if (asset) {
-        lines.push(`[${asset.filename}](${asset.url})`);
-      } else {
-        // Asset upload failed or wasn't attempted — surface that explicitly
-        // so the issue body reflects reality, but don't abort the whole flow.
-        lines.push(`_Attachment: ${f.name} (upload failed — see Slack thread)_`);
-      }
+      lines.push(`_Attachment: ${f.name} — see Slack thread for content._`);
       lines.push("");
     }
   }

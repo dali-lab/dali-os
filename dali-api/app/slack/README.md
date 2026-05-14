@@ -10,8 +10,8 @@ Webhook receiver embedded in `dali-api`. First feature: a teammate `@dali-slack 
 - `lib/slack-client.ts` — Thin `@slack/web-api` wrapper.
 - `lib/handle-mention.ts` — Reacts to `@dali-slack file-this` in a thread; posts preview, persists draft.
 - `lib/handle-reaction.ts` — On `:white_check_mark:` files via GitHub App; on `:x:` cancels.
-- `lib/format-issue.ts` — Pure function: thread + uploaded images → issue title/body.
-- `lib/github-app.ts` — Octokit + `@octokit/auth-app` wrapper for issue creation and asset upload.
+- `lib/format-issue.ts` — Pure function: Slack thread → GitHub issue title/body. Attachments are noted by name and linked back to the Slack thread (no upload to GitHub).
+- `lib/github-app.ts` — Octokit + `@octokit/auth-app` wrapper for issue creation.
 
 ## Required env vars (see `dali-api/.env.example`)
 
@@ -24,12 +24,11 @@ Webhook receiver embedded in `dali-api`. First feature: a teammate `@dali-slack 
 | `GITHUB_APP_INSTALLATION_ID` | Visible in the app's installation page URL. |
 | `GITHUB_APP_PRIVATE_KEY` | PEM. In Fly use a literal newline `\n` between lines; we decode `\n` → `\n` automatically. |
 | `GITHUB_ISSUES_REPO` | `owner/repo`. Default `dali-lab/dali-os`. |
-| `GITHUB_ISSUE_ASSETS_REPO` | `owner/repo`. We commit Slack image uploads here under `slack-uploads/<sha>/<name>` and embed the `raw.githubusercontent.com` URL in the issue. |
 
 ## One-time Slack app setup
 
 1. Create at https://api.slack.com/apps.
-2. **Bot Token Scopes**: `app_mentions:read`, `channels:history`, `chat:write`, `files:read`, `reactions:read`, `reactions:write` (add `groups:history` for private channels).
+2. **Bot Token Scopes**: `app_mentions:read`, `channels:history`, `chat:write`, `reactions:read`, `reactions:write` (add `groups:history` for private channels).
 3. **Event Subscriptions** → enable. Request URL per env:
    - dev: `https://dali-api-dev.fly.dev/api/slack/events`
    - staging: `https://dali-api-staging.fly.dev/api/slack/events`
@@ -45,8 +44,7 @@ Slack will verify the request URL once on save — the route returns the `challe
 1. Create at https://github.com/organizations/dali-lab/settings/apps/new.
 2. Permissions:
    - Repository → Issues: **Read & write**
-   - Repository → Contents: **Read & write** (for image asset commits)
-3. Install on `dali-lab/dali-os` and `dali-lab/dali-issue-assets`.
+3. Install on `dali-lab/dali-os` (the repo `GITHUB_ISSUES_REPO` points at).
 4. Generate a private key (`.pem` download). Store as `GITHUB_APP_PRIVATE_KEY` Fly secret.
 5. The installation ID is in the install URL (`/settings/installations/<id>`).
 

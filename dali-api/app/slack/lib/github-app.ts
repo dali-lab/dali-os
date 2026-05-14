@@ -1,6 +1,5 @@
 import { Octokit } from "@octokit/rest";
 import { createAppAuth } from "@octokit/auth-app";
-import type { UploadedAsset } from "./format-issue";
 
 type RepoRef = { owner: string; repo: string };
 
@@ -56,50 +55,3 @@ export async function createIssue(args: { title: string; body: string }): Promis
   return { number: res.data.number, htmlUrl: res.data.html_url };
 }
 
-// Uploads `bytes` to the issue-assets repo at a content-addressed path and
-// returns the raw.githubusercontent.com URL the issue body can embed. The
-// path uses a sha1 digest + filename so re-uploads are idempotent.
-export async function uploadIssueAsset(args: {
-  bytes: Buffer;
-  filename: string;
-}): Promise<UploadedAsset> {
-  const target = parseRepo(process.env.GITHUB_ISSUE_ASSETS_REPO, "GITHUB_ISSUE_ASSETS_REPO");
-  const { default: crypto } = await import("node:crypto");
-  const sha = crypto.createHash("sha1").update(args.bytes).digest("hex");
-  const safeName = args.filename.replace(/[^A-Za-z0-9._-]/g, "_");
-  const path = `slack-uploads/${sha}/${safeName}`;
-  const branch = "main";
-
-  const octo = githubAppClient();
-  // Best-effort: if the file already exists at this path, just return its URL.
-  try {
-    const existing = await octo.rest.repos.getContent({
-      owner: target.owner,
-      repo: target.repo,
-      path,
-      ref: branch,
-    });
-    if (!Array.isArray(existing.data) && existing.data.type === "file") {
-      return {
-        filename: args.filename,
-        url: `https://raw.githubusercontent.com/${target.owner}/${target.repo}/${branch}/${path}`,
-      };
-    }
-  } catch {
-    // 404 — fall through to create.
-  }
-
-  await octo.rest.repos.createOrUpdateFileContents({
-    owner: target.owner,
-    repo: target.repo,
-    path,
-    message: `chore(slack-upload): ${safeName}`,
-    content: args.bytes.toString("base64"),
-    branch,
-  });
-
-  return {
-    filename: args.filename,
-    url: `https://raw.githubusercontent.com/${target.owner}/${target.repo}/${branch}/${path}`,
-  };
-}

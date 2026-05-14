@@ -66,15 +66,3 @@ export async function getPermalink(channel: string, ts: string): Promise<string 
   const res = await client().chat.getPermalink({ channel, message_ts: ts });
   return res.permalink ?? null;
 }
-
-// Slack's file URLs (url_private) require the bot token in the Authorization
-// header to access. Returns the raw bytes — we re-upload to GitHub elsewhere.
-export async function downloadFile(urlPrivate: string): Promise<Buffer> {
-  const token = process.env.SLACK_BOT_TOKEN;
-  if (!token) throw new Error("SLACK_BOT_TOKEN is not set");
-  const res = await fetch(urlPrivate, { headers: { Authorization: `Bearer ${token}` } });
-  if (!res.ok) {
-    throw new Error(`Slack file download failed: ${res.status} ${res.statusText}`);
-  }
-  return Buffer.from(await res.arrayBuffer());
-}

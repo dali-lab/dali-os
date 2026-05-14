@@ -1,8 +1,8 @@
 import { prisma } from "~/lib/db";
-import { downloadFile, editMessage, getPermalink, postReply } from "./slack-client";
+import { editMessage, getPermalink, postReply } from "./slack-client";
 import type { SlackThreadMessage } from "./slack-client";
-import { formatIssue, type UploadedAsset } from "./format-issue";
-import { createIssue, uploadIssueAsset } from "./github-app";
+import { formatIssue } from "./format-issue";
+import { createIssue } from "./github-app";
 
 // Slack `reaction_added` event payload (subset we need).
 export type ReactionAddedEvent = {
@@ -48,32 +48,16 @@ export async function handleReactionAdded(event: ReactionAddedEvent): Promise<vo
     return;
   }
 
-  // Confirm: file the issue. Wrap in try/catch so a GitHub or upload failure
-  // produces a "Failed" draft + a useful Slack reply instead of silently dying.
+  // Confirm: file the issue. Wrap in try/catch so a GitHub failure produces
+  // a "Failed" draft + a useful Slack reply instead of silently dying.
   try {
     const thread = draft.threadJson as unknown as SlackThreadMessage[];
     const permalink = await getPermalink(event.item.channel, draft.slackThreadTs).catch(() => null);
-
-    // Try to upload every attached image. Failures per-file are non-fatal —
-    // formatIssue will note the missing asset in the issue body.
-    const assetsByFileId: Record<string, UploadedAsset> = {};
-    for (const msg of thread) {
-      for (const f of msg.files ?? []) {
-        if (!f.mimetype?.startsWith("image/")) continue;
-        try {
-          const bytes = await downloadFile(f.urlPrivate);
-          assetsByFileId[f.id] = await uploadIssueAsset({ bytes, filename: f.name });
-        } catch (err) {
-          console.warn("slack: image upload failed", { fileId: f.id, error: errMsg(err) });
-        }
-      }
-    }
 
     const { title, body } = formatIssue({
       thread,
       permalink,
       requestedBySlackUserId: draft.requestedBySlackUserId,
-      assetsByFileId,
     });
 
     const issue = await createIssue({ title, body });
