@@ -35,7 +35,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         include: {
           cycleInterviewer: {
             include: {
-              daliMember: true,
+              user: true,
               domain: true,
             },
           },

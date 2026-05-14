@@ -11,11 +11,11 @@ const NoteVersionSchema = z.object({
 });
 
 async function getAssignment(userId: string, cycleId: string, interviewId: string) {
-  const member = await prisma.dALIMember.findFirst({ where: { userId } });
+  const member = await prisma.dALIMember.findUnique({ where: { userId } });
   if (!member) return null;
 
   const interviewer = await prisma.cycleInterviewer.findFirst({
-    where: { daliMemberId: member.id, applicationCycleId: cycleId },
+    where: { userId: member.id, applicationCycleId: cycleId },
   });
   if (!interviewer) return null;
 

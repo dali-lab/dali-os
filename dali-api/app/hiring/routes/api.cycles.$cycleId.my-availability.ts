@@ -51,10 +51,10 @@ function interviewWindowUtcBounds(config: {
 // cycle. A member who serves multiple domains has multiple rows; availability
 // is a per-human concept, so writes fan out across every row.
 async function findCycleInterviewers(userId: string, cycleId: string) {
-  const member = await prisma.dALIMember.findFirst({ where: { userId } });
+  const member = await prisma.dALIMember.findUnique({ where: { userId } });
   if (!member) return [];
   return prisma.cycleInterviewer.findMany({
-    where: { daliMemberId: member.id, applicationCycleId: cycleId },
+    where: { userId: member.id, applicationCycleId: cycleId },
     select: { id: true },
   });
 }

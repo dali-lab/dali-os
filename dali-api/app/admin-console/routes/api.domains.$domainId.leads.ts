@@ -2,12 +2,16 @@ import type { Route } from "./+types/api.domains.$domainId.leads";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isAdmin } from "~/lib/roles";
+import { isAdmin, currentTerm } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 
+// Phase 2: domain-lead body uses `userId` (not `memberId`). The User must
+// exist and (per the admin UI convention) be a lab member, though we only
+// enforce the FK at the DB layer.
+
 const AddLeadSchema = z.object({
-  memberId: z.string().min(1).max(100),
+  userId: z.string().min(1).max(100),
 });
 
 const RemoveLeadSchema = z.object({
@@ -24,7 +28,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const leads = await prisma.domainLeadAssignment.findMany({
     where: { domainId: params.domainId },
-    include: { member: { include: { user: true } }, domain: true },
+    include: { user: true, domain: true, term: true },
   });
 
   return withCors(request, Response.json(leads));
@@ -41,11 +45,22 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (request.method === "POST") {
     const postBody = await parseJson(request, AddLeadSchema);
     if (postBody instanceof Response) return withCors(request, postBody);
-    const { memberId } = postBody;
+    const { userId } = postBody;
+
+    const term = await currentTerm();
+    if (!term) {
+      return withCors(
+        request,
+        Response.json(
+          { error: "No current Term — run npm run db:seed:v0-reference" },
+          { status: 500 },
+        ),
+      );
+    }
 
     const assignment = await prisma.domainLeadAssignment.create({
-      data: { memberId, domainId: params.domainId! },
-      include: { member: { include: { user: true } }, domain: true },
+      data: { userId, domainId: params.domainId!, termId: term.id },
+      include: { user: true, domain: true, term: true },
     });
     return withCors(request, Response.json(assignment, { status: 201 }));
   }

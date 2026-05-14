@@ -49,7 +49,7 @@ async function seedContent(name: string): Promise<string | null> {
         where: { interviewId: id },
         include: {
           noteVersions: { orderBy: { createdAt: "desc" }, take: 1 },
-          cycleInterviewer: { include: { daliMember: true } },
+          cycleInterviewer: { include: { user: true } },
         },
       });
       const parts: string[] = [];
@@ -58,8 +58,8 @@ async function seedContent(name: string): Promise<string | null> {
         if (latest?.content) {
           const name =
             [
-              a.cycleInterviewer.daliMember.firstName,
-              a.cycleInterviewer.daliMember.lastName,
+              a.cycleInterviewer.user.firstName,
+              a.cycleInterviewer.user.lastName,
             ]
               .filter(Boolean)
               .join(" ") || "Interviewer";

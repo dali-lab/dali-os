@@ -140,7 +140,7 @@ export async function inferUnderReviewStage(
   if (completedInterviews > 0) return 'finalDelibs';
 
   const myInterviewerRecords = await prisma.cycleInterviewer.findMany({
-    where: { daliMemberId: memberId, applicationCycleId: cycleId },
+    where: { userId: memberId, applicationCycleId: cycleId },
     select: { id: true },
   });
 

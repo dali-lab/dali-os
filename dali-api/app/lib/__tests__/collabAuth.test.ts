@@ -3,7 +3,6 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("~/lib/db", () => ({
   prisma: {
     applicationReview: { findUnique: vi.fn() },
-    dALIMember: { findFirst: vi.fn() },
     interviewAssignment: { findFirst: vi.fn() },
     interview: { findUnique: vi.fn() },
   },
@@ -21,13 +20,12 @@ vi.mock("~/hiring/lib/confidentiality", () => ({
 import { prisma } from "~/lib/db";
 import { isDomainLead, isHiringLead } from "~/lib/roles";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
-import { authorizeCollabDoc, hydrateAuthors } from "../collabAuth";
+import { authorizeCollabDoc } from "../collabAuth";
 
 const mockPrisma = prisma as any;
 
 beforeEach(() => {
   vi.resetAllMocks();
-  // Restore defaults
   (isDomainLead as any).mockResolvedValue(false);
   (isHiringLead as any).mockResolvedValue(false);
   (getCycleConfidentialityState as any).mockResolvedValue({ status: "signed", activeVersionId: "v1" });
@@ -49,9 +47,8 @@ describe("authorizeCollabDoc", () => {
     it("allows the reviewer who owns the review", async () => {
       mockPrisma.applicationReview.findUnique.mockResolvedValue({
         id: "r1",
-        cycleReviewer: { daliMemberId: "member1" },
+        cycleReviewer: { userId: "user1" },
       });
-      mockPrisma.dALIMember.findFirst.mockResolvedValue({ id: "member1" });
 
       expect(await authorizeCollabDoc("user1", "review:r1:feedback")).toBe(true);
     });
@@ -59,9 +56,8 @@ describe("authorizeCollabDoc", () => {
     it("rejects non-owner non-lead", async () => {
       mockPrisma.applicationReview.findUnique.mockResolvedValue({
         id: "r1",
-        cycleReviewer: { daliMemberId: "other-member" },
+        cycleReviewer: { userId: "other-user" },
       });
-      mockPrisma.dALIMember.findFirst.mockResolvedValue({ id: "member1" });
 
       expect(await authorizeCollabDoc("user1", "review:r1:feedback")).toBe(false);
     });
@@ -69,9 +65,8 @@ describe("authorizeCollabDoc", () => {
     it("allows domain leads", async () => {
       mockPrisma.applicationReview.findUnique.mockResolvedValue({
         id: "r1",
-        cycleReviewer: { daliMemberId: "other-member" },
+        cycleReviewer: { userId: "other-user" },
       });
-      mockPrisma.dALIMember.findFirst.mockResolvedValue({ id: "member1" });
       (isDomainLead as any).mockResolvedValue(true);
 
       expect(await authorizeCollabDoc("user1", "review:r1:feedback")).toBe(true);
@@ -80,9 +75,8 @@ describe("authorizeCollabDoc", () => {
     it("allows hiring leads", async () => {
       mockPrisma.applicationReview.findUnique.mockResolvedValue({
         id: "r1",
-        cycleReviewer: { daliMemberId: "other-member" },
+        cycleReviewer: { userId: "other-user" },
       });
-      mockPrisma.dALIMember.findFirst.mockResolvedValue({ id: "member1" });
       (isHiringLead as any).mockResolvedValue(true);
 
       expect(await authorizeCollabDoc("user1", "review:r1:feedback")).toBe(true);
@@ -96,31 +90,22 @@ describe("authorizeCollabDoc", () => {
 
   describe("interview docs", () => {
     it("allows assigned interviewer", async () => {
-      mockPrisma.dALIMember.findFirst.mockResolvedValue({ id: "member1" });
       mockPrisma.interviewAssignment.findFirst.mockResolvedValue({ id: "a1" });
 
       expect(await authorizeCollabDoc("user1", "interview:int1:notes")).toBe(true);
     });
 
     it("rejects unassigned non-lead", async () => {
-      mockPrisma.dALIMember.findFirst.mockResolvedValue({ id: "member1" });
       mockPrisma.interviewAssignment.findFirst.mockResolvedValue(null);
 
       expect(await authorizeCollabDoc("user1", "interview:int1:notes")).toBe(false);
     });
 
     it("allows hiring leads even when not assigned", async () => {
-      mockPrisma.dALIMember.findFirst.mockResolvedValue({ id: "member1" });
       mockPrisma.interviewAssignment.findFirst.mockResolvedValue(null);
       (isHiringLead as any).mockResolvedValue(true);
 
       expect(await authorizeCollabDoc("user1", "interview:int1:notes")).toBe(true);
     });
-  });
-});
-
-describe("hydrateAuthors", () => {
-  it("returns empty array for empty input", async () => {
-    expect(await hydrateAuthors([])).toEqual([]);
   });
 });

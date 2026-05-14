@@ -19,7 +19,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const member = await prisma.dALIMember.findFirst({ where: { userId: auth.user.sub } });
+  const member = await prisma.dALIMember.findUnique({ where: { userId: auth.user.sub } });
   if (!member) {
     return Response.json({ error: "Not a DALI member" }, { status: 403 });
   }

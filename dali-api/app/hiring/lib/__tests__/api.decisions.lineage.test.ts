@@ -17,7 +17,8 @@ import { action as delibsAction } from "~/hiring/routes/api.delibs.$id";
 import { loader as decisionsLoader } from "~/hiring/routes/api.domain-applications.$id.decisions";
 
 const mockPrisma = prisma as unknown as {
-  dALIMember: { findFirst: ReturnType<typeof vi.fn> };
+  dALIMember: { findUnique: ReturnType<typeof vi.fn> };
+  gmailIntegration: { findFirst: ReturnType<typeof vi.fn> };
   decision: {
     findUnique: ReturnType<typeof vi.fn>;
     create: ReturnType<typeof vi.fn>;
@@ -40,7 +41,8 @@ const FINAL_ID = "dec-final";
 
 beforeEach(() => {
   vi.clearAllMocks();
-  (mockPrisma as any).dALIMember = { findFirst: vi.fn() };
+  (mockPrisma as any).dALIMember = { findUnique: vi.fn() };
+  (mockPrisma as any).gmailIntegration = { findFirst: vi.fn() };
   (mockPrisma as any).decision = { findUnique: vi.fn(), create: vi.fn(), findMany: vi.fn() };
   (mockPrisma as any).domainApplication = { findUnique: vi.fn() };
   (mockPrisma as any).cycleDecisionEmail = { findUnique: vi.fn() };
@@ -49,7 +51,7 @@ beforeEach(() => {
   (mockPrisma as any).$transaction = vi.fn(async (fn: any) => fn(mockPrisma));
   vi.mocked(sendEmail).mockResolvedValue(undefined as any);
   vi.mocked(requireAuth).mockResolvedValue({ ok: true, user: { sub: USER_ID } } as any);
-  mockPrisma.dALIMember.findFirst.mockResolvedValue({ id: MEMBER_ID, userId: USER_ID });
+  mockPrisma.dALIMember.findUnique.mockResolvedValue({ id: MEMBER_ID, userId: USER_ID });
 });
 
 describe("Decision lineage (parentDecisionId)", () => {
@@ -98,6 +100,7 @@ describe("Decision lineage (parentDecisionId)", () => {
     mockPrisma.cycleDecisionEmail.findUnique.mockResolvedValue({
       emailTemplateVersion: { id: "etv-1", subject: "s", body: "b" },
     });
+    mockPrisma.gmailIntegration.findFirst.mockResolvedValue(null);
 
     const req = new Request("http://localhost/api/decisions/dec-final/release", { method: "POST" });
     const res = await releaseAction({ request: req, params: { id: FINAL_ID }, context: {} } as any);

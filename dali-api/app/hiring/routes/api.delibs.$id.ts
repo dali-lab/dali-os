@@ -63,7 +63,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     const { intent } = body;
 
     if (intent === "close") {
-      const member = await prisma.dALIMember.findFirst({
+      const member = await prisma.dALIMember.findUnique({
         where: { userId: auth.user.sub },
       });
       if (!member) {

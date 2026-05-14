@@ -3,11 +3,10 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isHiringLead } from "~/lib/roles";
 import { sendEmail } from "~/lib/gmail";
+import { getApplicationsGmailRefreshToken } from "~/lib/gmail-integration";
 import { renderForSlot, decisionSlot } from "~/hiring/lib/email-variables";
 import { logAuditEvent } from "~/lib/audit";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
-
-const GMAIL_USER = "applications@dali.dartmouth.edu";
 
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
@@ -24,7 +23,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         );
   }
 
-  const member = await prisma.dALIMember.findFirst({
+  const member = await prisma.dALIMember.findUnique({
     where: { userId: auth.user.sub },
   });
   if (!member) {
@@ -116,12 +115,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     const domainName = domainApp.challengeVersion.domain?.name ?? "";
 
     if (email && user) {
-      const gmailUser = await prisma.user.findUnique({
-        where: { daliEmail: GMAIL_USER },
-        select: { googleRefreshToken: true },
-      });
+      const refreshToken = await getApplicationsGmailRefreshToken();
 
-      if (gmailUser?.googleRefreshToken) {
+      if (refreshToken) {
         const { subject, html } = renderForSlot(
           decisionSlot(decision.type),
           binding.emailTemplateVersion,
@@ -132,7 +128,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         );
 
         await sendEmail({
-          refreshToken: gmailUser.googleRefreshToken,
+          refreshToken,
           to: email,
           subject,
           html,

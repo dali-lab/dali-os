@@ -14,7 +14,7 @@ import { sendEmail } from "~/lib/gmail";
 import { action } from "~/hiring/routes/api.decisions.$id.release";
 
 const mockPrisma = prisma as unknown as {
-  dALIMember: { findFirst: ReturnType<typeof vi.fn> };
+  dALIMember: { findUnique: ReturnType<typeof vi.fn> };
   decision: {
     findUnique: ReturnType<typeof vi.fn>;
     create: ReturnType<typeof vi.fn>;
@@ -22,6 +22,7 @@ const mockPrisma = prisma as unknown as {
   domainApplication: { findUnique: ReturnType<typeof vi.fn> };
   cycleDecisionEmail: { findUnique: ReturnType<typeof vi.fn> };
   user: { findUnique: ReturnType<typeof vi.fn> };
+  gmailIntegration: { findFirst: ReturnType<typeof vi.fn> };
 };
 
 const USER_ID = "user-hl";
@@ -32,7 +33,7 @@ const CYCLE_ID = "cycle-1";
 function setupAuth() {
   vi.mocked(requireAuth).mockResolvedValue({ ok: true, user: { sub: USER_ID } } as any);
   vi.mocked(isHiringLead).mockResolvedValue(true);
-  mockPrisma.dALIMember.findFirst.mockResolvedValue({ id: MEMBER_ID, userId: USER_ID });
+  mockPrisma.dALIMember.findUnique.mockResolvedValue({ id: MEMBER_ID, userId: USER_ID });
 }
 
 function setupFinalDecision(type: "Rejected" | "InvitedToInterview" | "Accepted" | "Waitlisted" = "Accepted") {
@@ -65,16 +66,17 @@ function setupApplicantContext(opts: { domainName?: string | null } = {}) {
       },
     },
   });
-  mockPrisma.user.findUnique.mockResolvedValue({ googleRefreshToken: "gmail-rt" });
+  mockPrisma.gmailIntegration.findFirst.mockResolvedValue({ oauthTokens: "gmail-rt" });
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
-  (mockPrisma as any).dALIMember = { findFirst: vi.fn() };
+  (mockPrisma as any).dALIMember = { findUnique: vi.fn() };
   (mockPrisma as any).decision = { findUnique: vi.fn(), create: vi.fn() };
   (mockPrisma as any).domainApplication = { findUnique: vi.fn() };
   (mockPrisma as any).cycleDecisionEmail = { findUnique: vi.fn() };
   (mockPrisma as any).user = { findUnique: vi.fn() };
+  (mockPrisma as any).gmailIntegration = { findFirst: vi.fn() };
   vi.mocked(sendEmail).mockResolvedValue(undefined as any);
 });
 
@@ -220,7 +222,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
         },
       },
     });
-    mockPrisma.user.findUnique.mockResolvedValue({ googleRefreshToken: "gmail-rt" });
+    mockPrisma.gmailIntegration.findFirst.mockResolvedValue({ oauthTokens: "gmail-rt" });
     mockPrisma.cycleDecisionEmail.findUnique.mockResolvedValue({
       applicationCycleId: CYCLE_ID,
       decisionType: "InvitedToInterview",

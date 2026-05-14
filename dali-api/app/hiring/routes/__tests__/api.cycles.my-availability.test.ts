@@ -17,7 +17,7 @@ const USER_ID = "user-1";
 const CYCLE_ID = "cycle-1";
 
 const mockPrisma = prisma as unknown as {
-  dALIMember: { findFirst: ReturnType<typeof vi.fn> };
+  dALIMember: { findUnique: ReturnType<typeof vi.fn> };
   cycleInterviewer: { findMany: ReturnType<typeof vi.fn> };
   interviewerAvailability: {
     findMany: ReturnType<typeof vi.fn>;
@@ -30,8 +30,7 @@ const mockPrisma = prisma as unknown as {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  (mockPrisma as any).dALIMember = {
-    findFirst: vi.fn().mockResolvedValue({ id: "m1" }),
+  (mockPrisma as any).dALIMember = { findUnique: vi.fn().mockResolvedValue({ id: "m1" }),
   };
   (mockPrisma as any).cycleInterviewer = {
     findMany: vi.fn().mockResolvedValue([{ id: "ci-1" }]),

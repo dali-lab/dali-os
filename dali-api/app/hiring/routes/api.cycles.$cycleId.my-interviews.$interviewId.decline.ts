@@ -19,7 +19,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   const gate = await requireApiSignedOrForbidden(auth.user.sub, params.cycleId!);
   if (gate) return withCors(request, gate);
 
-  const member = await prisma.dALIMember.findFirst({ where: { userId: auth.user.sub } });
+  const member = await prisma.dALIMember.findUnique({ where: { userId: auth.user.sub } });
   if (!member) {
     return withCors(request, Response.json({ error: "Not a DALI member" }, { status: 403 }));
   }
@@ -28,7 +28,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   // per domain), so look up ALL of their rows and find any active assignment
   // on this interview under any of them.
   const interviewerRows = await prisma.cycleInterviewer.findMany({
-    where: { daliMemberId: member.id, applicationCycleId: params.cycleId },
+    where: { userId: member.id, applicationCycleId: params.cycleId },
     select: { id: true },
   });
   if (interviewerRows.length === 0) {

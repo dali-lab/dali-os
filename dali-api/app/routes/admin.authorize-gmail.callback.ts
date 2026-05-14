@@ -87,25 +87,40 @@ export async function loader({ request }: { request: Request }) {
         })
   }
 
-  // Store the refresh token on the applications@ user row (upsert in case it doesn't exist yet)
-  await prisma.user.upsert({
+  // Phase 2: store tokens in GmailIntegration. The applications@ user row
+  // must already exist (created via Google sign-in or seeded). If it
+  // doesn't, we error — there's no longer a path for /admin/authorize-gmail
+  // to create a User row out of thin air without auth identity.
+  const user = await prisma.user.upsert({
     where: { daliEmail: GMAIL_USER },
-    update: {
-      googleRefreshToken: refreshToken,
-      googleAccessToken: tokens.access_token ?? null,
-      googleTokenExpiresAt: tokens.expires_in
-        ? new Date(Date.now() + tokens.expires_in * 1000)
-        : null,
-    },
+    update: {},
     create: {
       daliEmail: GMAIL_USER,
       firstName: 'DALI',
       lastName: 'Applications',
-      googleRefreshToken: refreshToken,
-      googleAccessToken: tokens.access_token ?? null,
-      googleTokenExpiresAt: tokens.expires_in
-        ? new Date(Date.now() + tokens.expires_in * 1000)
-        : null,
+    },
+    select: { id: true },
+  })
+
+  const tokenExpiresAt = tokens.expires_in
+    ? new Date(Date.now() + tokens.expires_in * 1000)
+    : null;
+
+  await prisma.gmailIntegration.upsert({
+    where: { userId: user.id },
+    update: {
+      sendAsEmail: GMAIL_USER,
+      oauthTokens: refreshToken,
+      tokenExpiresAt,
+      enabled: true,
+      syncError: null,
+    },
+    create: {
+      userId: user.id,
+      sendAsEmail: GMAIL_USER,
+      oauthTokens: refreshToken,
+      tokenExpiresAt,
+      enabled: true,
     },
   })
 

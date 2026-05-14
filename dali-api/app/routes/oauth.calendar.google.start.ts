@@ -12,7 +12,9 @@ export const CAL_STATE_COOKIE = "__dali_cal_oauth_state";
 const SCOPES = [
   "openid",
   "email",
-  "https://www.googleapis.com/auth/calendar.readonly",
+  // Full calendar scope: needed for events.insert / events.patch when pushing
+  // scheduled meetings and RSVP updates, plus calendarList + freebusy reads.
+  "https://www.googleapis.com/auth/calendar",
 ].join(" ");
 
 export async function loader({ request }: { request: Request }) {

@@ -4,6 +4,7 @@ import type { Route } from "./+types/portal.apply";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { sendEmail } from "~/lib/gmail";
+import { getApplicationsGmailRefreshToken } from "~/lib/gmail-integration";
 import { renderForSlot, notificationSlot } from "~/hiring/lib/email-variables";
 import { getActiveCycle } from "~/hiring/lib/cycles";
 import { checkGitHubUrl, checkFigmaUrl, checkDriveUrl } from "~/hiring/lib/submission-check";
@@ -23,7 +24,6 @@ import {
 
 export const meta: Route.MetaFunction = () => [{ title: "Apply · DALI OS" }];
 
-const GMAIL_USER = "applications@dali.dartmouth.edu";
 
 // ─── Loader ──────────────────────────────────────────────────────────────────
 
@@ -487,12 +487,9 @@ export async function action({ request }: Route.ActionArgs) {
 
       // Best-effort confirmation email — Gmail failure must not block the submission.
       try {
-        const gmailUser = await prisma.user.findUnique({
-          where: { daliEmail: GMAIL_USER },
-          select: { googleRefreshToken: true },
-        });
+        const refreshToken = await getApplicationsGmailRefreshToken();
         const user = await prisma.user.findUnique({ where: { id: auth.user.sub } });
-        if (gmailUser?.googleRefreshToken && user) {
+        if (refreshToken && user) {
           const to = user.dartmouthEmail ?? user.daliEmail ?? "";
           if (to) {
             const binding = await prisma.cycleNotificationEmail.findUnique({
@@ -514,7 +511,7 @@ export async function action({ request }: Route.ActionArgs) {
                 binding.emailTemplateVersion,
                 { firstName: user.firstName },
               );
-              await sendEmail({ refreshToken: gmailUser.googleRefreshToken, to, subject, html });
+              await sendEmail({ refreshToken, to, subject, html });
             }
           }
         }

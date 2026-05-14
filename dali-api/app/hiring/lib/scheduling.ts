@@ -10,7 +10,7 @@ interface AvailableSlot {
 
 interface InterviewerFreeCheck {
   cycleInterviewerId: string;
-  daliMemberId: string;
+  userId: string;
   domainId: string;
   availability: { startTime: Date; endTime: Date }[];
   bookedIntervals: { start: Date; end: Date }[]; // aggregated across ALL rows for this member; includes buffer
@@ -30,7 +30,7 @@ const ACTIVE_ASSIGNMENT_WITH_ACTIVE_INTERVIEW = {
 // applicationCycleId, and interviewAssignments were filtered to Active.
 function buildMemberAggregations(
   interviewers: Array<{
-    daliMemberId: string;
+    userId: string;
     interviewAssignments: Array<{ interview: { startTime: Date; endTime: Date } }>;
   }>,
   bufferMinutes: number,
@@ -43,12 +43,12 @@ function buildMemberAggregations(
       end: new Date(a.interview.endTime.getTime() + bufferMinutes * 60_000),
     }));
     memberIntervals.set(
-      r.daliMemberId,
-      (memberIntervals.get(r.daliMemberId) ?? []).concat(intervals),
+      r.userId,
+      (memberIntervals.get(r.userId) ?? []).concat(intervals),
     );
     memberActiveCount.set(
-      r.daliMemberId,
-      (memberActiveCount.get(r.daliMemberId) ?? 0) + r.interviewAssignments.length,
+      r.userId,
+      (memberActiveCount.get(r.userId) ?? 0) + r.interviewAssignments.length,
     );
   }
   return { memberIntervals, memberActiveCount };
@@ -93,13 +93,13 @@ export async function computeAvailableSlots(
   // Build free-check data per interviewer
   const interviewerChecks: InterviewerFreeCheck[] = interviewers.map((r) => ({
     cycleInterviewerId: r.id,
-    daliMemberId: r.daliMemberId,
+    userId: r.userId,
     domainId: r.domainId,
     availability: r.availabilityBlocks.map((b) => ({
       startTime: b.startTime,
       endTime: b.endTime,
     })),
-    bookedIntervals: memberIntervals.get(r.daliMemberId) ?? [],
+    bookedIntervals: memberIntervals.get(r.userId) ?? [],
   }));
 
   // For in-person mode, load existing pod bookings so we can filter out
@@ -141,9 +141,9 @@ export async function computeAvailableSlots(
     for (const r of interviewerChecks) {
       if (!isInterviewerFree(r, slotStart, slotEnd)) continue;
       if (applicantDomainIds.includes(r.domainId)) {
-        inDomainFreeMembers.add(r.daliMemberId);
+        inDomainFreeMembers.add(r.userId);
       } else {
-        crossDomainFreeMembers.add(r.daliMemberId);
+        crossDomainFreeMembers.add(r.userId);
       }
     }
 
@@ -253,14 +253,14 @@ async function assignInterviewersWithTx(
 
   const checks: (InterviewerFreeCheck & { activeCount: number })[] = interviewers.map((r) => ({
     cycleInterviewerId: r.id,
-    daliMemberId: r.daliMemberId,
+    userId: r.userId,
     domainId: r.domainId,
     availability: r.availabilityBlocks.map((b) => ({
       startTime: b.startTime,
       endTime: b.endTime,
     })),
-    bookedIntervals: memberIntervals.get(r.daliMemberId) ?? [],
-    activeCount: memberActiveCount.get(r.daliMemberId) ?? 0,
+    bookedIntervals: memberIntervals.get(r.userId) ?? [],
+    activeCount: memberActiveCount.get(r.userId) ?? 0,
   }));
 
   // Find least-scheduled free in-domain interviewer
@@ -282,7 +282,7 @@ async function assignInterviewersWithTx(
     .filter(
       (r) =>
         !applicantDomainIds.includes(r.domainId) &&
-        r.daliMemberId !== inDomainPick.daliMemberId &&
+        r.userId !== inDomainPick.userId &&
         isInterviewerFree(r, slotStart, slotEnd),
     )
     .sort((a, b) => a.activeCount - b.activeCount);
@@ -400,10 +400,10 @@ export async function reassignInterviewer(
     // different row.
     const existingAssignments = await tx.interviewAssignment.findMany({
       where: { interviewId: interview.id, status: "Active" },
-      include: { cycleInterviewer: { select: { daliMemberId: true } } },
+      include: { cycleInterviewer: { select: { userId: true } } },
     });
     const existingMemberIds = new Set(
-      existingAssignments.map((a) => a.cycleInterviewer.daliMemberId),
+      existingAssignments.map((a) => a.cycleInterviewer.userId),
     );
 
     // Load every CycleInterviewer in the cycle so we can build member-level
@@ -424,7 +424,7 @@ export async function reassignInterviewer(
     );
 
     const candidates = allInterviewers.filter((r) => {
-      if (existingMemberIds.has(r.daliMemberId)) return false;
+      if (existingMemberIds.has(r.userId)) return false;
       if (role === "InDomain") return r.domainId === applicantDomainId;
       return r.domainId !== applicantDomainId;
     });
@@ -433,20 +433,20 @@ export async function reassignInterviewer(
       .filter((r) => {
         const check: InterviewerFreeCheck = {
           cycleInterviewerId: r.id,
-          daliMemberId: r.daliMemberId,
+          userId: r.userId,
           domainId: r.domainId,
           availability: r.availabilityBlocks.map((b) => ({
             startTime: b.startTime,
             endTime: b.endTime,
           })),
-          bookedIntervals: memberIntervals.get(r.daliMemberId) ?? [],
+          bookedIntervals: memberIntervals.get(r.userId) ?? [],
         };
         return isInterviewerFree(check, interview.startTime, interview.endTime);
       })
       .sort(
         (a, b) =>
-          (memberActiveCount.get(a.daliMemberId) ?? 0) -
-          (memberActiveCount.get(b.daliMemberId) ?? 0),
+          (memberActiveCount.get(a.userId) ?? 0) -
+          (memberActiveCount.get(b.userId) ?? 0),
       );
 
     if (freeAndSorted.length === 0) {

@@ -47,10 +47,7 @@ export async function authorizeCollabDoc(
     const cycleId = review.cycleReviewer.applicationCycleId;
     const confState = await getCycleConfidentialityState(userSub, cycleId);
     if (confState.status !== "signed") return false;
-    const member = await prisma.dALIMember.findFirst({
-      where: { userId: userSub },
-    });
-    if (member && review.cycleReviewer.daliMemberId === member.id) return true;
+    if (review.cycleReviewer.userId === userSub) return true;
     if (await isDomainLead(userSub)) return true;
     if (await isHiringLead(userSub)) return true;
     return false;
@@ -67,19 +64,14 @@ export async function authorizeCollabDoc(
       interview.applicationCycleId,
     );
     if (confState.status !== "signed") return false;
-    const member = await prisma.dALIMember.findFirst({
-      where: { userId: userSub },
+    const assignment = await prisma.interviewAssignment.findFirst({
+      where: {
+        interviewId: id,
+        cycleInterviewer: { userId: userSub },
+      },
+      select: { id: true },
     });
-    if (member) {
-      const assignment = await prisma.interviewAssignment.findFirst({
-        where: {
-          interviewId: id,
-          cycleInterviewer: { daliMemberId: member.id },
-        },
-        select: { id: true },
-      });
-      if (assignment) return true;
-    }
+    if (assignment) return true;
     if (await isHiringLead(userSub)) return true;
     return false;
   }

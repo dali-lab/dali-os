@@ -27,7 +27,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         domainId: body.domainId,
       },
       include: {
-        daliMember: { include: { user: true } },
+        user: true,
         domain: true,
       },
     });

@@ -17,7 +17,9 @@ async function main() {
   // Find or create a "Design" domain
   let designDomain = await prisma.domain.findFirst({ where: { name: "Design" } });
   if (!designDomain) {
-    designDomain = await prisma.domain.create({ data: { name: "Design" } });
+    designDomain = await prisma.domain.create({
+      data: { name: "Design", code: "UIUX", displayName: "UI/UX Design" },
+    });
     console.log(`Created Design domain: ${designDomain.id}`);
   }
 
@@ -29,15 +31,15 @@ async function main() {
   });
   console.log(`Design domain linked to cycle`);
 
-  // Find Morgan's member record
-  const morgan = await prisma.dALIMember.findFirst({
+  // Find Morgan's user record
+  const morgan = await prisma.user.findFirst({
     where: { daliEmail: "test.interviewer@dali.dartmouth.edu" },
   });
   if (!morgan) { console.error("Morgan not found"); process.exit(1); }
 
   // Delete old Engineering CycleInterviewer (and its availability)
   const oldCI = await prisma.cycleInterviewer.findFirst({
-    where: { daliMemberId: morgan.id, applicationCycleId: cycleId },
+    where: { userId: morgan.id, applicationCycleId: cycleId },
   });
   if (oldCI) {
     await prisma.interviewerAvailability.deleteMany({ where: { cycleInterviewerId: oldCI.id } });
@@ -48,7 +50,7 @@ async function main() {
   // Create new CycleInterviewer under Design
   const newCI = await prisma.cycleInterviewer.create({
     data: {
-      daliMemberId: morgan.id,
+      userId: morgan.id,
       applicationCycleId: cycleId,
       domainId: designDomain.id,
     },

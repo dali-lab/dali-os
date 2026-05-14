@@ -33,7 +33,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!auth.ok) return redirect('/login')
   if (!(await isHiringLead(auth.user.sub))) return redirect('/')
 
-  const member = await prisma.dALIMember.findFirst({
+  const member = await prisma.dALIMember.findUnique({
     where: { userId: auth.user.sub },
   })
   if (!member) return redirect('/login')

@@ -201,7 +201,7 @@ function ReviewsSection({ reviews, criteria }: { reviews: any[]; criteria: any[]
       ) : (
         <div className="divide-y divide-gray-100">
           {reviews.map((review) => {
-            const reviewer = review.cycleReviewer?.daliMember;
+            const reviewer = review.cycleReviewer?.user;
             const name = reviewer ? `${reviewer.firstName} ${reviewer.lastName}` : "Unknown";
             const isSubmitted = !!review.submittedAt;
             const scores = (review.scores ?? {}) as Record<string, number>;

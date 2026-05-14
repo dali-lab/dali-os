@@ -44,7 +44,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   ]);
   if (!hiringLead && !domainLead && !admin) return redirect("/");
 
-  const member = await prisma.dALIMember.findFirst({
+  const member = await prisma.dALIMember.findUnique({
     where: { userId: auth.user.sub },
   });
   if (!member) return redirect("/login");

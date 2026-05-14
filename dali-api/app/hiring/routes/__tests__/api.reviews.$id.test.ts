@@ -18,7 +18,7 @@ const mockPrisma = prisma as unknown as {
     delete: ReturnType<typeof vi.fn>;
   };
   dALIMember: {
-    findFirst: ReturnType<typeof vi.fn>;
+    findUnique: ReturnType<typeof vi.fn>;
   };
 };
 
@@ -40,13 +40,12 @@ beforeEach(() => {
     findUnique: vi.fn().mockResolvedValue({
       id: REVIEW_ID,
       submittedAt: null,
-      cycleReviewer: { daliMemberId: MEMBER_ID },
+      cycleReviewer: { userId: USER_ID },
     }),
     update: vi.fn().mockImplementation(({ data }: any) => Promise.resolve({ id: REVIEW_ID, ...data })),
     delete: vi.fn(),
   };
-  (mockPrisma as any).dALIMember = {
-    findFirst: vi.fn().mockResolvedValue({ id: MEMBER_ID, userId: USER_ID }),
+  (mockPrisma as any).dALIMember = { findUnique: vi.fn().mockResolvedValue({ id: MEMBER_ID, userId: USER_ID }),
   };
   vi.mocked(requireAuth).mockResolvedValue({
     ok: true,
@@ -213,7 +212,7 @@ describe("PATCH /api/hiring/reviews/:id", () => {
     mockPrisma.applicationReview.findUnique.mockResolvedValueOnce({
       id: REVIEW_ID,
       submittedAt: new Date(),
-      cycleReviewer: { daliMemberId: MEMBER_ID },
+      cycleReviewer: { userId: USER_ID },
     });
     const res = await action({
       request: makeRequest({ feedback: "later edit" }),

@@ -29,7 +29,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         include: {
           cycleReviewer: {
             include: {
-              daliMember: { select: { firstName: true, lastName: true } },
+              user: { select: { firstName: true, lastName: true } },
             },
           },
         },

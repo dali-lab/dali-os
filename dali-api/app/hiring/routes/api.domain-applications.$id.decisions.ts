@@ -68,7 +68,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   );
   if (gate) return gate;
 
-  const member = await prisma.dALIMember.findFirst({
+  const member = await prisma.dALIMember.findUnique({
     where: { userId: auth.user.sub },
   });
   if (!member) {

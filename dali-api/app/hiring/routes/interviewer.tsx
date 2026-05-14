@@ -39,7 +39,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     confidentialityRequired: null as null | "no_agreement" | "unsigned",
   }
 
-  const member = await prisma.dALIMember.findFirst({
+  const member = await prisma.dALIMember.findUnique({
     where: { userId: auth.user.sub },
   })
   if (!member) return empty
@@ -50,7 +50,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Find CycleInterviewer records for this member in the active cycle
   const cycleInterviewers = await prisma.cycleInterviewer.findMany({
     where: {
-      daliMemberId: member.id,
+      userId: member.id,
       applicationCycleId: active.id,
     },
     include: {

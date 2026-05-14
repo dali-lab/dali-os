@@ -51,10 +51,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request)
   if (!auth.ok) throw redirect('/login')
 
-  const member = await prisma.dALIMember.findFirst({
-    where: { userId: auth.user.sub },
+  const member = await prisma.user.findUnique({
+    where: { id: auth.user.sub },
+    select: { id: true, firstName: true, lastName: true, daliMember: { select: { id: true } } },
   })
-  if (!member) throw redirect('/hiring/interviewer')
+  if (!member?.daliMember) throw redirect('/hiring/interviewer')
 
   const interview = await prisma.interview.findUnique({
     where: { id: params.interviewId },
@@ -62,7 +63,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       assignments: {
         include: {
           cycleInterviewer: {
-            include: { daliMember: true },
+            include: { user: true },
           },
         },
       },
@@ -79,7 +80,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
             where: { submittedAt: { not: null } },
             orderBy: { submittedAt: 'asc' },
             include: {
-              cycleReviewer: { include: { daliMember: true } },
+              cycleReviewer: { include: { user: true } },
             },
           },
         },
@@ -90,7 +91,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!interview) throw redirect('/hiring/interviewer')
 
   const myAssignment = interview.assignments.find(
-    (a: any) => a.cycleInterviewer.daliMemberId === member.id,
+    (a: any) => a.cycleInterviewer.userId === auth.user.sub,
   )
 
   if (!myAssignment) throw redirect('/hiring/interviewer')
@@ -480,7 +481,7 @@ export default function InterviewDetailPage() {
             ) : (
               <div className="space-y-6">
                 {submittedReviews.map((review: any) => {
-                  const m = review.cycleReviewer?.daliMember
+                  const m = review.cycleReviewer?.user
                   const reviewerName =
                     m?.firstName && m?.lastName
                       ? `${m.firstName} ${m.lastName}`
