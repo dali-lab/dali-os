@@ -98,9 +98,14 @@ async function seedDomains() {
     // row (ChallengeVersion, DomainApplicationCycle, etc.).
     let healedRow: { id: string } | null = null;
     if (d.legacyNames && d.legacyNames.length > 0) {
-      const legacy = await prisma.domain.findFirst({
-        where: { code: null as any, name: { in: d.legacyNames } },
-      });
+      // Prisma 7's generated `StringFilter` for the nullable `code` column
+      // doesn't include `null` in the type union, even though the runtime
+      // accepts it. Raw SQL bypasses the typing issue and is clearer here.
+      const [legacy] = await prisma.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM "Domain"
+        WHERE code IS NULL AND name = ANY(${d.legacyNames}::text[])
+        LIMIT 1
+      `;
       if (legacy) {
         // If a prior run of this seed already created a duplicate by code,
         // delete it first to free the unique constraint. The duplicate has
