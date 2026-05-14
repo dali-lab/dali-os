@@ -170,6 +170,22 @@ BEGIN
   UPDATE "DomainLeadAssignment" SET "termId" = cur_term_id WHERE "termId" IS NULL;
 END $$;
 
+-- M3-pre. Drop the OLD foreign keys that reference DALIMember BEFORE we
+-- translate their values. Postgres validates FKs on every UPDATE, so
+-- changing submittedById/madeById/etc. from a DALIMember.id to a User.id
+-- with the old FK still in place would fail with "Key is not present in
+-- DALIMember". We drop them here, translate in M3e/M3f, and add the new
+-- User-pointing FKs in M4.
+ALTER TABLE "CycleReviewer"                   DROP CONSTRAINT IF EXISTS "CycleReviewer_daliMemberId_fkey";
+ALTER TABLE "CycleInterviewer"                DROP CONSTRAINT IF EXISTS "CycleInterviewer_daliMemberId_fkey";
+ALTER TABLE "DomainLeadAssignment"            DROP CONSTRAINT IF EXISTS "DomainLeadAssignment_memberId_fkey";
+ALTER TABLE "Decision"                        DROP CONSTRAINT IF EXISTS "Decision_madeById_fkey";
+ALTER TABLE "ApplicationReview"               DROP CONSTRAINT IF EXISTS "ApplicationReview_submittedById_fkey";
+ALTER TABLE "DelibsSession"                   DROP CONSTRAINT IF EXISTS "DelibsSession_openedById_fkey";
+ALTER TABLE "LegacyEmailTemplate"             DROP CONSTRAINT IF EXISTS "LegacyEmailTemplate_createdById_fkey";
+ALTER TABLE "EmailTemplateVersion"            DROP CONSTRAINT IF EXISTS "EmailTemplateVersion_createdById_fkey";
+ALTER TABLE "ConfidentialityAgreementVersion" DROP CONSTRAINT IF EXISTS "ConfidentialityAgreementVersion_createdById_fkey";
+
 -- M3e. CycleReviewer / CycleInterviewer / DomainLeadAssignment: populate
 -- userId_new from the existing daliMemberId/memberId join.
 UPDATE "CycleReviewer" cr
@@ -189,7 +205,8 @@ WHERE dla."memberId" = m.id;
 
 -- M3f. Translate DALIMember.id → User.id for the six FK columns that point
 -- at DALIMember today. The column NAME stays (madeById, submittedById,
--- openedById, createdById); only the referenced table changes.
+-- openedById, createdById); only the referenced table changes. Possible
+-- only because we dropped the old FKs above.
 UPDATE "Decision" d
 SET "madeById" = m."userId"
 FROM "DALIMember" m
@@ -255,18 +272,11 @@ ALTER TYPE "OAuthAccountType" RENAME TO "OAuthAccountType_old";
 ALTER TYPE "OAuthAccountType_new" RENAME TO "OAuthAccountType";
 DROP TYPE "OAuthAccountType_old";
 
--- Drop old foreign keys.
-ALTER TABLE "DALIMember"                      DROP CONSTRAINT "DALIMember_userId_fkey";
-ALTER TABLE "CycleReviewer"                   DROP CONSTRAINT "CycleReviewer_daliMemberId_fkey";
-ALTER TABLE "CycleInterviewer"                DROP CONSTRAINT "CycleInterviewer_daliMemberId_fkey";
-ALTER TABLE "Decision"                        DROP CONSTRAINT "Decision_madeById_fkey";
-ALTER TABLE "ApplicationReview"               DROP CONSTRAINT "ApplicationReview_submittedById_fkey";
-ALTER TABLE "DelibsSession"                   DROP CONSTRAINT "DelibsSession_openedById_fkey";
-ALTER TABLE "LegacyEmailTemplate"             DROP CONSTRAINT "LegacyEmailTemplate_createdById_fkey";
-ALTER TABLE "EmailTemplateVersion"            DROP CONSTRAINT "EmailTemplateVersion_createdById_fkey";
-ALTER TABLE "ConfidentialityAgreementVersion" DROP CONSTRAINT "ConfidentialityAgreementVersion_createdById_fkey";
-ALTER TABLE "DomainLeadAssignment"            DROP CONSTRAINT "DomainLeadAssignment_memberId_fkey";
-ALTER TABLE "DomainLeadAssignment"            DROP CONSTRAINT "DomainLeadAssignment_termId_fkey";
+-- Drop remaining old foreign keys (the DALIMember-referencing ones were
+-- dropped earlier in M3-pre so M3f could translate values; the rest are
+-- dropped here).
+ALTER TABLE "DALIMember"           DROP CONSTRAINT "DALIMember_userId_fkey";
+ALTER TABLE "DomainLeadAssignment" DROP CONSTRAINT "DomainLeadAssignment_termId_fkey";
 
 -- Drop old indexes.
 DROP INDEX "DALIMember_daliEmail_key";
