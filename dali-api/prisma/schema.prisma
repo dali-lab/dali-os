@@ -782,6 +782,13 @@ model OAuthSession {
   // for chained Google → CAS account linking
   linkUserId String?
 
+  // MCP foundation track: the OAuthClient that initiated this authorization
+  // request, and the requested scopes the consent screen authorized. Both
+  // are nullable for backward-compat with pre-MCP rows; new sessions populate
+  // them at /oauth/authorize.
+  clientId String?
+  scopes   String[] @default([])
+
   expiresAt DateTime
   createdAt DateTime @default(now())
 
@@ -799,9 +806,8 @@ model Session {
   id                String    @id
   userId            String
   // Null for cookie logins. Set for OAuth-issued (MCP) sessions, linking
-  // the session to the OAuthGrant that authorized it. Intentionally a plain
-  // String? with no FK constraint in this PR — the FK lands when OAuthGrant
-  // ships in the MCP foundation track.
+  // the session to the OAuthGrant that authorized it. FK constraint enforced
+  // by the MCP foundation track migration.
   grantId           String?
   createdAt         DateTime  @default(now())
   // Bumped on every successful auth lookup. Drives rolling expiry and powers

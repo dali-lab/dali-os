@@ -50,5 +50,16 @@ export const prisma = {
     findUnique: vi.fn().mockResolvedValue({ confidentialityAgreementVersionId: "mock-cav-id" }),
     count: vi.fn().mockResolvedValue(0),
   },
+  oAuthClient: {
+    findUnique: vi.fn(),
+  },
+  oAuthGrant: {
+    findUnique: vi.fn(),
+    upsert: vi.fn(),
+    update: vi.fn(),
+  },
+  dALIMember: {
+    findUnique: vi.fn(),
+  },
   $transaction: vi.fn(),
 };

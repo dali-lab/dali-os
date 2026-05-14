@@ -2840,6 +2840,41 @@ async function main() {
   }
   console.log(`  ${seedTemplates.length} email templates seeded (2 legacy + 7 new + Fall 2026 decision + notification bindings)`)
   console.log(`  ${reviewSpecs.length} ApplicationReviews + ${decisionSpecs.filter(s => s.type === "InvitedToInterview").length * 3 + decisionSpecs.filter(s => s.type !== "InvitedToInterview").length * 2} Decisions + ${interviewBookings.length} booked interviews for Fall 2026`);
+
+  // ── MCP OAuth clients ──────────────────────────────────────────────────────
+  // Mirrors prisma/seeds/v0-reference.ts so a fresh local dev DB has them.
+  // No `dali-api` seed (schema comment at OAuthClient — provider surface is
+  // MCP-only).
+  for (const c of [
+    { clientId: "claude-desktop", name: "Claude Desktop" },
+    { clientId: "claude-code", name: "Claude Code" },
+  ]) {
+    await prisma.oAuthClient.upsert({
+      where: { clientId: c.clientId },
+      update: {
+        name: c.name,
+        redirectUris: ["http://127.0.0.1/callback", "http://localhost/callback"],
+        isLoopback: true,
+        isFirstParty: false,
+        allowedScopes: ["mcp:read", "mcp:write"],
+        allowedProviders: ["google"],
+        requiredAccountType: "member",
+        requireMembership: true,
+      },
+      create: {
+        clientId: c.clientId,
+        name: c.name,
+        redirectUris: ["http://127.0.0.1/callback", "http://localhost/callback"],
+        isLoopback: true,
+        isFirstParty: false,
+        allowedScopes: ["mcp:read", "mcp:write"],
+        allowedProviders: ["google"],
+        requiredAccountType: "member",
+        requireMembership: true,
+      },
+    });
+  }
+  console.log("  2 MCP OAuth clients seeded (claude-desktop, claude-code)")
 }
 
 main()

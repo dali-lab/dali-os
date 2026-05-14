@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { OAuth2Client } from "google-auth-library";
 import { prisma } from "~/lib/db";
 import type { OAuthProvider, OAuthAccountType } from "~/generated/prisma/enums";
+import type { OAuthClient } from "~/generated/prisma/client";
 
 // types
 
@@ -31,12 +32,47 @@ export class OAuthError extends Error {
 const SESSION_TTL_MS = 10 * 60 * 1000; // 10 min for the authorize→callback→exchange round-trip
 const AUTH_CODE_TTL_MS = 60 * 1000; // 1 min for code→token exchange
 
-export const VALID_CLIENT_IDS = ["dali-api"] as const;
+// OAuth client registry lookup. Replaces the legacy `VALID_CLIENT_IDS` array
+// once the OAuthClient table is seeded (MCP foundation track). First-party
+// login flows use /auth/callback/* directly and don't traverse this registry.
+export async function getOAuthClient(clientId: string): Promise<OAuthClient | null> {
+  return prisma.oAuthClient.findUnique({ where: { clientId } });
+}
 
-const frontendUrl = () => process.env.FRONTEND_URL ?? "http://localhost:5173";
+// Per-client redirect-URI matching per RFC 8252 §7.3 (loopback) and exact
+// match for everything else. For loopback clients we accept any port on
+// 127.0.0.1 or localhost over http (never https, never 0.0.0.0, never a
+// public IP). The path must match a registered redirect's path.
+export function isAllowedRedirectUri(
+  client: Pick<OAuthClient, "redirectUris" | "isLoopback">,
+  redirectUri: string,
+): boolean {
+  if (client.redirectUris.includes(redirectUri)) return true;
+  if (!client.isLoopback) return false;
 
-export function getAllowedRedirectUris() {
-  return [`${frontendUrl()}/login`];
+  let candidate: URL;
+  try {
+    candidate = new URL(redirectUri);
+  } catch {
+    return false;
+  }
+  if (candidate.protocol !== "http:") return false;
+  if (candidate.hostname !== "127.0.0.1" && candidate.hostname !== "localhost") {
+    return false;
+  }
+
+  for (const registered of client.redirectUris) {
+    let r: URL;
+    try {
+      r = new URL(registered);
+    } catch {
+      continue;
+    }
+    if (r.protocol !== "http:") continue;
+    if (r.hostname !== "127.0.0.1" && r.hostname !== "localhost") continue;
+    if (r.pathname === candidate.pathname) return true;
+  }
+  return false;
 }
 
 // helper functions
@@ -100,10 +136,13 @@ export async function createOAuthSession(params: {
   state: string;
   provider: OAuthProvider;
   accountType?: OAuthAccountType;
+  clientId?: string;
+  scopes?: string[];
 }) {
   return prisma.oAuthSession.create({
     data: {
       ...params,
+      scopes: params.scopes ?? [],
       expiresAt: new Date(Date.now() + SESSION_TTL_MS),
     },
   });
@@ -149,8 +188,18 @@ export async function exchangeAuthorizationCode(params: {
     throw new OAuthError("invalid_grant", "Authorization code expired");
   if (session.redirectUri !== params.redirectUri)
     throw new OAuthError("invalid_grant", "redirect_uri mismatch");
-  if (!VALID_CLIENT_IDS.includes(params.clientId as any))
+
+  const client = await getOAuthClient(params.clientId);
+  if (!client) {
     throw new OAuthError("invalid_client", "Unknown client_id");
+  }
+  // Reject if the OAuthSession was started for a different client_id.
+  if (session.clientId && session.clientId !== params.clientId) {
+    throw new OAuthError("invalid_client", "client_id does not match the authorization request");
+  }
+  if (!isAllowedRedirectUri(client, params.redirectUri)) {
+    throw new OAuthError("invalid_grant", "redirect_uri not allowed for client");
+  }
 
   if (
     !verifyPKCE(
@@ -174,6 +223,8 @@ export async function exchangeAuthorizationCode(params: {
     userId: session.userId,
     provider: session.provider,
     accountType: session.accountType,
+    scopes: session.scopes ?? [],
+    clientId: session.clientId ?? params.clientId,
   };
 }
 

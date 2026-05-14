@@ -65,8 +65,15 @@ export default [
   route("oauth/callback/cas", "routes/oauth.callback.cas.ts"),
   route("oauth/token", "routes/oauth.token.ts"),
   route("oauth/revoke", "routes/oauth.revoke.ts"),
+  route("oauth/consent", "routes/oauth.consent.tsx"),
   route("oauth/calendar/google/start", "routes/oauth.calendar.google.start.ts"),
   route("integrations/calendar/google/callback", "routes/integrations.calendar.google.callback.ts"),
+
+  // MCP foundation (no layout)
+  route(".well-known/oauth-authorization-server", "routes/well-known.oauth-authorization-server.ts"),
+  route("mcp", "routes/mcp.ts"),
+  route("help/mcp", "routes/help.mcp.tsx"),
+  route("settings/connected-apps", "routes/settings.connected-apps.tsx"),
 
   // Authenticated API endpoints (no layout)
   route("users/:id", "members/routes/users.$id.ts"),
