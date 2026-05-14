@@ -117,31 +117,18 @@ describe("fetchBusyEvents", () => {
     expect(out[0]).toEqual({ start: "2026-05-12T13:00:00Z", end: "2026-05-12T14:00:00Z" });
   });
 
-  it("falls back to legacy User.google* tokens when no link exists", async () => {
+  it("returns [] when no UserCalendarLink exists (Phase 2: no legacy User.google* fallback)", async () => {
     prismaMock.userCalendarLink.findMany.mockResolvedValueOnce([]);
-    prismaMock.user.findUnique.mockResolvedValueOnce({
-      googleAccessToken: "legacy-tok",
-      googleRefreshToken: "legacy-rt",
-      googleTokenExpiresAt: new Date(Date.now() + 10 * 60_000),
-    });
-    mockFetchOnce({
-      calendars: { primary: { busy: [{ start: "2026-05-12T19:00:00Z", end: "2026-05-12T20:00:00Z" }] } },
-    });
     const out = await fetchBusyEvents(
       "userX",
       new Date("2026-05-12T00:00:00Z"),
       new Date("2026-05-13T00:00:00Z"),
     );
-    expect(out).toEqual([{ start: "2026-05-12T19:00:00Z", end: "2026-05-12T20:00:00Z" }]);
+    expect(out).toEqual([]);
   });
 
-  it("returns [] when user has no link and no legacy tokens", async () => {
+  it("returns [] when user has no link", async () => {
     prismaMock.userCalendarLink.findMany.mockResolvedValueOnce([]);
-    prismaMock.user.findUnique.mockResolvedValueOnce({
-      googleAccessToken: null,
-      googleRefreshToken: null,
-      googleTokenExpiresAt: null,
-    });
     const out = await fetchBusyEvents(
       "userX",
       new Date("2026-05-12T00:00:00Z"),

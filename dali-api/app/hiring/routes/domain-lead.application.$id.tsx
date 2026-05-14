@@ -57,16 +57,16 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
 
-  const member = await prisma.dALIMember.findFirst({
+  const domainLeadAssignments = await prisma.domainLeadAssignment.findMany({
     where: { userId: auth.user.sub },
-    include: { domainLeadAssignments: true },
+    select: { domainId: true },
   });
 
-  if (!member || member.domainLeadAssignments.length === 0) {
+  if (domainLeadAssignments.length === 0) {
     return redirect("/hiring/reviewer");
   }
 
-  const leadDomainIds = member.domainLeadAssignments.map((a) => a.domainId);
+  const leadDomainIds = domainLeadAssignments.map((a) => a.domainId);
 
   const da = await prisma.domainApplication.findUnique({
     where: { id: params.id },
@@ -86,7 +86,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       reviews: {
         include: {
           cycleReviewer: {
-            include: { daliMember: { select: { firstName: true, lastName: true } } },
+            include: { user: { select: { firstName: true, lastName: true } } },
           },
         },
         orderBy: { createdAt: "asc" },
@@ -104,7 +104,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
             where: { status: "Active" },
             include: {
               cycleInterviewer: {
-                include: { daliMember: { select: { firstName: true, lastName: true } } },
+                include: { user: { select: { firstName: true, lastName: true } } },
               },
             },
           },
@@ -302,7 +302,7 @@ export default function DomainLeadApplicationView() {
                 {interview.assignments?.length > 0 && (
                   <div className="text-xs text-muted-foreground pt-1">
                     Interviewers: {interview.assignments.map((a: any) => {
-                      const m = a.cycleInterviewer?.daliMember;
+                      const m = a.cycleInterviewer?.user;
                       return m ? `${m.firstName} ${m.lastName}` : "?";
                     }).join(", ")}
                   </div>
@@ -342,7 +342,7 @@ export default function DomainLeadApplicationView() {
 
 function ReviewCard({ review, criteria }: { review: any; criteria: any[] }) {
   const [expanded, setExpanded] = useState(false);
-  const reviewer = review.cycleReviewer?.daliMember;
+  const reviewer = review.cycleReviewer?.user;
   const name = reviewer ? `${reviewer.firstName} ${reviewer.lastName}` : "Unknown";
   const isSubmitted = !!review.submittedAt;
   const scores = (review.scores ?? {}) as Record<string, number>;

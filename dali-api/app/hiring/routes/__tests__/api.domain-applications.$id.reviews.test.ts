@@ -16,7 +16,7 @@ const mockPrisma = prisma as unknown as {
   applicationCycle: { findUniqueOrThrow: ReturnType<typeof vi.fn> };
   domainApplicationCycle: { findUnique: ReturnType<typeof vi.fn> };
   applicationReview: { create: ReturnType<typeof vi.fn> };
-  dALIMember: { findFirst: ReturnType<typeof vi.fn> };
+  domainLeadAssignment: { findFirst: ReturnType<typeof vi.fn> };
 };
 
 const USER_ID = "user-1";
@@ -56,7 +56,7 @@ beforeEach(() => {
   (mockPrisma as any).applicationReview = {
     create: vi.fn().mockImplementation(({ data }: any) => Promise.resolve({ id: "rev-1", ...data })),
   };
-  (mockPrisma as any).dALIMember = {
+  (mockPrisma as any).domainLeadAssignment = {
     findFirst: vi.fn().mockResolvedValue(null),
   };
   vi.mocked(requireAuth).mockResolvedValue({
@@ -117,11 +117,11 @@ describe("POST /api/hiring/domain-applications/:id/reviews", () => {
     expect(mockPrisma.applicationReview.create).toHaveBeenCalledWith({
       data: { domainApplicationId: DA_ID, cycleReviewerId: CYCLE_REVIEWER_ID },
     });
-    expect(mockPrisma.dALIMember.findFirst).not.toHaveBeenCalled();
+    expect(mockPrisma.domainLeadAssignment.findFirst).not.toHaveBeenCalled();
   });
 
   it("allows a domain lead for the matching domain (201)", async () => {
-    mockPrisma.dALIMember.findFirst.mockResolvedValue({ id: "member-1" });
+    mockPrisma.domainLeadAssignment.findFirst.mockResolvedValue({ id: "member-1" });
 
     const res = await action({
       request: makeRequest(),
@@ -130,11 +130,8 @@ describe("POST /api/hiring/domain-applications/:id/reviews", () => {
     } as any);
 
     expect(res.status).toBe(201);
-    expect(mockPrisma.dALIMember.findFirst).toHaveBeenCalledWith({
-      where: {
-        userId: USER_ID,
-        domainLeadAssignments: { some: { domainId: DOMAIN_ID } },
-      },
+    expect(mockPrisma.domainLeadAssignment.findFirst).toHaveBeenCalledWith({
+      where: { userId: USER_ID, domainId: DOMAIN_ID },
       select: { id: true },
     });
     expect(mockPrisma.applicationReview.create).toHaveBeenCalled();
@@ -147,8 +144,8 @@ describe("POST /api/hiring/domain-applications/:id/reviews", () => {
       application: { applicationCycleId: CYCLE_ID },
       challengeVersion: { domainId: OTHER_DOMAIN_ID },
     });
-    // dALIMember.findFirst is scoped to OTHER_DOMAIN_ID — user has no assignment there.
-    mockPrisma.dALIMember.findFirst.mockResolvedValue(null);
+    // domainLeadAssignment.findFirst is scoped to OTHER_DOMAIN_ID — no row.
+    mockPrisma.domainLeadAssignment.findFirst.mockResolvedValue(null);
 
     const res = await action({
       request: makeRequest(),
@@ -157,18 +154,15 @@ describe("POST /api/hiring/domain-applications/:id/reviews", () => {
     } as any);
 
     expect(res.status).toBe(403);
-    expect(mockPrisma.dALIMember.findFirst).toHaveBeenCalledWith({
-      where: {
-        userId: USER_ID,
-        domainLeadAssignments: { some: { domainId: OTHER_DOMAIN_ID } },
-      },
+    expect(mockPrisma.domainLeadAssignment.findFirst).toHaveBeenCalledWith({
+      where: { userId: USER_ID, domainId: OTHER_DOMAIN_ID },
       select: { id: true },
     });
     expect(mockPrisma.applicationReview.create).not.toHaveBeenCalled();
   });
 
   it("rejects a non-lead, non-hiring-lead member (403)", async () => {
-    mockPrisma.dALIMember.findFirst.mockResolvedValue(null);
+    mockPrisma.domainLeadAssignment.findFirst.mockResolvedValue(null);
 
     const res = await action({
       request: makeRequest(),

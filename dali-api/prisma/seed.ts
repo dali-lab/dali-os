@@ -6,6 +6,9 @@ const prisma = new PrismaClient({ adapter });
 
 async function main() {
   // ── Admin user (creates forms, challenges, and cycle) ──────────────────────
+  // Phase 2: DALIMember is a thin marker (no display fields). AdminMembership
+  // confers the Admin role; CoreAssignment with leadTitle="Hiring Lead"
+  // confers the legacy "HiringLead" semantic.
   const admin = await prisma.user.upsert({
     where: { daliEmail: "admin@dali.dartmouth.edu" },
     update: { firstName: "Admin", lastName: "User" },
@@ -13,54 +16,70 @@ async function main() {
       daliEmail: "admin@dali.dartmouth.edu",
       firstName: "Admin",
       lastName: "User",
-      daliMember: {
-        create: {
-          daliEmail: "admin@dali.dartmouth.edu",
-          firstName: "Admin",
-          lastName: "User",
-          roles: ["Admin"],
-        },
-      },
+      daliMember: { create: {} },
     },
   });
-  await prisma.dALIMember.update({
-    where: { daliEmail: "admin@dali.dartmouth.edu" },
-    data: { firstName: "Admin", lastName: "User", roles: ["Admin"] },
+  await prisma.adminMembership.upsert({
+    where: { userId: admin.id },
+    update: {},
+    create: { userId: admin.id },
+  });
+
+  // ── Term ───────────────────────────────────────────────────────────────────
+  // Phase 2: CoreAssignment and DomainLeadAssignment require a termId. The
+  // local seed below references this term for the test hiring lead +
+  // domain leads. Prod seeds a full 12-term window via
+  // prisma/seeds/v0-reference.ts; locally one term is enough.
+  await prisma.term.upsert({
+    where: { code: "26S" },
+    update: {},
+    create: {
+      code: "26S",
+      year: 2026,
+      season: "S",
+      sortKey: 20262,
+      startDate: new Date("2026-03-28"),
+      endDate: new Date("2026-06-05"),
+    },
   });
 
   // ── Domains ────────────────────────────────────────────────────────────────
   // Phase 1 adds `code` + `displayName` to Domain. Local seeds populate them
   // so a fresh dev DB has consistent values; prod backfill is handled by the
-  // v0 reference-data script (prisma/data/v0-reference-seed.ts).
+  // v0 reference-data script (prisma/seeds/v0-reference.ts).
+  // Local-seed displayName intentionally mirrors `name` so existing e2e tests
+  // (which match on the legacy "Design"/"Engineering"/"Product" labels) keep
+  // working. Prod uses the canonical catalog via prisma/seeds/v0-reference.ts
+  // where displayName is the real catalog label (e.g. "UI/UX Design").
   const [designDomain, engDomain, pmDomain] = await Promise.all([
     prisma.domain.upsert({
       where: { id: "domain-design" },
-      update: { code: "UIUX", displayName: "UI/UX Design" },
+      update: { code: "UIUX", displayName: "Design" },
       create: {
         id: "domain-design",
         name: "Design",
         code: "UIUX",
-        displayName: "UI/UX Design",
+        displayName: "Design",
       },
     }),
     prisma.domain.upsert({
       where: { id: "domain-eng" },
-      update: { code: "Fullstack", displayName: "Fullstack Dev" },
+      update: { code: "Fullstack", displayName: "Engineering" },
       create: {
         id: "domain-eng",
         name: "Engineering",
         code: "Fullstack",
-        displayName: "Fullstack Dev",
+        displayName: "Engineering",
       },
     }),
     prisma.domain.upsert({
       where: { id: "domain-pm" },
-      update: { code: "PM", displayName: "Product Management" },
+      update: { code: "PM", displayName: "Product" },
       create: {
         id: "domain-pm",
         name: "Product",
         code: "PM",
-        displayName: "Product Management",
+        displayName: "Product",
       },
     }),
   ]);
@@ -1844,22 +1863,29 @@ async function main() {
       daliEmail: "eng.lead@dali.dartmouth.edu",
       firstName: "Mira",
       lastName: "Chen",
-      daliMember: { create: { daliEmail: "eng.lead@dali.dartmouth.edu", firstName: "Mira", lastName: "Chen" } },
+      daliMember: { create: {} },
     },
   });
 
-  const engLeadMember = await prisma.dALIMember.update({
-    where: { daliEmail: "eng.lead@dali.dartmouth.edu" },
-    data: { firstName: "Mira", lastName: "Chen", userId: engLead.id },
+  await prisma.dALIMember.upsert({
+    where: { userId: engLead.id },
+    update: {},
+    create: { userId: engLead.id },
   });
+
+  const currentTermForSeed = await prisma.term.findFirst({
+    orderBy: { sortKey: "desc" },
+  });
+  const termIdForSeed = currentTermForSeed?.id;
 
   await prisma.domainLeadAssignment.upsert({
     where: { id: "dla-eng-lead" },
     update: {},
     create: {
       id: "dla-eng-lead",
-      memberId: engLeadMember.id,
+      userId: engLead.id,
       domainId: engDomain.id,
+      termId: termIdForSeed!,
     },
   });
 
@@ -1871,30 +1897,37 @@ async function main() {
       daliEmail: "jordan.taylor@dali.dartmouth.edu",
       firstName: "Jordan",
       lastName: "Taylor",
-      daliMember: {
-        create: {
-          daliEmail: "jordan.taylor@dali.dartmouth.edu",
-          firstName: "Jordan",
-          lastName: "Taylor",
-          roles: ["HiringLead"],
-        },
-      },
+      daliMember: { create: {} },
     },
     include: { daliMember: true },
   });
 
-  const jordanMember = await prisma.dALIMember.update({
-    where: { daliEmail: "jordan.taylor@dali.dartmouth.edu" },
-    data: { firstName: "Jordan", lastName: "Taylor", userId: jordan.id },
+  await prisma.dALIMember.upsert({
+    where: { userId: jordan.id },
+    update: {},
+    create: { userId: jordan.id },
   });
+
+  // HiringLead semantic via CoreAssignment.
+  if (termIdForSeed) {
+    const existingCore = await prisma.coreAssignment.findFirst({
+      where: { userId: jordan.id, termId: termIdForSeed, leadTitle: "Hiring Lead" },
+    });
+    if (!existingCore) {
+      await prisma.coreAssignment.create({
+        data: { userId: jordan.id, termId: termIdForSeed, leadTitle: "Hiring Lead" },
+      });
+    }
+  }
 
   await prisma.domainLeadAssignment.upsert({
     where: { id: "dla-jordan-eng" },
     update: {},
     create: {
       id: "dla-jordan-eng",
-      memberId: jordanMember.id,
+      userId: jordan.id,
       domainId: engDomain.id,
+      termId: termIdForSeed!,
     },
   });
 
@@ -1914,7 +1947,7 @@ async function main() {
       versionNumber: 1,
       body: { type: "doc", content: [] },
       agreementId: "ca-fall-2026",
-      createdById: jordanMember.id,
+      createdById: jordan.id,
     },
   });
   await prisma.cycleConfidentialityAgreement.upsert({
@@ -1987,7 +2020,7 @@ async function main() {
     { email: "pm.lead@dali.dartmouth.edu", first: "Theo", last: "Abernathy", domainId: pmDomain.id, signed: false },
   ];
 
-  const reviewerMembers: Array<{ id: string; domainId: string }> = [];
+  const reviewerUsers: Array<{ id: string; domainId: string }> = [];
 
   for (const r of reviewerData) {
     const user = await prisma.user.upsert({
@@ -1997,32 +2030,31 @@ async function main() {
         daliEmail: r.email,
         firstName: r.first,
         lastName: r.last,
-        daliMember: { create: { daliEmail: r.email, firstName: r.first, lastName: r.last } },
+        daliMember: { create: {} },
       },
-      include: { daliMember: true },
     });
 
-    if (!user.daliMember) continue;
-    // Sync names onto the DALIMember row — the dashboard renders from there,
-    // and older seeds created members without names.
-    await prisma.dALIMember.update({
-      where: { id: user.daliMember.id },
-      data: { firstName: r.first, lastName: r.last },
+    // Ensure DALIMember marker exists (Phase 2).
+    await prisma.dALIMember.upsert({
+      where: { userId: user.id },
+      update: {},
+      create: { userId: user.id },
     });
-    reviewerMembers.push({ id: user.daliMember.id, domainId: r.domainId });
+
+    reviewerUsers.push({ id: user.id, domainId: r.domainId });
 
     // CycleReviewer (for written reviews)
     await prisma.cycleReviewer.upsert({
       where: {
-        daliMemberId_applicationCycleId_domainId: {
-          daliMemberId: user.daliMember.id,
+        userId_applicationCycleId_domainId: {
+          userId: user.id,
           applicationCycleId: cycle.id,
           domainId: r.domainId,
         },
       },
       update: {},
       create: {
-        daliMemberId: user.daliMember.id,
+        userId: user.id,
         applicationCycleId: cycle.id,
         domainId: r.domainId,
       },
@@ -2031,15 +2063,15 @@ async function main() {
     // CycleInterviewer (for conducting interviews)
     await prisma.cycleInterviewer.upsert({
       where: {
-        daliMemberId_applicationCycleId_domainId: {
-          daliMemberId: user.daliMember.id,
+        userId_applicationCycleId_domainId: {
+          userId: user.id,
           applicationCycleId: cycle.id,
           domainId: r.domainId,
         },
       },
       update: {},
       create: {
-        daliMemberId: user.daliMember.id,
+        userId: user.id,
         applicationCycleId: cycle.id,
         domainId: r.domainId,
       },
@@ -2059,18 +2091,18 @@ async function main() {
   }
 
   // ── Engineering reviewers for Winter 2027 ──────────────────────────────────
-  for (const rm of reviewerMembers.filter(r => r.domainId === engDomain.id)) {
+  for (const ru of reviewerUsers.filter(r => r.domainId === engDomain.id)) {
     await prisma.cycleReviewer.upsert({
       where: {
-        daliMemberId_applicationCycleId_domainId: {
-          daliMemberId: rm.id,
+        userId_applicationCycleId_domainId: {
+          userId: ru.id,
           applicationCycleId: cycleWinter2027.id,
           domainId: engDomain.id,
         },
       },
       update: {},
       create: {
-        daliMemberId: rm.id,
+        userId: ru.id,
         applicationCycleId: cycleWinter2027.id,
         domainId: engDomain.id,
       },
@@ -2107,7 +2139,7 @@ async function main() {
         domainApplicationId: spec.domainAppId,
         type: spec.type,
         stage: "Released",
-        madeById: jordanMember.id,
+        madeById: jordan.id,
         // Waitlist rank is taken from the position inside the Waitlisted
         // subset (stable, deterministic).
         waitlistRank: spec.type === "Waitlisted"
@@ -2150,29 +2182,29 @@ async function main() {
   }
 
   // ── Fall 2026 review + delibs + decision + interview seeding ─────────────
-  // Look up every CycleReviewer by its member email so we can reference them
-  // as either a reviewer or (later) as an interviewer.
-  const designLeadMember = await prisma.dALIMember.findUniqueOrThrow({
+  // Look up every CycleReviewer by its user.id (Phase 2 — hiring FKs key on
+  // userId, not DALIMember.id).
+  const designLeadUser = await prisma.user.findUniqueOrThrow({
     where: { daliEmail: "design.lead@dali.dartmouth.edu" },
   });
-  const pmLeadMember = await prisma.dALIMember.findUniqueOrThrow({
+  const pmLeadUser = await prisma.user.findUniqueOrThrow({
     where: { daliEmail: "pm.lead@dali.dartmouth.edu" },
   });
-  const rileyMember = await prisma.dALIMember.findUniqueOrThrow({
+  const rileyUser = await prisma.user.findUniqueOrThrow({
     where: { daliEmail: "reviewer1@dali.dartmouth.edu" },
   });
-  const samMember = await prisma.dALIMember.findUniqueOrThrow({
+  const samUser = await prisma.user.findUniqueOrThrow({
     where: { daliEmail: "reviewer2@dali.dartmouth.edu" },
   });
-  const patMember = await prisma.dALIMember.findUniqueOrThrow({
+  const patUser = await prisma.user.findUniqueOrThrow({
     where: { daliEmail: "reviewer3@dali.dartmouth.edu" },
   });
 
-  async function getCycleReviewer(daliMemberId: string, domainId: string) {
+  async function getCycleReviewer(userId: string, domainId: string) {
     return prisma.cycleReviewer.findUniqueOrThrow({
       where: {
-        daliMemberId_applicationCycleId_domainId: {
-          daliMemberId,
+        userId_applicationCycleId_domainId: {
+          userId,
           applicationCycleId: cycle.id,
           domainId,
         },
@@ -2180,12 +2212,12 @@ async function main() {
     });
   }
 
-  const rileyEngRv = await getCycleReviewer(rileyMember.id, engDomain.id);
-  const engLeadRv = await getCycleReviewer(engLeadMember.id, engDomain.id);
-  const samDesignRv = await getCycleReviewer(samMember.id, designDomain.id);
-  const designLeadRv = await getCycleReviewer(designLeadMember.id, designDomain.id);
-  const patPmRv = await getCycleReviewer(patMember.id, pmDomain.id);
-  const pmLeadRv = await getCycleReviewer(pmLeadMember.id, pmDomain.id);
+  const rileyEngRv = await getCycleReviewer(rileyUser.id, engDomain.id);
+  const engLeadRv = await getCycleReviewer(engLead.id, engDomain.id);
+  const samDesignRv = await getCycleReviewer(samUser.id, designDomain.id);
+  const designLeadRv = await getCycleReviewer(designLeadUser.id, designDomain.id);
+  const patPmRv = await getCycleReviewer(patUser.id, pmDomain.id);
+  const pmLeadRv = await getCycleReviewer(pmLeadUser.id, pmDomain.id);
 
   // Strong/plausible scores — full 5s where it's a clear "Strong Hire", 3s
   // where it's borderline, 1–2s for the reject case. Keep the existing Alice
@@ -2351,7 +2383,7 @@ async function main() {
       overallRecommendation: spec.overallRecommendation || null,
       annotations: [],
       submittedAt: spec.submitted ? ts(-500) : null,
-      submittedById: spec.submitted ? engLeadMember.id : null,
+      submittedById: spec.submitted ? engLead.id : null,
     };
     await prisma.applicationReview.upsert({
       where: {
@@ -2395,7 +2427,7 @@ async function main() {
       applicationCycleId: cycle.id,
       type: "Initial",
       status: "Closed",
-      openedById: engLeadMember.id,
+      openedById: engLead.id,
       columnOrder: {
         "No Decision": [],
         "Interview": ["da-alice-eng", "da-diego-eng"],
@@ -2425,7 +2457,7 @@ async function main() {
       applicationCycleId: cycle.id,
       type: "Initial",
       status: "Closed",
-      openedById: designLeadMember.id,
+      openedById: designLeadUser.id,
       columnOrder: {
         "No Decision": [],
         "Interview": ["da-bob-design", "da-eve-design"],
@@ -2455,7 +2487,7 @@ async function main() {
       applicationCycleId: cycle.id,
       type: "Initial",
       status: "Closed",
-      openedById: pmLeadMember.id,
+      openedById: pmLeadUser.id,
       columnOrder: {
         "No Decision": [],
         "Interview": ["da-bob-pm", "da-felix-pm"],
@@ -2476,13 +2508,13 @@ async function main() {
     notes?: string;
   };
   const decisionSpecs: DecisionSpec[] = [
-    { slug: "alice-eng", domainAppId: "da-alice-eng", type: "InvitedToInterview", madeBy: engLeadMember.id, notes: "Strong across both reviews." },
-    { slug: "bob-design", domainAppId: "da-bob-design", type: "InvitedToInterview", madeBy: designLeadMember.id },
-    { slug: "bob-pm", domainAppId: "da-bob-pm", type: "InvitedToInterview", madeBy: pmLeadMember.id },
-    { slug: "diego-eng", domainAppId: "da-diego-eng", type: "InvitedToInterview", madeBy: engLeadMember.id, notes: "Top signal in the Engineering round." },
-    { slug: "eve-design", domainAppId: "da-eve-design", type: "InvitedToInterview", madeBy: designLeadMember.id },
-    { slug: "felix-pm", domainAppId: "da-felix-pm", type: "InvitedToInterview", madeBy: pmLeadMember.id },
-    { slug: "grace-eng", domainAppId: "da-grace-eng", type: "Rejected", madeBy: engLeadMember.id, notes: "Both reviewers recommended no-hire." },
+    { slug: "alice-eng", domainAppId: "da-alice-eng", type: "InvitedToInterview", madeBy: engLead.id, notes: "Strong across both reviews." },
+    { slug: "bob-design", domainAppId: "da-bob-design", type: "InvitedToInterview", madeBy: designLeadUser.id },
+    { slug: "bob-pm", domainAppId: "da-bob-pm", type: "InvitedToInterview", madeBy: pmLeadUser.id },
+    { slug: "diego-eng", domainAppId: "da-diego-eng", type: "InvitedToInterview", madeBy: engLead.id, notes: "Top signal in the Engineering round." },
+    { slug: "eve-design", domainAppId: "da-eve-design", type: "InvitedToInterview", madeBy: designLeadUser.id },
+    { slug: "felix-pm", domainAppId: "da-felix-pm", type: "InvitedToInterview", madeBy: pmLeadUser.id },
+    { slug: "grace-eng", domainAppId: "da-grace-eng", type: "Rejected", madeBy: engLead.id, notes: "Both reviewers recommended no-hire." },
   ];
 
   for (const spec of decisionSpecs) {
@@ -2525,7 +2557,7 @@ async function main() {
           domainApplicationId: spec.domainAppId,
           type: spec.type,
           stage: "Released",
-          madeById: jordanMember.id,
+          madeById: jordan.id,
           createdAt: ts(-250),
           notes: spec.notes ?? null,
         },
@@ -2537,11 +2569,11 @@ async function main() {
   // Use the first two availabilityWindows entries (consecutive weekdays,
   // 14:00–16:00 UTC), pick the first 30-minute slot in each. Different days
   // guarantee Riley (shared InDomain interviewer) is never double-booked.
-  async function getCycleInterviewer(daliMemberId: string, domainId: string) {
+  async function getCycleInterviewer(userId: string, domainId: string) {
     return prisma.cycleInterviewer.findUniqueOrThrow({
       where: {
-        daliMemberId_applicationCycleId_domainId: {
-          daliMemberId,
+        userId_applicationCycleId_domainId: {
+          userId,
           applicationCycleId: cycle.id,
           domainId,
         },
@@ -2549,9 +2581,9 @@ async function main() {
     });
   }
 
-  const rileyCI = await getCycleInterviewer(rileyMember.id, engDomain.id);
-  const samCI = await getCycleInterviewer(samMember.id, designDomain.id);
-  const patCI = await getCycleInterviewer(patMember.id, pmDomain.id);
+  const rileyCI = await getCycleInterviewer(rileyUser.id, engDomain.id);
+  const samCI = await getCycleInterviewer(samUser.id, designDomain.id);
+  const patCI = await getCycleInterviewer(patUser.id, pmDomain.id);
 
   const interviewBookings: {
     id: string;
@@ -2728,7 +2760,7 @@ async function main() {
     const existing = await prisma.legacyEmailTemplate.findFirst({ where: { type: legacyType } })
     if (!existing) {
       await prisma.legacyEmailTemplate.create({
-        data: { type: legacyType, subject: t.subject, body: t.body, version: 1, createdById: engLeadMember.id },
+        data: { type: legacyType, subject: t.subject, body: t.body, version: 1, createdById: engLead.id },
       })
     }
   }
@@ -2753,7 +2785,7 @@ async function main() {
           versionNumber: 1,
           subject: t.subject,
           body: t.body,
-          createdById: engLeadMember.id,
+          createdById: engLead.id,
         },
       })
     }

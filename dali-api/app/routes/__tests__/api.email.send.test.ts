@@ -18,7 +18,7 @@ const USER_ID = "user-1";
 const OTHER_USER_ID = "user-2";
 
 const mockPrisma = prisma as unknown as {
-  user: { findUnique: ReturnType<typeof vi.fn> };
+  gmailIntegration: { findFirst: ReturnType<typeof vi.fn> };
 };
 
 function makeRequest(
@@ -43,8 +43,8 @@ beforeEach(() => {
     ok: true,
     user: { sub: USER_ID, email: "u@x.com", type: "user" },
   } as any);
-  (mockPrisma as any).user = {
-    findUnique: vi.fn().mockResolvedValue({ googleRefreshToken: "refresh-token" }),
+  (mockPrisma as any).gmailIntegration = {
+    findFirst: vi.fn().mockResolvedValue({ oauthTokens: "refresh-token" }),
   };
 });
 

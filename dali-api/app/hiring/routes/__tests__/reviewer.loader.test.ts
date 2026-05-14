@@ -41,8 +41,7 @@ beforeEach(() => {
     currentStatus: "UnderReview",
   } as any);
 
-  mockPrisma.dALIMember = {
-    findFirst: vi.fn().mockResolvedValue({ id: MEMBER_ID, userId: USER_ID }),
+  mockPrisma.dALIMember = { findUnique: vi.fn().mockResolvedValue({ id: MEMBER_ID, userId: USER_ID }),
   };
   mockPrisma.cycleReviewer = {
     findMany: vi

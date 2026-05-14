@@ -7,7 +7,7 @@ import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 
 const CreateReviewerSchema = z.object({
-  daliMemberId: z.string().min(1).max(100),
+  userId: z.string().min(1).max(100),
   domainId: z.string().min(1).max(100),
 });
 
@@ -24,7 +24,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const reviewers = await prisma.cycleReviewer.findMany({
     where: { applicationCycleId: params.cycleId },
     include: {
-      daliMember: { include: { user: true } },
+      user: true,
       domain: true,
     },
   });
@@ -46,7 +46,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const body = await parseJson(request, CreateReviewerSchema);
   if (body instanceof Response) return withCors(request, body);
-  const { daliMemberId, domainId } = body;
+  const { userId, domainId } = body;
 
   // Ensure domain is linked to cycle
   await prisma.domainApplicationCycle.upsert({
@@ -57,12 +57,12 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const reviewer = await prisma.cycleReviewer.create({
     data: {
-      daliMemberId,
+      userId,
       applicationCycleId: params.cycleId,
       domainId,
     },
     include: {
-      daliMember: { include: { user: true } },
+      user: true,
       domain: true,
     },
   });

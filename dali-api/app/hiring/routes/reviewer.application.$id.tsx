@@ -61,7 +61,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const cycleReviewers = await prisma.cycleReviewer.findMany({
     where: {
       applicationCycleId: applicationBase.applicationCycleId,
-      daliMember: { userId: auth.user.sub },
+      userId: auth.user.sub,
     },
     select: { id: true, domainId: true },
   })
@@ -84,7 +84,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     prisma.applicationReview.findFirst({
       where: {
         domainApplication: { applicationId: params.id },
-        cycleReviewer: { daliMember: { userId: auth.user.sub } },
+        cycleReviewer: { userId: auth.user.sub },
       },
     }),
   ])
@@ -167,7 +167,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     const existing = await prisma.applicationReview.findFirst({
       where: {
         domainApplication: { applicationId: params.id },
-        cycleReviewer: { daliMember: { userId: auth.user.sub } },
+        cycleReviewer: { userId: auth.user.sub },
       },
     })
 

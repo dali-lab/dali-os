@@ -12,6 +12,9 @@ import {
   upsertUserFromCas,
 } from "~/lib/user-provisioning";
 
+// Phase 2: upsertUserFromGoogle is member-only (@dali.dartmouth.edu).
+// Non-DALI branches throw — partners auth via magic-link instead.
+
 const mockPrisma = prisma as unknown as {
   user: {
     upsert: ReturnType<typeof vi.fn>;
@@ -20,9 +23,7 @@ const mockPrisma = prisma as unknown as {
     update: ReturnType<typeof vi.fn>;
   };
   dALIMember: {
-    findFirst: ReturnType<typeof vi.fn>;
-    create: ReturnType<typeof vi.fn>;
-    update: ReturnType<typeof vi.fn>;
+    upsert: ReturnType<typeof vi.fn>;
   };
 };
 
@@ -37,17 +38,14 @@ beforeEach(() => {
     update: vi.fn(),
   } as any;
   mockPrisma.dALIMember = {
-    findFirst: vi.fn(),
-    create: vi.fn().mockResolvedValue({}),
-    update: vi.fn().mockResolvedValue({}),
+    upsert: vi.fn().mockResolvedValue({}),
   } as any;
 });
 
 describe("upsertUserFromGoogle", () => {
-  it("@dali.dartmouth.edu → upserts by daliEmail and returns member authType", async () => {
+  it("@dali.dartmouth.edu → upserts user by daliEmail and the DALIMember marker", async () => {
     const userRow = { id: "u-1", netId: null };
     mockPrisma.user.upsert.mockResolvedValue(userRow);
-    mockPrisma.dALIMember.findFirst.mockResolvedValue({ id: "m-1", userId: "u-1" });
 
     const result = await upsertUserFromGoogle({
       email: "k@dali.dartmouth.edu",
@@ -60,112 +58,37 @@ describe("upsertUserFromGoogle", () => {
     expect(mockPrisma.user.upsert).toHaveBeenCalledWith(
       expect.objectContaining({ where: { daliEmail: "k@dali.dartmouth.edu" } }),
     );
-  });
-
-  it("@dali.dartmouth.edu with no existing DALIMember row → creates one", async () => {
-    mockPrisma.user.upsert.mockResolvedValue({ id: "u-1", netId: null });
-    mockPrisma.dALIMember.findFirst.mockResolvedValue(null);
-
-    await upsertUserFromGoogle({
-      email: "new@dali.dartmouth.edu",
-      firstName: "New",
-      lastName: "Member",
-    });
-
-    expect(mockPrisma.dALIMember.create).toHaveBeenCalledWith({
-      data: { userId: "u-1", daliEmail: "new@dali.dartmouth.edu" },
+    expect(mockPrisma.dALIMember.upsert).toHaveBeenCalledWith({
+      where: { userId: "u-1" },
+      update: {},
+      create: { userId: "u-1" },
     });
   });
 
-  it("@dali.dartmouth.edu with orphan DALIMember (no userId) → links userId", async () => {
-    mockPrisma.user.upsert.mockResolvedValue({ id: "u-2", netId: null });
-    mockPrisma.dALIMember.findFirst.mockResolvedValue({ id: "m-2", userId: null });
-
-    await upsertUserFromGoogle({
-      email: "orphan@dali.dartmouth.edu",
-      firstName: "O",
-      lastName: "P",
-    });
-
-    expect(mockPrisma.dALIMember.update).toHaveBeenCalledWith({
-      where: { id: "m-2" },
-      data: { userId: "u-2" },
-    });
-    expect(mockPrisma.dALIMember.create).not.toHaveBeenCalled();
+  it("@dartmouth.edu (non-DALI) → throws (Phase 2 dropped the dartmouth branch)", async () => {
+    await expect(
+      upsertUserFromGoogle({
+        email: "stu@dartmouth.edu",
+        firstName: "Stu",
+        lastName: "Dent",
+      }),
+    ).rejects.toThrow(/@dali\.dartmouth\.edu/);
+    expect(mockPrisma.user.upsert).not.toHaveBeenCalled();
   });
 
-  it("@dali.dartmouth.edu with already-linked DALIMember → no-op on member side", async () => {
-    mockPrisma.user.upsert.mockResolvedValue({ id: "u-3", netId: null });
-    mockPrisma.dALIMember.findFirst.mockResolvedValue({ id: "m-3", userId: "u-3" });
-
-    await upsertUserFromGoogle({
-      email: "linked@dali.dartmouth.edu",
-      firstName: "L",
-      lastName: "K",
-    });
-
-    expect(mockPrisma.dALIMember.update).not.toHaveBeenCalled();
-    expect(mockPrisma.dALIMember.create).not.toHaveBeenCalled();
-  });
-
-  it("@dartmouth.edu non-DALI → upserts by dartmouthEmail and returns dartmouth authType", async () => {
-    const userRow = { id: "u-d", netId: null };
-    mockPrisma.user.upsert.mockResolvedValue(userRow);
-
-    const result = await upsertUserFromGoogle({
-      email: "stu@dartmouth.edu",
-      firstName: "Stu",
-      lastName: "Dent",
-    });
-
-    expect(result.authType).toBe("dartmouth");
-    expect(mockPrisma.user.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { dartmouthEmail: "stu@dartmouth.edu" } }),
-    );
-    expect(mockPrisma.dALIMember.findFirst).not.toHaveBeenCalled();
-  });
-
-  it("partner email (existing) → findFirst + update, returns partner authType", async () => {
-    mockPrisma.user.findFirst.mockResolvedValue({ id: "u-p", netId: null });
-    mockPrisma.user.update.mockResolvedValue({ id: "u-p", netId: null });
-
-    const result = await upsertUserFromGoogle({
-      email: "partner@example.com",
-      firstName: "Pa",
-      lastName: "Rt",
-    });
-
-    expect(result.authType).toBe("partner");
-    expect(mockPrisma.user.findFirst).toHaveBeenCalledWith({
-      where: { dartmouthEmail: "partner@example.com" },
-    });
-    expect(mockPrisma.user.update).toHaveBeenCalled();
-    expect(mockPrisma.user.create).not.toHaveBeenCalled();
-  });
-
-  it("partner email (new) → findFirst + create, returns partner authType", async () => {
-    mockPrisma.user.findFirst.mockResolvedValue(null);
-    mockPrisma.user.create.mockResolvedValue({ id: "u-newp", netId: null });
-
-    const result = await upsertUserFromGoogle({
-      email: "newpartner@example.com",
-      firstName: "Ne",
-      lastName: "Wp",
-    });
-
-    expect(result.authType).toBe("partner");
-    expect(mockPrisma.user.create).toHaveBeenCalledWith({
-      data: {
-        dartmouthEmail: "newpartner@example.com",
-        firstName: "Ne",
-        lastName: "Wp",
-      },
-    });
+  it("external partner email → throws (Phase 2 dropped the partner branch)", async () => {
+    await expect(
+      upsertUserFromGoogle({
+        email: "partner@example.com",
+        firstName: "Pa",
+        lastName: "Rt",
+      }),
+    ).rejects.toThrow(/@dali\.dartmouth\.edu/);
+    expect(mockPrisma.user.upsert).not.toHaveBeenCalled();
   });
 
   it("never writes googleAccessToken / googleRefreshToken / googleTokenExpiresAt", async () => {
     mockPrisma.user.upsert.mockResolvedValue({ id: "u-1", netId: null });
-    mockPrisma.dALIMember.findFirst.mockResolvedValue({ id: "m-1", userId: "u-1" });
 
     await upsertUserFromGoogle({
       email: "k@dali.dartmouth.edu",

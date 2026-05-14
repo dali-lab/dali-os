@@ -52,7 +52,7 @@ describe("isInterviewerFree", () => {
   it("returns true when availability covers slot and no conflicts", () => {
     const reviewer = {
       cycleInterviewerId: "r1",
-      daliMemberId: "m1",
+      userId: "m1",
       domainId: "d1",
       availability: [
         { startTime: new Date("2026-04-15T13:00:00Z"), endTime: new Date("2026-04-15T17:00:00Z") },
@@ -65,7 +65,7 @@ describe("isInterviewerFree", () => {
   it("returns false when no availability block covers the slot", () => {
     const reviewer = {
       cycleInterviewerId: "r1",
-      daliMemberId: "m1",
+      userId: "m1",
       domainId: "d1",
       availability: [
         { startTime: new Date("2026-04-15T15:00:00Z"), endTime: new Date("2026-04-15T17:00:00Z") },
@@ -78,7 +78,7 @@ describe("isInterviewerFree", () => {
   it("returns false when availability only partially covers the slot", () => {
     const reviewer = {
       cycleInterviewerId: "r1",
-      daliMemberId: "m1",
+      userId: "m1",
       domainId: "d1",
       availability: [
         { startTime: new Date("2026-04-15T14:00:00Z"), endTime: new Date("2026-04-15T14:20:00Z") },
@@ -91,7 +91,7 @@ describe("isInterviewerFree", () => {
   it("returns false when a booked interval overlaps the slot", () => {
     const reviewer = {
       cycleInterviewerId: "r1",
-      daliMemberId: "m1",
+      userId: "m1",
       domainId: "d1",
       availability: [
         { startTime: new Date("2026-04-15T13:00:00Z"), endTime: new Date("2026-04-15T17:00:00Z") },
@@ -106,7 +106,7 @@ describe("isInterviewerFree", () => {
   it("returns true when booked interval ends exactly at slot start (no overlap)", () => {
     const reviewer = {
       cycleInterviewerId: "r1",
-      daliMemberId: "m1",
+      userId: "m1",
       domainId: "d1",
       availability: [
         { startTime: new Date("2026-04-15T13:00:00Z"), endTime: new Date("2026-04-15T17:00:00Z") },
@@ -121,7 +121,7 @@ describe("isInterviewerFree", () => {
   it("returns true when booked interval starts exactly at slot end (no overlap)", () => {
     const reviewer = {
       cycleInterviewerId: "r1",
-      daliMemberId: "m1",
+      userId: "m1",
       domainId: "d1",
       availability: [
         { startTime: new Date("2026-04-15T13:00:00Z"), endTime: new Date("2026-04-15T17:00:00Z") },
@@ -136,7 +136,7 @@ describe("isInterviewerFree", () => {
   it("returns false with empty availability", () => {
     const reviewer = {
       cycleInterviewerId: "r1",
-      daliMemberId: "m1",
+      userId: "m1",
       domainId: "d1",
       availability: [],
       bookedIntervals: [],
@@ -248,7 +248,7 @@ describe("computeAvailableSlots", () => {
     mockPrisma.cycleInterviewer.findMany.mockResolvedValue([
       {
         id: "r1",
-        daliMemberId: "m1",
+        userId: "m1",
         domainId: "domain1",
         availabilityBlocks: [
           { startTime: new Date("2030-04-15T00:00:00Z"), endTime: new Date("2030-04-15T23:59:59Z") },
@@ -257,7 +257,7 @@ describe("computeAvailableSlots", () => {
       },
       {
         id: "r2",
-        daliMemberId: "m2",
+        userId: "m2",
         domainId: "domain-other",
         availabilityBlocks: [
           { startTime: new Date("2030-04-15T00:00:00Z"), endTime: new Date("2030-04-15T23:59:59Z") },
@@ -291,7 +291,7 @@ describe("computeAvailableSlots", () => {
     mockPrisma.cycleInterviewer.findMany.mockResolvedValue([
       {
         id: "r1",
-        daliMemberId: "m1",
+        userId: "m1",
         domainId: "domain1",
         availabilityBlocks: [
           { startTime: new Date("2030-04-15T00:00:00Z"), endTime: new Date("2030-04-15T23:59:59Z") },
@@ -323,7 +323,7 @@ describe("computeAvailableSlots", () => {
     mockPrisma.cycleInterviewer.findMany.mockResolvedValue([
       {
         id: "r-mira-eng",
-        daliMemberId: "mira",
+        userId: "mira",
         domainId: "domain1",
         availabilityBlocks: [
           { startTime: new Date("2030-04-15T00:00:00Z"), endTime: new Date("2030-04-15T23:59:59Z") },
@@ -339,7 +339,7 @@ describe("computeAvailableSlots", () => {
       },
       {
         id: "r-mira-design",
-        daliMemberId: "mira", // same member
+        userId: "mira", // same member
         domainId: "domain-other",
         availabilityBlocks: [
           { startTime: new Date("2030-04-15T00:00:00Z"), endTime: new Date("2030-04-15T23:59:59Z") },
@@ -348,7 +348,7 @@ describe("computeAvailableSlots", () => {
       },
       {
         id: "r-bob",
-        daliMemberId: "bob",
+        userId: "bob",
         domainId: "domain1",
         availabilityBlocks: [
           { startTime: new Date("2030-04-15T00:00:00Z"), endTime: new Date("2030-04-15T23:59:59Z") },
@@ -392,7 +392,7 @@ describe("computeAvailableSlots", () => {
     mockPrisma.cycleInterviewer.findMany.mockResolvedValue([
       {
         id: "r-mira-eng",
-        daliMemberId: "mira",
+        userId: "mira",
         domainId: "domain1",
         availabilityBlocks: [
           { startTime: new Date("2030-04-15T00:00:00Z"), endTime: new Date("2030-04-15T23:59:59Z") },
@@ -401,7 +401,7 @@ describe("computeAvailableSlots", () => {
       },
       {
         id: "r-mira-design",
-        daliMemberId: "mira",
+        userId: "mira",
         domainId: "domain-other",
         availabilityBlocks: [
           { startTime: new Date("2030-04-15T00:00:00Z"), endTime: new Date("2030-04-15T23:59:59Z") },
@@ -431,7 +431,7 @@ describe("computeAvailableSlots", () => {
     mockPrisma.cycleInterviewer.findMany.mockResolvedValue([
       {
         id: "r-bob",
-        daliMemberId: "bob",
+        userId: "bob",
         domainId: "domain1",
         availabilityBlocks: [
           { startTime: new Date("2030-04-15T00:00:00Z"), endTime: new Date("2030-04-15T23:59:59Z") },
@@ -440,7 +440,7 @@ describe("computeAvailableSlots", () => {
       },
       {
         id: "r-mira-eng",
-        daliMemberId: "mira",
+        userId: "mira",
         domainId: "domain1",
         availabilityBlocks: [
           { startTime: new Date("2030-04-15T00:00:00Z"), endTime: new Date("2030-04-15T23:59:59Z") },
@@ -449,7 +449,7 @@ describe("computeAvailableSlots", () => {
       },
       {
         id: "r-mira-design",
-        daliMemberId: "mira",
+        userId: "mira",
         domainId: "domain-other",
         availabilityBlocks: [
           { startTime: new Date("2030-04-15T00:00:00Z"), endTime: new Date("2030-04-15T23:59:59Z") },
@@ -485,7 +485,7 @@ describe("assignInterviewers", () => {
       const fullInterviewers = [
         {
           id: "r1",
-          daliMemberId: "m1",
+          userId: "m1",
           domainId: "domain1",
           availabilityBlocks: [
             { startTime: new Date("2026-04-13T13:00:00Z"), endTime: new Date("2026-04-13T17:00:00Z") },
@@ -496,7 +496,7 @@ describe("assignInterviewers", () => {
         },
         {
           id: "r1-busy",
-          daliMemberId: "m-busy",
+          userId: "m-busy",
           domainId: "domain1",
           availabilityBlocks: [
             { startTime: new Date("2026-04-13T13:00:00Z"), endTime: new Date("2026-04-13T17:00:00Z") },
@@ -509,7 +509,7 @@ describe("assignInterviewers", () => {
         },
         {
           id: "r2",
-          daliMemberId: "m2",
+          userId: "m2",
           domainId: "domain-other",
           availabilityBlocks: [
             { startTime: new Date("2026-04-13T13:00:00Z"), endTime: new Date("2026-04-13T17:00:00Z") },
@@ -583,7 +583,7 @@ describe("assignInterviewers", () => {
     const onlyCrossDomain = [
       {
         id: "r2",
-        daliMemberId: "m2",
+        userId: "m2",
         domainId: "domain-other",
         availabilityBlocks: [
           { startTime: new Date("2026-04-13T13:00:00Z"), endTime: new Date("2026-04-13T17:00:00Z") },
@@ -617,12 +617,12 @@ describe("assignInterviewers", () => {
     // Mira is the only in-domain candidate (domain1) and also appears under a
     // Design row (domain-other). Without Fix A, the scheduler would pick
     // Mira-eng as in-domain AND Mira-design as cross-domain. Fix A rejects
-    // this by excluding Mira's daliMemberId from the cross-domain pool —
+    // this by excluding Mira's userId from the cross-domain pool —
     // and since she's the only cross-domain option, the booking must fail.
     const twoMiraRows = [
       {
         id: "r-mira-eng",
-        daliMemberId: "mira",
+        userId: "mira",
         domainId: "domain1",
         availabilityBlocks: [
           { startTime: new Date("2026-04-13T13:00:00Z"), endTime: new Date("2026-04-13T17:00:00Z") },
@@ -631,7 +631,7 @@ describe("assignInterviewers", () => {
       },
       {
         id: "r-mira-design",
-        daliMemberId: "mira",
+        userId: "mira",
         domainId: "domain-other",
         availabilityBlocks: [
           { startTime: new Date("2026-04-13T13:00:00Z"), endTime: new Date("2026-04-13T17:00:00Z") },
@@ -678,7 +678,7 @@ describe("assignInterviewers", () => {
     const interviewers = [
       {
         id: "r-mira-eng",
-        daliMemberId: "mira",
+        userId: "mira",
         domainId: "domain1",
         availabilityBlocks: [
           { startTime: new Date("2026-04-13T13:00:00Z"), endTime: new Date("2026-04-13T17:00:00Z") },
@@ -691,7 +691,7 @@ describe("assignInterviewers", () => {
       },
       {
         id: "r-bob",
-        daliMemberId: "bob",
+        userId: "bob",
         domainId: "domain1",
         availabilityBlocks: [
           { startTime: new Date("2026-04-13T13:00:00Z"), endTime: new Date("2026-04-13T17:00:00Z") },
@@ -702,7 +702,7 @@ describe("assignInterviewers", () => {
       },
       {
         id: "r-cross",
-        daliMemberId: "pat",
+        userId: "pat",
         domainId: "domain-other",
         availabilityBlocks: [
           { startTime: new Date("2026-04-13T13:00:00Z"), endTime: new Date("2026-04-13T17:00:00Z") },
@@ -744,7 +744,7 @@ describe("assignInterviewers", () => {
     const interviewers = [
       {
         id: "r1",
-        daliMemberId: "m1",
+        userId: "m1",
         domainId: "domain1",
         availabilityBlocks: [
           { startTime: new Date("2026-04-13T13:00:00Z"), endTime: new Date("2026-04-13T17:00:00Z") },
@@ -753,7 +753,7 @@ describe("assignInterviewers", () => {
       },
       {
         id: "r2",
-        daliMemberId: "m2",
+        userId: "m2",
         domainId: "domain-other",
         availabilityBlocks: [
           { startTime: new Date("2026-04-13T13:00:00Z"), endTime: new Date("2026-04-13T17:00:00Z") },
@@ -805,7 +805,7 @@ describe("assignInterviewers", () => {
     const interviewers = [
       {
         id: "r1",
-        daliMemberId: "m1",
+        userId: "m1",
         domainId: "domain1",
         availabilityBlocks: [
           { startTime: new Date("2026-04-13T13:00:00Z"), endTime: new Date("2026-04-13T17:00:00Z") },
@@ -814,7 +814,7 @@ describe("assignInterviewers", () => {
       },
       {
         id: "r2",
-        daliMemberId: "m2",
+        userId: "m2",
         domainId: "domain-other",
         availabilityBlocks: [
           { startTime: new Date("2026-04-13T13:00:00Z"), endTime: new Date("2026-04-13T17:00:00Z") },
@@ -865,7 +865,7 @@ describe("reassignInterviewer", () => {
           findUnique: vi.fn().mockResolvedValue({
             id: "a1",
             role: "InDomain",
-            cycleInterviewer: { id: "r1", daliMemberId: "m1", domainId: "domain1" },
+            cycleInterviewer: { id: "r1", userId: "m1", domainId: "domain1" },
             interview: {
               id: "int1",
               applicationCycleId: "cycle1",
@@ -881,8 +881,8 @@ describe("reassignInterviewer", () => {
             },
           }),
           findMany: vi.fn().mockResolvedValue([
-            { cycleInterviewer: { daliMemberId: "m1" } },
-            { cycleInterviewer: { daliMemberId: "m3" } },
+            { cycleInterviewer: { userId: "m1" } },
+            { cycleInterviewer: { userId: "m3" } },
           ]),
           update: vi.fn().mockResolvedValue({}),
           create: vi.fn().mockResolvedValue({ cycleInterviewerId: "r2" }),
@@ -894,7 +894,7 @@ describe("reassignInterviewer", () => {
           findMany: vi.fn().mockResolvedValue([
             {
               id: "r2",
-              daliMemberId: "m2",
+              userId: "m2",
               domainId: "domain1",
               availabilityBlocks: [
                 { startTime: new Date("2026-04-13T13:00:00Z"), endTime: new Date("2026-04-13T17:00:00Z") },
@@ -927,7 +927,7 @@ describe("reassignInterviewer", () => {
           findUnique: vi.fn().mockResolvedValue({
             id: "a1",
             role: "CrossDomain",
-            cycleInterviewer: { id: "r-mira-design", daliMemberId: "mira", domainId: "domain-other" },
+            cycleInterviewer: { id: "r-mira-design", userId: "mira", domainId: "domain-other" },
             interview: {
               id: "int1",
               applicationCycleId: "cycle1",
@@ -939,7 +939,7 @@ describe("reassignInterviewer", () => {
             },
           }),
           findMany: vi.fn().mockResolvedValue([
-            { cycleInterviewer: { daliMemberId: "mira" } },
+            { cycleInterviewer: { userId: "mira" } },
           ]),
           update: vi.fn().mockResolvedValue({}),
           create: vi.fn().mockResolvedValue({}),
@@ -952,7 +952,7 @@ describe("reassignInterviewer", () => {
             // Mira's Eng row — same human, excluded by existingMemberIds.
             {
               id: "r-mira-eng",
-              daliMemberId: "mira",
+              userId: "mira",
               domainId: "domain1",
               availabilityBlocks: [
                 { startTime: new Date("2026-04-13T13:00:00Z"), endTime: new Date("2026-04-13T17:00:00Z") },
@@ -978,7 +978,7 @@ describe("reassignInterviewer", () => {
           findUnique: vi.fn().mockResolvedValue({
             id: "a1",
             role: "InDomain",
-            cycleInterviewer: { id: "r1", daliMemberId: "m1", domainId: "domain1" },
+            cycleInterviewer: { id: "r1", userId: "m1", domainId: "domain1" },
             interview: {
               id: "int1",
               applicationCycleId: "cycle1",
@@ -990,7 +990,7 @@ describe("reassignInterviewer", () => {
             },
           }),
           findMany: vi.fn().mockResolvedValue([
-            { cycleInterviewer: { daliMemberId: "m1" } },
+            { cycleInterviewer: { userId: "m1" } },
           ]),
           update: vi.fn().mockResolvedValue({}),
           create: vi.fn().mockResolvedValue({}),

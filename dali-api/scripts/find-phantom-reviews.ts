@@ -34,7 +34,7 @@ const phantoms = await prisma.applicationReview.findMany({
       },
     },
     cycleReviewer: {
-      include: { daliMember: { select: { firstName: true, lastName: true, daliEmail: true } } },
+      include: { user: { select: { firstName: true, lastName: true, daliEmail: true } } },
     },
   },
   orderBy: { createdAt: "asc" },
@@ -50,7 +50,7 @@ for (const r of phantoms) {
   const applicant = `${u.firstName} ${u.lastName} <${u.daliEmail ?? u.dartmouthEmail ?? u.netId ?? "?"}>`;
   const domain = r.domainApplication.challengeVersion.domain?.name ?? "?";
   const cycle = r.domainApplication.application.applicationCycle.name;
-  const m = r.cycleReviewer.daliMember;
+  const m = r.cycleReviewer.user;
   const reviewer = `${m.firstName} ${m.lastName} <${m.daliEmail}>`;
 
   const scores = r.scores as Record<string, unknown>;

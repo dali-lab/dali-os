@@ -6,10 +6,9 @@ import type { NotificationType } from "~/generated/prisma/enums";
 import { prisma } from "~/lib/db";
 import { sendEmail } from "~/lib/gmail";
 import { type InterpolationVars } from "~/lib/email";
+import { getApplicationsGmailRefreshToken } from "~/lib/gmail-integration";
 import { renderForSlot, notificationSlot } from "./email-variables";
 import { buildInviteIcs, buildCancelIcs } from "./interview-ics";
-
-const GMAIL_USER = "applications@dali.dartmouth.edu";
 
 function formatLocation(location: string, meetingUrl?: string | null): string {
   if (location === "PodAppa") return "Pod Appa, DALI Lab";
@@ -29,11 +28,7 @@ function formatTime(d: Date): string {
 }
 
 async function getGmailRefreshToken(): Promise<string | null> {
-  const gmailUser = await prisma.user.findUnique({
-    where: { daliEmail: GMAIL_USER },
-    select: { googleRefreshToken: true },
-  });
-  return gmailUser?.googleRefreshToken ?? null;
+  return getApplicationsGmailRefreshToken();
 }
 
 interface Recipient {
@@ -64,20 +59,16 @@ async function getInterviewerRecipients(interviewId: string): Promise<Recipient[
     where: { interviewId, status: "Active" },
     include: {
       cycleInterviewer: {
-        include: {
-          daliMember: {
-            include: { user: { select: { firstName: true, daliEmail: true } } },
-          },
-        },
+        include: { user: { select: { firstName: true, daliEmail: true } } },
       },
     },
   });
 
   return assignments
     .map((a) => {
-      const member = a.cycleInterviewer.daliMember;
-      const email = member.user?.daliEmail ?? null;
-      const firstName = member.user?.firstName ?? member.firstName ?? "Interviewer";
+      const user = a.cycleInterviewer.user;
+      const email = user?.daliEmail ?? null;
+      const firstName = user?.firstName ?? "Interviewer";
       if (!email) return null;
       return { email, firstName };
     })
@@ -288,16 +279,16 @@ export async function sendReassignmentEmails(
     // Cancel ICS to removed interviewer
     const removedCI = await prisma.cycleInterviewer.findUnique({
       where: { id: removedCycleInterviewerId },
-      include: { daliMember: { include: { user: { select: { firstName: true, daliEmail: true } } } } },
+      include: { user: { select: { firstName: true, daliEmail: true } } },
     });
-    if (removedCI?.daliMember.user?.daliEmail) {
+    if (removedCI?.user.daliEmail) {
       const cancelIcs = buildCancelIcs({
         interviewId: interview.id,
         summary: `DALI Interview — ${domainName}`,
         startTime: interview.startTime,
         endTime: interview.endTime,
       });
-      const firstName = removedCI.daliMember.user.firstName ?? "Interviewer";
+      const firstName = removedCI.user.firstName ?? "Interviewer";
       const rendered = await renderFromBinding(
         interview.applicationCycleId,
         "InterviewCancelledInterviewer",
@@ -306,7 +297,7 @@ export async function sendReassignmentEmails(
       if (rendered) {
         sends.push(sendEmail({
           refreshToken,
-          to: removedCI.daliMember.user.daliEmail,
+          to: removedCI.user.daliEmail,
           subject: rendered.subject,
           html: rendered.html,
           ics: cancelIcs,
@@ -317,9 +308,9 @@ export async function sendReassignmentEmails(
     // Invite ICS to new interviewer
     const newCI = await prisma.cycleInterviewer.findUnique({
       where: { id: newCycleInterviewerId },
-      include: { daliMember: { include: { user: { select: { firstName: true, daliEmail: true } } } } },
+      include: { user: { select: { firstName: true, daliEmail: true } } },
     });
-    if (newCI?.daliMember.user?.daliEmail) {
+    if (newCI?.user.daliEmail) {
       const inviteIcs = buildInviteIcs({
         interviewId: interview.id,
         summary: `DALI Interview — ${domainName}`,
@@ -328,7 +319,7 @@ export async function sendReassignmentEmails(
         location: formatLocation(interview.location, interview.zoomJoinUrl),
         meetingUrl: interview.zoomJoinUrl,
       });
-      const firstName = newCI.daliMember.user.firstName ?? "Interviewer";
+      const firstName = newCI.user.firstName ?? "Interviewer";
       const rendered = await renderFromBinding(
         interview.applicationCycleId,
         "InterviewInviteMentor",
@@ -337,7 +328,7 @@ export async function sendReassignmentEmails(
       if (rendered) {
         sends.push(sendEmail({
           refreshToken,
-          to: newCI.daliMember.user.daliEmail,
+          to: newCI.user.daliEmail,
           subject: rendered.subject,
           html: rendered.html,
           ics: inviteIcs,

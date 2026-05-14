@@ -49,7 +49,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   // across domains).
   const newCI = await prisma.cycleInterviewer.findUnique({
     where: { id: newCycleInterviewerId },
-    select: { daliMemberId: true },
+    select: { userId: true },
   });
   if (!newCI) {
     return Response.json({ error: "Interviewer not found" }, { status: 404 });
@@ -69,7 +69,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       const conflict = await tx.interviewAssignment.findFirst({
         where: {
           status: "Active",
-          cycleInterviewer: { daliMemberId: newCI.daliMemberId },
+          cycleInterviewer: { userId: newCI.userId },
           interview: {
             id: { not: interview.id },
             status: "Scheduled",

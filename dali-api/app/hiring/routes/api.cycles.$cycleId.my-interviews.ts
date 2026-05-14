@@ -11,11 +11,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return withCors(request, auth.response);
 
-  const member = await prisma.dALIMember.findFirst({ where: { userId: auth.user.sub } });
+  const member = await prisma.dALIMember.findUnique({ where: { userId: auth.user.sub } });
   if (!member) return withCors(request, Response.json([]));
 
   const interviewer = await prisma.cycleInterviewer.findFirst({
-    where: { daliMemberId: member.id, applicationCycleId: params.cycleId },
+    where: { userId: auth.user.sub, applicationCycleId: params.cycleId },
   });
   if (!interviewer) return withCors(request, Response.json([]));
 
@@ -42,7 +42,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
             include: {
               cycleInterviewer: {
                 include: {
-                  daliMember: true,
+                  user: true,
                   domain: true,
                 },
               },

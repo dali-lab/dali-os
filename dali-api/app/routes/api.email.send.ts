@@ -7,25 +7,20 @@
 // Requires authenticated user.
 
 import { requireAuth } from "~/lib/auth";
-import { prisma } from '~/lib/db'
 import { sendEmail } from '~/lib/gmail'
+import { getApplicationsGmailRefreshToken } from "~/lib/gmail-integration";
 import { logAuditEvent } from '~/lib/audit'
 import { checkRateLimit } from '~/lib/rate-limit'
-
-const GMAIL_USER = 'applications@dali.dartmouth.edu'
 
 const RATE_LIMIT_MAX = 100
 const RATE_LIMIT_WINDOW_MS = 60_000
 
 async function getGmailRefreshToken(): Promise<string> {
-  const user = await prisma.user.findUnique({
-    where: { daliEmail: GMAIL_USER },
-    select: { googleRefreshToken: true },
-  })
-  if (!user?.googleRefreshToken) {
+  const token = await getApplicationsGmailRefreshToken();
+  if (!token) {
     throw new Error('Gmail not authorized. Visit /admin/authorize-gmail first.')
   }
-  return user.googleRefreshToken
+  return token;
 }
 
 export async function action({ request }: { request: Request }) {

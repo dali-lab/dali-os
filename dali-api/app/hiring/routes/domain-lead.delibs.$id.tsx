@@ -71,7 +71,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         include: {
           cycleReviewer: {
             include: {
-              daliMember: {
+              user: {
                 select: { firstName: true, lastName: true, daliEmail: true },
               },
             },
