@@ -3,8 +3,9 @@
 // This route should never exist in production.
 
 import type { Route } from "./+types/dev-login";
-import { signAccessToken } from "~/lib/auth";
 import { isDevLoginEnabled } from "~/lib/dev-login";
+import { issueSession } from "~/lib/session";
+import { setSessionCookie } from "~/lib/cookies";
 import { prisma } from "~/lib/db";
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -141,30 +142,16 @@ export async function loader({ request }: Route.LoaderArgs) {
 }
 
 async function loginAsUser(user: { id: string; daliEmail: string | null; dartmouthEmail: string | null; firstName: string; lastName: string }) {
-  const email = user.daliEmail ?? user.dartmouthEmail ?? "";
   const type = user.daliEmail ? "member" : "applicant";
 
-  const token = await signAccessToken({
-    sub: user.id,
-    email,
-    type,
-    firstName: user.firstName,
-    lastName: user.lastName,
-  });
+  const session = await issueSession({ userId: user.id });
 
-  const cookie = [
-    `__dali_at=${token}`,
-    "Max-Age=86400",
-    "Path=/",
-    "HttpOnly",
-    "SameSite=Lax",
-  ].join("; ");
+  const headers = new Headers();
+  setSessionCookie(headers, session.rawId);
 
   const redirect = type === "member" ? "/" : "/portal";
-  return new Response(null, {
-    status: 302,
-    headers: { "Set-Cookie": cookie, Location: redirect },
-  });
+  headers.set("Location", redirect);
+  return new Response(null, { status: 302, headers });
 }
 
 function renderSection(title: string, cards: string[]): string {

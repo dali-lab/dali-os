@@ -1,12 +1,13 @@
-// DEV-ONLY: log in as any existing user by netId. Sets both __dali_at (api JWT)
-// and __dali_user (web display) cookies via Set-Cookie headers so it overwrites
-// any existing HttpOnly cookies from real OAuth sessions.
+// DEV-ONLY: log in as any existing user by netId or daliEmail. Sets the
+// __dali_sid session cookie via Set-Cookie so it overwrites any existing
+// cookie from a real OAuth session.
 //
 // Usage: GET /dev-login-as?netId=f007al1&redirect=http://localhost:5173/portal
 
 import type { Route } from "./+types/dev-login-as";
-import { signAccessToken } from "~/lib/auth";
 import { isDevLoginEnabled } from "~/lib/dev-login";
+import { issueSession } from "~/lib/session";
+import { setSessionCookie } from "~/lib/cookies";
 import { prisma } from "~/lib/db";
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -34,13 +35,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const email = user.daliEmail ?? user.dartmouthEmail ?? "";
   const type = user.daliEmail ? "member" : "applicant";
 
-  const token = await signAccessToken({
-    sub: user.id,
-    email,
-    type,
-    firstName: user.firstName,
-    lastName: user.lastName,
-  });
+  const session = await issueSession({ userId: user.id });
 
   const userPayload = JSON.stringify({
     id: user.id,
@@ -54,11 +49,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     ? redirect
     : type === "member" ? "http://localhost:3001/" : "http://localhost:3001/portal";
   const headers = new Headers({ Location: finalRedirect });
-  // __dali_at: api auth (HttpOnly so JS can't read; server-set overwrites any existing)
-  headers.append(
-    "Set-Cookie",
-    `__dali_at=${token}; Path=/; Max-Age=86400; HttpOnly; SameSite=Lax`,
-  );
+  setSessionCookie(headers, session.rawId);
   // __dali_user: web display (NOT HttpOnly so client JS can read it)
   headers.append(
     "Set-Cookie",

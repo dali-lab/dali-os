@@ -1,8 +1,9 @@
 import type { Route } from "./+types/auth.callback.cas";
 import { prisma } from "~/lib/db";
 import { validateCasTicket } from "~/lib/auth";
-import { issueTokens } from "~/lib/oauth";
-import { setTokenCookies } from "~/lib/cookies";
+import { issueSession } from "~/lib/session";
+import { setSessionCookie } from "~/lib/cookies";
+import { getClientIp } from "~/lib/request-meta";
 import { logAuditEvent } from "~/lib/audit";
 
 export async function action() {
@@ -60,8 +61,12 @@ export async function loader({ request }: Route.LoaderArgs) {
     },
   });
 
-  // Issue tokens and set cookies
-  const tokens = await issueTokens(user.id, "dartmouth");
+  // Issue session and set cookie
+  const session = await issueSession({
+    userId: user.id,
+    userAgent: request.headers.get("user-agent") ?? undefined,
+    ip: getClientIp(request),
+  });
   await logAuditEvent({
     action: "login.success",
     userId: user.id,
@@ -73,7 +78,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     request,
   });
   const headers = new Headers();
-  setTokenCookies(headers, tokens.access_token, tokens.refresh_token);
+  setSessionCookie(headers, session.rawId);
   headers.set("Location", "/portal");
 
   return new Response(null, { status: 302, headers });

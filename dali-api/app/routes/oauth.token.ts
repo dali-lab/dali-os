@@ -1,16 +1,18 @@
 import type { Route } from "./+types/oauth.token";
 import {
   exchangeAuthorizationCode,
-  issueTokens,
-  refreshTokens,
+  buildUserInfo,
   OAuthError,
 } from "~/lib/oauth";
-
-import { setTokenCookies, parseRefreshToken } from "~/lib/cookies";
 import type { UserInfo } from "~/lib/oauth";
+
+import { setSessionCookie } from "~/lib/cookies";
+import { issueSession, ROLLING_TTL_MS } from "~/lib/session";
+import { getClientIp } from "~/lib/request-meta";
 import { withCors, handlePreflight, preflightLoader } from "~/lib/cors";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { safeJson } from "~/lib/safe-json";
+import { prisma } from "~/lib/db";
 
 const RATE_LIMIT_MAX = 200;
 const RATE_LIMIT_WINDOW_MS = 60_000;
@@ -56,21 +58,29 @@ export async function action({ request }: Route.ActionArgs) {
 
       const authType =
         provider === "cas" ? "dartmouth" : (accountType ?? "member");
-      const tokens = await issueTokens(userId, authType);
 
-      return withCors(request, tokenResponse(tokens));
+      const user = await prisma.user.findUnique({ where: { id: userId } });
+      if (!user) throw new OAuthError("server_error", "User not found");
+
+      const session = await issueSession({
+        userId,
+        userAgent: request.headers.get("user-agent") ?? undefined,
+        ip: getClientIp(request),
+        // grantId plumbed through when OAuthGrant lands; for now sessions
+        // issued via the OAuth flow are not yet attributed to a grant row.
+      });
+
+      const userInfo = buildUserInfo(user, authType);
+
+      return withCors(
+        request,
+        tokenResponse(session.rawId, userInfo),
+      );
     }
 
-    if (grantType === "refresh_token") {
-      // read refresh token from cookie first, fall back to body
-      const refreshToken = parseRefreshToken(request) ?? body.refresh_token;
-      if (!refreshToken) {
-        throw new OAuthError("invalid_request", "refresh_token is required");
-      }
-
-      const tokens = await refreshTokens(refreshToken);
-      return withCors(request, tokenResponse(tokens));
-    }
+    // refresh_token grant intentionally removed. Sessions auto-extend on
+    // use (rolling TTL); MCP clients re-run the authorization flow when
+    // the bearer expires. See SESSION_AUTH_PLAN.md.
 
     throw new OAuthError(
       "unsupported_grant_type",
@@ -84,19 +94,14 @@ export async function action({ request }: Route.ActionArgs) {
   }
 }
 
-function tokenResponse(tokens: {
-  access_token: string;
-  token_type: string;
-  expires_in: number;
-  refresh_token: string;
-  userInfo: UserInfo;
-}) {
+function tokenResponse(rawSessionId: string, userInfo: UserInfo) {
+  const expiresIn = Math.floor(ROLLING_TTL_MS / 1000);
   const res = Response.json(
     {
-      access_token: tokens.access_token,
-      token_type: tokens.token_type,
-      expires_in: tokens.expires_in,
-      user: tokens.userInfo,
+      access_token: rawSessionId,
+      token_type: "Bearer",
+      expires_in: expiresIn,
+      user: userInfo,
     },
     {
       headers: {
@@ -106,6 +111,6 @@ function tokenResponse(tokens: {
     },
   );
 
-  setTokenCookies(res.headers, tokens.access_token, tokens.refresh_token);
+  setSessionCookie(res.headers, rawSessionId);
   return res;
 }
