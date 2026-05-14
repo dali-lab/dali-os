@@ -1,69 +1,38 @@
-import { SignJWT, jwtVerify, errors as joseErrors } from "jose";
-import { data } from "react-router";
-import {
-  parseAccessToken,
-  parseRefreshToken,
-  setTokenCookies,
-  clearTokenCookies,
-} from "~/lib/cookies";
+import { clearSessionCookie, parseSessionId } from "~/lib/cookies";
 import { logAuditEvent } from "~/lib/audit";
-import { refreshTokens } from "~/lib/oauth";
+import { lookupSession, rollSession, hashSessionId } from "~/lib/session";
 
-// jwt helper functions
+// Session-backed auth middleware. See SESSION_AUTH_PLAN.md for design.
+// The `user.sub` shape is preserved from the legacy JWT payload so existing
+// callers (`auth.user.sub` is used across calendar/, collab/, etc.) keep
+// working without per-file edits.
 
-function getSecret() {
-  const secret = process.env.JWT_SECRET;
-  if (!secret) throw new Error("JWT_SECRET not set");
-  const encoded = new TextEncoder().encode(secret);
-  if (encoded.length < 32) {
-    throw new Error("JWT_SECRET must be at least 32 bytes for HS256 security");
-  }
-  return encoded;
-}
-
-export async function signAccessToken(payload: {
-  sub: string;
-  email: string;
-  type: string;
-  firstName?: string;
-  lastName?: string;
-}) {
-  return new SignJWT(payload)
-    .setProtectedHeader({ alg: "HS256" })
-    .setIssuedAt()
-    .setExpirationTime("15m")
-    .sign(getSecret());
-}
-
-export async function verifyAccessToken(token: string) {
-  const { payload } = await jwtVerify(token, getSecret());
-  return payload as {
-    sub: string;
-    email: string;
-    type: string;
-    firstName?: string;
-    lastName?: string;
-  };
-}
-
-// auth middleware
-
-type AuthUser = {
+export type AuthUser = {
   sub: string;
   email: string;
   type: string;
   firstName?: string;
   lastName?: string;
 };
+
 type AuthSuccess = {
   ok: true;
   user: AuthUser;
-  // Set-Cookie strings to attach to the outgoing response, set when
-  // requireAuth performed a silent refresh. Use `withAuth(auth, response)` to
-  // forward them to the browser.
-  setCookies?: string[];
+  sessionId: string; // hashed PK; not the raw credential
 };
-type AuthFailure = { ok: false; response: Response };
+
+type AuthFailureReason =
+  | "no_session"
+  | "not_found"
+  | "revoked"
+  | "expired";
+
+type AuthFailure = {
+  ok: false;
+  response: Response;
+  reason: AuthFailureReason;
+};
+
 export type AuthResult = AuthSuccess | AuthFailure;
 
 function unauthorized(): Response {
@@ -75,123 +44,78 @@ function unauthorized(): Response {
 
 function unauthorizedClearingCookies(): Response {
   const headers = new Headers({ "Content-Type": "application/json" });
-  clearTokenCookies(headers);
+  clearSessionCookie(headers);
   return new Response(JSON.stringify({ error: "Unauthorized" }), {
     status: 401,
     headers,
   });
 }
 
-// Per-request de-dup so two parallel loaders don't both burn a single RT.
-// The first call rotates the RT; the second awaits the same in-flight promise
-// and reuses its newly-issued tokens, instead of presenting the now-revoked RT
-// and tripping reuse detection.
-type RefreshOutcome =
-  | { ok: true; user: AuthUser; setCookies: string[] }
-  | { ok: false };
-const inFlightRefreshes = new Map<string, Promise<RefreshOutcome>>();
+function deriveAuthType(user: {
+  daliEmail: string | null;
+  netId: string | null;
+}): string {
+  if (user.daliEmail) return "member";
+  if (user.netId) return "dartmouth";
+  return "partner";
+}
 
-async function performRefresh(rawRT: string): Promise<RefreshOutcome> {
-  const existing = inFlightRefreshes.get(rawRT);
-  if (existing) return existing;
-
-  const promise = (async (): Promise<RefreshOutcome> => {
-    try {
-      const refreshed = await refreshTokens(rawRT);
-      const headers = new Headers();
-      setTokenCookies(headers, refreshed.access_token, refreshed.refresh_token);
-      return {
-        ok: true,
-        user: {
-          sub: refreshed.userInfo.id,
-          email: refreshed.userInfo.email,
-          type: refreshed.userInfo.type,
-          firstName: refreshed.userInfo.firstName,
-          lastName: refreshed.userInfo.lastName,
-        },
-        setCookies: headers.getSetCookie(),
-      };
-    } catch {
-      return { ok: false };
-    }
-  })();
-
-  inFlightRefreshes.set(rawRT, promise);
-  try {
-    return await promise;
-  } finally {
-    inFlightRefreshes.delete(rawRT);
-  }
+function buildAuthUser(user: {
+  id: string;
+  daliEmail: string | null;
+  dartmouthEmail: string | null;
+  netId: string | null;
+  firstName: string;
+  lastName: string;
+}): AuthUser {
+  return {
+    sub: user.id,
+    email:
+      user.daliEmail ?? user.dartmouthEmail ?? `${user.netId}@dartmouth.edu`,
+    type: deriveAuthType(user),
+    firstName: user.firstName,
+    lastName: user.lastName,
+  };
 }
 
 export async function requireAuth(request: Request): Promise<AuthResult> {
-  // try cookie first, fall back to authorization header if not present
-  let token = parseAccessToken(request);
-
-  // don't strictly need this yet but good to have support if we want to support API access later
-  if (!token) {
-    const authHeader = request.headers.get("Authorization");
-    if (authHeader?.startsWith("Bearer ")) {
-      token = authHeader.slice(7);
-    }
+  const raw = parseSessionId(request);
+  if (!raw) {
+    return { ok: false, response: unauthorized(), reason: "no_session" };
   }
 
-  if (token) {
-    try {
-      const user = await verifyAccessToken(token);
-      return { ok: true, user };
-    } catch (e) {
-      if (!(e instanceof joseErrors.JWTExpired)) {
-        // Tampered or otherwise malformed AT — don't try to refresh.
-        await logAuditEvent({
-          action: "auth.token.invalid",
-          request,
-        });
-        return { ok: false, response: unauthorized() };
-      }
-      // AT is just expired — fall through to silent refresh.
-    }
+  const session = await lookupSession(raw);
+  if (!session) {
+    await logAuditEvent({ action: "auth.token.invalid", request });
+    return { ok: false, response: unauthorizedClearingCookies(), reason: "not_found" };
   }
 
-  // Silent refresh: trade a valid RT for a fresh AT/RT pair without bouncing
-  // the user to /login. Bearer-token API callers (no RT cookie) still 401.
-  const rawRT = parseRefreshToken(request);
-  if (!rawRT) {
-    return { ok: false, response: unauthorized() };
+  if (session.revokedAt) {
+    return { ok: false, response: unauthorizedClearingCookies(), reason: "revoked" };
   }
 
-  const outcome = await performRefresh(rawRT);
-  if (outcome.ok) {
-    return { ok: true, user: outcome.user, setCookies: outcome.setCookies };
+  const now = new Date();
+  if (session.expiresAt < now || session.absoluteExpiresAt < now) {
+    return { ok: false, response: unauthorizedClearingCookies(), reason: "expired" };
   }
 
-  // Refresh failed — RT is invalid, expired, revoked, or its family was
-  // revoked due to reuse. Clear cookies so the browser stops resending them.
-  return { ok: false, response: unauthorizedClearingCookies() };
+  // Fire-and-forget — a failed roll doesn't break the request.
+  rollSession(session.id).catch(() => {});
+
+  return {
+    ok: true,
+    user: buildAuthUser(session.user),
+    sessionId: session.id,
+  };
 }
 
-// Forward Set-Cookie headers from `requireAuth` (silent refresh on success,
-// cleared cookies after a failed refresh) onto the outgoing response. No-op
-// when there are no cookies to forward, so it's safe to wrap unconditionally.
-export function withAuth<T>(auth: AuthResult, value: T): T;
-export function withAuth(auth: AuthResult, value: Response): Response;
-export function withAuth(auth: AuthResult, value: unknown): unknown {
-  const cookies = auth.ok
-    ? auth.setCookies
-    : auth.response.headers.getSetCookie();
-  if (!cookies || cookies.length === 0) return value;
-
-  if (value instanceof Response) {
-    for (const c of cookies) value.headers.append("Set-Cookie", c);
-    return value;
-  }
-
-  const headers = new Headers();
-  for (const c of cookies) headers.append("Set-Cookie", c);
-  return data(value, { headers });
+// Convenience used by routes that need to surface the hashed session id
+// without going through the full auth flow.
+export function sessionIdHash(raw: string): string {
+  return hashSessionId(raw);
 }
 
-// dartmouth cas (sso) ticket validation
+// dartmouth cas (sso) ticket validation — unrelated to session auth
 
 export async function validateCasTicket(ticket: string, serviceUrl: string) {
   const casBase = process.env.CAS_BASE_URL ?? "https://login.dartmouth.edu/cas";
