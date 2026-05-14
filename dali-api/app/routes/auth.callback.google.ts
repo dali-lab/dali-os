@@ -1,11 +1,11 @@
 import type { Route } from "./+types/auth.callback.google";
-import { prisma } from "~/lib/db";
 import { exchangeGoogleCode } from "~/lib/oauth";
 import { issueSession } from "~/lib/session";
 import { setSessionCookie } from "~/lib/cookies";
 import { getClientIp } from "~/lib/request-meta";
 import { logAuditEvent } from "~/lib/audit";
 import { requireAuth } from "~/lib/auth";
+import { upsertUserFromGoogle } from "~/lib/user-provisioning";
 import { CAL_STATE_PREFIX } from "~/routes/oauth.calendar.google.start";
 import { handleCalendarLinkCallback } from "~/routes/oauth.calendar.google.callback";
 
@@ -133,77 +133,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     return new Response(null, { status: 302, headers });
   }
 
-  let user;
-  let authType: string;
-  let redirectTo: string;
-
-  if (googleUser.email.endsWith("@dali.dartmouth.edu")) {
-    // DALI member flow
-    user = await prisma.user.upsert({
-      where: { daliEmail: googleUser.email },
-      update: { firstName: googleUser.firstName, lastName: googleUser.lastName },
-      create: {
-        daliEmail: googleUser.email,
-        firstName: googleUser.firstName,
-        lastName: googleUser.lastName,
-      },
-    });
-
-    // Ensure a DALIMember record exists for this DALI user.
-    const existingMember = await prisma.dALIMember.findFirst({
-      where: { OR: [{ userId: user.id }, { daliEmail: googleUser.email }] },
-    });
-    if (existingMember) {
-      if (!existingMember.userId) {
-        await prisma.dALIMember.update({
-          where: { id: existingMember.id },
-          data: { userId: user.id },
-        });
-      }
-    } else {
-      await prisma.dALIMember.create({
-        data: { userId: user.id, daliEmail: googleUser.email },
-      });
-    }
-
-    authType = "member";
-    redirectTo = "/hiring/reviewer";
-  } else if (googleUser.email.endsWith("@dartmouth.edu")) {
-    // Dartmouth student via Google (non-DALI email)
-    user = await prisma.user.upsert({
-      where: { dartmouthEmail: googleUser.email },
-      update: { firstName: googleUser.firstName, lastName: googleUser.lastName },
-      create: {
-        dartmouthEmail: googleUser.email,
-        firstName: googleUser.firstName,
-        lastName: googleUser.lastName,
-      },
-    });
-    authType = "dartmouth";
-    redirectTo = "/portal";
-  } else {
-    // External partner — any Google account
-    // Use a findFirst+create pattern since there's no unique constraint on generic emails
-    let existing = await prisma.user.findFirst({
-      where: { dartmouthEmail: googleUser.email },
-    });
-    if (existing) {
-      user = await prisma.user.update({
-        where: { id: existing.id },
-        data: { firstName: googleUser.firstName, lastName: googleUser.lastName },
-      });
-    } else {
-      user = await prisma.user.create({
-        data: {
-          dartmouthEmail: googleUser.email,
-          firstName: googleUser.firstName,
-          lastName: googleUser.lastName,
-        },
-      });
-    }
-    authType = "partner";
-    redirectTo = "/portal";
-  }
+  const { user, authType } = await upsertUserFromGoogle(googleUser);
+  const redirectTo = authType === "member" ? "/hiring/reviewer" : "/portal";
 
   // Issue session and set cookie
   const session = await issueSession({

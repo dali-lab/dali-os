@@ -4,8 +4,8 @@ import {
   getOAuthSession,
   generateAuthorizationCode,
   exchangeGoogleCode,
-  OAuthError,
 } from "~/lib/oauth";
+import { upsertUserFromGoogle } from "~/lib/user-provisioning";
 
 export async function action() {
   return new Response("Method not allowed", { status: 405 });
@@ -53,8 +53,10 @@ export async function loader({ request }: Route.LoaderArgs) {
     });
   }
 
-  // enforce email domain for DALI members
-  // note: technically done by Google because of internal project settings, but enforced here also
+  // Enforce the client's requiredAccountType. Today the only check is
+  // "member must use @dali.dartmouth.edu". When the OAuthClient registry
+  // lands (see dali-os-mcp.md), this becomes a generic check against
+  // `client.requiredAccountType` and `client.requireMembership`.
   if (
     session.accountType === "member" &&
     !googleUser.email.endsWith("@dali.dartmouth.edu")
@@ -70,29 +72,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     });
   }
 
-  // upsert user (and persist Google tokens for Calendar API access)
-  const tokenExpiresAt = googleUser.expiresIn
-    ? new Date(Date.now() + googleUser.expiresIn * 1000)
-    : null;
-
-  const user = await prisma.user.upsert({
-    where: { daliEmail: googleUser.email },
-    update: {
-      firstName: googleUser.firstName,
-      lastName: googleUser.lastName,
-      ...(googleUser.accessToken ? { googleAccessToken: googleUser.accessToken } : {}),
-      ...(googleUser.refreshToken ? { googleRefreshToken: googleUser.refreshToken } : {}),
-      ...(tokenExpiresAt ? { googleTokenExpiresAt: tokenExpiresAt } : {}),
-    },
-    create: {
-      daliEmail: googleUser.email,
-      firstName: googleUser.firstName,
-      lastName: googleUser.lastName,
-      googleAccessToken: googleUser.accessToken,
-      googleRefreshToken: googleUser.refreshToken,
-      googleTokenExpiresAt: tokenExpiresAt,
-    },
-  });
+  const { user } = await upsertUserFromGoogle(googleUser);
 
   // if member needs CAS link → chain to CAS
   if (session.accountType === "member" && !user.netId) {

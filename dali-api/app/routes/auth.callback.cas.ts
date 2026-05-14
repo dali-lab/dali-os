@@ -1,10 +1,10 @@
 import type { Route } from "./+types/auth.callback.cas";
-import { prisma } from "~/lib/db";
 import { validateCasTicket } from "~/lib/auth";
 import { issueSession } from "~/lib/session";
 import { setSessionCookie } from "~/lib/cookies";
 import { getClientIp } from "~/lib/request-meta";
 import { logAuditEvent } from "~/lib/audit";
+import { upsertUserFromCas } from "~/lib/user-provisioning";
 
 export async function action() {
   return new Response("Method not allowed", { status: 405 });
@@ -28,7 +28,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     });
   }
 
-  // Validate CAS ticket
   let casUser;
   try {
     casUser = await validateCasTicket(ticket, `${apiBase}/auth/callback/cas`);
@@ -44,24 +43,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     });
   }
 
-  // Upsert user with CAS-derived info
-  const dartmouthEmail = `${casUser.netId}@dartmouth.edu`;
-  const user = await prisma.user.upsert({
-    where: { netId: casUser.netId },
-    update: {
-      firstName: casUser.firstName,
-      lastName: casUser.lastName,
-      dartmouthEmail,
-    },
-    create: {
-      netId: casUser.netId,
-      firstName: casUser.firstName,
-      lastName: casUser.lastName,
-      dartmouthEmail,
-    },
-  });
+  const { user } = await upsertUserFromCas(casUser);
 
-  // Issue session and set cookie
   const session = await issueSession({
     userId: user.id,
     userAgent: request.headers.get("user-agent") ?? undefined,
