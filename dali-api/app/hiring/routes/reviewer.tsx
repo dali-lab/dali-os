@@ -27,7 +27,7 @@ function isoToLocalMidnightInTz(iso: string, timezone: string): Date {
   return new Date(year, month - 1, day)
 }
 import { prisma } from '~/lib/db'
-import { requireAuth, withAuth } from '~/lib/auth'
+import { requireAuth } from "~/lib/auth";
 import { inReviewPipelineFilter } from '~/hiring/lib/application-pipeline-filter'
 import type { Route } from './+types/reviewer'
 
@@ -48,24 +48,24 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   const auth = await requireAuth(request)
-  if (!auth.ok) return withAuth(auth, empty)
+  if (!auth.ok) return empty
 
   const member = await prisma.dALIMember.findFirst({ where: { userId: auth.user.sub } })
-  if (!member) return withAuth(auth, { ...empty, reviewerUserId: auth.user.sub })
+  if (!member) return { ...empty, reviewerUserId: auth.user.sub }
 
   // Anchor on the single active cycle (invariant: at most one cycle is in
   // Open/UnderReview at a time). Older code here picked "most recent cycle
   // that ever had an Open/UnderReview status update", which matched completed
   // cycles that had historically passed through UnderReview.
   const active = await getActiveCycle()
-  if (!active) return withAuth(auth, { ...empty, reviewerUserId: auth.user.sub })
+  if (!active) return { ...empty, reviewerUserId: auth.user.sub }
 
   // Fetch all CycleReviewer records for this member in this cycle (may span multiple domains)
   const myReviewerIds = await prisma.cycleReviewer.findMany({
     where: { daliMemberId: member.id, applicationCycleId: active.id },
     select: { id: true, domainId: true },
   })
-  if (myReviewerIds.length === 0) return withAuth(auth, { ...empty, reviewerUserId: auth.user.sub })
+  if (myReviewerIds.length === 0) return { ...empty, reviewerUserId: auth.user.sub }
   const reviewerIds = myReviewerIds.map(r => r.id)
   const myDomainIds = Array.from(new Set(myReviewerIds.map(r => r.domainId)))
 
@@ -127,7 +127,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Only load when signed — the session cards show applicant names.
   // Initial sessions are blinded; Final sessions show real names.
   if (confidentialityRequired) {
-    return withAuth(auth, {
+    return {
       activeCycle: { id: active.id, name: active.name },
       currentStage,
       reviewerUserId: auth.user.sub,
@@ -138,7 +138,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       delibsSessions: [],
       delibsApplications: [],
       confidentialityRequired,
-    })
+    }
   }
 
   const delibsSessionsRaw = await prisma.delibsSession.findMany({
@@ -217,7 +217,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const delibsApplications = Array.from(hydratedDaIds).map(id => daIdToSummary.get(id));
 
-  return withAuth(auth, {
+  return {
       activeCycle: { id: active.id, name: active.name },
       currentStage,
       reviewerUserId: auth.user.sub,
@@ -228,7 +228,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       delibsSessions,
       delibsApplications,
       confidentialityRequired: null as null | "no_agreement" | "unsigned",
-    })
+    }
 }
 
 export default function ReviewerDashboard() {

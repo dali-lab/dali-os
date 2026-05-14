@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.interviews.$id.location";
 import { prisma } from "~/lib/db";
-import { requireAuth, withAuth } from "~/lib/auth";
+import { requireAuth } from "~/lib/auth";
 import { hasCycleAccess } from "~/lib/roles";
 // import { provisionZoomMeeting, deprovisionZoomMeeting } from "~/lib/zoom"; // S2S Zoom not configured yet
 import { sendLocationChangeEmails } from "~/hiring/lib/interview-emails";
@@ -12,21 +12,21 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!auth.ok) return auth.response;
 
   if (request.method !== "PATCH") {
-    return withAuth(auth, Response.json({ error: "Method not allowed" }, { status: 405 }));
+    return Response.json({ error: "Method not allowed" }, { status: 405 });
   }
 
   const body = await request.json();
   const { location, meetingUrl } = body;
 
   if (!location || !VALID_LOCATIONS.includes(location)) {
-    return withAuth(auth, Response.json(
+    return Response.json(
       { error: `location must be one of: ${VALID_LOCATIONS.join(", ")}` },
       { status: 400 },
-    ));
+    );
   }
 
   if (meetingUrl !== undefined && typeof meetingUrl !== "string") {
-    return withAuth(auth, Response.json({ error: "meetingUrl must be a string" }, { status: 400 }));
+    return Response.json({ error: "meetingUrl must be a string" }, { status: 400 });
   }
 
   const interview = await prisma.interview.findUnique({
@@ -34,18 +34,18 @@ export async function action({ request, params }: Route.ActionArgs) {
   });
 
   if (!interview) {
-    return withAuth(auth, Response.json({ error: "Interview not found" }, { status: 404 }));
+    return Response.json({ error: "Interview not found" }, { status: 404 });
   }
 
   if (!(await hasCycleAccess(auth.user.sub, interview.applicationCycleId))) {
-    return withAuth(auth, Response.json({ error: "Forbidden" }, { status: 403 }));
+    return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 
   if (interview.status !== "Scheduled") {
-    return withAuth(auth, Response.json(
+    return Response.json(
       { error: "Can only change location of scheduled interviews" },
       { status: 400 },
-    ));
+    );
   }
 
   // Conflict check + update in one serializable transaction to prevent
@@ -83,13 +83,13 @@ export async function action({ request, params }: Route.ActionArgs) {
     // Best-effort: notify applicant + interviewers of location change
     sendLocationChangeEmails(interview.id, interview.domainApplicationId).catch(() => {});
 
-    return withAuth(auth, Response.json(updated));
+    return Response.json(updated);
   } catch (err: any) {
     if (err?.message === "__POD_OCCUPIED__") {
-      return withAuth(auth, Response.json(
+      return Response.json(
         { error: `${location === "PodAppa" ? "Pod Appa" : "Pod Momo"} is already occupied at this time` },
         { status: 409 },
-      ));
+      );
     }
     throw err;
   }

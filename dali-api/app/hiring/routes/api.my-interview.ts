@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.my-interview";
 import { prisma } from "~/lib/db";
-import { requireAuth, withAuth } from "~/lib/auth";
+import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -24,5 +24,5 @@ export async function loader({ request }: Route.LoaderArgs) {
     orderBy: { startTime: "desc" },
   });
 
-  return withAuth(auth, withCors(request, Response.json(interview)));
+  return withCors(request, Response.json(interview));
 }

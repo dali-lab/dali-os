@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { redirect, useLoaderData, useFetcher } from "react-router";
 import type { Route } from "./+types/portal.apply";
 import { prisma } from "~/lib/db";
-import { requireAuth, withAuth } from "~/lib/auth";
+import { requireAuth } from "~/lib/auth";
 import { sendEmail } from "~/lib/gmail";
 import { renderForSlot, notificationSlot } from "~/hiring/lib/email-variables";
 import { getActiveCycle } from "~/hiring/lib/cycles";
@@ -29,11 +29,11 @@ const GMAIL_USER = "applications@dali.dartmouth.edu";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return withAuth(auth, redirect("/login"));
+  if (!auth.ok) return redirect("/login");
 
   const active = await getActiveCycle();
   if (!active || active.currentStatus !== "Open") {
-    return withAuth(auth, redirect("/portal"));
+    return redirect("/portal");
   }
 
   // Load cycle with its challenge versions and hiring domains
@@ -53,14 +53,14 @@ export async function loader({ request }: Route.LoaderArgs) {
     },
   });
 
-  if (!cycle) return withAuth(auth, redirect("/portal"));
+  if (!cycle) return redirect("/portal");
 
   // General form = ChallengeVersion with domainId: null linked to this cycle
   const generalCvac = cycle.challengeVersions.find(
     cvc => cvc.challengeVersion.domainId === null,
   );
 
-  if (!generalCvac) return withAuth(auth, redirect("/portal"));
+  if (!generalCvac) return redirect("/portal");
 
   const generalChallengeVersionId = generalCvac.challengeVersionId;
   const formQuestions = (generalCvac.challengeVersion.questions as unknown as Question[]) ?? [];
@@ -101,7 +101,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const draftStatus = draft?.statusUpdates[0]?.newStatus ?? null;
 
-  return withAuth(auth, {
+  return {
       cycleId: active.id,
       cycleName: active.name,
       closeDate: active.closeDate ? active.closeDate.toISOString() : null,
@@ -125,7 +125,7 @@ export async function loader({ request }: Route.LoaderArgs) {
             })),
           }
         : null,
-    });
+    };
 }
 
 // ─── Action ──────────────────────────────────────────────────────────────────
@@ -196,7 +196,7 @@ export async function action({ request }: Route.ActionArgs) {
       },
     });
 
-    return withAuth(auth, {
+    return {
           draft: {
             id: application.id,
             answers: application.answers,
@@ -210,7 +210,7 @@ export async function action({ request }: Route.ActionArgs) {
               answers: da.answers,
             })),
           },
-        });
+        };
   }
 
   if (intent === "update-domains") {
@@ -299,7 +299,7 @@ export async function action({ request }: Route.ActionArgs) {
       },
     });
 
-    return withAuth(auth, {
+    return {
           draft: updatedApp ? {
             id: updatedApp.id,
             answers: updatedApp.answers,
@@ -311,7 +311,7 @@ export async function action({ request }: Route.ActionArgs) {
               answers: da.answers,
             })),
           } : null,
-        });
+        };
   }
 
   if (intent === "save-draft") {
@@ -335,7 +335,7 @@ export async function action({ request }: Route.ActionArgs) {
       });
     }
 
-    return withAuth(auth, { saved: true });
+    return { saved: true };
   }
 
   if (intent === "submit") {
@@ -362,7 +362,7 @@ export async function action({ request }: Route.ActionArgs) {
       },
     });
     if (!application) {
-      return withAuth(auth, Response.json({ error: "Application not found" }, { status: 404 }));
+      return Response.json({ error: "Application not found" }, { status: 404 });
     }
     const generalQuestions =
       (application.generalChallengeVersion.questions as unknown as Question[]) ?? [];
@@ -384,7 +384,7 @@ export async function action({ request }: Route.ActionArgs) {
       Object.assign(wordCountErrors, validateWordLimits(questions, da.answers));
     }
     if (Object.keys(wordCountErrors).length > 0) {
-      return withAuth(auth, { wordCountErrors });
+      return { wordCountErrors };
     }
 
     // Required-question validation. Client gates the review modal on this, but
@@ -412,9 +412,9 @@ export async function action({ request }: Route.ActionArgs) {
       }
     }
     if (missingRequired.length > 0) {
-      return withAuth(auth, {
+      return {
         error: `Please answer all required questions before submitting (${missingRequired.length} unanswered).`,
-      });
+      };
     }
 
     // Save final answers
@@ -469,7 +469,7 @@ export async function action({ request }: Route.ActionArgs) {
     }
 
     if (Object.keys(urlWarnings).length > 0) {
-      return withAuth(auth, { urlWarnings });
+      return { urlWarnings };
     }
 
     // Create Submitted status update only on first submission
@@ -525,10 +525,10 @@ export async function action({ request }: Route.ActionArgs) {
 
     // Signal first-time submission so the portal can play a one-shot confetti.
     // Subsequent edit-saves keep the plain redirect so the animation does not replay.
-    return withAuth(auth, redirect(existingSubmitted ? "/portal" : "/portal?just-submitted=1"));
+    return redirect(existingSubmitted ? "/portal" : "/portal?just-submitted=1");
   }
 
-  return withAuth(auth, { error: "Unknown intent" });
+  return { error: "Unknown intent" };
 }
 
 // ─── Domain Colors ──────────────────────────────────────────────────────────

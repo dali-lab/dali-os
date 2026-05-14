@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.check-url";
 import { z } from "zod";
-import { requireAuth, withAuth } from "~/lib/auth";
+import { requireAuth } from "~/lib/auth";
 import { checkGitHubUrl, checkFigmaUrl, checkDriveUrl } from "~/hiring/lib/submission-check";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { parseJson } from "~/lib/validate";
@@ -18,10 +18,10 @@ export async function action({ request }: Route.ActionArgs) {
   if (!auth.ok) return auth.response;
 
   const userLimited = checkRateLimit(request, { max: RATE_LIMIT_MAX, windowMs: RATE_LIMIT_WINDOW_MS }, auth.user.sub);
-  if (userLimited) return withAuth(auth, userLimited);
+  if (userLimited) return userLimited;
 
   const body = await parseJson(request, CheckUrlSchema);
-  if (body instanceof Response) return withAuth(auth, body);
+  if (body instanceof Response) return body;
   const { url, type } = body;
 
   const result =
@@ -30,5 +30,5 @@ export async function action({ request }: Route.ActionArgs) {
       : type === "drive_url"
         ? await checkDriveUrl(url)
         : await checkGitHubUrl(url);
-  return withAuth(auth, Response.json(result));
+  return Response.json(result);
 }

@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.decisions.$id.release";
 import { prisma } from "~/lib/db";
-import { requireAuth, withAuth } from "~/lib/auth";
+import { requireAuth } from "~/lib/auth";
 import { isHiringLead } from "~/lib/roles";
 import { sendEmail } from "~/lib/gmail";
 import { renderForSlot, decisionSlot } from "~/hiring/lib/email-variables";
@@ -14,34 +14,34 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!auth.ok) return auth.response;
 
   if (request.method !== "POST") {
-    return withAuth(auth, Response.json({ error: "Method not allowed" }, { status: 405 }));
+    return Response.json({ error: "Method not allowed" }, { status: 405 });
   }
 
   if (!(await isHiringLead(auth.user.sub))) {
-    return withAuth(auth, Response.json(
+    return Response.json(
           { error: "Only hiring leads can release decisions" },
           { status: 403 }
-        ));
+        );
   }
 
   const member = await prisma.dALIMember.findFirst({
     where: { userId: auth.user.sub },
   });
   if (!member) {
-    return withAuth(auth, Response.json({ error: "Not a DALI member" }, { status: 403 }));
+    return Response.json({ error: "Not a DALI member" }, { status: 403 });
   }
 
   const decision = await prisma.decision.findUnique({
     where: { id: params.id },
   });
   if (!decision) {
-    return withAuth(auth, Response.json({ error: "Decision not found" }, { status: 404 }));
+    return Response.json({ error: "Decision not found" }, { status: 404 });
   }
   if (decision.stage !== "Final") {
-    return withAuth(auth, Response.json(
+    return Response.json(
           { error: "Only Final decisions can be released" },
           { status: 409 }
-        ));
+        );
   }
 
   const domainApp = await prisma.domainApplication.findUnique({
@@ -64,17 +64,17 @@ export async function action({ request, params }: Route.ActionArgs) {
     },
   });
   if (!domainApp) {
-    return withAuth(auth, Response.json(
+    return Response.json(
           { error: "Domain application not found" },
           { status: 404 }
-        ));
+        );
   }
 
   const gate = await requireApiSignedOrForbidden(
     auth.user.sub,
     domainApp.application.applicationCycleId,
   );
-  if (gate) return withAuth(auth, gate);
+  if (gate) return gate;
 
   const binding = await prisma.cycleDecisionEmail.findUnique({
     where: {
@@ -86,12 +86,12 @@ export async function action({ request, params }: Route.ActionArgs) {
     include: { emailTemplateVersion: true },
   });
   if (!binding) {
-    return withAuth(auth, Response.json(
+    return Response.json(
           {
             error: `No email template is bound to ${decision.type} in this cycle. Bind one on the Setup tab before releasing.`,
           },
           { status: 409 }
-        ));
+        );
   }
 
   const released = await prisma.decision.create({
@@ -159,5 +159,5 @@ export async function action({ request, params }: Route.ActionArgs) {
     request,
   });
 
-  return withAuth(auth, Response.json(released, { status: 201 }));
+  return Response.json(released, { status: 201 });
 }

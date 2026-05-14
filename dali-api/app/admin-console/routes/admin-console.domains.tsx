@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { redirect, useLoaderData, useFetcher } from "react-router";
 import type { Route } from "./+types/admin-console.domains";
 import { prisma } from "~/lib/db";
-import { requireAuth, withAuth } from "~/lib/auth";
+import { requireAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
 import { describeDomainUsage } from "./api.domains.$domainId";
 import { ChevronDown, Trash2, Plus } from "lucide-react";
@@ -17,9 +17,9 @@ export const meta: Route.MetaFunction = () => [{ title: "Domains · Admin consol
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return withAuth(auth, redirect("/login"));
+  if (!auth.ok) return redirect("/login");
   const admin = await isAdmin(auth.user.sub);
-  if (!admin) return withAuth(auth, redirect("/admin-console/members"));
+  if (!admin) return redirect("/admin-console/members");
 
   const [members, domains] = await Promise.all([
     prisma.dALIMember.findMany({
@@ -54,28 +54,28 @@ export async function loader({ request }: Route.LoaderArgs) {
     }),
   ]);
 
-  return withAuth(auth, { members, domains });
+  return { members, domains };
 }
 
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
   const admin = await isAdmin(auth.user.sub);
-  if (!admin) return withAuth(auth, Response.json({ error: "Forbidden" }, { status: 403 }));
+  if (!admin) return Response.json({ error: "Forbidden" }, { status: 403 });
 
   const formData = await request.formData();
   const intent = formData.get("intent") as string;
 
   if (intent === "create-domain") {
     const name = String(formData.get("name") ?? "").trim();
-    if (!name) return withAuth(auth, Response.json({ error: "Name is required" }, { status: 400 }));
+    if (!name) return Response.json({ error: "Name is required" }, { status: 400 });
     await prisma.domain.create({ data: { name } });
-    return withAuth(auth, null);
+    return null;
   }
 
   if (intent === "delete-domain") {
     const domainId = String(formData.get("domainId") ?? "");
-    if (!domainId) return withAuth(auth, Response.json({ error: "domainId is required" }, { status: 400 }));
+    if (!domainId) return Response.json({ error: "domainId is required" }, { status: 400 });
 
     const result = await prisma.$transaction(async (tx) => {
       const domain = await tx.domain.findUnique({
@@ -101,31 +101,31 @@ export async function action({ request }: Route.ActionArgs) {
     });
 
     if (result.kind === "not-found") {
-      return withAuth(auth, Response.json({ error: "Domain not found" }, { status: 404 }));
+      return Response.json({ error: "Domain not found" }, { status: 404 });
     }
     if (result.kind === "in-use") {
-      return withAuth(auth, Response.json(
+      return Response.json(
               { error: `Cannot delete: domain is in use by ${result.blocking.join(", ")}.` },
               { status: 409 },
-            ));
+            );
     }
-    return withAuth(auth, null);
+    return null;
   }
 
   if (intent === "add-domain-lead") {
     const memberId = formData.get("memberId") as string;
     const domainId = formData.get("domainId") as string;
     await prisma.domainLeadAssignment.create({ data: { memberId, domainId } });
-    return withAuth(auth, null);
+    return null;
   }
 
   if (intent === "remove-domain-lead") {
     const assignmentId = formData.get("assignmentId") as string;
     await prisma.domainLeadAssignment.delete({ where: { id: assignmentId } });
-    return withAuth(auth, null);
+    return null;
   }
 
-  return withAuth(auth, null);
+  return null;
 }
 
 function AddDomainLeadForMemberButton({ domainId, member, onAdded }: { domainId: string; member: Member; onAdded: () => void }) {

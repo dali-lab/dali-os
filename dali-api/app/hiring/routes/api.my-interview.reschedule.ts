@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.my-interview.reschedule";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
-import { requireAuth, withAuth } from "~/lib/auth";
+import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import { assignInterviewers } from "~/hiring/lib/scheduling";
@@ -27,11 +27,11 @@ export async function action({ request }: Route.ActionArgs) {
   if (!auth.ok) return withCors(request, auth.response);
 
   if (request.method !== "POST") {
-    return withAuth(auth, withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 })));
+    return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
 
   const body = await parseJson(request, RescheduleSchema);
-  if (body instanceof Response) return withAuth(auth, withCors(request, body));
+  if (body instanceof Response) return withCors(request, body);
   const { newStart, newEnd, domainApplicationId, mode } = body;
   const interviewMode = mode === "in-person" ? "in-person" as const : "online" as const;
 
@@ -115,14 +115,14 @@ export async function action({ request }: Route.ActionArgs) {
     sendInterviewCancelEmails(oldInterviewId, domainApplicationId).catch(() => {});
     sendInterviewInviteEmails(newInterview.id, domainApplicationId).catch(() => {});
 
-    return withAuth(auth, withCors(request, Response.json(newInterview, { status: 201 })));
+    return withCors(request, Response.json(newInterview, { status: 201 }));
   } catch (err: any) {
     if (err?.message === "__NO_ACTIVE_INTERVIEW__") {
-      return withAuth(auth, withCors(request, Response.json({ error: "No active interview found" }, { status: 404 })));
+      return withCors(request, Response.json({ error: "No active interview found" }, { status: 404 }));
     }
     if (err?.message === "__TOO_LATE_TO_RESCHEDULE__") {
-      return withAuth(auth, withCors(request, Response.json({ error: "Too late to reschedule — please contact the DALI team" }, { status: 403 })));
+      return withCors(request, Response.json({ error: "Too late to reschedule — please contact the DALI team" }, { status: 403 }));
     }
-    return withAuth(auth, withCors(request, Response.json({ error: err?.message ?? "Failed to reschedule" }, { status: 409 })));
+    return withCors(request, Response.json({ error: err?.message ?? "Failed to reschedule" }, { status: 409 }));
   }
 }

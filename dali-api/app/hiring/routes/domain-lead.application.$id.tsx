@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/domain-lead.application.$id";
 import { prisma } from "~/lib/db";
-import { requireAuth, withAuth } from "~/lib/auth";
+import { requireAuth } from "~/lib/auth";
 import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
 import { presignAnswers } from "~/hiring/lib/presign";
 import { ChevronDown } from "lucide-react";
@@ -55,7 +55,7 @@ export const meta: Route.MetaFunction = ({ data }) => {
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return withAuth(auth, redirect("/login"));
+  if (!auth.ok) return redirect("/login");
 
   const member = await prisma.dALIMember.findFirst({
     where: { userId: auth.user.sub },
@@ -63,7 +63,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
 
   if (!member || member.domainLeadAssignments.length === 0) {
-    return withAuth(auth, redirect("/hiring/reviewer"));
+    return redirect("/hiring/reviewer");
   }
 
   const leadDomainIds = member.domainLeadAssignments.map((a) => a.domainId);
@@ -113,8 +113,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
   });
 
-  if (!da) return withAuth(auth, redirect("/hiring/domain-lead"));
-  if (!leadDomainIds.includes(da.challengeVersion.domainId!)) return withAuth(auth, redirect("/hiring/domain-lead"));
+  if (!da) return redirect("/hiring/domain-lead");
+  if (!leadDomainIds.includes(da.challengeVersion.domainId!)) return redirect("/hiring/domain-lead");
 
   const confRedirect = await requirePageSignedOrRedirect(
     auth.user.sub,
@@ -162,13 +162,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     da.answers as Record<string, string>,
   );
 
-  return withAuth(auth, {
+  return {
       domainApplication: { ...da, answers: presignedChallengeAnswers },
       application: { ...da.application, answers: presignedGeneralAnswers },
       inferredStatus,
       domainRubricCriteria: (dac?.rubricVersion?.criteria as any[]) ?? [],
       generalRubricCriteria: (generalRubric?.generalRubricVersion?.criteria as any[]) ?? [],
-    });
+    };
 }
 
 export default function DomainLeadApplicationView() {

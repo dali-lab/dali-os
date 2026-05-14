@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.reviews.$id";
 import { prisma } from "~/lib/db";
-import { requireAuth, withAuth } from "~/lib/auth";
+import { requireAuth } from "~/lib/auth";
 import { isHiringLead, isDomainLead } from "~/lib/roles";
 import { safeJson } from "~/lib/safe-json";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
@@ -153,7 +153,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     include: { cycleReviewer: true },
   });
   if (!review) {
-    return withAuth(auth, Response.json({ error: "Review not found" }, { status: 404 }));
+    return Response.json({ error: "Review not found" }, { status: 404 });
   }
 
   const gate = await requireApiSignedOrForbidden(
@@ -164,7 +164,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   if (request.method === "PATCH") {
     if (review.submittedAt) {
-      return withAuth(auth, Response.json({ error: "Cannot edit a submitted review. Unsubmit first." }, { status: 409 }));
+      return Response.json({ error: "Cannot edit a submitted review. Unsubmit first." }, { status: 409 });
     }
 
     const member = await prisma.dALIMember.findFirst({ where: { userId: auth.user.sub } });
@@ -172,11 +172,11 @@ export async function action({ request, params }: Route.ActionArgs) {
     const isLead = await isDomainLead(auth.user.sub);
     const isHL = await isHiringLead(auth.user.sub);
     if (!isOwner && !isLead && !isHL) {
-      return withAuth(auth, Response.json({ error: "Forbidden" }, { status: 403 }));
+      return Response.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const body = await safeJson<Record<string, unknown>>(request);
-    if (body instanceof Response) return withAuth(auth, body);
+    if (body instanceof Response) return body;
     const data: Record<string, unknown> = {};
     if (body.scores !== undefined) data.scores = body.scores;
     if (body.feedback !== undefined) data.feedback = body.feedback;
@@ -186,29 +186,29 @@ export async function action({ request, params }: Route.ActionArgs) {
 
     const result = validateReviewPatch(body);
     if (!result.ok) {
-      return withAuth(auth, Response.json({ error: result.error }, { status: 400 }));
+      return Response.json({ error: result.error }, { status: 400 });
     }
     const updated = await prisma.applicationReview.update({
       where: { id: params.id },
       data: result.data,
     });
 
-    return withAuth(auth, Response.json(updated));
+    return Response.json(updated);
   }
 
   if (request.method === "DELETE") {
     const isLead = await isDomainLead(auth.user.sub);
     const isHL = await isHiringLead(auth.user.sub);
     if (!isLead && !isHL) {
-      return withAuth(auth, Response.json({ error: "Forbidden" }, { status: 403 }));
+      return Response.json({ error: "Forbidden" }, { status: 403 });
     }
 
     // Submitted reviews are allowed to be deleted by domain/hiring leads —
     // the client is expected to confirm with the user first since this
     // destroys the submitted scores/feedback.
     await prisma.applicationReview.delete({ where: { id: params.id } });
-    return withAuth(auth, Response.json({ deleted: true }));
+    return Response.json({ deleted: true });
   }
 
-  return withAuth(auth, Response.json({ error: "Method not allowed" }, { status: 405 }));
+  return Response.json({ error: "Method not allowed" }, { status: 405 });
 }

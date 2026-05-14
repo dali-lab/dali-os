@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { redirect, useLoaderData, useRevalidator, useSearchParams, Link } from "react-router";
 import type { Route } from "./+types/portal";
 import { prisma } from "~/lib/db";
-import { requireAuth, withAuth } from "~/lib/auth";
+import { requireAuth } from "~/lib/auth";
 import { getActiveCycle } from "~/hiring/lib/cycles";
 import { sendExtensionNoticeIfDue } from "~/hiring/lib/extension-notice";
 import {
@@ -22,7 +22,7 @@ export const meta: Route.MetaFunction = () => [{ title: "Applicant portal · DAL
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return withAuth(auth, redirect("/login"));
+  if (!auth.ok) return redirect("/login");
 
   const emptyResult = {
     cycleName: null as string | null,
@@ -68,7 +68,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       orderBy: { createdAt: "desc" },
     });
 
-    if (!recentApp) return withAuth(auth, emptyResult);
+    if (!recentApp) return emptyResult;
 
     cycleId = recentApp.applicationCycleId;
     cycleName = recentApp.applicationCycle.name;
@@ -131,7 +131,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     };
   });
 
-  return withAuth(auth, {
+  return {
       cycleName,
       cycleId,
       cycleStatus,
@@ -141,7 +141,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       slotDurationMinutes: config?.slotDurationMinutes ?? 30,
       hasApplication: !!application,
       applicationStatus: appStatus,
-    });
+    };
 }
 
 // ─── Types ───────────────────────────────────────────────────────────────────

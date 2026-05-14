@@ -3,7 +3,7 @@
 // Must be visited while logged in as an admin.
 // After Google redirects back, /admin/authorize-gmail/callback stores the refresh token.
 
-import { requireAuth, withAuth } from '~/lib/auth'
+import { requireAuth } from "~/lib/auth";
 import { isHiringLead } from '~/lib/roles'
 import { randomBytes } from 'node:crypto'
 
@@ -19,11 +19,11 @@ const SCOPES = [
 export async function loader({ request }: { request: Request }) {
   const auth = await requireAuth(request)
   if (!auth.ok) {
-    return withAuth(auth, new Response(null, { status: 302, headers: { Location: '/login' } }))
+    return new Response(null, { status: 302, headers: { Location: '/login' } })
   }
 
   if (!(await isHiringLead(auth.user.sub))) {
-    return withAuth(auth, new Response(null, { status: 302, headers: { Location: '/' } }))
+    return new Response(null, { status: 302, headers: { Location: '/' } })
   }
 
   const apiBase = process.env.API_BASE_URL ?? 'http://localhost:3001'
@@ -43,11 +43,11 @@ export async function loader({ request }: { request: Request }) {
 
   const stateCookie = `${GMAIL_STATE_COOKIE}=${state}; Path=/admin/authorize-gmail; Max-Age=600; HttpOnly; SameSite=Lax`
 
-  return withAuth(auth, new Response(null, {
+  return new Response(null, {
       status: 302,
       headers: {
         'Set-Cookie': stateCookie,
         Location: `https://accounts.google.com/o/oauth2/v2/auth?${params}`,
       },
-    }))
+    })
 }

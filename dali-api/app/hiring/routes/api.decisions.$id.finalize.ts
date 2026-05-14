@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.decisions.$id.finalize";
 import { prisma } from "~/lib/db";
-import { requireAuth, withAuth } from "~/lib/auth";
+import { requireAuth } from "~/lib/auth";
 import { isHiringLead, isDomainLead } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
@@ -10,18 +10,18 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!auth.ok) return auth.response;
 
   if (request.method !== "POST") {
-    return withAuth(auth, Response.json({ error: "Method not allowed" }, { status: 405 }));
+    return Response.json({ error: "Method not allowed" }, { status: 405 });
   }
 
   const hiringLead = await isHiringLead(auth.user.sub);
   const domainLead = await isDomainLead(auth.user.sub);
   if (!hiringLead && !domainLead) {
-    return withAuth(auth, Response.json({ error: "Forbidden" }, { status: 403 }));
+    return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const member = await prisma.dALIMember.findFirst({ where: { userId: auth.user.sub } });
   if (!member) {
-    return withAuth(auth, Response.json({ error: "Not a DALI member" }, { status: 403 }));
+    return Response.json({ error: "Not a DALI member" }, { status: 403 });
   }
 
   const decision = await prisma.decision.findUnique({
@@ -29,10 +29,10 @@ export async function action({ request, params }: Route.ActionArgs) {
     include: { domainApplication: { select: { application: { select: { applicationCycleId: true } } } } },
   });
   if (!decision) {
-    return withAuth(auth, Response.json({ error: "Decision not found" }, { status: 404 }));
+    return Response.json({ error: "Decision not found" }, { status: 404 });
   }
   if (decision.stage !== "Draft") {
-    return withAuth(auth, Response.json({ error: "Only Draft decisions can be finalized" }, { status: 409 }));
+    return Response.json({ error: "Only Draft decisions can be finalized" }, { status: 409 });
   }
 
   const gate = await requireApiSignedOrForbidden(
@@ -66,5 +66,5 @@ export async function action({ request, params }: Route.ActionArgs) {
     request,
   });
 
-  return withAuth(auth, Response.json(finalized, { status: 201 }));
+  return Response.json(finalized, { status: 201 });
 }

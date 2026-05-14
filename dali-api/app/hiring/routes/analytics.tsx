@@ -1,7 +1,7 @@
 import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/analytics";
 import { prisma } from "~/lib/db";
-import { requireAuth, withAuth } from "~/lib/auth";
+import { requireAuth } from "~/lib/auth";
 import { getUserRoles } from "~/lib/roles";
 import {
   inferDomainApplicationStatus,
@@ -53,10 +53,10 @@ const STATUS_ORDER: AnalyticsStatus[] = [
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return withAuth(auth, redirect("/login"));
+  if (!auth.ok) return redirect("/login");
 
   const roles = await getUserRoles(auth.user.sub);
-  if (!roles.isHiringLead && !roles.isDomainLead) return withAuth(auth, redirect("/"));
+  if (!roles.isHiringLead && !roles.isDomainLead) return redirect("/");
 
   // Cycles for the selector
   const allCycles = await prisma.applicationCycle.findMany({
@@ -73,7 +73,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   }));
 
   if (cycles.length === 0) {
-    return withAuth(auth, {
+    return {
       cycles: [],
       selectedCycleId: "",
       cycleStatus: "",
@@ -83,7 +83,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       slices: [],
       rows: [],
       confidentialityRequired: null as null | "no_agreement" | "unsigned",
-    });
+    };
   }
 
   const url = new URL(request.url);
@@ -136,7 +136,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     confState.status === "signed" ? null : confState.status;
 
   if (confidentialityRequired) {
-    return withAuth(auth, {
+    return {
       cycles,
       selectedCycleId: cycleId,
       cycleStatus,
@@ -146,7 +146,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       slices: [],
       rows: [],
       confidentialityRequired,
-    });
+    };
   }
 
   // ─── Fetch all selected domain applications with the relations needed
@@ -256,7 +256,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     .map(({ rawStatus: _r, ...rest }) => rest)
     .sort((a, b) => a.applicantName.localeCompare(b.applicantName));
 
-  return withAuth(auth, {
+  return {
     cycles,
     selectedCycleId: cycleId,
     cycleStatus,
@@ -266,7 +266,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     slices,
     rows,
     confidentialityRequired: null as null | "no_agreement" | "unsigned",
-  });
+  };
 }
 
 export default function AnalyticsDashboard() {

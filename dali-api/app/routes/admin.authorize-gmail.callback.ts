@@ -2,7 +2,7 @@
 // Receives the Google OAuth callback, exchanges the code for tokens,
 // and stores the refresh token on the applications@dali.dartmouth.edu user row.
 
-import { requireAuth, withAuth } from '~/lib/auth'
+import { requireAuth } from "~/lib/auth";
 import { isHiringLead } from '~/lib/roles'
 import { prisma } from '~/lib/db'
 
@@ -22,11 +22,11 @@ function parseCookies(request: Request): Record<string, string> {
 export async function loader({ request }: { request: Request }) {
   const auth = await requireAuth(request)
   if (!auth.ok) {
-    return withAuth(auth, new Response(null, { status: 302, headers: { Location: '/login' } }))
+    return new Response(null, { status: 302, headers: { Location: '/login' } })
   }
 
   if (!(await isHiringLead(auth.user.sub))) {
-    return withAuth(auth, new Response(null, { status: 302, headers: { Location: '/' } }))
+    return new Response(null, { status: 302, headers: { Location: '/' } })
   }
 
   const url = new URL(request.url)
@@ -41,19 +41,19 @@ export async function loader({ request }: { request: Request }) {
   const clearCookie = `${GMAIL_STATE_COOKIE}=; Path=/admin/authorize-gmail; Max-Age=0; HttpOnly; SameSite=Lax`
 
   if (error || !code || !state) {
-    return withAuth(auth, new Response(null, {
+    return new Response(null, {
           status: 302,
           headers: { 'Set-Cookie': clearCookie, Location: '/hiring/emails?gmail_error=auth_failed' },
-        }))
+        })
   }
 
   // CSRF check
   const cookies = parseCookies(request)
   if (cookies[GMAIL_STATE_COOKIE] !== state) {
-    return withAuth(auth, new Response(null, {
+    return new Response(null, {
           status: 302,
           headers: { 'Set-Cookie': clearCookie, Location: '/hiring/emails?gmail_error=state_mismatch' },
-        }))
+        })
   }
 
   // Exchange code for tokens
@@ -71,20 +71,20 @@ export async function loader({ request }: { request: Request }) {
 
   if (!tokenRes.ok) {
     console.error('Gmail token exchange failed:', await tokenRes.text())
-    return withAuth(auth, new Response(null, {
+    return new Response(null, {
           status: 302,
           headers: { 'Set-Cookie': clearCookie, Location: '/hiring/emails?gmail_error=token_exchange_failed' },
-        }))
+        })
   }
 
   const tokens = await tokenRes.json()
   const refreshToken = tokens.refresh_token as string | undefined
 
   if (!refreshToken) {
-    return withAuth(auth, new Response(null, {
+    return new Response(null, {
           status: 302,
           headers: { 'Set-Cookie': clearCookie, Location: '/hiring/emails?gmail_error=no_refresh_token' },
-        }))
+        })
   }
 
   // Store the refresh token on the applications@ user row (upsert in case it doesn't exist yet)
@@ -109,8 +109,8 @@ export async function loader({ request }: { request: Request }) {
     },
   })
 
-  return withAuth(auth, new Response(null, {
+  return new Response(null, {
       status: 302,
       headers: { 'Set-Cookie': clearCookie, Location: '/hiring/emails?gmail_authorized=1' },
-    }))
+    })
 }

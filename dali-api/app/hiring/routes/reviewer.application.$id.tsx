@@ -2,9 +2,9 @@ import { useState, useEffect, useRef } from 'react'
 import { Link, redirect, useLoaderData, useSubmit } from 'react-router'
 import { ArrowLeft, HelpCircle, X, Check } from 'lucide-react'
 import { prisma } from '~/lib/db'
-import { requireAuth, withAuth } from '~/lib/auth'
+import { requireAuth } from "~/lib/auth";
 import { hasCycleAccess } from '~/lib/roles'
-import { parseAccessToken } from '~/lib/cookies'
+import { parseSessionCookie } from '~/lib/cookies'
 import { requirePageSignedOrRedirect } from '~/hiring/lib/confidentiality'
 import { presignAnswers } from '~/hiring/lib/presign'
 import type { Route } from './+types/reviewer.application.$id'
@@ -23,7 +23,7 @@ export const meta: Route.MetaFunction = ({ data }) => {
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request)
-  if (!auth.ok) return withAuth(auth, redirect('/login'))
+  if (!auth.ok) return redirect('/login')
 
   const applicationBase = await prisma.application.findUniqueOrThrow({
     where: { id: params.id },
@@ -146,15 +146,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
 
   // Pass JWT for WebSocket auth
-  const collabToken = parseAccessToken(request)
+  const collabToken = parseSessionCookie(request)
   const userName = [reviewer.firstName, reviewer.lastName].filter(Boolean).join(' ') || auth.user.email
 
-  return withAuth(auth, { application, reviewer, existingReview: review, collabToken, userName })
+  return { application, reviewer, existingReview: review, collabToken, userName }
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request)
-  if (!auth.ok) return withAuth(auth, redirect('/login'))
+  if (!auth.ok) return redirect('/login')
 
   const formData = await request.formData()
   const intent = formData.get('intent') as string
@@ -179,7 +179,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
   }
 
-  return withAuth(auth, null)
+  return null
 }
 
 const RECOMMENDATIONS = ['Strong Hire', 'Hire', 'Lean Hire', 'Lean No Hire', 'No Hire'] as const

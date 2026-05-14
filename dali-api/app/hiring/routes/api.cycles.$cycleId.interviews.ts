@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.cycles.$cycleId.interviews";
 import { prisma } from "~/lib/db";
-import { requireAuth, withAuth } from "~/lib/auth";
+import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { hasCycleAccess } from "~/lib/roles";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
@@ -13,7 +13,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!auth.ok) return withCors(request, auth.response);
 
   if (!(await hasCycleAccess(auth.user.sub, params.cycleId!)))
-    return withAuth(auth, withCors(request, Response.json({ error: "Forbidden" }, { status: 403 })));
+    return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
 
   const gate = await requireApiSignedOrForbidden(auth.user.sub, params.cycleId!);
   if (gate) return withCors(request, gate);
@@ -45,5 +45,5 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     orderBy: { startTime: "asc" },
   });
 
-  return withAuth(auth, withCors(request, Response.json(interviews)));
+  return withCors(request, Response.json(interviews));
 }
