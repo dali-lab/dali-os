@@ -103,14 +103,19 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   // Google authentication flow
-  // redirect to google oauth with redirect_uri pointing to callback endpoint
+  // redirect to google oauth with redirect_uri pointing to callback endpoint.
+  //
+  // Scope is intentionally identity-only: this endpoint is the dali-os OAuth
+  // *provider* surface (the dali-os client gets back a session for dali-os),
+  // not the place where members grant Calendar / Gmail API access to dali-os.
+  // Those integrations have their own flows: /oauth/calendar/google/start and
+  // /admin/authorize-gmail.
   const googleParams = new URLSearchParams({
     client_id: process.env.GOOGLE_CLIENT_ID!,
     redirect_uri: `${apiBase}/oauth/callback/google`,
     response_type: "code",
-    scope: "openid email profile https://www.googleapis.com/auth/calendar.readonly",
+    scope: "openid email profile",
     state: session.id,
-    access_type: "offline",
     prompt: "select_account",
   });
   if (accountType === "member") {
