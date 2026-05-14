@@ -125,6 +125,9 @@ model User {
 
   // ─── Phase 1: Gmail integration (single per User) ─────────────────────────
   gmailIntegration GmailIntegration?
+  // ─── Notification relations ────────────────────────────────────────────────
+  receivedNotifications Notification[] @relation("NotificationRecipient")
+  authoredNotifications Notification[] @relation("NotificationAuthor")
 }
 
 // A DALI lab member. userId is optional because a member may be known (e.g. via daliEmail)
@@ -1089,7 +1092,8 @@ model UserCalendarLink {
   lastSyncedAt   DateTime?
   syncError      String?
 
-  user User @relation(fields: [userId], references: [id])
+  user            User                @relation(fields: [userId], references: [id])
+  hostedMeetings  ScheduledMeeting[]
 
   @@unique([userId, provider, externalEmail])
   @@index([userId])
@@ -1123,7 +1127,14 @@ model ScheduledMeeting {
   // Resolved at create-time from scopeType/scopeId.
   ownerCalendarEmail String
 
-  exceptions MeetingException[]
+  // Which of the organizer's linked Google calendars hosts the event. When set,
+  // the server pushes the meeting to that calendar and lets Google send Gmail
+  // invites to attendees on its behalf.
+  organizerCalendarLinkId String?
+  organizerCalendarLink   UserCalendarLink? @relation(fields: [organizerCalendarLinkId], references: [id])
+
+  exceptions    MeetingException[]
+  notifications Notification[]
 
   createdAt DateTime @default(now())
 }
@@ -1189,6 +1200,8 @@ model UserAvailabilitySettings {
 
 // One row per user per weekday. startMinute/endMinute are minutes-from-local-midnight
 // (0–1440), applied in the user's UserAvailabilitySettings.timezone.
+// Working-hours segment. A user can have multiple segments per day-of-week, e.g.
+// 07:00–09:00 Remote followed by 09:00–12:00 InPerson.
 model WorkingHoursDay {
   id          String       @id @default(cuid())
   userId      String
@@ -1200,8 +1213,7 @@ model WorkingHoursDay {
 
   user User @relation(fields: [userId], references: [id])
 
-  @@unique([userId, dayOfWeek])
-  @@index([userId])
+  @@index([userId, dayOfWeek])
 }
 
 enum WorkLocation {

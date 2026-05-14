@@ -28,6 +28,8 @@ interface Annotation {
 }
 
 interface Popover {
+  // Coordinates are relative to the AnnotatableField container so the popover
+  // scrolls with the annotated content rather than sticking to the viewport.
   x: number
   y: number
   anchorTop: number
@@ -41,16 +43,26 @@ const POPOVER_WIDTH = 256
 const POPOVER_ESTIMATED_HEIGHT = 220
 const VIEWPORT_MARGIN = 8
 
-function clampPopoverPosition(x: number, y: number, anchorTop: number) {
+function clampPopoverPosition(
+  x: number,
+  y: number,
+  anchorTop: number,
+  container: HTMLElement | null,
+) {
+  // Translate the viewport-edge clamp into container-relative coordinates so
+  // the popover stays on-screen at the moment of opening but then moves with
+  // the page as the user scrolls.
+  const containerRect = container?.getBoundingClientRect()
+  const offsetX = containerRect?.left ?? 0
+  const offsetY = containerRect?.top ?? 0
   const vw = window.innerWidth
   const vh = window.innerHeight
-  const left = Math.max(
-    VIEWPORT_MARGIN,
-    Math.min(x - POPOVER_WIDTH / 2, vw - POPOVER_WIDTH - VIEWPORT_MARGIN),
-  )
-  const flipsAbove = y + POPOVER_ESTIMATED_HEIGHT + VIEWPORT_MARGIN > vh
+  const minLeft = VIEWPORT_MARGIN - offsetX
+  const maxLeft = vw - POPOVER_WIDTH - VIEWPORT_MARGIN - offsetX
+  const left = Math.max(minLeft, Math.min(x - POPOVER_WIDTH / 2, maxLeft))
+  const flipsAbove = y + offsetY + POPOVER_ESTIMATED_HEIGHT + VIEWPORT_MARGIN > vh
   const top = flipsAbove
-    ? Math.max(VIEWPORT_MARGIN, anchorTop - POPOVER_ESTIMATED_HEIGHT - VIEWPORT_MARGIN)
+    ? Math.max(VIEWPORT_MARGIN - offsetY, anchorTop - POPOVER_ESTIMATED_HEIGHT - VIEWPORT_MARGIN)
     : y
   return { left, top }
 }
@@ -178,7 +190,15 @@ function AnnotatableField({
     const end = start + range.toString().length
     if (start === end) return
     const rect = range.getBoundingClientRect()
-    setPopover({ x: rect.left + rect.width / 2, y: rect.bottom + 8, anchorTop: rect.top, start, end, fieldKey })
+    const containerRect = container.getBoundingClientRect()
+    setPopover({
+      x: rect.left + rect.width / 2 - containerRect.left,
+      y: rect.bottom + 8 - containerRect.top,
+      anchorTop: rect.top - containerRect.top,
+      start,
+      end,
+      fieldKey,
+    })
     setPendingComment('')
     setPendingColor('yellow')
     sel.removeAllRanges()
@@ -188,7 +208,18 @@ function AnnotatableField({
     (annotationId: string, x: number, y: number) => {
       const ann = annotations.find((a) => a.id === annotationId)
       if (!ann) return
-      setPopover({ x, y: y + 8, anchorTop: y, start: ann.start, end: ann.end, fieldKey, annotationId })
+      const containerRect = containerRef.current?.getBoundingClientRect()
+      const offsetX = containerRect?.left ?? 0
+      const offsetY = containerRect?.top ?? 0
+      setPopover({
+        x: x - offsetX,
+        y: y + 8 - offsetY,
+        anchorTop: y - offsetY,
+        start: ann.start,
+        end: ann.end,
+        fieldKey,
+        annotationId,
+      })
       setPendingComment(ann.comment)
       setPendingColor(ann.color)
     },
@@ -211,8 +242,8 @@ function AnnotatableField({
   }
 
   return (
-    <div className="relative">
-      <div ref={containerRef} onMouseUp={handleMouseUp}
+    <div ref={containerRef} className="relative">
+      <div onMouseUp={handleMouseUp}
         className="text-base text-foreground whitespace-pre-wrap leading-relaxed select-text cursor-text">
         {renderAnnotatedText(value, fieldKey, annotations, handleAnnotationClick,
           popover && !popover.annotationId ? { start: popover.start, end: popover.end, color: pendingColor } : undefined)}
@@ -222,8 +253,8 @@ function AnnotatableField({
         <>
           <div className="fixed inset-0 z-40" onClick={() => setPopover(null)} />
           <div
-            className="fixed z-50 bg-card rounded-xl shadow-xl border border-border p-3 w-64 max-w-[calc(100vw-2rem)]"
-            style={clampPopoverPosition(popover.x, popover.y, popover.anchorTop)}
+            className="absolute z-50 bg-card rounded-xl shadow-xl border border-border p-3 w-64 max-w-[calc(100vw-2rem)]"
+            style={clampPopoverPosition(popover.x, popover.y, popover.anchorTop, containerRef.current)}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-2">
