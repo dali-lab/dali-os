@@ -11,24 +11,24 @@ test.describe('calendar settings persistence', () => {
     await expect(page.getByRole('heading', { name: 'Availability' })).toBeVisible();
 
     // Normalize: ensure Monday is enabled before the actual test.
-    if ((await page.getByLabel('Mon start time').count()) === 0) {
+    if ((await page.getByLabel('Mon segment 1 start').count()) === 0) {
       await page.getByRole('button', { name: /Mon enabled/i }).click();
-      await expect(page.getByLabel('Mon start time')).toBeVisible();
+      await expect(page.getByLabel('Mon segment 1 start')).toBeVisible();
       await page.waitForLoadState('networkidle');
     }
 
     // Disable Monday.
     await page.getByRole('button', { name: /Mon enabled/i }).click();
-    await expect(page.getByLabel('Mon start time')).toHaveCount(0);
+    await expect(page.getByLabel('Mon segment 1 start')).toHaveCount(0);
     await page.waitForLoadState('networkidle');
 
     // Reload and assert state persists.
     await page.reload();
-    await expect(page.getByLabel('Mon start time')).toHaveCount(0);
+    await expect(page.getByLabel('Mon segment 1 start')).toHaveCount(0);
 
     // Toggle back on (leaves DB in enabled state for next run).
     await page.getByRole('button', { name: /Mon enabled/i }).click();
-    await expect(page.getByLabel('Mon start time')).toBeVisible();
+    await expect(page.getByLabel('Mon segment 1 start')).toBeVisible();
     await page.waitForLoadState('networkidle');
   });
 
