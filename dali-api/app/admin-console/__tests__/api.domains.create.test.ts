@@ -48,7 +48,9 @@ describe("POST /api/domains — name validation", () => {
       context: {},
     } as any);
     expect(res.status).toBe(201);
-    expect(mockPrisma.domain.create).toHaveBeenCalledWith({ data: { name: "Design" } });
+    expect(mockPrisma.domain.create).toHaveBeenCalledWith({
+      data: { name: "Design", code: "Design", displayName: "Design" },
+    });
   });
 
   it("rejects an empty name", async () => {

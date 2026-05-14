@@ -1,33 +1,15 @@
 import { prisma } from "~/lib/db";
 import { linkCasToGoogleUser } from "~/lib/linking";
 
-// Shared user-provisioning helpers used by all four auth callbacks
-// (/auth/callback/{google,cas} and /oauth/callback/{google,cas}).
+// Shared user-provisioning helpers used by /auth/callback/{google,cas} and
+// /oauth/callback/{google,cas}.
 //
-// Prior to this module, each callback inlined its own upsert logic and the
-// two Google paths had drifted in three ways:
-//   - first-party auto-created a DALIMember row for @dali.dartmouth.edu
-//     accounts; OAuth-provider did not
-//   - OAuth-provider persisted googleAccessToken / googleRefreshToken /
-//     googleTokenExpiresAt on the User row; first-party did not
-//   - first-party handled all three branches (member / dartmouth / partner);
-//     OAuth-provider only handled the member branch and rejected the rest
-//
-// Unified behavior here:
-//   - both Google callbacks auto-create the DALIMember row on the
-//     @dali.dartmouth.edu branch. The MCP `requireMembership` constraint
-//     (see dali-os-mcp.md) is satisfied by row existence.
-//   - neither callback persists googleAccessToken / RT / expiresAt on User.
-//     That belonged to the calendar-link / gmail flows and has been moved
-//     out of the standard login path. Calendar tokens land in
-//     UserCalendarLink via /oauth/calendar/google/start, gmail tokens via
-//     /admin/authorize-gmail. The OAuth provider Google authorize URL no
-//     longer requests calendar.readonly scope either (see
-//     lib/oauth.ts → calendar scope stripped).
-//   - both callbacks handle all three account-type branches. Whether a
-//     given branch is acceptable for the calling route is a separate
-//     concern (e.g. an MCP client's OAuthClient row has
-//     `requiredAccountType: "member"` and the caller rejects upstream).
+// Phase 2: collapsed to `member` only for Google. The dartmouth (@dartmouth
+// .edu Google) and partner (external Google) branches were dead — the
+// website login page only offers Google for members and CAS for Dartmouth
+// students, and the OAuth-provider path is MCP-only (members-only per
+// V0_PLAN.md Q18). Partners auth through magic-link via OneTimeToken (Phase
+// 1 model; Partner portal track wires up the UI).
 
 export type GoogleClaims = {
   email: string;
@@ -41,7 +23,9 @@ export type CasClaims = {
   lastName: string;
 };
 
-export type GoogleAuthType = "member" | "dartmouth" | "partner";
+// Member is the only Google auth type post-Phase-2. Kept as a type alias
+// for clarity and forward compatibility (future expansion may add more).
+export type GoogleAuthType = "member";
 
 export type ProvisionedGoogleUser = {
   user: { id: string; netId: string | null };
@@ -51,74 +35,35 @@ export type ProvisionedGoogleUser = {
 export async function upsertUserFromGoogle(
   google: GoogleClaims,
 ): Promise<ProvisionedGoogleUser> {
-  if (google.email.endsWith("@dali.dartmouth.edu")) {
-    const user = await prisma.user.upsert({
-      where: { daliEmail: google.email },
-      update: { firstName: google.firstName, lastName: google.lastName },
-      create: {
-        daliEmail: google.email,
-        firstName: google.firstName,
-        lastName: google.lastName,
-      },
-    });
-
-    // Ensure a DALIMember row exists. Unifies the prior asymmetry where
-    // first-party login auto-created and the OAuth provider didn't.
-    const existingMember = await prisma.dALIMember.findFirst({
-      where: { OR: [{ userId: user.id }, { daliEmail: google.email }] },
-    });
-    if (existingMember) {
-      if (!existingMember.userId) {
-        await prisma.dALIMember.update({
-          where: { id: existingMember.id },
-          data: { userId: user.id },
-        });
-      }
-    } else {
-      await prisma.dALIMember.create({
-        data: { userId: user.id, daliEmail: google.email },
-      });
-    }
-
-    return { user, authType: "member" };
+  // Member branch only. The non-@dali.dartmouth.edu branches were removed
+  // in Phase 2 — they were dead code paths.
+  if (!google.email.endsWith("@dali.dartmouth.edu")) {
+    throw new Error(
+      "upsertUserFromGoogle called with non-@dali.dartmouth.edu email; " +
+        "callers must filter upstream (per Phase 2 — OAuth provider is MCP " +
+        "members-only and website login enforces the domain in the route).",
+    );
   }
 
-  if (google.email.endsWith("@dartmouth.edu")) {
-    const user = await prisma.user.upsert({
-      where: { dartmouthEmail: google.email },
-      update: { firstName: google.firstName, lastName: google.lastName },
-      create: {
-        dartmouthEmail: google.email,
-        firstName: google.firstName,
-        lastName: google.lastName,
-      },
-    });
-    return { user, authType: "dartmouth" };
-  }
-
-  // External partner — any other Google account. Stored in `dartmouthEmail`
-  // because there's no separate column today (known schema-naming wart —
-  // see dali-os-mcp.md "Known auth-surface issues" #D). findFirst+create
-  // because there is no unique index on `dartmouthEmail` for generic
-  // (non-Dartmouth) emails.
-  const existing = await prisma.user.findFirst({
-    where: { dartmouthEmail: google.email },
-  });
-  if (existing) {
-    const user = await prisma.user.update({
-      where: { id: existing.id },
-      data: { firstName: google.firstName, lastName: google.lastName },
-    });
-    return { user, authType: "partner" };
-  }
-  const user = await prisma.user.create({
-    data: {
-      dartmouthEmail: google.email,
+  const user = await prisma.user.upsert({
+    where: { daliEmail: google.email },
+    update: { firstName: google.firstName, lastName: google.lastName },
+    create: {
+      daliEmail: google.email,
       firstName: google.firstName,
       lastName: google.lastName,
     },
   });
-  return { user, authType: "partner" };
+
+  // Ensure a DALIMember marker row exists for this user. DALIMember.userId
+  // is NOT NULL after Phase 2; we upsert by userId.
+  await prisma.dALIMember.upsert({
+    where: { userId: user.id },
+    update: {},
+    create: { userId: user.id },
+  });
+
+  return { user, authType: "member" };
 }
 
 export type ProvisionedCasUser = {

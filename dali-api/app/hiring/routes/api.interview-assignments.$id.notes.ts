@@ -49,7 +49,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     where: { id: params.id },
     include: {
       cycleInterviewer: {
-        include: { daliMember: true },
+        include: { user: true },
       },
       interview: { select: { applicationCycleId: true } },
     },
@@ -59,7 +59,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     return Response.json({ error: "Assignment not found" }, { status: 404 });
   }
 
-  if (assignment.cycleInterviewer.daliMember.userId !== auth.user.sub) {
+  if (assignment.cycleInterviewer.userId !== auth.user.sub) {
     return Response.json({ error: "Not your assignment" }, { status: 403 });
   }
 

@@ -21,7 +21,7 @@ const mockTx: any = {
 };
 
 const mockPrisma = prisma as unknown as {
-  dALIMember: { findFirst: ReturnType<typeof vi.fn> };
+  dALIMember: { findUnique: ReturnType<typeof vi.fn> };
   delibsSession: {
     findUnique: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
@@ -35,14 +35,14 @@ beforeEach(() => {
   mockTx.decision.create = vi.fn().mockResolvedValue({});
   mockTx.delibsSession.update = vi.fn().mockResolvedValue({});
 
-  (mockPrisma as any).dALIMember = { findFirst: vi.fn() };
+  (mockPrisma as any).dALIMember = { findUnique: vi.fn() };
   (mockPrisma as any).delibsSession = { findUnique: vi.fn(), update: vi.fn() };
   (mockPrisma as any).$transaction = vi.fn(async (cb: any) => cb(mockTx));
 
   vi.mocked(requireAuth).mockResolvedValue({ ok: true, user: { sub: USER_ID } } as any);
   vi.mocked(isHiringLead).mockResolvedValue(true);
   vi.mocked(isDomainLead).mockResolvedValue(false);
-  mockPrisma.dALIMember.findFirst.mockResolvedValue({ id: MEMBER_ID, userId: USER_ID });
+  mockPrisma.dALIMember.findUnique.mockResolvedValue({ id: MEMBER_ID, userId: USER_ID });
 });
 
 function makeCloseRequest() {

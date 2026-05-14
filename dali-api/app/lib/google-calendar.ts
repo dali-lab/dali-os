@@ -161,9 +161,10 @@ async function fetchBusyForLink(
 
 /**
  * Fetch busy events for a user across all enabled Google calendar links.
- * Falls back to legacy User.google* tokens if no link exists yet (preserves
- * the existing /api/google-calendar/busy contract used by the hiring reviewer
- * flow).
+ * Phase 2: the legacy fallback (`fetchBusyFromLegacyUserTokens`) was removed
+ * alongside the drop of `User.google*` columns. Users without a
+ * UserCalendarLink return an empty array — the calling UI should prompt
+ * them to link a calendar in Settings.
  */
 export async function fetchBusyEvents(
   userId: string,
@@ -174,93 +175,26 @@ export async function fetchBusyEvents(
     where: { userId, provider: "Google", enabled: true },
     select: { id: true, subCalendarIds: true },
   });
-  if (links.length > 0) {
-    const results = await Promise.all(
-      links.map(async (l) => {
-        try {
-          const events = await fetchBusyForLink(l.id, l.subCalendarIds, start, end);
-          await prisma.userCalendarLink.update({
-            where: { id: l.id },
-            data: { lastSyncedAt: new Date(), syncError: null },
-          });
-          return events;
-        } catch (err) {
-          const message = err instanceof Error ? err.message : "Unknown error";
-          await prisma.userCalendarLink
-            .update({ where: { id: l.id }, data: { syncError: message } })
-            .catch(() => {});
-          return [];
-        }
-      }),
-    );
-    return results.flat();
-  }
-
-  // Legacy fallback — uses tokens from User.google* (login-OAuth scope).
-  return fetchBusyFromLegacyUserTokens(userId, start, end);
-}
-
-async function fetchBusyFromLegacyUserTokens(
-  userId: string,
-  start: Date,
-  end: Date,
-): Promise<BusyEvent[]> {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: {
-      googleAccessToken: true,
-      googleRefreshToken: true,
-      googleTokenExpiresAt: true,
-    },
-  });
-  if (!user?.googleAccessToken) return [];
-
-  let token = user.googleAccessToken;
-  if (
-    user.googleTokenExpiresAt &&
-    user.googleTokenExpiresAt.getTime() <= Date.now() + REFRESH_BUFFER_MS &&
-    user.googleRefreshToken
-  ) {
-    const res = await fetch("https://oauth2.googleapis.com/token", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        client_id: process.env.GOOGLE_CLIENT_ID!,
-        client_secret: process.env.GOOGLE_CLIENT_SECRET!,
-        refresh_token: user.googleRefreshToken,
-        grant_type: "refresh_token",
-      }),
-    });
-    if (res.ok) {
-      const data = (await res.json()) as { access_token: string; expires_in: number };
-      token = data.access_token;
-      await prisma.user.update({
-        where: { id: userId },
-        data: {
-          googleAccessToken: data.access_token,
-          googleTokenExpiresAt: new Date(Date.now() + data.expires_in * 1000),
-        },
-      });
-    }
-  }
-
-  const res = await fetch("https://www.googleapis.com/calendar/v3/freeBusy", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      timeMin: start.toISOString(),
-      timeMax: end.toISOString(),
-      items: [{ id: "primary" }],
+  if (links.length === 0) return [];
+  const results = await Promise.all(
+    links.map(async (l) => {
+      try {
+        const events = await fetchBusyForLink(l.id, l.subCalendarIds, start, end);
+        await prisma.userCalendarLink.update({
+          where: { id: l.id },
+          data: { lastSyncedAt: new Date(), syncError: null },
+        });
+        return events;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Unknown error";
+        await prisma.userCalendarLink
+          .update({ where: { id: l.id }, data: { syncError: message } })
+          .catch(() => {});
+        return [];
+      }
     }),
-  });
-  if (!res.ok) return [];
-  const data = (await res.json()) as {
-    calendars?: { primary?: { busy?: { start: string; end: string }[] } };
-  };
-  return (data.calendars?.primary?.busy ?? []).map((b) => ({ start: b.start, end: b.end }));
+  );
+  return results.flat();
 }
 
 // ─── events.insert / events.patch ──────────────────────────────────────────

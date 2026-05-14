@@ -3,6 +3,7 @@ import type { Route } from './+types/email-templates'
 import { prisma } from '~/lib/db'
 import { requireAuth } from "~/lib/auth";
 import { isHiringLead } from '~/lib/roles'
+import { isApplicationsGmailConnected } from "~/lib/gmail-integration";
 import EmailTemplatesList from '~/hiring/components/EmailTemplates'
 
 export const meta: Route.MetaFunction = () => [{ title: 'Email templates · DALI OS' }]
@@ -12,7 +13,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!auth.ok) return redirect('/login')
   if (!(await isHiringLead(auth.user.sub))) return redirect('/')
 
-  const [templates, gmailUser] = await Promise.all([
+  const [templates, gmailConnected] = await Promise.all([
     prisma.emailTemplate.findMany({
       include: {
         versions: {
@@ -22,12 +23,9 @@ export async function loader({ request }: Route.LoaderArgs) {
       },
       orderBy: { createdAt: 'desc' },
     }),
-    prisma.user.findUnique({
-      where: { daliEmail: 'applications@dali.dartmouth.edu' },
-      select: { googleRefreshToken: true },
-    }),
+    isApplicationsGmailConnected(),
   ])
-  return { templates, gmailConnected: !!gmailUser?.googleRefreshToken }
+  return { templates, gmailConnected }
 }
 
 export async function action({ request }: Route.ActionArgs) {

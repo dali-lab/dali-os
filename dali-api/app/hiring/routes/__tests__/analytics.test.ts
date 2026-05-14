@@ -26,7 +26,7 @@ beforeEach(() => {
     user: { sub: HIRING_LEAD_ID, email: "lead@x.com", type: "user" },
   } as any);
   vi.mocked(getUserRoles).mockResolvedValue({
-    memberId: null,
+    isLabMember: false,
     isHiringLead: true,
     isAdmin: false,
     isDomainLead: false,

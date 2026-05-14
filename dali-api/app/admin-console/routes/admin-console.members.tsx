@@ -3,15 +3,22 @@ import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/admin-console.members";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isAdmin } from "~/lib/roles";
+import { isAdmin, currentTerm } from "~/lib/roles";
 import { Users, Check } from "lucide-react";
 import {
   AdminToggle,
   DomainLeadPicker,
   HiringLeadToggle,
+  type Member,
 } from "~/admin-console/components/admin-console-shared";
 
 export const meta: Route.MetaFunction = () => [{ title: "Members · Admin console · DALI OS" }];
+
+// Phase 2 rewrite: role state lives in AdminMembership / CoreAssignment /
+// DomainLeadAssignment instead of DALIMember.roles[]. The admin page now
+// lists Users (filtered to those with a DALIMember row, i.e. lab members)
+// and presents per-user toggles backed by row insert/delete on the three
+// assignment tables.
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -19,21 +26,45 @@ export async function loader({ request }: Route.LoaderArgs) {
   const admin = await isAdmin(auth.user.sub);
   if (!admin) return redirect("/");
 
-  const [members, domains] = await Promise.all([
-    prisma.dALIMember.findMany({
+  const [users, domains, term] = await Promise.all([
+    prisma.user.findMany({
+      where: { daliMember: { isNot: null } },
       include: {
-        user: { select: { id: true, firstName: true, lastName: true } },
-        domainLeadAssignments: { include: { domain: true } },
+        daliMember: { select: { id: true } },
+        adminMembership: { select: { id: true } },
+        coreAssignments: { select: { id: true, termId: true, leadTitle: true } },
+        domainLeadAssignmentsAsUser: { include: { domain: true } },
       },
       orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
     }),
     prisma.domain.findMany({
-      orderBy: { name: "asc" },
-      select: { id: true, name: true },
+      where: { active: true },
+      orderBy: { displayName: "asc" },
+      select: { id: true, name: true, displayName: true },
     }),
+    currentTerm(),
   ]);
 
-  return { members, domains };
+  const members: Member[] = users.map((u) => ({
+    id: u.id,
+    firstName: u.firstName,
+    lastName: u.lastName,
+    daliEmail: u.daliEmail,
+    isLabMember: u.daliMember !== null,
+    isAdmin: u.adminMembership !== null,
+    isCore:
+      term !== null &&
+      u.coreAssignments.some((a) => a.termId === term.id),
+    domainLeadAssignments: u.domainLeadAssignmentsAsUser.map((a) => ({
+      id: a.id,
+      domain: { id: a.domain.id, name: a.domain.displayName },
+    })),
+  }));
+
+  return {
+    members,
+    domains: domains.map((d) => ({ id: d.id, name: d.displayName })),
+  };
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -47,37 +78,66 @@ export async function action({ request }: Route.ActionArgs) {
   const intent = formData.get("intent") as string;
 
   if (intent === "set-admin") {
-    const memberId = formData.get("memberId") as string;
+    const userId = formData.get("userId") as string;
     const value = formData.get("value") === "true";
-    const member = await prisma.dALIMember.findUniqueOrThrow({
-      where: { id: memberId },
-      select: { roles: true },
-    });
-    const roles = value
-      ? [...new Set([...member.roles, "Admin" as const])]
-      : member.roles.filter((r) => r !== "Admin");
-    await prisma.dALIMember.update({ where: { id: memberId }, data: { roles } });
+    if (value) {
+      await prisma.adminMembership.upsert({
+        where: { userId },
+        update: {},
+        create: { userId, grantedBy: auth.user.sub },
+      });
+    } else {
+      await prisma.adminMembership.deleteMany({ where: { userId } });
+    }
     return null;
   }
 
   if (intent === "set-hiring-lead") {
-    const memberId = formData.get("memberId") as string;
+    const userId = formData.get("userId") as string;
     const value = formData.get("value") === "true";
-    const member = await prisma.dALIMember.findUniqueOrThrow({
-      where: { id: memberId },
-      select: { roles: true },
-    });
-    const roles = value
-      ? [...new Set([...member.roles, "HiringLead" as const])]
-      : member.roles.filter((r) => r !== "HiringLead");
-    await prisma.dALIMember.update({ where: { id: memberId }, data: { roles } });
+    const term = await currentTerm();
+    if (!term) {
+      return Response.json(
+        { error: "No current Term — run npm run db:seed:v0-reference" },
+        { status: 500 },
+      );
+    }
+    if (value) {
+      // App-level "no duplicate (user, term, leadTitle)" check.
+      const existing = await prisma.coreAssignment.findFirst({
+        where: { userId, termId: term.id, leadTitle: "Hiring Lead" },
+        select: { id: true },
+      });
+      if (!existing) {
+        await prisma.coreAssignment.create({
+          data: { userId, termId: term.id, leadTitle: "Hiring Lead" },
+        });
+      }
+    } else {
+      await prisma.coreAssignment.deleteMany({
+        where: { userId, termId: term.id, leadTitle: "Hiring Lead" },
+      });
+    }
     return null;
   }
 
   if (intent === "add-domain-lead") {
-    const memberId = formData.get("memberId") as string;
+    const userId = formData.get("userId") as string;
     const domainId = formData.get("domainId") as string;
-    await prisma.domainLeadAssignment.create({ data: { memberId, domainId } });
+    const term = await currentTerm();
+    if (!term) {
+      return Response.json(
+        { error: "No current Term — run npm run db:seed:v0-reference" },
+        { status: 500 },
+      );
+    }
+    await prisma.domainLeadAssignment.upsert({
+      where: {
+        userId_domainId_termId: { userId, domainId, termId: term.id },
+      },
+      update: {},
+      create: { userId, domainId, termId: term.id },
+    });
     return null;
   }
 
@@ -98,12 +158,12 @@ export default function AdminConsoleMembers() {
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("all");
 
   const filtered = members.filter((m) => {
-    const name = `${m.firstName ?? ""} ${m.lastName ?? ""}`.toLowerCase();
+    const name = `${m.firstName} ${m.lastName}`.toLowerCase();
     const email = (m.daliEmail ?? "").toLowerCase();
     const q = search.toLowerCase();
     if (q && !name.includes(q) && !email.includes(q)) return false;
-    if (roleFilter === "admin" && !m.roles.includes("Admin")) return false;
-    if (roleFilter === "hiringLead" && !m.roles.includes("HiringLead")) return false;
+    if (roleFilter === "admin" && !m.isAdmin) return false;
+    if (roleFilter === "hiringLead" && !m.isCore) return false;
     return true;
   });
 
@@ -152,7 +212,7 @@ export default function AdminConsoleMembers() {
             <tr className="border-b border-border bg-muted/50">
               <th className="text-left px-4 py-3 font-medium text-muted-foreground">Name</th>
               <th className="text-left px-4 py-3 font-medium text-muted-foreground">DALI Email</th>
-              <th className="text-left px-4 py-3 font-medium text-muted-foreground">Linked User</th>
+              <th className="text-left px-4 py-3 font-medium text-muted-foreground">Lab Member</th>
               <th className="text-left px-4 py-3 font-medium text-muted-foreground">Admin</th>
               <th className="text-left px-4 py-3 font-medium text-muted-foreground">Hiring Lead</th>
               <th className="text-left px-4 py-3 font-medium text-muted-foreground">Domain Lead</th>
@@ -173,13 +233,12 @@ export default function AdminConsoleMembers() {
                 </td>
                 <td className="px-4 py-3 text-muted-foreground">{member.daliEmail ?? "—"}</td>
                 <td className="px-4 py-3">
-                  {member.user ? (
+                  {member.isLabMember ? (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                      <Check className="w-3 h-3" />
-                      {member.user.firstName} {member.user.lastName}
+                      <Check className="w-3 h-3" /> Yes
                     </span>
                   ) : (
-                    <span className="text-xs text-muted-foreground/70">No account</span>
+                    <span className="text-xs text-muted-foreground/70">No</span>
                   )}
                 </td>
                 <td className="px-4 py-3">

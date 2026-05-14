@@ -3,7 +3,7 @@ import { redirect, useLoaderData, useFetcher } from "react-router";
 import type { Route } from "./+types/admin-console.domains";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isAdmin } from "~/lib/roles";
+import { isAdmin, currentTerm } from "~/lib/roles";
 import { describeDomainUsage } from "./api.domains.$domainId";
 import { ChevronDown, Trash2, Plus } from "lucide-react";
 import {
@@ -15,30 +15,36 @@ import {
 
 export const meta: Route.MetaFunction = () => [{ title: "Domains · Admin console · DALI OS" }];
 
+// Phase 2 rewrite: domain-lead assignments now key off User.id (not
+// DALIMember.id) and require a termId. Lead picker lists Users with a
+// DALIMember row (lab members).
+
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
   const admin = await isAdmin(auth.user.sub);
   if (!admin) return redirect("/admin-console/members");
 
-  const [members, domains] = await Promise.all([
-    prisma.dALIMember.findMany({
+  const [users, domains] = await Promise.all([
+    prisma.user.findMany({
+      where: { daliMember: { isNot: null } },
       include: {
-        user: { select: { id: true, firstName: true, lastName: true } },
-        domainLeadAssignments: { include: { domain: true } },
+        adminMembership: { select: { id: true } },
+        coreAssignments: { select: { termId: true, leadTitle: true } },
+        domainLeadAssignmentsAsUser: { include: { domain: true } },
       },
       orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
     }),
     prisma.domain.findMany({
-      orderBy: { name: "asc" },
+      orderBy: { displayName: "asc" },
       include: {
         domainLeadAssignments: {
           include: {
-            member: {
+            user: {
               select: { id: true, firstName: true, lastName: true, daliEmail: true },
             },
           },
-          orderBy: [{ member: { lastName: "asc" } }, { member: { firstName: "asc" } }],
+          orderBy: [{ user: { lastName: "asc" } }, { user: { firstName: "asc" } }],
         },
         _count: {
           select: {
@@ -54,7 +60,36 @@ export async function loader({ request }: Route.LoaderArgs) {
     }),
   ]);
 
-  return { members, domains };
+  const members: Member[] = users.map((u) => ({
+    id: u.id,
+    firstName: u.firstName,
+    lastName: u.lastName,
+    daliEmail: u.daliEmail,
+    isLabMember: true,
+    isAdmin: u.adminMembership !== null,
+    isCore: u.coreAssignments.length > 0,
+    domainLeadAssignments: u.domainLeadAssignmentsAsUser.map((a) => ({
+      id: a.id,
+      domain: { id: a.domain.id, name: a.domain.displayName },
+    })),
+  }));
+
+  const domainsForView: DomainWithCounts[] = domains.map((d) => ({
+    id: d.id,
+    name: d.displayName,
+    domainLeadAssignments: d.domainLeadAssignments.map((a) => ({
+      id: a.id,
+      user: {
+        id: a.user.id,
+        firstName: a.user.firstName,
+        lastName: a.user.lastName,
+        daliEmail: a.user.daliEmail,
+      },
+    })),
+    _count: d._count,
+  }));
+
+  return { members, domains: domainsForView };
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -69,7 +104,13 @@ export async function action({ request }: Route.ActionArgs) {
   if (intent === "create-domain") {
     const name = String(formData.get("name") ?? "").trim();
     if (!name) return Response.json({ error: "Name is required" }, { status: 400 });
-    await prisma.domain.create({ data: { name } });
+    // Phase 2: code + displayName required. Derive code from the name by
+    // stripping non-alnum (admin can rename later). displayName mirrors
+    // name on create; both editable post-create.
+    const code = name.replace(/[^A-Za-z0-9]/g, "") || "Domain";
+    await prisma.domain.create({
+      data: { name, code, displayName: name },
+    });
     return null;
   }
 
@@ -105,17 +146,30 @@ export async function action({ request }: Route.ActionArgs) {
     }
     if (result.kind === "in-use") {
       return Response.json(
-              { error: `Cannot delete: domain is in use by ${result.blocking.join(", ")}.` },
-              { status: 409 },
-            );
+        { error: `Cannot delete: domain is in use by ${result.blocking.join(", ")}.` },
+        { status: 409 },
+      );
     }
     return null;
   }
 
   if (intent === "add-domain-lead") {
-    const memberId = formData.get("memberId") as string;
+    const userId = formData.get("userId") as string;
     const domainId = formData.get("domainId") as string;
-    await prisma.domainLeadAssignment.create({ data: { memberId, domainId } });
+    const term = await currentTerm();
+    if (!term) {
+      return Response.json(
+        { error: "No current Term — run npm run db:seed:v0-reference" },
+        { status: 500 },
+      );
+    }
+    await prisma.domainLeadAssignment.upsert({
+      where: {
+        userId_domainId_termId: { userId, domainId, termId: term.id },
+      },
+      update: {},
+      create: { userId, domainId, termId: term.id },
+    });
     return null;
   }
 
@@ -133,7 +187,7 @@ function AddDomainLeadForMemberButton({ domainId, member, onAdded }: { domainId:
   return (
     <fetcher.Form method="post" onSubmit={onAdded}>
       <input type="hidden" name="intent" value="add-domain-lead" />
-      <input type="hidden" name="memberId" value={member.id} />
+      <input type="hidden" name="userId" value={member.id} />
       <input type="hidden" name="domainId" value={domainId} />
       <button type="submit" className="w-full text-left px-4 py-2 text-sm text-foreground/80 hover:bg-muted/50">
         {memberLabel(member)}
@@ -145,8 +199,8 @@ function AddDomainLeadForMemberButton({ domainId, member, onAdded }: { domainId:
 function DomainLeadsForDomain({ domain, members }: { domain: DomainWithCounts; members: Member[] }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const assignedMemberIds = new Set(domain.domainLeadAssignments.map((a) => a.member.id));
-  const available = members.filter((m) => !assignedMemberIds.has(m.id));
+  const assignedUserIds = new Set(domain.domainLeadAssignments.map((a) => a.user.id));
+  const available = members.filter((m) => !assignedUserIds.has(m.id));
   const q = search.trim().toLowerCase();
   const filtered = q
     ? available.filter((m) => memberLabel(m).toLowerCase().includes(q) || (m.daliEmail ?? "").toLowerCase().includes(q))
@@ -163,7 +217,7 @@ function DomainLeadsForDomain({ domain, members }: { domain: DomainWithCounts; m
           key={assignment.id}
           className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800"
         >
-          {memberLabel(assignment.member)}
+          {memberLabel(assignment.user)}
           <RemoveDomainLeadButton assignmentId={assignment.id} />
         </span>
       ))}

@@ -3,38 +3,49 @@ import { createPortal } from "react-dom";
 import { useFetcher } from "react-router";
 import { Shield, ChevronDown, X, Check } from "lucide-react";
 
+// Phase 2 reshape: Member is rooted at User. Role flags derive from typed
+// assignment tables (AdminMembership, CoreAssignment, DomainLeadAssignment)
+// rather than the dropped DALIMember.roles[] enum.
+
 export interface DomainRow {
   id: string;
   name: string;
 }
 
-export interface DomainLeadAssignment {
+export interface DomainLeadAssignmentForMember {
   id: string;
   domain: DomainRow;
 }
 
 export interface Member {
+  // User.id — the canonical actor id used by all admin-console actions.
   id: string;
-  firstName: string | null;
-  lastName: string | null;
+  firstName: string;
+  lastName: string;
   daliEmail: string | null;
-  roles: string[];
-  user: { id: string; firstName: string; lastName: string } | null;
-  domainLeadAssignments: DomainLeadAssignment[];
+  // Presence indicates a lab member (vs a Dartmouth student or partner).
+  isLabMember: boolean;
+  // Presence = Admin (AdminMembership row exists).
+  isAdmin: boolean;
+  // Presence = Core in the current term (any CoreAssignment with current term).
+  // We surface this as the "Hiring Lead"-equivalent toggle (Core has hiring
+  // lead-equivalent access per V0_PLAN.md).
+  isCore: boolean;
+  domainLeadAssignments: DomainLeadAssignmentForMember[];
 }
 
-export interface DomainLeadAssignmentWithMember {
+export interface DomainLeadAssignmentWithUser {
   id: string;
-  member: {
+  user: {
     id: string;
-    firstName: string | null;
-    lastName: string | null;
+    firstName: string;
+    lastName: string;
     daliEmail: string | null;
   };
 }
 
 export interface DomainWithCounts extends DomainRow {
-  domainLeadAssignments: DomainLeadAssignmentWithMember[];
+  domainLeadAssignments: DomainLeadAssignmentWithUser[];
   _count: {
     challengeVersions: number;
     applicationCycles: number;
@@ -45,7 +56,7 @@ export interface DomainWithCounts extends DomainRow {
   };
 }
 
-export function memberLabel(member: { firstName: string | null; lastName: string | null; daliEmail: string | null }) {
+export function memberLabel(member: { firstName: string; lastName: string; daliEmail: string | null }) {
   const name = `${member.firstName ?? ""} ${member.lastName ?? ""}`.trim();
   return name || member.daliEmail || "Unnamed member";
 }
@@ -67,12 +78,12 @@ export function RemoveDomainLeadButton({ assignmentId }: { assignmentId: string 
   );
 }
 
-function AddDomainLeadButton({ memberId, domain, onAdded }: { memberId: string; domain: DomainRow; onAdded: () => void }) {
+function AddDomainLeadButton({ userId, domain, onAdded }: { userId: string; domain: DomainRow; onAdded: () => void }) {
   const fetcher = useFetcher();
   return (
     <fetcher.Form method="post" onSubmit={onAdded}>
       <input type="hidden" name="intent" value="add-domain-lead" />
-      <input type="hidden" name="memberId" value={memberId} />
+      <input type="hidden" name="userId" value={userId} />
       <input type="hidden" name="domainId" value={domain.id} />
       <button type="submit" className="w-full text-left px-4 py-2 text-sm text-foreground/80 hover:bg-muted/50">
         {domain.name}
@@ -149,7 +160,7 @@ export function DomainLeadPicker({
                     {available.map((domain) => (
                       <AddDomainLeadButton
                         key={domain.id}
-                        memberId={member.id}
+                        userId={member.id}
                         domain={domain}
                         onAdded={() => setOpen(false)}
                       />
@@ -170,12 +181,12 @@ export function AdminToggle({ member }: { member: Member }) {
   const submittedValue = fetcher.formData?.get("value");
   const isAdminMember = submittedValue != null
     ? submittedValue === "true"
-    : member.roles.includes("Admin");
+    : member.isAdmin;
 
   return (
     <fetcher.Form method="post">
       <input type="hidden" name="intent" value="set-admin" />
-      <input type="hidden" name="memberId" value={member.id} />
+      <input type="hidden" name="userId" value={member.id} />
       <input type="hidden" name="value" value={String(!isAdminMember)} />
       <button
         type="submit"
@@ -197,12 +208,12 @@ export function HiringLeadToggle({ member }: { member: Member }) {
   const submittedValue = fetcher.formData?.get("value");
   const isHiringLead = submittedValue != null
     ? submittedValue === "true"
-    : member.roles.includes("HiringLead");
+    : member.isCore;
 
   return (
     <fetcher.Form method="post">
       <input type="hidden" name="intent" value="set-hiring-lead" />
-      <input type="hidden" name="memberId" value={member.id} />
+      <input type="hidden" name="userId" value={member.id} />
       <input type="hidden" name="value" value={String(!isHiringLead)} />
       <button
         type="submit"

@@ -6,7 +6,7 @@ import { isHiringLead, isDomainLead, hasCycleAccess } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
 
 const CreateInterviewerSchema = z.object({
-  daliMemberId: z.string().min(1).max(100),
+  userId: z.string().min(1).max(100),
   domainId: z.string().min(1).max(100),
 });
 
@@ -24,7 +24,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const interviewers = await prisma.cycleInterviewer.findMany({
     where: { applicationCycleId: params.cycleId },
     include: {
-      daliMember: { select: { firstName: true, lastName: true, daliEmail: true } },
+      user: { select: { firstName: true, lastName: true, daliEmail: true } },
       domain: { select: { id: true, name: true } },
     },
     orderBy: { createdAt: "asc" },
@@ -46,11 +46,11 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (request.method === "POST") {
     const body = await parseJson(request, CreateInterviewerSchema);
     if (body instanceof Response) return body;
-    const { daliMemberId, domainId } = body;
+    const { userId, domainId } = body;
 
     const interviewer = await prisma.cycleInterviewer.create({
       data: {
-        daliMemberId,
+        userId,
         applicationCycleId: params.cycleId,
         domainId,
       },

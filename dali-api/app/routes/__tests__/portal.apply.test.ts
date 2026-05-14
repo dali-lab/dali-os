@@ -47,6 +47,7 @@ const mockPrisma = prisma as unknown as {
   };
   user: { findUnique: ReturnType<typeof vi.fn> };
   cycleNotificationEmail: { findUnique: ReturnType<typeof vi.fn> };
+  gmailIntegration: { findFirst: ReturnType<typeof vi.fn> };
 };
 
 const USER_ID = "user-1";
@@ -107,6 +108,9 @@ beforeEach(() => {
   (mockPrisma as any).user = { findUnique: vi.fn().mockResolvedValue(null) };
   (mockPrisma as any).cycleNotificationEmail = {
     findUnique: vi.fn().mockResolvedValue(null),
+  };
+  (mockPrisma as any).gmailIntegration = {
+    findFirst: vi.fn().mockResolvedValue(null),
   };
   vi.mocked(requireAuth).mockResolvedValue({
     ok: true,
@@ -340,14 +344,13 @@ describe("POST /portal/apply (submit) confirmation email", () => {
   const CYCLE_ID = "cycle-1";
 
   function mockApplicantsAndGmail() {
-    (mockPrisma as any).user.findUnique
-      .mockResolvedValueOnce({ googleRefreshToken: "rt" })
-      .mockResolvedValueOnce({
-        id: USER_ID,
-        firstName: "Ada",
-        dartmouthEmail: "ada@dartmouth.edu",
-        daliEmail: null,
-      });
+    (mockPrisma as any).gmailIntegration.findFirst.mockResolvedValue({ oauthTokens: "rt" });
+    (mockPrisma as any).user.findUnique.mockResolvedValueOnce({
+      id: USER_ID,
+      firstName: "Ada",
+      dartmouthEmail: "ada@dartmouth.edu",
+      daliEmail: null,
+    });
   }
 
   it("sends a confirmation email on first submission when a binding exists", async () => {
