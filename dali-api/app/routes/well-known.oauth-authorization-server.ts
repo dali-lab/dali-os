@@ -20,6 +20,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       authorization_endpoint: `${issuer}/oauth/authorize`,
       token_endpoint: `${issuer}/oauth/token`,
       revocation_endpoint: `${issuer}/oauth/revoke`,
+      registration_endpoint: `${issuer}/oauth/register`,
       response_types_supported: ["code"],
       grant_types_supported: ["authorization_code"],
       code_challenge_methods_supported: ["S256"],
