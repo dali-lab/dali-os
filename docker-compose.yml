@@ -33,7 +33,6 @@ services:
       - ./dali-api/.env
     environment:
       DATABASE_URL: postgresql://dali:dali@db:5432/dali
-      JWT_SECRET: dev-jwt-secret-change-me-in-production!!
       CAS_BASE_URL: https://login.dartmouth.edu/cas
       FRONTEND_URL: http://localhost:5173
       API_BASE_URL: http://localhost:3001

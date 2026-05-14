@@ -1,9 +1,11 @@
 import type { Route } from "./+types/auth.callback.google";
 import { prisma } from "~/lib/db";
-import { exchangeGoogleCode, issueTokens } from "~/lib/oauth";
-import { setTokenCookies } from "~/lib/cookies";
+import { exchangeGoogleCode } from "~/lib/oauth";
+import { issueSession } from "~/lib/session";
+import { setSessionCookie } from "~/lib/cookies";
+import { getClientIp } from "~/lib/request-meta";
 import { logAuditEvent } from "~/lib/audit";
-import { requireAuth, withAuth } from "~/lib/auth";
+import { requireAuth } from "~/lib/auth";
 import { CAL_STATE_PREFIX } from "~/routes/oauth.calendar.google.start";
 import { handleCalendarLinkCallback } from "~/routes/oauth.calendar.google.callback";
 
@@ -37,19 +39,16 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (state?.startsWith(CAL_STATE_PREFIX)) {
     const auth = await requireAuth(request);
     if (!auth.ok) {
-      return withAuth(auth, new Response(null, { status: 302, headers: { Location: "/login" } }));
+      return new Response(null, { status: 302, headers: { Location: "/login" } });
     }
     if (auth.user.type === "applicant") {
-      return withAuth(auth, new Response(null, { status: 302, headers: { Location: "/portal" } }));
+      return new Response(null, { status: 302, headers: { Location: "/portal" } });
     }
     if (googleError || !code) {
-      return withAuth(
-        auth,
-        new Response(null, {
+      return new Response(null, {
           status: 302,
           headers: { Location: "/calendar?calendar_link_error=auth_failed" },
-        }),
-      );
+        });
     }
     const response = await handleCalendarLinkCallback({
       request,
@@ -57,7 +56,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       code,
       state,
     });
-    return withAuth(auth, response);
+    return response;
   }
 
   if (googleError || !code || !state) {
@@ -206,8 +205,12 @@ export async function loader({ request }: Route.LoaderArgs) {
     redirectTo = "/portal";
   }
 
-  // Issue tokens and set cookies
-  const tokens = await issueTokens(user.id, authType);
+  // Issue session and set cookie
+  const session = await issueSession({
+    userId: user.id,
+    userAgent: request.headers.get("user-agent") ?? undefined,
+    ip: getClientIp(request),
+  });
   await logAuditEvent({
     action: "login.success",
     userId: user.id,
@@ -221,7 +224,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const headers = new Headers();
   headers.append("Set-Cookie", clearStateCookie);
   headers.append("Set-Cookie", clearAccountTypeCookie);
-  setTokenCookies(headers, tokens.access_token, tokens.refresh_token);
+  setSessionCookie(headers, session.rawId);
   headers.set("Location", redirectTo);
 
   return new Response(null, { status: 302, headers });

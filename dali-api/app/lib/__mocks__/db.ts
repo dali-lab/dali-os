@@ -7,7 +7,7 @@ export const prisma = {
     update: vi.fn(),
     delete: vi.fn(),
   },
-  refreshToken: {
+  session: {
     create: vi.fn(),
     findUnique: vi.fn(),
     update: vi.fn(),

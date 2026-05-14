@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.domain-applications.$id.full-context";
 import { prisma } from "~/lib/db";
-import { requireAuth, withAuth } from "~/lib/auth";
+import { requireAuth } from "~/lib/auth";
 import { hasCycleAccess } from "~/lib/roles";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
 
@@ -41,9 +41,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
   });
 
-  if (!da) return withAuth(auth, Response.json({ error: "Not found" }, { status: 404 }));
+  if (!da) return Response.json({ error: "Not found" }, { status: 404 });
   if (!(await hasCycleAccess(auth.user.sub, da.application.applicationCycleId))) {
-    return withAuth(auth, Response.json({ error: "Forbidden" }, { status: 403 }));
+    return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const gate = await requireApiSignedOrForbidden(
@@ -73,7 +73,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       : Promise.resolve(null),
   ]);
 
-  return withAuth(auth, Response.json({
+  return Response.json({
       domainApplication: {
         id: da.id,
         answers: da.answers,
@@ -92,5 +92,5 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         generalCriteria: generalRubric?.criteria ?? [],
         domainCriteria: domainCycle?.rubricVersion?.criteria ?? [],
       },
-    }));
+    });
 }

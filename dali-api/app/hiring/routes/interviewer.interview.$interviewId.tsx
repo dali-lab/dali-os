@@ -14,8 +14,8 @@ import {
   MessageSquare,
 } from 'lucide-react'
 import { prisma } from '~/lib/db'
-import { requireAuth, withAuth } from '~/lib/auth'
-import { parseAccessToken } from '~/lib/cookies'
+import { requireAuth } from "~/lib/auth";
+import { parseSessionCookie } from '~/lib/cookies'
 import { requirePageSignedOrRedirect } from '~/hiring/lib/confidentiality'
 import { presignAnswers } from '~/hiring/lib/presign'
 import { CollaborativeEditor } from '~/components/CollaborativeEditor'
@@ -122,7 +122,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     }
   }
 
-  const collabToken = parseAccessToken(request)
+  const collabToken = parseSessionCookie(request)
 
   // Presign file-type answers so interviewers can download uploads instead of
   // staring at raw S3 keys.
@@ -153,13 +153,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // Build user display name for cursors
   const userName = [member.firstName, member.lastName].filter(Boolean).join(' ') || auth.user.email
 
-  return withAuth(auth, {
+  return {
       interview: interviewWithPresignedAnswers,
       myAssignment,
       rubricCriteria,
       collabToken,
       userName,
-    })
+    }
 }
 
 export default function InterviewDetailPage() {

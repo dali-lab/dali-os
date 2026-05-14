@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
 
@@ -11,14 +11,10 @@ const mockPrisma = prisma as unknown as {
     update: ReturnType<typeof vi.fn>;
     delete: ReturnType<typeof vi.fn>;
   };
-  refreshToken: { updateMany: ReturnType<typeof vi.fn> };
+  session: { updateMany: ReturnType<typeof vi.fn> };
   oAuthSession: { updateMany: ReturnType<typeof vi.fn> };
   $transaction: ReturnType<typeof vi.fn>;
 };
-
-beforeAll(() => {
-  process.env.JWT_SECRET = "test-secret-at-least-32-chars-long!!";
-});
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -53,7 +49,7 @@ describe("linkCasToGoogleUser", () => {
     mockPrisma.$transaction.mockImplementation(async (fn: any) => {
       // provide a mock tx with the same methods
       const tx = {
-        refreshToken: { updateMany: vi.fn().mockResolvedValue({}) },
+        session: { updateMany: vi.fn().mockResolvedValue({}) },
         oAuthSession: { updateMany: vi.fn().mockResolvedValue({}) },
         user: {
           delete: vi.fn().mockResolvedValue({}),

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { Form, Link, useParams, useLoaderData, redirect } from 'react-router'
 import type { Route } from "./+types/lead.cycle.$id";
 import { prisma } from "~/lib/db";
-import { requireAuth, withAuth } from "~/lib/auth";
+import { requireAuth } from "~/lib/auth";
 import { isHiringLead } from "~/lib/roles";
 import { renderEmail } from "~/lib/email";
 import {
@@ -99,8 +99,8 @@ export const meta: Route.MetaFunction = ({ data }) => {
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return withAuth(auth, redirect("/login"));
-  if (!(await isHiringLead(auth.user.sub))) return withAuth(auth, redirect("/"));
+  if (!auth.ok) return redirect("/login");
+  if (!(await isHiringLead(auth.user.sub))) return redirect("/");
 
   // Hiring leads must be able to reach this page to bind a confidentiality
   // agreement to the cycle, so we don't redirect when unsigned. Instead, the
@@ -315,7 +315,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     })),
   };
 
-  return withAuth(auth, {
+  return {
       cycle: cycleWithCvNumbers,
       allDomains,
       finalDecisions,
@@ -333,7 +333,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       currentConfidentialityBinding,
       confidentialitySignatures,
       confidentialityRequired,
-    });
+    };
 }
 
 // ─── Action ──────────────────────────────────────────────────────────────────
@@ -365,10 +365,10 @@ async function reopenIfNeeded(
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
-  if (!(await isHiringLead(auth.user.sub))) return withAuth(auth, new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } }));
+  if (!(await isHiringLead(auth.user.sub))) return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
 
   const user = await prisma.user.findUnique({ where: { id: auth.user.sub } });
-  if (!user) return withAuth(auth, new Response(JSON.stringify({ error: "User not found" }), { status: 401 }));
+  if (!user) return new Response(JSON.stringify({ error: "User not found" }), { status: 401 });
 
   const formData = await request.formData();
   const intent = formData.get("intent");
@@ -407,7 +407,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     const notice = parsedClose
       ? (reopened ? "deadline-set-reopened" : "deadline-set")
       : "deadline-cleared";
-    return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}?notice=${notice}`));
+    return redirect(`/hiring/lead/cycle/${params.id}?notice=${notice}`);
   }
 
   if (intent === "extend-close-date") {
@@ -415,17 +415,17 @@ export async function action({ request, params }: Route.ActionArgs) {
     const unit = formData.get("unit") as string;
     const amount = Number(amountRaw);
     if (!Number.isFinite(amount) || amount <= 0) {
-      return withAuth(auth, new Response(JSON.stringify({ error: "Extension amount must be positive." }), { status: 400, headers: { "Content-Type": "application/json" } }));
+      return new Response(JSON.stringify({ error: "Extension amount must be positive." }), { status: 400, headers: { "Content-Type": "application/json" } });
     }
     if (unit !== "hours" && unit !== "days") {
-      return withAuth(auth, new Response(JSON.stringify({ error: "Extension unit must be hours or days." }), { status: 400, headers: { "Content-Type": "application/json" } }));
+      return new Response(JSON.stringify({ error: "Extension unit must be hours or days." }), { status: 400, headers: { "Content-Type": "application/json" } });
     }
     const cycle = await prisma.applicationCycle.findUnique({
       where: { id: params.id },
       include: { statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 } },
     });
     if (!cycle?.closeDate) {
-      return withAuth(auth, new Response(JSON.stringify({ error: "Set a close date before extending." }), { status: 400, headers: { "Content-Type": "application/json" } }));
+      return new Response(JSON.stringify({ error: "Set a close date before extending." }), { status: 400, headers: { "Content-Type": "application/json" } });
     }
     // Set-total semantics: the amount is the *total* extension from the
     // original anchor, not additive. So calling extend(48h) twice in a row is
@@ -442,7 +442,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       return await reopenIfNeeded(tx, params.id!, cycle, nextClose, auth.user.sub);
     });
     const notice = reopened ? "extended-reopened" : "extended";
-    return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}?notice=${notice}`));
+    return redirect(`/hiring/lead/cycle/${params.id}?notice=${notice}`);
   }
 
   if (intent === "remove-extension") {
@@ -451,7 +451,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     });
     if (!cycle?.originalCloseDate) {
       // No extension to remove — just no-op.
-      return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}`));
+      return redirect(`/hiring/lead/cycle/${params.id}`);
     }
     await prisma.applicationCycle.update({
       where: { id: params.id },
@@ -464,7 +464,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         extensionNoticeSentAt: null,
       },
     });
-    return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}?notice=extension-removed`));
+    return redirect(`/hiring/lead/cycle/${params.id}?notice=extension-removed`);
   }
 
   if (intent === "resend-extension-notice") {
@@ -483,10 +483,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     } else {
       notice = "extension-notice-sent";
     }
-    return withAuth(
-      auth,
-      redirect(`/hiring/lead/cycle/${params.id}?notice=${notice}&sent=${result.succeeded}&failed=${result.failed}&skipped=${result.alreadySent}`),
-    );
+    return redirect(`/hiring/lead/cycle/${params.id}?notice=${notice}&sent=${result.succeeded}&failed=${result.failed}&skipped=${result.alreadySent}`);
   }
 
   if (intent === "set-general-rubric") {
@@ -499,13 +496,13 @@ export async function action({ request, params }: Route.ActionArgs) {
       },
     });
     if (hasAssignedReviews > 0) {
-      return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}`));
+      return redirect(`/hiring/lead/cycle/${params.id}`);
     }
     await prisma.applicationCycle.update({
       where: { id: params.id },
       data: { generalRubricVersionId: rubricVersionId },
     });
-    return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}`));
+    return redirect(`/hiring/lead/cycle/${params.id}`);
   }
 
   if (intent === "set-confidentiality-agreement") {
@@ -533,7 +530,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     const emailTemplateVersionId = (formData.get("emailTemplateVersionId") as string) || null;
     const validTypes = ["Rejected", "InvitedToInterview", "Accepted", "Waitlisted"] as const;
     if (!validTypes.includes(decisionType as (typeof validTypes)[number])) {
-      return withAuth(auth, new Response(JSON.stringify({ error: "Invalid decision type" }), { status: 400, headers: { "Content-Type": "application/json" } }));
+      return new Response(JSON.stringify({ error: "Invalid decision type" }), { status: 400, headers: { "Content-Type": "application/json" } });
     }
     // Lock once a Released decision of this type exists for this cycle.
     const alreadyReleased = await prisma.decision.count({
@@ -544,7 +541,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       },
     });
     if (alreadyReleased > 0) {
-      return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}`));
+      return redirect(`/hiring/lead/cycle/${params.id}`);
     }
     if (emailTemplateVersionId) {
       await prisma.cycleDecisionEmail.upsert({
@@ -569,7 +566,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         },
       });
     }
-    return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}`));
+    return redirect(`/hiring/lead/cycle/${params.id}`);
   }
 
   if (intent === "set-notification-email") {
@@ -577,7 +574,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     const emailTemplateVersionId = (formData.get("emailTemplateVersionId") as string) || null;
     const validTypes = ["ApplicationReceived", "ApplicationExtensionNotice", "InterviewInviteMentor", "InterviewConfirmedApplicant", "InterviewCancelledApplicant", "InterviewCancelledInterviewer", "InterviewLocationChanged"] as const;
     if (!validTypes.includes(notificationType as (typeof validTypes)[number])) {
-      return withAuth(auth, new Response(JSON.stringify({ error: "Invalid notification type" }), { status: 400, headers: { "Content-Type": "application/json" } }));
+      return new Response(JSON.stringify({ error: "Invalid notification type" }), { status: 400, headers: { "Content-Type": "application/json" } });
     }
     if (emailTemplateVersionId) {
       await prisma.cycleNotificationEmail.upsert({
@@ -602,13 +599,13 @@ export async function action({ request, params }: Route.ActionArgs) {
         },
       });
     }
-    return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}`));
+    return redirect(`/hiring/lead/cycle/${params.id}`);
   }
 
   if (intent === "link-general-form") {
     const challengeVersionId = formData.get("challengeVersionId") as string;
     if (!challengeVersionId) {
-      return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}`));
+      return redirect(`/hiring/lead/cycle/${params.id}`);
     }
     // Remove any existing general form link (domainId is null)
     const existing = await prisma.challengeVersionApplicationCycle.findMany({
@@ -626,14 +623,14 @@ export async function action({ request, params }: Route.ActionArgs) {
     await prisma.challengeVersionApplicationCycle.create({
       data: { challengeVersionId, applicationCycleId: params.id },
     });
-    return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}`));
+    return redirect(`/hiring/lead/cycle/${params.id}`);
   }
 
   if (intent === "hl-add-domain-challenge") {
     const domainId = formData.get("domainId") as string;
     const challengeVersionId = formData.get("challengeVersionId") as string;
     if (!domainId || !challengeVersionId) {
-      return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}`));
+      return redirect(`/hiring/lead/cycle/${params.id}`);
     }
     // Hiring lead override mirrors domain lead's window: challenge edits are
     // Draft-only because applicants see the form once the cycle is Open.
@@ -642,13 +639,13 @@ export async function action({ request, params }: Route.ActionArgs) {
       orderBy: { createdAt: "desc" },
     });
     if ((latestUpdate?.newStatus ?? "Draft") !== "Draft") {
-      return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}`));
+      return redirect(`/hiring/lead/cycle/${params.id}`);
     }
     // Confirm the chosen version belongs to the named domain — guard against
     // form tampering linking a different domain's challenge.
     const cv = await prisma.challengeVersion.findUnique({ where: { id: challengeVersionId } });
     if (!cv || cv.domainId !== domainId) {
-      return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}`));
+      return redirect(`/hiring/lead/cycle/${params.id}`);
     }
     // Prevent linking two versions of the same underlying challenge in one cycle.
     const sameChallenge = await prisma.challengeVersionApplicationCycle.findFirst({
@@ -658,7 +655,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       },
     });
     if (sameChallenge) {
-      return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}`));
+      return redirect(`/hiring/lead/cycle/${params.id}`);
     }
     const existing = await prisma.challengeVersionApplicationCycle.findUnique({
       where: { challengeVersionId_applicationCycleId: { challengeVersionId, applicationCycleId: params.id! } },
@@ -668,20 +665,20 @@ export async function action({ request, params }: Route.ActionArgs) {
         data: { challengeVersionId, applicationCycleId: params.id! },
       });
     }
-    return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}`));
+    return redirect(`/hiring/lead/cycle/${params.id}`);
   }
 
   if (intent === "hl-remove-domain-challenge") {
     const challengeVersionId = formData.get("challengeVersionId") as string;
     if (!challengeVersionId) {
-      return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}`));
+      return redirect(`/hiring/lead/cycle/${params.id}`);
     }
     const latestUpdate = await prisma.applicationCycleStatusUpdate.findFirst({
       where: { applicationCycleId: params.id },
       orderBy: { createdAt: "desc" },
     });
     if ((latestUpdate?.newStatus ?? "Draft") !== "Draft") {
-      return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}`));
+      return redirect(`/hiring/lead/cycle/${params.id}`);
     }
     // Refuse to remove if any DomainApplication in this cycle picked this CV.
     const inUse = await prisma.domainApplication.count({
@@ -691,19 +688,19 @@ export async function action({ request, params }: Route.ActionArgs) {
       },
     });
     if (inUse > 0) {
-      return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}`));
+      return redirect(`/hiring/lead/cycle/${params.id}`);
     }
     await prisma.challengeVersionApplicationCycle.deleteMany({
       where: { challengeVersionId, applicationCycleId: params.id! },
     });
-    return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}`));
+    return redirect(`/hiring/lead/cycle/${params.id}`);
   }
 
   if (intent === "hl-set-domain-rubric") {
     const domainId = formData.get("domainId") as string;
     const rubricVersionId = (formData.get("rubricVersionId") as string) || null;
     if (!domainId) {
-      return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}`));
+      return redirect(`/hiring/lead/cycle/${params.id}`);
     }
     // Once any review is assigned for this domain in this cycle, the rubric
     // is locked: changing it would silently invalidate prior scores.
@@ -716,14 +713,14 @@ export async function action({ request, params }: Route.ActionArgs) {
       },
     });
     if (hasAssignedReviews > 0) {
-      return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}`));
+      return redirect(`/hiring/lead/cycle/${params.id}`);
     }
     if (rubricVersionId) {
       const rv = await prisma.rubricVersion.findUnique({
         where: { id: rubricVersionId },
       });
       if (!rv) {
-        return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}`));
+        return redirect(`/hiring/lead/cycle/${params.id}`);
       }
     }
     await prisma.domainApplicationCycle.upsert({
@@ -731,21 +728,21 @@ export async function action({ request, params }: Route.ActionArgs) {
       update: { rubricVersionId },
       create: { domainId, applicationCycleId: params.id, rubricVersionId },
     });
-    return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}`));
+    return redirect(`/hiring/lead/cycle/${params.id}`);
   }
 
   if (intent === "hl-force-mark-ready" || intent === "hl-force-unmark-ready") {
     const domainId = formData.get("domainId") as string;
     const confirm = formData.get("confirm");
     if (!domainId || confirm !== "true") {
-      return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}`));
+      return redirect(`/hiring/lead/cycle/${params.id}`);
     }
     const latestUpdate = await prisma.applicationCycleStatusUpdate.findFirst({
       where: { applicationCycleId: params.id },
       orderBy: { createdAt: "desc" },
     });
     if ((latestUpdate?.newStatus ?? "Draft") !== "Draft") {
-      return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}`));
+      return redirect(`/hiring/lead/cycle/${params.id}`);
     }
     const isReady = intent === "hl-force-mark-ready";
     if (isReady) {
@@ -759,7 +756,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         },
       });
       if (hasChallenge === 0) {
-        return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}`));
+        return redirect(`/hiring/lead/cycle/${params.id}`);
       }
     }
     await prisma.domainApplicationCycle.upsert({
@@ -767,7 +764,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       update: { isReady },
       create: { domainId, applicationCycleId: params.id, isReady },
     });
-    return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}`));
+    return redirect(`/hiring/lead/cycle/${params.id}`);
   }
 
   if (intent === "remove-domain" || intent === "add-domain") {
@@ -776,7 +773,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       orderBy: { createdAt: "desc" },
     });
     if ((latestUpdate?.newStatus ?? "Draft") !== "Draft") {
-      return withAuth(auth, new Response(JSON.stringify({ error: "Domains can only be modified in Draft" }), { status: 409, headers: { "Content-Type": "application/json" } }));
+      return new Response(JSON.stringify({ error: "Domains can only be modified in Draft" }), { status: 409, headers: { "Content-Type": "application/json" } });
     }
     const domainId = formData.get("domainId") as string;
     if (intent === "remove-domain") {
@@ -788,7 +785,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         data: { domainId, applicationCycleId: params.id },
       });
     }
-    return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}`));
+    return redirect(`/hiring/lead/cycle/${params.id}`);
   }
 
   if (intent === "advance-status") {
@@ -803,7 +800,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
     const currentStatus = cycle.statusUpdates[0]?.newStatus ?? "Draft";
     const next = nextStatus(currentStatus as CycleStatus);
-    if (!next) return withAuth(auth, null);
+    if (!next) return null;
 
     if (currentStatus === "Draft") {
       const hasCloseDate = !!cycle.closeDate;
@@ -811,7 +808,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         cycle.challengeVersions.map((cv) => cv.challengeVersion.domainId)
       );
       const allDomainsCovered = cycle.domains.length > 0 && cycle.domains.every((d) => coveredDomainIds.has(d.domainId));
-      if (!hasCloseDate || !allDomainsCovered) return withAuth(auth, null);
+      if (!hasCloseDate || !allDomainsCovered) return null;
     }
 
     await prisma.applicationCycleStatusUpdate.create({
@@ -823,7 +820,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     });
   }
 
-  return withAuth(auth, redirect(`/hiring/lead/cycle/${params.id}`));
+  return redirect(`/hiring/lead/cycle/${params.id}`);
 }
 
 const DURATION_OPTIONS = [15, 20, 25, 30, 45, 60]

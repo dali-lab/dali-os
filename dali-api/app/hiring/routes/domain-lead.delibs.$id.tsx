@@ -2,7 +2,7 @@ import { useState, useCallback, useRef } from "react";
 import { redirect, useLoaderData, useNavigate } from "react-router";
 import type { Route } from "./+types/domain-lead.delibs.$id";
 import { prisma } from "~/lib/db";
-import { requireAuth, withAuth } from "~/lib/auth";
+import { requireAuth } from "~/lib/auth";
 import { isDomainLead } from "~/lib/roles";
 import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
 import { ArrowLeft, GripVertical, X, Check } from "lucide-react";
@@ -17,8 +17,8 @@ export const meta: Route.MetaFunction = ({ data }) => {
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return withAuth(auth, redirect("/login"));
-  if (!(await isDomainLead(auth.user.sub))) return withAuth(auth, redirect("/"));
+  if (!auth.ok) return redirect("/login");
+  if (!(await isDomainLead(auth.user.sub))) return redirect("/");
 
   const session = await prisma.delibsSession.findUniqueOrThrow({
     where: { id: params.id },
@@ -86,7 +86,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
   });
 
-  return withAuth(auth, { session, domainApplications });
+  return { session, domainApplications };
 }
 
 type LoaderResult = {

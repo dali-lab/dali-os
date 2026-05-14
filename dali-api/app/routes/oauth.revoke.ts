@@ -1,7 +1,6 @@
 import type { Route } from "./+types/oauth.revoke";
-import { revokeToken } from "~/lib/oauth";
-
-import { clearTokenCookies, parseRefreshToken } from "~/lib/cookies";
+import { revokeSession } from "~/lib/session";
+import { clearSessionCookie, parseSessionId } from "~/lib/cookies";
 import { withCors, handlePreflight, preflightLoader } from "~/lib/cors";
 import { safeJson } from "~/lib/safe-json";
 
@@ -11,10 +10,9 @@ export async function action({ request }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
   if (preflight) return preflight;
 
-  // read refresh token from cookie first, fall back to body
-  let token: string | undefined = parseRefreshToken(request) ?? undefined;
+  // Cookie or Bearer first, then fall back to body `token`.
+  let token: string | undefined = parseSessionId(request) ?? undefined;
 
-  // don't strictly need this yet but good to have support if we want to support API access later
   if (!token) {
     const contentType = request.headers.get("Content-Type") ?? "";
     if (contentType.includes("application/json")) {
@@ -28,10 +26,10 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   if (token) {
-    await revokeToken(token);
+    await revokeSession(token);
   }
 
   const res = Response.json({});
-  clearTokenCookies(res.headers);
+  clearSessionCookie(res.headers);
   return withCors(request, res);
 }

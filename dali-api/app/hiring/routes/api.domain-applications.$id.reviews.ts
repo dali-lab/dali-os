@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.domain-applications.$id.reviews";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
-import { requireAuth, withAuth } from "~/lib/auth";
+import { requireAuth } from "~/lib/auth";
 import { isHiringLead, hasCycleAccess } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
@@ -18,9 +18,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     where: { id: params.id },
     select: { application: { select: { applicationCycleId: true } } },
   });
-  if (!domainApp) return withAuth(auth, Response.json({ error: "Not found" }, { status: 404 }));
+  if (!domainApp) return Response.json({ error: "Not found" }, { status: 404 });
   if (!(await hasCycleAccess(auth.user.sub, domainApp.application.applicationCycleId)))
-    return withAuth(auth, Response.json({ error: "Forbidden" }, { status: 403 }));
+    return Response.json({ error: "Forbidden" }, { status: 403 });
 
   const gate = await requireApiSignedOrForbidden(
     auth.user.sub,
@@ -40,7 +40,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     orderBy: { createdAt: "asc" },
   });
 
-  return withAuth(auth, Response.json(reviews));
+  return Response.json(reviews);
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -48,11 +48,11 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!auth.ok) return auth.response;
 
   if (request.method !== "POST") {
-    return withAuth(auth, Response.json({ error: "Method not allowed" }, { status: 405 }));
+    return Response.json({ error: "Method not allowed" }, { status: 405 });
   }
 
   const body = await parseJson(request, CreateReviewSchema);
-  if (body instanceof Response) return withAuth(auth, body);
+  if (body instanceof Response) return body;
   const { cycleReviewerId } = body;
 
   const domainApp = await prisma.domainApplication.findUniqueOrThrow({
@@ -66,7 +66,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   // Refuse to assign reviewers to a domain the applicant deselected — the
   // record only persists to preserve answers in case they re-select.
   if (!domainApp.selected) {
-    return withAuth(auth, Response.json({ error: "Cannot assign reviewer to a deselected domain application" }, { status: 409 }));
+    return Response.json({ error: "Cannot assign reviewer to a deselected domain application" }, { status: 409 });
   }
 
   // ChallengeVersion.domainId is nullable because the general application form
@@ -74,7 +74,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   // so this is a data invariant error rather than a user-facing condition.
   const domainId = domainApp.challengeVersion.domainId;
   if (!domainId) {
-    return withAuth(auth, Response.json({ error: "Domain application is linked to a non-domain challenge version" }, { status: 500 }));
+    return Response.json({ error: "Domain application is linked to a non-domain challenge version" }, { status: 500 });
   }
 
   const gate = await requireApiSignedOrForbidden(
@@ -92,7 +92,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       select: { id: true },
     });
     if (!domainLeadForThisDomain) {
-      return withAuth(auth, Response.json({ error: "Forbidden" }, { status: 403 }));
+      return Response.json({ error: "Forbidden" }, { status: 403 });
     }
   }
 
@@ -100,14 +100,14 @@ export async function action({ request, params }: Route.ActionArgs) {
     where: { id: domainApp.application.applicationCycleId },
   });
   if (!cycle.generalRubricVersionId) {
-    return withAuth(auth, Response.json({ error: "A general application rubric must be set before assigning reviewers to applications" }, { status: 400 }));
+    return Response.json({ error: "A general application rubric must be set before assigning reviewers to applications" }, { status: 400 });
   }
 
   const domainCycle = await prisma.domainApplicationCycle.findUnique({
     where: { domainId_applicationCycleId: { domainId, applicationCycleId: cycle.id } },
   });
   if (!domainCycle?.rubricVersionId) {
-    return withAuth(auth, Response.json({ error: "A domain rubric must be set before assigning reviewers to applications in this domain" }, { status: 400 }));
+    return Response.json({ error: "A domain rubric must be set before assigning reviewers to applications in this domain" }, { status: 400 });
   }
 
   const review = await prisma.applicationReview.create({
@@ -117,5 +117,5 @@ export async function action({ request, params }: Route.ActionArgs) {
     },
   });
 
-  return withAuth(auth, Response.json(review, { status: 201 }));
+  return Response.json(review, { status: 201 });
 }

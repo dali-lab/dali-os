@@ -1,7 +1,7 @@
 import { redirect } from "react-router";
 import type { Route } from "./+types/challenges";
 import { prisma } from "~/lib/db";
-import { requireAuth, withAuth } from "~/lib/auth";
+import { requireAuth } from "~/lib/auth";
 import { isHiringLead, isDomainLead, isAdmin } from "~/lib/roles";
 import Challenges from "~/hiring/components/Challenges";
 
@@ -9,8 +9,8 @@ export const meta: Route.MetaFunction = () => [{ title: "Challenges · DALI OS" 
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return withAuth(auth, redirect("/login"));
-  if (!(await isHiringLead(auth.user.sub)) && !(await isDomainLead(auth.user.sub)) && !(await isAdmin(auth.user.sub))) return withAuth(auth, redirect("/"));
+  if (!auth.ok) return redirect("/login");
+  if (!(await isHiringLead(auth.user.sub)) && !(await isDomainLead(auth.user.sub)) && !(await isAdmin(auth.user.sub))) return redirect("/");
   const [domains, challenges] = await Promise.all([
     prisma.domain.findMany({ orderBy: { name: "asc" } }),
     prisma.challenge.findMany({
@@ -23,13 +23,13 @@ export async function loader({ request }: Route.LoaderArgs) {
       orderBy: { createdAt: "desc" },
     }),
   ]);
-  return withAuth(auth, { domains, challenges });
+  return { domains, challenges };
 }
 
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return withAuth(auth, redirect("/login"));
-  if (!(await isHiringLead(auth.user.sub)) && !(await isDomainLead(auth.user.sub)) && !(await isAdmin(auth.user.sub))) return withAuth(auth, redirect("/"));
+  if (!auth.ok) return redirect("/login");
+  if (!(await isHiringLead(auth.user.sub)) && !(await isDomainLead(auth.user.sub)) && !(await isAdmin(auth.user.sub))) return redirect("/");
 
   const formData = await request.formData();
   const intent = formData.get("intent") as string;
@@ -38,7 +38,7 @@ export async function action({ request }: Route.ActionArgs) {
     const name = (formData.get("name") as string)?.trim();
     const domainId = formData.get("domainId") as string | null;
     const isGeneral = formData.get("general") === "1";
-    if (!name) return withAuth(auth, { error: "Name is required" });
+    if (!name) return { error: "Name is required" };
 
     const challenge = await prisma.challenge.create({ data: { name } });
     const dest = isGeneral
@@ -46,7 +46,7 @@ export async function action({ request }: Route.ActionArgs) {
       : domainId
         ? `/hiring/challenges/${challenge.id}?domainId=${domainId}`
         : `/hiring/challenges/${challenge.id}`;
-    return withAuth(auth, redirect(dest));
+    return redirect(dest);
   }
 
   if (intent === "delete") {
@@ -54,10 +54,10 @@ export async function action({ request }: Route.ActionArgs) {
     // Delete all versions first (cascade not set in schema)
     await prisma.challengeVersion.deleteMany({ where: { challengeId: id } });
     await prisma.challenge.delete({ where: { id } });
-    return withAuth(auth, null);
+    return null;
   }
 
-  return withAuth(auth, null);
+  return null;
 }
 
 export default Challenges;

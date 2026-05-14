@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.cycles.$cycleId.reviewers.$reviewerId";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
-import { requireAuth, withAuth } from "~/lib/auth";
+import { requireAuth } from "~/lib/auth";
 import { isHiringLead, isDomainLead } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
@@ -16,11 +16,11 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const auth = await requireAuth(request);
   if (!auth.ok) return withCors(request, auth.response);
-  if (!(await isHiringLead(auth.user.sub)) && !(await isDomainLead(auth.user.sub))) return withAuth(auth, withCors(request, Response.json({ error: "Forbidden" }, { status: 403 })));
+  if (!(await isHiringLead(auth.user.sub)) && !(await isDomainLead(auth.user.sub))) return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
 
   if (request.method === "PATCH") {
     const body = await parseJson(request, PatchReviewerSchema);
-    if (body instanceof Response) return withAuth(auth, withCors(request, body));
+    if (body instanceof Response) return withCors(request, body);
     const reviewer = await prisma.cycleReviewer.update({
       where: { id: params.reviewerId },
       data: {
@@ -31,7 +31,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         domain: true,
       },
     });
-    return withAuth(auth, withCors(request, Response.json(reviewer)));
+    return withCors(request, Response.json(reviewer));
   }
 
   if (request.method === "DELETE") {
@@ -49,12 +49,12 @@ export async function action({ request, params }: Route.ActionArgs) {
       });
     } catch (e: any) {
       if (e?.code === "P2025") {
-        return withAuth(auth, withCors(request, Response.json({ error: "Reviewer not found" }, { status: 404 })));
+        return withCors(request, Response.json({ error: "Reviewer not found" }, { status: 404 }));
       }
-      return withAuth(auth, withCors(request, Response.json({ error: "Failed to remove reviewer" }, { status: 500 })));
+      return withCors(request, Response.json({ error: "Failed to remove reviewer" }, { status: 500 }));
     }
-    return withAuth(auth, withCors(request, Response.json({ ok: true })));
+    return withCors(request, Response.json({ ok: true }));
   }
 
-  return withAuth(auth, withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 })));
+  return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
 }

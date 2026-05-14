@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.domain-applications.$id.decisions";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
-import { requireAuth, withAuth } from "~/lib/auth";
+import { requireAuth } from "~/lib/auth";
 import { isHiringLead, isDomainLead, hasCycleAccess } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
@@ -21,9 +21,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     where: { id: params.id },
     select: { application: { select: { applicationCycleId: true } } },
   });
-  if (!domainApp) return withAuth(auth, Response.json({ error: "Not found" }, { status: 404 }));
+  if (!domainApp) return Response.json({ error: "Not found" }, { status: 404 });
   if (!(await hasCycleAccess(auth.user.sub, domainApp.application.applicationCycleId)))
-    return withAuth(auth, Response.json({ error: "Forbidden" }, { status: 403 }));
+    return Response.json({ error: "Forbidden" }, { status: 403 });
 
   const gate = await requireApiSignedOrForbidden(
     auth.user.sub,
@@ -42,7 +42,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
   });
 
-  return withAuth(auth, Response.json(decisions));
+  return Response.json(decisions);
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -50,11 +50,11 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!auth.ok) return auth.response;
 
   if (request.method !== "POST") {
-    return withAuth(auth, Response.json({ error: "Method not allowed" }, { status: 405 }));
+    return Response.json({ error: "Method not allowed" }, { status: 405 });
   }
 
   const body = await parseJson(request, DecisionSchema);
-  if (body instanceof Response) return withAuth(auth, body);
+  if (body instanceof Response) return body;
   const { type, stage, notes, waitlistRank } = body;
 
   const da = await prisma.domainApplication.findUnique({
@@ -72,7 +72,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     where: { userId: auth.user.sub },
   });
   if (!member) {
-    return withAuth(auth, Response.json({ error: "Not a DALI member" }, { status: 403 }));
+    return Response.json({ error: "Not a DALI member" }, { status: 403 });
   }
 
   // Stage-based authorization:
@@ -80,13 +80,13 @@ export async function action({ request, params }: Route.ActionArgs) {
   // Released = hiring lead only
   if (stage === "Released") {
     if (!(await isHiringLead(auth.user.sub))) {
-      return withAuth(auth, Response.json({ error: "Only hiring leads can release decisions" }, { status: 403 }));
+      return Response.json({ error: "Only hiring leads can release decisions" }, { status: 403 });
     }
   } else {
     const hiringLead = await isHiringLead(auth.user.sub);
     const domainLead = await isDomainLead(auth.user.sub);
     if (!hiringLead && !domainLead) {
-      return withAuth(auth, Response.json({ error: "Forbidden" }, { status: 403 }));
+      return Response.json({ error: "Forbidden" }, { status: 403 });
     }
   }
 
@@ -101,5 +101,5 @@ export async function action({ request, params }: Route.ActionArgs) {
     },
   });
 
-  return withAuth(auth, Response.json(decision, { status: 201 }));
+  return Response.json(decision, { status: 201 });
 }

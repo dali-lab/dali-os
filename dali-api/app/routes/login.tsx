@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { Form, redirect, useSearchParams } from "react-router";
 import type { Route } from "./+types/login";
-import { requireAuth, withAuth } from "~/lib/auth";
+import { requireAuth } from "~/lib/auth";
 import { checkRateLimit } from "~/lib/rate-limit";
 
 const OAUTH_STATE_COOKIE = "__dali_oauth_state";
@@ -16,10 +16,10 @@ export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (auth.ok) {
     // Route based on user type: members go to admin, others to portal
-    if (auth.user.type === "member") return withAuth(auth, redirect("/hiring/reviewer"));
-    return withAuth(auth, redirect("/portal"));
+    if (auth.user.type === "member") return redirect("/hiring/reviewer");
+    return redirect("/portal");
   }
-  return withAuth(auth, {});
+  return {};
 }
 
 export async function action({ request }: Route.ActionArgs) {

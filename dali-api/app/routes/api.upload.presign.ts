@@ -7,7 +7,7 @@
 // signed policy, so a malicious client cannot exceed the size cap.
 // After upload, store the key in the DB and use GET /api/upload/url?key=... to read it.
 
-import { requireAuth, withAuth } from '~/lib/auth'
+import { requireAuth } from "~/lib/auth";
 import { getUploadPost } from '~/lib/s3'
 import {
   MAX_UPLOAD_BYTES,
@@ -60,25 +60,25 @@ function filenameFromKey(key: string): string {
 export async function action({ request }: { request: Request }) {
   try {
     const auth = await requireAuth(request)
-    if (!auth.ok) return withAuth(auth, Response.json({ error: 'Unauthorized' }, { status: 401 }))
+    if (!auth.ok) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
     const rateLimited = checkRateLimit(
       request,
       { max: RATE_LIMIT_MAX, windowMs: RATE_LIMIT_WINDOW_MS },
       auth.user.sub,
     )
-    if (rateLimited) return withAuth(auth, rateLimited)
+    if (rateLimited) return rateLimited
 
     const { key, contentType, contentLength, accept } = await request.json()
 
     if (!key || typeof key !== 'string') {
-      return withAuth(auth, Response.json({ error: 'key is required' }, { status: 400 }))
+      return Response.json({ error: 'key is required' }, { status: 400 })
     }
     if (!contentType || typeof contentType !== 'string') {
-      return withAuth(auth, Response.json({ error: 'contentType is required' }, { status: 400 }))
+      return Response.json({ error: 'contentType is required' }, { status: 400 })
     }
     if (accept !== undefined && typeof accept !== 'string') {
-      return withAuth(auth, Response.json({ error: 'accept must be a string' }, { status: 400 }))
+      return Response.json({ error: 'accept must be a string' }, { status: 400 })
     }
 
     const fileName = filenameFromKey(key)
@@ -86,27 +86,27 @@ export async function action({ request }: { request: Request }) {
     const lowerType = contentType.toLowerCase()
 
     if (BLOCKED_TYPES.has(lowerType) || (ext && BLOCKED_EXTENSIONS.has(ext))) {
-      return withAuth(auth, Response.json({ error: 'File type not allowed' }, { status: 400 }))
+      return Response.json({ error: 'File type not allowed' }, { status: 400 })
     }
 
     if (accept && !fileMatchesAccept(fileName, contentType, accept)) {
-      return withAuth(auth, Response.json(
+      return Response.json(
               { error: `File type not allowed. Accepted: ${accept}` },
               { status: 400 },
-            ))
+            )
     }
     // Cheap pre-check that returns a clean 413 before signing. The presigned
     // POST policy below also enforces the size cap server-side, so this is
     // only for UX — the client cannot bypass the real limit.
     if (contentLength !== undefined) {
       if (typeof contentLength !== 'number' || !Number.isFinite(contentLength) || contentLength < 0) {
-        return withAuth(auth, Response.json({ error: 'contentLength must be a non-negative number' }, { status: 400 }))
+        return Response.json({ error: 'contentLength must be a non-negative number' }, { status: 400 })
       }
       if (contentLength > MAX_UPLOAD_BYTES) {
-        return withAuth(auth, Response.json(
+        return Response.json(
                   { error: `File too large (max ${MAX_UPLOAD_LABEL})` },
                   { status: 413 },
-                ))
+                )
       }
     }
 
@@ -114,7 +114,7 @@ export async function action({ request }: { request: Request }) {
     const scopedKey = key.startsWith('uploads/') ? key : `uploads/${key}`
 
     const { url, fields } = await getUploadPost(scopedKey, contentType)
-    return withAuth(auth, Response.json({ url, fields, key: scopedKey }))
+    return Response.json({ url, fields, key: scopedKey })
   } catch (err) {
     console.error('Upload presign error:', err)
     return Response.json(

@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.collab.versions";
 import { prisma } from "~/lib/db";
-import { requireAuth, withAuth } from "~/lib/auth";
+import { requireAuth } from "~/lib/auth";
 import { authorizeCollabDoc, hydrateAuthors } from "~/lib/collabAuth";
 
 const PREVIEW_CHARS = 200;
@@ -15,11 +15,11 @@ export async function loader({ request }: Route.LoaderArgs) {
   const url = new URL(request.url);
   const name = url.searchParams.get("name");
   if (!name) {
-    return withAuth(auth, Response.json({ error: "name query param required" }, { status: 400 }));
+    return Response.json({ error: "name query param required" }, { status: 400 });
   }
 
   const allowed = await authorizeCollabDoc(auth.user.sub, name);
-  if (!allowed) return withAuth(auth, Response.json({ error: "Forbidden" }, { status: 403 }));
+  if (!allowed) return Response.json({ error: "Forbidden" }, { status: 403 });
 
   const versions = await prisma.collabDocumentVersion.findMany({
     where: { name },
@@ -33,7 +33,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const authorList = await hydrateAuthors(Array.from(allAuthorIds));
   const authorsById = new Map(authorList.map((a) => [a.id, a]));
 
-  return withAuth(auth, Response.json(
+  return Response.json(
       versions.map((v) => ({
         id: v.id,
         createdAt: v.createdAt,
@@ -45,5 +45,5 @@ export async function loader({ request }: Route.LoaderArgs) {
           .map((id) => authorsById.get(id))
           .filter(Boolean),
       })),
-    ));
+    );
 }

@@ -21,8 +21,8 @@ export async function linkCasToGoogleUser(googleUserId: string, netId: string) {
     return prisma.$transaction(async (tx) => {
       const daliEmail = googleUser.daliEmail;
 
-      // migrate refresh tokens to the surviving user
-      await tx.refreshToken.updateMany({
+      // migrate sessions to the surviving user
+      await tx.session.updateMany({
         where: { userId: googleUser.id },
         data: { userId: casUser.id },
       });

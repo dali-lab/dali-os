@@ -1,21 +1,21 @@
-// cookie helpers for httpOnly authentication tokens
+// Cookie helpers for the single session credential. See SESSION_AUTH_PLAN.md.
 
-const COOKIE_AT = "__dali_at";
-const COOKIE_RT = "__dali_rt";
+export const COOKIE_SID = "__dali_sid";
+
+// 30 days in seconds — same horizon as ROLLING_TTL_MS in `lib/session.ts`,
+// kept local so this module doesn't transitively import the Prisma client.
+// The cookie Max-Age and the DB rolling TTL are independently enforced:
+// the server is the source of truth, and an expired DB session 302s to
+// /login on the next request regardless of the cookie's lifetime.
+const SESSION_COOKIE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
 
 const isProduction = process.env.NODE_ENV === "production";
 
-function setCookie(
-  headers: Headers,
-  name: string,
-  value: string,
-  maxAge: number,
-  path = "/",
-) {
+export function setSessionCookie(headers: Headers, rawSessionId: string) {
   const parts = [
-    `${name}=${value}`,
-    `Max-Age=${maxAge}`,
-    `Path=${path}`,
+    `${COOKIE_SID}=${rawSessionId}`,
+    `Max-Age=${SESSION_COOKIE_MAX_AGE_SECONDS}`,
+    "Path=/",
     "HttpOnly",
     "SameSite=Lax",
   ];
@@ -23,26 +23,10 @@ function setCookie(
   headers.append("Set-Cookie", parts.join("; "));
 }
 
-export function setTokenCookies(
-  headers: Headers,
-  accessToken: string,
-  refreshToken: string,
-) {
-  setCookie(headers, COOKIE_AT, accessToken, 900);
-  // RT path is `/` so it is sent to every request — required for the silent
-  // refresh in `requireAuth`. Theft defence is the family-revocation reuse
-  // detection in `refreshTokens`, plus HttpOnly + SameSite=Lax + Secure-in-prod.
-  setCookie(headers, COOKIE_RT, refreshToken, 604800);
-}
-
-export function clearTokenCookies(headers: Headers) {
+export function clearSessionCookie(headers: Headers) {
   headers.append(
     "Set-Cookie",
-    `${COOKIE_AT}=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax`,
-  );
-  headers.append(
-    "Set-Cookie",
-    `${COOKIE_RT}=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax`,
+    `${COOKIE_SID}=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax`,
   );
 }
 
@@ -56,10 +40,18 @@ function parseCookies(request: Request): Record<string, string> {
   return entries;
 }
 
-export function parseAccessToken(request: Request): string | null {
-  return parseCookies(request)[COOKIE_AT] ?? null;
+export function parseSessionCookie(request: Request): string | null {
+  return parseCookies(request)[COOKIE_SID] ?? null;
 }
 
-export function parseRefreshToken(request: Request): string | null {
-  return parseCookies(request)[COOKIE_RT] ?? null;
+export function parseBearerHeader(request: Request): string | null {
+  const header = request.headers.get("Authorization");
+  if (!header) return null;
+  if (!header.startsWith("Bearer ")) return null;
+  return header.slice(7).trim() || null;
+}
+
+// Cookie first, Bearer header second. Cookie wins if both present.
+export function parseSessionId(request: Request): string | null {
+  return parseSessionCookie(request) ?? parseBearerHeader(request);
 }

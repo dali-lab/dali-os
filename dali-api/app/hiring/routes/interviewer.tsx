@@ -4,7 +4,7 @@ import { redirect } from 'react-router'
 import { Clock, Check, Video, AlertTriangle, ChevronDown } from 'lucide-react'
 import CalendarGrid from '~/hiring/components/CalendarGrid'
 import { prisma } from '~/lib/db'
-import { requireAuth, withAuth } from '~/lib/auth'
+import { requireAuth } from "~/lib/auth";
 import { getActiveCycle } from '~/hiring/lib/cycles'
 import { getCycleConfidentialityState } from '~/hiring/lib/confidentiality'
 import { ConfidentialityGate } from '~/hiring/components/ConfidentialityGate'
@@ -42,10 +42,10 @@ export async function loader({ request }: Route.LoaderArgs) {
   const member = await prisma.dALIMember.findFirst({
     where: { userId: auth.user.sub },
   })
-  if (!member) return withAuth(auth, empty)
+  if (!member) return empty
 
   const active = await getActiveCycle()
-  if (!active) return withAuth(auth, empty)
+  if (!active) return empty
 
   // Find CycleInterviewer records for this member in the active cycle
   const cycleInterviewers = await prisma.cycleInterviewer.findMany({
@@ -58,7 +58,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     },
   })
 
-  if (cycleInterviewers.length === 0) return withAuth(auth, empty)
+  if (cycleInterviewers.length === 0) return empty
 
   const cycleInterviewerIds = cycleInterviewers.map((ci) => ci.id)
 
@@ -106,7 +106,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     where: { applicationCycleId: active.id },
   })
 
-  return withAuth(auth, {
+  return {
       isInterviewer: true as const,
       activeCycle: { id: active.id, name: active.name },
       assignments,
@@ -121,7 +121,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       savedAvailability,
       confidentialityRequired:
         confState.status === "signed" ? null : confState.status,
-    })
+    }
 }
 
 export default function InterviewerDashboard() {

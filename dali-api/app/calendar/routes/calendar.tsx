@@ -14,7 +14,7 @@ import {
   Copy,
   ChevronDown,
 } from "lucide-react";
-import { requireAuth, withAuth } from "~/lib/auth";
+import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { computeFreeIntervals, type Interval } from "~/lib/availability";
 import { CalendarActionSchema } from "~/lib/calendar-schemas";
@@ -112,8 +112,8 @@ function currentWeekWindow(timezone: string): { start: Date; end: Date } {
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return withAuth(auth, redirect("/login"));
-  if (auth.user.type === "applicant") return withAuth(auth, redirect("/portal"));
+  if (!auth.ok) return redirect("/login");
+  if (auth.user.type === "applicant") return redirect("/portal");
 
   const userId = auth.user.sub;
 
@@ -230,14 +230,14 @@ export async function loader({ request }: Route.LoaderArgs) {
     })),
     ingestionError,
   };
-  return withAuth(auth, data);
+  return data;
 }
 
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
   if (auth.user.type === "applicant")
-    return withAuth(auth, Response.json({ error: "Forbidden" }, { status: 403 }));
+    return Response.json({ error: "Forbidden" }, { status: 403 });
 
   const userId = auth.user.sub;
   const form = await request.formData();
@@ -247,20 +247,14 @@ export async function action({ request }: Route.ActionArgs) {
   const candidate = coerceFormToAction(raw);
   const parsed = CalendarActionSchema.safeParse(candidate);
   if (!parsed.success) {
-    return withAuth(
-      auth,
-      Response.json({ error: "Invalid input", details: parsed.error.flatten() }, { status: 400 }),
-    );
+    return Response.json({ error: "Invalid input", details: parsed.error.flatten() }, { status: 400 });
   }
   const input = parsed.data;
 
   switch (input.intent) {
     case "update-working-hours-day": {
       if (input.enabled && input.startMinute >= input.endMinute) {
-        return withAuth(
-          auth,
-          Response.json({ error: "startMinute must be < endMinute" }, { status: 400 }),
-        );
+        return Response.json({ error: "startMinute must be < endMinute" }, { status: 400 });
       }
       await prisma.workingHoursDay.upsert({
         where: { userId_dayOfWeek: { userId, dayOfWeek: input.dayOfWeek } },
@@ -279,14 +273,14 @@ export async function action({ request }: Route.ActionArgs) {
           location: input.location,
         },
       });
-      return withAuth(auth, null);
+      return null;
     }
 
     case "copy-weekdays": {
       const monday = await prisma.workingHoursDay.findUnique({
         where: { userId_dayOfWeek: { userId, dayOfWeek: 1 } },
       });
-      if (!monday) return withAuth(auth, null);
+      if (!monday) return null;
       const tuesToFri = [2, 3, 4, 5];
       await Promise.all(
         tuesToFri.map((dow) =>
@@ -309,12 +303,12 @@ export async function action({ request }: Route.ActionArgs) {
           }),
         ),
       );
-      return withAuth(auth, null);
+      return null;
     }
 
     case "reset-working-hours": {
       await prisma.workingHoursDay.deleteMany({ where: { userId } });
-      return withAuth(auth, null);
+      return null;
     }
 
     case "set-event-buffer": {
@@ -323,17 +317,14 @@ export async function action({ request }: Route.ActionArgs) {
         create: { userId, defaultEventBufferMin: input.defaultEventBufferMin },
         update: { defaultEventBufferMin: input.defaultEventBufferMin },
       });
-      return withAuth(auth, null);
+      return null;
     }
 
     case "add-manual-block": {
       const startTime = new Date(input.startTime);
       const endTime = new Date(input.endTime);
       if (endTime <= startTime) {
-        return withAuth(
-          auth,
-          Response.json({ error: "endTime must be after startTime" }, { status: 400 }),
-        );
+        return Response.json({ error: "endTime must be after startTime" }, { status: 400 });
       }
       await prisma.manualBlock.create({
         data: {
@@ -345,21 +336,18 @@ export async function action({ request }: Route.ActionArgs) {
           recurrenceRule: input.recurrenceRule ?? null,
         },
       });
-      return withAuth(auth, null);
+      return null;
     }
 
     case "update-manual-block": {
       const existing = await prisma.manualBlock.findUnique({ where: { id: input.id } });
       if (!existing || existing.userId !== userId) {
-        return withAuth(auth, Response.json({ error: "Not found" }, { status: 404 }));
+        return Response.json({ error: "Not found" }, { status: 404 });
       }
       const startTime = input.startTime ? new Date(input.startTime) : existing.startTime;
       const endTime = input.endTime ? new Date(input.endTime) : existing.endTime;
       if (endTime <= startTime) {
-        return withAuth(
-          auth,
-          Response.json({ error: "endTime must be after startTime" }, { status: 400 }),
-        );
+        return Response.json({ error: "endTime must be after startTime" }, { status: 400 });
       }
       await prisma.manualBlock.update({
         where: { id: input.id },
@@ -372,31 +360,31 @@ export async function action({ request }: Route.ActionArgs) {
             input.recurrenceRule === undefined ? existing.recurrenceRule : input.recurrenceRule,
         },
       });
-      return withAuth(auth, null);
+      return null;
     }
 
     case "remove-manual-block": {
       const existing = await prisma.manualBlock.findUnique({ where: { id: input.id } });
       if (!existing || existing.userId !== userId) {
-        return withAuth(auth, Response.json({ error: "Not found" }, { status: 404 }));
+        return Response.json({ error: "Not found" }, { status: 404 });
       }
       await prisma.manualBlock.delete({ where: { id: input.id } });
-      return withAuth(auth, null);
+      return null;
     }
 
     case "remove-calendar-link": {
       const link = await prisma.userCalendarLink.findUnique({ where: { id: input.linkId } });
       if (!link || link.userId !== userId) {
-        return withAuth(auth, Response.json({ error: "Not found" }, { status: 404 }));
+        return Response.json({ error: "Not found" }, { status: 404 });
       }
       await prisma.userCalendarLink.delete({ where: { id: input.linkId } });
-      return withAuth(auth, null);
+      return null;
     }
 
     case "toggle-sub-calendar": {
       const link = await prisma.userCalendarLink.findUnique({ where: { id: input.linkId } });
       if (!link || link.userId !== userId) {
-        return withAuth(auth, Response.json({ error: "Not found" }, { status: 404 }));
+        return Response.json({ error: "Not found" }, { status: 404 });
       }
       const current = new Set(link.subCalendarIds);
       if (input.enabled) current.add(input.calendarId);
@@ -405,7 +393,7 @@ export async function action({ request }: Route.ActionArgs) {
         where: { id: input.linkId },
         data: { subCalendarIds: Array.from(current) },
       });
-      return withAuth(auth, null);
+      return null;
     }
   }
 }

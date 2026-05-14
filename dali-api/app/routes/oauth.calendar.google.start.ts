@@ -6,7 +6,7 @@
 // to handleCalendarLinkCallback, which writes a UserCalendarLink for the
 // already-authenticated user.
 
-import { requireAuth, withAuth } from "~/lib/auth";
+import { requireAuth } from "~/lib/auth";
 import { randomBytes } from "node:crypto";
 
 export const CAL_STATE_COOKIE = "__dali_cal_oauth_state";
@@ -21,16 +21,16 @@ const SCOPES = [
 export async function loader({ request }: { request: Request }) {
   const auth = await requireAuth(request);
   if (!auth.ok) {
-    return withAuth(auth, new Response(null, { status: 302, headers: { Location: "/login" } }));
+    return new Response(null, { status: 302, headers: { Location: "/login" } });
   }
   if (auth.user.type === "applicant") {
-    return withAuth(auth, new Response(null, { status: 302, headers: { Location: "/portal" } }));
+    return new Response(null, { status: 302, headers: { Location: "/portal" } });
   }
 
   const apiBase = process.env.API_BASE_URL ?? "http://localhost:3001";
   const clientId = process.env.GOOGLE_CLIENT_ID;
   if (!clientId) {
-    return withAuth(auth, new Response("GOOGLE_CLIENT_ID not configured", { status: 500 }));
+    return new Response("GOOGLE_CLIENT_ID not configured", { status: 500 });
   }
 
   const nonce = randomBytes(16).toString("hex");
@@ -50,14 +50,11 @@ export async function loader({ request }: { request: Request }) {
   // Use Path=/ so the cookie is sent on /auth/callback/google too.
   const stateCookie = `${CAL_STATE_COOKIE}=${nonce}; Path=/; Max-Age=600; HttpOnly; SameSite=Lax`;
 
-  return withAuth(
-    auth,
-    new Response(null, {
+  return new Response(null, {
       status: 302,
       headers: {
         "Set-Cookie": stateCookie,
         Location: `https://accounts.google.com/o/oauth2/v2/auth?${params}`,
       },
-    }),
-  );
+    });
 }

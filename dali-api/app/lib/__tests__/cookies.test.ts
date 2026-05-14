@@ -1,68 +1,93 @@
 import { describe, it, expect } from "vitest";
 import {
-  parseAccessToken,
-  parseRefreshToken,
-  setTokenCookies,
-  clearTokenCookies,
+  parseSessionCookie,
+  parseBearerHeader,
+  parseSessionId,
+  setSessionCookie,
+  clearSessionCookie,
 } from "~/lib/cookies";
 
-describe("parseAccessToken", () => {
-  it("extracts __dali_at from cookie header", () => {
+describe("parseSessionCookie", () => {
+  it("extracts __dali_sid from cookie header", () => {
     const req = new Request("http://localhost", {
-      headers: { Cookie: "__dali_at=abc123; __dali_rt=xyz" },
+      headers: { Cookie: "__dali_sid=abc123; other=xyz" },
     });
-    expect(parseAccessToken(req)).toBe("abc123");
+    expect(parseSessionCookie(req)).toBe("abc123");
   });
 
   it("returns null when cookie is missing", () => {
     const req = new Request("http://localhost");
-    expect(parseAccessToken(req)).toBeNull();
+    expect(parseSessionCookie(req)).toBeNull();
   });
 });
 
-describe("parseRefreshToken", () => {
-  it("extracts __dali_rt from cookie header", () => {
+describe("parseBearerHeader", () => {
+  it("extracts the token from an Authorization: Bearer header", () => {
     const req = new Request("http://localhost", {
-      headers: { Cookie: "__dali_at=abc; __dali_rt=refresh456" },
+      headers: { Authorization: "Bearer sess-id-123" },
     });
-    expect(parseRefreshToken(req)).toBe("refresh456");
+    expect(parseBearerHeader(req)).toBe("sess-id-123");
   });
 
-  it("returns null when cookie is missing", () => {
+  it("returns null without an Authorization header", () => {
     const req = new Request("http://localhost");
-    expect(parseRefreshToken(req)).toBeNull();
+    expect(parseBearerHeader(req)).toBeNull();
+  });
+
+  it("returns null for a non-Bearer scheme", () => {
+    const req = new Request("http://localhost", {
+      headers: { Authorization: "Basic abc=" },
+    });
+    expect(parseBearerHeader(req)).toBeNull();
   });
 });
 
-describe("setTokenCookies", () => {
-  it("appends correct Set-Cookie headers", () => {
+describe("parseSessionId", () => {
+  it("prefers the cookie when both cookie and header are present", () => {
+    const req = new Request("http://localhost", {
+      headers: {
+        Cookie: "__dali_sid=cookie-id",
+        Authorization: "Bearer header-id",
+      },
+    });
+    expect(parseSessionId(req)).toBe("cookie-id");
+  });
+
+  it("falls back to the Bearer header when no cookie", () => {
+    const req = new Request("http://localhost", {
+      headers: { Authorization: "Bearer header-id" },
+    });
+    expect(parseSessionId(req)).toBe("header-id");
+  });
+
+  it("returns null when neither is present", () => {
+    const req = new Request("http://localhost");
+    expect(parseSessionId(req)).toBeNull();
+  });
+});
+
+describe("setSessionCookie", () => {
+  it("appends one Set-Cookie header for __dali_sid", () => {
     const headers = new Headers();
-    setTokenCookies(headers, "at_value", "rt_value");
+    setSessionCookie(headers, "raw-session-id");
 
     const cookies = headers.getSetCookie();
-    expect(cookies).toHaveLength(2);
-    expect(cookies[0]).toContain("__dali_at=at_value");
-    expect(cookies[0]).toContain("Max-Age=900");
+    expect(cookies).toHaveLength(1);
+    expect(cookies[0]).toContain("__dali_sid=raw-session-id");
     expect(cookies[0]).toContain("Path=/");
     expect(cookies[0]).toContain("HttpOnly");
-    expect(cookies[1]).toContain("__dali_rt=rt_value");
-    expect(cookies[1]).toContain("Max-Age=604800");
-    // RT cookie path is `/` so the silent refresh in `requireAuth` sees it on
-    // every request — not just calls into /oauth/*.
-    expect(cookies[1]).toContain("Path=/");
+    expect(cookies[0]).toContain("SameSite=Lax");
   });
 });
 
-describe("clearTokenCookies", () => {
-  it("appends clearing Set-Cookie headers with Max-Age=0", () => {
+describe("clearSessionCookie", () => {
+  it("appends a clearing Set-Cookie header with Max-Age=0", () => {
     const headers = new Headers();
-    clearTokenCookies(headers);
+    clearSessionCookie(headers);
 
     const cookies = headers.getSetCookie();
-    expect(cookies).toHaveLength(2);
-    expect(cookies[0]).toContain("__dali_at=");
+    expect(cookies).toHaveLength(1);
+    expect(cookies[0]).toContain("__dali_sid=");
     expect(cookies[0]).toContain("Max-Age=0");
-    expect(cookies[1]).toContain("__dali_rt=");
-    expect(cookies[1]).toContain("Max-Age=0");
   });
 });

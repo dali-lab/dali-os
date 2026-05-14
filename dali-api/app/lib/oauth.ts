@@ -1,7 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { OAuth2Client } from "google-auth-library";
 import { prisma } from "~/lib/db";
-import { signAccessToken } from "~/lib/auth";
 
 // types
 
@@ -30,9 +29,6 @@ export class OAuthError extends Error {
 
 const SESSION_TTL_MS = 10 * 60 * 1000; // 10 min for the authorize→callback→exchange round-trip
 const AUTH_CODE_TTL_MS = 60 * 1000; // 1 min for code→token exchange
-const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days sliding
-const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days absolute cap
-const ACCESS_TOKEN_EXPIRES_IN = 900; // 15 min
 
 export const VALID_CLIENT_IDS = ["dali-api"] as const;
 
@@ -61,7 +57,7 @@ function deriveAuthType(user: {
   return "partner";
 }
 
-function buildUserInfo(
+export function buildUserInfo(
   user: {
     id: string;
     daliEmail: string | null;
@@ -70,59 +66,16 @@ function buildUserInfo(
     firstName: string;
     lastName: string;
   },
-  authType: string,
+  authType?: string,
 ): UserInfo {
+  const resolvedType = authType ?? deriveAuthType(user);
   return {
     id: user.id,
     email:
       user.daliEmail ?? user.dartmouthEmail ?? `${user.netId}@dartmouth.edu`,
     firstName: user.firstName,
     lastName: user.lastName,
-    type: authType,
-  };
-}
-
-async function createTokenPair(
-  user: {
-    id: string;
-    daliEmail: string | null;
-    dartmouthEmail: string | null;
-    netId: string | null;
-    firstName: string;
-    lastName: string;
-  },
-  authType: string,
-  family?: string,
-  familyCreatedAt?: Date,
-) {
-  const userInfo = buildUserInfo(user, authType);
-
-  const accessToken = await signAccessToken({
-    sub: user.id,
-    email: userInfo.email,
-    type: authType,
-    firstName: user.firstName,
-    lastName: user.lastName,
-  });
-
-  const rawRefreshToken = generateOpaqueToken();
-
-  await prisma.refreshToken.create({
-    data: {
-      tokenHash: sha256(rawRefreshToken),
-      userId: user.id,
-      family: family ?? generateOpaqueToken(),
-      expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_MS),
-      familyCreatedAt: familyCreatedAt ?? new Date(),
-    },
-  });
-
-  return {
-    access_token: accessToken,
-    token_type: "Bearer" as const,
-    expires_in: ACCESS_TOKEN_EXPIRES_IN,
-    refresh_token: rawRefreshToken,
-    userInfo,
+    type: resolvedType,
   };
 }
 
@@ -223,69 +176,10 @@ export async function exchangeAuthorizationCode(params: {
   };
 }
 
-// token issuing and refreshing
-
-export async function issueTokens(userId: string, authType: string) {
-  const user = await prisma.user.findUnique({ where: { id: userId } });
-  if (!user) throw new OAuthError("server_error", "User not found");
-  return createTokenPair(user, authType);
-}
-
-export async function refreshTokens(rawRefreshToken: string) {
-  const tokenHash = sha256(rawRefreshToken);
-  const existing = await prisma.refreshToken.findUnique({
-    where: { tokenHash },
-  });
-
-  if (!existing) throw new OAuthError("invalid_grant", "Invalid refresh token");
-
-  if (existing.revokedAt) {
-    await prisma.refreshToken.updateMany({
-      where: { family: existing.family },
-      data: { revokedAt: new Date() },
-    });
-    throw new OAuthError(
-      "invalid_grant",
-      "Refresh token reuse detected — family revoked",
-    );
-  }
-
-  if (existing.expiresAt < new Date()) {
-    throw new OAuthError("invalid_grant", "Refresh token expired");
-  }
-
-  if (existing.familyCreatedAt.getTime() + SESSION_MAX_AGE_MS < Date.now()) {
-    throw new OAuthError("invalid_grant", "Session expired — please log in again");
-  }
-
-  // revoke old token
-  await prisma.refreshToken.update({
-    where: { id: existing.id },
-    data: { revokedAt: new Date() },
-  });
-
-  const user = await prisma.user.findUnique({
-    where: { id: existing.userId },
-  });
-  if (!user) throw new OAuthError("server_error", "User not found");
-
-  return createTokenPair(user, deriveAuthType(user), existing.family, existing.familyCreatedAt);
-}
-
-// revoke tokens
-
-export async function revokeToken(rawToken: string) {
-  const tokenHash = sha256(rawToken);
-  const existing = await prisma.refreshToken.findUnique({
-    where: { tokenHash },
-  });
-  if (!existing) return;
-
-  await prisma.refreshToken.updateMany({
-    where: { family: existing.family },
-    data: { revokedAt: new Date() },
-  });
-}
+// Token issuing now lives in `lib/session.ts` (`issueSession`). The OAuth
+// provider's `/oauth/token` endpoint calls `issueSession` after
+// `exchangeAuthorizationCode` succeeds. Refresh-token grant has been removed
+// from `/oauth/token` — sessions auto-extend on use. See SESSION_AUTH_PLAN.md.
 
 // google OAuth
 

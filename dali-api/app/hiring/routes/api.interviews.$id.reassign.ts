@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.interviews.$id.reassign";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
-import { requireAuth, withAuth } from "~/lib/auth";
+import { requireAuth } from "~/lib/auth";
 import { isHiringLead } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
@@ -17,15 +17,15 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!auth.ok) return auth.response;
 
   if (request.method !== "POST") {
-    return withAuth(auth, Response.json({ error: "Method not allowed" }, { status: 405 }));
+    return Response.json({ error: "Method not allowed" }, { status: 405 });
   }
 
   if (!(await isHiringLead(auth.user.sub))) {
-    return withAuth(auth, Response.json({ error: "Forbidden" }, { status: 403 }));
+    return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const body = await parseJson(request, ReassignSchema);
-  if (body instanceof Response) return withAuth(auth, body);
+  if (body instanceof Response) return body;
   const { assignmentId, newCycleInterviewerId } = body;
 
   const assignment = await prisma.interviewAssignment.findUnique({
@@ -33,14 +33,14 @@ export async function action({ request, params }: Route.ActionArgs) {
     include: { interview: true },
   });
   if (!assignment || assignment.interview.id !== params.id) {
-    return withAuth(auth, Response.json({ error: "Assignment not found" }, { status: 404 }));
+    return Response.json({ error: "Assignment not found" }, { status: 404 });
   }
 
   const gate = await requireApiSignedOrForbidden(
     auth.user.sub,
     assignment.interview.applicationCycleId,
   );
-  if (gate) return withAuth(auth, gate);
+  if (gate) return gate;
 
   const interview = assignment.interview;
 
@@ -52,7 +52,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     select: { daliMemberId: true },
   });
   if (!newCI) {
-    return withAuth(auth, Response.json({ error: "Interviewer not found" }, { status: 404 }));
+    return Response.json({ error: "Interviewer not found" }, { status: 404 });
   }
 
   // Conflict check + reassign in one serializable transaction to prevent
@@ -98,10 +98,10 @@ export async function action({ request, params }: Route.ActionArgs) {
     }, { isolationLevel: "Serializable" });
   } catch (err: any) {
     if (err?.message === "__CONFLICT__") {
-      return withAuth(auth, Response.json(
+      return Response.json(
         { error: "This interviewer is already assigned to another interview at this time" },
         { status: 409 },
-      ));
+      );
     }
     throw err;
   }
@@ -114,5 +114,5 @@ export async function action({ request, params }: Route.ActionArgs) {
     newCycleInterviewerId,
   ).catch(() => {});
 
-  return withAuth(auth, Response.json({ success: true }));
+  return Response.json({ success: true });
 }

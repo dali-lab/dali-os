@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.my-interview.cancel";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
-import { requireAuth, withAuth } from "~/lib/auth";
+import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 // import { deprovisionZoomMeeting } from "~/lib/zoom"; // S2S Zoom not configured yet
@@ -19,11 +19,11 @@ export async function action({ request }: Route.ActionArgs) {
   if (!auth.ok) return withCors(request, auth.response);
 
   if (request.method !== "POST") {
-    return withAuth(auth, withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 })));
+    return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
 
   const body = await parseJson(request, CancelSchema);
-  if (body instanceof Response) return withAuth(auth, withCors(request, body));
+  if (body instanceof Response) return withCors(request, body);
   const { domainApplicationId } = body;
 
   const interview = await prisma.interview.findFirst({
@@ -35,7 +35,7 @@ export async function action({ request }: Route.ActionArgs) {
   });
 
   if (!interview) {
-    return withAuth(auth, withCors(request, Response.json({ error: "No active interview found" }, { status: 404 })));
+    return withCors(request, Response.json({ error: "No active interview found" }, { status: 404 }));
   }
 
   const config = await prisma.interviewConfig.findUnique({
@@ -45,10 +45,10 @@ export async function action({ request }: Route.ActionArgs) {
   if (cancelNoticeHours > 0) {
     const cutoff = new Date(interview.startTime.getTime() - cancelNoticeHours * 60 * 60_000);
     if (new Date() > cutoff) {
-      return withAuth(auth, withCors(request, Response.json(
+      return withCors(request, Response.json(
         { error: "Too late to cancel — please contact the DALI team" },
         { status: 403 },
-      )));
+      ));
     }
   }
 
@@ -71,5 +71,5 @@ export async function action({ request }: Route.ActionArgs) {
   // Best-effort: send cancellation ICS to applicant + interviewers
   sendInterviewCancelEmails(interview.id, domainApplicationId).catch(() => {});
 
-  return withAuth(auth, withCors(request, Response.json(updated)));
+  return withCors(request, Response.json(updated));
 }
