@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 
 const mockVerifyIdToken = vi.hoisted(() => vi.fn());
 const mockGetPayload = vi.hoisted(() => vi.fn());
@@ -17,30 +17,22 @@ import {
   getAllowedRedirectUris,
   exchangeAuthorizationCode,
   exchangeGoogleCode,
-  refreshTokens,
-  revokeToken,
+  buildUserInfo,
 } from "~/lib/oauth";
 
 const mockPrisma = prisma as unknown as {
-  user: { findUnique: ReturnType<typeof vi.fn> };
-  refreshToken: {
-    create: ReturnType<typeof vi.fn>;
-    findUnique: ReturnType<typeof vi.fn>;
-    update: ReturnType<typeof vi.fn>;
-    updateMany: ReturnType<typeof vi.fn>;
-  };
   oAuthSession: {
     findUnique: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
   };
 };
 
-beforeAll(() => {
-  process.env.JWT_SECRET = "test-secret-at-least-32-chars-long!!";
-});
-
 beforeEach(() => {
   vi.clearAllMocks();
+  mockPrisma.oAuthSession = {
+    findUnique: vi.fn(),
+    update: vi.fn().mockResolvedValue({}),
+  } as any;
 });
 
 describe("verifyPKCE", () => {
@@ -80,6 +72,59 @@ describe("getAllowedRedirectUris", () => {
   it("returns frontend login URI", () => {
     const uris = getAllowedRedirectUris();
     expect(uris).toContain("http://localhost:5173/login");
+  });
+});
+
+describe("buildUserInfo", () => {
+  it("derives type from user columns when not provided", () => {
+    expect(
+      buildUserInfo({
+        id: "u",
+        daliEmail: "a@dali.dartmouth.edu",
+        dartmouthEmail: null,
+        netId: null,
+        firstName: "A",
+        lastName: "B",
+      }).type,
+    ).toBe("member");
+
+    expect(
+      buildUserInfo({
+        id: "u",
+        daliEmail: null,
+        dartmouthEmail: null,
+        netId: "x",
+        firstName: "A",
+        lastName: "B",
+      }).type,
+    ).toBe("dartmouth");
+
+    expect(
+      buildUserInfo({
+        id: "u",
+        daliEmail: null,
+        dartmouthEmail: "x@example.com",
+        netId: null,
+        firstName: "A",
+        lastName: "B",
+      }).type,
+    ).toBe("partner");
+  });
+
+  it("uses an explicit authType when supplied", () => {
+    expect(
+      buildUserInfo(
+        {
+          id: "u",
+          daliEmail: "a@dali.dartmouth.edu",
+          dartmouthEmail: null,
+          netId: null,
+          firstName: "A",
+          lastName: "B",
+        },
+        "dartmouth",
+      ).type,
+    ).toBe("dartmouth");
   });
 });
 
@@ -170,7 +215,6 @@ describe("exchangeAuthorizationCode", () => {
       provider: "cas",
       accountType: "dartmouth",
     });
-    mockPrisma.oAuthSession.update.mockResolvedValue({});
 
     await expect(exchangeAuthorizationCode(baseParams)).rejects.toThrow(
       "Session has no user",
@@ -194,7 +238,6 @@ describe("exchangeAuthorizationCode", () => {
       provider: "cas",
       accountType: "dartmouth",
     });
-    mockPrisma.oAuthSession.update.mockResolvedValue({});
 
     const result = await exchangeAuthorizationCode(baseParams);
     expect(result).toEqual({
@@ -202,123 +245,6 @@ describe("exchangeAuthorizationCode", () => {
       provider: "cas",
       accountType: "dartmouth",
     });
-  });
-});
-
-describe("refreshTokens", () => {
-  const mockUser = {
-    id: "u1",
-    daliEmail: "a@dali.dartmouth.edu",
-    dartmouthEmail: null,
-    netId: "d12345a",
-    firstName: "Jane",
-    lastName: "Doe",
-  };
-
-  it("throws when token not found", async () => {
-    mockPrisma.refreshToken.findUnique.mockResolvedValue(null);
-    await expect(refreshTokens("unknown-token")).rejects.toThrow(
-      "Invalid refresh token",
-    );
-  });
-
-  it("revokes family on token reuse", async () => {
-    mockPrisma.refreshToken.findUnique.mockResolvedValue({
-      id: "rt1",
-      family: "fam1",
-      revokedAt: new Date(),
-      expiresAt: new Date(Date.now() + 60000),
-      userId: "u1",
-    });
-
-    await expect(refreshTokens("reused-token")).rejects.toThrow(
-      "family revoked",
-    );
-    expect(mockPrisma.refreshToken.updateMany).toHaveBeenCalledWith({
-      where: { family: "fam1" },
-      data: { revokedAt: expect.any(Date) },
-    });
-  });
-
-  it("throws when token is expired", async () => {
-    mockPrisma.refreshToken.findUnique.mockResolvedValue({
-      id: "rt1",
-      family: "fam1",
-      revokedAt: null,
-      expiresAt: new Date(Date.now() - 60000),
-      userId: "u1",
-    });
-    await expect(refreshTokens("expired-token")).rejects.toThrow(
-      "Refresh token expired",
-    );
-  });
-
-  it("succeeds with token rotation", async () => {
-    const familyCreatedAt = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    mockPrisma.refreshToken.findUnique.mockResolvedValue({
-      id: "rt1",
-      family: "fam1",
-      revokedAt: null,
-      expiresAt: new Date(Date.now() + 60000),
-      userId: "u1",
-      familyCreatedAt,
-    });
-    mockPrisma.refreshToken.update.mockResolvedValue({});
-    mockPrisma.user.findUnique.mockResolvedValue(mockUser);
-    mockPrisma.refreshToken.create.mockResolvedValue({});
-
-    const result = await refreshTokens("valid-token");
-    expect(result.access_token).toBeDefined();
-    expect(result.refresh_token).toBeDefined();
-    expect(result.token_type).toBe("Bearer");
-    expect(result.expires_in).toBe(900);
-    expect(result.userInfo.id).toBe("u1");
-
-    // old token was revoked
-    expect(mockPrisma.refreshToken.update).toHaveBeenCalledWith({
-      where: { id: "rt1" },
-      data: { revokedAt: expect.any(Date) },
-    });
-    // familyCreatedAt propagated to new token
-    expect(mockPrisma.refreshToken.create).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ familyCreatedAt }) }),
-    );
-  });
-
-  it("throws when session exceeds 30-day absolute cap", async () => {
-    mockPrisma.refreshToken.findUnique.mockResolvedValue({
-      id: "rt1",
-      family: "fam1",
-      revokedAt: null,
-      expiresAt: new Date(Date.now() + 60000),
-      userId: "u1",
-      familyCreatedAt: new Date(Date.now() - 31 * 24 * 60 * 60 * 1000),
-    });
-    await expect(refreshTokens("old-session-token")).rejects.toThrow(
-      "Session expired",
-    );
-  });
-});
-
-describe("revokeToken", () => {
-  it("revokes the token family", async () => {
-    mockPrisma.refreshToken.findUnique.mockResolvedValue({
-      id: "rt1",
-      family: "fam1",
-    });
-    mockPrisma.refreshToken.updateMany.mockResolvedValue({});
-
-    await revokeToken("some-token");
-    expect(mockPrisma.refreshToken.updateMany).toHaveBeenCalledWith({
-      where: { family: "fam1" },
-      data: { revokedAt: expect.any(Date) },
-    });
-  });
-
-  it("is a no-op for unknown token", async () => {
-    mockPrisma.refreshToken.findUnique.mockResolvedValue(null);
-    await revokeToken("unknown-token");
-    expect(mockPrisma.refreshToken.updateMany).not.toHaveBeenCalled();
   });
 });
 

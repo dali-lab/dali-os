@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/audit", () => ({
   logAuditEvent: vi.fn(),
@@ -6,19 +6,11 @@ vi.mock("~/lib/audit", () => ({
 vi.mock("~/lib/db");
 
 import { prisma } from "~/lib/db";
-import { logAuditEvent } from "~/lib/audit";
-import {
-  signAccessToken,
-  verifyAccessToken,
-  requireAuth,
-  withAuth,
-  validateCasTicket,
-} from "~/lib/auth";
-import { setTokenCookies } from "~/lib/cookies";
+import { requireAuth, validateCasTicket } from "~/lib/auth";
+import { hashSessionId, ROLLING_TTL_MS, ABSOLUTE_TTL_MS } from "~/lib/session";
 
 const mockPrisma = prisma as unknown as {
-  user: { findUnique: ReturnType<typeof vi.fn> };
-  refreshToken: {
+  session: {
     create: ReturnType<typeof vi.fn>;
     findUnique: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
@@ -26,406 +18,228 @@ const mockPrisma = prisma as unknown as {
   };
 };
 
-beforeAll(() => {
-  process.env.JWT_SECRET = "test-secret-at-least-32-chars-long!!";
-});
+function makeSessionRow(overrides: Partial<{
+  id: string;
+  userId: string;
+  grantId: string | null;
+  expiresAt: Date;
+  absoluteExpiresAt: Date;
+  revokedAt: Date | null;
+  user: {
+    id: string;
+    daliEmail: string | null;
+    dartmouthEmail: string | null;
+    netId: string | null;
+    firstName: string;
+    lastName: string;
+  };
+}> = {}) {
+  const userId = overrides.userId ?? "user-1";
+  return {
+    id: overrides.id ?? hashSessionId("raw-1"),
+    userId,
+    grantId: overrides.grantId ?? null,
+    createdAt: new Date(),
+    lastUsedAt: new Date(),
+    expiresAt: overrides.expiresAt ?? new Date(Date.now() + ROLLING_TTL_MS),
+    absoluteExpiresAt:
+      overrides.absoluteExpiresAt ?? new Date(Date.now() + ABSOLUTE_TTL_MS),
+    revokedAt: overrides.revokedAt ?? null,
+    userAgent: null,
+    ip: null,
+    user: overrides.user ?? {
+      id: userId,
+      daliEmail: "u@dali.dartmouth.edu",
+      dartmouthEmail: null,
+      netId: null,
+      firstName: "U",
+      lastName: "Ser",
+    },
+  };
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
-});
-
-describe("getSecret validation", () => {
-  it("throws when JWT_SECRET is shorter than 32 bytes", async () => {
-    vi.stubEnv("JWT_SECRET", "too-short");
-    await expect(
-      signAccessToken({ sub: "u", email: "e@e.com", type: "member" }),
-    ).rejects.toThrow("JWT_SECRET must be at least 32 bytes for HS256 security");
-    vi.unstubAllEnvs();
-  });
-
-  it("throws when JWT_SECRET is unset", async () => {
-    vi.stubEnv("JWT_SECRET", "");
-    await expect(
-      signAccessToken({ sub: "u", email: "e@e.com", type: "member" }),
-    ).rejects.toThrow("JWT_SECRET not set");
-    vi.unstubAllEnvs();
-  });
-
-  it("accepts a 32+ byte secret", async () => {
-    // beforeAll secret is 36 bytes; this asserts the happy path explicitly
-    const token = await signAccessToken({
-      sub: "u",
-      email: "e@e.com",
-      type: "member",
-    });
-    expect(typeof token).toBe("string");
-  });
-});
-
-describe("signAccessToken / verifyAccessToken", () => {
-  it("round-trips a token", async () => {
-    const token = await signAccessToken({
-      sub: "user1",
-      email: "a@b.com",
-      type: "member",
-    });
-    const payload = await verifyAccessToken(token);
-    expect(payload.sub).toBe("user1");
-    expect(payload.email).toBe("a@b.com");
-    expect(payload.type).toBe("member");
-  });
-
-  it("rejects an expired token", async () => {
-    // sign a token in the past so it's already expired at real time
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date(Date.now() - 60 * 60 * 1000)); // 1 hour ago
-    const token = await signAccessToken({
-      sub: "user1",
-      email: "a@b.com",
-      type: "member",
-    });
-    vi.useRealTimers();
-
-    await expect(verifyAccessToken(token)).rejects.toThrow();
-  });
+  mockPrisma.session ??= {
+    create: vi.fn(),
+    findUnique: vi.fn(),
+    update: vi.fn(),
+    updateMany: vi.fn(),
+  } as any;
+  mockPrisma.session.update.mockResolvedValue({});
 });
 
 describe("requireAuth", () => {
-  it("returns 401 when no token is present", async () => {
-    const req = new Request("http://localhost/api/test");
+  it("returns no_session when no cookie and no header", async () => {
+    const req = new Request("http://localhost");
     const result = await requireAuth(req);
     expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.response.status).toBe(401);
-    }
-    // No DB write when no token at all.
-    expect(mockPrisma.refreshToken.findUnique).not.toHaveBeenCalled();
+    if (!result.ok) expect(result.reason).toBe("no_session");
   });
 
-  it("returns user when valid cookie is present and does not touch the DB", async () => {
-    const token = await signAccessToken({
-      sub: "u1",
-      email: "e@e.com",
-      type: "member",
+  it("returns not_found when the session row is missing", async () => {
+    mockPrisma.session.findUnique.mockResolvedValue(null);
+    const req = new Request("http://localhost", {
+      headers: { Cookie: "__dali_sid=ghost" },
     });
-    const req = new Request("http://localhost/api/test", {
-      headers: { Cookie: `__dali_at=${token}` },
+    const result = await requireAuth(req);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe("not_found");
+  });
+
+  it("returns revoked when the session has a revokedAt timestamp", async () => {
+    mockPrisma.session.findUnique.mockResolvedValue(
+      makeSessionRow({ revokedAt: new Date() }),
+    );
+    const req = new Request("http://localhost", {
+      headers: { Cookie: "__dali_sid=raw-1" },
+    });
+    const result = await requireAuth(req);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe("revoked");
+  });
+
+  it("returns expired when expiresAt has passed", async () => {
+    mockPrisma.session.findUnique.mockResolvedValue(
+      makeSessionRow({ expiresAt: new Date(Date.now() - 1000) }),
+    );
+    const req = new Request("http://localhost", {
+      headers: { Cookie: "__dali_sid=raw-1" },
+    });
+    const result = await requireAuth(req);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe("expired");
+  });
+
+  it("returns expired when absoluteExpiresAt has passed", async () => {
+    mockPrisma.session.findUnique.mockResolvedValue(
+      makeSessionRow({
+        // rolling not yet expired but absolute cap has passed
+        expiresAt: new Date(Date.now() + 1000),
+        absoluteExpiresAt: new Date(Date.now() - 1000),
+      }),
+    );
+    const req = new Request("http://localhost", {
+      headers: { Cookie: "__dali_sid=raw-1" },
+    });
+    const result = await requireAuth(req);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe("expired");
+  });
+
+  it("succeeds with a valid cookie session and preserves auth.user.sub", async () => {
+    mockPrisma.session.findUnique.mockResolvedValue(makeSessionRow());
+    const req = new Request("http://localhost", {
+      headers: { Cookie: "__dali_sid=raw-1" },
     });
     const result = await requireAuth(req);
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.user.sub).toBe("u1");
-      expect(result.setCookies).toBeUndefined();
+      expect(result.user.sub).toBe("user-1");
+      expect(result.user.email).toBe("u@dali.dartmouth.edu");
+      expect(result.user.type).toBe("member");
     }
-    expect(mockPrisma.refreshToken.findUnique).not.toHaveBeenCalled();
   });
 
-  it("returns user when valid Bearer header is present", async () => {
-    const token = await signAccessToken({
-      sub: "u2",
-      email: "f@f.com",
-      type: "dartmouth",
-    });
-    const req = new Request("http://localhost/api/test", {
-      headers: { Authorization: `Bearer ${token}` },
+  it("accepts a Bearer header when no cookie is present", async () => {
+    mockPrisma.session.findUnique.mockResolvedValue(makeSessionRow());
+    const req = new Request("http://localhost", {
+      headers: { Authorization: "Bearer raw-1" },
     });
     const result = await requireAuth(req);
     expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.user.sub).toBe("u2");
-    }
   });
 
-  it("returns 401 on tampered token without attempting refresh", async () => {
-    const req = new Request("http://localhost/api/test", {
-      headers: { Cookie: "__dali_at=garbage; __dali_rt=anything" },
+  it("prefers the cookie over a Bearer header when both are present", async () => {
+    mockPrisma.session.findUnique.mockImplementation(async ({ where }: any) => {
+      // Only the cookie's hash should match
+      if (where.id === hashSessionId("cookie-raw")) {
+        return makeSessionRow({
+          id: hashSessionId("cookie-raw"),
+          userId: "user-cookie",
+        });
+      }
+      return null;
     });
-    const result = await requireAuth(req);
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.response.status).toBe(401);
-    }
-    // Tampered AT — no refresh attempt, audit logged.
-    expect(mockPrisma.refreshToken.findUnique).not.toHaveBeenCalled();
-    expect(logAuditEvent).toHaveBeenCalledWith(
-      expect.objectContaining({ action: "auth.token.invalid" }),
-    );
-  });
-
-  it("silently refreshes when AT is expired but RT is valid", async () => {
-    // Sign an already-expired AT.
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date(Date.now() - 60 * 60 * 1000));
-    const expiredToken = await signAccessToken({
-      sub: "u3",
-      email: "g@g.com",
-      type: "member",
+    const req = new Request("http://localhost", {
+      headers: {
+        Cookie: "__dali_sid=cookie-raw",
+        Authorization: "Bearer header-raw",
+      },
     });
-    vi.useRealTimers();
-
-    mockPrisma.refreshToken.findUnique.mockResolvedValue({
-      id: "rt-1",
-      tokenHash: "doesnt-matter",
-      userId: "u3",
-      family: "fam-1",
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      revokedAt: null,
-      familyCreatedAt: new Date(Date.now() - 24 * 60 * 60 * 1000), // 1 day old
-    });
-    mockPrisma.refreshToken.update.mockResolvedValue({});
-    mockPrisma.refreshToken.create.mockResolvedValue({});
-    mockPrisma.user.findUnique.mockResolvedValue({
-      id: "u3",
-      daliEmail: "g@dali.dartmouth.edu",
-      dartmouthEmail: null,
-      netId: null,
-      firstName: "Test",
-      lastName: "User",
-    });
-
-    const req = new Request("http://localhost/api/test", {
-      headers: { Cookie: `__dali_at=${expiredToken}; __dali_rt=valid-rt` },
-    });
-
     const result = await requireAuth(req);
     expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.user.sub).toBe("u3");
-      expect(result.setCookies).toBeDefined();
-      expect(result.setCookies!.length).toBe(2);
-      // New AT and RT are issued.
-      expect(result.setCookies!.some((c) => c.startsWith("__dali_at="))).toBe(
-        true,
-      );
-      expect(result.setCookies!.some((c) => c.startsWith("__dali_rt="))).toBe(
-        true,
-      );
-      // RT cookie path is `/` so the browser sends it on every request.
-      expect(result.setCookies!.some((c) => /__dali_rt=.*Path=\//.test(c))).toBe(
-        true,
-      );
-    }
-    // Old RT was revoked, new one created.
-    expect(mockPrisma.refreshToken.update).toHaveBeenCalled();
-    expect(mockPrisma.refreshToken.create).toHaveBeenCalled();
+    if (result.ok) expect(result.user.sub).toBe("user-cookie");
   });
 
-  it("clears cookies and 401s when RT was already revoked (reuse detected)", async () => {
-    mockPrisma.refreshToken.findUnique.mockResolvedValue({
-      id: "rt-2",
-      tokenHash: "x",
-      userId: "u4",
-      family: "fam-2",
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      revokedAt: new Date(),
-      familyCreatedAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
+  it("looks up sessions by sha256(raw), never the raw value", async () => {
+    mockPrisma.session.findUnique.mockResolvedValue(makeSessionRow());
+    const req = new Request("http://localhost", {
+      headers: { Cookie: "__dali_sid=raw-1" },
     });
-    mockPrisma.refreshToken.updateMany.mockResolvedValue({ count: 3 });
+    await requireAuth(req);
+    expect(mockPrisma.session.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: hashSessionId("raw-1") },
+      }),
+    );
+  });
 
-    const req = new Request("http://localhost/api/test", {
-      headers: { Cookie: "__dali_rt=reused-rt" },
+  it("derives auth.user.type as member, dartmouth, or partner based on user columns", async () => {
+    mockPrisma.session.findUnique.mockResolvedValue(
+      makeSessionRow({
+        user: {
+          id: "user-1",
+          daliEmail: null,
+          dartmouthEmail: null,
+          netId: "abc123",
+          firstName: "Net",
+          lastName: "Id",
+        },
+      }),
+    );
+    const req = new Request("http://localhost", {
+      headers: { Cookie: "__dali_sid=raw-1" },
     });
-
     const result = await requireAuth(req);
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.response.status).toBe(401);
-      const cleared = result.response.headers.getSetCookie();
-      expect(cleared.length).toBe(2);
-      expect(cleared.some((c) => /__dali_at=;.*Max-Age=0/.test(c))).toBe(true);
-      expect(cleared.some((c) => /__dali_rt=;.*Max-Age=0/.test(c))).toBe(true);
-    }
-    // The whole family was revoked.
-    expect(mockPrisma.refreshToken.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { family: "fam-2" } }),
-    );
-  });
-
-  it("clears cookies and 401s when session exceeds 30-day absolute cap", async () => {
-    mockPrisma.refreshToken.findUnique.mockResolvedValue({
-      id: "rt-old",
-      tokenHash: "x",
-      userId: "u6",
-      family: "fam-old",
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      revokedAt: null,
-      familyCreatedAt: new Date(Date.now() - 31 * 24 * 60 * 60 * 1000), // 31 days ago
-    });
-    mockPrisma.refreshToken.updateMany.mockResolvedValue({ count: 0 });
-
-    const req = new Request("http://localhost/api/test", {
-      headers: { Cookie: "__dali_rt=old-session-rt" },
-    });
-
-    const result = await requireAuth(req);
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.response.status).toBe(401);
-      const cleared = result.response.headers.getSetCookie();
-      expect(cleared.length).toBe(2);
-      expect(cleared.some((c) => /__dali_at=;.*Max-Age=0/.test(c))).toBe(true);
-      expect(cleared.some((c) => /__dali_rt=;.*Max-Age=0/.test(c))).toBe(true);
-    }
-  });
-
-  it("clears cookies and 401s when RT is unknown", async () => {
-    mockPrisma.refreshToken.findUnique.mockResolvedValue(null);
-
-    const req = new Request("http://localhost/api/test", {
-      headers: { Cookie: "__dali_rt=ghost" },
-    });
-
-    const result = await requireAuth(req);
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.response.status).toBe(401);
-      expect(result.response.headers.getSetCookie().length).toBe(2);
-    }
-  });
-
-  it("de-duplicates concurrent refreshes that present the same RT", async () => {
-    // Make findUnique resolve only after both calls have been made, so we
-    // know the dedup map has had both lookups land on the same in-flight
-    // promise.
-    let resolveFind: (v: any) => void;
-    mockPrisma.refreshToken.findUnique.mockImplementation(
-      () =>
-        new Promise((res) => {
-          resolveFind = res;
-        }),
-    );
-    mockPrisma.refreshToken.update.mockResolvedValue({});
-    mockPrisma.refreshToken.create.mockResolvedValue({});
-    mockPrisma.user.findUnique.mockResolvedValue({
-      id: "u5",
-      daliEmail: "h@dali.dartmouth.edu",
-      dartmouthEmail: null,
-      netId: null,
-      firstName: "T",
-      lastName: "U",
-    });
-
-    const headers = { Cookie: "__dali_rt=shared-rt" };
-    const r1 = requireAuth(new Request("http://localhost/a", { headers }));
-    const r2 = requireAuth(new Request("http://localhost/b", { headers }));
-
-    // Resolve the in-flight DB lookup with a valid RT row.
-    resolveFind!({
-      id: "rt-3",
-      tokenHash: "x",
-      userId: "u5",
-      family: "fam-3",
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      revokedAt: null,
-      familyCreatedAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
-    });
-
-    const [a, b] = await Promise.all([r1, r2]);
-    expect(a.ok).toBe(true);
-    expect(b.ok).toBe(true);
-    // findUnique was called once (the dedup map collapsed both into one
-    // refresh) — without dedup, the second caller would see `revokedAt` set
-    // by the first caller's update and trip reuse detection.
-    expect(mockPrisma.refreshToken.findUnique).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe("withAuth", () => {
-  it("is a no-op when no setCookies are present", () => {
-    const auth = { ok: true as const, user: { sub: "u", email: "e", type: "m" } };
-    const value = { foo: "bar" };
-    expect(withAuth(auth, value)).toBe(value);
-
-    const resp = new Response("ok");
-    expect(withAuth(auth, resp)).toBe(resp);
-    expect(resp.headers.getSetCookie()).toEqual([]);
-  });
-
-  it("appends Set-Cookie headers onto a Response on success", () => {
-    const headers = new Headers();
-    setTokenCookies(headers, "new-at", "new-rt");
-    const setCookies = headers.getSetCookie();
-
-    const auth = {
-      ok: true as const,
-      user: { sub: "u", email: "e", type: "m" },
-      setCookies,
-    };
-    const resp = Response.json({ hello: "world" });
-    const out = withAuth(auth, resp);
-
-    expect(out).toBe(resp);
-    expect(resp.headers.getSetCookie().length).toBe(2);
-    expect(resp.headers.getSetCookie()).toEqual(setCookies);
-  });
-
-  it("forwards cleared cookies from a failure response", () => {
-    // Build a failure auth result whose response carries cleared cookies.
-    const inner = new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401,
-    });
-    inner.headers.append(
-      "Set-Cookie",
-      "__dali_at=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
-    );
-    inner.headers.append(
-      "Set-Cookie",
-      "__dali_rt=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
-    );
-    const auth = { ok: false as const, response: inner };
-
-    const redirected = new Response(null, {
-      status: 302,
-      headers: { Location: "/login" },
-    });
-    const out = withAuth(auth, redirected);
-    expect(out).toBe(redirected);
-    const cleared = redirected.headers.getSetCookie();
-    expect(cleared.length).toBe(2);
-    expect(cleared.some((c) => /__dali_at=;.*Max-Age=0/.test(c))).toBe(true);
-    expect(cleared.some((c) => /__dali_rt=;.*Max-Age=0/.test(c))).toBe(true);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.user.type).toBe("dartmouth");
   });
 });
 
 describe("validateCasTicket", () => {
-  it("parses a successful CAS response", async () => {
-    const xml = `<cas:serviceResponse>
-      <cas:authenticationSuccess>
-        <cas:user>d12345a</cas:user>
-        <cas:netid>d12345a</cas:netid>
-        <cas:name>Jane Doe</cas:name>
-      </cas:authenticationSuccess>
-    </cas:serviceResponse>`;
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
 
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(new Response(xml)),
-    );
-
-    const result = await validateCasTicket("ST-ticket", "http://localhost/cb");
-    expect(result.netId).toBe("d12345a");
-    expect(result.firstName).toBe("Jane");
-    expect(result.lastName).toBe("Doe");
-
+  it("returns netId, firstName, lastName from CAS XML", async () => {
+    const xml = `<?xml version="1.0"?>
+<cas:serviceResponse xmlns:cas="http://www.yale.edu/tp/cas">
+  <cas:authenticationSuccess>
+    <cas:user>abc123</cas:user>
+    <cas:netid>abc123</cas:netid>
+    <cas:name>Test User</cas:name>
+  </cas:authenticationSuccess>
+</cas:serviceResponse>`;
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(xml, { status: 200 }),
+    ));
+    const out = await validateCasTicket("ticket-x", "https://example.com/cb");
+    expect(out.netId).toBe("abc123");
+    expect(out.firstName).toBe("Test");
+    expect(out.lastName).toBe("User");
     vi.unstubAllGlobals();
   });
 
-  it("throws on CAS failure response", async () => {
-    const xml = `<cas:serviceResponse>
-      <cas:authenticationFailure code="INVALID_TICKET">
-        Ticket not recognized
-      </cas:authenticationFailure>
-    </cas:serviceResponse>`;
-
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(new Response(xml)),
-    );
-
-    await expect(
-      validateCasTicket("bad-ticket", "http://localhost/cb"),
-    ).rejects.toThrow("CAS authentication failed");
-
+  it("throws when CAS returns a failure document", async () => {
+    const xml = `<?xml version="1.0"?>
+<cas:serviceResponse xmlns:cas="http://www.yale.edu/tp/cas">
+  <cas:authenticationFailure code="INVALID_TICKET">no such ticket</cas:authenticationFailure>
+</cas:serviceResponse>`;
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(xml, { status: 200 }),
+    ));
+    await expect(validateCasTicket("bad", "https://x")).rejects.toThrow();
     vi.unstubAllGlobals();
   });
 });
