@@ -90,6 +90,10 @@ export default [
   route("api/scheduled-meetings", "calendar/routes/api.scheduled-meetings.ts"),
   route("api/calendar/group-availability", "calendar/routes/api.calendar.group-availability.ts"),
 
+  // Slack bot (webhook receivers; signature-verified, no auth middleware)
+  route("api/slack/events", "slack/routes/api.slack.events.ts"),
+  route("api/slack/interactivity", "slack/routes/api.slack.interactivity.ts"),
+
 
   // Hiring API — cycles, scheduling, applications, reviews, decisions, interviews, delibs
   route("api/hiring/cycles/:cycleId/status", "hiring/routes/api.cycles.$cycleId.status.ts"),
