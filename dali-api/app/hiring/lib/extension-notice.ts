@@ -16,10 +16,9 @@
 
 import { prisma } from "~/lib/db";
 import { sendEmail } from "~/lib/gmail";
+import { getApplicationsGmailRefreshToken } from "~/lib/gmail-integration";
 import { renderForSlot, notificationSlot } from "./email-variables";
 import { logAuditEvent } from "~/lib/audit";
-
-const GMAIL_USER = "applications@dali.dartmouth.edu";
 
 function formatCloseInstant(d: Date): string {
   return `${d.toLocaleString("en-US", {
@@ -34,11 +33,7 @@ function formatCloseInstant(d: Date): string {
 }
 
 async function getGmailRefreshToken(): Promise<string | null> {
-  const gmailUser = await prisma.user.findUnique({
-    where: { daliEmail: GMAIL_USER },
-    select: { googleRefreshToken: true },
-  });
-  return gmailUser?.googleRefreshToken ?? null;
+  return getApplicationsGmailRefreshToken();
 }
 
 interface DraftRecipient {

@@ -46,7 +46,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   const gate = await requireApiSignedOrForbidden(auth.user.sub, params.cycleId!);
   if (gate) return gate;
 
-  const member = await prisma.dALIMember.findFirst({
+  const member = await prisma.dALIMember.findUnique({
     where: { userId: auth.user.sub },
   });
   if (!member) {
@@ -71,7 +71,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       applicationCycleId: params.cycleId,
       type,
       status: "Active",
-      openedById: member.id,
+      openedById: auth.user.sub,
     },
     update: {
       status: "Active",

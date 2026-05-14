@@ -11,14 +11,14 @@ export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request)
   if (!auth.ok) return redirect('/login')
   if (auth.user.type === 'applicant') return redirect('/portal')
-  const { memberId, isHiringLead: hiringLead, isAdmin: admin, isDomainLead: domainLead } = await getUserRoles(auth.user.sub)
+  const { isLabMember, isHiringLead: hiringLead, isAdmin: admin, isDomainLead: domainLead } = await getUserRoles(auth.user.sub)
 
   let isInterviewer = false
-  if (memberId) {
+  if (isLabMember) {
     const active = await getActiveCycle()
     if (active) {
       const interviewer = await prisma.cycleInterviewer.findFirst({
-        where: { daliMemberId: memberId, applicationCycleId: active.id },
+        where: { userId: auth.user.sub, applicationCycleId: active.id },
       })
       isInterviewer = !!interviewer
     }

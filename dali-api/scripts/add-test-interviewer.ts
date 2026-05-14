@@ -53,32 +53,24 @@ async function main() {
     },
   });
 
-  let member = await prisma.dALIMember.findFirst({
-    where: { OR: [{ userId: user.id }, { daliEmail: user.daliEmail! }] },
+  await prisma.dALIMember.upsert({
+    where: { userId: user.id },
+    update: {},
+    create: { userId: user.id },
   });
-  if (!member) {
-    member = await prisma.dALIMember.create({
-      data: { userId: user.id, daliEmail: user.daliEmail! },
-    });
-  } else if (!member.userId) {
-    member = await prisma.dALIMember.update({
-      where: { id: member.id },
-      data: { userId: user.id },
-    });
-  }
 
   // Create CycleInterviewer for the cross-domain
   const ci = await prisma.cycleInterviewer.upsert({
     where: {
-      daliMemberId_applicationCycleId_domainId: {
-        daliMemberId: member.id,
+      userId_applicationCycleId_domainId: {
+        userId: user.id,
         applicationCycleId: cycleId,
         domainId: domainForInterviewer.domainId,
       },
     },
     update: {},
     create: {
-      daliMemberId: member.id,
+      userId: user.id,
       applicationCycleId: cycleId,
       domainId: domainForInterviewer.domainId,
     },

@@ -50,7 +50,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request)
   if (!auth.ok) return empty
 
-  const member = await prisma.dALIMember.findFirst({ where: { userId: auth.user.sub } })
+  const member = await prisma.dALIMember.findUnique({ where: { userId: auth.user.sub } })
   if (!member) return { ...empty, reviewerUserId: auth.user.sub }
 
   // Anchor on the single active cycle (invariant: at most one cycle is in
@@ -62,7 +62,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   // Fetch all CycleReviewer records for this member in this cycle (may span multiple domains)
   const myReviewerIds = await prisma.cycleReviewer.findMany({
-    where: { daliMemberId: member.id, applicationCycleId: active.id },
+    where: { userId: auth.user.sub, applicationCycleId: active.id },
     select: { id: true, domainId: true },
   })
   if (myReviewerIds.length === 0) return { ...empty, reviewerUserId: auth.user.sub }
@@ -102,13 +102,13 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Infer the sub-stage within UnderReview from actual data
   let currentStage = cycleStatusToStage(activeCycleStatus);
   if (activeCycleStatus === 'UnderReview') {
-    currentStage = await inferUnderReviewStage(active.id, member.id, reviewerIds);
+    currentStage = await inferUnderReviewStage(active.id, auth.user.sub, reviewerIds);
   }
 
   // Check if this member is a cycle interviewer with no availability set yet
   // (so we can prompt them once interview config is set up).
   const cycleInterviewers = await prisma.cycleInterviewer.findMany({
-    where: { daliMemberId: member.id, applicationCycleId: active.id },
+    where: { userId: auth.user.sub, applicationCycleId: active.id },
     select: { id: true },
   });
   const isCycleInterviewer = cycleInterviewers.length > 0;

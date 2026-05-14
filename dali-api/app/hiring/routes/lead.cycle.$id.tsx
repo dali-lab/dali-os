@@ -43,12 +43,12 @@ interface InterviewConfig {
 
 interface CycleReviewer {
   id: string
-  daliMember: {
+  user: { 
     id: string
     firstName: string | null
     lastName: string | null
     daliEmail: string | null
-  }
+   }
   domain: { id: string; name: string }
 }
 
@@ -68,7 +68,7 @@ interface InterviewRow {
     role: string
     status: string
     cycleInterviewer: {
-      daliMember: { firstName: string | null; lastName: string | null; daliEmail: string | null }
+      user: {  firstName: string | null; lastName: string | null; daliEmail: string | null  }
       domain: { name: string }
     }
   }[]
@@ -1044,7 +1044,7 @@ export default function HiringLeadCycleDetails() {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ daliMemberId: newMemberId, domainId: newDomainId }),
+      body: JSON.stringify({ userId: newMemberId, domainId: newDomainId }),
     })
     if (res.ok) {
       const reviewer = await res.json()
@@ -1071,7 +1071,7 @@ export default function HiringLeadCycleDetails() {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ daliMemberId: newInterviewerMemberId, domainId: newInterviewerDomainId }),
+      body: JSON.stringify({ userId: newInterviewerMemberId, domainId: newInterviewerDomainId }),
     })
     if (res.ok) {
       // POST returns the bare cycleInterviewer row without daliMember/domain
@@ -1560,8 +1560,8 @@ export default function HiringLeadCycleDetails() {
               </thead>
               <tbody className="divide-y divide-border">
                 {reviewers.map(r => {
-                  const m = r.daliMember
-                  const name = m?.firstName && m?.lastName ? `${m.firstName} ${m.lastName}` : m?.daliEmail ?? r.daliMember.id
+                  const m = r.user
+                  const name = m?.firstName && m?.lastName ? `${m.firstName} ${m.lastName}` : m?.daliEmail ?? r.user.id
                   return (
                   <tr key={r.id} className="hover:bg-muted/50 transition">
                     <td className="px-4 py-3 font-medium text-foreground">{name}</td>
@@ -1582,8 +1582,8 @@ export default function HiringLeadCycleDetails() {
             </div>
             <ul className="sm:hidden divide-y divide-border">
               {reviewers.map(r => {
-                const m = r.daliMember
-                const name = m?.firstName && m?.lastName ? `${m.firstName} ${m.lastName}` : m?.daliEmail ?? r.daliMember.id
+                const m = r.user
+                const name = m?.firstName && m?.lastName ? `${m.firstName} ${m.lastName}` : m?.daliEmail ?? r.user.id
                 return (
                 <li key={r.id} className="px-4 py-3 flex items-start justify-between gap-3">
                   <div className="min-w-0">
@@ -1665,8 +1665,8 @@ export default function HiringLeadCycleDetails() {
               </thead>
               <tbody className="divide-y divide-border">
                 {interviewers.map((i: any) => {
-                  const m = i.daliMember
-                  const name = m?.firstName && m?.lastName ? `${m.firstName} ${m.lastName}` : m?.daliEmail ?? i.daliMemberId
+                  const m = i.user
+                  const name = m?.firstName && m?.lastName ? `${m.firstName} ${m.lastName}` : m?.daliEmail ?? i.userId
                   return (
                     <tr key={i.id} className="hover:bg-muted/50 transition">
                       <td className="px-4 py-3 font-medium text-foreground">{name}</td>
@@ -1687,8 +1687,8 @@ export default function HiringLeadCycleDetails() {
             </div>
             <ul className="sm:hidden divide-y divide-border">
               {interviewers.map((i: any) => {
-                const m = i.daliMember
-                const name = m?.firstName && m?.lastName ? `${m.firstName} ${m.lastName}` : m?.daliEmail ?? i.daliMemberId
+                const m = i.user
+                const name = m?.firstName && m?.lastName ? `${m.firstName} ${m.lastName}` : m?.daliEmail ?? i.userId
                 return (
                   <li key={i.id} className="px-4 py-3 flex items-start justify-between gap-3">
                     <div className="min-w-0">
@@ -1834,7 +1834,7 @@ export default function HiringLeadCycleDetails() {
                         {interview.assignments
                           .filter((a: any) => a.status === 'Active')
                           .map((a: any) => {
-                            const m = a.cycleInterviewer.daliMember
+                            const m = a.cycleInterviewer.user
                             const name = m.firstName && m.lastName
                               ? `${m.firstName} ${m.lastName}`
                               : m.daliEmail ?? '?'
@@ -1864,7 +1864,7 @@ export default function HiringLeadCycleDetails() {
                                         : i.domain?.name !== domainName)
                                       .filter((i: any) => i.id !== a.cycleInterviewerId)
                                       .map((i: any) => {
-                                        const im = i.daliMember
+                                        const im = i.user
                                         const iName = im?.firstName && im?.lastName ? `${im.firstName} ${im.lastName}` : im?.daliEmail ?? i.id
                                         return <option key={i.id} value={i.id}>{iName}</option>
                                       })}
@@ -1987,7 +1987,7 @@ export default function HiringLeadCycleDetails() {
                         {interview.assignments
                           .filter((a: any) => a.status === 'Active')
                           .map((a: any) => {
-                            const m = a.cycleInterviewer.daliMember
+                            const m = a.cycleInterviewer.user
                             const name = m.firstName && m.lastName
                               ? `${m.firstName} ${m.lastName}`
                               : m.daliEmail ?? '?'
@@ -2017,7 +2017,7 @@ export default function HiringLeadCycleDetails() {
                                         : i.domain?.name !== domainName)
                                       .filter((i: any) => i.id !== a.cycleInterviewerId)
                                       .map((i: any) => {
-                                        const im = i.daliMember
+                                        const im = i.user
                                         const iName = im?.firstName && im?.lastName ? `${im.firstName} ${im.lastName}` : im?.daliEmail ?? i.id
                                         return <option key={i.id} value={i.id}>{iName}</option>
                                       })}

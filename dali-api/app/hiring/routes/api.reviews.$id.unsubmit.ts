@@ -29,8 +29,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   );
   if (gate) return gate;
 
-  const member = await prisma.dALIMember.findFirst({ where: { userId: auth.user.sub } });
-  const isOwner = member && review.cycleReviewer.daliMemberId === member.id;
+  const isOwner = review.cycleReviewer.userId === auth.user.sub;
   const isLead = await isDomainLead(auth.user.sub);
   const isHL = await isHiringLead(auth.user.sub);
   if (!isOwner && !isLead && !isHL) {

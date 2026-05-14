@@ -51,18 +51,14 @@ export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return { domainData: [] };
 
-  const member = await prisma.dALIMember.findFirst({
-    where: { userId: auth.user.sub },
-  });
-
-  if (!member) {
-    return { domainData: [] };
-  }
-
   const assignments = await prisma.domainLeadAssignment.findMany({
-    where: { memberId: member.id },
+    where: { userId: auth.user.sub },
     include: { domain: true },
   });
+
+  if (assignments.length === 0) {
+    return { domainData: [] };
+  }
 
   const domainData = await Promise.all(
     assignments.map(async (assignment) => {
@@ -95,7 +91,7 @@ export async function loader({ request }: Route.LoaderArgs) {
                   reviews: {
                     include: {
                       cycleReviewer: {
-                        include: { daliMember: { select: { firstName: true, lastName: true, daliEmail: true } } },
+                        include: { user: { select: { firstName: true, lastName: true, daliEmail: true } } },
                       },
                     },
                   },
@@ -199,7 +195,7 @@ export async function loader({ request }: Route.LoaderArgs) {
                 where: { status: "Active" },
                 include: {
                   cycleInterviewer: {
-                    include: { daliMember: true, domain: true },
+                    include: { user: true, domain: true },
                   },
                 },
               },
@@ -212,7 +208,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       const reviewers = cycle
         ? await prisma.cycleReviewer.findMany({
             where: { applicationCycleId: cycle.id, domainId: assignment.domainId },
-            include: { daliMember: { include: { user: true } }, domain: true },
+            include: { user: true, domain: true },
           })
         : [];
 
@@ -283,7 +279,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       const cycleReviewersForDomain = cycle
         ? await prisma.cycleReviewer.findMany({
             where: { applicationCycleId: cycle.id, domainId: assignment.domainId },
-            include: { daliMember: { select: { id: true, firstName: true, lastName: true, daliEmail: true } } },
+            include: { user: { select: { id: true, firstName: true, lastName: true, daliEmail: true } } },
           })
         : [];
 
@@ -301,7 +297,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         ? await prisma.cycleInterviewer.findMany({
             where: { applicationCycleId: cycle.id, domainId: assignment.domainId },
             include: {
-              daliMember: { select: { id: true, firstName: true, lastName: true, daliEmail: true } },
+              user: { select: { id: true, firstName: true, lastName: true, daliEmail: true } },
               availabilityBlocks: { select: { startTime: true, endTime: true } },
             },
           })
@@ -943,7 +939,7 @@ export default function DomainLeadDashboard() {
                                     const start = new Date(interview.startTime);
                                     const end = new Date(interview.endTime);
                                     const formatAssignment = (a: any) => {
-                                      const m = a.cycleInterviewer.daliMember;
+                                      const m = a.cycleInterviewer.user;
                                       return m.firstName && m.lastName
                                         ? `${m.firstName} ${m.lastName}`
                                         : m.daliEmail ?? '?';
@@ -994,7 +990,7 @@ export default function DomainLeadDashboard() {
                                   const start = new Date(interview.startTime);
                                   const end = new Date(interview.endTime);
                                   const formatAssignment = (a: any) => {
-                                    const m = a.cycleInterviewer.daliMember;
+                                    const m = a.cycleInterviewer.user;
                                     return m.firstName && m.lastName
                                       ? `${m.firstName} ${m.lastName}`
                                       : m.daliEmail ?? '?';
@@ -1360,7 +1356,7 @@ function ReviewerSection({ cycleId, domainId, initialReviewers }: {
     const res = await fetch(`/api/hiring/cycles/${cycleId}/reviewers`, {
       method: 'POST', credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ daliMemberId: selectedMemberId, domainId, isLead: false }),
+      body: JSON.stringify({ userId: selectedMemberId, domainId, isLead: false }),
     });
     if (res.ok) {
       const reviewer = await res.json();
@@ -1388,13 +1384,13 @@ function ReviewerSection({ cycleId, domainId, initialReviewers }: {
   }
 
   const pendingName = pendingRemove
-    ? (pendingRemove.daliMember?.firstName && pendingRemove.daliMember?.lastName
-        ? `${pendingRemove.daliMember.firstName} ${pendingRemove.daliMember.lastName}`
-        : pendingRemove.daliMember?.daliEmail ?? "this reviewer")
+    ? (pendingRemove.user?.firstName && pendingRemove.user?.lastName
+        ? `${pendingRemove.user.firstName} ${pendingRemove.user.lastName}`
+        : pendingRemove.user?.daliEmail ?? "this reviewer")
     : "";
 
   // Filter out members already assigned as reviewers for this domain
-  const existingMemberIds = new Set(reviewers.map((r: any) => r.daliMemberId));
+  const existingMemberIds = new Set(reviewers.map((r: any) => r.userId));
   const availableMembers = members.filter(m => !existingMemberIds.has(m.id));
 
   return (
@@ -1432,7 +1428,7 @@ function ReviewerSection({ cycleId, domainId, initialReviewers }: {
             {reviewers.map((r: any) => (
               <div key={r.id} className="flex items-center justify-between py-2">
                 <span className="text-sm font-medium text-foreground">
-                  {r.daliMember?.firstName && r.daliMember?.lastName ? `${r.daliMember.firstName} ${r.daliMember.lastName}` : r.daliMember?.daliEmail ?? r.daliMemberId}
+                  {r.user?.firstName && r.user?.lastName ? `${r.user.firstName} ${r.user.lastName}` : r.user?.daliEmail ?? r.userId}
                 </span>
                 <button
                   onClick={() => setPendingRemove(r)}
@@ -1559,12 +1555,12 @@ function InterviewerSection({ cycleId, domainId, initialInterviewers }: {
     const res = await fetch(`/api/hiring/cycles/${cycleId}/interviewers`, {
       method: "POST", credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ daliMemberId: selectedMemberId, domainId }),
+      body: JSON.stringify({ userId: selectedMemberId, domainId }),
     });
     if (res.ok) {
       const interviewer = await res.json();
       const member = members.find((m: any) => m.id === selectedMemberId);
-      setInterviewers(prev => [...prev, { ...interviewer, daliMember: member, availabilityHours: 0 }]);
+      setInterviewers(prev => [...prev, { ...interviewer, user: member, availabilityHours: 0 }]);
       setSelectedMemberId("");
     }
   }
@@ -1589,12 +1585,12 @@ function InterviewerSection({ cycleId, domainId, initialInterviewers }: {
     }
   }
 
-  const existingMemberIds = new Set(interviewers.map((i: any) => i.daliMemberId));
+  const existingMemberIds = new Set(interviewers.map((i: any) => i.userId));
   const availableMembers = members.filter(m => !existingMemberIds.has(m.id));
   const pendingName = pendingRemove
-    ? (pendingRemove.daliMember?.firstName && pendingRemove.daliMember?.lastName
-        ? `${pendingRemove.daliMember.firstName} ${pendingRemove.daliMember.lastName}`
-        : pendingRemove.daliMember?.daliEmail ?? "this interviewer")
+    ? (pendingRemove.user?.firstName && pendingRemove.user?.lastName
+        ? `${pendingRemove.user.firstName} ${pendingRemove.user.lastName}`
+        : pendingRemove.user?.daliEmail ?? "this interviewer")
     : "";
 
   return (
@@ -1630,10 +1626,10 @@ function InterviewerSection({ cycleId, domainId, initialInterviewers }: {
         {interviewers.length > 0 ? (
           <div className="divide-y divide-gray-100">
             {interviewers.map((i: any) => {
-              const m = i.daliMember;
+              const m = i.user;
               const name = m?.firstName && m?.lastName
                 ? `${m.firstName} ${m.lastName}`
-                : m?.daliEmail ?? i.daliMemberId;
+                : m?.daliEmail ?? i.userId;
               const hours = i.availabilityHours ?? 0;
               const hasAvailability = hours > 0;
               const hoursLabel =
@@ -2186,7 +2182,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
             >
               <option value="">Assign reviewer…</option>
               {cycleReviewersForDomain.map((cr: any) => {
-                const m = cr.daliMember;
+                const m = cr.user;
                 const label = m?.firstName && m?.lastName
                   ? `${m.firstName} ${m.lastName}`
                   : m?.daliEmail ?? cr.id;
@@ -2534,7 +2530,7 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
   return (
     <div className={cellClass}>
       {localReviews.map((r: any) => {
-        const m = r.cycleReviewer?.daliMember;
+        const m = r.cycleReviewer?.user;
         const name = m?.firstName && m?.lastName
           ? `${m.firstName} ${m.lastName[0]}.`
           : m?.daliEmail ?? "?";
@@ -2610,7 +2606,7 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
           >
             <option value="">Select...</option>
             {available.map((cr: any) => {
-              const m = cr.daliMember;
+              const m = cr.user;
               const label = m?.firstName && m?.lastName
                 ? `${m.firstName} ${m.lastName}`
                 : m?.daliEmail ?? cr.id;
@@ -2655,7 +2651,7 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
           <p>
             <strong>
               {(() => {
-                const m = pendingRemoveReview?.cycleReviewer?.daliMember;
+                const m = pendingRemoveReview?.cycleReviewer?.user;
                 if (!m) return "This reviewer";
                 return m.firstName && m.lastName ? `${m.firstName} ${m.lastName}` : (m.daliEmail ?? "This reviewer");
               })()}
@@ -2681,7 +2677,7 @@ function ReviewModal({ review, rubricCriteria, onClose }: {
   rubricCriteria: any[];
   onClose: () => void;
 }) {
-  const m = review.cycleReviewer?.daliMember;
+  const m = review.cycleReviewer?.user;
   const reviewerName = m?.firstName && m?.lastName
     ? `${m.firstName} ${m.lastName}`
     : m?.daliEmail ?? "Reviewer";

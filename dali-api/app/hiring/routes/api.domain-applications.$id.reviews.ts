@@ -33,7 +33,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     include: {
       cycleReviewer: {
         include: {
-          daliMember: { select: { firstName: true, lastName: true, daliEmail: true } },
+          user: { select: { firstName: true, lastName: true, daliEmail: true } },
         },
       },
     },
@@ -84,14 +84,11 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (gate) return gate;
 
   if (!(await isHiringLead(auth.user.sub))) {
-    const domainLeadForThisDomain = await prisma.dALIMember.findFirst({
-      where: {
-        userId: auth.user.sub,
-        domainLeadAssignments: { some: { domainId } },
-      },
+    const domainLead = await prisma.domainLeadAssignment.findFirst({
+      where: { userId: auth.user.sub, domainId },
       select: { id: true },
     });
-    if (!domainLeadForThisDomain) {
+    if (!domainLead) {
       return Response.json({ error: "Forbidden" }, { status: 403 });
     }
   }

@@ -8,11 +8,8 @@ import {
 import { checkRateLimit } from "~/lib/rate-limit";
 import type { OAuthAccountType } from "~/generated/prisma/enums";
 
-const VALID_ACCOUNT_TYPES: ReadonlyArray<OAuthAccountType> = [
-  "member",
-  "dartmouth",
-  "partner",
-];
+// Phase 2: OAuthAccountType collapsed to `member` only (MCP is members-only).
+const VALID_ACCOUNT_TYPES: ReadonlyArray<OAuthAccountType> = ["member"];
 
 const RATE_LIMIT_MAX = 10;
 const RATE_LIMIT_WINDOW_MS = 60_000;

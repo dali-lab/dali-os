@@ -21,7 +21,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     return Response.json({ error: "Method not allowed" }, { status: 405 });
   }
 
-  const member = await prisma.dALIMember.findFirst({ where: { userId: auth.user.sub } });
+  const member = await prisma.dALIMember.findUnique({ where: { userId: auth.user.sub } });
   if (!member) {
     return Response.json({ error: "Not a DALI member" }, { status: 403 });
   }
@@ -31,7 +31,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     where: {
       interviewId: params.id,
       status: "Active",
-      cycleInterviewer: { daliMemberId: member.id },
+      cycleInterviewer: { userId: auth.user.sub },
     },
   });
   if (!assignment) {

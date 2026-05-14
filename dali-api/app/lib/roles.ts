@@ -1,91 +1,149 @@
 import { prisma } from "~/lib/db";
-import type { MemberRole } from "~/generated/prisma/enums";
 
-// ─── Core lookup ─────────────────────────────────────────────────────────────
+// Phase 2 rewrite: role flags derived from the new typed assignment tables
+// (AdminMembership, CoreAssignment, DomainLeadAssignment) rather than the
+// dropped DALIMember.roles[] enum. See V0_PLAN.md §"Identity model".
+//
+// API shape preserves field names where the value semantics still apply
+// (`isHiringLead`, `isAdmin`, `isDomainLead`) and renames `memberId` →
+// `isLabMember` (boolean) since the new schema keys hiring FKs on userId
+// directly — callers use `auth.user.sub` instead of indirecting through a
+// DALIMember.id.
 
-/** Fetch the DALIMember record (with roles + domain lead assignments) for a user. */
-async function getMember(userId: string) {
-  return prisma.dALIMember.findFirst({
-    where: { userId },
-    select: {
-      id: true,
-      roles: true,
-      domainLeadAssignments: { select: { id: true }, take: 1 },
-    },
-  });
-}
-
-// ─── Bulk check (one query) ───────────────────────────────────────────────────
+// ─── Bulk check (parallel queries) ───────────────────────────────────────────
 
 export interface UserRoles {
-  memberId: string | null;
+  isLabMember: boolean;
   isHiringLead: boolean;
   isAdmin: boolean;
   isDomainLead: boolean;
 }
 
 /**
- * Resolve all role flags for a user in a single DB query.
- * Use this in layout loaders instead of calling individual checks in parallel.
+ * Resolve all role flags for a user with one round of parallel queries.
+ * Use this in layout loaders instead of calling individual checks separately.
  */
 export async function getUserRoles(userId: string): Promise<UserRoles> {
-  const envIds = (process.env.ADMIN_USER_IDS ?? "").split(",").filter(Boolean);
-  const member = await getMember(userId);
+  const envIds = (process.env.ADMIN_USER_IDS ?? "")
+    .split(",")
+    .filter(Boolean);
+
+  const [member, admin, core, domainLead] = await Promise.all([
+    prisma.dALIMember.findUnique({ where: { userId }, select: { id: true } }),
+    prisma.adminMembership.findUnique({ where: { userId }, select: { id: true } }),
+    // Any CoreAssignment is sufficient for "hiring lead-equivalent" access.
+    // Per V0_PLAN.md: Core members have broad access; we don't gate on
+    // leadTitle. Term scoping is not required here — Core seats are
+    // year-long and the few minutes around term rollover don't warrant a
+    // current-term filter at this layer.
+    prisma.coreAssignment.findFirst({ where: { userId }, select: { id: true } }),
+    // DomainLeadAssignment.termId is required post-Phase-2; any row signals
+    // domain-lead authority for that user.
+    prisma.domainLeadAssignment.findFirst({ where: { userId }, select: { id: true } }),
+  ]);
+
+  const isAdminVal = admin !== null || envIds.includes(userId);
+  const isCoreVal = core !== null;
 
   return {
-    memberId: member?.id ?? null,
-    isHiringLead: envIds.includes(userId) || (member?.roles.includes("HiringLead") ?? false),
-    isAdmin: member?.roles.includes("Admin") ?? false,
-    isDomainLead: (member?.domainLeadAssignments.length ?? 0) > 0,
+    isLabMember: member !== null,
+    // HiringLead semantics: Core members have hiring-lead-equivalent access
+    // (V0_PLAN.md). Admins are a superset of Core. The legacy
+    // DALIMember.roles[].HiringLead enum is gone.
+    isHiringLead: isAdminVal || isCoreVal,
+    isAdmin: isAdminVal,
+    isDomainLead: domainLead !== null,
   };
 }
 
-// ─── Individual checks (for route-level guards) ───────────────────────────────
+// ─── Individual checks (for route-level guards) ──────────────────────────────
 
-/** HiringLead: manages cycles, forms, challenges, rubrics. */
+/** HiringLead-equivalent: Core or Admin. */
 export async function isHiringLead(userId: string): Promise<boolean> {
-  const envIds = (process.env.ADMIN_USER_IDS ?? "").split(",").filter(Boolean);
+  const envIds = (process.env.ADMIN_USER_IDS ?? "")
+    .split(",")
+    .filter(Boolean);
   if (envIds.includes(userId)) return true;
-  const member = await getMember(userId);
-  return member?.roles.includes("HiringLead") ?? false;
+  const [admin, core] = await Promise.all([
+    prisma.adminMembership.findUnique({ where: { userId }, select: { id: true } }),
+    prisma.coreAssignment.findFirst({ where: { userId }, select: { id: true } }),
+  ]);
+  return admin !== null || core !== null;
 }
 
-/** Admin: view member list, assign hiring leads and domain leads. */
+/** Admin: full-time staff. */
 export async function isAdmin(userId: string): Promise<boolean> {
-  const member = await getMember(userId);
-  return member?.roles.includes("Admin") ?? false;
+  const envIds = (process.env.ADMIN_USER_IDS ?? "")
+    .split(",")
+    .filter(Boolean);
+  if (envIds.includes(userId)) return true;
+  const row = await prisma.adminMembership.findUnique({
+    where: { userId },
+    select: { id: true },
+  });
+  return row !== null;
 }
 
 /** DomainLead: has at least one DomainLeadAssignment. */
 export async function isDomainLead(userId: string): Promise<boolean> {
-  const member = await getMember(userId);
-  return (member?.domainLeadAssignments.length ?? 0) > 0;
+  const row = await prisma.domainLeadAssignment.findFirst({
+    where: { userId },
+    select: { id: true },
+  });
+  return row !== null;
 }
 
+/**
+ * Lab-membership gate. Returns the DALIMember row (thin marker — just
+ * `{ id, userId, createdAt, updatedAt }`) if the user is a member, null
+ * otherwise. The row is now a presence-only marker; callers should not
+ * read display fields from it.
+ */
 export async function requireMember(userId: string) {
-  return prisma.dALIMember.findFirst({ where: { userId } });
+  return prisma.dALIMember.findUnique({ where: { userId } });
 }
 
-// ─── Cycle-scoped access ────────────────────────────────────────────────────
+// ─── Term helper ─────────────────────────────────────────────────────────────
+
+/**
+ * Resolves the current Term. If now() falls between terms (e.g. the week
+ * between Spring's endDate and Summer's startDate), returns the next
+ * upcoming Term so role-checks don't briefly drop members to "Alumni".
+ * Returns null only if the Term table is empty (i.e. v0-reference seed
+ * hasn't run).
+ */
+export async function currentTerm() {
+  const now = new Date();
+  const active = await prisma.term.findFirst({
+    where: { startDate: { lte: now }, endDate: { gte: now } },
+    orderBy: { sortKey: "desc" },
+  });
+  if (active) return active;
+  return prisma.term.findFirst({
+    where: { startDate: { gt: now } },
+    orderBy: { sortKey: "asc" },
+  });
+}
+
+// ─── Cycle-scoped access ─────────────────────────────────────────────────────
 
 /**
  * Check whether a user may read cycle-scoped hiring data.
- * Hiring leads and domain leads pass immediately (1 DB query).
- * Other DALI members pass only if they are a CycleReviewer or
- * CycleInterviewer for the given cycle.
+ * Hiring leads and domain leads pass immediately. Other lab members pass
+ * only if they are a CycleReviewer or CycleInterviewer for the given cycle.
  */
 export async function hasCycleAccess(userId: string, cycleId: string): Promise<boolean> {
   const roles = await getUserRoles(userId);
   if (roles.isHiringLead || roles.isDomainLead) return true;
-  if (!roles.memberId) return false;
+  if (!roles.isLabMember) return false;
 
   const [reviewer, interviewer] = await Promise.all([
     prisma.cycleReviewer.findFirst({
-      where: { daliMemberId: roles.memberId, applicationCycleId: cycleId },
+      where: { userId, applicationCycleId: cycleId },
       select: { id: true },
     }),
     prisma.cycleInterviewer.findFirst({
-      where: { daliMemberId: roles.memberId, applicationCycleId: cycleId },
+      where: { userId, applicationCycleId: cycleId },
       select: { id: true },
     }),
   ]);

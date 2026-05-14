@@ -26,10 +26,10 @@ export async function loader({ request }: Route.LoaderArgs) {
     return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
 
   const domains = await prisma.domain.findMany({
-    orderBy: { name: "asc" },
+    orderBy: { displayName: "asc" },
     include: {
       domainLeadAssignments: {
-        include: { member: { include: { user: true } } },
+        include: { user: true },
       },
       _count: {
         select: {
@@ -63,6 +63,11 @@ export async function action({ request }: Route.ActionArgs) {
   if (body instanceof Response) return withCors(request, body);
   const { name } = body;
 
-  const domain = await prisma.domain.create({ data: { name } });
+  // Phase 2: code + displayName required. Derive code from name (admin can
+  // rename later via Admin Console > Domains).
+  const code = name.replace(/[^A-Za-z0-9]/g, "") || "Domain";
+  const domain = await prisma.domain.create({
+    data: { name, code, displayName: name },
+  });
   return withCors(request, Response.json(domain, { status: 201 }));
 }

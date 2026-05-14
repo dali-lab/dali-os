@@ -34,14 +34,6 @@ model User {
   firstName String
   lastName  String
 
-  // ─── Google API tokens (Phase 1: retained for transition) ─────────────────
-  // Read by /admin/authorize-gmail (Gmail send-as) and the legacy free-busy
-  // fallback in lib/google-calendar.ts:fetchBusyFromLegacyUserTokens. Both
-  // move to GmailIntegration in Phase 2; these columns are then dropped.
-  googleAccessToken    String?
-  googleRefreshToken   String?
-  googleTokenExpiresAt DateTime?
-
   // IANA zone, e.g. "America/New_York". Used by calendar/scheduling.
   timeZone String?
 
@@ -128,35 +120,33 @@ model User {
   // ─── Notification relations ────────────────────────────────────────────────
   receivedNotifications Notification[] @relation("NotificationRecipient")
   authoredNotifications Notification[] @relation("NotificationAuthor")
+
+  // ─── Phase 2: hiring FK back-relations (formerly via DALIMember) ──────────
+  cycleReviewers                          CycleReviewer[]
+  cycleInterviewers                       CycleInterviewer[]
+  domainLeadAssignmentsAsUser             DomainLeadAssignment[]
+  decisionsMade                           Decision[]                        @relation("DecisionMadeBy")
+  applicationReviewsSubmitted             ApplicationReview[]               @relation("ApplicationReviewSubmittedBy")
+  delibsSessionsOpened                    DelibsSession[]
+  legacyEmailTemplatesCreated             LegacyEmailTemplate[]
+  emailTemplateVersionsCreated            EmailTemplateVersion[]
+  confidentialityAgreementVersionsCreated ConfidentialityAgreementVersion[]
 }
 
 // A DALI lab member. userId is optional because a member may be known (e.g. via daliEmail)
 // before they have created a User account.
+// Thin lab-membership marker. Presence = the User is a hired lab member.
+// All display/identity fields live on User (firstName, lastName, daliEmail,
+// dartmouthEmail, netId, did-equivalent). Hiring FKs now point at User
+// directly; this model exists only to discriminate Member from
+// non-Member Users.
 model DALIMember {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  userId String? @unique
-  user   User?   @relation(fields: [userId], references: [id])
-
-  firstName      String?
-  lastName       String?
-  daliEmail      String? @unique
-  dartmouthEmail String? @unique
-  did            String? @unique // Dartmouth D-number e.g. "F00709M"
-
-  roles MemberRole[] @default([])
-
-  cycleReviewers                   CycleReviewer[]
-  cycleInterviewers                CycleInterviewer[]
-  decisions                        Decision[]
-  applicationReviews               ApplicationReview[]               @relation("SubmittedBy")
-  delibSessions                    DelibsSession[]
-  legacyEmailTemplates             LegacyEmailTemplate[]
-  emailTemplateVersions            EmailTemplateVersion[]
-  confidentialityAgreementVersions ConfidentialityAgreementVersion[]
-  domainLeadAssignments            DomainLeadAssignment[]
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id])
 }
 
 model ApplicationCycle {
@@ -301,15 +291,16 @@ model Domain {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // Legacy display name. Retained through Phase 1; Phase 2 enforces NOT NULL
-  // on the new `code` + `displayName` columns and drops this.
+  // Legacy display name. Retained as a soft fallback (some old fixtures
+  // still read .name). Going forward, app code reads `displayName`.
+  // Future cleanup can drop `name` once display.ts and tests stop reading it.
   name String
 
-  // ─── Phase 1 additions (all nullable; backfilled in seed) ─────────────────
+  // Phase 2: code/displayName now required.
   // Stable code referenced from app code (e.g. "Fullstack", "UIUX", "ERAS").
-  code            String? @unique
+  code            String  @unique
   // Human-friendly display label (e.g. "Fullstack Dev").
-  displayName     String?
+  displayName     String
   // Intern programs (ERAS, EEJUST, WISP) are domains with this set true.
   // After the intern term, members apply normally and get a fresh
   // DomainEligibility in their actual hire domain.
@@ -436,8 +427,8 @@ model CycleReviewer {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  daliMemberId       String
-  daliMember         DALIMember       @relation(fields: [daliMemberId], references: [id])
+  userId             String
+  user               User             @relation(fields: [userId], references: [id])
   applicationCycleId String
   applicationCycle   ApplicationCycle @relation(fields: [applicationCycleId], references: [id])
   domainId           String
@@ -445,7 +436,7 @@ model CycleReviewer {
 
   reviews ApplicationReview[]
 
-  @@unique([daliMemberId, applicationCycleId, domainId])
+  @@unique([userId, applicationCycleId, domainId])
 }
 
 // A DALI member assigned to conduct interviews for a domain in a cycle.
@@ -455,8 +446,8 @@ model CycleInterviewer {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  daliMemberId       String
-  daliMember         DALIMember       @relation(fields: [daliMemberId], references: [id])
+  userId             String
+  user               User             @relation(fields: [userId], references: [id])
   applicationCycleId String
   applicationCycle   ApplicationCycle @relation(fields: [applicationCycleId], references: [id])
   domainId           String
@@ -465,7 +456,7 @@ model CycleInterviewer {
   availabilityBlocks   InterviewerAvailability[]
   interviewAssignments InterviewAssignment[]
 
-  @@unique([daliMemberId, applicationCycleId, domainId])
+  @@unique([userId, applicationCycleId, domainId])
 }
 
 model InterviewerAvailability {
@@ -540,10 +531,9 @@ enum AssignmentStatus {
   Replaced
 }
 
-enum MemberRole {
-  Admin
-  HiringLead
-}
+// MemberRole enum dropped in Phase 2. Admin → AdminMembership row;
+// HiringLead → CoreAssignment row with leadTitle="Hiring Lead". See
+// V0_PHASE2_PLAN.md M3 backfill.
 
 model InterviewAssignment {
   id        String   @id @default(cuid())
@@ -606,7 +596,7 @@ model Decision {
   stage DecisionStage
 
   madeById String
-  madeBy   DALIMember @relation(fields: [madeById], references: [id])
+  madeBy   User   @relation("DecisionMadeBy", fields: [madeById], references: [id])
 
   notes        String?
   waitlistRank Int? // set when type == Waitlisted; current rank = latest record's value
@@ -643,7 +633,7 @@ model ApplicationReview {
 
   submittedAt   DateTime? // null = in progress; non-null = read-only while set
   submittedById String? // records who authored the final review (set on submit, cleared on unsubmit)
-  submittedBy   DALIMember? @relation("SubmittedBy", fields: [submittedById], references: [id])
+  submittedBy   User?   @relation("ApplicationReviewSubmittedBy", fields: [submittedById], references: [id])
 
   @@unique([cycleReviewerId, domainApplicationId])
 }
@@ -683,7 +673,7 @@ model DelibsSession {
   columnOrder Json @default("{}")
 
   openedById String
-  openedBy   DALIMember @relation(fields: [openedById], references: [id])
+  openedBy   User   @relation(fields: [openedById], references: [id])
 
   @@unique([domainId, applicationCycleId, type])
 }
@@ -760,10 +750,12 @@ enum OAuthProvider {
   cas
 }
 
+// Phase 2: collapsed to `member` only. MCP clients are members-only (per
+// V0_PLAN.md Q18). The `dartmouth` and `partner` values were never used in
+// production — first-party login (/auth/callback/*) doesn't go through this
+// type, and the OAuth provider surface (/oauth/*) is MCP-only.
 enum OAuthAccountType {
   member
-  dartmouth
-  partner
 }
 
 model OAuthSession {
@@ -862,7 +854,7 @@ model LegacyEmailTemplate {
   version Int
 
   createdById String
-  createdBy   DALIMember @relation(fields: [createdById], references: [id])
+  createdBy   User   @relation(fields: [createdById], references: [id])
 
   @@index([type, createdAt])
 }
@@ -894,7 +886,7 @@ model EmailTemplateVersion {
   template   EmailTemplate @relation(fields: [templateId], references: [id])
 
   createdById String
-  createdBy   DALIMember @relation(fields: [createdById], references: [id])
+  createdBy   User   @relation(fields: [createdById], references: [id])
 
   cycleDecisionEmails     CycleDecisionEmail[]
   cycleNotificationEmails CycleNotificationEmail[]
@@ -1010,7 +1002,7 @@ model ConfidentialityAgreementVersion {
   agreement   ConfidentialityAgreement @relation(fields: [agreementId], references: [id])
 
   createdById String
-  createdBy   DALIMember @relation(fields: [createdById], references: [id])
+  createdBy   User   @relation(fields: [createdById], references: [id])
 
   cycleBindings CycleConfidentialityAgreement[]
   signatures    ConfidentialityAgreementSignature[]
@@ -1056,19 +1048,17 @@ model DomainLeadAssignment {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
 
-  memberId String
+  // Phase 2: memberId column dropped; userId column added pointing at User.
+  // termId NOT NULL after backfill to current term.
+  userId   String
   domainId String
+  termId   String
 
-  // Phase 1: termId nullable. Phase 2 backfills existing rows to the current
-  // term then enforces NOT NULL. Phase 2 also renames memberId → userId
-  // (pointing at User instead of DALIMember).
-  termId String?
+  user   User   @relation(fields: [userId], references: [id])
+  domain Domain @relation(fields: [domainId], references: [id])
+  term   Term   @relation(fields: [termId], references: [id])
 
-  member DALIMember @relation(fields: [memberId], references: [id])
-  domain Domain     @relation(fields: [domainId], references: [id])
-  term   Term?      @relation(fields: [termId], references: [id])
-
-  @@unique([memberId, domainId])
+  @@unique([userId, domainId, termId])
   @@index([domainId])
   @@index([termId])
 }

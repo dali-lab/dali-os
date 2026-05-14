@@ -173,7 +173,7 @@ export async function loader({ request }: Route.LoaderArgs) {
           id: true,
           cycleReviewer: {
             select: {
-              daliMember: { select: { firstName: true, lastName: true } },
+              user: { select: { firstName: true, lastName: true } },
             },
           },
         },
@@ -187,7 +187,7 @@ export async function loader({ request }: Route.LoaderArgs) {
             select: {
               cycleInterviewer: {
                 select: {
-                  daliMember: { select: { firstName: true, lastName: true } },
+                  user: { select: { firstName: true, lastName: true } },
                 },
               },
             },
@@ -219,14 +219,14 @@ export async function loader({ request }: Route.LoaderArgs) {
 
     const reviewerNames = Array.from(
       new Set(
-        (da as any).reviews.map((r: any) => fullName(r.cycleReviewer.daliMember)),
+        (da as any).reviews.map((r: any) => fullName(r.cycleReviewer.user)),
       ),
     ) as string[];
 
     const interviewerNames = Array.from(
       new Set(
         ((da as any).interviews as any[]).flatMap((iv) =>
-          iv.assignments.map((a: any) => fullName(a.cycleInterviewer.daliMember)),
+          iv.assignments.map((a: any) => fullName(a.cycleInterviewer.user)),
         ),
       ),
     ) as string[];
