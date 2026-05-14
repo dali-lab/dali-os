@@ -100,35 +100,38 @@ export async function action({ request }: Route.ActionArgs) {
     );
   }
 
-  // grant_types: only authorization_code (or omitted).
+  // grant_types: must include "authorization_code" if present. Other entries
+  // (e.g. "refresh_token", which Claude Code's MCP SDK sends by default) are
+  // allowed but ignored — we only support authorization_code. Per RFC 7591 §2
+  // the server MAY reject unsupported metadata, but intersecting with what we
+  // support is friendlier and equally safe since we echo back only what's
+  // actually honored.
   if (body.grant_types !== undefined) {
     if (
       !Array.isArray(body.grant_types) ||
-      body.grant_types.length !== 1 ||
-      body.grant_types[0] !== "authorization_code"
+      !body.grant_types.includes("authorization_code")
     ) {
       return withCors(
         request,
         badRequest(
           "invalid_client_metadata",
-          "grant_types must be ['authorization_code']",
+          "grant_types must include 'authorization_code'",
         ),
       );
     }
   }
 
-  // response_types: only "code" (or omitted).
+  // response_types: must include "code" if present. Other entries ignored.
   if (body.response_types !== undefined) {
     if (
       !Array.isArray(body.response_types) ||
-      body.response_types.length !== 1 ||
-      body.response_types[0] !== "code"
+      !body.response_types.includes("code")
     ) {
       return withCors(
         request,
         badRequest(
           "invalid_client_metadata",
-          "response_types must be ['code']",
+          "response_types must include 'code'",
         ),
       );
     }

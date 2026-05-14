@@ -29,7 +29,9 @@ test('DCR: register → authorize → consent → token → /mcp whoami', async 
   loginAs,
   request,
 }) => {
-  // 1) Register a new client.
+  // 1) Register a new client. Mirror the Claude Code MCP SDK shape, which sends
+  // the OAuth 2.1 public-client defaults including refresh_token (we ignore it
+  // but must not reject the registration).
   const redirectUri = 'http://127.0.0.1:54113/callback';
   const regRes = await request.post('/oauth/register', {
     headers: freshIpHeaders(),
@@ -37,7 +39,7 @@ test('DCR: register → authorize → consent → token → /mcp whoami', async 
       redirect_uris: [redirectUri],
       client_name: 'Claude Code E2E',
       token_endpoint_auth_method: 'none',
-      grant_types: ['authorization_code'],
+      grant_types: ['authorization_code', 'refresh_token'],
       response_types: ['code'],
     },
   });
@@ -148,6 +150,21 @@ test('DCR: rejects 0.0.0.0 as a redirect_uri host', async ({ request }) => {
   expect(res.status()).toBe(400);
   const body = await res.json();
   expect(body.error).toBe('invalid_redirect_uri');
+});
+
+test('DCR: rejects grant_types without authorization_code', async ({
+  request,
+}) => {
+  const res = await request.post('/oauth/register', {
+    headers: freshIpHeaders(),
+    data: {
+      redirect_uris: ['http://127.0.0.1/callback'],
+      grant_types: ['refresh_token'],
+    },
+  });
+  expect(res.status()).toBe(400);
+  const body = await res.json();
+  expect(body.error).toBe('invalid_client_metadata');
 });
 
 test('DCR: rejects unsupported token_endpoint_auth_method', async ({
