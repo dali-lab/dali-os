@@ -25,6 +25,7 @@ import {
 } from 'lucide-react'
 import { userInitials } from '~/lib/display'
 import { TabWorkspace, type TabWorkspaceHandle, type OpenTabRequest } from '~/components/TabWorkspace'
+import { useUnreadNotificationCount, UnreadBadge } from '~/components/NotificationBell'
 
 interface LayoutProps {
   user: { email: string; firstName?: string; lastName?: string }
@@ -285,6 +286,7 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
   const activeSection = activeArea?.sections.find((s) => s.active)
 
   const initials = userInitials(user)
+  const unreadCount = useUnreadNotificationCount()
   const sidebarWidth = collapsed ? 'w-16' : 'w-64'
 
   const sidebarContent = (
@@ -411,14 +413,15 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
           <button
             type="button"
             onClick={() => openInWorkspace({ url: '/', label: 'Home' })}
-            title={collapsed ? 'Open profile' : undefined}
-            aria-label="Open profile"
+            title={collapsed ? `Open home${unreadCount > 0 ? ` (${unreadCount} unread)` : ''}` : undefined}
+            aria-label="Open home"
             className={`flex items-center gap-2 rounded-md hover:bg-white/5 transition-colors ${
               collapsed ? 'p-1.5' : 'flex-1 min-w-0 px-2 py-1.5 text-left'
             }`}
           >
-            <div className="w-8 h-8 rounded-full bg-accent-coral text-white flex items-center justify-center font-bold text-xs flex-shrink-0">
+            <div className="relative w-8 h-8 rounded-full bg-accent-coral text-white flex items-center justify-center font-bold text-xs flex-shrink-0">
               {initials}
+              <UnreadBadge count={unreadCount} />
             </div>
             {!collapsed && (
               <span className="text-xs text-white/80 truncate min-w-0">{user.email}</span>
@@ -471,9 +474,14 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
           </Link>
         </div>
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-accent-coral text-white flex items-center justify-center font-bold text-xs">
+          <Link
+            to="/"
+            aria-label={unreadCount > 0 ? `Home (${unreadCount} unread)` : 'Home'}
+            className="relative w-8 h-8 rounded-full bg-accent-coral text-white flex items-center justify-center font-bold text-xs"
+          >
             {initials}
-          </div>
+            <UnreadBadge count={unreadCount} />
+          </Link>
           <a href="/logout" className="text-white/40 hover:text-white/70 transition" title="Log out">
             <LogOut className="w-4 h-4" />
           </a>

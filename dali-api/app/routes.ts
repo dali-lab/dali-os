@@ -76,6 +76,19 @@ export default [
   route("api/members", "admin-console/routes/api.members.ts"),
   route("api/members/:memberId/roles", "admin-console/routes/api.members.$memberId.roles.ts"),
 
+  // Groups (admin) and notifications (per-user + admin send)
+  route("api/groups", "admin-console/routes/api.groups.ts"),
+  route("api/groups/:groupId", "admin-console/routes/api.groups.$groupId.ts"),
+  route("api/notifications", "routes/api.notifications.ts"),
+  route("api/notifications/send", "admin-console/routes/api.notifications.send.ts"),
+  route("api/notifications/:id/read", "routes/api.notifications.$id.read.ts"),
+  route("api/notifications/:id/rsvp", "routes/api.notifications.$id.rsvp.ts"),
+
+  // Scheduled meetings
+  route("api/scheduled-meetings", "calendar/routes/api.scheduled-meetings.ts"),
+  route("api/calendar/group-availability", "calendar/routes/api.calendar.group-availability.ts"),
+
+
   // Hiring API — cycles, scheduling, applications, reviews, decisions, interviews, delibs
   route("api/hiring/cycles/:cycleId/status", "hiring/routes/api.cycles.$cycleId.status.ts"),
   route("api/hiring/cycles/:cycleId/interview-config", "hiring/routes/api.cycles.$cycleId.interview-config.ts"),

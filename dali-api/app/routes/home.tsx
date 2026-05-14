@@ -1,24 +1,68 @@
+import { useState } from "react";
 import { redirect, useLoaderData } from "react-router";
 import {
-  FileText,
-  ExternalLink,
-  AlertCircle,
+  Bell,
+  Check,
+  X as XIcon,
   CalendarDays,
   ChevronLeft,
   ChevronRight,
+  ExternalLink,
+  HelpCircle,
 } from "lucide-react";
 import { requireAuth } from "~/lib/auth";
+import { prisma } from "~/lib/db";
 import type { Route } from "./+types/home";
+
+type HomeNotification = {
+  id: string;
+  kind: "General" | "MeetingInvite" | "MeetingReminder" | "SystemAnnouncement";
+  title: string;
+  body: string | null;
+  link: string | null;
+  readAt: string | null;
+  createdAt: string;
+  scheduledMeetingId: string | null;
+  rsvp: "Accepted" | "Declined" | "Tentative" | null;
+};
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
   if (auth.user.type === "applicant") return redirect("/portal");
-  return { user: auth.user };
+
+  const items = await prisma.notification.findMany({
+    where: { recipientUserId: auth.user.sub },
+    orderBy: { createdAt: "desc" },
+    take: 50,
+    select: {
+      id: true,
+      kind: true,
+      title: true,
+      body: true,
+      link: true,
+      readAt: true,
+      createdAt: true,
+      scheduledMeetingId: true,
+      rsvp: true,
+    },
+  });
+  const notifications: HomeNotification[] = items.map((n) => ({
+    id: n.id,
+    kind: n.kind,
+    title: n.title,
+    body: n.body,
+    link: n.link,
+    readAt: n.readAt ? n.readAt.toISOString() : null,
+    createdAt: n.createdAt.toISOString(),
+    scheduledMeetingId: n.scheduledMeetingId,
+    rsvp: n.rsvp,
+  }));
+  return { user: auth.user, notifications };
 }
 
 export default function Home() {
-  const { user } = useLoaderData<typeof loader>();
+  const { user, notifications } = useLoaderData<typeof loader>();
   const firstName = user.firstName || user.email.split("@")[0];
 
   return (
@@ -33,7 +77,7 @@ export default function Home() {
       </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-6">
-        <RemindersPanel />
+        <NotificationsPanel notifications={notifications} />
         <WeekCalendarPanel />
       </div>
     </div>
@@ -41,87 +85,153 @@ export default function Home() {
 }
 
 /* ------------------------------------------------------------------ */
-/* Lab-wide reminders                                                  */
+/* Notifications panel                                                  */
 /* ------------------------------------------------------------------ */
 
-type Reminder = {
-  id: string;
-  title: string;
-  description: string;
-  dueLabel: string;
-  urgent?: boolean;
-  href?: string;
-};
+function relativeTime(iso: string): string {
+  const now = Date.now();
+  const t = new Date(iso).getTime();
+  const diff = Math.max(0, now - t);
+  const m = Math.floor(diff / 60_000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 7) return `${d}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
 
-const REMINDERS: Reminder[] = [
-  {
-    id: "r1",
-    title: "Submit weekly term-time form",
-    description: "Log your hours and project updates for the week.",
-    dueLabel: "Due Friday",
-    urgent: true,
-    href: "#",
-  },
-  {
-    id: "r2",
-    title: "End-of-term reflection",
-    description: "Share what went well and what to improve next term.",
-    dueLabel: "Due next week",
-    href: "#",
-  },
-  {
-    id: "r3",
-    title: "Update headshot & bio",
-    description: "Refresh your profile so partners can find you.",
-    dueLabel: "Anytime",
-    href: "#",
-  },
-];
-
-function RemindersPanel() {
+function NotificationsPanel({ notifications }: { notifications: HomeNotification[] }) {
+  const unread = notifications.filter((n) => !n.readAt).length;
   return (
     <aside className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
-          <AlertCircle className="w-4 h-4 text-accent-coral" />
-          Lab Reminders
+          <Bell className="w-4 h-4 text-accent-coral" />
+          Notifications
         </h2>
-        <span className="text-xs text-muted-foreground">{REMINDERS.length} open</span>
+        <span className="text-xs text-muted-foreground">
+          {unread > 0 ? `${unread} unread` : `${notifications.length} total`}
+        </span>
       </div>
       <div className="flex flex-col gap-2">
-        {REMINDERS.map((r) => (
-          <ReminderCard key={r.id} reminder={r} />
-        ))}
+        {notifications.length === 0 ? (
+          <p className="text-sm text-muted-foreground px-3 py-6 bg-card border border-border rounded-md text-center">
+            No notifications yet.
+          </p>
+        ) : (
+          notifications.map((n) => <NotificationCard key={n.id} notification={n} />)
+        )}
       </div>
     </aside>
   );
 }
 
-function ReminderCard({ reminder }: { reminder: Reminder }) {
-  const accent = reminder.urgent ? "border-l-accent-coral" : "border-l-accent-teal";
+function NotificationCard({ notification }: { notification: HomeNotification }) {
+  const isUnread = !notification.readAt;
+  const isInvite = notification.kind === "MeetingInvite" && !!notification.scheduledMeetingId;
+  const accent = isUnread ? "border-l-accent-coral" : "border-l-accent-teal";
+  const [rsvp, setRsvp] = useState<HomeNotification["rsvp"]>(notification.rsvp);
+  const [submitting, setSubmitting] = useState<null | "accepted" | "declined" | "tentative">(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function sendRsvp(response: "accepted" | "declined" | "tentative") {
+    setSubmitting(response);
+    setError(null);
+    try {
+      const res = await fetch(`/api/notifications/${notification.id}/rsvp`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ response }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setError(json.error ?? "Failed to RSVP");
+      } else {
+        setRsvp(response === "accepted" ? "Accepted" : response === "declined" ? "Declined" : "Tentative");
+        if (json.gcalError) setError(`Recorded in-app, but Google sync failed: ${json.gcalError}`);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Network error");
+    } finally {
+      setSubmitting(null);
+    }
+  }
+
   return (
-    <a
-      href={reminder.href ?? "#"}
-      className={`group bg-card border border-border border-l-4 ${accent} rounded-md px-3 py-2.5 flex items-start gap-3 hover:bg-muted/40 transition-colors`}
+    <div
+      className={`group bg-card border border-border border-l-4 ${accent} rounded-md px-3 py-2.5 flex items-start gap-3`}
     >
-      <FileText className="w-4 h-4 text-muted-foreground mt-0.5 flex-shrink-0" />
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
-          <span className="text-sm font-semibold text-foreground truncate">{reminder.title}</span>
-          <ExternalLink className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
+          <span className="text-sm font-semibold text-foreground truncate">{notification.title}</span>
+          {notification.link && (
+            <a
+              href={notification.link}
+              className="text-muted-foreground hover:text-foreground"
+              aria-label="Open linked page"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
+          )}
         </div>
-        <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{reminder.description}</p>
-        <span
-          className={`inline-block mt-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded ${
-            reminder.urgent
-              ? "bg-accent-coral/15 text-accent-coral"
-              : "bg-muted text-muted-foreground"
-          }`}
-        >
-          {reminder.dueLabel}
-        </span>
+        {notification.body && (
+          <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{notification.body}</p>
+        )}
+        <div className="flex items-center gap-2 mt-1.5">
+          <span className="text-[10px] text-muted-foreground/70">
+            {relativeTime(notification.createdAt)}
+          </span>
+          {rsvp && (
+            <span
+              className={`inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                rsvp === "Accepted"
+                  ? "bg-green-100 text-green-800"
+                  : rsvp === "Declined"
+                    ? "bg-red-100 text-red-800"
+                    : "bg-yellow-100 text-yellow-800"
+              }`}
+            >
+              {rsvp}
+            </span>
+          )}
+        </div>
+        {isInvite && !rsvp && (
+          <div className="flex items-center gap-1.5 mt-2">
+            <button
+              type="button"
+              onClick={() => sendRsvp("accepted")}
+              disabled={!!submitting}
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
+            >
+              <Check className="w-3 h-3" />
+              {submitting === "accepted" ? "Accepting…" : "Accept"}
+            </button>
+            <button
+              type="button"
+              onClick={() => sendRsvp("tentative")}
+              disabled={!!submitting}
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md border border-border text-foreground hover:bg-muted disabled:opacity-50"
+            >
+              <HelpCircle className="w-3 h-3" />
+              {submitting === "tentative" ? "…" : "Maybe"}
+            </button>
+            <button
+              type="button"
+              onClick={() => sendRsvp("declined")}
+              disabled={!!submitting}
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md border border-border text-foreground hover:bg-muted disabled:opacity-50"
+            >
+              <XIcon className="w-3 h-3" />
+              {submitting === "declined" ? "…" : "Decline"}
+            </button>
+          </div>
+        )}
+        {error && <p className="text-[10px] text-red-700 mt-1">{error}</p>}
       </div>
-    </a>
+    </div>
   );
 }
 

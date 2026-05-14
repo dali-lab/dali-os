@@ -13,13 +13,21 @@ const isoString = z.string().refine(
 // Each intent is a discriminated variant so the action handler can switch on it.
 // Cross-field checks (e.g. start < end) are enforced by the action handler, not the
 // schema — Zod 4 forbids refined objects inside a discriminatedUnion.
-export const UpdateWorkingHoursDaySchema = z.object({
-  intent: z.literal("update-working-hours-day"),
+
+// Full-replace for a single day: wipes the user's existing rows for that
+// day-of-week and inserts the provided segments (possibly empty for "unavailable").
+export const SetWorkingSegmentsSchema = z.object({
+  intent: z.literal("set-working-segments"),
   dayOfWeek,
-  enabled: z.boolean(),
-  startMinute: minuteOfDay,
-  endMinute: minuteOfDay,
-  location: z.enum(["InPerson", "Remote"]),
+  segments: z
+    .array(
+      z.object({
+        startMinute: minuteOfDay,
+        endMinute: minuteOfDay,
+        location: z.enum(["InPerson", "Remote"]),
+      }),
+    )
+    .max(24),
 });
 
 // Copy Monday's hours to Tue–Fri. Sat/Sun untouched.
@@ -74,7 +82,7 @@ export const ToggleSubCalendarSchema = z.object({
 });
 
 export const CalendarActionSchema = z.discriminatedUnion("intent", [
-  UpdateWorkingHoursDaySchema,
+  SetWorkingSegmentsSchema,
   CopyWeekdaysSchema,
   ResetWorkingHoursSchema,
   SetEventBufferSchema,
