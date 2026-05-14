@@ -42,7 +42,7 @@ model User {
   applications                  Application[]
   applicationStatusUpdates      ApplicationStatusUpdate[]
   oauthSessions                 OAuthSession[]
-  refreshTokens                 RefreshToken[]
+  sessions                      Session[]
   rubricVersions                RubricVersion[]
   confidentialitySignatures     ConfidentialityAgreementSignature[]
 
@@ -673,17 +673,40 @@ model OAuthSession {
   user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
-model RefreshToken {
-  id              String    @id @default(cuid())
-  tokenHash       String    @unique // sha-256 token hash
-  userId          String
-  family          String // rotation detection
-  expiresAt       DateTime
-  revokedAt       DateTime?
-  createdAt       DateTime  @default(now())
-  familyCreatedAt DateTime  @default(now()) // absolute session cap anchor
+// Single-credential session record backing both browser cookie logins and
+// OAuth-issued (MCP) sessions. See SESSION_AUTH_PLAN.md for design.
+//
+// The PK `id` stores SHA-256(raw) so a DB read leak does not surface live
+// credentials. The raw id is what travels in the __dali_sid cookie or in
+// Authorization: Bearer headers; we never store it.
+model Session {
+  // sha256(raw session id), base64url
+  id                String   @id
+  userId            String
+  // Null for cookie logins. Set for OAuth-issued (MCP) sessions, linking
+  // the session to the OAuthGrant that authorized it. Intentionally a plain
+  // String? with no FK constraint in this PR — the FK lands when OAuthGrant
+  // ships in the MCP foundation track.
+  grantId           String?
+  createdAt         DateTime @default(now())
+  // Bumped on every successful auth lookup. Drives rolling expiry and powers
+  // per-session telemetry.
+  lastUsedAt        DateTime @default(now())
+  // Rolling expiry: extended on use up to absoluteExpiresAt.
+  expiresAt         DateTime
+  // Hard cap: never extended. Equivalent to the legacy familyCreatedAt + 30d.
+  absoluteExpiresAt DateTime
+  // Soft delete. Sessions are never hard-deleted so the audit log stays whole.
+  revokedAt         DateTime?
+  // Populated at issuance for audit / "active sessions" UI.
+  userAgent         String?
+  ip                String?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@index([grantId])
+  @@index([expiresAt])
 }
 
 // ─── Email Templates ────────────────────────────────────────────────────────
