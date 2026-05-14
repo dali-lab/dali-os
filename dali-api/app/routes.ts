@@ -38,6 +38,7 @@ export default [
 
     // Members directory (separate from admin-console/members)
     route("members", "members/routes/members.tsx"),
+    route("members/groups", "members/routes/members.groups.tsx"),
 
     // Partners
     route("partners", "partners/routes/partners.tsx"),

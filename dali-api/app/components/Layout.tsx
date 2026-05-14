@@ -217,8 +217,16 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
       to: '/members',
       icon: UsersRound,
       show: true,
-      active: path === '/members' || path.startsWith('/members/'),
+      active: path === '/members',
       sub: null as { label: string; to: string; active: boolean }[] | null,
+    },
+    {
+      label: 'Groups',
+      to: '/members/groups',
+      icon: Users,
+      show: isAdmin,
+      active: path.startsWith('/members/groups'),
+      sub: null,
     },
   ].filter((s) => s.show)
 
