@@ -1757,11 +1757,33 @@ function CreateScheduledMeetingForm({
 
         <div className="flex items-center justify-between pt-1">
           <div className="text-sm">
-            {status?.ok === true && (
+            {status?.ok === true && !status.gcalError && (
               <span className="text-green-700">
                 Meeting created. Notified {status.count} participant{status.count === 1 ? "" : "s"}.
-                {status.gcalError ? ` (Google Calendar push failed: ${status.gcalError})` : ""}
               </span>
+            )}
+            {status?.ok === true && status.gcalError && (
+              <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">
+                <div className="font-medium">
+                  Meeting created, but the Google Calendar invite didn't go out.
+                </div>
+                <div className="text-xs mt-0.5">
+                  Notified {status.count} participant{status.count === 1 ? "" : "s"} in-app.{" "}
+                  {/insufficient.*scope|insufficientPermissions|invalid_grant|unauthorized/i.test(
+                    status.gcalError,
+                  ) ? (
+                    <>
+                      Your linked Google account is missing calendar-write permission.{" "}
+                      <a href="/oauth/calendar/google/start" className="underline font-medium">
+                        Reconnect Google Calendar
+                      </a>{" "}
+                      to send invites.
+                    </>
+                  ) : (
+                    <>Details: {status.gcalError}</>
+                  )}
+                </div>
+              </div>
             )}
             {status?.ok === false && <span className="text-red-700">{status.error}</span>}
           </div>
