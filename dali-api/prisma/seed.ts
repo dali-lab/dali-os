@@ -25,10 +25,28 @@ async function main() {
     create: { userId: admin.id },
   });
 
+  // ── Term ───────────────────────────────────────────────────────────────────
+  // Phase 2: CoreAssignment and DomainLeadAssignment require a termId. The
+  // local seed below references this term for the test hiring lead +
+  // domain leads. Prod seeds a full 12-term window via
+  // prisma/seeds/v0-reference.ts; locally one term is enough.
+  await prisma.term.upsert({
+    where: { code: "26S" },
+    update: {},
+    create: {
+      code: "26S",
+      year: 2026,
+      season: "S",
+      sortKey: 20262,
+      startDate: new Date("2026-03-28"),
+      endDate: new Date("2026-06-05"),
+    },
+  });
+
   // ── Domains ────────────────────────────────────────────────────────────────
   // Phase 1 adds `code` + `displayName` to Domain. Local seeds populate them
   // so a fresh dev DB has consistent values; prod backfill is handled by the
-  // v0 reference-data script (prisma/data/v0-reference-seed.ts).
+  // v0 reference-data script (prisma/seeds/v0-reference.ts).
   const [designDomain, engDomain, pmDomain] = await Promise.all([
     prisma.domain.upsert({
       where: { id: "domain-design" },
