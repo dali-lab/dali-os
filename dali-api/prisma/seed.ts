@@ -29,21 +29,39 @@ async function main() {
   });
 
   // ── Domains ────────────────────────────────────────────────────────────────
+  // Phase 1 adds `code` + `displayName` to Domain. Local seeds populate them
+  // so a fresh dev DB has consistent values; prod backfill is handled by the
+  // v0 reference-data script (prisma/data/v0-reference-seed.ts).
   const [designDomain, engDomain, pmDomain] = await Promise.all([
     prisma.domain.upsert({
       where: { id: "domain-design" },
-      update: {},
-      create: { id: "domain-design", name: "Design" },
+      update: { code: "UIUX", displayName: "UI/UX Design" },
+      create: {
+        id: "domain-design",
+        name: "Design",
+        code: "UIUX",
+        displayName: "UI/UX Design",
+      },
     }),
     prisma.domain.upsert({
       where: { id: "domain-eng" },
-      update: {},
-      create: { id: "domain-eng", name: "Engineering" },
+      update: { code: "Fullstack", displayName: "Fullstack Dev" },
+      create: {
+        id: "domain-eng",
+        name: "Engineering",
+        code: "Fullstack",
+        displayName: "Fullstack Dev",
+      },
     }),
     prisma.domain.upsert({
       where: { id: "domain-pm" },
-      update: {},
-      create: { id: "domain-pm", name: "Product" },
+      update: { code: "PM", displayName: "Product Management" },
+      create: {
+        id: "domain-pm",
+        name: "Product",
+        code: "PM",
+        displayName: "Product Management",
+      },
     }),
   ]);
 
