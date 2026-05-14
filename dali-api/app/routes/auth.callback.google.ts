@@ -10,7 +10,6 @@ import { CAL_STATE_PREFIX } from "~/routes/oauth.calendar.google.start";
 import { handleCalendarLinkCallback } from "~/routes/oauth.calendar.google.callback";
 
 const OAUTH_STATE_COOKIE = "__dali_oauth_state";
-const ACCOUNT_TYPE_COOKIE = "__dali_account_type";
 
 function parseCookies(request: Request): Record<string, string> {
   const header = request.headers.get("Cookie") ?? "";
@@ -110,13 +109,15 @@ export async function loader({ request }: Route.LoaderArgs) {
     });
   }
 
-  // Determine account type from the cookie set during the login action
-  const accountType = cookies[ACCOUNT_TYPE_COOKIE] ?? "";
-  const clearAccountTypeCookie = `${ACCOUNT_TYPE_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax`;
-  const isMemberLogin = accountType === "member";
-
-  // For member login, enforce DALI domain
-  if (isMemberLogin && !googleUser.email.endsWith("@dali.dartmouth.edu")) {
+  // The only /login button that uses this callback is the Member button, so
+  // @dali.dartmouth.edu is the only valid outcome. Enforce unconditionally —
+  // we no longer rely on the __dali_account_type cookie (which could be
+  // stripped) to gate the check. Dartmouth-student and partner branches that
+  // used to live inline below are gone for the same reason: unreachable from
+  // any production route. They live on (for now) in the OAuth-provider
+  // callback `/oauth/callback/google`, which gates on a different signal
+  // (`OAuthSession.accountType`).
+  if (!googleUser.email.endsWith("@dali.dartmouth.edu")) {
     await logAuditEvent({
       action: "login.failure",
       metadata: {
@@ -126,15 +127,21 @@ export async function loader({ request }: Route.LoaderArgs) {
       },
       request,
     });
-    const headers = new Headers();
-    headers.append("Set-Cookie", clearStateCookie);
-    headers.append("Set-Cookie", clearAccountTypeCookie);
-    headers.set("Location", "/login?error=access_denied");
-    return new Response(null, { status: 302, headers });
+    return new Response(null, {
+      status: 302,
+      headers: {
+        "Set-Cookie": clearStateCookie,
+        Location: "/login?error=access_denied",
+      },
+    });
   }
 
-  const { user, authType } = await upsertUserFromGoogle(googleUser);
-  const redirectTo = authType === "member" ? "/hiring/reviewer" : "/portal";
+  // Always-enforce above means we only reach this with an @dali.dartmouth.edu
+  // email, so the helper's member branch fires and creates a DALIMember if
+  // missing. Dartmouth-student and partner branches in the helper are
+  // unreachable through this route — they live on for the OAuth-provider
+  // callback `/oauth/callback/google` which gates on a different signal.
+  const { user } = await upsertUserFromGoogle(googleUser);
 
   // Issue session and set cookie
   const session = await issueSession({
@@ -147,16 +154,15 @@ export async function loader({ request }: Route.LoaderArgs) {
     userId: user.id,
     metadata: {
       provider: "google",
-      authType,
+      authType: "member",
       email: googleUser.email,
     },
     request,
   });
   const headers = new Headers();
   headers.append("Set-Cookie", clearStateCookie);
-  headers.append("Set-Cookie", clearAccountTypeCookie);
   setSessionCookie(headers, session.rawId);
-  headers.set("Location", redirectTo);
+  headers.set("Location", "/hiring/reviewer");
 
   return new Response(null, { status: 302, headers });
 }
