@@ -2330,3 +2330,35 @@ model GmailIntegration {
 
   user User @relation(fields: [userId], references: [id])
 }
+
+// Slack bug-report bot. A draft is created when a teammate @-mentions the bot
+// in a Slack thread; it's filed (or cancelled) when they react to the bot's
+// preview message with ✅ (or ❌). See app/slack/.
+model SlackBugReportDraft {
+  id                     String                @id @default(cuid())
+  // Source thread on Slack — channel + the parent message ts identify the thread.
+  slackChannelId         String
+  slackThreadTs          String
+  // The bot's preview reply; reactions on this row drive state transitions.
+  previewMessageTs       String
+  // Snapshot of the thread at draft time so we can re-render or audit even
+  // if Slack messages get edited or deleted.
+  threadJson             Json
+  status                 SlackBugReportStatus  @default(Pending)
+  githubIssueNumber      Int?
+  githubIssueUrl         String?
+  // Captured so we can surface "who asked" in the issue body + audit.
+  requestedBySlackUserId String
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
+
+  @@unique([slackChannelId, previewMessageTs])
+  @@index([status])
+}
+
+enum SlackBugReportStatus {
+  Pending
+  Filed
+  Cancelled
+  Failed
+}
