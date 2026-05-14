@@ -31,6 +31,10 @@ ALTER TABLE "DomainLeadAssignment" ADD COLUMN "userId_new" TEXT;
 -- We reuse the DALIMember.id as the new User.id (both cuids; no collision
 -- since DALIMember.id is unique and no existing User shares it).
 
+-- INSERT uses ON CONFLICT DO NOTHING (without column spec) so that
+-- conflicts on ANY unique constraint (daliEmail, netId, or did's lowercase
+-- collision with a pre-existing User.netId) skip cleanly. Skipped rows are
+-- handled by the linking UPDATE below, which keys on daliEmail.
 INSERT INTO "User" (id, "createdAt", "updatedAt", "firstName", "lastName", "daliEmail", "netId")
 SELECT
   m.id,
@@ -39,11 +43,18 @@ SELECT
   COALESCE(NULLIF(m."firstName", ''), 'Unknown'),
   COALESCE(NULLIF(m."lastName",  ''), ''),
   m."daliEmail",
-  LOWER(m."did")
+  -- Only set netId if no existing User already owns this value. Otherwise
+  -- leave NULL and let the user complete their identity by signing in.
+  CASE
+    WHEN m."did" IS NULL THEN NULL
+    WHEN EXISTS (SELECT 1 FROM "User" u WHERE u."netId" = LOWER(m."did"))
+      THEN NULL
+    ELSE LOWER(m."did")
+  END
 FROM "DALIMember" m
 WHERE m."userId" IS NULL
   AND m."daliEmail" IS NOT NULL
-ON CONFLICT ("daliEmail") DO NOTHING;
+ON CONFLICT DO NOTHING;
 
 -- Link the freshly-created User rows back to their DALIMember.
 UPDATE "DALIMember" m
@@ -52,18 +63,30 @@ FROM "User" u
 WHERE m."userId" IS NULL AND m."daliEmail" = u."daliEmail";
 
 -- Discard any DALIMember row that still has no userId (no daliEmail to
--- migrate). These should not exist in prod; the DELETE is defensive.
+-- migrate, or daliEmail collided with a non-member User during INSERT).
+-- These should be rare; the DELETE is defensive.
 DELETE FROM "DALIMember" WHERE "userId" IS NULL;
 
 -- ═══ M3: backfills ════════════════════════════════════════════════════════
 
--- M3a. Backfill User.netId from DALIMember.did where User doesn't already
--- have a netId. Per V0_PLAN.md: netId === did (same Dartmouth identifier,
--- case-normalized to lowercase).
+-- M3a. Backfill User.netId from DALIMember.did where:
+--   (a) the User doesn't already have a netId, AND
+--   (b) no other User already owns the target netId value.
+-- Per V0_PLAN.md: netId === did (same Dartmouth identifier, case-normalized).
+-- Case (b) typically arises when a member logged in via CAS first (got
+-- netId='f006jnh'), and a separate DALIMember row linked to a DIFFERENT
+-- User has did='F006JNH'. We skip rather than collide — the second User
+-- can still operate without a netId; if they later log in via CAS,
+-- linkCasToGoogleUser will merge them into the correct User row.
 UPDATE "User" u
 SET "netId" = LOWER(m."did")
 FROM "DALIMember" m
-WHERE u.id = m."userId" AND u."netId" IS NULL AND m."did" IS NOT NULL;
+WHERE u.id = m."userId"
+  AND u."netId" IS NULL
+  AND m."did" IS NOT NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM "User" u2 WHERE u2."netId" = LOWER(m."did") AND u2.id <> u.id
+  );
 
 -- M3b. Backfill User.firstName/lastName from DALIMember where missing.
 -- (Defensive; in practice User rows have these populated.)
@@ -147,6 +170,22 @@ BEGIN
   UPDATE "DomainLeadAssignment" SET "termId" = cur_term_id WHERE "termId" IS NULL;
 END $$;
 
+-- M3-pre. Drop the OLD foreign keys that reference DALIMember BEFORE we
+-- translate their values. Postgres validates FKs on every UPDATE, so
+-- changing submittedById/madeById/etc. from a DALIMember.id to a User.id
+-- with the old FK still in place would fail with "Key is not present in
+-- DALIMember". We drop them here, translate in M3e/M3f, and add the new
+-- User-pointing FKs in M4.
+ALTER TABLE "CycleReviewer"                   DROP CONSTRAINT IF EXISTS "CycleReviewer_daliMemberId_fkey";
+ALTER TABLE "CycleInterviewer"                DROP CONSTRAINT IF EXISTS "CycleInterviewer_daliMemberId_fkey";
+ALTER TABLE "DomainLeadAssignment"            DROP CONSTRAINT IF EXISTS "DomainLeadAssignment_memberId_fkey";
+ALTER TABLE "Decision"                        DROP CONSTRAINT IF EXISTS "Decision_madeById_fkey";
+ALTER TABLE "ApplicationReview"               DROP CONSTRAINT IF EXISTS "ApplicationReview_submittedById_fkey";
+ALTER TABLE "DelibsSession"                   DROP CONSTRAINT IF EXISTS "DelibsSession_openedById_fkey";
+ALTER TABLE "LegacyEmailTemplate"             DROP CONSTRAINT IF EXISTS "LegacyEmailTemplate_createdById_fkey";
+ALTER TABLE "EmailTemplateVersion"            DROP CONSTRAINT IF EXISTS "EmailTemplateVersion_createdById_fkey";
+ALTER TABLE "ConfidentialityAgreementVersion" DROP CONSTRAINT IF EXISTS "ConfidentialityAgreementVersion_createdById_fkey";
+
 -- M3e. CycleReviewer / CycleInterviewer / DomainLeadAssignment: populate
 -- userId_new from the existing daliMemberId/memberId join.
 UPDATE "CycleReviewer" cr
@@ -166,7 +205,8 @@ WHERE dla."memberId" = m.id;
 
 -- M3f. Translate DALIMember.id → User.id for the six FK columns that point
 -- at DALIMember today. The column NAME stays (madeById, submittedById,
--- openedById, createdById); only the referenced table changes.
+-- openedById, createdById); only the referenced table changes. Possible
+-- only because we dropped the old FKs above.
 UPDATE "Decision" d
 SET "madeById" = m."userId"
 FROM "DALIMember" m
@@ -232,18 +272,11 @@ ALTER TYPE "OAuthAccountType" RENAME TO "OAuthAccountType_old";
 ALTER TYPE "OAuthAccountType_new" RENAME TO "OAuthAccountType";
 DROP TYPE "OAuthAccountType_old";
 
--- Drop old foreign keys.
-ALTER TABLE "DALIMember"                      DROP CONSTRAINT "DALIMember_userId_fkey";
-ALTER TABLE "CycleReviewer"                   DROP CONSTRAINT "CycleReviewer_daliMemberId_fkey";
-ALTER TABLE "CycleInterviewer"                DROP CONSTRAINT "CycleInterviewer_daliMemberId_fkey";
-ALTER TABLE "Decision"                        DROP CONSTRAINT "Decision_madeById_fkey";
-ALTER TABLE "ApplicationReview"               DROP CONSTRAINT "ApplicationReview_submittedById_fkey";
-ALTER TABLE "DelibsSession"                   DROP CONSTRAINT "DelibsSession_openedById_fkey";
-ALTER TABLE "LegacyEmailTemplate"             DROP CONSTRAINT "LegacyEmailTemplate_createdById_fkey";
-ALTER TABLE "EmailTemplateVersion"            DROP CONSTRAINT "EmailTemplateVersion_createdById_fkey";
-ALTER TABLE "ConfidentialityAgreementVersion" DROP CONSTRAINT "ConfidentialityAgreementVersion_createdById_fkey";
-ALTER TABLE "DomainLeadAssignment"            DROP CONSTRAINT "DomainLeadAssignment_memberId_fkey";
-ALTER TABLE "DomainLeadAssignment"            DROP CONSTRAINT "DomainLeadAssignment_termId_fkey";
+-- Drop remaining old foreign keys (the DALIMember-referencing ones were
+-- dropped earlier in M3-pre so M3f could translate values; the rest are
+-- dropped here).
+ALTER TABLE "DALIMember"           DROP CONSTRAINT "DALIMember_userId_fkey";
+ALTER TABLE "DomainLeadAssignment" DROP CONSTRAINT "DomainLeadAssignment_termId_fkey";
 
 -- Drop old indexes.
 DROP INDEX "DALIMember_daliEmail_key";
