@@ -188,15 +188,18 @@ export async function loader({ request }: Route.LoaderArgs) {
     if (list) list.push(seg);
     else byDow.set(r.dayOfWeek, [seg]);
   }
-  // Days with no persisted segments fall back to the default (empty for weekends,
-  // 9–5 InPerson for Mon–Fri). Days with at least one persisted segment use only
-  // the persisted ones — defaults are not mixed in.
+  // Defaults only apply for users who have never persisted working hours. Once
+  // a user has any WorkingHoursDay row (even disabled / mid-edit), we trust the
+  // persisted state — so an explicit "disable Monday" sticks instead of being
+  // overwritten by the Mon–Fri 9–5 default on every reload.
+  const hasAnyPersisted = whRows.length > 0;
   const workingHours: WhDay[] = defaultWorkingHours().map((d) => {
     const persisted = byDow.get(d.dayOfWeek);
     if (persisted && persisted.length > 0) {
       persisted.sort((a, b) => a.startMinute - b.startMinute);
       return { dayOfWeek: d.dayOfWeek, segments: persisted };
     }
+    if (hasAnyPersisted) return { dayOfWeek: d.dayOfWeek, segments: [] };
     return d;
   });
 
@@ -362,6 +365,20 @@ export async function action({ request }: Route.ActionArgs) {
               location: s.location,
             })),
           });
+        } else {
+          // Sentinel row that records "user explicitly cleared this day."
+          // The loader skips disabled rows for availability calc but uses their
+          // existence to distinguish "explicit empty" from "never set."
+          await tx.workingHoursDay.create({
+            data: {
+              userId,
+              dayOfWeek: input.dayOfWeek,
+              enabled: false,
+              startMinute: 0,
+              endMinute: 1,
+              location: "InPerson",
+            },
+          });
         }
       });
       return null;
@@ -370,7 +387,7 @@ export async function action({ request }: Route.ActionArgs) {
     case "copy-weekdays": {
       // Copy all of Monday's segments to Tue–Fri.
       const mondaySegments = await prisma.workingHoursDay.findMany({
-        where: { userId, dayOfWeek: 1 },
+        where: { userId, dayOfWeek: 1, enabled: true },
         select: { startMinute: true, endMinute: true, location: true, enabled: true },
       });
       if (mondaySegments.length === 0) return null;
