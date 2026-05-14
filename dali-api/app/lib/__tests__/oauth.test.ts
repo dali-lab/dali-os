@@ -14,7 +14,7 @@ import { prisma } from "~/lib/db";
 import {
   verifyPKCE,
   OAuthError,
-  getAllowedRedirectUris,
+  isAllowedRedirectUri,
   exchangeAuthorizationCode,
   exchangeGoogleCode,
   buildUserInfo,
@@ -25,6 +25,21 @@ const mockPrisma = prisma as unknown as {
     findUnique: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
   };
+  oAuthClient: {
+    findUnique: ReturnType<typeof vi.fn>;
+  };
+};
+
+const DEFAULT_CLIENT = {
+  clientId: "dali-api",
+  name: "Dali",
+  redirectUris: ["http://localhost:5173/login"],
+  isLoopback: false,
+  isFirstParty: false,
+  allowedScopes: [],
+  allowedProviders: ["google", "cas"],
+  requiredAccountType: null,
+  requireMembership: false,
 };
 
 beforeEach(() => {
@@ -32,6 +47,9 @@ beforeEach(() => {
   mockPrisma.oAuthSession = {
     findUnique: vi.fn(),
     update: vi.fn().mockResolvedValue({}),
+  } as any;
+  mockPrisma.oAuthClient = {
+    findUnique: vi.fn().mockResolvedValue(DEFAULT_CLIENT),
   } as any;
 });
 
@@ -68,10 +86,38 @@ describe("OAuthError", () => {
   });
 });
 
-describe("getAllowedRedirectUris", () => {
-  it("returns frontend login URI", () => {
-    const uris = getAllowedRedirectUris();
-    expect(uris).toContain("http://localhost:5173/login");
+describe("isAllowedRedirectUri", () => {
+  it("exact-matches non-loopback redirect URIs", () => {
+    const client = { redirectUris: ["http://example.com/cb"], isLoopback: false };
+    expect(isAllowedRedirectUri(client, "http://example.com/cb")).toBe(true);
+    expect(isAllowedRedirectUri(client, "http://example.com/cb?x=1")).toBe(false);
+  });
+
+  it("accepts loopback addresses with any port when client is loopback", () => {
+    const client = {
+      redirectUris: ["http://127.0.0.1/callback"],
+      isLoopback: true,
+    };
+    expect(isAllowedRedirectUri(client, "http://127.0.0.1:51234/callback")).toBe(true);
+    expect(isAllowedRedirectUri(client, "http://localhost:9999/callback")).toBe(true);
+  });
+
+  it("rejects loopback over https, public IPs, and 0.0.0.0", () => {
+    const client = {
+      redirectUris: ["http://127.0.0.1/callback"],
+      isLoopback: true,
+    };
+    expect(isAllowedRedirectUri(client, "https://127.0.0.1/callback")).toBe(false);
+    expect(isAllowedRedirectUri(client, "http://0.0.0.0/callback")).toBe(false);
+    expect(isAllowedRedirectUri(client, "http://8.8.8.8/callback")).toBe(false);
+  });
+
+  it("requires the path to match a registered redirect's path", () => {
+    const client = {
+      redirectUris: ["http://127.0.0.1/callback"],
+      isLoopback: true,
+    };
+    expect(isAllowedRedirectUri(client, "http://127.0.0.1:8080/other")).toBe(false);
   });
 });
 
@@ -180,6 +226,7 @@ describe("exchangeAuthorizationCode", () => {
       expiresAt: new Date(Date.now() + 60000),
       redirectUri: baseParams.redirectUri,
     });
+    mockPrisma.oAuthClient.findUnique.mockResolvedValueOnce(null);
     await expect(
       exchangeAuthorizationCode({ ...baseParams, clientId: "bad-client" }),
     ).rejects.toThrow("Unknown client_id");
@@ -244,6 +291,8 @@ describe("exchangeAuthorizationCode", () => {
       userId: "user-abc",
       provider: "cas",
       accountType: "dartmouth",
+      scopes: [],
+      clientId: baseParams.clientId,
     });
   });
 });

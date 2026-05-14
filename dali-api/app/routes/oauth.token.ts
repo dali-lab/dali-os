@@ -2,6 +2,7 @@ import type { Route } from "./+types/oauth.token";
 import {
   exchangeAuthorizationCode,
   buildUserInfo,
+  getOAuthClient,
   OAuthError,
 } from "~/lib/oauth";
 import type { UserInfo } from "~/lib/oauth";
@@ -47,14 +48,18 @@ export async function action({ request }: Route.ActionArgs) {
         throw new OAuthError("invalid_request", "Missing required parameters");
       }
 
-      const { userId, provider, accountType } = await exchangeAuthorizationCode(
-        {
-          code,
-          codeVerifier: code_verifier,
-          redirectUri: redirect_uri,
-          clientId: client_id,
-        },
-      );
+      const {
+        userId,
+        provider,
+        accountType,
+        scopes,
+        clientId: resolvedClientId,
+      } = await exchangeAuthorizationCode({
+        code,
+        codeVerifier: code_verifier,
+        redirectUri: redirect_uri,
+        clientId: client_id,
+      });
 
       const authType =
         provider === "cas" ? "dartmouth" : (accountType ?? "member");
@@ -62,19 +67,50 @@ export async function action({ request }: Route.ActionArgs) {
       const user = await prisma.user.findUnique({ where: { id: userId } });
       if (!user) throw new OAuthError("server_error", "User not found");
 
+      // Upsert the OAuthGrant for (user, client). The set of scopes is the
+      // union of any prior grant + this request's scopes — once a user has
+      // approved a scope it persists until they revoke the grant.
+      const client = await getOAuthClient(resolvedClientId);
+      if (!client) throw new OAuthError("invalid_client", "Unknown client_id");
+
+      const existingGrant = await prisma.oAuthGrant.findUnique({
+        where: {
+          userId_clientId: { userId, clientId: client.clientId },
+        },
+      });
+      const nextScopes = Array.from(
+        new Set([...(existingGrant?.scopes ?? []), ...scopes]),
+      );
+      const grant = await prisma.oAuthGrant.upsert({
+        where: {
+          userId_clientId: { userId, clientId: client.clientId },
+        },
+        update: {
+          scopes: nextScopes,
+          lastUsedAt: new Date(),
+          revokedAt: null,
+        },
+        create: {
+          userId,
+          clientId: client.clientId,
+          name: client.name,
+          scopes: nextScopes,
+          lastUsedAt: new Date(),
+        },
+      });
+
       const session = await issueSession({
         userId,
+        grantId: grant.id,
         userAgent: request.headers.get("user-agent") ?? undefined,
         ip: getClientIp(request),
-        // grantId plumbed through when OAuthGrant lands; for now sessions
-        // issued via the OAuth flow are not yet attributed to a grant row.
       });
 
       const userInfo = buildUserInfo(user, authType);
 
       return withCors(
         request,
-        tokenResponse(session.rawId, userInfo),
+        tokenResponse(session.rawId, userInfo, scopes),
       );
     }
 
@@ -94,13 +130,14 @@ export async function action({ request }: Route.ActionArgs) {
   }
 }
 
-function tokenResponse(rawSessionId: string, userInfo: UserInfo) {
+function tokenResponse(rawSessionId: string, userInfo: UserInfo, scopes: string[]) {
   const expiresIn = Math.floor(ROLLING_TTL_MS / 1000);
   const res = Response.json(
     {
       access_token: rawSessionId,
       token_type: "Bearer",
       expires_in: expiresIn,
+      scope: scopes.join(" "),
       user: userInfo,
     },
     {

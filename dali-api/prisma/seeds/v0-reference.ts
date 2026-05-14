@@ -221,12 +221,57 @@ async function seedMentorNoteTemplate() {
   console.log(`✓ Seeded default mentor-note template.`);
 }
 
+async function seedMcpOAuthClients() {
+  // MCP foundation: seed the two first-class MCP clients. Per the schema
+  // comment at OAuthClient: NO `dali-api` seed — the /oauth/* surface is
+  // MCP-only; first-party login uses /auth/callback/* directly.
+  const clients = [
+    {
+      clientId: "claude-desktop",
+      name: "Claude Desktop",
+    },
+    {
+      clientId: "claude-code",
+      name: "Claude Code",
+    },
+  ] as const;
+
+  for (const c of clients) {
+    await prisma.oAuthClient.upsert({
+      where: { clientId: c.clientId },
+      update: {
+        name: c.name,
+        redirectUris: ["http://127.0.0.1/callback", "http://localhost/callback"],
+        isLoopback: true,
+        isFirstParty: false,
+        allowedScopes: ["mcp:read", "mcp:write"],
+        allowedProviders: ["google"],
+        requiredAccountType: "member",
+        requireMembership: true,
+      },
+      create: {
+        clientId: c.clientId,
+        name: c.name,
+        redirectUris: ["http://127.0.0.1/callback", "http://localhost/callback"],
+        isLoopback: true,
+        isFirstParty: false,
+        allowedScopes: ["mcp:read", "mcp:write"],
+        allowedProviders: ["google"],
+        requiredAccountType: "member",
+        requireMembership: true,
+      },
+    });
+  }
+  console.log(`✓ Seeded ${clients.length} MCP OAuth clients.`);
+}
+
 async function main() {
   console.log("Running v0 reference-data seed against", process.env.DATABASE_URL?.split("@")[1]?.split("/")[0] ?? "(unknown DB)");
   await seedDomains();
   await seedTerms();
   await seedPageTemplates();
   await seedMentorNoteTemplate();
+  await seedMcpOAuthClients();
   console.log("Done.");
 }
 

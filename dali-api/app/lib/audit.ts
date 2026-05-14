@@ -11,7 +11,8 @@ export type AuditAction =
   | "decision.release"
   | "email.send"
   | "email.extension_notice"
-  | "confidentiality.sign";
+  | "confidentiality.sign"
+  | "mcp.tool_called";
 
 export type AuditEvent = {
   action: AuditAction;

@@ -2,6 +2,7 @@ import type { Route } from "./+types/oauth.callback.google";
 import { prisma } from "~/lib/db";
 import {
   getOAuthSession,
+  getOAuthClient,
   generateAuthorizationCode,
   exchangeGoogleCode,
 } from "~/lib/oauth";
@@ -53,10 +54,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     });
   }
 
-  // Enforce the client's requiredAccountType. Today the only check is
-  // "member must use @dali.dartmouth.edu". When the OAuthClient registry
-  // lands (see dali-os-mcp.md), this becomes a generic check against
-  // `client.requiredAccountType` and `client.requireMembership`.
+  // Enforce client policy. accountType=member requires @dali.dartmouth.edu.
   if (
     session.accountType === "member" &&
     !googleUser.email.endsWith("@dali.dartmouth.edu")
@@ -73,6 +71,27 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   const { user } = await upsertUserFromGoogle(googleUser);
+
+  // Resolve the OAuthClient policy. requireMembership is a belt-and-suspenders
+  // check after the upsert (which already creates a DALIMember marker).
+  const client = session.clientId ? await getOAuthClient(session.clientId) : null;
+  if (client?.requireMembership) {
+    const member = await prisma.dALIMember.findUnique({
+      where: { userId: user.id },
+      select: { id: true },
+    });
+    if (!member) {
+      const params = new URLSearchParams({
+        error: "access_denied",
+        error_description: "not_a_member",
+        state: session.state,
+      });
+      return new Response(null, {
+        status: 302,
+        headers: { Location: `${session.redirectUri}?${params}` },
+      });
+    }
+  }
 
   // if member needs CAS link → chain to CAS
   if (session.accountType === "member" && !user.netId) {
@@ -92,11 +111,43 @@ export async function loader({ request }: Route.LoaderArgs) {
     });
   }
 
-  // issue authorization code and redirect to client
-  const code = await generateAuthorizationCode(session.id, user.id);
-  const params = new URLSearchParams({ code, state: session.state });
+  // Consent-vs-direct branching. First-party clients skip consent; for
+  // everyone else we look for a non-revoked OAuthGrant whose scopes cover
+  // the requested scopes — match → straight to code, miss → consent screen.
+  const requestedScopes = session.scopes ?? [];
+  const isFirstParty = client?.isFirstParty ?? false;
+
+  let matchingGrant = false;
+  if (client && !isFirstParty) {
+    const grant = await prisma.oAuthGrant.findUnique({
+      where: {
+        userId_clientId: { userId: user.id, clientId: client.clientId },
+      },
+    });
+    if (grant && !grant.revokedAt) {
+      matchingGrant = requestedScopes.every((s) => grant.scopes.includes(s));
+    }
+  }
+
+  if (isFirstParty || matchingGrant || !client) {
+    const code = await generateAuthorizationCode(session.id, user.id);
+    const params = new URLSearchParams({ code, state: session.state });
+    return new Response(null, {
+      status: 302,
+      headers: { Location: `${session.redirectUri}?${params}` },
+    });
+  }
+
+  // Pre-set userId so the consent screen can render the client + scopes
+  // and approve action can issue the code.
+  await prisma.oAuthSession.update({
+    where: { id: session.id },
+    data: { userId: user.id },
+  });
   return new Response(null, {
     status: 302,
-    headers: { Location: `${session.redirectUri}?${params}` },
+    headers: {
+      Location: `/oauth/consent?session_id=${session.id}`,
+    },
   });
 }
