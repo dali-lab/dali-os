@@ -1,16 +1,13 @@
 // GET /oauth/calendar/google/start
 // Initiates the OAuth flow to link an external Google calendar account.
-// Reuses the existing /auth/callback/google redirect URI (already registered
-// with the Google OAuth client) and disambiguates calendar-link flow vs. login
-// flow via a `cal:` state prefix. The login callback dispatches on that prefix
-// to handleCalendarLinkCallback, which writes a UserCalendarLink for the
-// already-authenticated user.
+// The callback is /integrations/calendar/google/callback, which is registered
+// separately with the Google OAuth client and handles the calendar-link flow
+// in isolation from login.
 
 import { requireAuth } from "~/lib/auth";
 import { randomBytes } from "node:crypto";
 
 export const CAL_STATE_COOKIE = "__dali_cal_oauth_state";
-export const CAL_STATE_PREFIX = "cal:";
 
 const SCOPES = [
   "openid",
@@ -33,12 +30,10 @@ export async function loader({ request }: { request: Request }) {
     return new Response("GOOGLE_CLIENT_ID not configured", { status: 500 });
   }
 
-  const nonce = randomBytes(16).toString("hex");
-  const state = `${CAL_STATE_PREFIX}${nonce}`;
+  const state = randomBytes(16).toString("hex");
   const params = new URLSearchParams({
     client_id: clientId,
-    // Reuse the registered login redirect; the callback dispatches on `cal:` state.
-    redirect_uri: `${apiBase}/auth/callback/google`,
+    redirect_uri: `${apiBase}/integrations/calendar/google/callback`,
     response_type: "code",
     scope: SCOPES,
     access_type: "offline",
@@ -47,8 +42,7 @@ export async function loader({ request }: { request: Request }) {
     state,
   });
 
-  // Use Path=/ so the cookie is sent on /auth/callback/google too.
-  const stateCookie = `${CAL_STATE_COOKIE}=${nonce}; Path=/; Max-Age=600; HttpOnly; SameSite=Lax`;
+  const stateCookie = `${CAL_STATE_COOKIE}=${state}; Path=/; Max-Age=600; HttpOnly; SameSite=Lax`;
 
   return new Response(null, {
       status: 302,

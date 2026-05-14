@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { OAuth2Client } from "google-auth-library";
 import { prisma } from "~/lib/db";
+import type { OAuthProvider, OAuthAccountType } from "~/generated/prisma/enums";
 
 // types
 
@@ -97,8 +98,8 @@ export async function createOAuthSession(params: {
   codeChallengeMethod: string;
   redirectUri: string;
   state: string;
-  provider: string;
-  accountType?: string;
+  provider: OAuthProvider;
+  accountType?: OAuthAccountType;
 }) {
   return prisma.oAuthSession.create({
     data: {
