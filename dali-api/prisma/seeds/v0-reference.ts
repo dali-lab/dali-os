@@ -35,22 +35,32 @@ type DomainSeed = {
   code: string;
   displayName: string;
   isInternProgram: boolean;
+  // Legacy `name` values that should be matched and merged into this row
+  // when running against a database that pre-dates Phase 1. The first run of
+  // this seed against staging created v0-reference rows alongside the legacy
+  // ones (because the upsert keyed on code, which the legacy rows didn't
+  // have). This list lets the heal step below find the live legacy row by
+  // name and assign it the canonical code instead — preserving all the
+  // ChallengeVersion / DomainApplicationCycle / DomainLeadAssignment /
+  // CycleReviewer / CycleInterviewer / DelibsSession references already
+  // pointing at it.
+  legacyNames?: string[];
 };
 
 const DOMAINS: DomainSeed[] = [
-  { code: "Fullstack", displayName: "Fullstack Dev", isInternProgram: false },
-  { code: "UIUX", displayName: "UI/UX Design", isInternProgram: false },
-  { code: "ARVR", displayName: "AR/VR Dev", isInternProgram: false },
-  { code: "Data", displayName: "Data Dev", isInternProgram: false },
-  { code: "Engineering", displayName: "Engineering", isInternProgram: false },
-  { code: "ThreeDModeling", displayName: "3D Modeling", isInternProgram: false },
-  { code: "Animation", displayName: "Animation", isInternProgram: false },
-  { code: "Graphics", displayName: "Graphics", isInternProgram: false },
-  { code: "Writing", displayName: "Writing", isInternProgram: false },
-  { code: "Videography", displayName: "Videography", isInternProgram: false },
-  { code: "Photography", displayName: "Photography", isInternProgram: false },
+  { code: "Fullstack", displayName: "Fullstack Dev", isInternProgram: false, legacyNames: ["Fullstack Development"] },
+  { code: "UIUX", displayName: "UI/UX Design", isInternProgram: false, legacyNames: ["UI/UX Design"] },
+  { code: "ARVR", displayName: "AR/VR Dev", isInternProgram: false, legacyNames: ["AR/VR Development"] },
+  { code: "Data", displayName: "Data Dev", isInternProgram: false, legacyNames: ["Data Development"] },
+  { code: "Engineering", displayName: "Engineering", isInternProgram: false, legacyNames: ["Engineering"] },
+  { code: "ThreeDModeling", displayName: "3D Modeling", isInternProgram: false, legacyNames: ["3D Modeling"] },
+  { code: "Animation", displayName: "Animation", isInternProgram: false, legacyNames: ["Animation"] },
+  { code: "Graphics", displayName: "Graphics", isInternProgram: false, legacyNames: ["Graphics"] },
+  { code: "Writing", displayName: "Writing", isInternProgram: false, legacyNames: ["Writing"] },
+  { code: "Videography", displayName: "Videography", isInternProgram: false, legacyNames: ["Videography"] },
+  { code: "Photography", displayName: "Photography", isInternProgram: false, legacyNames: ["Photography"] },
   { code: "Production", displayName: "Production", isInternProgram: false },
-  { code: "PM", displayName: "Product Management", isInternProgram: false },
+  { code: "PM", displayName: "Product Management", isInternProgram: false, legacyNames: ["Product Management"] },
   { code: "DigitalArts", displayName: "Digital Arts Design", isInternProgram: false },
   { code: "ERAS", displayName: "ERAS Intern", isInternProgram: true },
   { code: "EEJUST", displayName: "EE Just Intern", isInternProgram: true },
@@ -77,11 +87,51 @@ function quarterDates(year: number, season: Season): { start: Date; end: Date } 
 }
 
 async function seedDomains() {
+  let healed = 0;
+  let mergedDuplicates = 0;
+
   for (const d of DOMAINS) {
+    // ── Heal step ──────────────────────────────────────────────────────────
+    // If a legacy row (pre-Phase-1) exists for one of this domain's
+    // `legacyNames` with no `code` yet, assign it the canonical code +
+    // displayName. This preserves all FK references attached to the legacy
+    // row (ChallengeVersion, DomainApplicationCycle, etc.).
+    let healedRow: { id: string } | null = null;
+    if (d.legacyNames && d.legacyNames.length > 0) {
+      const legacy = await prisma.domain.findFirst({
+        where: { code: null as any, name: { in: d.legacyNames } },
+      });
+      if (legacy) {
+        // If a prior run of this seed already created a duplicate by code,
+        // delete it first to free the unique constraint. The duplicate has
+        // no FK references (it was just created and never used).
+        const duplicate = await prisma.domain.findUnique({
+          where: { code: d.code },
+        });
+        if (duplicate && duplicate.id !== legacy.id) {
+          await prisma.domain.delete({ where: { id: duplicate.id } });
+          mergedDuplicates++;
+        }
+        healedRow = await prisma.domain.update({
+          where: { id: legacy.id },
+          data: {
+            code: d.code,
+            displayName: d.displayName,
+            isInternProgram: d.isInternProgram,
+            active: true,
+          },
+        });
+        healed++;
+      }
+    }
+
+    if (healedRow) continue;
+
+    // ── Upsert step ────────────────────────────────────────────────────────
+    // Either no legacy row to heal, or it was already healed on a prior run.
+    // Regular upsert by code; create the row if it doesn't exist yet.
     await prisma.domain.upsert({
       where: { code: d.code },
-      // If the row already exists, update only the new Phase 1 fields.
-      // Legacy `name` is left alone (Phase 2 drops it).
       update: {
         displayName: d.displayName,
         isInternProgram: d.isInternProgram,
@@ -96,7 +146,10 @@ async function seedDomains() {
       },
     });
   }
-  console.log(`✓ Seeded ${DOMAINS.length} domains.`);
+  console.log(
+    `✓ Seeded ${DOMAINS.length} domains (healed ${healed} legacy rows, ` +
+    `merged ${mergedDuplicates} duplicate v0-reference rows).`,
+  );
 }
 
 async function seedTerms() {
