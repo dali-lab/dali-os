@@ -6,6 +6,13 @@ import {
   OAuthError,
 } from "~/lib/oauth";
 import { checkRateLimit } from "~/lib/rate-limit";
+import type { OAuthAccountType } from "~/generated/prisma/enums";
+
+const VALID_ACCOUNT_TYPES: ReadonlyArray<OAuthAccountType> = [
+  "member",
+  "dartmouth",
+  "partner",
+];
 
 const RATE_LIMIT_MAX = 10;
 const RATE_LIMIT_WINDOW_MS = 60_000;
@@ -70,10 +77,19 @@ export async function loader({ request }: Route.LoaderArgs) {
       "code_challenge with method S256 is required",
     );
   }
-  if (!provider || !["google", "cas"].includes(provider)) {
+  if (provider !== "google" && provider !== "cas") {
     return errorRedirect(
       "invalid_request",
       "provider must be 'google' or 'cas'",
+    );
+  }
+  if (
+    accountType !== null &&
+    !VALID_ACCOUNT_TYPES.includes(accountType as OAuthAccountType)
+  ) {
+    return errorRedirect(
+      "invalid_request",
+      "account_type must be 'member', 'dartmouth', or 'partner'",
     );
   }
 
@@ -83,7 +99,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     redirectUri,
     state,
     provider,
-    accountType: accountType ?? undefined,
+    accountType: (accountType as OAuthAccountType | null) ?? undefined,
   });
 
   const apiBase = process.env.API_BASE_URL ?? "http://localhost:5173";
