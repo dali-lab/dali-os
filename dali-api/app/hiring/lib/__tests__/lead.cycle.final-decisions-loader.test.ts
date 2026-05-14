@@ -33,7 +33,11 @@ beforeEach(() => {
   vi.mocked(requireAuth).mockResolvedValue({ ok: true, user: { sub: USER_ID } } as any);
   vi.mocked(isHiringLead).mockResolvedValue(true);
 
-  (mockPrisma as any).applicationCycle = { findUniqueOrThrow: vi.fn() };
+  (mockPrisma as any).applicationCycle = {
+    findUniqueOrThrow: vi.fn(),
+    // Loader does a cycleType early-redirect lookup before everything else.
+    findUnique: vi.fn().mockResolvedValue({ cycleType: "Standard" }),
+  };
   (mockPrisma as any).application = { findMany: vi.fn().mockResolvedValue([]) };
   (mockPrisma as any).domain = { findMany: vi.fn() };
   (mockPrisma as any).challengeVersion = { findMany: vi.fn() };

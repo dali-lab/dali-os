@@ -60,7 +60,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const withdrawnUpdate = isWithdrawn ? latestUpdate : null;
   const canWithdraw = !!active && !isWithdrawn;
 
-  const generalQuestions = application.generalChallengeVersion.questions as unknown as Question[];
+  const generalQuestions = (application.generalChallengeVersion?.questions as unknown as Question[]) ?? [];
   const rawGeneralAnswers = application.answers as Record<string, string>;
   const generalAnswers = await presignAnswers(generalQuestions, rawGeneralAnswers);
 

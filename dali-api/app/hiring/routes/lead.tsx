@@ -42,6 +42,8 @@ export async function loader({ request }: Route.LoaderArgs) {
 export async function action({ request }: Route.ActionArgs) {
   const formData = await request.formData();
   const name = (formData.get("name") as string)?.trim();
+  const cycleTypeRaw = (formData.get("cycleType") as string) ?? "Standard";
+  const cycleType = cycleTypeRaw === "InternToFull" ? "InternToFull" : "Standard";
   if (!name) return { error: "Name is required" };
 
   const auth = await requireAuth(request);
@@ -54,6 +56,7 @@ export async function action({ request }: Route.ActionArgs) {
   const cycle = await prisma.applicationCycle.create({
     data: {
       name,
+      cycleType,
       statusUpdates: {
         create: { newStatus: "Draft", userId: adminUser.id },
       },
@@ -105,6 +108,23 @@ export default function HiringLeadDashboard() {
                     autoComplete="off"
                     className="w-full px-3 py-2 text-sm text-foreground border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
+                </div>
+                <div>
+                  <label htmlFor="cycle-type" className="block text-sm font-medium text-foreground/80 mb-1">
+                    Cycle type
+                  </label>
+                  <select
+                    id="cycle-type"
+                    name="cycleType"
+                    defaultValue="Standard"
+                    className="w-full px-3 py-2 text-sm text-foreground border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="Standard">Standard hire</option>
+                    <option value="InternToFull">Intern → Full-time conversion</option>
+                  </select>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    InternToFull cycles use a shortform (no challenge) and skip interviews.
+                  </p>
                 </div>
                 <div className="flex justify-end gap-2">
                   <button

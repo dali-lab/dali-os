@@ -54,11 +54,17 @@ function setupFinalDecision(type: "Rejected" | "InvitedToInterview" | "Accepted"
 
 function setupApplicantContext(opts: { domainName?: string | null } = {}) {
   const domainName = opts.domainName === undefined ? "Engineering" : opts.domainName;
+  // The release route now also reads `domain` (direct InternToFull relation)
+  // and `applicationCycle.cycleType`. Default to Standard with no direct domain
+  // so existing tests still flow through the challengeVersion path.
   mockPrisma.domainApplication.findUnique.mockResolvedValue({
     id: "da-1",
-    challengeVersion: { domain: domainName ? { name: domainName } : null },
+    challengeVersion: { domain: domainName ? { id: "dom-1", name: domainName, displayName: domainName } : null },
+    domain: null,
     application: {
+      userId: "applicant-user-id",
       applicationCycleId: CYCLE_ID,
+      applicationCycle: { cycleType: "Standard" },
       user: {
         firstName: "Ada",
         dartmouthEmail: "ada@dartmouth.edu",
@@ -142,7 +148,10 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     expect(args.html).toContain("Hi Ada, regarding Design.");
   });
 
-  it("substitutes {{domain}} with empty string when the challenge version has no domain", async () => {
+  it("refuses to release when the domain application has no linked domain at all", async () => {
+    // A DomainApplication must have either a challengeVersion → domain (Standard)
+    // or a direct `domain` (InternToFull). If both are missing the data is
+    // corrupt; the route fails closed rather than emailing an empty {{domain}}.
     setupAuth();
     setupFinalDecision("Rejected");
     setupApplicantContext({ domainName: null });
@@ -158,10 +167,9 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     });
 
     const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
-    expect(res.status).toBe(201);
-    const args = vi.mocked(sendEmail).mock.calls[0][0];
-    expect(args.subject).toBe("About ");
-    expect(args.html).toContain("Ada / ");
+    expect(res.status).toBe(409);
+    expect(mockPrisma.decision.create).not.toHaveBeenCalled();
+    expect(sendEmail).not.toHaveBeenCalled();
   });
 
   it("returns 409 and does not create the released decision when no binding exists", async () => {
@@ -212,9 +220,12 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     setupFinalDecision("InvitedToInterview");
     mockPrisma.domainApplication.findUnique.mockResolvedValue({
       id: "da-1",
-      challengeVersion: { domain: { name: "Engineering" } },
+      challengeVersion: { domain: { id: "dom-1", name: "Engineering", displayName: "Engineering" } },
+      domain: null,
       application: {
+        userId: "applicant-user-id",
         applicationCycleId: CYCLE_ID,
+        applicationCycle: { cycleType: "Standard" },
         user: {
           firstName: "Grace",
           dartmouthEmail: null,

@@ -65,7 +65,10 @@ describe("getActiveCycle()", () => {
     expect(result).toBeNull();
     expect(mockPrisma.applicationCycleStatusUpdate.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { newStatus: { in: ["Open", "UnderReview"] } },
+        where: {
+          newStatus: { in: ["Open", "UnderReview"] },
+          applicationCycle: { cycleType: "Standard" },
+        },
         orderBy: { createdAt: "desc" },
       }),
     );

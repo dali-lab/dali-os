@@ -56,11 +56,10 @@ export async function action({ request, params }: Route.ActionArgs) {
     return Response.json({ error: "Interview already scheduled" }, { status: 409 });
   }
 
-  // DomainApplications always attach to a domain-scoped challenge version.
-  // The general application form has `domainId = null`, but DomainApplication
-  // rows are never created for general forms — defensive guard in case that
-  // invariant ever breaks.
-  if (!da.challengeVersion.domainId) {
+  // DomainApplications always attach to a domain-scoped challenge version on
+  // Standard cycles. InternToFull cycles don't run interviews, so reaching
+  // this route with a null challengeVersion means something is misconfigured.
+  if (!da.challengeVersion?.domainId) {
     return Response.json({ error: "Domain application is not attached to a domain" }, { status: 400 });
   }
 
