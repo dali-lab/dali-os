@@ -5,7 +5,6 @@ import { requireAuth } from "~/lib/auth";
 import { checkRateLimit } from "~/lib/rate-limit";
 
 const OAUTH_STATE_COOKIE = "__dali_oauth_state";
-const ACCOUNT_TYPE_COOKIE = "__dali_account_type";
 
 const RATE_LIMIT_MAX = 5;
 const RATE_LIMIT_WINDOW_MS = 60_000;
@@ -31,24 +30,12 @@ export async function action({ request }: Route.ActionArgs) {
 
   const formData = await request.formData();
   const provider = formData.get("provider") as string;
-  const accountType = formData.get("accountType") as string | null;
 
   const state = randomBytes(32).toString("base64url");
   const apiBase = process.env.API_BASE_URL ?? "http://localhost:3001";
   const casBase = process.env.CAS_BASE_URL ?? "https://login.dartmouth.edu/cas";
 
   const headers = new Headers();
-
-  // Store account type so callback knows where to redirect
-  const accountTypeCookie = [
-    `${ACCOUNT_TYPE_COOKIE}=${accountType ?? ""}`,
-    "Path=/",
-    "Max-Age=600",
-    "HttpOnly",
-    "SameSite=Lax",
-    ...(process.env.NODE_ENV === "production" ? ["Secure"] : []),
-  ].join("; ");
-  headers.append("Set-Cookie", accountTypeCookie);
 
   if (provider === "cas") {
     // Dartmouth CAS login — redirect to CAS with service URL pointing to our callback
@@ -69,7 +56,7 @@ export async function action({ request }: Route.ActionArgs) {
     return new Response(null, { status: 302, headers });
   }
 
-  // Google OAuth — redirect to Google with optional hd restriction
+  // Google OAuth — redirect to Google with @dali.dartmouth.edu hd hint
   const stateCookie = [
     `${OAUTH_STATE_COOKIE}=${state}`,
     "Path=/auth/callback/google",
@@ -80,18 +67,19 @@ export async function action({ request }: Route.ActionArgs) {
   ].join("; ");
   headers.append("Set-Cookie", stateCookie);
 
+  // The Member button is the only button that posts provider=google, so we
+  // always want the @dali.dartmouth.edu hd nudge on Google's account picker.
+  // Enforcement of the domain still happens server-side in
+  // /auth/callback/google; `hd` is purely a UX hint and not a security
+  // boundary.
   const googleParams = new URLSearchParams({
     client_id: process.env.GOOGLE_CLIENT_ID!,
     redirect_uri: `${apiBase}/auth/callback/google`,
     response_type: "code",
     scope: "openid email profile",
     state,
+    hd: "dali.dartmouth.edu",
   });
-
-  // Restrict to DALI domain for member login
-  if (accountType === "member") {
-    googleParams.set("hd", "dali.dartmouth.edu");
-  }
 
   headers.set(
     "Location",
@@ -164,7 +152,6 @@ export default function Login() {
             {/* DALI Member */}
             <Form method="post">
               <input type="hidden" name="provider" value="google" />
-              <input type="hidden" name="accountType" value="member" />
               <button
                 type="submit"
                 className="w-full flex items-center gap-4 p-5 rounded-2xl border-2 border-transparent bg-[#E8F4FA] dark:bg-secondary hover:border-accent-coral transition group text-left"
@@ -211,7 +198,6 @@ export default function Login() {
             {/* Applicant */}
             <Form method="post">
               <input type="hidden" name="provider" value="cas" />
-              <input type="hidden" name="accountType" value="dartmouth" />
               <button
                 type="submit"
                 className="w-full flex items-center gap-4 p-5 rounded-2xl border-2 border-transparent bg-[#E8F4FA] dark:bg-secondary hover:border-accent-coral transition group text-left"

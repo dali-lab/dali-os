@@ -11,7 +11,6 @@ import { action } from "~/routes/login";
 function makeRequest(ip = "1.2.3.4") {
   const form = new URLSearchParams({
     provider: "google",
-    accountType: "member",
   });
   return new Request("http://localhost/login", {
     method: "POST",
