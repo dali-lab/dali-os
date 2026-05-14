@@ -1,14 +1,16 @@
-// Helper invoked from /auth/callback/google when the `state` is prefixed
-// with `cal:` (the marker set by /oauth/calendar/google/start). Exchanges the
-// authorization code for tokens and upserts a UserCalendarLink for the
-// already-authenticated user.
+// GET /integrations/calendar/google/callback
+// Dedicated callback for the calendar-link flow initiated by
+// /oauth/calendar/google/start. Exchanges Google's authorization code for
+// tokens and upserts a UserCalendarLink for the already-authenticated user.
 //
-// Not exposed as its own route — the file keeps calendar-link logic separate
-// from the login callback while sharing Google's registered redirect URI.
+// This is separate from /auth/callback/google (login) so the two flows don't
+// have to share a redirect URI or disambiguate via a state-prefix hack.
 
+import type { Route } from "./+types/integrations.calendar.google.callback";
 import { prisma } from "~/lib/db";
 import { buildEncryptedTokens } from "~/lib/google-calendar";
-import { CAL_STATE_COOKIE, CAL_STATE_PREFIX } from "~/routes/oauth.calendar.google.start";
+import { requireAuth } from "~/lib/auth";
+import { CAL_STATE_COOKIE } from "~/routes/oauth.calendar.google.start";
 
 function parseCookies(request: Request): Record<string, string> {
   const header = request.headers.get("Cookie") ?? "";
@@ -34,26 +36,30 @@ function redirectToCalendar(qs: string) {
   });
 }
 
-/**
- * Returns a Response that redirects back to /calendar — never throws.
- */
-export async function handleCalendarLinkCallback({
-  request,
-  userId,
-  code,
-  state,
-}: {
-  request: Request;
-  userId: string;
-  code: string;
-  state: string;
-}): Promise<Response> {
-  if (!state.startsWith(CAL_STATE_PREFIX)) {
-    return redirectToCalendar("calendar_link_error=bad_state");
+export async function action() {
+  return new Response("Method not allowed", { status: 405 });
+}
+
+export async function loader({ request }: Route.LoaderArgs) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) {
+    return new Response(null, { status: 302, headers: { Location: "/login" } });
   }
-  const nonce = state.slice(CAL_STATE_PREFIX.length);
+  if (auth.user.type === "applicant") {
+    return new Response(null, { status: 302, headers: { Location: "/portal" } });
+  }
+
+  const url = new URL(request.url);
+  const code = url.searchParams.get("code");
+  const state = url.searchParams.get("state");
+  const googleError = url.searchParams.get("error");
+
+  if (googleError || !code || !state) {
+    return redirectToCalendar("calendar_link_error=auth_failed");
+  }
+
   const cookies = parseCookies(request);
-  if (cookies[CAL_STATE_COOKIE] !== nonce || !nonce) {
+  if (!cookies[CAL_STATE_COOKIE] || cookies[CAL_STATE_COOKIE] !== state) {
     return redirectToCalendar("calendar_link_error=state_mismatch");
   }
 
@@ -68,8 +74,8 @@ export async function handleCalendarLinkCallback({
       code,
       client_id: clientId,
       client_secret: clientSecret,
-      // Must match the redirect_uri we sent in /start (== the login callback URI).
-      redirect_uri: `${apiBase}/auth/callback/google`,
+      // Must match the redirect_uri sent by /oauth/calendar/google/start.
+      redirect_uri: `${apiBase}/integrations/calendar/google/callback`,
       grant_type: "authorization_code",
     }),
   });
@@ -99,10 +105,14 @@ export async function handleCalendarLinkCallback({
 
   await prisma.userCalendarLink.upsert({
     where: {
-      userId_provider_externalEmail: { userId, provider: "Google", externalEmail },
+      userId_provider_externalEmail: {
+        userId: auth.user.sub,
+        provider: "Google",
+        externalEmail,
+      },
     },
     create: {
-      userId,
+      userId: auth.user.sub,
       provider: "Google",
       externalEmail,
       displayName: externalEmail,
@@ -121,7 +131,10 @@ export async function handleCalendarLinkCallback({
   return redirectToCalendar("calendar_linked=1");
 }
 
-async function resolveExternalEmail(idToken: string | undefined, accessToken: string): Promise<string | null> {
+async function resolveExternalEmail(
+  idToken: string | undefined,
+  accessToken: string,
+): Promise<string | null> {
   if (idToken) {
     const payload = decodeIdTokenPayload(idToken);
     if (payload && typeof payload.email === "string") return payload.email;

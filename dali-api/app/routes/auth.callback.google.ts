@@ -4,10 +4,7 @@ import { issueSession } from "~/lib/session";
 import { setSessionCookie } from "~/lib/cookies";
 import { getClientIp } from "~/lib/request-meta";
 import { logAuditEvent } from "~/lib/audit";
-import { requireAuth } from "~/lib/auth";
 import { upsertUserFromGoogle } from "~/lib/user-provisioning";
-import { CAL_STATE_PREFIX } from "~/routes/oauth.calendar.google.start";
-import { handleCalendarLinkCallback } from "~/routes/oauth.calendar.google.callback";
 
 const OAUTH_STATE_COOKIE = "__dali_oauth_state";
 const ACCOUNT_TYPE_COOKIE = "__dali_account_type";
@@ -33,31 +30,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
   const googleError = url.searchParams.get("error");
-
-  // Calendar-link flow: state is prefixed with "cal:" by /oauth/calendar/google/start.
-  // Dispatch to the helper, which writes to UserCalendarLink for the logged-in user.
-  if (state?.startsWith(CAL_STATE_PREFIX)) {
-    const auth = await requireAuth(request);
-    if (!auth.ok) {
-      return new Response(null, { status: 302, headers: { Location: "/login" } });
-    }
-    if (auth.user.type === "applicant") {
-      return new Response(null, { status: 302, headers: { Location: "/portal" } });
-    }
-    if (googleError || !code) {
-      return new Response(null, {
-          status: 302,
-          headers: { Location: "/calendar?calendar_link_error=auth_failed" },
-        });
-    }
-    const response = await handleCalendarLinkCallback({
-      request,
-      userId: auth.user.sub,
-      code,
-      state,
-    });
-    return response;
-  }
 
   if (googleError || !code || !state) {
     await logAuditEvent({
