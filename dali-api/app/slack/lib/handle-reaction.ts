@@ -1,5 +1,5 @@
 import { prisma } from "~/lib/db";
-import { downloadFile, editMessage, getPermalink } from "./slack-client";
+import { downloadFile, editMessage, getPermalink, postReply } from "./slack-client";
 import type { SlackThreadMessage } from "./slack-client";
 import { formatIssue, type UploadedAsset } from "./format-issue";
 import { createIssue, uploadIssueAsset } from "./github-app";
@@ -86,8 +86,11 @@ export async function handleReactionAdded(event: ReactionAddedEvent): Promise<vo
     await editMessage(
       event.item.channel,
       event.item.ts,
-      `:white_check_mark: Filed as <${issue.htmlUrl}|issue #${issue.number}> (confirmed by <@${event.user}>).`,
+      `:white_check_mark: Filed by <@${event.user}>.`,
     );
+    // Post the URL on its own line so Slack unfurls it into a rich preview
+    // card (title, body, labels). Goes into the same thread as the preview.
+    await postReply(event.item.channel, draft.slackThreadTs, issue.htmlUrl);
   } catch (err) {
     const message = errMsg(err);
     console.error("slack: filing failed", { draftId: draft.id, error: message });
