@@ -47,35 +47,39 @@ async function main() {
   // Phase 1 adds `code` + `displayName` to Domain. Local seeds populate them
   // so a fresh dev DB has consistent values; prod backfill is handled by the
   // v0 reference-data script (prisma/seeds/v0-reference.ts).
+  // Local-seed displayName intentionally mirrors `name` so existing e2e tests
+  // (which match on the legacy "Design"/"Engineering"/"Product" labels) keep
+  // working. Prod uses the canonical catalog via prisma/seeds/v0-reference.ts
+  // where displayName is the real catalog label (e.g. "UI/UX Design").
   const [designDomain, engDomain, pmDomain] = await Promise.all([
     prisma.domain.upsert({
       where: { id: "domain-design" },
-      update: { code: "UIUX", displayName: "UI/UX Design" },
+      update: { code: "UIUX", displayName: "Design" },
       create: {
         id: "domain-design",
         name: "Design",
         code: "UIUX",
-        displayName: "UI/UX Design",
+        displayName: "Design",
       },
     }),
     prisma.domain.upsert({
       where: { id: "domain-eng" },
-      update: { code: "Fullstack", displayName: "Fullstack Dev" },
+      update: { code: "Fullstack", displayName: "Engineering" },
       create: {
         id: "domain-eng",
         name: "Engineering",
         code: "Fullstack",
-        displayName: "Fullstack Dev",
+        displayName: "Engineering",
       },
     }),
     prisma.domain.upsert({
       where: { id: "domain-pm" },
-      update: { code: "PM", displayName: "Product Management" },
+      update: { code: "PM", displayName: "Product" },
       create: {
         id: "domain-pm",
         name: "Product",
         code: "PM",
-        displayName: "Product Management",
+        displayName: "Product",
       },
     }),
   ]);
