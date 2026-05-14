@@ -2209,8 +2209,8 @@ model ProjectPartner {
 
 // ─── OAuth provider (MCP) ────────────────────────────────────────────────────
 //
-// Empty in Phase 1. The MCP foundation track seeds claude-desktop /
-// claude-code rows. No `dali-api` seed — per Q7 the OAuth provider surface
+// MCP clients register themselves via RFC 7591 Dynamic Client Registration
+// at /oauth/register. No `dali-api` seed — per Q7 the OAuth provider surface
 // is MCP-only.
 
 model OAuthClient {
