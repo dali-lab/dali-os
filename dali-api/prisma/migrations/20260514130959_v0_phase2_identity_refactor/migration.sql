@@ -14,9 +14,8 @@
 --   M3: Backfill data from DALIMember → User, hiring FKs → userId, etc.
 --   M4: Drop old columns, tighten constraints, drop dead enums.
 --
--- All four run inside one transaction.
-
-BEGIN;
+-- Prisma wraps each migration in its own transaction; no explicit
+-- BEGIN/COMMIT needed (and an explicit pair can mask abort errors).
 
 -- ═══ M1: staging columns for hiring FK renames ════════════════════════════
 -- The old daliMemberId/memberId columns hold DALIMember.id values; we need
@@ -86,12 +85,31 @@ WHERE m."userId" IS NOT NULL AND 'Admin' = ANY(m."roles")
 ON CONFLICT ("userId") DO NOTHING;
 
 -- HiringLead → CoreAssignment with the current term + leadTitle="Hiring Lead".
--- Skipped if no Term row covers now() (would mean v0-reference seed never
--- ran; halt the migration in that case rather than silently dropping data).
+-- Also backfills DomainLeadAssignment.termId for rows that still have it
+-- NULL after Phase 1.
+--
+-- Tolerant of an empty Term table (CI runs migrations against a fresh DB
+-- before seeding; in prod the operator runs v0-reference seed first). If
+-- there's no Term row AND there's actual data that needs one, raise — the
+-- NOT NULL ALTER below would catch a NULL termId anyway, but a clear error
+-- message is friendlier.
 DO $$
 DECLARE
   cur_term_id text;
+  hiring_lead_count int;
+  null_term_dla_count int;
 BEGIN
+  SELECT COUNT(*) INTO hiring_lead_count
+  FROM "DALIMember" WHERE 'HiringLead' = ANY("roles") AND "userId" IS NOT NULL;
+
+  SELECT COUNT(*) INTO null_term_dla_count
+  FROM "DomainLeadAssignment" WHERE "termId" IS NULL;
+
+  IF hiring_lead_count = 0 AND null_term_dla_count = 0 THEN
+    -- No data needs a Term reference. Skip the rest cleanly.
+    RETURN;
+  END IF;
+
   SELECT id INTO cur_term_id
   FROM "Term"
   WHERE "startDate" <= NOW() AND "endDate" >= NOW()
@@ -106,7 +124,7 @@ BEGIN
   END IF;
 
   IF cur_term_id IS NULL THEN
-    RAISE EXCEPTION 'Phase 2 migration: no Term rows exist. Run npm run db:seed:v0-reference before deploying.';
+    RAISE EXCEPTION 'Phase 2 migration: data requires a Term but none exists (% HiringLead members, % DomainLeadAssignment rows with NULL termId). Run npm run db:seed:v0-reference before deploying.', hiring_lead_count, null_term_dla_count;
   END IF;
 
   INSERT INTO "CoreAssignment" (id, "userId", "termId", "leadTitle")
@@ -328,5 +346,3 @@ ALTER TABLE "DomainLeadAssignment"
 ALTER TABLE "DomainLeadAssignment"
   ADD CONSTRAINT "DomainLeadAssignment_termId_fkey"
   FOREIGN KEY ("termId") REFERENCES "Term"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
-COMMIT;
