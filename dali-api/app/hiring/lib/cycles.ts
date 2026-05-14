@@ -100,7 +100,7 @@ export function cycleStatusToStage(status: string): CycleStage {
  */
 export async function inferUnderReviewStage(
   cycleId: string,
-  memberId: string,
+  userId: string,
   reviewerIds: string[],
 ): Promise<CycleStage> {
   const invitedDecisions = await prisma.decision.count({
@@ -140,7 +140,7 @@ export async function inferUnderReviewStage(
   if (completedInterviews > 0) return 'finalDelibs';
 
   const myInterviewerRecords = await prisma.cycleInterviewer.findMany({
-    where: { userId: memberId, applicationCycleId: cycleId },
+    where: { userId, applicationCycleId: cycleId },
     select: { id: true },
   });
 

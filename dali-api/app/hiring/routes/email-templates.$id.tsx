@@ -58,7 +58,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         versionNumber,
         subject,
         body,
-        createdById: member.id,
+        createdById: auth.user.sub,
       },
     })
 

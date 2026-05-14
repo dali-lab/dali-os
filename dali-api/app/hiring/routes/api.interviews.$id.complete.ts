@@ -31,7 +31,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     where: {
       interviewId: params.id,
       status: "Active",
-      cycleInterviewer: { userId: member.id },
+      cycleInterviewer: { userId: auth.user.sub },
     },
   });
   if (!assignment) {

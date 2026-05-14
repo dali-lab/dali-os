@@ -50,7 +50,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Find CycleInterviewer records for this member in the active cycle
   const cycleInterviewers = await prisma.cycleInterviewer.findMany({
     where: {
-      userId: member.id,
+      userId: auth.user.sub,
       applicationCycleId: active.id,
     },
     include: {

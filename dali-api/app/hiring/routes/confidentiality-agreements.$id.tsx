@@ -72,7 +72,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         agreementId: params.id,
         versionNumber,
         body: body as any,
-        createdById: member.id,
+        createdById: auth.user.sub,
       },
     });
 

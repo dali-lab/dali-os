@@ -15,7 +15,7 @@ async function getAssignment(userId: string, cycleId: string, interviewId: strin
   if (!member) return null;
 
   const interviewer = await prisma.cycleInterviewer.findFirst({
-    where: { userId: member.id, applicationCycleId: cycleId },
+    where: { userId, applicationCycleId: cycleId },
   });
   if (!interviewer) return null;
 

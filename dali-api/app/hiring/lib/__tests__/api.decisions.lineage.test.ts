@@ -76,7 +76,10 @@ describe("Decision lineage (parentDecisionId)", () => {
     const arg = mockPrisma.decision.create.mock.calls[0][0];
     expect(arg.data.stage).toBe("Final");
     expect(arg.data.parentDecisionId).toBe(DRAFT_ID);
-    expect(arg.data.madeById).toBe(MEMBER_ID);
+    // Phase 2: Decision.madeById points at User.id (auth.user.sub) instead of
+    // DALIMember.id. The test mock's `member` is the DALIMember row; the
+    // actual stored value is the authenticated user.
+    expect(arg.data.madeById).toBe(USER_ID);
   });
 
   it("release: links the new Released record to its Final predecessor", async () => {

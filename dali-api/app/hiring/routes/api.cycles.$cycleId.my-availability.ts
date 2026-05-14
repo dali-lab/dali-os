@@ -54,7 +54,7 @@ async function findCycleInterviewers(userId: string, cycleId: string) {
   const member = await prisma.dALIMember.findUnique({ where: { userId } });
   if (!member) return [];
   return prisma.cycleInterviewer.findMany({
-    where: { userId: member.id, applicationCycleId: cycleId },
+    where: { userId, applicationCycleId: cycleId },
     select: { id: true },
   });
 }

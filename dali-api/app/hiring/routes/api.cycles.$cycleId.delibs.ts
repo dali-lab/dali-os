@@ -71,7 +71,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       applicationCycleId: params.cycleId,
       type,
       status: "Active",
-      openedById: member.id,
+      openedById: auth.user.sub,
     },
     update: {
       status: "Active",

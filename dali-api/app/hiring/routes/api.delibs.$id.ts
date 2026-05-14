@@ -110,7 +110,7 @@ export async function action({ request, params }: Route.ActionArgs) {
               domainApplicationId: d.domainApplicationId,
               type: d.type as any,
               stage: "Draft",
-              madeById: member.id,
+              madeById: auth.user.sub,
               waitlistRank: d.waitlistRank,
             },
           });

@@ -98,7 +98,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       domainApplicationId: decision.domainApplicationId,
       type: decision.type,
       stage: "Released",
-      madeById: member.id,
+      madeById: auth.user.sub,
       notes: decision.notes,
       waitlistRank: decision.waitlistRank,
       parentDecisionId: decision.id,

@@ -28,7 +28,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   // per domain), so look up ALL of their rows and find any active assignment
   // on this interview under any of them.
   const interviewerRows = await prisma.cycleInterviewer.findMany({
-    where: { userId: member.id, applicationCycleId: params.cycleId },
+    where: { userId: auth.user.sub, applicationCycleId: params.cycleId },
     select: { id: true },
   });
   if (interviewerRows.length === 0) {

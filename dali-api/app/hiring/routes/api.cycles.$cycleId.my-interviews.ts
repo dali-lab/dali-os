@@ -15,7 +15,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!member) return withCors(request, Response.json([]));
 
   const interviewer = await prisma.cycleInterviewer.findFirst({
-    where: { userId: member.id, applicationCycleId: params.cycleId },
+    where: { userId: auth.user.sub, applicationCycleId: params.cycleId },
   });
   if (!interviewer) return withCors(request, Response.json([]));
 
