@@ -2335,10 +2335,13 @@ model SlackBugReportDraft {
   // Source thread on Slack — channel + the parent message ts identify the thread.
   slackChannelId         String
   slackThreadTs          String
-  // The bot's preview reply; reactions on this row drive state transitions.
+  // Slack ts of the @-mention that triggered the filing. Combined with
+  // channelId in the unique index this de-dupes Slack retries of the same
+  // event. (Column kept its old name from the prior preview-then-confirm
+  // flow to avoid a schema migration.)
   previewMessageTs       String
-  // Snapshot of the thread at draft time so we can re-render or audit even
-  // if Slack messages get edited or deleted.
+  // Snapshot of the thread at filing time so the issue body can be re-derived
+  // or audited even if Slack messages get edited or deleted.
   threadJson             Json
   status                 SlackBugReportStatus  @default(Pending)
   githubIssueNumber      Int?
