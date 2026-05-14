@@ -1153,6 +1153,47 @@ enum MeetingStatus {
   Cancelled
 }
 
+// In-app notification delivered to a single user. Fan-out at write time:
+// sending to a group resolves to N rows (one per recipient).
+model Notification {
+  id              String           @id @default(cuid())
+  recipientUserId String
+  recipient       User             @relation("NotificationRecipient", fields: [recipientUserId], references: [id])
+  createdByUserId String?
+  createdBy       User?            @relation("NotificationAuthor", fields: [createdByUserId], references: [id])
+  kind            NotificationKind @default(General)
+  title           String
+  body            String?
+  link            String?
+  // Origin group for bulk sends. Not an FK so groups can be deleted independently.
+  sourceGroupId   String?
+  readAt          DateTime?
+  createdAt       DateTime         @default(now())
+
+  // Set on MeetingInvite notifications so the bell can render Accept/Decline
+  // buttons and the RSVP endpoint can locate the underlying meeting.
+  scheduledMeetingId String?
+  scheduledMeeting   ScheduledMeeting? @relation(fields: [scheduledMeetingId], references: [id], onDelete: SetNull)
+  rsvp               MeetingRsvp?
+  rsvpAt             DateTime?
+
+  @@index([recipientUserId, readAt])
+  @@index([recipientUserId, createdAt])
+}
+
+enum NotificationKind {
+  General
+  MeetingInvite
+  MeetingReminder
+  SystemAnnouncement
+}
+
+enum MeetingRsvp {
+  Accepted
+  Declined
+  Tentative
+}
+
 model GroupDefinition {
   id              String    @id @default(cuid())
   name            String
