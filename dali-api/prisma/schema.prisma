@@ -245,11 +245,11 @@ model Application {
   // cycles (which pin `internToFullFormVersionId` instead). One of the two
   // must be set — enforced at the app layer.
   generalChallengeVersionId String?
-  generalChallengeVersion   ChallengeVersion? @relation("ApplicationGeneralChallenge", fields: [generalChallengeVersionId], references: [id])
+  generalChallengeVersion   ChallengeVersion? @relation("ApplicationGeneralChallenge", fields: [generalChallengeVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   // Pinned at creation time for InternToFull applications. Null on Standard.
   internToFullFormVersionId String?
-  internToFullFormVersion   InternToFullFormVersion? @relation("ApplicationInternToFullForm", fields: [internToFullFormVersionId], references: [id])
+  internToFullFormVersion   InternToFullFormVersion? @relation("ApplicationInternToFullForm", fields: [internToFullFormVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   // Phase 1: distinguishes the application's purpose. Standard = regular DALI
   // hire cycle (only value used today). Intern = shorter form for intern
@@ -318,11 +318,11 @@ model DomainApplication {
   application        Application      @relation(fields: [applicationId], references: [id])
   // Standard cycles: required (pins challenge questions). InternToFull: null.
   challengeVersionId String?
-  challengeVersion   ChallengeVersion? @relation(fields: [challengeVersionId], references: [id])
+  challengeVersion   ChallengeVersion? @relation(fields: [challengeVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   // InternToFull cycles: required (the target domain the intern is applying
   // to). Standard cycles: null (derive via challengeVersion.domain).
   domainId           String?
-  domain             Domain?          @relation(fields: [domainId], references: [id])
+  domain             Domain?          @relation(fields: [domainId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   interviews Interview[]
   reviews    ApplicationReview[]
