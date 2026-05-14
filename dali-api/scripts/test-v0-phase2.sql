@@ -103,6 +103,7 @@ WHERE g."sendAsEmail" = 'applications@dali.dartmouth.edu';
 -- ─── 6. WRITE TEST: insert a fake review through the new FK shape ───────────
 \echo ''
 \echo '=== T6: insert a test ApplicationReview via User-based FK + rollback ==='
+SAVEPOINT t6;
 DO $$
 DECLARE
   test_reviewer_user_id text;
@@ -110,7 +111,6 @@ DECLARE
   test_da_id text;
   test_ar_id text;
 BEGIN
-  -- Pick the first CycleReviewer + a DomainApplication in their domain
   SELECT cr."userId", cr.id INTO test_reviewer_user_id, test_cr_id
   FROM "CycleReviewer" cr
   LIMIT 1;
@@ -127,19 +127,28 @@ BEGIN
     RETURN;
   END IF;
 
-  -- Insert a probe review. submittedById references User now.
-  INSERT INTO "ApplicationReview" (id, "cycleReviewerId", "domainApplicationId", "submittedById", "submittedAt", scores, feedback)
-  VALUES (gen_random_uuid()::text, test_cr_id, test_da_id, test_reviewer_user_id, NOW(), '{}'::jsonb, 'TEST — rolled back')
+  INSERT INTO "ApplicationReview" (
+    id, "cycleReviewerId", "domainApplicationId", "submittedById",
+    "submittedAt", "createdAt", "updatedAt",
+    scores, feedback, "rejectionRationale", annotations
+  )
+  VALUES (
+    gen_random_uuid()::text, test_cr_id, test_da_id, test_reviewer_user_id,
+    NOW(), NOW(), NOW(),
+    '{}'::jsonb, 'TEST — rolled back', '', '[]'::jsonb
+  )
   ON CONFLICT ("cycleReviewerId", "domainApplicationId") DO UPDATE
     SET feedback = 'TEST — rolled back'
   RETURNING id INTO test_ar_id;
 
   RAISE NOTICE '  PASS: inserted review id=% with submittedById=%', test_ar_id, test_reviewer_user_id;
 END $$;
+ROLLBACK TO SAVEPOINT t6;
 
 -- ─── 7. WRITE TEST: insert a Decision via User-based madeById ───────────────
 \echo ''
 \echo '=== T7: insert a test Decision via User-based madeById + rollback ==='
+SAVEPOINT t7;
 DO $$
 DECLARE
   test_admin_user_id text;
@@ -156,22 +165,25 @@ BEGIN
     RETURN;
   END IF;
 
-  INSERT INTO "Decision" (id, "domainApplicationId", type, stage, "madeById", notes)
-  VALUES (gen_random_uuid()::text, test_da_id, 'Rejected', 'Draft', test_admin_user_id, 'TEST — rolled back')
+  INSERT INTO "Decision" (id, "createdAt", "domainApplicationId", type, stage, "madeById", notes)
+  VALUES (gen_random_uuid()::text, NOW(), test_da_id, 'Rejected', 'Draft', test_admin_user_id, 'TEST — rolled back')
   RETURNING id INTO test_dec_id;
 
   RAISE NOTICE '  PASS: inserted decision id=% with madeById=%', test_dec_id, test_admin_user_id;
 END $$;
+ROLLBACK TO SAVEPOINT t7;
 
 -- ─── 8. CONSTRAINT TEST: NOT NULL on hiring FKs is enforced ────────────────
 \echo ''
 \echo '=== T8: constraint test — INSERT with NULL userId should fail ==='
+SAVEPOINT t8;
 DO $$
 BEGIN
   BEGIN
-    INSERT INTO "CycleReviewer" (id, "applicationCycleId", "domainId", "userId")
+    INSERT INTO "CycleReviewer" (id, "createdAt", "updatedAt", "applicationCycleId", "domainId", "userId")
     VALUES (
       gen_random_uuid()::text,
+      NOW(), NOW(),
       (SELECT "applicationCycleId" FROM "CycleReviewer" LIMIT 1),
       (SELECT "domainId" FROM "CycleReviewer" LIMIT 1),
       NULL
@@ -181,16 +193,19 @@ BEGIN
     RAISE NOTICE '  PASS: NULL userId rejected as expected';
   END;
 END $$;
+ROLLBACK TO SAVEPOINT t8;
 
 -- ─── 9. CONSTRAINT TEST: FK to User is enforced ─────────────────────────────
 \echo ''
 \echo '=== T9: constraint test — INSERT with non-existent userId should fail ==='
+SAVEPOINT t9;
 DO $$
 BEGIN
   BEGIN
-    INSERT INTO "CycleReviewer" (id, "applicationCycleId", "domainId", "userId")
+    INSERT INTO "CycleReviewer" (id, "createdAt", "updatedAt", "applicationCycleId", "domainId", "userId")
     VALUES (
       gen_random_uuid()::text,
+      NOW(), NOW(),
       (SELECT "applicationCycleId" FROM "CycleReviewer" LIMIT 1),
       (SELECT "domainId" FROM "CycleReviewer" LIMIT 1),
       'does-not-exist-userid'
@@ -200,6 +215,7 @@ BEGIN
     RAISE NOTICE '  PASS: invalid userId rejected as expected (FK to User enforced)';
   END;
 END $$;
+ROLLBACK TO SAVEPOINT t9;
 
 -- ─── 10. BACKFILL SPOT-CHECK: an admin from DALIMember.roles[] is in AdminMembership ───
 \echo ''
@@ -251,6 +267,7 @@ WHERE u."daliEmail" IS NOT NULL
 -- ─── 14. LEGACY DROP VERIFICATION: column references in queries fail ──────
 \echo ''
 \echo '=== T14: verify the old daliMemberId column truly cannot be queried ==='
+SAVEPOINT t14;
 DO $$
 BEGIN
   BEGIN
@@ -260,10 +277,12 @@ BEGIN
     RAISE NOTICE '  PASS: daliMemberId column does not exist (drop succeeded)';
   END;
 END $$;
+ROLLBACK TO SAVEPOINT t14;
 
 -- ─── 15. LEGACY DROP VERIFICATION: User.googleRefreshToken truly dropped ──
 \echo ''
 \echo '=== T15: verify User.googleRefreshToken truly dropped ==='
+SAVEPOINT t15;
 DO $$
 BEGIN
   BEGIN
@@ -273,6 +292,7 @@ BEGIN
     RAISE NOTICE '  PASS: googleRefreshToken column does not exist';
   END;
 END $$;
+ROLLBACK TO SAVEPOINT t15;
 
 ROLLBACK;
 
