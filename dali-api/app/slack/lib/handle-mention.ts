@@ -1,5 +1,8 @@
 import { prisma } from "~/lib/db";
 import { fetchThread, getPermalink, postReply } from "./slack-client";
+import type { SlackThreadMessage } from "./slack-client";
+import { formatIssue } from "./format-issue";
+import { createIssue } from "./github-app";
 
 // Slack `app_mention` event payload (subset we need).
 export type AppMentionEvent = {
@@ -12,39 +15,57 @@ export type AppMentionEvent = {
   thread_ts?: string;
 };
 
-// Trigger phrase. We require "file-this" anywhere in the mention text so the
-// bot doesn't reply to incidental @-mentions.
-const TRIGGER = /\bfile-this\b/i;
+// Trigger word: we file an issue when the mention text contains "bug"
+// (any case, any morphology — "bug", "bugs", "debugging" all count). Loose on
+// purpose because the @-mention itself is the explicit signal; "bug" just
+// disambiguates "I want to file" from incidental chatter.
+const TRIGGER = /bug/i;
 
 export async function handleAppMention(event: AppMentionEvent): Promise<void> {
   if (!TRIGGER.test(event.text)) return;
 
-  // If the mention is on a top-level message (no thread parent), we treat the
-  // mention message itself as a single-message "thread."
+  // If the mention is on a top-level message (no thread parent), we file just
+  // that one message and the bot reply starts a new thread under it. If the
+  // mention is in an existing thread, the whole thread becomes the issue body.
   const threadTs = event.thread_ts ?? event.ts;
   const thread = await fetchThread(event.channel, threadTs);
   if (thread.length === 0) return;
 
   const permalink = await getPermalink(event.channel, threadTs).catch(() => null);
 
-  const previewLines = [
-    `*Bug report draft from <@${event.user}>* — react with :white_check_mark: to file as a GitHub issue, :x: to cancel.`,
-    "",
-    `Captured ${thread.length} message${thread.length === 1 ? "" : "s"}` +
-      (permalink ? ` (<${permalink}|open thread>)` : "") +
-      ".",
-  ];
-  const previewText = previewLines.join("\n");
-
-  const posted = await postReply(event.channel, threadTs, previewText);
-
-  await prisma.slackBugReportDraft.create({
-    data: {
-      slackChannelId: event.channel,
-      slackThreadTs: threadTs,
-      previewMessageTs: posted.ts,
-      threadJson: thread as unknown as object,
+  try {
+    const { title, body } = formatIssue({
+      thread: thread as SlackThreadMessage[],
+      permalink,
       requestedBySlackUserId: event.user,
-    },
-  });
+    });
+
+    const issue = await createIssue({ title, body });
+
+    await prisma.slackBugReportDraft.create({
+      data: {
+        slackChannelId: event.channel,
+        slackThreadTs: threadTs,
+        // Re-use previewMessageTs to store the mention message ts. Keeps the
+        // unique index meaningful as a "one issue per mention" guard.
+        previewMessageTs: event.ts,
+        threadJson: thread as unknown as object,
+        requestedBySlackUserId: event.user,
+        status: "Filed",
+        githubIssueNumber: issue.number,
+        githubIssueUrl: issue.htmlUrl,
+      },
+    });
+
+    // Post the URL on its own line so Slack unfurls into a rich preview card.
+    await postReply(event.channel, threadTs, issue.htmlUrl);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("slack: filing failed", { channel: event.channel, ts: event.ts, error: message });
+    await postReply(
+      event.channel,
+      threadTs,
+      `:warning: Couldn't file issue: ${message}`,
+    );
+  }
 }

@@ -1,11 +1,10 @@
 import type { Route } from "./+types/api.slack.events";
 import { verifySlackSignature } from "../lib/verify-signature";
 import { handleAppMention, type AppMentionEvent } from "../lib/handle-mention";
-import { handleReactionAdded, type ReactionAddedEvent } from "../lib/handle-reaction";
 
 // Slack Events API webhook. Two responsibilities:
 // 1. Respond to Slack's URL verification challenge during app setup.
-// 2. Verify signatures and dispatch app_mention / reaction_added events.
+// 2. Verify signatures and dispatch app_mention events.
 //
 // Slack expects a 2xx within 3 seconds or it retries; the heavy lifting
 // (Slack API calls, GitHub API calls) is fired off after we've already
@@ -68,11 +67,6 @@ function dispatchEvent(event: { type: string } & Record<string, unknown>): void 
     case "app_mention":
       void handleAppMention(event as unknown as AppMentionEvent).catch((err) => {
         console.error("slack: handleAppMention failed", err);
-      });
-      break;
-    case "reaction_added":
-      void handleReactionAdded(event as unknown as ReactionAddedEvent).catch((err) => {
-        console.error("slack: handleReactionAdded failed", err);
       });
       break;
     default:
