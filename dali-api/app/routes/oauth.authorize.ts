@@ -27,13 +27,12 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (limited) return limited;
 
   const url = new URL(request.url);
-  const frontendUrl = process.env.FRONTEND_URL ?? "http://localhost:5173";
 
   function fallbackError(error: string, description: string) {
     const params = new URLSearchParams({ error, error_description: description });
     return new Response(null, {
       status: 302,
-      headers: { Location: `${frontendUrl}/login?${params}` },
+      headers: { Location: `/login?${params}` },
     });
   }
   function clientError(
@@ -204,10 +203,13 @@ export async function loader({ request }: Route.LoaderArgs) {
         where: { id: oauthSession.id },
         data: { userId: existing.userId },
       });
+      // Consent route lives on the same origin as /oauth/authorize (the
+      // dali-api full-stack app); use a same-origin path so it works both
+      // locally (no separate frontend bind) and in production.
       return new Response(null, {
         status: 302,
         headers: {
-          Location: `${frontendUrl}/oauth/consent?session_id=${oauthSession.id}`,
+          Location: `/oauth/consent?session_id=${oauthSession.id}`,
         },
       });
     }

@@ -147,7 +147,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   return new Response(null, {
     status: 302,
     headers: {
-      Location: `${frontendUrl}/oauth/consent?session_id=${session.id}`,
+      Location: `/oauth/consent?session_id=${session.id}`,
     },
   });
 }
