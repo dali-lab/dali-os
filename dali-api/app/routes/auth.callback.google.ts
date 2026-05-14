@@ -1,16 +1,12 @@
 import type { Route } from "./+types/auth.callback.google";
-import { prisma } from "~/lib/db";
 import { exchangeGoogleCode } from "~/lib/oauth";
 import { issueSession } from "~/lib/session";
 import { setSessionCookie } from "~/lib/cookies";
 import { getClientIp } from "~/lib/request-meta";
 import { logAuditEvent } from "~/lib/audit";
-import { requireAuth } from "~/lib/auth";
-import { CAL_STATE_PREFIX } from "~/routes/oauth.calendar.google.start";
-import { handleCalendarLinkCallback } from "~/routes/oauth.calendar.google.callback";
+import { upsertUserFromGoogle } from "~/lib/user-provisioning";
 
 const OAUTH_STATE_COOKIE = "__dali_oauth_state";
-const ACCOUNT_TYPE_COOKIE = "__dali_account_type";
 
 function parseCookies(request: Request): Record<string, string> {
   const header = request.headers.get("Cookie") ?? "";
@@ -33,31 +29,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
   const googleError = url.searchParams.get("error");
-
-  // Calendar-link flow: state is prefixed with "cal:" by /oauth/calendar/google/start.
-  // Dispatch to the helper, which writes to UserCalendarLink for the logged-in user.
-  if (state?.startsWith(CAL_STATE_PREFIX)) {
-    const auth = await requireAuth(request);
-    if (!auth.ok) {
-      return new Response(null, { status: 302, headers: { Location: "/login" } });
-    }
-    if (auth.user.type === "applicant") {
-      return new Response(null, { status: 302, headers: { Location: "/portal" } });
-    }
-    if (googleError || !code) {
-      return new Response(null, {
-          status: 302,
-          headers: { Location: "/calendar?calendar_link_error=auth_failed" },
-        });
-    }
-    const response = await handleCalendarLinkCallback({
-      request,
-      userId: auth.user.sub,
-      code,
-      state,
-    });
-    return response;
-  }
 
   if (googleError || !code || !state) {
     await logAuditEvent({
@@ -110,13 +81,15 @@ export async function loader({ request }: Route.LoaderArgs) {
     });
   }
 
-  // Determine account type from the cookie set during the login action
-  const accountType = cookies[ACCOUNT_TYPE_COOKIE] ?? "";
-  const clearAccountTypeCookie = `${ACCOUNT_TYPE_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax`;
-  const isMemberLogin = accountType === "member";
-
-  // For member login, enforce DALI domain
-  if (isMemberLogin && !googleUser.email.endsWith("@dali.dartmouth.edu")) {
+  // The only /login button that uses this callback is the Member button, so
+  // @dali.dartmouth.edu is the only valid outcome. Enforce unconditionally —
+  // we no longer rely on the __dali_account_type cookie (which could be
+  // stripped) to gate the check. Dartmouth-student and partner branches that
+  // used to live inline below are gone for the same reason: unreachable from
+  // any production route. They live on (for now) in the OAuth-provider
+  // callback `/oauth/callback/google`, which gates on a different signal
+  // (`OAuthSession.accountType`).
+  if (!googleUser.email.endsWith("@dali.dartmouth.edu")) {
     await logAuditEvent({
       action: "login.failure",
       metadata: {
@@ -126,84 +99,21 @@ export async function loader({ request }: Route.LoaderArgs) {
       },
       request,
     });
-    const headers = new Headers();
-    headers.append("Set-Cookie", clearStateCookie);
-    headers.append("Set-Cookie", clearAccountTypeCookie);
-    headers.set("Location", "/login?error=access_denied");
-    return new Response(null, { status: 302, headers });
-  }
-
-  let user;
-  let authType: string;
-  let redirectTo: string;
-
-  if (googleUser.email.endsWith("@dali.dartmouth.edu")) {
-    // DALI member flow
-    user = await prisma.user.upsert({
-      where: { daliEmail: googleUser.email },
-      update: { firstName: googleUser.firstName, lastName: googleUser.lastName },
-      create: {
-        daliEmail: googleUser.email,
-        firstName: googleUser.firstName,
-        lastName: googleUser.lastName,
+    return new Response(null, {
+      status: 302,
+      headers: {
+        "Set-Cookie": clearStateCookie,
+        Location: "/login?error=access_denied",
       },
     });
-
-    // Ensure a DALIMember record exists for this DALI user.
-    const existingMember = await prisma.dALIMember.findFirst({
-      where: { OR: [{ userId: user.id }, { daliEmail: googleUser.email }] },
-    });
-    if (existingMember) {
-      if (!existingMember.userId) {
-        await prisma.dALIMember.update({
-          where: { id: existingMember.id },
-          data: { userId: user.id },
-        });
-      }
-    } else {
-      await prisma.dALIMember.create({
-        data: { userId: user.id, daliEmail: googleUser.email },
-      });
-    }
-
-    authType = "member";
-    redirectTo = "/hiring/reviewer";
-  } else if (googleUser.email.endsWith("@dartmouth.edu")) {
-    // Dartmouth student via Google (non-DALI email)
-    user = await prisma.user.upsert({
-      where: { dartmouthEmail: googleUser.email },
-      update: { firstName: googleUser.firstName, lastName: googleUser.lastName },
-      create: {
-        dartmouthEmail: googleUser.email,
-        firstName: googleUser.firstName,
-        lastName: googleUser.lastName,
-      },
-    });
-    authType = "dartmouth";
-    redirectTo = "/portal";
-  } else {
-    // External partner — any Google account
-    // Use a findFirst+create pattern since there's no unique constraint on generic emails
-    let existing = await prisma.user.findFirst({
-      where: { dartmouthEmail: googleUser.email },
-    });
-    if (existing) {
-      user = await prisma.user.update({
-        where: { id: existing.id },
-        data: { firstName: googleUser.firstName, lastName: googleUser.lastName },
-      });
-    } else {
-      user = await prisma.user.create({
-        data: {
-          dartmouthEmail: googleUser.email,
-          firstName: googleUser.firstName,
-          lastName: googleUser.lastName,
-        },
-      });
-    }
-    authType = "partner";
-    redirectTo = "/portal";
   }
+
+  // Always-enforce above means we only reach this with an @dali.dartmouth.edu
+  // email, so the helper's member branch fires and creates a DALIMember if
+  // missing. Dartmouth-student and partner branches in the helper are
+  // unreachable through this route — they live on for the OAuth-provider
+  // callback `/oauth/callback/google` which gates on a different signal.
+  const { user } = await upsertUserFromGoogle(googleUser);
 
   // Issue session and set cookie
   const session = await issueSession({
@@ -216,16 +126,15 @@ export async function loader({ request }: Route.LoaderArgs) {
     userId: user.id,
     metadata: {
       provider: "google",
-      authType,
+      authType: "member",
       email: googleUser.email,
     },
     request,
   });
   const headers = new Headers();
   headers.append("Set-Cookie", clearStateCookie);
-  headers.append("Set-Cookie", clearAccountTypeCookie);
   setSessionCookie(headers, session.rawId);
-  headers.set("Location", redirectTo);
+  headers.set("Location", "/hiring/reviewer");
 
   return new Response(null, { status: 302, headers });
 }

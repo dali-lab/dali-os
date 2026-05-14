@@ -650,6 +650,17 @@ model CollabDocumentVersion {
 
 // ─── OAuth & Sessions ────────────────────────────────────────────────────────
 
+enum OAuthProvider {
+  google
+  cas
+}
+
+enum OAuthAccountType {
+  member
+  dartmouth
+  partner
+}
+
 model OAuthSession {
   id String @id @default(cuid())
 
@@ -660,8 +671,11 @@ model OAuthSession {
   // oAuth params preserved across IDP redirect
   redirectUri String
   state       String
-  provider    String // "google" | "cas"
-  accountType String? // "member" | "partner" (Google only)
+  provider    OAuthProvider
+  // Optional. Set when the OAuthClient row pins a single accountType
+  // (e.g. MCP clients require "member"). Null = any accountType is OK
+  // for this session, decided by the callback's domain branch.
+  accountType OAuthAccountType?
 
   // set after IDP authenticates user
   userId            String?

@@ -10,14 +10,54 @@ The use case: a member working in Claude wants to ask *"who's on Project Alpha r
 
 **Consumer scope:** lab members only (current members + Core). Not partners, not alumni, not the public. This is the single most important constraint — it collapses most of the OAuth-provider machinery you would otherwise need.
 
+**Hard auth constraints for MCP clients** (enforced on the OAuthClient row — not the member's prompt or the consent screen):
+
+1. **Google only — CAS is never accepted.** MCP clients must `provider=google` on `/oauth/authorize`. Any client sending `provider=cas` (or omitting `provider`) is rejected with `invalid_request`. CAS is for first-party applicant login (`/auth/callback/cas`); it has no MCP role.
+2. **`@dali.dartmouth.edu` Google account only.** The existing member-domain check at `/oauth/callback/google` already enforces this. Any other email — including `@dartmouth.edu` (non-DALI student) or third-party Google accounts — is rejected before an authorization code is issued.
+3. **Must have a `DALIMember` row.** Belt-and-suspenders check at the OAuth/MCP boundary. In practice the shared `lib/user-provisioning.ts` helper auto-creates the row whenever a `@dali.dartmouth.edu` Google account completes auth (first-party or OAuth-provider), so the row always exists by the time this check runs. The constraint is preserved on the `OAuthClient` row anyway so any future code path that bypasses the helper still gets gated. See decision **D-1** below for why "row exists" is sufficient and we don't gate on `MemberRole` membership.
+
+All three rules ride on the `OAuthClient` row (see schema below — `allowedProviders`, `requiredAccountType`, `requireMembership`). The first-party `dali-api` client is exempt: it still accepts CAS for applicant login.
+
 **Why this is post-v0:** members can do everything via the DALI OS UI. MCP is leverage on top of a working platform — ship after the platform exists.
+
+## Locked-in decisions
+
+These were open questions when this doc was drafted; they are now policy. Captured here so the build-from steps below don't drift back into open-ended discussion.
+
+| # | Question | Decision | Rationale |
+|---|---|---|---|
+| **D-1** | What counts as a "DALI member" for MCP eligibility? | `DALIMember` row exists. No `MemberRole` check, no "current term" check. | Simplicity. The `@dali.dartmouth.edu` Google domain is administered by the lab — if you have that email, the lab gave it to you. Auto-create-on-login means any onboarded member who's ever signed in has a row. Off-boarding is handled out-of-band (see D-5). |
+| **D-2** | Token lifetime? | 30-day rolling, 30-day absolute. Matches the cookie session in `lib/session.ts`. | Industry-standard for opaque revocable bearers (Slack OAuth, Notion, GitHub Apps default). Server-side revocation gives instant kill regardless of TTL. |
+| **D-3** | Consent UX? | Per-`(user, client, scopes)` persistent until revoked. No periodic re-prompt. | Matches Google OAuth, GitHub Apps, Anthropic apps. Member can revoke from Settings → Connected apps at any time. |
+| **D-4** | v1 tool catalog scope? | **Foundation + `whoami` only.** | The full read/write tool catalog below depends on expansion-plan-v0 data models (Project, Sprint, Task, education, mentorship) that don't ship until later. v1 proves the auth path end-to-end with Claude Desktop. Useful tools layer on after v0 lands. |
+| **D-5** | Off-boarding flow when a member leaves the lab? | Deferred. v1 relies on the request-time `requireMembership` re-check in `lib/mcp-auth.ts`. Revisit when there's a real off-boarding workflow to integrate with. | Plan documents the re-check, no explicit revoke-on-off-boarding wired up. Re-check means even a long-lived grant goes 401 the moment the `DALIMember` row is removed (currently no UI for that anyway). |
+| **D-6** | AI-attributed writes ("created via Claude Code" badges)? | Deferred. v1 has no write tools so this is moot. | The MCP server's audit log captures `clientName` + `grantId` per tool call already. UI-level attribution becomes a real decision when write tools ship. |
+
+The full tool catalog below remains as the eventual target shape, but only `whoami` ships with v1.
+
+## Known auth-surface issues
+
+Catalog of inconsistencies and rough edges in the auth/oauth route surface. Maintained here so they don't get lost. Some are fixed in the user-provisioning extraction PR; others are explicit future cleanups or deferred-by-decision.
+
+| # | Issue | Status |
+|---|---|---|
+| A | `/auth/callback/google` and `/oauth/callback/google` had drifted upsert logic (member branches only vs. all three; `DALIMember` auto-create vs. not; `googleAccessToken` persistence on `User` row vs. not). | ✅ Fixed by `lib/user-provisioning.ts` — both Google callbacks now route through `upsertUserFromGoogle`; behavior unified. |
+| B | OAuth-provider `/oauth/callback/google` persisted `googleAccessToken` / `googleRefreshToken` / `googleTokenExpiresAt` on the `User` row. The standard login path shouldn't be doing Google-API credential capture — that belongs in the explicit integration flows (`/oauth/calendar/google/start`, `/admin/authorize-gmail`). | ✅ Fixed in user-provisioning helper. Persistence removed. Calendar tokens still land in `UserCalendarLink` via the calendar-link flow; Gmail tokens still land via `/admin/authorize-gmail`. |
+| C | `/oauth/authorize`'s Google authorize URL requested `https://www.googleapis.com/auth/calendar.readonly` as part of its scope. The OAuth-provider flow has nothing to do with Calendar API access. | ✅ Fixed — scope stripped to `openid email profile` in the same PR. |
+| D | `/auth/callback/cas` set `dartmouthEmail = <netId>@dartmouth.edu`; `/oauth/callback/cas` did not. | ✅ Fixed — both CAS callbacks now route through `upsertUserFromCas` which sets `dartmouthEmail` uniformly. |
+| E | `__dali_account_type` cookie is the only signal telling `/auth/callback/google` "this should have been a member login." If the cookie is missing or stripped, the `@dali.dartmouth.edu` check fails open — any Google account works for member login. | 🔜 **Future cleanup.** Move the member/applicant distinction into the OAuth state (signed or DB-stored) rather than a cookie. Tracked but not blocking. |
+| F | Calendar-link flow rides on `/auth/callback/google` via a `cal:` state prefix. Two semantically different flows (login vs. integration token grant) share one endpoint. The dispatch logic in `auth.callback.google.ts:37-61` is non-obvious. | 🔜 **Future cleanup.** Split into a dedicated route (e.g. `/integrations/calendar/google/callback`). Touches the existing Google OAuth client redirect-URI registration so isn't a one-line change. |
+| G | Partner Google accounts are stored with their email in the `User.dartmouthEmail` column — schema-naming wart. | 🔜 **Future cleanup.** Either rename to `email` (broad change) or add a separate `partnerEmail` column. Defer until there's a real partner-management feature to justify the migration. |
+| H | `OAuthSession.provider` and `OAuthSession.accountType` are free-form strings, validated in route logic only. State cookie path scoping is inconsistent (`__dali_oauth_state` is tight, `__dali_account_type` is `Path=/`). | 🔜 **Future cleanup.** Tighten the cookie path + add Prisma enums for the OAuthSession fields. Low priority. |
+| I | `/auth/callback/google` auto-creates `DALIMember` for any `@dali.dartmouth.edu` Google account, making the MCP `requireMembership` check a tautology in practice. | ⏸️ **Deferred by D-1.** This is the intended model: domain membership === lab membership for now. |
+| J | OAuth provider routes (`/oauth/{authorize,callback/*,token,revoke}`) are dead in production — no caller hits them today. The session refactor verified them at unit-test level but no E2E exercises the full authorize → callback → token round-trip end-to-end. | ⏸️ **Will be covered when v1 ships.** The MCP-track skeleton (foundation + `whoami`) includes an E2E that walks the full flow.
 
 ## Auth model
 
-**OAuth 2.1 + PKCE.** No Personal Access Tokens. The existing `lib/oauth.ts` already implements the hard parts (mandatory S256 PKCE, single-use authorization codes, opaque refresh tokens hashed at rest, refresh-token family rotation) — it just needs to be extended from one hardcoded client to a small registry, and to surface a few standard endpoints.
+**OAuth 2.1 + PKCE.** No Personal Access Tokens. The existing `lib/oauth.ts` already implements the hard parts (mandatory S256 PKCE, single-use authorization codes hashed at rest, rolling-expiry `Session` rows via `lib/session.ts`) — it just needs to be extended from one hardcoded client to a small registry, and to surface a few standard endpoints.
 
 **Why OAuth over PAT:**
-- A token bound to a registered client, a consent record, and a refresh-token family is materially safer than a bearer secret a member pastes around. Revocation, last-used tracking, and rotation come for free.
+- A token bound to a registered client, a consent record, and a server-side `Session` row is materially safer than a bearer secret a member pastes around. Revocation, last-used tracking, and rolling expiry come for free.
 - Standard flow — every MCP client speaks it. PATs would require per-client config docs and copy-paste.
 - The existing implementation is ~80% of the way there. The remaining work is small *because* the consumer is lab-internal — no dynamic client registration, no scope-by-scope consent UI, no confidential clients, no introspection.
 
@@ -37,7 +77,7 @@ The use case: a member working in Claude wants to ask *"who's on Project Alpha r
 1. Member configures their MCP client with `https://dalios.dartmouth.edu/mcp` as the server URL.
 2. MCP client fetches `/.well-known/oauth-authorization-server`, discovers the authorize/token endpoints.
 3. MCP client opens the member's browser to `/oauth/authorize?client_id=claude-desktop&redirect_uri=http://127.0.0.1:<port>/callback&response_type=code&code_challenge=...&code_challenge_method=S256&state=...&scope=mcp:read mcp:write`.
-4. **Existing-session shortcut:** if the member has a valid dali-os session cookie, skip the Google/CAS bounce. Otherwise log them in normally.
+4. **Existing-session shortcut:** if the member has a valid dali-os session cookie, skip the Google bounce. Otherwise log them in via Google (CAS is rejected for MCP clients per the auth constraints above).
 5. **First-time consent** for this `(user, client)` pair: a single page asking "Authorize Claude Desktop to access your DALI OS account?" with the requested scopes shown. Stores an `OAuthGrant` row on approval. Subsequent authorizations with the same scopes are auto-approved.
 6. Redirect to the loopback URI with `?code=<opaque>&state=...`.
 7. MCP client exchanges the code at `/oauth/token` with its `code_verifier`. Receives an opaque session id as the bearer (30 days rolling, 30 days absolute cap). See `SESSION_AUTH_PLAN.md` for the unified `Session` model that backs both browser cookies and MCP bearers.
@@ -52,7 +92,7 @@ These are all small. Sequencing is in the implementation phases section.
 |---|---|---|
 | **Client registry** | `VALID_CLIENT_IDS = ["dali-api"]` constant array | New `OAuthClient` Prisma model; seeded with `dali-api`, `claude-desktop`, `claude-code`. `lib/oauth.ts` resolves clients via `getClient(clientId)`. |
 | **Per-client redirect URIs** | `getAllowedRedirectUris()` returns one frontend URL | Resolved from the client record. Loopback rule: for clients flagged `isLoopback`, match scheme + host (`http://127.0.0.1` or `http://localhost`), ignore port. Exact match for everything else. |
-| **Existing-session shortcut on `/oauth/authorize`** | Always bounces through Google/CAS | If the request carries a valid `__dali_sid` cookie, skip straight to consent → code. Only force provider auth when there's no session. |
+| **Existing-session shortcut on `/oauth/authorize`** | Always bounces through Google | If the request carries a valid `__dali_sid` cookie and the session's user satisfies the client's `requiredAccountType` / `requireMembership` constraints, skip straight to consent → code. Otherwise force the Google bounce. (CAS is unreachable for MCP clients — filtered out by the `allowedProviders` check.) |
 | **First-time consent screen** | None — code is generated immediately after provider auth | New route `/oauth/consent`. For first-party (`dali-api`) and previously-granted (user, client, scopes) pairs, skip the screen. For new grants, render it; on approve, insert `OAuthGrant` and continue. |
 | **Scopes** | `scope` param ignored | Plumb through `OAuthSession` → `OAuthGrant` → access token claim. Enforced in MCP route middleware. |
 | **Bearer-token acceptance** | ~~`requireAuth` reads JWT from cookie only~~ Done by the session refactor. `requireAuth` already accepts `Authorization: Bearer <session_id>`; cookie wins if both present. | n/a |
@@ -112,9 +152,10 @@ In the browser, three sub-cases:
 
 | Member's state | What they see |
 |---|---|
-| Already signed in to DALI OS (cookie session valid) | Skip Google/CAS entirely (existing-session shortcut). Go straight to consent. |
-| Not signed in | Standard `/login` page, pick Google or CAS, then consent. |
+| Already signed in to DALI OS (cookie session valid) | Skip Google entirely (existing-session shortcut). Go straight to consent. |
+| Not signed in | Bounce to Google sign-in for the member's `@dali.dartmouth.edu` account. CAS is not offered for MCP clients — the OAuthClient row only allows `google`. |
 | First time authorizing *this client* | One-time consent screen: *"Authorize Claude Code to access your DALI OS account?"* with the requested scopes listed. Approve once; future re-authorizations for the same `(member, client, scopes)` skip this screen. |
+| Not a current `DALIMember` (alum, off-boarded, or `@dali.dartmouth.edu` Google account without a member row) | `access_denied` returned to the loopback URI; no authorization code issued. The client surfaces a sign-in error. |
 
 On approval, browser redirects back to `http://127.0.0.1:54113/callback?code=<opaque>&state=<echoed>`. The client's loopback listener catches it, closes itself, and exchanges the code at `/oauth/token` with its `code_verifier`. Receives a session id as the bearer token.
 
@@ -128,7 +169,7 @@ The MCP client stores the session id in its own credentials store (keychain on m
 
 If the session goes 30 days without use, the next call returns 401. The client re-runs the OAuth flow:
 - Cookie still valid in their browser → one redirect, no clicks. They notice a browser tab opening and closing.
-- Cookie also expired → one Google or CAS click.
+- Cookie also expired → one Google click (`@dali.dartmouth.edu`).
 
 Either way, no token to copy-paste. No "rotate your credentials" hygiene to remember.
 
@@ -192,18 +233,34 @@ model OAuthClient {
   isFirstParty  Boolean  @default(false)
   // Scopes this client is allowed to request.
   allowedScopes String[]
+
+  // ─── Hard auth constraints (enforced at /oauth/authorize and the callbacks) ───
+
+  // Identity providers this client may use. MCP clients have ["google"];
+  // dali-api (first-party) has ["google", "cas"]. /oauth/authorize rejects
+  // any `provider` param not in this list.
+  allowedProviders String[]
+  // Required `accountType` for this client. MCP clients: "member" — bars
+  // Dartmouth-student and partner Google accounts. Null = any.
+  requiredAccountType String?
+  // If true, /oauth/callback/google additionally verifies a `DALIMember`
+  // row exists for the authenticated user. MCP clients: true. Bars
+  // off-boarded alums whose @dali.dartmouth.edu Google identity may still
+  // authenticate but who are no longer in the lab.
+  requireMembership Boolean @default(false)
+
   createdAt     DateTime @default(now())
 }
 ```
 
 Seeded entries:
-- `dali-api` — `isFirstParty: true`, redirect `${FRONTEND_URL}/login`, all scopes
-- `claude-desktop` — `isLoopback: true`, redirect `http://127.0.0.1/callback`, `mcp:read mcp:write`
-- `claude-code` — `isLoopback: true`, redirect `http://127.0.0.1/callback`, `mcp:read mcp:write`
+- `dali-api` — `isFirstParty: true`, redirect `${FRONTEND_URL}/login`, all scopes, `allowedProviders: ["google", "cas"]`, `requiredAccountType: null`, `requireMembership: false` (first-party login serves applicants and partners too)
+- `claude-desktop` — `isLoopback: true`, redirect `http://127.0.0.1/callback`, `mcp:read mcp:write`, **`allowedProviders: ["google"]`**, **`requiredAccountType: "member"`**, **`requireMembership: true`**
+- `claude-code` — same as `claude-desktop`
 
 ### `OAuthGrant`
 
-Represents a member's standing authorization for a specific client. One row per `(user, client)`. Owns N refresh-token families over time.
+Represents a member's standing authorization for a specific client. One row per `(user, client)`. Owns N `Session` rows over time (one per re-authorization after rolling expiry).
 
 ```prisma
 model OAuthGrant {
@@ -372,33 +429,52 @@ Lives at **Settings > Connected apps** (a sub-section of the broader Settings pa
 
 The OAuth extensions are independently shippable and useful on their own — the existing-session shortcut helps any future third-party client, and Bearer-token acceptance is useful for any non-cookie API call. Order them before the MCP server itself.
 
+### Pre-MCP cleanup (already shipped)
+
+0. **`lib/user-provisioning.ts`** ✅ — extracted the user-upsert logic shared by all four callbacks. Unified Google `DALIMember` auto-create; removed `googleAccessToken` persistence on `User`; stripped `calendar.readonly` from the OAuth-provider Google scope; unified CAS `dartmouthEmail` setting. Removes 200+ lines of drifted duplication so the foundation work below has one source of truth to build on. See Known auth-surface issues A–D above.
+
 ### Foundation (extends `/oauth/*`)
 
-1. **`OAuthClient` model + migration + seed.** Replace the hardcoded `VALID_CLIENT_IDS` array with a DB lookup. No external behavior change.
+1. **`OAuthClient` model + migration + seed.** Replace the hardcoded `VALID_CLIENT_IDS` array with a DB lookup. Seed includes the per-client provider/account/membership constraints (`allowedProviders`, `requiredAccountType`, `requireMembership`). No external behavior change for `dali-api`.
 2. **Per-client redirect URIs + loopback matching.** `getAllowedRedirectUris` becomes per-client. Loopback rule for `isLoopback` clients.
-3. **Existing-session shortcut on `/oauth/authorize`.** If a valid dali-os session cookie is present, skip the Google/CAS bounce.
-4. **Bearer-token acceptance in `requireAuth`.** Accept `Authorization: Bearer <jwt>` in addition to the existing cookie.
-5. **Scope plumbing.** `scope` param → `OAuthSession.scopes` → access-token claim. Reject scope values not in the client's `allowedScopes`.
-6. **`OAuthGrant` model + consent screen.** `/oauth/consent` route; first-time per-`(user, client, scopes)` confirmation; subsequent flows auto-approve.
-7. **`/.well-known/oauth-authorization-server`.**
-8. **Settings > Connected apps UI.** List + revoke.
+3. **Provider + account-type enforcement at `/oauth/authorize`.** Reject `provider` values not in `client.allowedProviders` (with `invalid_request`); pass `client.requiredAccountType` through to `OAuthSession.accountType` so the callback enforces it. This is where MCP clients are locked to Google + member.
+4. **Membership check at `/oauth/callback/google`.** After the existing `@dali.dartmouth.edu` domain check, if `client.requireMembership` is true, look up `DALIMember` by `userId` / `daliEmail`. Reject with `access_denied` + `error_description=not_a_member` if no row exists. Bars off-boarded alums.
+5. **Existing-session shortcut on `/oauth/authorize`.** If a valid `__dali_sid` cookie is present *and* the session's user satisfies the client's `requiredAccountType` / `requireMembership` constraints, skip Google entirely. Otherwise force the Google bounce (CAS is unreachable here because rule 3 already filtered the `provider` value).
+6. **Bearer-token acceptance in `requireAuth`.** Already done by the session refactor — `Authorization: Bearer <session_id>` works.
+7. **Scope plumbing.** `scope` param → `OAuthSession.scopes` → `Session.scopes` column. Reject scope values not in the client's `allowedScopes`.
+8. **`OAuthGrant` model + consent screen.** `/oauth/consent` route; first-time per-`(user, client, scopes)` confirmation; subsequent flows auto-approve.
+9. **`/.well-known/oauth-authorization-server`.**
+10. **Settings > Connected apps UI.** List + revoke.
 
-### MCP track
+### MCP track — v1 (per D-4: foundation + `whoami`)
 
-9. **`lib/mcp-auth.ts`** — middleware: `lookupSession` → resolve grant, check scopes, attach context, fire-and-forget `rollSession`.
-10. **`/mcp` route** — MCP server endpoint, dispatches by tool name.
-11. **Read tools** — implement the read-scope tool catalog (one PR per area or one large PR).
-12. **Audit log integration** — every tool call logs to `AuditLog`.
-13. **Rate limiting** — per-grant quotas (reuse existing `lib/rate-limit.ts`).
-14. **Write tools** — implement the write-scope tool catalog (separate PRs per area).
-15. **Member documentation** — "How to connect Claude to DALI OS" with sample MCP-client config.
+11. **`lib/mcp-auth.ts`** — middleware: `lookupSession` → resolve grant → re-check `requireMembership` at request time (so a member off-boarded mid-grant gets 401 on their next MCP call without needing to revoke each grant manually) → scope-attach → fire-and-forget `rollSession`.
+12. **`/mcp` route** — MCP server endpoint, dispatches by tool name. Wired up with exactly one tool (`whoami`).
+13. **`whoami` tool** — returns the authenticated user's basic info + tier. Validates the full Claude-Desktop-to-dali-os auth path end-to-end. Useless on its own, but proves the system.
+14. **Audit log integration** — every tool call logs to `AuditLog` with `actorUserId`, `toolName`, `clientName`, `grantId`.
+15. **Rate limiting** — per-grant quotas (reuse existing `lib/rate-limit.ts`).
+16. **Member documentation** — "How to connect Claude to DALI OS" with sample MCP-client config (CLI command for Claude Code, config JSON for Claude Desktop).
+17. **E2E test** — Playwright flow that exercises the full `/oauth/authorize` → consent → loopback → `/oauth/token` → `/mcp` `whoami` round-trip. Covers Known issue J.
 
-Rough sizing: foundation (1–6) is 3–5 focused days. MCP read-only v1 (9–13) is another 1 week. Writes (14) are another 1 week if pursued.
+### MCP track — post-v0 (when expansion plan v0 data models land)
+
+18. **Read tools** — implement the read-scope tool catalog above (one PR per area or one large PR). Depends on Project / Sprint / Task / education / mentorship models from expansion plan v0.
+19. **Write tools** — implement the write-scope tool catalog (separate PRs per area). Triggers a separate decision on D-6 (AI-attribution badges) before merge.
+
+### Sizing
+
+| Phase | Effort |
+|---|---|
+| Pre-cleanup (0) | ✅ shipped |
+| Foundation (1–10) | 4–6 focused days |
+| MCP v1 — foundation + whoami (11–17) | 1 week |
+| MCP read tools (18) | 1 week, gated on expansion plan v0 |
+| MCP write tools (19) | 1 week, gated on read tools soaking |
 
 ## Security considerations
 
-- **Access tokens are bearer credentials.** Never log them. JWTs are short-lived (15 min) and self-contained; revoking the grant invalidates them as soon as the access token expires (or sooner — the middleware looks up the grant on every request).
-- **Refresh tokens are bearer credentials.** Stored only as SHA-256 hashes. Sliding 7-day expiry, 30-day absolute cap, family-based reuse detection (existing behavior). Revoking a grant cascade-revokes every refresh token in it.
+- **Session ids are bearer credentials.** Never log them. Raw ids never hit the DB — `Session.id` stores `sha256(raw)`. Revocation is instant: `lib/mcp-auth.ts` resolves the grant on every request, so revoking an `OAuthGrant` invalidates every session under it within one request cycle. No 15-minute stale window like the old JWT model.
+- **Rolling 30-day TTL, 30-day absolute cap.** Sessions auto-extend on use up to the absolute cap. Idle 30+ days → 401 → client re-runs the OAuth flow.
 - **Audit every tool call.** AI assistants don't always do what users expect; the audit log is the forensics trail. Include `clientName` and `grantId` so a misbehaving client is traceable.
 - **Rate limit per grant** to bound runaway-loop damage from a misbehaving AI client.
 - **Lab-mentor-collective gate** (`isLabMentor`) still applies even with `mcp:read:mentorship`. Non-mentors get nothing.
@@ -406,7 +482,11 @@ Rough sizing: foundation (1–6) is 3–5 focused days. MCP read-only v1 (9–13
 - **Loopback URI validation:** for `isLoopback` clients, the redirect URI must match scheme `http`, host `127.0.0.1` or `localhost`, ignoring port — anything else is rejected. No `0.0.0.0`, no public-IP loopback claims.
 - **State + PKCE remain mandatory.** State for CSRF, PKCE for code-interception. Both already enforced.
 - **First-party flag isn't a backdoor.** Only the seeded `dali-api` client gets `isFirstParty: true`; the seed migration is the only path to setting it.
-- **No partners, no alumni, no public.** A `User.tier` check at the start of `/oauth/authorize` rejects anyone outside members + Core when the client is an MCP client.
+- **No partners, no alumni, no public — three layers of enforcement, all on the `OAuthClient` row:**
+  1. **Provider lock.** MCP clients have `allowedProviders: ["google"]`. `/oauth/authorize` rejects `provider=cas` with `invalid_request`. CAS exists only for applicant login via `/auth/callback/cas`; it has no MCP role.
+  2. **Account-type lock.** MCP clients have `requiredAccountType: "member"`. The existing `@dali.dartmouth.edu` domain check at `/oauth/callback/google` enforces this — Dartmouth-student and partner Google accounts are rejected before an authorization code is issued.
+  3. **Membership lock.** MCP clients have `requireMembership: true`. After the domain check, `/oauth/callback/google` verifies a `DALIMember` row exists. Bars off-boarded alums whose `@dali.dartmouth.edu` Google identity may still authenticate. Re-checked at request time in `lib/mcp-auth.ts` so an in-flight grant goes 401 the moment a member is off-boarded — no per-grant revoke needed.
+- **The first-party `dali-api` client is the only exception**, by design. It accepts CAS, `dartmouth` / `partner` account types, and non-member users (applicants, partners). The seed migration is the only path to setting any of these permissive defaults.
 
 ## Open questions
 

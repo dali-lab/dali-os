@@ -1,8 +1,7 @@
 import type { Route } from "./+types/oauth.callback.cas";
-import { prisma } from "~/lib/db";
 import { validateCasTicket } from "~/lib/auth";
 import { getOAuthSession, generateAuthorizationCode } from "~/lib/oauth";
-import { linkCasToGoogleUser } from "~/lib/linking";
+import { upsertUserFromCas } from "~/lib/user-provisioning";
 
 export async function action() {
   return new Response("Method not allowed", { status: 405 });
@@ -31,7 +30,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     });
   }
 
-  // validate CAS ticket
   const serviceUrl = `${apiBase}/oauth/callback/cas?session_id=${sessionId}`;
   let casResult;
   try {
@@ -48,32 +46,20 @@ export async function loader({ request }: Route.LoaderArgs) {
     });
   }
 
-  const { netId, firstName, lastName } = casResult;
   let finalUser;
-
-  if (session.linkUserId) {
-    // chained auth: link the Google user to this CAS identity
-    try {
-      finalUser = await linkCasToGoogleUser(session.linkUserId, netId);
-    } catch {
-      const params = new URLSearchParams({
-        error: "server_error",
-        state: session.state,
-      });
-      return new Response(null, {
-        status: 302,
-        headers: { Location: `${session.redirectUri}?${params}` },
-      });
-    }
-  } else {
-    // standalone CAS login
-    finalUser = await prisma.user.upsert({
-      where: { netId },
-      update: {
-        ...(firstName && { firstName }),
-        ...(lastName && { lastName }),
-      },
-      create: { netId, firstName, lastName },
+  try {
+    const result = await upsertUserFromCas(casResult, {
+      linkUserId: session.linkUserId ?? undefined,
+    });
+    finalUser = result.user;
+  } catch {
+    const params = new URLSearchParams({
+      error: "server_error",
+      state: session.state,
+    });
+    return new Response(null, {
+      status: 302,
+      headers: { Location: `${session.redirectUri}?${params}` },
     });
   }
 
