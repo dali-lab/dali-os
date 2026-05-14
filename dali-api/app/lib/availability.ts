@@ -63,8 +63,14 @@ export function computeFreeIntervals(input: ComputeInput): ComputeOutput {
     return { free: [], busy: [] };
   }
 
-  const whByDow = new Map<number, WorkingHoursDayInput>();
-  for (const d of workingHours) whByDow.set(d.dayOfWeek, d);
+  // Multiple segments per day-of-week are allowed (e.g. 07:00–09:00 Remote and
+  // 09:00–12:00 InPerson on the same Monday).
+  const whByDow = new Map<number, WorkingHoursDayInput[]>();
+  for (const d of workingHours) {
+    const list = whByDow.get(d.dayOfWeek);
+    if (list) list.push(d);
+    else whByDow.set(d.dayOfWeek, [d]);
+  }
 
   // (1) Project working hours.
   const workIntervals: Interval[] = [];
@@ -80,12 +86,15 @@ export function computeFreeIntervals(input: ComputeInput): ComputeOutput {
     const dayStartUtc = zonedDayStartUtc(y, m, d, timezone);
     // Day-of-week is computed from the local date, not the UTC instant.
     const dow = dowFromYmd(y, m, d);
-    const wh = whByDow.get(dow);
-    if (wh && wh.enabled && wh.startMinute < wh.endMinute) {
-      const wStart = new Date(dayStartUtc.getTime() + wh.startMinute * 60_000);
-      const wEnd = new Date(dayStartUtc.getTime() + wh.endMinute * 60_000);
-      const clipped = clipToWindow(wStart, wEnd, windowStart, windowEnd);
-      if (clipped) workIntervals.push(clipped);
+    const segments = whByDow.get(dow);
+    if (segments) {
+      for (const wh of segments) {
+        if (!wh.enabled || wh.startMinute >= wh.endMinute) continue;
+        const wStart = new Date(dayStartUtc.getTime() + wh.startMinute * 60_000);
+        const wEnd = new Date(dayStartUtc.getTime() + wh.endMinute * 60_000);
+        const clipped = clipToWindow(wStart, wEnd, windowStart, windowEnd);
+        if (clipped) workIntervals.push(clipped);
+      }
     }
     cursor = new Date(cursor.getTime() + 24 * 60 * 60_000);
   }
@@ -129,8 +138,12 @@ export function computeFreeIntervals(input: ComputeInput): ComputeOutput {
   }
   const mergedBusy = mergeIntervals(rawBusy);
 
+  // Merge adjacent/overlapping working-hours segments before subtraction so
+  // multiple segments on the same day collapse to a single union.
+  const mergedWork = mergeIntervals(workIntervals);
+
   // (4) Subtract busy from working hours.
-  const free = subtractIntervals(workIntervals, mergedBusy);
+  const free = subtractIntervals(mergedWork, mergedBusy);
   return { free, busy: mergedBusy };
 }
 

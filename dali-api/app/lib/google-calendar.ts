@@ -262,3 +262,111 @@ async function fetchBusyFromLegacyUserTokens(
   };
   return (data.calendars?.primary?.busy ?? []).map((b) => ({ start: b.start, end: b.end }));
 }
+
+// ─── events.insert / events.patch ──────────────────────────────────────────
+
+export type GoogleAttendee = {
+  email: string;
+  displayName?: string;
+};
+
+export type CreateGoogleEventInput = {
+  linkId: string;
+  summary: string;
+  description?: string;
+  startIso: string;
+  endIso: string;
+  // RFC 5545 RRULE; pass without the "RRULE:" prefix (e.g. "FREQ=WEEKLY;BYDAY=MO").
+  recurrenceRule?: string | null;
+  attendees: GoogleAttendee[];
+  // Sub-calendar id to write into. Defaults to "primary".
+  calendarId?: string;
+};
+
+export async function createGoogleCalendarEvent(
+  input: CreateGoogleEventInput,
+): Promise<{ eventId: string; htmlLink: string | null }> {
+  const token = await getValidAccessTokenForLink(input.linkId);
+  const calendarId = encodeURIComponent(input.calendarId ?? "primary");
+  const body: Record<string, unknown> = {
+    summary: input.summary,
+    start: { dateTime: input.startIso },
+    end: { dateTime: input.endIso },
+  };
+  if (input.description) body.description = input.description;
+  if (input.recurrenceRule) {
+    const rule = input.recurrenceRule.startsWith("RRULE:")
+      ? input.recurrenceRule
+      : `RRULE:${input.recurrenceRule}`;
+    body.recurrence = [rule];
+  }
+  if (input.attendees.length > 0) body.attendees = input.attendees;
+  // sendUpdates=all → Google sends Gmail invites to all attendees on our behalf.
+  const url = `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events?sendUpdates=all`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const detail = await extractGoogleErrorDetail(res);
+    throw new Error(`Google events.insert failed (${res.status}): ${detail}`);
+  }
+  const data = (await res.json()) as { id?: string; htmlLink?: string };
+  if (!data.id) throw new Error("Google events.insert returned no event id");
+  return { eventId: data.id, htmlLink: data.htmlLink ?? null };
+}
+
+type AttendeeResponse = "accepted" | "declined" | "tentative" | "needsAction";
+
+export async function updateGoogleAttendeeRsvp(opts: {
+  linkId: string;
+  calendarId?: string;
+  eventId: string;
+  attendeeEmail: string;
+  response: AttendeeResponse;
+}): Promise<void> {
+  const token = await getValidAccessTokenForLink(opts.linkId);
+  const calendarId = encodeURIComponent(opts.calendarId ?? "primary");
+  // Fetch the event so we can patch the attendees array (Google requires the
+  // full list on update, identified by email).
+  const getRes = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${encodeURIComponent(opts.eventId)}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (!getRes.ok) {
+    const detail = await extractGoogleErrorDetail(getRes);
+    throw new Error(`Google events.get failed (${getRes.status}): ${detail}`);
+  }
+  const event = (await getRes.json()) as {
+    attendees?: { email: string; responseStatus?: AttendeeResponse; displayName?: string }[];
+  };
+  const attendees = (event.attendees ?? []).map((a) =>
+    a.email.toLowerCase() === opts.attendeeEmail.toLowerCase()
+      ? { ...a, responseStatus: opts.response }
+      : a,
+  );
+  // Ensure the attendee exists in the list (caller may be a participant the
+  // organizer added without us having seen this email yet).
+  if (!attendees.some((a) => a.email.toLowerCase() === opts.attendeeEmail.toLowerCase())) {
+    attendees.push({ email: opts.attendeeEmail, responseStatus: opts.response });
+  }
+  const patchRes = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${encodeURIComponent(opts.eventId)}?sendUpdates=all`,
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ attendees }),
+    },
+  );
+  if (!patchRes.ok) {
+    const detail = await extractGoogleErrorDetail(patchRes);
+    throw new Error(`Google events.patch failed (${patchRes.status}): ${detail}`);
+  }
+}
