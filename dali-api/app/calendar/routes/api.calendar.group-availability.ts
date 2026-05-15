@@ -1,11 +1,13 @@
 import type { Route } from "./+types/api.calendar.group-availability";
 import { z } from "zod";
-import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
-import { computeFreeIntervals, type Interval, type WorkingHoursDayInput } from "~/lib/availability";
-import { fetchBusyEvents } from "~/lib/google-calendar";
+import {
+  computeUserFreeBusy,
+  intersectFreeIntervals,
+  type Interval,
+} from "~/lib/availability";
 import { getZonedYMD } from "~/lib/timezone";
 
 const Schema = z.object({
@@ -16,19 +18,6 @@ const Schema = z.object({
   timezone: z.string().min(1),
 });
 
-const DEFAULT_BUFFER_MIN = 15;
-const DEFAULT_WORK_START_MIN = 9 * 60;
-const DEFAULT_WORK_END_MIN = 17 * 60;
-
-function defaultWorkingHours(): WorkingHoursDayInput[] {
-  return Array.from({ length: 7 }).map((_, dow) => ({
-    dayOfWeek: dow,
-    enabled: dow >= 1 && dow <= 5,
-    startMinute: DEFAULT_WORK_START_MIN,
-    endMinute: DEFAULT_WORK_END_MIN,
-  }));
-}
-
 type DayBucket = {
   // Sun=0 .. Sat=6 in the requesting user's timezone.
   dayOfWeek: number;
@@ -37,30 +26,6 @@ type DayBucket = {
   matches: { startHour: number; durationHours: number }[];
   busy: { startHour: number; durationHours: number }[];
 };
-
-function intersectMany(sets: Interval[][]): Interval[] {
-  if (sets.length === 0) return [];
-  let acc = sets[0];
-  for (let i = 1; i < sets.length; i++) {
-    acc = intersectTwo(acc, sets[i]);
-    if (acc.length === 0) return [];
-  }
-  return acc;
-}
-
-function intersectTwo(a: Interval[], b: Interval[]): Interval[] {
-  const out: Interval[] = [];
-  let i = 0;
-  let j = 0;
-  while (i < a.length && j < b.length) {
-    const start = Math.max(a[i].start.getTime(), b[j].start.getTime());
-    const end = Math.min(a[i].end.getTime(), b[j].end.getTime());
-    if (start < end) out.push({ start: new Date(start), end: new Date(end) });
-    if (a[i].end.getTime() < b[j].end.getTime()) i++;
-    else j++;
-  }
-  return out;
-}
 
 function unionMany(sets: Interval[][]): Interval[] {
   const all: Interval[] = sets.flat().sort((x, y) => x.start.getTime() - y.start.getTime());
@@ -173,53 +138,12 @@ export async function action({ request }: Route.ActionArgs) {
 
   // Per-user: load availability inputs and compute busy/free.
   const perUser = await Promise.all(
-    userIds.map(async (uid) => {
-      const [settings, whRows, blocks, busyRaw] = await Promise.all([
-        prisma.userAvailabilitySettings.findUnique({ where: { userId: uid } }),
-        prisma.workingHoursDay.findMany({ where: { userId: uid } }),
-        prisma.manualBlock.findMany({ where: { userId: uid }, take: 500 }),
-        fetchBusyEvents(uid, windowStart, windowEnd).catch(() => [] as { start: string; end: string }[]),
-      ]);
-
-      // Multiple segments per dow are allowed — expand each persisted row as
-      // its own working-hours entry. Days with no persisted rows fall back to
-      // the Mon–Fri 9–5 default.
-      const persistedDows = new Set(whRows.map((r) => r.dayOfWeek));
-      const workingHours: WorkingHoursDayInput[] = [
-        ...whRows.map((r) => ({
-          dayOfWeek: r.dayOfWeek,
-          enabled: r.enabled,
-          startMinute: r.startMinute,
-          endMinute: r.endMinute,
-        })),
-        ...defaultWorkingHours().filter((d) => !persistedDows.has(d.dayOfWeek)),
-      ];
-
-      const externalBusy: Interval[] = busyRaw.map((b) => ({
-        start: new Date(b.start),
-        end: new Date(b.end),
-      }));
-
-      const { free, busy } = computeFreeIntervals({
-        windowStart,
-        windowEnd,
-        workingHours,
-        manualBlocks: blocks.map((b) => ({
-          startTime: b.startTime,
-          endTime: b.endTime,
-          recurrenceRule: b.recurrenceRule,
-        })),
-        externalBusy,
-        bufferMin: settings?.defaultEventBufferMin ?? DEFAULT_BUFFER_MIN,
-        timezone: settings?.timezone ?? body.timezone,
-      });
-      return { userId: uid, free, busy };
-    }),
+    userIds.map((uid) => computeUserFreeBusy(uid, windowStart, windowEnd, body.timezone)),
   );
 
   // Intersect all users' free intervals → match windows. Keep only those ≥ duration.
   const minDurationMs = body.durationMinutes * 60_000;
-  const matches = intersectMany(perUser.map((u) => u.free)).filter(
+  const matches = intersectFreeIntervals(perUser.map((u) => u.free)).filter(
     (iv) => iv.end.getTime() - iv.start.getTime() >= minDurationMs,
   );
 
