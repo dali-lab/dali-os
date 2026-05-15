@@ -48,7 +48,7 @@ export const SCHEDULE_MEETING_TOOL = {
         type: "string",
         minLength: 1,
         description:
-          "Optional UserCalendarLink ID. When provided (and enabled), the meeting is pushed to Google Calendar and Gmail invites are sent.",
+          "Optional UserCalendarLink ID. When provided (and enabled), the meeting is pushed to that external calendar and Gmail invites are sent. Use `list_my_calendar_links` to discover available IDs.",
       },
     },
     required: ["title", "durationMinutes", "participantUserIds"],

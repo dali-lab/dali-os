@@ -36,6 +36,10 @@ import {
   runScheduleMeeting,
   ScheduleMeetingError,
 } from "~/mcp/tools/schedule-meeting";
+import {
+  LIST_MY_CALENDAR_LINKS_TOOL,
+  runListMyCalendarLinks,
+} from "~/mcp/tools/list-my-calendar-links";
 
 const PROTOCOL_VERSION = "2024-11-05";
 const SERVER_INFO = { name: "dali-os", version: "1.0.0" };
@@ -51,6 +55,7 @@ const TOOLS = [
   SEARCH_DIRECTORY_TOOL,
   GET_MEMBER_PROFILE_TOOL,
   SCHEDULE_MEETING_TOOL,
+  LIST_MY_CALENDAR_LINKS_TOOL,
 ] as const;
 
 type JsonRpcRequest = {
@@ -186,6 +191,9 @@ export async function action({ request }: Route.ActionArgs) {
               auth.user,
               args as Parameters<typeof runScheduleMeeting>[1],
             );
+            break;
+          case "list_my_calendar_links":
+            payload = await runListMyCalendarLinks(auth.user.id);
             break;
           default:
             return rpcError(body.id, -32601, "Tool not implemented");
