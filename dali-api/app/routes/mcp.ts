@@ -31,6 +31,11 @@ import {
   runGetMemberProfile,
   MemberNotFoundError,
 } from "~/mcp/tools/get-member-profile";
+import {
+  SCHEDULE_MEETING_TOOL,
+  runScheduleMeeting,
+  ScheduleMeetingError,
+} from "~/mcp/tools/schedule-meeting";
 
 const PROTOCOL_VERSION = "2024-11-05";
 const SERVER_INFO = { name: "dali-os", version: "1.0.0" };
@@ -45,6 +50,7 @@ const TOOLS = [
   FIND_MUTUAL_FREEBUSY_TOOL,
   SEARCH_DIRECTORY_TOOL,
   GET_MEMBER_PROFILE_TOOL,
+  SCHEDULE_MEETING_TOOL,
 ] as const;
 
 type JsonRpcRequest = {
@@ -175,6 +181,12 @@ export async function action({ request }: Route.ActionArgs) {
               args as Parameters<typeof runGetMemberProfile>[1],
             );
             break;
+          case "schedule_meeting":
+            payload = await runScheduleMeeting(
+              auth.user,
+              args as Parameters<typeof runScheduleMeeting>[1],
+            );
+            break;
           default:
             return rpcError(body.id, -32601, "Tool not implemented");
         }
@@ -198,6 +210,9 @@ export async function action({ request }: Route.ActionArgs) {
       } catch (err) {
         if (err instanceof MemberNotFoundError) {
           return rpcError(body.id, -32004, err.message);
+        }
+        if (err instanceof ScheduleMeetingError) {
+          return rpcError(body.id, -32602, err.message);
         }
         const message = err instanceof Error ? err.message : "Tool execution failed";
         return rpcError(body.id, -32000, message);

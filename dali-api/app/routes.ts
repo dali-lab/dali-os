@@ -72,6 +72,16 @@ export default [
 
   // MCP foundation (no layout)
   route(".well-known/oauth-authorization-server", "routes/well-known.oauth-authorization-server.ts"),
+  route(
+    ".well-known/oauth-protected-resource",
+    "routes/well-known.oauth-protected-resource.ts",
+    { id: "well-known.oauth-protected-resource" },
+  ),
+  route(
+    ".well-known/oauth-protected-resource/mcp",
+    "routes/well-known.oauth-protected-resource.ts",
+    { id: "well-known.oauth-protected-resource.mcp" },
+  ),
   route("mcp", "routes/mcp.ts"),
   route("help/mcp", "routes/help.mcp.tsx"),
   route("settings/connected-apps", "routes/settings.connected-apps.tsx"),
