@@ -22,7 +22,7 @@ export default function ApplicantLayout() {
   const initial = userInitials(user);
 
   return (
-    <div className="min-h-screen bg-section-bg">
+    <div className="min-h-screen bg-page">
       {/* Navbar */}
       <nav className="fixed top-0 inset-x-0 z-50 h-16 bg-card border-b border-border flex items-center px-4 sm:px-6">
         <Link to="/portal" className="flex items-center gap-2 min-w-0 focus:outline-none" title="DALI">
@@ -63,7 +63,7 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
   // (e.g. requireAuth). Auth state is unknown here, so render a minimal
   // shell without the user-identity navbar to avoid misrepresenting it.
   return (
-    <div className="min-h-screen bg-section-bg">
+    <div className="min-h-screen bg-page">
       <nav className="fixed top-0 inset-x-0 z-50 h-16 bg-card border-b border-border flex items-center px-4 sm:px-6">
         <Link to="/portal" className="flex items-center gap-2 min-w-0">
           <span className="font-heading text-lg font-bold text-dark-blue">DALI</span>
