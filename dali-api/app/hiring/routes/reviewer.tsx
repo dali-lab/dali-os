@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Link, useLoaderData } from 'react-router'
+import { Link, useLoaderData, useRevalidator } from 'react-router'
 import {
   ChevronRight,
   ChevronDown,
@@ -15,6 +15,7 @@ import { getActiveCycle, cycleStatusToStage, inferUnderReviewStage } from '~/hir
 import { getCycleConfidentialityState } from '~/hiring/lib/confidentiality'
 import { ConfidentialityGate } from '~/hiring/components/ConfidentialityGate'
 import { INITIAL_COLUMNS, FINAL_COLUMNS } from '~/hiring/lib/delibs'
+import { ApplicantContextModal } from '~/hiring/components/delibs/ApplicantContextModal'
 import CalendarGrid from '~/hiring/components/CalendarGrid'
 import { getZonedYMD } from '~/lib/timezone'
 
@@ -260,6 +261,24 @@ export default function ReviewerDashboard() {
   const submittedReviews = reviews.filter(r => getReviewStatus(r) === 'submitted')
   const inProgressReviews = reviews.filter(r => getReviewStatus(r) === 'inProgress')
   const pendingReviews = reviews.filter(r => getReviewStatus(r) === 'notStarted')
+
+  // Poll the loader every 5s while any delibs session is visible, so column
+  // moves made by the domain lead surface in this mirror view without a manual
+  // refresh.
+  const revalidator = useRevalidator()
+  const hasActiveDelibs = (delibsSessions?.length ?? 0) > 0
+  useEffect(() => {
+    if (!hasActiveDelibs) return
+    const t = setInterval(() => {
+      if (revalidator.state === 'idle') revalidator.revalidate()
+    }, 5000)
+    return () => clearInterval(t)
+  }, [hasActiveDelibs, revalidator])
+
+  // Selected delibs card → opens the same applicant-context modal the domain
+  // lead uses. /full-context permits any reviewer with cycle access, so this
+  // gives non-leads visibility into all reviews on apps in their domain.
+  const [selectedDelibsDaId, setSelectedDelibsDaId] = useState<string | null>(null)
 
   // Lookup table of every domainApplication referenced in an active delibs
   // session, so we can render per-column cards from columnOrder.
@@ -654,11 +673,19 @@ export default function ReviewerDashboard() {
                 key={session.id}
                 session={session}
                 appMap={delibsAppMap}
+                onSelect={(daId) => setSelectedDelibsDaId(daId)}
               />
             ))}
           </div>
         )}
       </Section>
+
+      {selectedDelibsDaId && (
+        <ApplicantContextModal
+          domainApplicationId={selectedDelibsDaId}
+          onClose={() => setSelectedDelibsDaId(null)}
+        />
+      )}
     </div>
   )
 }
@@ -738,9 +765,11 @@ const FINAL_COLUMN_STYLES: Record<string, { label: string; classes: string; head
 function DelibsSessionView({
   session,
   appMap,
+  onSelect,
 }: {
   session: any
   appMap: Map<string, any>
+  onSelect: (domainApplicationId: string) => void
 }) {
   const isInitial = session.type === 'Initial'
   const columnOrder = (session.columnOrder ?? {}) as Record<string, string[]>
@@ -774,15 +803,17 @@ function DelibsSessionView({
                   const user = da?.application?.user
                   const label = user ? `${user.firstName} ${user.lastName}` : 'Applicant'
                   return (
-                    <div
+                    <button
                       key={id}
-                      className="bg-white p-3 rounded-md border border-gray-200 shadow-sm flex items-center gap-2"
+                      type="button"
+                      onClick={() => onSelect(id)}
+                      className="w-full text-left bg-white p-3 rounded-md border border-gray-200 shadow-sm flex items-center gap-2 hover:shadow-md hover:border-blue-300 transition cursor-pointer"
                     >
                       {!isInitial && col === 'Waitlist' && (
                         <span className="text-gray-400 font-bold text-xs w-4">{i + 1}.</span>
                       )}
                       <span className="font-medium text-gray-900 text-sm">{label}</span>
-                    </div>
+                    </button>
                   )
                 })}
                 {ids.length === 0 && (
