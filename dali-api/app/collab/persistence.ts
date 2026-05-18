@@ -14,6 +14,10 @@ const SNAPSHOT_MIN_INTERVAL_MS = 30_000;
  *   review:{reviewId}:rejectionRationale
  *   interview:{interviewId}:notes
  *   interview:{interviewId}:recommendation
+ *   project:{projectId}:overview
+ *   sprint:{sprintId}:goal
+ *   epic:{epicId}:description
+ *   task:{taskId}:description
  */
 function parseDocName(name: string) {
   const parts = name.split(":");
@@ -37,6 +41,71 @@ async function seedContent(name: string): Promise<string | null> {
     if (!review) return null;
     if (field === "feedback") return review.feedback;
     if (field === "rejectionRationale") return review.rejectionRationale;
+  }
+
+  if (entity === "education-offering" && field === "description") {
+    const offering = await prisma.educationOffering.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    return offering ? "" : null;
+  }
+  if (entity === "education-session" && field === "materials") {
+    const session = await prisma.educationSession.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    return session ? "" : null;
+  }
+  if (entity === "education-assignment" && field === "instructions") {
+    const assignment = await prisma.educationAssignment.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    return assignment ? "" : null;
+  }
+  if (entity === "education-submission" && (field === "content" || field === "feedback")) {
+    const submission = await prisma.educationSubmission.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    return submission ? "" : null;
+  }
+  if (entity === "education-application" && field === "review") {
+    const application = await prisma.educationApplication.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    return application ? "" : null;
+  }
+
+  if (entity === "project" && field === "overview") {
+    const project = await prisma.project.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    return project ? "" : null;
+  }
+  if (entity === "sprint" && field === "goal") {
+    const sprint = await prisma.sprint.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    return sprint ? "" : null;
+  }
+  if (entity === "epic" && field === "description") {
+    const epic = await prisma.epic.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    return epic ? "" : null;
+  }
+  if (entity === "task" && field === "description") {
+    const task = await prisma.task.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    return task ? "" : null;
   }
 
   if (entity === "interview") {

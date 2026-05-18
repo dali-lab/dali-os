@@ -176,26 +176,81 @@ async function seedTerms() {
   console.log(`✓ Seeded ${count} terms.`);
 }
 
+// Real Project Brief body — seeded into a CollabDocument so that new project
+// Overview docs are cloned from a non-empty starting point. Other templates
+// still seed empty bodies (Page Tree UX track will populate them).
+const PROJECT_BRIEF_LINES: string[] = [
+  "Goals",
+  "What is this project trying to accomplish? What does success look like at the end of the term?",
+  "",
+  "Scope",
+  "Concrete deliverables for this term. What is in scope and what is explicitly not?",
+  "",
+  "Team",
+  "Members on the project this term, including their domain and level. Who is the PM? Who is mentoring whom?",
+  "",
+  "Partners",
+  "Partner organization(s) and key contacts. What are their goals and constraints?",
+  "",
+  "Stakeholders",
+  "Anyone outside the project team who needs to be kept in the loop.",
+  "",
+  "Links & Resources",
+  "Slack channel, Figma files, GitHub repo, Drive folder, recorded meetings, etc.",
+];
+
+async function buildSeededCollabDoc(name: string, lines: string[]): Promise<void> {
+  const existing = await prisma.collabDocument.findUnique({ where: { name } });
+  if (existing) return;
+
+  // Build a minimal Y.Doc with one <paragraph> per line. Mirrors the seeding
+  // strategy in app/collab/persistence.ts so first-open of the doc renders
+  // the same content directly via the Y.Doc XmlFragment.
+  const Y = await import("yjs");
+  const doc = new Y.Doc();
+  const fragment = doc.getXmlFragment("default");
+  for (const line of lines) {
+    const p = new Y.XmlElement("paragraph");
+    if (line.length > 0) {
+      const t = new Y.XmlText();
+      t.insert(0, line);
+      p.insert(0, [t]);
+    }
+    fragment.push([p]);
+  }
+  const state = Y.encodeStateAsUpdate(doc) as Uint8Array & { buffer: ArrayBuffer };
+  await prisma.collabDocument.create({
+    data: { name, state: Buffer.from(state) },
+  });
+}
+
 async function seedPageTemplates() {
-  // Stub collab doc id per template. The Page Tree UX track replaces these
-  // with real CollabDocument rows whose bodies encode the template content.
   const TEMPLATES = [
-    { name: "Empty", iconEmoji: "📄", isDefault: true },
-    { name: "Project Brief", iconEmoji: "📋", isDefault: false },
-    { name: "Sprint Retro", iconEmoji: "🔁", isDefault: false },
-    { name: "Sprint Goals", iconEmoji: "🎯", isDefault: false },
-    { name: "Meeting Notes", iconEmoji: "📝", isDefault: false },
-    { name: "Decision Log", iconEmoji: "✅", isDefault: false },
-    { name: "Onboarding Doc", iconEmoji: "🚀", isDefault: false },
+    { name: "Empty", iconEmoji: "📄", isDefault: true, body: [] as string[] },
+    { name: "Project Brief", iconEmoji: "📋", isDefault: false, body: PROJECT_BRIEF_LINES },
+    { name: "Sprint Retro", iconEmoji: "🔁", isDefault: false, body: [] as string[] },
+    { name: "Sprint Goals", iconEmoji: "🎯", isDefault: false, body: [] as string[] },
+    { name: "Meeting Notes", iconEmoji: "📝", isDefault: false, body: [] as string[] },
+    { name: "Decision Log", iconEmoji: "✅", isDefault: false, body: [] as string[] },
+    { name: "Onboarding Doc", iconEmoji: "🚀", isDefault: false, body: [] as string[] },
   ] as const;
 
   for (const t of TEMPLATES) {
+    const contentDocId = `page-template:${t.name.toLowerCase().replace(/\s+/g, "-")}`;
+
+    // Seed the underlying CollabDocument body when we have non-empty lines.
+    // (Empty templates leave the doc absent — Page Tree UX track will fill in
+    // the rest; cloners must handle a null source.)
+    if (t.body.length > 0) {
+      await buildSeededCollabDoc(contentDocId, [...t.body]);
+    }
+
     const existing = await prisma.pageTemplate.findFirst({ where: { name: t.name } });
     if (existing) continue;
     await prisma.pageTemplate.create({
       data: {
         name: t.name,
-        contentDocId: `page-template:${t.name.toLowerCase().replace(/\s+/g, "-")}`,
+        contentDocId,
         iconEmoji: t.iconEmoji,
         isDefault: t.isDefault,
         workspaceTypes: [],
