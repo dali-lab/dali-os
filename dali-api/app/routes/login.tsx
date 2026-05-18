@@ -113,6 +113,11 @@ export default function Login() {
       {/* Left decorative panel */}
       <div className="hidden md:flex w-1/2 min-h-screen bg-brand-tint flex-col justify-center px-12 lg:px-16 relative overflow-hidden">
         <div className="relative z-10">
+          <img
+            src="/logo-blue.svg"
+            alt="DALI Lab"
+            className="h-16 lg:h-20 w-auto mb-10"
+          />
           <h2 className="font-heading text-4xl lg:text-5xl font-bold text-dark-blue leading-tight mb-6">
             Welcome to
             <br />
@@ -135,6 +140,12 @@ export default function Login() {
       {/* Right form panel */}
       <div className="w-full md:w-1/2 min-h-screen flex items-center justify-center px-6 md:px-12 lg:px-16 bg-page">
         <div className="w-full max-w-sm">
+          {/* Mobile-only logo (left panel is hidden on small screens) */}
+          <img
+            src="/logo-blue.svg"
+            alt="DALI Lab"
+            className="md:hidden h-12 w-auto mb-8"
+          />
           <h1 className="font-heading text-3xl font-bold text-dark-blue mb-2">
             Sign in
           </h1>

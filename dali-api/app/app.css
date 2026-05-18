@@ -1,21 +1,46 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Mulish:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Dosis:wght@600;700&family=Open+Sans:wght@300;400;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
 
 @import "tailwindcss";
 
 @theme {
-  /* DALI brand colors */
-  --color-accent-coral: hsl(354 70% 61%);
-  --color-accent-coral-light: hsl(354 70% 75%);
-  --color-accent-teal: hsl(177 45% 51%);
-  --color-accent-yellow: hsl(51 100% 88%);
-  --color-accent-pink: hsl(344 64% 79%);
-  --color-accent-green: hsl(97 49% 67%);
-  --color-dark-blue: hsl(203 38% 23%);
-  --color-nav-primary: hsl(203 38% 23%);
-  --color-dali-teal: hsl(177 45% 51%);
-  --color-dali-teal-dark: hsl(177 45% 38%);
-  --color-dali-green: hsl(80 45% 70%);
-  --color-text-secondary: hsl(0 0% 40%);
+  /* ── DALI brand colors (exact hex, per official style guide §3.1) ── */
+  --color-accent-coral:       #FF8B81;  /* "Sunrise" — primary CTA */
+  --color-accent-coral-light: #FFA991;  /* hover / soft coral */
+  --color-accent-teal:        #00ADAB;  /* primary accent */
+  --color-accent-teal-light:  #80D5CD;  /* soft / hover teal */
+  --color-accent-yellow:      #FFD461;  /* warm accent */
+  --color-accent-yellow-light:#FFE7A5;  /* soft yellow */
+  --color-dark-blue:          #1E5779;  /* navy — headlines, dark logo */
+  --color-navy:               #1E5779;  /* alias */
+  --color-navy-deep:          #082330;  /* shadow ink / deep navy */
+  --color-nav-primary:        #1E5779;
+  --color-dali-teal:          #00ADAB;  /* alias for back-compat */
+  --color-dali-teal-dark:     #00807F;
+  --color-dali-green:         #A2D483;  /* extended illustration green */
+  --color-accent-pink:        #E68FBE;  /* extended illustration */
+  --color-accent-green:       #A2D483;  /* extended illustration */
+  --color-text-secondary:     hsl(0 0% 40%);
+
+  /* ── Brand neutrals (guide §3.2) ── */
+  --color-brand-white:    #FFFFFF;
+  --color-brand-off:      #F1F3F4;
+  --color-brand-gray:     #C6CACC;
+  --color-brand-charcoal: #404040;
+
+  /* ── Elevation shadows (guide §3.2, paired with neutrals above) ── */
+  --shadow-1: 0 2px 4px  rgba(8, 35, 48, 0.25);     /* on #FFFFFF */
+  --shadow-2: 0 4px 6px  rgba(8, 35, 48, 0.20);     /* on #F1F3F4 */
+  --shadow-3: 0 4px 8px  rgba(198, 202, 204, 0.80); /* on #C6CACC */
+  --shadow-4: 0 4px 10px rgba(94, 99, 102, 0.50);   /* on #404040 */
+
+  /* ── Brand gradients (guide §3.3) ── */
+  --grad-teal:        linear-gradient(180deg, #00ADAB 0%, #80D5CD 100%);
+  --grad-yellow:      linear-gradient(180deg, #FFD461 0%, #FFE7A5 100%);
+  --grad-coral:       linear-gradient(180deg, #FF8B81 0%, #FFA991 100%);
+  --grad-teal-fade:   linear-gradient(180deg, #80D5CD 0%, #FFFFFF 100%);
+  --grad-coral-fade:  linear-gradient(180deg, #FFA991 0%, #FFFFFF 100%);
+  --grad-sunset:      linear-gradient(180deg, #FFA991 0%, #80D5CD 100%);
+  --grad-navy:        linear-gradient(180deg, #1E5779 0%, #082330 100%);
 
   /* ── Light-mode surface conventions ──────────────────────────────────
    * Standardize on these instead of raw palette classes so light mode
@@ -73,8 +98,8 @@
   --color-sidebar-ring: hsl(217.2 91.2% 59.8%);
 
   --radius: 8px;
-  --font-sans: "Mulish", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-heading: "Plus Jakarta Sans", sans-serif;
+  --font-sans: "Open Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-heading: "Dosis", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", "Fira Code", "Monaco", monospace;
 }
 
@@ -99,12 +124,19 @@
     --color-destructive-foreground: hsl(0 0% 98%);
     --color-border: hsl(215 25% 22%);
     --color-input: hsl(215 28% 18%);
-    --color-ring: hsl(177 45% 55%);
-    --color-accent-coral: hsl(354 70% 65%);
-    --color-accent-coral-light: hsl(354 60% 75%);
-    --color-accent-teal: hsl(177 50% 58%);
-    --color-dali-teal: hsl(177 50% 58%);
+    --color-ring: #00ADAB;
+    /* Brand primaries stay vivid in dark mode (guide §3.5) */
+    --color-accent-coral:        #FF8B81;
+    --color-accent-coral-light:  #FFA991;
+    --color-accent-teal:         #00ADAB;
+    --color-accent-teal-light:   #80D5CD;
+    --color-accent-yellow:       #FFD461;
+    --color-accent-yellow-light: #FFE7A5;
+    --color-dali-teal:           #00ADAB;
+    --color-dali-teal-dark:      #00807F;
+    /* Navy effectively inverts to white text in dark mode (guide §3.5) */
     --color-dark-blue: hsl(210 20% 88%);
+    --color-navy:      hsl(210 20% 88%);
     --color-nav-primary: hsl(210 20% 95%);
     /* page wash = background in dark — no mid-blue tint; brand-tint
        panels become an elevated dark surface (matches the old
@@ -117,12 +149,12 @@
     --color-text-secondary: hsl(210 15% 62%);
     --color-sidebar: hsl(215 35% 8%);
     --color-sidebar-foreground: hsl(210 15% 85%);
-    --color-sidebar-primary: hsl(177 50% 58%);
+    --color-sidebar-primary: #00ADAB;
     --color-sidebar-primary-foreground: hsl(215 35% 8%);
     --color-sidebar-accent: hsl(215 28% 16%);
     --color-sidebar-accent-foreground: hsl(210 15% 85%);
     --color-sidebar-border: hsl(215 25% 20%);
-    --color-sidebar-ring: hsl(177 50% 58%);
+    --color-sidebar-ring: #00ADAB;
   }
 
   /* Remap light status colors to dark-friendly equivalents */
@@ -290,16 +322,41 @@ body {
 h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-heading);
   font-weight: 700;
-  letter-spacing: -0.025em;
+  letter-spacing: -0.005em;
 }
 
 .font-heading {
   font-family: var(--font-heading);
 }
 
+/* Open Sans small-caps section title (guide §2) — sits above an H2 */
+.section-title {
+  font-family: var(--font-sans);
+  font-variant-caps: all-small-caps;
+  letter-spacing: 0.08em;
+  font-weight: 400;
+}
+
 .text-balance {
   text-wrap: balance;
 }
+
+/* Brand elevation utilities (paired with neutral surfaces, guide §3.2/§6) */
+.shadow-brand-1 { box-shadow: var(--shadow-1); }
+.shadow-brand-2 { box-shadow: var(--shadow-2); }
+.shadow-brand-3 { box-shadow: var(--shadow-3); }
+.shadow-brand-4 { box-shadow: var(--shadow-4); }
+.hover\:shadow-brand-2:hover { box-shadow: var(--shadow-2); }
+.hover\:shadow-brand-3:hover { box-shadow: var(--shadow-3); }
+
+/* Brand gradient backgrounds (guide §3.3) */
+.bg-grad-teal       { background: var(--grad-teal); }
+.bg-grad-yellow     { background: var(--grad-yellow); }
+.bg-grad-coral      { background: var(--grad-coral); }
+.bg-grad-teal-fade  { background: var(--grad-teal-fade); }
+.bg-grad-coral-fade { background: var(--grad-coral-fade); }
+.bg-grad-sunset     { background: var(--grad-sunset); }
+.bg-grad-navy       { background: var(--grad-navy); }
 
 .dali-gradient {
   background: linear-gradient(135deg, var(--color-accent-teal), var(--color-dark-blue));
