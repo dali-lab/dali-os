@@ -2,6 +2,7 @@ import React, { useCallback, useState, useRef } from 'react'
 import { GripVertical, Plus, Pencil, Trash2, Save } from 'lucide-react'
 import type { Question } from '~/types'
 import { RichTextEditor } from '~/components/RichTextEditor'
+import { referenceSourceChoices } from '~/forms/lib/reference-sources.shared'
 
 const ACCEPT_PRESETS = [
   { label: 'PDF', value: 'application/pdf' },
@@ -45,6 +46,7 @@ export interface BuildQuestionInput {
   isGeneralForm?: boolean
   maxWordsEnabled?: boolean
   maxWordsValue?: number | string
+  referenceSource?: string
 }
 
 export function buildQuestion(input: BuildQuestionInput): Question {
@@ -60,6 +62,7 @@ export function buildQuestion(input: BuildQuestionInput): Question {
     isGeneralForm,
     maxWordsEnabled,
     maxWordsValue,
+    referenceSource,
   } = input
 
   let maxWords: number | undefined
@@ -86,6 +89,8 @@ export function buildQuestion(input: BuildQuestionInput): Question {
       accept: type === 'file' ? accept || undefined : undefined,
       afterDomains: isGeneralForm && afterDomains ? true : undefined,
       maxWords,
+      referenceSource:
+        type === 'reference' ? referenceSource || undefined : undefined,
     },
   }
 }
@@ -197,6 +202,7 @@ export function FormBuilderTab({
       isGeneralForm,
       maxWordsEnabled,
       maxWordsValue,
+      referenceSource: editForm.data.referenceSource,
     })
     if (isAdding) {
       setQuestions([...questions, updatedQuestion])
@@ -274,6 +280,7 @@ export function FormBuilderTab({
               <option value="drive_url">Google Drive URL</option>
               <option value="file">File Upload</option>
               <option value="skills_rating">Skills Rating</option>
+              <option value="reference">Reference (from database)</option>
             </select>
           </div>
 
@@ -387,6 +394,38 @@ export function FormBuilderTab({
                 placeholder="JavaScript&#10;Python&#10;React.js&#10;Figma"
               />
               <p className="text-xs text-gray-500 mt-1">Applicants will rate each skill from 0-5.</p>
+            </div>
+          )}
+
+          {editForm.type === 'reference' && (
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-foreground/80 mb-1">
+                Data source
+              </label>
+              <select
+                value={editForm.data?.referenceSource || ''}
+                onChange={(e) =>
+                  setEditForm({
+                    ...editForm,
+                    data: {
+                      ...editForm.data!,
+                      referenceSource: e.target.value,
+                    },
+                  })
+                }
+                className="block w-full rounded-md border border-gray-300 bg-card text-foreground shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
+              >
+                <option value="">Select a source…</option>
+                {referenceSourceChoices().map((s) => (
+                  <option key={s.key} value={s.key}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-muted-foreground mt-1">
+                Choices are pulled live when the form is filled — e.g. projects
+                open for staffing this term.
+              </p>
             </div>
           )}
 

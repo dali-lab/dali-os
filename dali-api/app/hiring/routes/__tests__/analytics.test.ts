@@ -30,6 +30,9 @@ beforeEach(() => {
     isHiringLead: true,
     isAdmin: false,
     isDomainLead: false,
+    isInstructor: false,
+    canViewForms: true,
+    canViewStaffing: true,
   });
 
   mockPrisma.applicationCycle = {

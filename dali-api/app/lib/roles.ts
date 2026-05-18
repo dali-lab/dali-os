@@ -17,6 +17,11 @@ export interface UserRoles {
   isHiringLead: boolean;
   isAdmin: boolean;
   isDomainLead: boolean;
+  isInstructor: boolean;
+  /** Forms & Groups: Core, Admin, or Instructor. */
+  canViewForms: boolean;
+  /** Staffing, Intent to Work, Bids, Applications: Core or Admin. */
+  canViewStaffing: boolean;
 }
 
 /**
@@ -28,7 +33,7 @@ export async function getUserRoles(userId: string): Promise<UserRoles> {
     .split(",")
     .filter(Boolean);
 
-  const [member, admin, core, domainLead] = await Promise.all([
+  const [member, admin, core, domainLead, instructor] = await Promise.all([
     prisma.dALIMember.findUnique({ where: { userId }, select: { id: true } }),
     prisma.adminMembership.findUnique({ where: { userId }, select: { id: true } }),
     // Any CoreAssignment is sufficient for "hiring lead-equivalent" access.
@@ -40,10 +45,14 @@ export async function getUserRoles(userId: string): Promise<UserRoles> {
     // DomainLeadAssignment.termId is required post-Phase-2; any row signals
     // domain-lead authority for that user.
     prisma.domainLeadAssignment.findFirst({ where: { userId }, select: { id: true } }),
+    // Any InstructorAssignment (any term) signals instructor authority —
+    // mirrors the domain-lead "any row" convention.
+    prisma.instructorAssignment.findFirst({ where: { userId }, select: { id: true } }),
   ]);
 
   const isAdminVal = admin !== null || envIds.includes(userId);
   const isCoreVal = core !== null;
+  const isInstructorVal = instructor !== null;
 
   return {
     isLabMember: member !== null,
@@ -53,6 +62,9 @@ export async function getUserRoles(userId: string): Promise<UserRoles> {
     isHiringLead: isAdminVal || isCoreVal,
     isAdmin: isAdminVal,
     isDomainLead: domainLead !== null,
+    isInstructor: isInstructorVal,
+    canViewForms: isAdminVal || isCoreVal || isInstructorVal,
+    canViewStaffing: isAdminVal || isCoreVal,
   };
 }
 
@@ -82,6 +94,33 @@ export async function isAdmin(userId: string): Promise<boolean> {
     select: { id: true },
   });
   return row !== null;
+}
+
+/** Instructor: has at least one InstructorAssignment (any term). */
+export async function isInstructor(userId: string): Promise<boolean> {
+  const row = await prisma.instructorAssignment.findFirst({
+    where: { userId },
+    select: { id: true },
+  });
+  return row !== null;
+}
+
+/**
+ * Forms & Groups gate: Core, Admin, or Instructor. (`isHiringLead` already
+ * covers Core + Admin; Instructors are added on top.)
+ */
+export async function canViewForms(userId: string): Promise<boolean> {
+  if (await isHiringLead(userId)) return true;
+  return isInstructor(userId);
+}
+
+/**
+ * Staffing / Intent to Work / Bids / Applications gate: Core or Admin.
+ * Same membership set as `isHiringLead` today — named separately so the
+ * staffing access policy can diverge from hiring-lead semantics later.
+ */
+export async function canViewStaffing(userId: string): Promise<boolean> {
+  return isHiringLead(userId);
 }
 
 /** DomainLead: has at least one DomainLeadAssignment. */

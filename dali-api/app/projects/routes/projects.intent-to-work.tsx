@@ -2,48 +2,99 @@ import { useMemo, useState } from "react";
 import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/projects.intent-to-work";
 import { requireAuth } from "~/lib/auth";
-import { canManageStaffing, currentTerm } from "~/lib/roles";
+import { canManageStaffing, canViewStaffing, currentTerm } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { ensureStaffingCycle } from "../lib/staffing-cycle";
+import {
+  getSlotBinding,
+  listSelectableForms,
+  setSlotBinding,
+} from "../lib/form-slots";
 import { SubmissionFilters } from "../components/SubmissionFilters";
+import { SlotFormPicker } from "../components/SlotFormPicker";
+import { TermFilter } from "~/components/TermFilter";
+import { resolveTermFilter } from "~/lib/terms";
+
+const SLOT = "intent-to-work" as const;
 
 export const meta: Route.MetaFunction = () => [
   { title: "Intent to Work · DALI OS" },
 ];
 
 // Read-only database of received Intent-to-Work submissions for the current
-// cycle. Staffing leads only — members submit via the Intent to Work form
+// cycle. Core/Admin only — members submit via the Intent to Work form
 // (POST /api/projects/intent-to-work).
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
   if (auth.user.type === "applicant") return redirect("/portal");
-  if (!(await canManageStaffing(auth.user.sub))) return redirect("/");
+  if (!(await canViewStaffing(auth.user.sub))) return redirect("/");
 
-  const term = await currentTerm();
-  if (!term) return { gate: "no-cycle" as const };
-  const cycle = await ensureStaffingCycle(term.id, term.code);
+  const {
+    terms: termOptions,
+    selected: selectedTerm,
+    termId: filterTermId,
+    isAll,
+  } = await resolveTermFilter(request);
 
-  const terms = await prisma.term.findMany({
-    where: { sortKey: { gte: term.sortKey } },
-    orderBy: { sortKey: "asc" },
-    take: 4,
-    select: { id: true, code: true },
-  });
+  const fallbackTerm = await currentTerm();
+  if (!fallbackTerm && termOptions.length === 0)
+    return { gate: "no-cycle" as const };
+
+  // Which staffing cycle(s) feed the board:
+  //  - All terms → every existing cycle (read-only aggregate; don't create).
+  //  - A specific term (default = current) → that term's cycle, get-or-create
+  //    so the live cycle keeps its existing auto-provision behavior.
+  let cycleIds: string[];
+  let cycleName: string;
+  let singleCycleId: string | null;
+  if (isAll) {
+    const cycles = await prisma.staffingCycle.findMany({
+      select: { id: true },
+    });
+    cycleIds = cycles.map((c) => c.id);
+    cycleName = "all terms";
+    singleCycleId = null;
+  } else {
+    const t =
+      termOptions.find((o) => o.id === filterTermId) ??
+      (fallbackTerm
+        ? { id: fallbackTerm.id, code: fallbackTerm.code }
+        : termOptions[0]);
+    const cycle = await ensureStaffingCycle(t.id, t.code);
+    cycleIds = [cycle.id];
+    cycleName = cycle.name;
+    singleCycleId = cycle.id;
+  }
 
   // The mirrored IntentToWork rows are the source of truth for the board;
   // the table reads them directly so it stays correct regardless of which
-  // form version a member answered.
+  // form version a member answered. Term columns are derived from the rows
+  // present, so a single cycle and the all-terms aggregate render the same.
   const rows = await prisma.intentToWork.findMany({
-    where: { staffingCycleId: cycle.id },
+    where: { staffingCycleId: { in: cycleIds } },
     select: {
       userId: true,
       termId: true,
       status: true,
       updatedAt: true,
+      term: { select: { code: true, sortKey: true } },
       user: { select: { firstName: true, lastName: true, daliEmail: true } },
     },
   });
+
+  // Distinct terms touched by these submissions, oldest → newest, for the
+  // table's status columns.
+  const terms = [
+    ...new Map(
+      rows.map((r) => [
+        r.termId,
+        { id: r.termId, code: r.term.code, sortKey: r.term.sortKey },
+      ]),
+    ).values(),
+  ]
+    .sort((a, b) => a.sortKey - b.sortKey)
+    .map((t) => ({ id: t.id, code: t.code }));
 
   // IntentToWork rows carry no domain; a member's domain(s) come from their
   // DomainEligibility. Fetch eligibilities for the submitting members so the
@@ -103,13 +154,54 @@ export async function loader({ request }: Route.LoaderArgs) {
     ).values(),
   ].sort((a, b) => a.name.localeCompare(b.name));
 
+  // The generic-form slot binding is per-cycle, so it only applies to the
+  // single-term view. In the all-terms aggregate there's no one slot to bind,
+  // so the picker is hidden (singleCycleId === null).
+  const canManage = await canManageStaffing(auth.user.sub);
+  const [binding, selectableForms] = await Promise.all([
+    singleCycleId ? getSlotBinding(singleCycleId, SLOT) : Promise.resolve(null),
+    canManage && singleCycleId
+      ? listSelectableForms()
+      : Promise.resolve([]),
+  ]);
+
   return {
     gate: "ok" as const,
-    cycle: { name: cycle.name },
+    cycle: { name: cycleName },
     terms,
+    termOptions,
+    selectedTerm,
+    isAll,
     submissions,
     domainFilter,
+    canManage,
+    binding,
+    selectableForms,
   };
+}
+
+// Staffing managers bind a generic form to this cycle's Intent to Work slot.
+// Gated tighter than the loader: viewing the board is Core/Admin, changing
+// the form requires staffing management.
+export async function action({ request }: Route.ActionArgs) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
+  if (!(await canManageStaffing(auth.user.sub)))
+    return Response.json({ error: "Forbidden" }, { status: 403 });
+
+  const term = await currentTerm();
+  if (!term)
+    return Response.json({ error: "No active staffing term." }, { status: 400 });
+  const cycle = await ensureStaffingCycle(term.id, term.code);
+
+  const form = await request.formData();
+  if (String(form.get("intent")) !== "set-slot-form")
+    return Response.json({ error: "Unknown intent" }, { status: 400 });
+
+  const formId = String(form.get("formId") ?? "");
+  const result = await setSlotBinding(cycle.id, SLOT, formId, auth.user.sub);
+  if (!result.ok) return Response.json({ error: result.error }, { status: 400 });
+  return Response.json({ ok: true });
 }
 
 const STATUS_PILL: Record<string, string> = {
@@ -165,13 +257,27 @@ function Loaded({
     <div className="flex flex-col gap-4">
       <Header cycleName={data.cycle.name} />
 
-      <SubmissionFilters
-        query={query}
-        onQueryChange={setQuery}
-        domainId={domainId}
-        onDomainChange={setDomainId}
-        domains={data.domainFilter}
-      />
+      {!data.isAll && (
+        <SlotFormPicker
+          slotLabel="Intent to Work"
+          binding={data.binding}
+          forms={data.selectableForms}
+          canManage={data.canManage}
+        />
+      )}
+
+      <div className="flex flex-col sm:flex-row gap-2">
+        <div className="flex-1">
+          <SubmissionFilters
+            query={query}
+            onQueryChange={setQuery}
+            domainId={domainId}
+            onDomainChange={setDomainId}
+            domains={data.domainFilter}
+          />
+        </div>
+        <TermFilter terms={data.termOptions} selected={data.selectedTerm} />
+      </div>
 
       <div className="bg-card border border-border rounded-lg">
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">

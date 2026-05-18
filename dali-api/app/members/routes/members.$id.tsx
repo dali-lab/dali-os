@@ -4,6 +4,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
 import { initialsFromName } from "~/lib/display";
+import { EditModeToggle, useEditMode } from "~/components/EditModeToggle";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const m = (data as { member?: { firstName: string; lastName: string } } | undefined)?.member;
@@ -117,7 +118,8 @@ const FIELD_LABELS: Record<string, string> = {
 };
 
 export default function MemberDetail() {
-  const { member, canEdit } = useLoaderData<typeof loader>();
+  const { member, canEdit: canEditPerm } = useLoaderData<typeof loader>();
+  const { editing: canEdit, editMode, setEditMode } = useEditMode(canEditPerm);
   const actionData = useActionData<typeof action>();
 
   return (
@@ -126,9 +128,11 @@ export default function MemberDetail() {
         <Link to="/members" className="text-sm text-muted-foreground hover:text-foreground">
           ← Back to members
         </Link>
-        {!canEdit && (
-          <span className="text-xs text-muted-foreground">Read-only</span>
-        )}
+        <EditModeToggle
+          canEdit={canEditPerm}
+          editMode={editMode}
+          setEditMode={setEditMode}
+        />
       </div>
 
       <header className="flex flex-col items-center gap-4 text-center">

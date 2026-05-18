@@ -1,7 +1,7 @@
 import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/projects.staffing";
 import { requireAuth } from "~/lib/auth";
-import { canManageStaffing } from "~/lib/roles";
+import { canManageStaffing, canViewStaffing } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { ensureStaffingCycle } from "../lib/staffing-cycle";
 import { StaffingBoard } from "../components/StaffingBoard";
@@ -18,10 +18,11 @@ export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
   if (auth.user.type === "applicant") return redirect("/portal");
+  // Viewing the board is now Core/Admin only. Mutations are further gated
+  // by canManageStaffing (staffing leads); the UI hides drag affordances
+  // when canManage is false.
+  if (!(await canViewStaffing(auth.user.sub))) return redirect("/");
 
-  // Any non-applicant user can SEE the board (read-only). Mutations are
-  // separately gated by canManageStaffing on the API side, and the UI hides
-  // drag affordances when canManage is false.
   const canManage = await canManageStaffing(auth.user.sub);
 
   // Term picker drives which cycle the board shows. ?term=<code> selects it;

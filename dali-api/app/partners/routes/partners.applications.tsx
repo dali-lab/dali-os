@@ -15,7 +15,7 @@ import {
 import type { Route } from "./+types/partners.applications";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
-import { isHiringLead } from "~/lib/roles";
+import { canViewStaffing, isHiringLead } from "~/lib/roles";
 import {
   PARTNER_APPLICATION_STATUSES as STATUSES,
   PARTNER_APPLICATION_STATUS_LABELS as STATUS_LABEL,
@@ -42,8 +42,7 @@ type ApplicationRow = {
   status: Status;
   partnerName: string;
   partnerLogoUrl: string | null;
-  targetTermCode: string | null;
-  targetTermSortKey: number | null;
+  targetTerms: { code: string; sortKey: number }[];
   domains: DomainScopeOut[];
   totalExpectedMembers: number;
 };
@@ -62,6 +61,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
   if (auth.user.type === "applicant") return redirect("/portal");
+  if (!(await canViewStaffing(auth.user.sub))) return redirect("/");
 
   const [applications, partnerOrgs, canEdit, roleRequests] =
     await Promise.all([
@@ -72,7 +72,10 @@ export async function loader({ request }: Route.LoaderArgs) {
         title: true,
         status: true,
         partnerOrg: { select: { name: true, logoUrl: true } },
-        targetTerm: { select: { code: true, sortKey: true } },
+        targetTerms: {
+          orderBy: { term: { sortKey: "asc" } },
+          select: { term: { select: { code: true, sortKey: true } } },
+        },
         domains: {
           select: {
             domainId: true,
@@ -111,8 +114,10 @@ export async function loader({ request }: Route.LoaderArgs) {
       status: a.status,
       partnerName: a.partnerOrg.name,
       partnerLogoUrl: a.partnerOrg.logoUrl,
-      targetTermCode: a.targetTerm?.code ?? null,
-      targetTermSortKey: a.targetTerm?.sortKey ?? null,
+      targetTerms: a.targetTerms.map((t) => ({
+        code: t.term.code,
+        sortKey: t.term.sortKey,
+      })),
       domains,
       totalExpectedMembers: domains.reduce((s, d) => s + d.expectedMembers, 0),
     };
@@ -484,10 +489,14 @@ function TermProjection({
     };
     for (const r of rows) {
       if (!PROJECTING_STATUSES.includes(r.status)) continue;
-      if (!r.targetTermCode || r.targetTermSortKey == null) continue;
-      const g = ensure(r.targetTermCode, r.targetTermSortKey);
-      for (const d of r.domains) {
-        if (inFocus(d.domainId)) addTo(g.expected, d.domainId, d.expectedMembers);
+      // An application's expected headcount counts toward every term it
+      // targets — a 3-term engagement needs that team in all 3 terms.
+      for (const t of r.targetTerms) {
+        const g = ensure(t.code, t.sortKey);
+        for (const d of r.domains) {
+          if (inFocus(d.domainId))
+            addTo(g.expected, d.domainId, d.expectedMembers);
+        }
       }
     }
     for (const c of requiredCells) {
@@ -727,7 +736,9 @@ function ApplicationsTable({ rows }: { rows: ApplicationRow[] }) {
                 <StatusPill status={a.status} />
               </td>
               <td className="px-4 py-2 text-muted-foreground">
-                {a.targetTermCode ?? "—"}
+                {a.targetTerms.length > 0
+                  ? a.targetTerms.map((t) => t.code).join(", ")
+                  : "—"}
               </td>
               <td className="px-4 py-2 text-muted-foreground">
                 {a.domains.length > 0
@@ -917,7 +928,9 @@ function ApplicationCard({
         {app.partnerName}
       </span>
       <span className="text-xs text-muted-foreground">
-        {app.targetTermCode ? `Target ${app.targetTermCode}` : "No target term"}
+        {app.targetTerms.length > 0
+          ? `Target ${app.targetTerms.map((t) => t.code).join(", ")}`
+          : "No target term"}
         {app.totalExpectedMembers > 0
           ? ` · ${app.totalExpectedMembers} expected`
           : ""}

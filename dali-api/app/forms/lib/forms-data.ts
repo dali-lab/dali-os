@@ -11,6 +11,7 @@
 import { z } from "zod";
 import { prisma } from "~/lib/db";
 import type { Question } from "~/types";
+import { isReferenceSourceKey } from "./reference-sources.shared";
 
 const QUESTION_TYPES: Question["type"][] = [
   "text",
@@ -21,6 +22,7 @@ const QUESTION_TYPES: Question["type"][] = [
   "drive_url",
   "file",
   "skills_rating",
+  "reference",
 ];
 
 export function isQuestionArray(x: unknown): x is Question[] {
@@ -359,6 +361,11 @@ export async function runFormsAction(
       for (const q of questions) {
         if (!q.data.label.trim())
           return { error: "Every question needs a label.", status: 400 };
+        if (q.type === "reference" && !isReferenceSourceKey(q.data.referenceSource))
+          return {
+            error: `"${q.data.label}" is a reference question but has no valid data source.`,
+            status: 400,
+          };
       }
 
       const last = await prisma.formVersion.findFirst({

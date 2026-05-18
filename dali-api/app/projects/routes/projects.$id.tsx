@@ -9,7 +9,6 @@ import {
   useSearchParams,
   useSubmit,
 } from "react-router";
-import { Pencil } from "lucide-react";
 import type { Route } from "./+types/projects.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
@@ -24,6 +23,7 @@ import {
 } from "../components/EpicSprintManager";
 import { CollaborativeEditor } from "~/components/CollaborativeEditor";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
+import { EditModeToggle, useEditMode } from "~/components/EditModeToggle";
 import type { TaskCardModel, TaskStatus, Priority } from "../lib/task-board";
 
 export const meta: Route.MetaFunction = ({ data }) => {
@@ -326,10 +326,11 @@ export default function ProjectDetail() {
     editableEpics,
     sprints,
     tasks,
-    canEdit,
+    canEdit: canEditPerm,
     collabToken,
     userName,
   } = useLoaderData() as LoaderData;
+  const { editing: canEdit, editMode, setEditMode } = useEditMode(canEditPerm);
   const actionData = useActionData<typeof action>();
   const [searchParams, setSearchParams] = useSearchParams();
   const partnerNames = project.partners.map((p) => p.partnerOrg.name);
@@ -352,7 +353,11 @@ export default function ProjectDetail() {
         <Link to="/projects/list" className="text-sm text-muted-foreground hover:text-foreground">
           ← Back to projects
         </Link>
-        {!canEdit && <span className="text-xs text-muted-foreground">Read-only</span>}
+        <EditModeToggle
+          canEdit={canEditPerm}
+          editMode={editMode}
+          setEditMode={setEditMode}
+        />
       </div>
 
       {/* Overview header — always on top, not behind a tab */}
@@ -417,7 +422,6 @@ function ProjectHeader({
   partnerNames: string[];
   canEdit: boolean;
 }) {
-  const [editing, setEditing] = useState(false);
   const submit = useSubmit();
 
   const subtitle = (
@@ -443,55 +447,31 @@ function ProjectHeader({
       )}
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 flex-wrap">
-          {editing ? (
-            // Inline name edit. Carries the current status as a hidden field
-            // so the intent=header action branch (which requires both) is
-            // unchanged.
-            <Form
-              method="post"
-              onSubmit={() => setEditing(false)}
-              className="flex items-center gap-2"
-            >
+          {canEdit ? (
+            // In edit mode the name is directly editable and auto-saves on
+            // blur — same pattern as the status dropdown, no separate Save.
+            // Carries the current status as a hidden field so the
+            // intent=header action branch (which requires both) is unchanged.
+            <Form method="post" className="flex items-center gap-2">
               <input type="hidden" name="intent" value="header" />
               <input type="hidden" name="status" value={project.status} />
               <input
                 name="name"
                 defaultValue={project.name}
-                autoFocus
                 aria-label="Project name"
+                onBlur={(e) => {
+                  const next = e.currentTarget.value.trim();
+                  if (next && next !== project.name) {
+                    submit(e.currentTarget.form);
+                  }
+                }}
                 className="font-heading text-xl font-bold text-foreground px-2 py-1 border border-border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
               />
-              <button
-                type="submit"
-                className="px-2.5 py-1 text-xs font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
-              >
-                Save
-              </button>
-              <button
-                type="button"
-                onClick={() => setEditing(false)}
-                className="px-2.5 py-1 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors"
-              >
-                Cancel
-              </button>
             </Form>
           ) : (
-            <>
-              <h1 className="font-heading text-2xl font-bold text-foreground">
-                {project.name}
-              </h1>
-              {canEdit && (
-                <button
-                  type="button"
-                  onClick={() => setEditing(true)}
-                  aria-label="Edit project name"
-                  title="Edit name"
-                  className="text-muted-foreground hover:text-accent-coral transition-colors"
-                >
-                  <Pencil className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </>
+            <h1 className="font-heading text-2xl font-bold text-foreground">
+              {project.name}
+            </h1>
           )}
 
           {/* Status: always-visible dropdown that auto-saves on change.

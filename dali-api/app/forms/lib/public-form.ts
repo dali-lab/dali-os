@@ -5,6 +5,7 @@
 
 import { prisma } from "~/lib/db";
 import type { Question } from "~/types";
+import { resolveReferenceOptions } from "./reference-sources";
 
 export type PublicForm = {
   formId: string;
@@ -51,12 +52,25 @@ export async function loadPublicForm(
   const version = form.versions[0];
   if (!version) return null;
 
+  const questions = (version.questions as unknown as Question[]) ?? [];
+
+  // `reference` questions store only a source key; resolve the live choices
+  // now so the fill UI can render them. Done in parallel; non-reference
+  // questions pass through untouched.
+  const resolved = await Promise.all(
+    questions.map(async (q) => {
+      if (q.type !== "reference") return q;
+      const options = await resolveReferenceOptions(q.data.referenceSource);
+      return { ...q, data: { ...q.data, referenceOptions: options } };
+    }),
+  );
+
   return {
     formId: form.id,
     name: form.name,
     versionId: version.id,
     description: safeParse(version.intro),
-    questions: (version.questions as unknown as Question[]) ?? [],
+    questions: resolved,
   };
 }
 
@@ -108,6 +122,22 @@ export async function submitPublicForm(args: {
       (Array.isArray(v) && v.length === 0) ||
       (typeof v === "object" && !Array.isArray(v) && Object.keys(v as object).length === 0);
     if (empty) return { error: `"${q.data.label}" is required.`, status: 400 };
+  }
+
+  // Re-resolve `reference` questions server-side and reject any answer that
+  // isn't a currently-valid option. Never trust the client's option list —
+  // the source may have changed since the form was rendered.
+  for (const q of questions) {
+    if (q.type !== "reference") continue;
+    const answer = args.answers[q.key];
+    if (answer == null || answer === "") continue; // required-ness handled above
+    const options = await resolveReferenceOptions(q.data.referenceSource);
+    if (!options.some((o) => o.value === answer)) {
+      return {
+        error: `"${q.data.label}": that choice is no longer available.`,
+        status: 400,
+      };
+    }
   }
 
   await prisma.formSubmission.create({

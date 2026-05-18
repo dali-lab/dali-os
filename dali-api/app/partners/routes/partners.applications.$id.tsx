@@ -13,7 +13,7 @@ import type { Route } from "./+types/partners.applications.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { parseSessionCookie } from "~/lib/cookies";
-import { isHiringLead } from "~/lib/roles";
+import { canViewStaffing, isHiringLead } from "~/lib/roles";
 import {
   PARTNER_APPLICATION_STATUSES as STATUSES,
   PARTNER_APPLICATION_STATUS_LABELS as STATUS_LABEL,
@@ -22,6 +22,7 @@ import {
 } from "../lib/partner-application";
 import { CollaborativeEditor } from "~/components/CollaborativeEditor";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
+import { EditModeToggle, useEditMode } from "~/components/EditModeToggle";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const a = (data as { application?: { title: string } } | undefined)
@@ -40,6 +41,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
   if (auth.user.type === "applicant") return redirect("/portal");
+  if (!(await canViewStaffing(auth.user.sub))) return redirect("/");
 
   const application = await prisma.partnerApplication.findUnique({
     where: { id: params.id },
@@ -50,9 +52,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       status: true,
       sowDocId: true,
       resultingProjectId: true,
-      targetTermId: true,
       partnerOrg: { select: { id: true, name: true, logoUrl: true } },
-      targetTerm: { select: { code: true } },
+      targetTerms: {
+        orderBy: { term: { sortKey: "asc" } },
+        select: { termId: true, term: { select: { code: true } } },
+      },
       domains: {
         orderBy: { domain: { displayName: "asc" } },
         select: {
@@ -97,8 +101,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       status: application.status,
       sowDocId: application.sowDocId,
       resultingProjectId: application.resultingProjectId,
-      targetTermId: application.targetTermId,
-      targetTermCode: application.targetTerm?.code ?? null,
+      targetTerms: application.targetTerms.map((t) => ({
+        termId: t.termId,
+        code: t.term.code,
+      })),
       partner: application.partnerOrg,
       domains: application.domains.map((d) => ({
         id: d.id,
@@ -127,46 +133,127 @@ export async function action({ request, params }: Route.ActionArgs) {
   const form = await request.formData();
   const intent = (form.get("intent") as string | null) ?? "details";
 
-  let data: {
-    title?: string;
-    status?: Status;
-    summary?: string | null;
-    targetTermId?: string | null;
-  };
-
   if (intent === "title") {
     const title = (form.get("title") as string | null)?.trim() ?? "";
     if (!title) return { error: "Title is required." };
-    data = { title };
+    await prisma.partnerApplication.update({
+      where: { id: params.id },
+      data: { title },
+    });
   } else if (intent === "status") {
     const status = form.get("status");
     if (!isPartnerApplicationStatus(status)) {
       return { error: "Invalid status." };
     }
-    data = { status };
+    await prisma.partnerApplication.update({
+      where: { id: params.id },
+      data: { status },
+    });
   } else if (intent === "details") {
     const summaryRaw = (form.get("summary") as string | null)?.trim() ?? "";
-    const targetTermId = (form.get("targetTermId") as string | null) ?? "";
-    // empty string = clear the target term
-    if (targetTermId) {
-      const term = await prisma.term.findUnique({
-        where: { id: targetTermId },
+    // The form posts one targetTermId per selected term; blank/duplicate
+    // entries are dropped so an empty list cleanly clears all target terms.
+    const termIds = [
+      ...new Set(
+        form
+          .getAll("targetTermId")
+          .map((v) => String(v).trim())
+          .filter(Boolean),
+      ),
+    ];
+    if (termIds.length > 0) {
+      const found = await prisma.term.findMany({
+        where: { id: { in: termIds } },
         select: { id: true },
       });
-      if (!term) return { error: "That term no longer exists." };
+      if (found.length !== termIds.length) {
+        return { error: "One of those terms no longer exists." };
+      }
     }
-    data = {
-      summary: summaryRaw === "" ? null : summaryRaw,
-      targetTermId: targetTermId === "" ? null : targetTermId,
-    };
+    // Replace the whole target-term set in one transaction: scalar fields,
+    // then drop and recreate the join rows.
+    await prisma.$transaction([
+      prisma.partnerApplication.update({
+        where: { id: params.id },
+        data: { summary: summaryRaw === "" ? null : summaryRaw },
+      }),
+      prisma.partnerApplicationTargetTerm.deleteMany({
+        where: { applicationId: params.id },
+      }),
+      prisma.partnerApplicationTargetTerm.createMany({
+        data: termIds.map((termId) => ({
+          applicationId: params.id,
+          termId,
+        })),
+      }),
+    ]);
+  } else if (intent === "promote") {
+    // Spin up a Project from this application and link the two so they share
+    // partner + scope data. Idempotent on resultingProjectId so a double
+    // submit can't create two projects.
+    const app = await prisma.partnerApplication.findUnique({
+      where: { id: params.id },
+      select: {
+        id: true,
+        title: true,
+        summary: true,
+        resultingProjectId: true,
+        partnerOrgId: true,
+        targetTerms: {
+          orderBy: { term: { sortKey: "asc" } },
+          select: { termId: true },
+        },
+        domains: {
+          select: { domainId: true, expectedMembers: true },
+        },
+      },
+    });
+    if (!app) return { error: "That application no longer exists." };
+    if (app.resultingProjectId) {
+      return redirect(`/projects/${app.resultingProjectId}`);
+    }
+
+    // Earliest target term (targetTerms is sorted by sortKey asc) seeds the
+    // project's start term and scopes the per-domain role requests. Without a
+    // target term we still create the project, just with no role requests
+    // (ProjectRoleRequest requires a termId).
+    const firstTermId = app.targetTerms[0]?.termId ?? null;
+    // PartnerApplicationDomain carries headcount but no level; new role
+    // requests default to P1 (Learner) — the staffing board can refine.
+    const roleRequestRows = firstTermId
+      ? app.domains
+          .filter((d) => d.expectedMembers > 0)
+          .map((d) => ({
+            termId: firstTermId,
+            domainId: d.domainId,
+            level: "P1" as const,
+            slots: d.expectedMembers,
+          }))
+      : [];
+
+    const project = await prisma.$transaction(async (tx) => {
+      const created = await tx.project.create({
+        data: {
+          name: app.title,
+          description: app.summary,
+          firstTermId,
+          partners: { create: { partnerOrgId: app.partnerOrgId } },
+          ...(roleRequestRows.length > 0
+            ? { roleRequests: { create: roleRequestRows } }
+            : {}),
+        },
+        select: { id: true },
+      });
+      await tx.partnerApplication.update({
+        where: { id: app.id },
+        data: { resultingProjectId: created.id },
+      });
+      return created;
+    });
+    return redirect(`/projects/${project.id}`);
   } else {
     return { error: "Unknown action." };
   }
-
-  await prisma.partnerApplication.update({
-    where: { id: params.id },
-    data,
-  });
   return redirect(`/partners/applications/${params.id}`);
 }
 
@@ -179,10 +266,11 @@ export default function PartnerApplicationDetail() {
     application,
     availableDomains,
     terms,
-    canEdit,
+    canEdit: canEditPerm,
     collabToken,
     userName,
   } = useLoaderData() as LoaderData;
+  const { editing: canEdit, editMode, setEditMode } = useEditMode(canEditPerm);
   const actionData = useActionData<typeof action>();
 
   return (
@@ -194,9 +282,11 @@ export default function PartnerApplicationDetail() {
         >
           ← Back to applications
         </Link>
-        {!canEdit && (
-          <span className="text-xs text-muted-foreground">Read-only</span>
-        )}
+        <EditModeToggle
+          canEdit={canEditPerm}
+          editMode={editMode}
+          setEditMode={setEditMode}
+        />
       </div>
 
       {actionData?.error && (
@@ -320,8 +410,8 @@ function Header({
         >
           {application.partner.name}
         </Link>
-        {application.targetTermCode
-          ? ` · Target ${application.targetTermCode}`
+        {application.targetTerms.length > 0
+          ? ` · Target ${application.targetTerms.map((t) => t.code).join(", ")}`
           : " · No target term"}
         {application.resultingProjectId && (
           <>
@@ -335,6 +425,29 @@ function Header({
           </>
         )}
       </p>
+
+      {canEdit && !application.resultingProjectId && (
+        <Form
+          method="post"
+          onSubmit={(e) => {
+            if (
+              !window.confirm(
+                "Create a project from this application? It will carry over the partner, start term, and per-domain role requests, and the two will be linked.",
+              )
+            ) {
+              e.preventDefault();
+            }
+          }}
+        >
+          <input type="hidden" name="intent" value="promote" />
+          <button
+            type="submit"
+            className="px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
+          >
+            Promote to project →
+          </button>
+        </Form>
+      )}
     </header>
   );
 }
@@ -373,27 +486,11 @@ function DetailsSection({
         )}
       </label>
 
-      <label className="flex flex-col gap-1 text-xs sm:max-w-xs">
-        <span className="text-muted-foreground">Target term</span>
-        {canEdit ? (
-          <select
-            name="targetTermId"
-            defaultValue={application.targetTermId ?? ""}
-            className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-          >
-            <option value="">No target term</option>
-            {terms.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.code}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <span className="px-2 py-1.5 text-sm text-foreground">
-            {application.targetTermCode ?? "—"}
-          </span>
-        )}
-      </label>
+      <TargetTermsField
+        terms={terms}
+        selected={application.targetTerms}
+        canEdit={canEdit}
+      />
 
       {canEdit && (
         <div className="flex justify-end">
@@ -406,6 +503,100 @@ function DetailsSection({
         </div>
       )}
     </Form>
+  );
+}
+
+// Multiple target terms: one dropdown row per selected term, each posting its
+// value as `targetTermId` (the action reads all of them). A term already
+// picked in another row is hidden from the remaining dropdowns so the same
+// term can't be added twice. An empty list posts no targetTermId, which the
+// action treats as "clear all target terms".
+function TargetTermsField({
+  terms,
+  selected,
+  canEdit,
+}: {
+  terms: LoaderData["terms"];
+  selected: LoaderData["application"]["targetTerms"];
+  canEdit: boolean;
+}) {
+  // "" is the placeholder for a freshly-added, not-yet-chosen row.
+  const [rows, setRows] = useState<string[]>(() =>
+    selected.map((t) => t.termId),
+  );
+
+  if (!canEdit) {
+    return (
+      <div className="flex flex-col gap-1 text-xs sm:max-w-xs">
+        <span className="text-muted-foreground">Target terms</span>
+        <span className="px-2 py-1.5 text-sm text-foreground">
+          {selected.length > 0
+            ? selected.map((t) => t.code).join(", ")
+            : "—"}
+        </span>
+      </div>
+    );
+  }
+
+  const chosen = new Set(rows.filter(Boolean));
+
+  return (
+    <fieldset className="flex flex-col gap-2 text-xs sm:max-w-xs">
+      <legend className="text-muted-foreground mb-1">
+        Target terms
+        <span className="ml-1 text-muted-foreground/70">
+          (add one per expected term)
+        </span>
+      </legend>
+
+      {rows.length === 0 && (
+        <p className="text-sm text-muted-foreground italic">
+          No target terms.
+        </p>
+      )}
+
+      {rows.map((value, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <select
+            name="targetTermId"
+            value={value}
+            onChange={(e) =>
+              setRows((r) =>
+                r.map((v, j) => (j === i ? e.target.value : v)),
+              )
+            }
+            className="flex-1 px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+          >
+            <option value="">Select a term…</option>
+            {terms
+              .filter((t) => t.id === value || !chosen.has(t.id))
+              .map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.code}
+                </option>
+              ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => setRows((r) => r.filter((_, j) => j !== i))}
+            aria-label="Remove term"
+            className="px-2 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors"
+          >
+            Remove
+          </button>
+        </div>
+      ))}
+
+      {chosen.size < terms.length && (
+        <button
+          type="button"
+          onClick={() => setRows((r) => [...r, ""])}
+          className="self-start text-xs font-medium text-accent-coral hover:underline"
+        >
+          + Add term
+        </button>
+      )}
+    </fieldset>
   );
 }
 

@@ -40,6 +40,8 @@ interface LayoutProps {
   isHiringLead?: boolean
   isAdmin?: boolean
   isDomainLead?: boolean
+  canViewForms?: boolean
+  canViewStaffing?: boolean
   isInterviewer?: boolean
 }
 
@@ -48,7 +50,7 @@ const EXPANDED_AREAS_KEY = 'dali:sidebar:expanded-areas'
 
 type AreaKey = 'hiring' | 'projects' | 'members' | 'partners' | 'education' | 'internal-processes' | 'admin-console'
 
-export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLead = false, isInterviewer = false }: LayoutProps) {
+export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLead = false, canViewForms = false, canViewStaffing = false, isInterviewer = false }: LayoutProps) {
   const location = useLocation()
   const [focusedTabUrl, setFocusedTabUrl] = useState<string | null>(null)
   // Sidebar highlight follows the focused workspace tab when one is open;
@@ -225,7 +227,7 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
       label: 'Staffing',
       to: '/projects/staffing',
       icon: UserPlus,
-      show: true,
+      show: canViewStaffing,
       active: path.startsWith('/projects/staffing'),
       sub: null,
     },
@@ -233,7 +235,7 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
       label: 'Intent to Work',
       to: '/projects/intent-to-work',
       icon: FileText,
-      show: true,
+      show: canViewStaffing,
       active: path.startsWith('/projects/intent-to-work'),
       sub: null,
     },
@@ -241,7 +243,7 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
       label: 'Project Bids',
       to: '/projects/project-bids',
       icon: ClipboardList,
-      show: true,
+      show: canViewStaffing,
       active: path.startsWith('/projects/project-bids'),
       sub: null,
     },
@@ -260,7 +262,7 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
       label: 'Groups',
       to: '/members/groups',
       icon: Users,
-      show: isAdmin,
+      show: canViewForms,
       active: path.startsWith('/members/groups'),
       sub: null,
     },
@@ -279,7 +281,7 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
       label: 'Applications',
       to: '/partners/applications',
       icon: ClipboardList,
-      show: true,
+      show: canViewStaffing,
       active: path.startsWith('/partners/applications'),
       sub: null,
     },
@@ -541,7 +543,7 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
             </button>
           )
         })()}
-        {(() => {
+        {canViewForms && (() => {
           const formsActive = path.startsWith('/forms')
           return (
             <button

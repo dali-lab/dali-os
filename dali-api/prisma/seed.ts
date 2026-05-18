@@ -2903,7 +2903,9 @@ async function main() {
       id: "papp-hood-kiosk",
       title: "Interactive gallery kiosk",
       partnerOrgId: "partner-hood-museum",
-      targetTermId: term26S?.id ?? null,
+      // Multi-term engagement: exercises the new multiple-target-terms UI.
+      // 26X may not exist in the minimal local seed; filtered out below.
+      targetTermIds: [term26S?.id, term26X?.id],
       status: "UnderReview" as const,
       summary: "Touchscreen kiosks that let visitors explore the permanent collection by theme.",
       domains: [
@@ -2916,7 +2918,7 @@ async function main() {
       id: "papp-tuck-mentor",
       title: "Alumni mentorship matching",
       partnerOrgId: "partner-tuck-school",
-      targetTermId: term26S?.id ?? null,
+      targetTermIds: [term26S?.id],
       status: "Accepted" as const,
       summary: "Match current students with alumni mentors by industry and interest.",
       domains: [
@@ -2928,7 +2930,7 @@ async function main() {
       id: "papp-thayer-sensors",
       title: "Lab sensor dashboard",
       partnerOrgId: "partner-thayer",
-      targetTermId: term26X?.id ?? null,
+      targetTermIds: [term26X?.id],
       status: "Submitted" as const,
       summary: "Real-time dashboard for shared lab equipment sensor data.",
       domains: [
@@ -2939,9 +2941,17 @@ async function main() {
   for (const a of partnerApplicationSeeds) {
     await prisma.partnerApplication.upsert({
       where: { id: a.id },
-      update: { title: a.title, partnerOrgId: a.partnerOrgId, targetTermId: a.targetTermId, status: a.status, summary: a.summary },
-      create: { id: a.id, title: a.title, partnerOrgId: a.partnerOrgId, targetTermId: a.targetTermId, status: a.status, summary: a.summary },
+      update: { title: a.title, partnerOrgId: a.partnerOrgId, status: a.status, summary: a.summary },
+      create: { id: a.id, title: a.title, partnerOrgId: a.partnerOrgId, status: a.status, summary: a.summary },
     });
+    // Replace the target-term set each run so re-seeding stays idempotent.
+    const termIds = [...new Set(a.targetTermIds.filter((t): t is string => Boolean(t)))];
+    await prisma.partnerApplicationTargetTerm.deleteMany({ where: { applicationId: a.id } });
+    if (termIds.length > 0) {
+      await prisma.partnerApplicationTargetTerm.createMany({
+        data: termIds.map((termId) => ({ applicationId: a.id, termId })),
+      });
+    }
     for (const d of a.domains) {
       await prisma.partnerApplicationDomain.upsert({
         where: { applicationId_domainId: { applicationId: a.id, domainId: d.domainId } },

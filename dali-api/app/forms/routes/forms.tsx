@@ -1,7 +1,7 @@
 import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/forms";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead } from "~/lib/roles";
+import { canViewForms } from "~/lib/roles";
 import { loadFormsLevel, runFormsAction } from "~/forms/lib/forms-data";
 import { FormsBrowser } from "~/forms/components/FormsBrowser";
 
@@ -11,7 +11,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
   if (auth.user.type === "applicant") return redirect("/portal");
-  if (!(await isHiringLead(auth.user.sub))) return redirect("/");
+  if (!(await canViewForms(auth.user.sub))) return redirect("/");
 
   const level = await loadFormsLevel(null);
   return level!; // top level always resolves
@@ -20,7 +20,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
-  if (!(await isHiringLead(auth.user.sub)))
+  if (!(await canViewForms(auth.user.sub)))
     return Response.json({ error: "Forbidden" }, { status: 403 });
 
   const result = await runFormsAction(

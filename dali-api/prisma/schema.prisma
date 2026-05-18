@@ -95,6 +95,7 @@ model User {
   formFolders      FormFolder[]
   formVersions     FormVersion[]
   formSubmissions  FormSubmission[]
+  formBindingsSet  StaffingCycleFormBinding[]
 
   // ─── Phase 1: education back-relations ────────────────────────────────────
   educationApplications  EducationApplication[]  @relation("EducationApplicant")
@@ -1327,7 +1328,7 @@ model Term {
   projectRoleRequests   ProjectRoleRequest[]
   staffingAssignments   StaffingAssignment[]
   projectsAsFirstTerm   Project[]              @relation("ProjectFirstTerm")
-  partnerApplications   PartnerApplication[]
+  partnerApplications   PartnerApplicationTargetTerm[]
   intentToWork          IntentToWork[]
 
   @@index([sortKey])
@@ -1961,6 +1962,7 @@ model StaffingCycle {
   essentialityForms EssentialityForm[]
   assignments       StaffingAssignment[]
   intentToWork      IntentToWork[]
+  formBindings      StaffingCycleFormBinding[]
 }
 
 model StaffingPreference {
@@ -2065,6 +2067,7 @@ model Form {
   versions      FormVersion[]
   submissions   FormSubmission[]
   notifications Notification[]
+  cycleBindings StaffingCycleFormBinding[]
 
   @@index([folderId])
   @@index([createdById])
@@ -2124,6 +2127,29 @@ model FormSubmission {
   @@index([userId, formVersionId])
   @@index([formId])
   @@index([formVersionId])
+}
+
+// Binds a generic Form to a named "slot" within one staffing cycle, so an
+// admin can choose which form members fill for that term's Intent to Work,
+// Project Bids, etc. `slot` is a free string (e.g. "intent-to-work",
+// "project-bids") rather than an enum so new slots need no migration. Absence
+// of a row = no form selected for that slot (callers fall back to default
+// behavior). The read-only staffing boards still read structured records;
+// this only controls which form is surfaced to members.
+model StaffingCycleFormBinding {
+  id              String   @id @default(cuid())
+  staffingCycleId String
+  slot            String
+  formId          String
+  updatedAt       DateTime @updatedAt
+  updatedById     String
+
+  staffingCycle StaffingCycle @relation(fields: [staffingCycleId], references: [id], onDelete: Cascade)
+  form          Form          @relation(fields: [formId], references: [id], onDelete: Cascade)
+  updatedBy     User          @relation(fields: [updatedById], references: [id])
+
+  @@unique([staffingCycleId, slot])
+  @@index([formId])
 }
 
 model EssentialityForm {
@@ -2592,9 +2618,6 @@ enum SlackBugReportStatus {
 model PartnerApplication {
   id           String  @id @default(cuid())
   partnerOrgId String
-  // The term the partner wants the project to start / be staffed in. Drives
-  // the "expected lab members per term" projection on the list page.
-  targetTermId String?
   title        String
   // Short pitch summary. The long-form, versionable Statement of Work lives
   // in the collab doc named `partner-sow:{id}` (see sowDocId) — same Yjs +
@@ -2610,16 +2633,35 @@ model PartnerApplication {
   // Project.id; no relation to avoid a Project→PartnerApplication cycle.
   resultingProjectId String?
 
-  partnerOrg PartnerOrg                 @relation(fields: [partnerOrgId], references: [id])
-  targetTerm Term?                      @relation(fields: [targetTermId], references: [id])
-  domains    PartnerApplicationDomain[]
+  partnerOrg  PartnerOrg                     @relation(fields: [partnerOrgId], references: [id])
+  // The terms the partner wants the project to run / be staffed in. Drives
+  // the "expected lab members per term" projection on the list page — an
+  // application's expected headcount counts toward every target term.
+  targetTerms PartnerApplicationTargetTerm[]
+  domains     PartnerApplicationDomain[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([partnerOrgId])
   @@index([status])
-  @@index([targetTermId])
+}
+
+// Join table: an application can target multiple terms (e.g. a 3-term
+// engagement). `@@unique([applicationId, termId])` keeps a term from being
+// added twice to the same application.
+model PartnerApplicationTargetTerm {
+  id            String @id @default(cuid())
+  applicationId String
+  termId        String
+
+  application PartnerApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  term        Term               @relation(fields: [termId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@unique([applicationId, termId])
+  @@index([termId])
 }
 
 // Per-domain expected scope for one application. `expectedChallenges` is the

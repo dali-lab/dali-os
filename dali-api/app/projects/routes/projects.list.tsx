@@ -1,9 +1,19 @@
 import { useMemo, useState } from "react";
-import { Link, redirect, useLoaderData, useNavigate } from "react-router";
+import {
+  Form,
+  Link,
+  redirect,
+  useActionData,
+  useLoaderData,
+  useNavigate,
+} from "react-router";
 import type { Route } from "./+types/projects.list";
 import { requireAuth } from "~/lib/auth";
+import { isHiringLead } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { ViewToggle, useViewPreference } from "~/components/ViewToggle";
+import { TermFilter } from "~/components/TermFilter";
+import { resolveTermFilter } from "~/lib/terms";
 
 export const meta: Route.MetaFunction = () => [{ title: "Projects · DALI OS" }];
 
@@ -28,7 +38,16 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!auth.ok) return redirect("/login");
   if (auth.user.type === "applicant") return redirect("/portal");
 
+  const { terms, selected, termId, isAll } = await resolveTermFilter(request);
+
   const projects = await prisma.project.findMany({
+    // A term filter scopes to Active projects whose start (first) term is the
+    // selected one — Paused/Archived projects are noise for a term view.
+    // "All terms" drops the filter entirely and stays the full archive view.
+    where:
+      isAll || !termId
+        ? undefined
+        : { firstTermId: termId, status: "Active" },
     orderBy: [{ status: "asc" }, { name: "asc" }],
     select: {
       id: true,
@@ -54,11 +73,74 @@ export async function loader({ request }: Route.LoaderArgs) {
     })),
   }));
 
-  return { rows };
+  const [partnerOrgs, canEdit] = await Promise.all([
+    prisma.partnerOrg.findMany({
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+    isHiringLead(auth.user.sub),
+  ]);
+
+  return { rows, terms, selectedTerm: selected, partnerOrgs, canEdit };
+}
+
+export async function action({ request }: Route.ActionArgs) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return redirect("/login");
+  if (auth.user.type === "applicant") return redirect("/portal");
+  if (!(await isHiringLead(auth.user.sub))) {
+    return { error: "You don't have permission to create projects." };
+  }
+
+  const form = await request.formData();
+  const name = (form.get("name") as string | null)?.trim() ?? "";
+  const description = (form.get("description") as string | null)?.trim() ?? "";
+  const status = (form.get("status") as string | null) ?? "Active";
+  const firstTermId = (form.get("firstTermId") as string | null)?.trim() ?? "";
+  const partnerOrgId = (form.get("partnerOrgId") as string | null)?.trim() ?? "";
+
+  if (!name) return { error: "A project name is required." };
+  const STATUSES: ProjectStatus[] = ["Active", "Paused", "Archived"];
+  if (!STATUSES.includes(status as ProjectStatus)) {
+    return { error: "Invalid status." };
+  }
+  if (firstTermId) {
+    const term = await prisma.term.findUnique({
+      where: { id: firstTermId },
+      select: { id: true },
+    });
+    if (!term) return { error: "That start term no longer exists." };
+  }
+  if (partnerOrgId) {
+    const org = await prisma.partnerOrg.findUnique({
+      where: { id: partnerOrgId },
+      select: { id: true },
+    });
+    if (!org) return { error: "That partner no longer exists." };
+  }
+
+  const created = await prisma.project.create({
+    data: {
+      name,
+      description: description === "" ? null : description,
+      status: status as ProjectStatus,
+      firstTermId: firstTermId || null,
+      // Optionally link a partner up front; further partners are managed on
+      // the project detail page.
+      ...(partnerOrgId
+        ? { partners: { create: { partnerOrgId } } }
+        : {}),
+    },
+    select: { id: true },
+  });
+  return redirect(`/projects/${created.id}`);
 }
 
 export default function ProjectsListPage() {
-  const { rows } = useLoaderData<typeof loader>();
+  const { rows, terms, selectedTerm, partnerOrgs, canEdit } =
+    useLoaderData<typeof loader>();
+  const actionData = useActionData<typeof action>();
+  const [creating, setCreating] = useState(false);
   const [query, setQuery] = useState("");
   const [view, setView] = useViewPreference("dali:view:projects", "list");
 
@@ -73,12 +155,121 @@ export default function ProjectsListPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <header>
-        <h1 className="font-heading text-2xl font-bold text-foreground">Projects</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Every DALI project, with status and partners.
-        </p>
+      <header className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="font-heading text-2xl font-bold text-foreground">
+            Projects
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Every DALI project, with status and partners.
+          </p>
+        </div>
+        {canEdit && !creating && (
+          <button
+            type="button"
+            onClick={() => setCreating(true)}
+            className="px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
+          >
+            + New project
+          </button>
+        )}
       </header>
+
+      {actionData?.error && (
+        <div className="bg-destructive/10 border border-destructive/30 text-destructive text-sm rounded-md px-3 py-2">
+          {actionData.error}
+        </div>
+      )}
+
+      {creating && canEdit && (
+        <Form
+          method="post"
+          onSubmit={() => setCreating(false)}
+          className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3"
+        >
+          <h2 className="text-sm font-semibold text-foreground">New project</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label className="flex flex-col gap-1 text-xs sm:col-span-2">
+              <span className="text-muted-foreground">
+                Name<span className="text-destructive"> *</span>
+              </span>
+              <input
+                name="name"
+                autoFocus
+                required
+                placeholder="Project name"
+                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs sm:col-span-2">
+              <span className="text-muted-foreground">Description</span>
+              <textarea
+                name="description"
+                rows={2}
+                placeholder="Short blurb shown at the top of the project page."
+                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="text-muted-foreground">Status</span>
+              <select
+                name="status"
+                defaultValue="Active"
+                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+              >
+                <option value="Active">Active</option>
+                <option value="Paused">Paused</option>
+                <option value="Archived">Archived</option>
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="text-muted-foreground">Start term</span>
+              <select
+                name="firstTermId"
+                defaultValue=""
+                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+              >
+                <option value="">No start term</option>
+                {terms.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.code}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs sm:col-span-2">
+              <span className="text-muted-foreground">Partner (optional)</span>
+              <select
+                name="partnerOrgId"
+                defaultValue=""
+                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+              >
+                <option value="">No partner</option>
+                {partnerOrgs.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setCreating(false)}
+              className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-3 py-1.5 text-xs font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
+            >
+              Create
+            </button>
+          </div>
+        </Form>
+      )}
 
       <div className="flex items-center gap-3 flex-wrap">
         <input
@@ -88,6 +279,7 @@ export default function ProjectsListPage() {
           placeholder="Search by project or partner name"
           className="flex-1 min-w-[200px] max-w-sm px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
         />
+        <TermFilter terms={terms} selected={selectedTerm} />
         <ViewToggle value={view} onChange={setView} />
         <span className="text-xs text-muted-foreground ml-auto">
           {filtered.length} {filtered.length === 1 ? "project" : "projects"}

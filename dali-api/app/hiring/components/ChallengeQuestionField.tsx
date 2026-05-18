@@ -310,6 +310,30 @@ export function ChallengeQuestionField({
     );
   }
 
+  if (question.type === "reference") {
+    // Options were resolved server-side from the question's data source.
+    // The visible label differs from the stored value (a DB id).
+    const opts = question.data.referenceOptions ?? [];
+    return (
+      <select
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        disabled={disabled || opts.length === 0}
+        aria-disabled={disabled || opts.length === 0 || undefined}
+        className={`${inputBase} appearance-auto${disabledClass}`}
+      >
+        <option value="">
+          {opts.length === 0 ? "No options available" : "Select..."}
+        </option>
+        {opts.map(o => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
   if (question.type === "file") {
     return (
       <FileUploadField

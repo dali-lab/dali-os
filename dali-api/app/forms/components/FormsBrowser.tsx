@@ -47,9 +47,18 @@ export function FormsBrowser({
 }) {
   const fetcher = useFetcher();
   const [dialog, setDialog] = useState<Dialog | null>(null);
+  const [query, setQuery] = useState("");
 
   const busy = fetcher.state !== "idle";
   const error = errorOf(fetcher.data);
+
+  const q = query.trim().toLowerCase();
+  const visibleFolders = q
+    ? folders.filter((d) => d.name.toLowerCase().includes(q))
+    : folders;
+  const visibleForms = q
+    ? forms.filter((f) => f.name.toLowerCase().includes(q))
+    : forms;
 
   function createForm() {
     setDialog({
@@ -148,7 +157,15 @@ export function FormsBrowser({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-end gap-2">
+      <div className="flex items-center justify-between gap-2">
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search forms and folders"
+          className="flex-1 min-w-[200px] max-w-sm px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+        />
+        <div className="flex items-center gap-2">
         <button
           type="button"
           disabled={busy}
@@ -165,6 +182,7 @@ export function FormsBrowser({
         >
           + New form
         </button>
+        </div>
       </div>
 
       {error && (
@@ -177,9 +195,13 @@ export function FormsBrowser({
         <div className="border border-dashed border-border rounded-lg p-10 text-center text-sm text-muted-foreground">
           Nothing here yet. Create a form or a folder to get started.
         </div>
+      ) : visibleFolders.length === 0 && visibleForms.length === 0 ? (
+        <div className="border border-dashed border-border rounded-lg p-10 text-center text-sm text-muted-foreground">
+          No forms or folders match "{query.trim()}".
+        </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {folders.map((d) => (
+          {visibleFolders.map((d) => (
             <FolderCardView
               key={d.id}
               folder={d}
@@ -190,7 +212,7 @@ export function FormsBrowser({
               onMove={(target) => moveFolder(d, target)}
             />
           ))}
-          {forms.map((f) => (
+          {visibleForms.map((f) => (
             <FormCardView
               key={f.id}
               form={f}

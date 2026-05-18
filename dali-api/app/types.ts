@@ -94,7 +94,21 @@ export interface Rubric {
 
 export interface Question {
   key: string
-  type: 'text' | 'textarea' | 'select' | 'github_url' | 'figma_url' | 'drive_url' | 'file' | 'skills_rating'
+  type:
+    | 'text'
+    | 'textarea'
+    | 'select'
+    | 'github_url'
+    | 'figma_url'
+    | 'drive_url'
+    | 'file'
+    | 'skills_rating'
+    // A dropdown whose choices come from live DB data instead of a static
+    // `options` list. The choices are resolved at fill time from the
+    // server-side registry keyed by `data.referenceSource` (see
+    // app/forms/lib/reference-sources.ts). The stored answer is the chosen
+    // row's id (its `value`), not its label.
+    | 'reference'
   required: boolean
   data: {
     label: string
@@ -103,6 +117,12 @@ export interface Question {
     afterDomains?: boolean
     accept?: string
     maxWords?: number
+    // Set only for `type: 'reference'`. A key into REFERENCE_SOURCES.
+    referenceSource?: string
+    // Transient: populated by the server at fill time from the resolved
+    // source (label shown, value = stored answer / DB id). Never persisted —
+    // save-version rebuilds `data` and drops it.
+    referenceOptions?: { value: string; label: string }[]
   }
 }
 
