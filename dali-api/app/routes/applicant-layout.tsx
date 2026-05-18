@@ -25,9 +25,13 @@ export default function ApplicantLayout() {
     <div className="min-h-screen bg-page">
       {/* Navbar */}
       <nav className="fixed top-0 inset-x-0 z-50 h-16 bg-card border-b border-border flex items-center px-4 sm:px-6">
-        <Link to="/portal" className="flex items-center gap-2 min-w-0 focus:outline-none" title="DALI">
-          <span className="font-heading text-lg font-bold text-dark-blue">DALI</span>
-          <span className="text-xs text-muted-foreground/70 font-medium hidden sm:inline">
+        <Link to="/portal" className="flex items-center gap-3 min-w-0 focus:outline-none" title="DALI">
+          <img
+            src="/logo-blue.svg"
+            alt="DALI Lab"
+            className="h-9 w-auto flex-shrink-0"
+          />
+          <span className="text-xs text-muted-foreground/70 font-medium hidden sm:inline border-l border-border pl-3">
             Applicant Portal
           </span>
         </Link>
@@ -65,9 +69,13 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
   return (
     <div className="min-h-screen bg-page">
       <nav className="fixed top-0 inset-x-0 z-50 h-16 bg-card border-b border-border flex items-center px-4 sm:px-6">
-        <Link to="/portal" className="flex items-center gap-2 min-w-0">
-          <span className="font-heading text-lg font-bold text-dark-blue">DALI</span>
-          <span className="text-xs text-muted-foreground/70 font-medium hidden sm:inline">Applicant Portal</span>
+        <Link to="/portal" className="flex items-center gap-3 min-w-0">
+          <img
+            src="/logo-blue.svg"
+            alt="DALI Lab"
+            className="h-9 w-auto flex-shrink-0"
+          />
+          <span className="text-xs text-muted-foreground/70 font-medium hidden sm:inline border-l border-border pl-3">Applicant Portal</span>
         </Link>
       </nav>
       <div className="pt-16">

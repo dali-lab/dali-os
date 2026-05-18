@@ -325,9 +325,12 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
       {/* Brand */}
       <div className={`h-14 flex items-center flex-shrink-0 ${collapsed ? 'justify-center px-2' : 'justify-between px-3 gap-2'}`}>
         <Link to="/" className="flex items-center gap-2.5 min-w-0 focus:outline-none" title="DALI">
-          <div className="w-7 h-7 bg-accent-coral rounded-md flex items-center justify-center flex-shrink-0">
-            <span className="text-white font-bold text-base leading-none font-heading">D</span>
-          </div>
+          <img
+            src="/icon-white.svg"
+            alt=""
+            aria-hidden="true"
+            className="w-8 h-8 flex-shrink-0"
+          />
           {!collapsed && (
             <span className="font-heading font-bold text-lg text-white tracking-tight truncate">
               DALI OS
@@ -512,9 +515,12 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
             {mobileNavOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
           <Link to="/" className="flex items-center gap-2.5">
-            <div className="w-7 h-7 bg-accent-coral rounded-md flex items-center justify-center flex-shrink-0">
-              <span className="text-white font-bold text-base leading-none font-heading">D</span>
-            </div>
+            <img
+              src="/icon-white.svg"
+              alt=""
+              aria-hidden="true"
+              className="w-8 h-8 flex-shrink-0"
+            />
             <span className="font-heading font-bold text-lg text-white tracking-tight">
               DALI OS
             </span>

@@ -5,15 +5,20 @@ export type ButtonVariant = "primary" | "secondary" | "ghost" | "destructive";
 export type ButtonSize = "sm" | "md";
 
 const BASE =
-  "inline-flex items-center justify-center gap-2 rounded-full font-semibold font-heading transition focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none";
+  "inline-flex items-center justify-center gap-2 rounded-full font-semibold font-heading transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-teal focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none";
 
 const VARIANTS: Record<ButtonVariant, string> = {
-  // DALI brand coral is the single primary action color across the app.
-  primary: "bg-accent-coral text-white hover:bg-accent-coral/90 shadow-sm",
+  // DALI brand coral ("Sunrise") is the single primary action across the app.
+  // Hover promotes elevation one level and shifts to the light coral variant,
+  // per guide §8.1.
+  primary:
+    "bg-accent-coral text-white shadow-brand-1 hover:bg-accent-coral-light hover:shadow-brand-2",
+  // Navy outline secondary — guide §8.1 outline pill recipe.
   secondary:
-    "bg-card text-foreground border border-border hover:bg-muted",
+    "bg-card text-dark-blue border-2 border-dark-blue hover:bg-dark-blue hover:text-white",
   ghost: "text-muted-foreground hover:text-foreground hover:bg-muted",
-  destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+  destructive:
+    "bg-destructive text-destructive-foreground shadow-brand-1 hover:bg-destructive/90 hover:shadow-brand-2",
 };
 
 const SIZES: Record<ButtonSize, string> = {
