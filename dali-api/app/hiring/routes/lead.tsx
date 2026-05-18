@@ -120,10 +120,10 @@ export default function HiringLeadDashboard() {
                     className="w-full px-3 py-2 text-sm text-foreground border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="Standard">Standard hire</option>
-                    <option value="InternToFull">Intern → Full-time conversion</option>
+                    <option value="InternToFull">Fellowship</option>
                   </select>
                   <p className="text-xs text-muted-foreground mt-1">
-                    InternToFull cycles use a shortform (no challenge) and skip interviews.
+                    Fellowship cycles use a shortform (no challenge) and skip interviews.
                   </p>
                 </div>
                 <div className="flex justify-end gap-2">
@@ -156,7 +156,7 @@ export default function HiringLeadDashboard() {
 
 const CYCLE_TYPE_LABELS: Record<string, string> = {
   Standard: "Standard hire",
-  InternToFull: "Intern → Full-time",
+  InternToFull: "Fellowship",
 };
 
 function heroLinkFor(cycle: any): string {

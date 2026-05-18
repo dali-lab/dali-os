@@ -2,7 +2,7 @@ import { useSearchParams } from "react-router";
 
 export const CYCLE_TYPE_LABELS: Record<string, string> = {
   Standard: "Standard hire",
-  InternToFull: "Intern → Full-time",
+  InternToFull: "Fellowship",
 };
 
 export function CycleSelector({

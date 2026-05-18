@@ -397,7 +397,7 @@ export function ApplicationViewer({ application, questionLabels, initialAnnotati
             <div key={dapp.id} className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
               <div className="px-6 py-4 border-b border-border bg-muted/50">
                 <h2 className="text-lg font-semibold text-foreground">{domainName}</h2>
-                <p className="text-xs text-muted-foreground mt-1">Target domain selected (no challenge for intern conversions).</p>
+                <p className="text-xs text-muted-foreground mt-1">Target domain selected (no challenge for fellowship applications).</p>
               </div>
             </div>
           )
