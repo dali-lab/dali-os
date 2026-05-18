@@ -23,6 +23,7 @@ import {
 import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
 import type { DecisionType } from "~/types";
 import { formatVersionLabel, buildVersionNumberMap } from "~/lib/formatVersion";
+import { selectActiveCycleForDomainLead } from "~/hiring/lib/cycle-picker";
 
 const STATUS_LABELS: Record<string, string> = {
   Draft: "Draft",
@@ -88,35 +89,6 @@ function CyclePicker({
 }
 
 export const meta: Route.MetaFunction = () => [{ title: "Domain lead · DALI OS" }];
-
-// Picker selection rules, in order:
-//   1. Honor ?cycle=<id> when it matches one of the candidates.
-//   2. Prefer a Standard cycle in Open/UnderReview — keeps the existing
-//      single-cycle UX unchanged when a Standard cycle is the "main" one.
-//   3. Any cycle in Open/UnderReview (InternToFull falls here).
-//   4. Any Draft cycle.
-//   5. Otherwise null (the loader caller falls back to a "no active cycle" card).
-// Pure function so it's directly unit-testable without standing up the full
-// loader's prisma mocks.
-export function selectActiveCycleForDomainLead<
-  C extends { id: string; cycleType: string; statusUpdates: Array<{ newStatus: string }> },
->(candidates: C[], requestedId: string | null): C | null {
-  if (requestedId) {
-    const found = candidates.find((c) => c.id === requestedId);
-    if (found) return found;
-  }
-  const isActive = (c: C) => {
-    const s = c.statusUpdates[0]?.newStatus;
-    return s === "Open" || s === "UnderReview";
-  };
-  const isDraft = (c: C) => c.statusUpdates[0]?.newStatus === "Draft";
-  return (
-    candidates.find((c) => c.cycleType === "Standard" && isActive(c)) ??
-    candidates.find(isActive) ??
-    candidates.find(isDraft) ??
-    null
-  );
-}
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);

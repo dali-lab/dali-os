@@ -4,7 +4,7 @@
 // preferred over InternToFull when both active, fallback to Draft, etc.
 
 import { describe, it, expect } from "vitest";
-import { selectActiveCycleForDomainLead } from "~/hiring/routes/domain-lead";
+import { selectActiveCycleForDomainLead } from "~/hiring/lib/cycle-picker";
 
 type C = { id: string; cycleType: string; statusUpdates: Array<{ newStatus: string }> };
 
