@@ -490,16 +490,16 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
   )
 
   return (
-    <div className="min-h-screen min-h-dvh bg-section-bg flex flex-col md:flex-row pt-14 md:pt-0">
+    <div className="min-h-screen min-h-dvh bg-page flex flex-col md:flex-row pt-14 md:pt-0">
       {/* Desktop sidebar */}
       <aside
-        className={`hidden md:flex flex-col fixed inset-y-0 left-0 z-20 ${sidebarWidth} bg-[hsl(203,38%,23%)] dark:bg-[hsl(215,35%,10%)] transition-[width] duration-200`}
+        className={`hidden md:flex flex-col fixed inset-y-0 left-0 z-20 ${sidebarWidth} bg-sidebar-bg transition-[width] duration-200`}
       >
         {sidebarContent}
       </aside>
 
       {/* Mobile top bar */}
-      <div className="md:hidden fixed inset-x-0 top-0 z-20 h-14 bg-[hsl(203,38%,23%)] dark:bg-[hsl(215,35%,10%)] flex items-center justify-between px-3">
+      <div className="md:hidden fixed inset-x-0 top-0 z-20 h-14 bg-sidebar-bg flex items-center justify-between px-3">
         <div className="flex items-center gap-2.5">
           <button
             type="button"
@@ -572,7 +572,7 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
           />
           <aside
             id="mobile-nav-panel"
-            className="md:hidden fixed inset-y-0 left-0 z-40 w-64 bg-[hsl(203,38%,23%)] dark:bg-[hsl(215,35%,10%)] flex flex-col shadow-xl"
+            className="md:hidden fixed inset-y-0 left-0 z-40 w-64 bg-sidebar-bg flex flex-col shadow-xl"
           >
             {sidebarContent}
           </aside>

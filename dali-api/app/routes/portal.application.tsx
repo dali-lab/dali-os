@@ -176,7 +176,7 @@ function DomainSection({
 }) {
   return (
     <details className="group rounded-2xl border border-border overflow-hidden">
-      <summary className="flex items-center justify-between px-6 py-4 bg-[#E8F4FA] cursor-pointer list-none select-none">
+      <summary className="flex items-center justify-between px-6 py-4 bg-brand-tint cursor-pointer list-none select-none">
         <span className="font-heading text-base font-bold text-dark-blue">{name}</span>
         <svg
           className="w-5 h-5 text-muted-foreground transition-transform group-open:rotate-180"
@@ -235,7 +235,7 @@ export default function PortalApplication() {
   return (
     <div>
       {/* Header */}
-      <div className="bg-[#E8F4FA] px-6 md:px-16 lg:px-24 py-10">
+      <div className="bg-brand-tint px-6 md:px-16 lg:px-24 py-10">
         <div className="max-w-3xl mx-auto">
           <Link
             to="/portal"
@@ -294,7 +294,7 @@ export default function PortalApplication() {
           ) : null}
 
           {/* General questions */}
-          <div className="rounded-2xl bg-[#E8F4FA] px-6 py-5">
+          <div className="rounded-2xl bg-brand-tint px-6 py-5">
             <h2 className="font-heading text-sm font-bold text-dark-blue uppercase tracking-wider mb-5">
               General Questions
             </h2>

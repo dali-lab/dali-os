@@ -1303,7 +1303,7 @@ export default function PortalApply() {
   // Render domain pill selector (shared between both states)
   function renderDomainSelector() {
     return (
-      <div className="px-6 py-5 rounded-2xl bg-[#E8F4FA]">
+      <div className="px-6 py-5 rounded-2xl bg-brand-tint">
         <h3 className="font-heading text-base font-bold text-dark-blue mb-1">
           Domains <span className="text-accent-coral">*</span>
         </h3>
@@ -1402,7 +1402,7 @@ export default function PortalApply() {
         {(() => {
           const beforeQuestions = (formQuestions as Question[]).filter(q => !q.data.afterDomains);
           return beforeQuestions.length > 0 ? (
-            <div id="section-general-before" className="rounded-2xl bg-[#E8F4FA] px-6 py-5 space-y-6 scroll-mt-24">
+            <div id="section-general-before" className="rounded-2xl bg-brand-tint px-6 py-5 space-y-6 scroll-mt-24">
               <h3 className="font-heading text-sm font-bold text-dark-blue uppercase tracking-wider">General Questions</h3>
               {!isEmptyDoc(generalDescription) && (
                 <div className="text-dark-blue">
@@ -1544,7 +1544,7 @@ export default function PortalApply() {
         {(() => {
           const afterQuestions = (formQuestions as Question[]).filter(q => q.data.afterDomains);
           return afterQuestions.length > 0 ? (
-            <div id="section-general-after" className="rounded-2xl bg-[#E8F4FA] px-6 py-5 space-y-6 scroll-mt-24">
+            <div id="section-general-after" className="rounded-2xl bg-brand-tint px-6 py-5 space-y-6 scroll-mt-24">
               <h3 className="font-heading text-sm font-bold text-dark-blue uppercase tracking-wider">Anything Else</h3>
               {afterQuestions.map(q => (
                 <div key={q.key} id={`question-${q.key}`}>
@@ -1663,7 +1663,7 @@ export default function PortalApply() {
           {(() => {
             const beforeQuestions = (formQuestions as Question[]).filter(q => !q.data.afterDomains);
             return beforeQuestions.length > 0 ? (
-              <div className="rounded-2xl bg-[#E8F4FA] px-5 py-4">
+              <div className="rounded-2xl bg-brand-tint px-5 py-4">
                 <h4 className="font-heading text-xs font-bold text-dark-blue uppercase tracking-wider mb-4">
                   General Questions
                 </h4>
@@ -1702,7 +1702,7 @@ export default function PortalApply() {
           {(() => {
             const afterQuestions = (formQuestions as Question[]).filter(q => q.data.afterDomains);
             return afterQuestions.length > 0 ? (
-              <div className="rounded-2xl bg-[#E8F4FA] px-5 py-4">
+              <div className="rounded-2xl bg-brand-tint px-5 py-4">
                 <h4 className="font-heading text-xs font-bold text-dark-blue uppercase tracking-wider mb-4">
                   Anything Else
                 </h4>

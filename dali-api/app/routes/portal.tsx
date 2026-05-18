@@ -281,7 +281,7 @@ function DeadlineLine({ closeDate, originalCloseDate }: { closeDate: string; ori
 
 // ─── Shared UI ───────────────────────────────────────────────────────────────
 
-const cardBg = "bg-[#E8F4FA]";
+const cardBg = "bg-brand-tint";
 
 function StatusBadge({ label, variant }: { label: string; variant: "blue" | "green" | "yellow" | "red" | "gray" }) {
   const styles: Record<string, string> = {
@@ -937,17 +937,17 @@ function DomainApplicationCard({
   const [isExpanded, setIsExpanded] = useState(false);
 
   return (
-    <div className="rounded-2xl border border-gray-200 overflow-hidden">
+    <div className="rounded-2xl border border-border overflow-hidden">
       <button
         type="button"
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full bg-[#E8F4FA] px-6 py-4 flex items-center justify-between cursor-pointer"
+        className="w-full bg-brand-tint px-6 py-4 flex items-center justify-between cursor-pointer"
       >
         <h3 className="font-heading text-base font-bold text-dark-blue">{da.domainName}</h3>
         <div className="flex items-center gap-3">
           <StageIndicator stage={stage} />
           <svg
-            className={`w-5 h-5 text-gray-500 transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`}
+            className={`w-5 h-5 text-muted-foreground transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`}
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
@@ -1047,7 +1047,7 @@ export default function Portal() {
     <div>
       <Confetti trigger={justSubmitted} onFire={handleConfettiFire} />
       {/* Header */}
-      <div className="bg-[#E8F4FA] px-6 md:px-16 lg:px-24 py-10">
+      <div className="bg-brand-tint px-6 md:px-16 lg:px-24 py-10">
         <div className="max-w-3xl mx-auto">
           <h1 className="font-heading text-xl font-bold text-dark-blue">
             {cycleName} Application Portal

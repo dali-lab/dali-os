@@ -15,9 +15,31 @@
   --color-dali-teal: hsl(177 45% 51%);
   --color-dali-teal-dark: hsl(177 45% 38%);
   --color-dali-green: hsl(80 45% 70%);
-  --color-section-bg: hsl(205 100% 92%);
-  --color-section-bg-alt: hsl(205 100% 92%);
   --color-text-secondary: hsl(0 0% 40%);
+
+  /* ── Light-mode surface conventions ──────────────────────────────────
+   * Standardize on these instead of raw palette classes so light mode
+   * stays consistent and dark mode is handled by the token, not the
+   * !important remap layer below.
+   *
+   *   Page wash ............ bg-page        (the route background)
+   *   Brand-tint panel ..... bg-brand-tint  (decorative info panels)
+   *   Content card ......... bg-card + border border-border
+   *   Sidebar shell ........ bg-sidebar-bg  (dark navy nav, both modes)
+   *   Borders / inputs ..... border-border
+   *   Body text ............ text-foreground
+   *   Secondary text ....... text-muted-foreground
+   *   Primary action ....... bg-accent-coral (DALI brand, not blue)
+   *
+   * Layering: page (lightest) < brand-tint panel < white card.
+   * `section-bg` is the legacy page-wash alias — kept equal to `page`
+   * so un-migrated routes don't visually diverge while they're phased
+   * over to `bg-page` in follow-up PRs. */
+  --color-page: hsl(200 60% 98%);
+  --color-brand-tint: hsl(202 58% 94%);
+  --color-sidebar-bg: hsl(203 38% 23%);
+  --color-section-bg: var(--color-page);
+  --color-section-bg-alt: var(--color-brand-tint);
 
   /* shadcn semantic tokens */
   --color-background: hsl(0 0% 100%);
@@ -84,9 +106,14 @@
     --color-dali-teal: hsl(177 50% 58%);
     --color-dark-blue: hsl(210 20% 88%);
     --color-nav-primary: hsl(210 20% 95%);
-    /* section-bg = same as background in dark — no mid-blue page wash */
-    --color-section-bg: hsl(215 35% 10%);
-    --color-section-bg-alt: hsl(215 32% 13%);
+    /* page wash = background in dark — no mid-blue tint; brand-tint
+       panels become an elevated dark surface (matches the old
+       hand-rolled .bg-[#E8F4FA] dark remap that this replaces) */
+    --color-page: hsl(215 35% 10%);
+    --color-brand-tint: hsl(215 32% 15%);
+    --color-sidebar-bg: hsl(215 35% 10%);
+    --color-section-bg: var(--color-page);
+    --color-section-bg-alt: var(--color-brand-tint);
     --color-text-secondary: hsl(210 15% 62%);
     --color-sidebar: hsl(215 35% 8%);
     --color-sidebar-foreground: hsl(210 15% 85%);
@@ -226,9 +253,6 @@
   .text-gray-800, .text-gray-700 { color: hsl(210 18% 88%) !important; }
   .text-gray-600 { color: hsl(210 15% 75%) !important; }
   .text-gray-500, .text-gray-400 { color: var(--color-muted-foreground) !important; }
-
-  /* Brand pale-blue tint → elevated dark surface (login hero, applicant portal cards) */
-  .bg-\[\#E8F4FA\] { background-color: hsl(215 32% 15%) !important; }
 }
 
 * {
