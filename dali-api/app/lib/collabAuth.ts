@@ -1,5 +1,5 @@
 import { prisma } from "~/lib/db";
-import { isHiringLead, isDomainLead } from "~/lib/roles";
+import { isHiringLead, isDomainLead, isCore, isInstructorFor } from "~/lib/roles";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 
 /** Hydrate author IDs into `{ id, name }` objects in a single IN query. */
@@ -50,6 +50,86 @@ export async function authorizeCollabDoc(
     if (review.cycleReviewer.userId === userSub) return true;
     if (await isDomainLead(userSub)) return true;
     if (await isHiringLead(userSub)) return true;
+    return false;
+  }
+
+  if (entity === "education-offering") {
+    const offering = await prisma.educationOffering.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!offering) return false;
+    if (await isInstructorFor(userSub, id)) return true;
+    if (await isCore(userSub)) return true;
+    return false;
+  }
+
+  if (entity === "education-session") {
+    const session = await prisma.educationSession.findUnique({
+      where: { id },
+      select: { offeringId: true },
+    });
+    if (!session) return false;
+    if (await isInstructorFor(userSub, session.offeringId)) return true;
+    if (await isCore(userSub)) return true;
+    return false;
+  }
+
+  if (entity === "education-assignment") {
+    const assignment = await prisma.educationAssignment.findUnique({
+      where: { id },
+      select: { offeringId: true, sessionId: true },
+    });
+    if (!assignment) return false;
+    let offeringId = assignment.offeringId;
+    if (!offeringId && assignment.sessionId) {
+      const session = await prisma.educationSession.findUnique({
+        where: { id: assignment.sessionId },
+        select: { offeringId: true },
+      });
+      offeringId = session?.offeringId ?? null;
+    }
+    if (offeringId && (await isInstructorFor(userSub, offeringId))) return true;
+    if (await isCore(userSub)) return true;
+    return false;
+  }
+
+  if (entity === "education-submission") {
+    const submission = await prisma.educationSubmission.findUnique({
+      where: { id },
+      select: {
+        studentId: true,
+        assignment: {
+          select: {
+            offeringId: true,
+            sessionId: true,
+          },
+        },
+      },
+    });
+    if (!submission) return false;
+    if (submission.studentId === userSub) return true;
+    let offeringId = submission.assignment.offeringId;
+    if (!offeringId && submission.assignment.sessionId) {
+      const session = await prisma.educationSession.findUnique({
+        where: { id: submission.assignment.sessionId },
+        select: { offeringId: true },
+      });
+      offeringId = session?.offeringId ?? null;
+    }
+    if (offeringId && (await isInstructorFor(userSub, offeringId))) return true;
+    if (await isCore(userSub)) return true;
+    return false;
+  }
+
+  if (entity === "education-application") {
+    const application = await prisma.educationApplication.findUnique({
+      where: { id },
+      select: { offeringId: true },
+    });
+    if (!application) return false;
+    if (await isInstructorFor(userSub, application.offeringId)) return true;
+    if (await isCore(userSub)) return true;
     return false;
   }
 

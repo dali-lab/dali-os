@@ -22,6 +22,11 @@ import {
   List,
   UserPlus,
   Building2,
+  GraduationCap,
+  BookOpen,
+  Sparkles,
+  ClipboardList,
+  Megaphone,
 } from 'lucide-react'
 import { userInitials } from '~/lib/display'
 import { TabWorkspace, type TabWorkspaceHandle, type OpenTabRequest } from '~/components/TabWorkspace'
@@ -33,14 +38,26 @@ interface LayoutProps {
   isAdmin?: boolean
   isDomainLead?: boolean
   isInterviewer?: boolean
+  isCore?: boolean
+  isEducationLead?: boolean
+  isInstructor?: boolean
 }
 
 const SIDEBAR_COLLAPSED_KEY = 'dali:sidebar:collapsed'
 const EXPANDED_AREAS_KEY = 'dali:sidebar:expanded-areas'
 
-type AreaKey = 'hiring' | 'projects' | 'members' | 'partners' | 'admin-console'
+type AreaKey = 'hiring' | 'projects' | 'members' | 'partners' | 'admin-console' | 'education'
 
-export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLead = false, isInterviewer = false }: LayoutProps) {
+export function Layout({
+  user,
+  isHiringLead = false,
+  isAdmin = false,
+  isDomainLead = false,
+  isInterviewer = false,
+  isCore = false,
+  isEducationLead = false,
+  isInstructor = false,
+}: LayoutProps) {
   const location = useLocation()
   const [focusedTabUrl, setFocusedTabUrl] = useState<string | null>(null)
   // Sidebar highlight follows the focused workspace tab when one is open;
@@ -54,6 +71,7 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
     members: undefined,
     partners: undefined,
     'admin-console': undefined,
+    education: undefined,
   })
   const workspaceRef = useRef<TabWorkspaceHandle | null>(null)
 
@@ -104,6 +122,7 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
     : path.startsWith('/projects') ? 'projects'
     : path.startsWith('/members') ? 'members'
     : path.startsWith('/partners') ? 'partners'
+    : path.startsWith('/education') ? 'education'
     : null
 
   const hiringSections = [
@@ -230,6 +249,41 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
     },
   ].filter((s) => s.show)
 
+  const educationSections = [
+    {
+      label: 'Browse',
+      to: '/education/browse',
+      icon: BookOpen,
+      show: true,
+      active: path.startsWith('/education/browse'),
+      sub: null as { label: string; to: string; active: boolean }[] | null,
+    },
+    {
+      label: 'My Learning',
+      to: '/education/my-learning',
+      icon: Sparkles,
+      show: true,
+      active: path.startsWith('/education/my-learning'),
+      sub: null,
+    },
+    {
+      label: 'Teaching',
+      to: '/education/teaching',
+      icon: ClipboardList,
+      show: isInstructor || isCore,
+      active: path.startsWith('/education/teaching'),
+      sub: null,
+    },
+    {
+      label: 'Manage',
+      to: '/education/manage',
+      icon: Megaphone,
+      show: isCore || isEducationLead,
+      active: path.startsWith('/education/manage') || path.startsWith('/education/offerings'),
+      sub: null,
+    },
+  ].filter((s) => s.show)
+
   const partnersSections = [
     {
       label: 'Organizations',
@@ -269,6 +323,15 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
       show: true,
       active: activeAreaKey === 'members',
       sections: membersSections,
+    },
+    {
+      key: 'education' as AreaKey,
+      label: 'Education',
+      to: '/education/browse',
+      icon: GraduationCap,
+      show: true,
+      active: activeAreaKey === 'education',
+      sections: educationSections,
     },
     {
       key: 'partners' as AreaKey,

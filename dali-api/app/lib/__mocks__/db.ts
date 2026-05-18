@@ -72,8 +72,72 @@ export const prisma = {
   },
   scheduledMeeting: {
     findMany: vi.fn().mockResolvedValue([]),
+    findUnique: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
+  },
+  instructorAssignment: {
+    findFirst: vi.fn(),
+    create: vi.fn(),
+    deleteMany: vi.fn(),
+  },
+  educationOffering: {
+    findUnique: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+    create: vi.fn(),
+    update: vi.fn(),
+  },
+  educationApplication: {
+    findUnique: vi.fn(),
+    findFirst: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+    create: vi.fn(),
+    update: vi.fn(),
+    count: vi.fn().mockResolvedValue(0),
+  },
+  educationApplicationAnswer: {
+    createMany: vi.fn(),
+    deleteMany: vi.fn(),
+  },
+  educationApplicationQuestion: {
+    findMany: vi.fn().mockResolvedValue([]),
+    aggregate: vi.fn().mockResolvedValue({ _max: { position: null } }),
+    create: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+  },
+  educationSession: {
+    findMany: vi.fn().mockResolvedValue([]),
+    findUnique: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+    aggregate: vi.fn().mockResolvedValue({ _max: { sequence: null } }),
+  },
+  educationAssignment: {
+    findUnique: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+    create: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+  },
+  educationSubmission: {
+    findUnique: vi.fn(),
+    upsert: vi.fn(),
+    update: vi.fn(),
+  },
+  educationAttendance: {
+    upsert: vi.fn(),
+  },
+  educationAnnouncement: {
+    create: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+  },
+  notificationEvent: {
+    createMany: vi.fn().mockResolvedValue({ count: 0 }),
+  },
+  page: {
+    findMany: vi.fn().mockResolvedValue([]),
   },
   userAvailabilitySettings: {
     findUnique: vi.fn().mockResolvedValue(null),
@@ -86,6 +150,7 @@ export const prisma = {
   },
   userCalendarLink: {
     findMany: vi.fn().mockResolvedValue([]),
+    findFirst: vi.fn().mockResolvedValue(null),
     findUnique: vi.fn(),
     update: vi.fn(),
   },

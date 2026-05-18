@@ -13,10 +13,11 @@ import {
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import type { Route } from "./+types/home";
+import type { NotificationKind } from "~/generated/prisma/enums";
 
 type HomeNotification = {
   id: string;
-  kind: "General" | "MeetingInvite" | "MeetingReminder" | "SystemAnnouncement";
+  kind: NotificationKind;
   title: string;
   body: string | null;
   link: string | null;

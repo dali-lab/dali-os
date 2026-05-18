@@ -5,7 +5,11 @@
 
 import { prisma } from "~/lib/db";
 import { resolveGroupMembers } from "~/lib/groups";
-import { createGoogleCalendarEvent, type GoogleAttendee } from "~/lib/google-calendar";
+import {
+  createGoogleCalendarEvent,
+  setGoogleCalendarEventAttendees,
+  type GoogleAttendee,
+} from "~/lib/google-calendar";
 import type { ScheduledMeeting } from "~/generated/prisma/client";
 
 export type ScheduledMeetingScope =
@@ -149,4 +153,82 @@ export async function createScheduledMeeting(
     notifiedCount,
     gcalError,
   };
+}
+
+export type UpdateParticipantsResult =
+  | { ok: true; added: string[]; removed: string[]; gcalError: string | null }
+  | { ok: false; error: string };
+
+/**
+ * Reconcile a ScheduledMeeting's participants to `participantUserIds`. Updates
+ * the participantUserIds column and patches the Google Calendar event when
+ * the meeting has an externalEventId + a calendar link is still attached.
+ */
+export async function updateScheduledMeetingParticipants(
+  meetingId: string,
+  participantUserIds: string[],
+): Promise<UpdateParticipantsResult> {
+  const targetIds = Array.from(new Set(participantUserIds));
+
+  const meeting = await prisma.scheduledMeeting.findUnique({
+    where: { id: meetingId },
+    select: {
+      id: true,
+      participantUserIds: true,
+      externalEventId: true,
+      organizerCalendarLinkId: true,
+      organizerCalendarLink: {
+        select: { id: true, enabled: true },
+      },
+    },
+  });
+  if (!meeting) return { ok: false, error: "Meeting not found" };
+
+  const current = new Set(meeting.participantUserIds);
+  const target = new Set(targetIds);
+  const added = targetIds.filter((id) => !current.has(id));
+  const removed = meeting.participantUserIds.filter((id) => !target.has(id));
+
+  if (added.length === 0 && removed.length === 0) {
+    return { ok: true, added: [], removed: [], gcalError: null };
+  }
+
+  await prisma.scheduledMeeting.update({
+    where: { id: meetingId },
+    data: { participantUserIds: targetIds },
+  });
+
+  let gcalError: string | null = null;
+  if (meeting.externalEventId && meeting.organizerCalendarLink?.enabled) {
+    const users = await prisma.user.findMany({
+      where: { id: { in: targetIds } },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        daliEmail: true,
+        dartmouthEmail: true,
+      },
+    });
+    const attendees: GoogleAttendee[] = [];
+    for (const u of users) {
+      const email = u.daliEmail ?? u.dartmouthEmail;
+      if (!email) continue;
+      attendees.push({
+        email,
+        displayName: `${u.firstName} ${u.lastName}`.trim() || email,
+      });
+    }
+    try {
+      await setGoogleCalendarEventAttendees({
+        linkId: meeting.organizerCalendarLink.id,
+        eventId: meeting.externalEventId,
+        attendees,
+      });
+    } catch (err) {
+      gcalError = err instanceof Error ? err.message : "Google Calendar patch failed";
+    }
+  }
+
+  return { ok: true, added, removed, gcalError };
 }

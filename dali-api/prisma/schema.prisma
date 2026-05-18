@@ -1129,8 +1129,9 @@ model ScheduledMeeting {
   organizerCalendarLinkId String?
   organizerCalendarLink   UserCalendarLink? @relation(fields: [organizerCalendarLinkId], references: [id])
 
-  exceptions    MeetingException[]
-  notifications Notification[]
+  exceptions       MeetingException[]
+  notifications    Notification[]
+  educationSession EducationSession[] @relation("EducationSessionMeeting")
 
   createdAt DateTime @default(now())
 }
@@ -1182,6 +1183,10 @@ enum NotificationKind {
   MeetingInvite
   MeetingReminder
   SystemAnnouncement
+  EducationApplicationDecision
+  EducationAnnouncementPosted
+  EducationWaitlistPromoted
+  EducationSessionInvite
 }
 
 enum MeetingRsvp {
@@ -1726,10 +1731,14 @@ model EducationSession {
   // Materials as collab doc — slides, notes, pre-reads.
   materialsDocId String?
   recordingUrl   String?
+  // Lazily created when roster sync first runs. Lets us re-sync participants
+  // on approve / withdraw / promote without recreating the calendar event.
+  scheduledMeetingId String?
 
-  offering    EducationOffering     @relation(fields: [offeringId], references: [id])
-  attendances EducationAttendance[]
-  assignments EducationAssignment[]
+  offering         EducationOffering     @relation(fields: [offeringId], references: [id])
+  scheduledMeeting ScheduledMeeting?     @relation("EducationSessionMeeting", fields: [scheduledMeetingId], references: [id], onDelete: SetNull)
+  attendances      EducationAttendance[]
+  assignments      EducationAssignment[]
 
   @@index([offeringId, sequence])
 }

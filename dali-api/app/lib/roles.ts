@@ -1,4 +1,7 @@
 import { prisma } from "~/lib/db";
+import { requireAuth } from "~/lib/auth";
+
+export const EDUCATION_LEAD_TITLE = "Education Lead";
 
 // Phase 2 rewrite: role flags derived from the new typed assignment tables
 // (AdminMembership, CoreAssignment, DomainLeadAssignment) rather than the
@@ -17,6 +20,9 @@ export interface UserRoles {
   isHiringLead: boolean;
   isAdmin: boolean;
   isDomainLead: boolean;
+  isCore: boolean;
+  isEducationLead: boolean;
+  isInstructor: boolean;
 }
 
 /**
@@ -28,7 +34,7 @@ export async function getUserRoles(userId: string): Promise<UserRoles> {
     .split(",")
     .filter(Boolean);
 
-  const [member, admin, core, domainLead] = await Promise.all([
+  const [member, admin, core, educationLead, instructor, domainLead] = await Promise.all([
     prisma.dALIMember.findUnique({ where: { userId }, select: { id: true } }),
     prisma.adminMembership.findUnique({ where: { userId }, select: { id: true } }),
     // Any CoreAssignment is sufficient for "hiring lead-equivalent" access.
@@ -37,6 +43,11 @@ export async function getUserRoles(userId: string): Promise<UserRoles> {
     // year-long and the few minutes around term rollover don't warrant a
     // current-term filter at this layer.
     prisma.coreAssignment.findFirst({ where: { userId }, select: { id: true } }),
+    prisma.coreAssignment.findFirst({
+      where: { userId, leadTitle: EDUCATION_LEAD_TITLE },
+      select: { id: true },
+    }),
+    prisma.instructorAssignment.findFirst({ where: { userId }, select: { id: true } }),
     // DomainLeadAssignment.termId is required post-Phase-2; any row signals
     // domain-lead authority for that user.
     prisma.domainLeadAssignment.findFirst({ where: { userId }, select: { id: true } }),
@@ -53,6 +64,9 @@ export async function getUserRoles(userId: string): Promise<UserRoles> {
     isHiringLead: isAdminVal || isCoreVal,
     isAdmin: isAdminVal,
     isDomainLead: domainLead !== null,
+    isCore: isAdminVal || isCoreVal,
+    isEducationLead: educationLead !== null,
+    isInstructor: instructor !== null,
   };
 }
 
@@ -148,4 +162,71 @@ export async function hasCycleAccess(userId: string, cycleId: string): Promise<b
     }),
   ]);
   return reviewer !== null || interviewer !== null;
+}
+
+// ─── Education-scoped helpers ────────────────────────────────────────────────
+
+/** Core for the current term. Admins are a superset of Core. */
+export async function isCore(userId: string): Promise<boolean> {
+  const envIds = (process.env.ADMIN_USER_IDS ?? "")
+    .split(",")
+    .filter(Boolean);
+  if (envIds.includes(userId)) return true;
+  const [admin, core] = await Promise.all([
+    prisma.adminMembership.findUnique({ where: { userId }, select: { id: true } }),
+    prisma.coreAssignment.findFirst({ where: { userId }, select: { id: true } }),
+  ]);
+  return admin !== null || core !== null;
+}
+
+/** True when the user holds a Core seat with leadTitle = "Education Lead". */
+export async function isEducationLead(userId: string): Promise<boolean> {
+  const row = await prisma.coreAssignment.findFirst({
+    where: { userId, leadTitle: EDUCATION_LEAD_TITLE },
+    select: { id: true },
+  });
+  return row !== null;
+}
+
+/** True when the user is currently an instructor for the offering (any term). */
+export async function isInstructorFor(
+  userId: string,
+  offeringId: string,
+): Promise<boolean> {
+  const row = await prisma.instructorAssignment.findFirst({
+    where: { userId, offeringId },
+    select: { id: true },
+  });
+  return row !== null;
+}
+
+/**
+ * Gate helper for Education manager loaders/actions. Returns either an
+ * authenticated userId or a Response the caller should throw. Pass
+ * `offeringId = null` for endpoints that only Core may use (e.g. create
+ * an offering).
+ */
+export async function requireInstructorOrCore(
+  request: Request,
+  offeringId: string | null,
+): Promise<
+  | { ok: true; userId: string }
+  | { ok: false; response: Response }
+> {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return { ok: false, response: auth.response };
+
+  if (await isCore(auth.user.sub)) return { ok: true, userId: auth.user.sub };
+
+  if (offeringId && (await isInstructorFor(auth.user.sub, offeringId))) {
+    return { ok: true, userId: auth.user.sub };
+  }
+
+  return {
+    ok: false,
+    response: new Response(JSON.stringify({ error: "Forbidden" }), {
+      status: 403,
+      headers: { "Content-Type": "application/json" },
+    }),
+  };
 }

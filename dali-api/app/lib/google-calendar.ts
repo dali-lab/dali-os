@@ -304,3 +304,33 @@ export async function updateGoogleAttendeeRsvp(opts: {
     throw new Error(`Google events.patch failed (${patchRes.status}): ${detail}`);
   }
 }
+
+/**
+ * Replace the attendee list on an existing Google Calendar event. Sends
+ * Gmail invite/uninvite mail via `sendUpdates=all` so newly added attendees
+ * receive an invite and removed attendees receive a cancellation.
+ */
+export async function setGoogleCalendarEventAttendees(opts: {
+  linkId: string;
+  calendarId?: string;
+  eventId: string;
+  attendees: GoogleAttendee[];
+}): Promise<void> {
+  const token = await getValidAccessTokenForLink(opts.linkId);
+  const calendarId = encodeURIComponent(opts.calendarId ?? "primary");
+  const patchRes = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${encodeURIComponent(opts.eventId)}?sendUpdates=all`,
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ attendees: opts.attendees }),
+    },
+  );
+  if (!patchRes.ok) {
+    const detail = await extractGoogleErrorDetail(patchRes);
+    throw new Error(`Google events.patch failed (${patchRes.status}): ${detail}`);
+  }
+}
