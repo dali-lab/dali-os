@@ -124,6 +124,7 @@ export function ApplicantContextModal({
                   ...(data.rubric.generalCriteria ?? []),
                   ...(data.rubric.domainCriteria ?? []),
                 ]}
+                fieldContext={buildFieldContext(data)}
               />
               <DecisionsSection decisions={data.decisions ?? []} />
             </>
@@ -186,7 +187,99 @@ function AnswerSection({
   );
 }
 
-function ReviewsSection({ reviews, criteria }: { reviews: any[]; criteria: any[] }) {
+type FieldContext = Record<string, { label: string; answer: string }>;
+
+function buildFieldContext(data: any): FieldContext {
+  const ctx: FieldContext = {};
+  const generalQs = Array.isArray(data?.application?.generalQuestions)
+    ? data.application.generalQuestions
+    : [];
+  const generalAns = (data?.application?.answers && typeof data.application.answers === "object")
+    ? (data.application.answers as Record<string, unknown>)
+    : {};
+  const domainQs = Array.isArray(data?.domainApplication?.challengeQuestions)
+    ? data.domainApplication.challengeQuestions
+    : [];
+  const domainAns = (data?.domainApplication?.answers && typeof data.domainApplication.answers === "object")
+    ? (data.domainApplication.answers as Record<string, unknown>)
+    : {};
+  for (const q of generalQs) {
+    ctx[q.key] = {
+      label: q.data?.label ?? q.key,
+      answer: typeof generalAns[q.key] === "string" ? (generalAns[q.key] as string) : "",
+    };
+  }
+  for (const q of domainQs) {
+    ctx[q.key] = {
+      label: q.data?.label ?? q.key,
+      answer: typeof domainAns[q.key] === "string" ? (domainAns[q.key] as string) : "",
+    };
+  }
+  return ctx;
+}
+
+function ReviewAnnotations({
+  annotations,
+  fieldContext,
+}: {
+  annotations: Array<{ id: string; fieldKey: string; start: number; end: number; comment: string }>;
+  fieldContext: FieldContext;
+}) {
+  if (!annotations.length) return null;
+  // Group annotations by field so each section reads cleanly.
+  const byField = new Map<string, typeof annotations>();
+  for (const a of annotations) {
+    const list = byField.get(a.fieldKey) ?? [];
+    list.push(a);
+    byField.set(a.fieldKey, list);
+  }
+  return (
+    <div className="mt-2 space-y-2">
+      <div className="text-[10px] uppercase tracking-wide font-semibold text-muted-foreground/70">
+        Notes
+      </div>
+      {Array.from(byField.entries()).map(([fieldKey, anns]) => {
+        const ctx = fieldContext[fieldKey];
+        const label = ctx?.label ?? fieldKey;
+        const answer = ctx?.answer ?? "";
+        return (
+          <div key={fieldKey} className="text-xs">
+            <div className="font-medium text-foreground/80 mb-1">{label}</div>
+            <ul className="space-y-1.5">
+              {anns.map((a) => {
+                const excerpt = answer
+                  ? answer.slice(Math.max(0, a.start), Math.max(a.start, a.end))
+                  : "";
+                return (
+                  <li key={a.id} className="bg-yellow-50 border-l-2 border-yellow-300 rounded-r p-2">
+                    {excerpt && (
+                      <div className="italic text-muted-foreground mb-1 whitespace-pre-wrap">
+                        “{excerpt}”
+                      </div>
+                    )}
+                    {a.comment && (
+                      <div className="text-foreground whitespace-pre-wrap">{a.comment}</div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ReviewsSection({
+  reviews,
+  criteria,
+  fieldContext,
+}: {
+  reviews: any[];
+  criteria: any[];
+  fieldContext: FieldContext;
+}) {
   return (
     <section className="bg-card border border-border rounded-lg overflow-hidden">
       <div className="px-4 py-2 bg-muted/50 border-b border-border">
@@ -261,6 +354,10 @@ function ReviewsSection({ reviews, criteria }: { reviews: any[]; criteria: any[]
                     {review.rejectionRationale}
                   </p>
                 )}
+                <ReviewAnnotations
+                  annotations={Array.isArray(review.annotations) ? review.annotations : []}
+                  fieldContext={fieldContext}
+                />
               </div>
             );
           })}

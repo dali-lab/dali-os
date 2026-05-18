@@ -71,8 +71,26 @@ export default [
   route("oauth/callback/cas", "routes/oauth.callback.cas.ts"),
   route("oauth/token", "routes/oauth.token.ts"),
   route("oauth/revoke", "routes/oauth.revoke.ts"),
+  route("oauth/register", "routes/oauth.register.ts"),
+  route("oauth/consent", "routes/oauth.consent.tsx"),
   route("oauth/calendar/google/start", "routes/oauth.calendar.google.start.ts"),
   route("integrations/calendar/google/callback", "routes/integrations.calendar.google.callback.ts"),
+
+  // MCP foundation (no layout)
+  route(".well-known/oauth-authorization-server", "routes/well-known.oauth-authorization-server.ts"),
+  route(
+    ".well-known/oauth-protected-resource",
+    "routes/well-known.oauth-protected-resource.ts",
+    { id: "well-known.oauth-protected-resource" },
+  ),
+  route(
+    ".well-known/oauth-protected-resource/mcp",
+    "routes/well-known.oauth-protected-resource.ts",
+    { id: "well-known.oauth-protected-resource.mcp" },
+  ),
+  route("mcp", "routes/mcp.ts"),
+  route("help/mcp", "routes/help.mcp.tsx"),
+  route("settings/connected-apps", "routes/settings.connected-apps.tsx"),
 
   // Authenticated API endpoints (no layout)
   route("users/:id", "members/routes/users.$id.ts"),
@@ -95,6 +113,10 @@ export default [
   // Scheduled meetings
   route("api/scheduled-meetings", "calendar/routes/api.scheduled-meetings.ts"),
   route("api/calendar/group-availability", "calendar/routes/api.calendar.group-availability.ts"),
+
+  // Slack bot (webhook receivers; signature-verified, no auth middleware)
+  route("api/slack/events", "slack/routes/api.slack.events.ts"),
+  route("api/slack/interactivity", "slack/routes/api.slack.interactivity.ts"),
 
 
   // Hiring API — cycles, scheduling, applications, reviews, decisions, interviews, delibs

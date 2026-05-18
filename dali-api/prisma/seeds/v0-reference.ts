@@ -227,6 +227,8 @@ async function main() {
   await seedTerms();
   await seedPageTemplates();
   await seedMentorNoteTemplate();
+  // MCP OAuth clients are no longer seeded — clients register themselves
+  // via RFC 7591 Dynamic Client Registration at /oauth/register.
   console.log("Done.");
 }
 

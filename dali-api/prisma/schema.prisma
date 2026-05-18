@@ -837,6 +837,13 @@ model OAuthSession {
   // for chained Google → CAS account linking
   linkUserId String?
 
+  // MCP foundation track: the OAuthClient that initiated this authorization
+  // request, and the requested scopes the consent screen authorized. Both
+  // are nullable for backward-compat with pre-MCP rows; new sessions populate
+  // them at /oauth/authorize.
+  clientId String?
+  scopes   String[] @default([])
+
   expiresAt DateTime
   createdAt DateTime @default(now())
 
@@ -854,9 +861,8 @@ model Session {
   id                String    @id
   userId            String
   // Null for cookie logins. Set for OAuth-issued (MCP) sessions, linking
-  // the session to the OAuthGrant that authorized it. Intentionally a plain
-  // String? with no FK constraint in this PR — the FK lands when OAuthGrant
-  // ships in the MCP foundation track.
+  // the session to the OAuthGrant that authorized it. FK constraint enforced
+  // by the MCP foundation track migration.
   grantId           String?
   createdAt         DateTime  @default(now())
   // Bumped on every successful auth lookup. Drives rolling expiry and powers
@@ -2258,8 +2264,8 @@ model ProjectPartner {
 
 // ─── OAuth provider (MCP) ────────────────────────────────────────────────────
 //
-// Empty in Phase 1. The MCP foundation track seeds claude-desktop /
-// claude-code rows. No `dali-api` seed — per Q7 the OAuth provider surface
+// MCP clients register themselves via RFC 7591 Dynamic Client Registration
+// at /oauth/register. No `dali-api` seed — per Q7 the OAuth provider surface
 // is MCP-only.
 
 model OAuthClient {
@@ -2374,4 +2380,39 @@ model GmailIntegration {
   linkedAt       DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id])
+}
+
+// Slack bug-report bot. A draft is created when a teammate @-mentions the bot
+// in a Slack thread; it's filed (or cancelled) when they react to the bot's
+// preview message with ✅ (or ❌). See app/slack/.
+model SlackBugReportDraft {
+  id                     String                @id @default(cuid())
+  // Source thread on Slack — channel + the parent message ts identify the thread.
+  slackChannelId         String
+  slackThreadTs          String
+  // Slack ts of the @-mention that triggered the filing. Combined with
+  // channelId in the unique index this de-dupes Slack retries of the same
+  // event. (Column kept its old name from the prior preview-then-confirm
+  // flow to avoid a schema migration.)
+  previewMessageTs       String
+  // Snapshot of the thread at filing time so the issue body can be re-derived
+  // or audited even if Slack messages get edited or deleted.
+  threadJson             Json
+  status                 SlackBugReportStatus  @default(Pending)
+  githubIssueNumber      Int?
+  githubIssueUrl         String?
+  // Captured so we can surface "who asked" in the issue body + audit.
+  requestedBySlackUserId String
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
+
+  @@unique([slackChannelId, previewMessageTs])
+  @@index([status])
+}
+
+enum SlackBugReportStatus {
+  Pending
+  Filed
+  Cancelled
+  Failed
 }

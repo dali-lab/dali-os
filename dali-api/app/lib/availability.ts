@@ -1,5 +1,7 @@
 import rrulePkg from "rrule";
 import type { RRule as RRuleType } from "rrule";
+import { prisma } from "~/lib/db";
+import { fetchBusyEvents } from "~/lib/google-calendar";
 import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
 
 const { RRule, rrulestr } = rrulePkg as unknown as {
@@ -229,5 +231,128 @@ function formatDtstart(d: Date): string {
   return (
     `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}` +
     `T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}Z`
+  );
+}
+
+// ─── Multi-user mutual-availability helpers ─────────────────────────────────
+//
+// These power the in-app meeting scheduler (api.calendar.group-availability)
+// and the MCP `find_mutual_freebusy` tool. The route still owns its own
+// per-day grid bucketing; this module owns the cross-user math.
+
+const DEFAULT_BUFFER_MIN = 15;
+const DEFAULT_WORK_START_MIN = 9 * 60;
+const DEFAULT_WORK_END_MIN = 17 * 60;
+const DEFAULT_TIMEZONE = "America/New_York";
+
+function defaultWorkingHoursForDow(): WorkingHoursDayInput[] {
+  return Array.from({ length: 7 }).map((_, dow) => ({
+    dayOfWeek: dow,
+    enabled: dow >= 1 && dow <= 5,
+    startMinute: DEFAULT_WORK_START_MIN,
+    endMinute: DEFAULT_WORK_END_MIN,
+  }));
+}
+
+/**
+ * Load + compute free/busy for a single user across the given window.
+ * Pulls UserAvailabilitySettings, WorkingHoursDay segments, ManualBlock rows
+ * (incl. RRULE expansion), and external Google Calendar busy events.
+ *
+ * `fallbackTimezone` is used only if the user has no UserAvailabilitySettings row.
+ */
+export async function computeUserFreeBusy(
+  userId: string,
+  windowStart: Date,
+  windowEnd: Date,
+  fallbackTimezone: string = DEFAULT_TIMEZONE,
+): Promise<{ userId: string; free: Interval[]; busy: Interval[] }> {
+  const [settings, whRows, blocks, busyRaw] = await Promise.all([
+    prisma.userAvailabilitySettings.findUnique({ where: { userId } }),
+    prisma.workingHoursDay.findMany({ where: { userId } }),
+    prisma.manualBlock.findMany({ where: { userId }, take: 500 }),
+    fetchBusyEvents(userId, windowStart, windowEnd).catch(
+      () => [] as { start: string; end: string }[],
+    ),
+  ]);
+
+  const persistedDows = new Set(whRows.map((r) => r.dayOfWeek));
+  const workingHours: WorkingHoursDayInput[] = [
+    ...whRows.map((r) => ({
+      dayOfWeek: r.dayOfWeek,
+      enabled: r.enabled,
+      startMinute: r.startMinute,
+      endMinute: r.endMinute,
+    })),
+    ...defaultWorkingHoursForDow().filter((d) => !persistedDows.has(d.dayOfWeek)),
+  ];
+
+  const externalBusy: Interval[] = busyRaw.map((b) => ({
+    start: new Date(b.start),
+    end: new Date(b.end),
+  }));
+
+  const { free, busy } = computeFreeIntervals({
+    windowStart,
+    windowEnd,
+    workingHours,
+    manualBlocks: blocks.map((b) => ({
+      startTime: b.startTime,
+      endTime: b.endTime,
+      recurrenceRule: b.recurrenceRule,
+    })),
+    externalBusy,
+    bufferMin: settings?.defaultEventBufferMin ?? DEFAULT_BUFFER_MIN,
+    timezone: settings?.timezone ?? fallbackTimezone,
+  });
+  return { userId, free, busy };
+}
+
+/**
+ * Intersect a set of per-user free interval lists. Returns intervals where
+ * every participant is free. Each input list must be sorted by start.
+ */
+export function intersectFreeIntervals(sets: Interval[][]): Interval[] {
+  if (sets.length === 0) return [];
+  let acc = sets[0];
+  for (let i = 1; i < sets.length; i++) {
+    acc = intersectTwo(acc, sets[i]);
+    if (acc.length === 0) return [];
+  }
+  return acc;
+}
+
+function intersectTwo(a: Interval[], b: Interval[]): Interval[] {
+  const out: Interval[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < a.length && j < b.length) {
+    const start = Math.max(a[i].start.getTime(), b[j].start.getTime());
+    const end = Math.min(a[i].end.getTime(), b[j].end.getTime());
+    if (start < end) out.push({ start: new Date(start), end: new Date(end) });
+    if (a[i].end.getTime() < b[j].end.getTime()) i++;
+    else j++;
+  }
+  return out;
+}
+
+/**
+ * For a list of users, find every contiguous slot of at least `slotMinutes`
+ * where all participants are mutually free.
+ */
+export async function findMutualFreeSlots(
+  participantUserIds: string[],
+  windowStart: Date,
+  windowEnd: Date,
+  slotMinutes: number,
+): Promise<Interval[]> {
+  if (participantUserIds.length === 0) return [];
+  const uniq = Array.from(new Set(participantUserIds));
+  const perUser = await Promise.all(
+    uniq.map((uid) => computeUserFreeBusy(uid, windowStart, windowEnd)),
+  );
+  const minMs = Math.max(1, slotMinutes) * 60_000;
+  return intersectFreeIntervals(perUser.map((u) => u.free)).filter(
+    (iv) => iv.end.getTime() - iv.start.getTime() >= minMs,
   );
 }

@@ -1,10 +1,28 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
+const mockGetOAuthClient = vi.hoisted(() => vi.fn());
+
 vi.mock("~/lib/oauth", () => ({
   createOAuthSession: vi.fn().mockResolvedValue({ id: "session-1" }),
-  getAllowedRedirectUris: vi.fn().mockReturnValue(["http://localhost:5173/login"]),
-  VALID_CLIENT_IDS: ["dali-api"],
+  getOAuthClient: mockGetOAuthClient,
+  isAllowedRedirectUri: (_client: any, uri: string) =>
+    uri === "http://localhost:5173/login",
+  generateAuthorizationCode: vi.fn(),
   OAuthError: class OAuthError extends Error {},
+}));
+
+vi.mock("~/lib/cookies", () => ({
+  parseSessionId: vi.fn().mockReturnValue(null),
+}));
+vi.mock("~/lib/session", () => ({
+  lookupSession: vi.fn().mockResolvedValue(null),
+}));
+vi.mock("~/lib/db", () => ({
+  prisma: {
+    dALIMember: { findUnique: vi.fn() },
+    oAuthGrant: { findUnique: vi.fn() },
+    oAuthSession: { update: vi.fn() },
+  },
 }));
 
 import { _resetForTests } from "~/lib/rate-limit";
@@ -31,6 +49,17 @@ beforeEach(() => {
   process.env.GOOGLE_CLIENT_ID = "test-client-id";
   process.env.API_BASE_URL = "http://localhost:3001";
   process.env.FRONTEND_URL = "http://localhost:5173";
+  mockGetOAuthClient.mockResolvedValue({
+    clientId: "dali-api",
+    name: "Dali API",
+    redirectUris: ["http://localhost:5173/login"],
+    isLoopback: false,
+    isFirstParty: false,
+    allowedScopes: ["mcp:read", "mcp:write"],
+    allowedProviders: ["google", "cas"],
+    requiredAccountType: "member",
+    requireMembership: false,
+  });
 });
 
 describe("GET /oauth/authorize rate limiting", () => {
