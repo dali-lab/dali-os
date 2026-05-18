@@ -45,6 +45,48 @@ const STATUS_MESSAGES: Record<string, string> = {
   Completed: "Decisions have been released to applicants.",
 };
 
+const CYCLE_TYPE_LABELS: Record<string, string> = {
+  Standard: "Standard hire",
+  InternToFull: "Intern → Full-time",
+};
+
+function CyclePicker({
+  cycles,
+  activeId,
+}: {
+  cycles: Array<{ id: string; name: string; cycleType: string }>;
+  activeId: string;
+}) {
+  const [searchParams, setSearchParams] = useSearchParams();
+  if (cycles.length < 2) return null;
+  return (
+    <div className="inline-flex rounded-md border border-border bg-card p-0.5 text-xs">
+      {cycles.map((c) => {
+        const isActive = c.id === activeId;
+        return (
+          <button
+            key={c.id}
+            type="button"
+            onClick={() => {
+              const next = new URLSearchParams(searchParams);
+              next.set("cycle", c.id);
+              setSearchParams(next, { replace: true });
+            }}
+            className={`px-3 py-1.5 rounded font-medium transition ${
+              isActive
+                ? "bg-blue-600 text-white"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+            title={c.name}
+          >
+            {CYCLE_TYPE_LABELS[c.cycleType] ?? c.cycleType}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export const meta: Route.MetaFunction = () => [{ title: "Domain lead · DALI OS" }];
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -85,7 +127,15 @@ export async function loader({ request }: Route.LoaderArgs) {
               user: true,
               statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
               domainApplications: {
-                where: { selected: true, challengeVersion: { domainId: assignment.domainId } },
+                where: {
+                  selected: true,
+                  // Standard cycles link Domain via challengeVersion; InternToFull
+                  // links it directly. OR matches DAs from both cycle types.
+                  OR: [
+                    { challengeVersion: { domainId: assignment.domainId } },
+                    { domainId: assignment.domainId },
+                  ],
+                },
                 include: {
                   challengeVersion: { include: { domain: true } },
                   reviews: {
@@ -108,16 +158,44 @@ export async function loader({ request }: Route.LoaderArgs) {
         orderBy: { createdAt: "desc" },
       });
 
-      // Pick the single most recent cycle — prefer Open/UnderReview over Draft
-      const activeCycle = allCycles.find((c) => {
+      // Cycles eligible for the picker: anything Open/UnderReview/Draft for
+      // this domain. After cycleType split, a Standard + InternToFull cycle
+      // can both be active for the same domain (target domains overlap).
+      const candidateCycles = allCycles.filter((c) => {
         const status = c.statusUpdates[0]?.newStatus;
-        return status && ["Open", "UnderReview"].includes(status);
-      }) ?? allCycles.find((c) => {
-        const status = c.statusUpdates[0]?.newStatus;
-        return status === "Draft";
-      }) ?? null;
+        return status && ["Open", "UnderReview", "Draft"].includes(status);
+      });
+      const availableCycles = candidateCycles.map((c) => ({
+        id: c.id,
+        name: c.name,
+        cycleType: c.cycleType as string,
+      }));
 
-      if (!activeCycle) return [{ assignment, cycle: null, apps: [], challengeVersionOptions: [], linkedChallengeVersions: [], isChallengeReady: false, interviews: [], reviewers: [], delibsSessions: [], draftDecisions: [], cycleReviewersForDomain: [], initialDelibsCount: 0, finalDelibsCount: 0, rubricVersionOptions: [], currentRubricVersionId: null, rubricCriteria: [], interviewers: [], hasApplicationReviews: false, confidentialityRequired: null as null | "no_agreement" | "unsigned" }];
+      // Honor ?cycle=<id> if present and valid for this assignment; else
+      // prefer the most recent Standard Open/UnderReview, then any
+      // Open/UnderReview, then Draft. Standard wins by default so the
+      // existing single-cycle UX stays unchanged.
+      const requestedCycleId = new URL(request.url).searchParams.get("cycle");
+      const activeCycle =
+        (requestedCycleId && candidateCycles.find((c) => c.id === requestedCycleId)) ??
+        candidateCycles.find((c) => {
+          const status = c.statusUpdates[0]?.newStatus;
+          return (
+            c.cycleType === "Standard" &&
+            status && ["Open", "UnderReview"].includes(status)
+          );
+        }) ??
+        candidateCycles.find((c) => {
+          const status = c.statusUpdates[0]?.newStatus;
+          return status && ["Open", "UnderReview"].includes(status);
+        }) ??
+        candidateCycles.find((c) => {
+          const status = c.statusUpdates[0]?.newStatus;
+          return status === "Draft";
+        }) ??
+        null;
+
+      if (!activeCycle) return [{ assignment, cycle: null, availableCycles, apps: [], challengeVersionOptions: [], linkedChallengeVersions: [], isChallengeReady: false, interviews: [], reviewers: [], delibsSessions: [], draftDecisions: [], cycleReviewersForDomain: [], initialDelibsCount: 0, finalDelibsCount: 0, rubricVersionOptions: [], currentRubricVersionId: null, rubricCriteria: [], interviewers: [], hasApplicationReviews: false, confidentialityRequired: null as null | "no_agreement" | "unsigned" }];
 
       const confState = await getCycleConfidentialityState(auth.user.sub, activeCycle.id);
       const confidentialityRequired = confState.status === "signed" ? null : confState.status;
@@ -177,7 +255,10 @@ export async function loader({ request }: Route.LoaderArgs) {
               applicationCycleId: cycle.id,
               status: "Scheduled",
               domainApplication: {
-                challengeVersion: { domainId: assignment.domainId },
+                OR: [
+                  { challengeVersion: { domainId: assignment.domainId } },
+                  { domainId: assignment.domainId },
+                ],
               },
             },
             include: {
@@ -221,11 +302,23 @@ export async function loader({ request }: Route.LoaderArgs) {
         : [];
 
       // Count qualifying applications for each delibs type
-      const initialDelibsCount = cycle
+      const isInternToFull = cycle?.cycleType === "InternToFull";
+      // Domain-linkage OR matches DAs whether they're attached via
+      // challengeVersion (Standard) or directly (InternToFull).
+      const daDomainMatch = {
+        OR: [
+          { challengeVersion: { domainId: assignment.domainId } },
+          { domainId: assignment.domainId },
+        ],
+      };
+
+      // InternToFull cycles skip the Initial→interview round, so the Initial
+      // delibs count is always 0 for them.
+      const initialDelibsCount = cycle && !isInternToFull
         ? await prisma.domainApplication.count({
             where: {
               selected: true,
-              challengeVersion: { domainId: assignment.domainId },
+              ...daDomainMatch,
               application: { applicationCycleId: cycle.id, ...inReviewPipelineFilter },
               reviews: { every: { submittedAt: { not: null } }, some: {} },
               decisions: { none: { stage: { in: ["Final", "Released"] } } },
@@ -233,13 +326,22 @@ export async function loader({ request }: Route.LoaderArgs) {
           })
         : 0;
 
+      // Final-delibs qualifier differs by cycle type. Standard: post-interview.
+      // InternToFull: no interview, so "all reviews submitted" is the gate.
       const finalDelibsCount = cycle
         ? await prisma.domainApplication.count({
             where: {
               selected: true,
-              challengeVersion: { domainId: assignment.domainId },
+              ...daDomainMatch,
               application: { applicationCycleId: cycle.id, ...inReviewPipelineFilter },
-              interviews: { some: { status: "Completed" } },
+              ...(isInternToFull
+                ? {
+                    reviews: { every: { submittedAt: { not: null } }, some: {} },
+                    decisions: { none: { stage: { in: ["Final", "Released"] } } },
+                  }
+                : {
+                    interviews: { some: { status: "Completed" } },
+                  }),
             },
           })
         : 0;
@@ -262,7 +364,7 @@ export async function loader({ request }: Route.LoaderArgs) {
             where: {
               stage: "Draft",
               domainApplication: {
-                challengeVersion: { domainId: assignment.domainId },
+                ...daDomainMatch,
                 application: { applicationCycleId: cycle.id },
               },
             },
@@ -316,7 +418,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         ? (await prisma.applicationReview.count({
             where: {
               domainApplication: {
-                challengeVersion: { domainId: assignment.domainId },
+                ...daDomainMatch,
                 application: { applicationCycleId: cycle.id },
               },
             },
@@ -334,6 +436,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         return {
           assignment,
           cycle: sanitizedCycle,
+          availableCycles,
           apps: [] as any[],
           challengeVersionOptions,
           linkedChallengeVersions,
@@ -354,7 +457,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         };
       }
 
-      return { assignment, cycle, apps: appsWithStatus, challengeVersionOptions, linkedChallengeVersions, isChallengeReady, interviews, reviewers, delibsSessions, draftDecisions, cycleReviewersForDomain, initialDelibsCount, finalDelibsCount, rubricVersionOptions, currentRubricVersionId, rubricCriteria, interviewers, hasApplicationReviews, confidentialityRequired: null as null | "no_agreement" | "unsigned" };
+      return { assignment, cycle, availableCycles, apps: appsWithStatus, challengeVersionOptions, linkedChallengeVersions, isChallengeReady, interviews, reviewers, delibsSessions, draftDecisions, cycleReviewersForDomain, initialDelibsCount, finalDelibsCount, rubricVersionOptions, currentRubricVersionId, rubricCriteria, interviewers, hasApplicationReviews, confidentialityRequired: null as null | "no_agreement" | "unsigned" };
       })(activeCycle)];
     })
   );
@@ -374,7 +477,10 @@ export async function action({ request }: Route.ActionArgs) {
     const hasAssignedReviews = await prisma.applicationReview.count({
       where: {
         domainApplication: {
-          challengeVersion: { domainId },
+          OR: [
+            { challengeVersion: { domainId } },
+            { domainId },
+          ],
           application: { applicationCycleId: cycleId },
         },
       },
@@ -584,7 +690,7 @@ export default function DomainLeadDashboard() {
     <div className="space-y-8">
       <h1 className="text-2xl font-bold text-foreground">Domain Lead Dashboard</h1>
 
-      {domainData.map(({ assignment, cycle, apps, challengeVersionOptions, linkedChallengeVersions, isChallengeReady, interviews, reviewers: cycleReviewers, delibsSessions, draftDecisions, cycleReviewersForDomain, initialDelibsCount, finalDelibsCount, rubricVersionOptions, currentRubricVersionId, rubricCriteria, interviewers, hasApplicationReviews, confidentialityRequired }: any, idx: number) => {
+      {domainData.map(({ assignment, cycle, availableCycles, apps, challengeVersionOptions, linkedChallengeVersions, isChallengeReady, interviews, reviewers: cycleReviewers, delibsSessions, draftDecisions, cycleReviewersForDomain, initialDelibsCount, finalDelibsCount, rubricVersionOptions, currentRubricVersionId, rubricCriteria, interviewers, hasApplicationReviews, confidentialityRequired }: any, idx: number) => {
         const hasLinkedChallenge = (linkedChallengeVersions ?? []).length > 0;
         const currentStatus = cycle?.statusUpdates[0]?.newStatus ?? null;
 
@@ -629,6 +735,7 @@ export default function DomainLeadDashboard() {
                           {STATUS_LABELS[currentStatus]}
                         </span>
                       )}
+                      <CyclePicker cycles={availableCycles ?? []} activeId={cycle.id} />
                     </div>
                     {currentStatus !== "Draft" && !confidentialityRequired && (
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
