@@ -149,3 +149,20 @@ export async function hasCycleAccess(userId: string, cycleId: string): Promise<b
   ]);
   return reviewer !== null || interviewer !== null;
 }
+
+/**
+ * Core for the current term, OR Admin. Same env-id override as isAdmin.
+ * Use this when a feature should be open to Core access without going through
+ * the legacy "isHiringLead" semantic.
+ */
+export async function isCore(userId: string): Promise<boolean> {
+  const envIds = (process.env.ADMIN_USER_IDS ?? "")
+    .split(",")
+    .filter(Boolean);
+  if (envIds.includes(userId)) return true;
+  const [admin, core] = await Promise.all([
+    prisma.adminMembership.findUnique({ where: { userId }, select: { id: true } }),
+    prisma.coreAssignment.findFirst({ where: { userId }, select: { id: true } }),
+  ]);
+  return admin !== null || core !== null;
+}
