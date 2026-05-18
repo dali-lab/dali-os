@@ -77,6 +77,20 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
     setMobileNavOpen(false)
   }, [path])
 
+  // Listen for "open in new tab" requests from embedded iframes (e.g. a
+  // notification card in the Home tab whose link would otherwise navigate
+  // the iframe itself, trapping the user in chrome-less embed mode).
+  useEffect(() => {
+    function handler(e: MessageEvent) {
+      if (e.origin !== window.location.origin) return
+      const data = e.data
+      if (!data || data.type !== 'dali:openTab' || typeof data.url !== 'string') return
+      workspaceRef.current?.openTab({ url: data.url, label: data.label || data.url })
+    }
+    window.addEventListener('message', handler)
+    return () => window.removeEventListener('message', handler)
+  }, [])
+
   const toggleCollapsed = () => {
     setCollapsed((prev) => {
       const next = !prev

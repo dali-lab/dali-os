@@ -198,7 +198,7 @@ function NotificationCard({ notification }: { notification: HomeNotification }) 
           {notification.link && (
             <a
               href={notification.link}
-              onClick={() => {
+              onClick={(e) => {
                 if (!notification.readAt) {
                   // keepalive: true so the POST survives the navigation
                   // that the anchor's default action is about to start.
@@ -207,6 +207,18 @@ function NotificationCard({ notification }: { notification: HomeNotification }) 
                     credentials: "include",
                     keepalive: true,
                   });
+                }
+                // If we're inside a TabWorkspace iframe, ask the parent to
+                // open the link as a new tab instead of letting it navigate
+                // the iframe (which strands the user in chrome-less embed
+                // mode with no way back).
+                const link = notification.link!;
+                if (link.startsWith("/") && window.self !== window.top) {
+                  e.preventDefault();
+                  window.parent.postMessage(
+                    { type: "dali:openTab", url: link, label: notification.title },
+                    window.location.origin,
+                  );
                 }
               }}
               className="text-muted-foreground hover:text-foreground"
