@@ -172,6 +172,12 @@ model ApplicationCycle {
   // can re-trigger the notice.
   extensionNoticeSentAt DateTime?
 
+  // Idempotency marker for the InternToFull eligibility notification fan-out
+  // (sent when the cycle first transitions to Open). Stays set across
+  // Open→Draft→Open bounces so leads can iterate during setup without
+  // re-spamming interns. Always null on Standard cycles.
+  internsNotifiedAt DateTime?
+
   // Rubric for the general application form (reviewers score this alongside
   // the per-domain rubric set on DomainApplicationCycle).
   generalRubricVersionId String?

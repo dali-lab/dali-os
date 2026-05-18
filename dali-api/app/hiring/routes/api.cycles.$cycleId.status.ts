@@ -4,6 +4,7 @@ import { parseJson } from "~/lib/validate";
 import { requireAuth } from "~/lib/auth";
 import { isHiringLead, hasCycleAccess } from "~/lib/roles";
 import { autoCloseIfExpired, findOtherActiveCycleId } from "~/hiring/lib/cycles";
+import { eligibleInternUserIds } from "~/hiring/lib/intern-eligibility";
 import { inReviewPipelineFilter } from "~/hiring/lib/application-pipeline-filter";
 import type { Route } from "./+types/api.cycles.$cycleId.status";
 
@@ -157,6 +158,38 @@ export async function action({ request, params }: Route.ActionArgs) {
       userId: auth.user.sub,
     },
   });
+
+  // Fan out the "cycle is open" notification to all current-term interns the
+  // first time an InternToFull cycle is opened. internsNotifiedAt guards
+  // against re-spam if the lead bounces Open→Draft→Open during setup.
+  if (newStatus === "Open") {
+    const cycle = await prisma.applicationCycle.findUniqueOrThrow({
+      where: { id: params.cycleId! },
+      select: { cycleType: true, closeDate: true, name: true, internsNotifiedAt: true },
+    });
+    if (cycle.cycleType === "InternToFull" && !cycle.internsNotifiedAt) {
+      const userIds = await eligibleInternUserIds();
+      if (userIds.length > 0) {
+        const closeText = cycle.closeDate
+          ? ` Apply by ${cycle.closeDate.toLocaleDateString("en-US", { month: "long", day: "numeric" })}.`
+          : "";
+        await prisma.notification.createMany({
+          data: userIds.map((recipientUserId) => ({
+            recipientUserId,
+            createdByUserId: auth.user.sub,
+            kind: "General" as const,
+            title: "Intern → Full-time application is open",
+            body: `${cycle.name} is accepting conversion applications.${closeText}`,
+            link: "/intern-to-full",
+          })),
+        });
+      }
+      await prisma.applicationCycle.update({
+        where: { id: params.cycleId! },
+        data: { internsNotifiedAt: new Date() },
+      });
+    }
+  }
 
   return Response.json({ currentStatus: newStatus });
 }

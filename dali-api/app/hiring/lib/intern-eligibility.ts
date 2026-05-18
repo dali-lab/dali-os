@@ -25,6 +25,30 @@ export async function isInternToFullEligible(userId: string): Promise<boolean> {
   return assignment != null;
 }
 
+// Returns user IDs of everyone currently eligible for an InternToFull cycle:
+// any DALI member with a ProjectAssignment in the active term whose domain
+// is flagged as an intern program. Used to fan out the "cycle is open"
+// notification. Returns [] when no term is currently active.
+export async function eligibleInternUserIds(): Promise<string[]> {
+  const now = new Date();
+  const activeTerm = await prisma.term.findFirst({
+    where: { startDate: { lte: now }, endDate: { gte: now } },
+    orderBy: { sortKey: "desc" },
+    select: { id: true },
+  });
+  if (!activeTerm) return [];
+
+  const rows = await prisma.projectAssignment.findMany({
+    where: {
+      termId: activeTerm.id,
+      domain: { isInternProgram: true },
+    },
+    select: { userId: true },
+    distinct: ["userId"],
+  });
+  return rows.map((r) => r.userId);
+}
+
 // Returns the intern-program domains the user is currently assigned in.
 // Used to surface "you're converting from <X>" hints in the applicant UI
 // and reviewer view. Empty when the user is not a current-term intern.
