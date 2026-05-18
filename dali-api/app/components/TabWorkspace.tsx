@@ -9,6 +9,9 @@ export interface OpenTabRequest {
 export interface TabWorkspaceHandle {
   /** Open a tab in the focused pane, or focus it if already open anywhere. */
   openTab: (req: OpenTabRequest) => void
+  /** Rename any tab matching `url` (across all panes). Used by embedded
+   *  iframes to announce their preferred label after route meta resolves. */
+  setTabLabel: (url: string, label: string) => void
 }
 
 interface Tab {
@@ -257,6 +260,22 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
                 : p,
             ),
           }
+        })
+      },
+      setTabLabel: (url, label) => {
+        setState((prev) => {
+          let changed = false
+          const panes = prev.panes.map((p) => ({
+            ...p,
+            tabs: p.tabs.map((t) => {
+              if (t.url === url && t.label !== label) {
+                changed = true
+                return { ...t, label }
+              }
+              return t
+            }),
+          }))
+          return changed ? { ...prev, panes } : prev
         })
       },
     }

@@ -84,8 +84,16 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
     function handler(e: MessageEvent) {
       if (e.origin !== window.location.origin) return
       const data = e.data
-      if (!data || data.type !== 'dali:openTab' || typeof data.url !== 'string') return
-      workspaceRef.current?.openTab({ url: data.url, label: data.label || data.url })
+      if (!data) return
+      if (data.type === 'dali:openTab' && typeof data.url === 'string') {
+        workspaceRef.current?.openTab({ url: data.url, label: data.label || data.url })
+      } else if (
+        data.type === 'dali:setTabLabel' &&
+        typeof data.url === 'string' &&
+        typeof data.label === 'string'
+      ) {
+        workspaceRef.current?.setTabLabel(data.url, data.label)
+      }
     }
     window.addEventListener('message', handler)
     return () => window.removeEventListener('message', handler)
