@@ -72,9 +72,10 @@ export async function action({ request }: Route.ActionArgs) {
         }
 
         // DomainApplications always attach to a domain-scoped challenge
-        // version; filter out any (theoretically impossible) null domainIds.
+        // version on Standard cycles (the only cycleType that schedules
+        // interviews); filter out any null domainIds defensively.
         const applicantDomainIds = current.domainApplication.application.domainApplications
-          .map((da) => da.challengeVersion.domainId)
+          .map((da) => da.challengeVersion?.domainId ?? null)
           .filter((id): id is string => id !== null);
 
         await tx.interview.update({

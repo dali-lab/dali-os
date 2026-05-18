@@ -41,20 +41,37 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   // Load domain applications that qualify for this delibs type.
   // Initial: all reviews submitted, at least one review, no Final/Released decision.
-  // Final: interview completed, no post-interview Final/Released decision.
+  // Final: interview completed (Standard) OR all reviews submitted (InternToFull,
+  //   which has no interview round), no post-interview Final/Released decision.
+  const cycleTypeRow = await prisma.applicationCycle.findUniqueOrThrow({
+    where: { id: session.applicationCycleId },
+    select: { cycleType: true },
+  });
+  const isInternToFull = cycleTypeRow.cycleType === "InternToFull";
+
   const qualifyingFilter = session.type === "Initial"
     ? {
         reviews: { every: { submittedAt: { not: null } }, some: {} },
         decisions: { none: { stage: { in: ["Final" as const, "Released" as const] } } },
       }
-    : {
-        interviews: { some: { status: "Completed" as const } },
-      };
+    : isInternToFull
+      ? {
+          reviews: { every: { submittedAt: { not: null } }, some: {} },
+          decisions: { none: { stage: { in: ["Final" as const, "Released" as const] } } },
+        }
+      : {
+          interviews: { some: { status: "Completed" as const } },
+        };
 
   const domainApplications = await prisma.domainApplication.findMany({
     where: {
       selected: true,
-      challengeVersion: { domainId: session.domainId },
+      // Standard cycles join Domain via challengeVersion. InternToFull cycles
+      // store Domain directly.
+      OR: [
+        { challengeVersion: { domainId: session.domainId } },
+        { domainId: session.domainId },
+      ],
       application: {
         applicationCycleId: session.applicationCycleId,
         ...inReviewPipelineFilter,

@@ -47,8 +47,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     where: { id: decision.domainApplicationId },
     include: {
       challengeVersion: {
-        include: { domain: { select: { name: true } } },
+        include: { domain: { select: { id: true, name: true, displayName: true } } },
       },
+      domain: { select: { id: true, name: true, displayName: true } },
       application: {
         include: {
           user: {
@@ -58,6 +59,7 @@ export async function action({ request, params }: Route.ActionArgs) {
               netId: true,
             },
           },
+          applicationCycle: { select: { cycleType: true } },
         },
       },
     },
@@ -67,6 +69,16 @@ export async function action({ request, params }: Route.ActionArgs) {
           { error: "Domain application not found" },
           { status: 404 }
         );
+  }
+
+  // Resolve the target Domain regardless of how it was linked.
+  const targetDomain =
+    domainApp.domain ?? domainApp.challengeVersion?.domain ?? null;
+  if (!targetDomain) {
+    return Response.json(
+      { error: "Domain application has no linked domain — cannot release." },
+      { status: 409 },
+    );
   }
 
   const gate = await requireApiSignedOrForbidden(
@@ -105,6 +117,35 @@ export async function action({ request, params }: Route.ActionArgs) {
     },
   });
 
+  // ── InternToFull conversion side-effect ──────────────────────────────────
+  // When an InternToFull applicant is accepted, grant them DomainEligibility
+  // in the target domain at P1 so subsequent staffing flows pick them up.
+  // Their intern DomainEligibility is left intact; it naturally lapses when
+  // their intern term ends. Idempotent: upserts on the (userId, domainId)
+  // unique constraint so a re-release doesn't change anything.
+  let internConversionApplied = false;
+  if (
+    decision.type === "Accepted" &&
+    domainApp.application.applicationCycle.cycleType === "InternToFull"
+  ) {
+    await prisma.domainEligibility.upsert({
+      where: {
+        userId_domainId: {
+          userId: domainApp.application.userId,
+          domainId: targetDomain.id,
+        },
+      },
+      update: {},
+      create: {
+        userId: domainApp.application.userId,
+        domainId: targetDomain.id,
+        level: "P1",
+        promotedBy: auth.user.sub,
+      },
+    });
+    internConversionApplied = true;
+  }
+
   // ── Send notification email via per-cycle binding ────────────────────────────
   let emailSent = false;
   try {
@@ -112,7 +153,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     const email =
       user?.dartmouthEmail ??
       (user?.netId ? `${user.netId}@dartmouth.edu` : null);
-    const domainName = domainApp.challengeVersion.domain?.name ?? "";
+    const domainName = targetDomain.displayName ?? targetDomain.name ?? "";
 
     if (email && user) {
       const refreshToken = await getApplicationsGmailRefreshToken();
@@ -151,6 +192,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       domainApplicationId: decision.domainApplicationId,
       type: released.type,
       emailSent,
+      internConversionApplied,
     },
     request,
   });

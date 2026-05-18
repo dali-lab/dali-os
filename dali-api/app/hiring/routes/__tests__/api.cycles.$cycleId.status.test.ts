@@ -33,6 +33,8 @@ beforeEach(() => {
   (mockPrisma as any).challengeVersion = { findMany: vi.fn() };
   (mockPrisma as any).interview = { count: vi.fn() };
   (mockPrisma as any).domainApplication = { count: vi.fn() };
+  // Pass-through $transaction so inner calls hit the same mocks.
+  (mockPrisma as any).$transaction = vi.fn(async (fn: any) => fn(mockPrisma));
   vi.mocked(requireAuth).mockResolvedValue({
     ok: true,
     user: { sub: HIRING_LEAD_ID, email: "lead@x.com", type: "user" },

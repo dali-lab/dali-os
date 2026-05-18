@@ -116,10 +116,10 @@ export async function loader({ request }: Route.LoaderArgs) {
             answers: draft.answers as Record<string, string>,
             selectedDomainIds: draft.domainApplications
               .filter(da => da.selected)
-              .map(da => da.challengeVersion.domainId),
+              .map(da => da.domainId),
             domainApplications: draft.domainApplications.map(da => ({
               id: da.id,
-              domainId: da.challengeVersion.domainId,
+              domainId: da.domainId,
               challengeVersionId: da.challengeVersionId,
               answers: da.answers as Record<string, string>,
             })),
@@ -184,6 +184,7 @@ export async function action({ request }: Route.ActionArgs) {
         },
         domainApplications: {
           create: validSelections.map(s => ({
+            domainId: s.domainId,
             challengeVersionId: s.challengeVersionId,
             answers: {},
           })),
@@ -201,11 +202,11 @@ export async function action({ request }: Route.ActionArgs) {
             id: application.id,
             answers: application.answers,
             selectedDomainIds: application.domainApplications.map(
-              (da) => da.challengeVersion.domainId,
+              (da) => da.domainId,
             ),
             domainApplications: application.domainApplications.map((da) => ({
               id: da.id,
-              domainId: da.challengeVersion.domainId,
+              domainId: da.domainId,
               challengeVersionId: da.challengeVersionId,
               answers: da.answers,
             })),
@@ -245,7 +246,7 @@ export async function action({ request }: Route.ActionArgs) {
     });
     const existingByDomain = new Map<string, (typeof existing)[number]>();
     for (const da of existing) {
-      const did = da.challengeVersion.domainId;
+      const did = da.domainId;
       if (did) existingByDomain.set(did, da);
     }
 
@@ -256,6 +257,7 @@ export async function action({ request }: Route.ActionArgs) {
         await prisma.domainApplication.create({
           data: {
             applicationId,
+            domainId: sel.domainId,
             challengeVersionId: sel.challengeVersionId,
             answers: {},
           },
@@ -280,7 +282,7 @@ export async function action({ request }: Route.ActionArgs) {
 
     // Domains the applicant deselected — preserve answers but mark unselected.
     const toDeselectIds = existing
-      .filter(da => da.challengeVersion.domainId && !newDomainIds.includes(da.challengeVersion.domainId))
+      .filter(da => da.domainId && !newDomainIds.includes(da.domainId))
       .map(da => da.id);
     if (toDeselectIds.length > 0) {
       await prisma.domainApplication.updateMany({
@@ -306,7 +308,7 @@ export async function action({ request }: Route.ActionArgs) {
             selectedDomainIds: newDomainIds,
             domainApplications: updatedApp.domainApplications.map((da) => ({
               id: da.id,
-              domainId: da.challengeVersion.domainId,
+              domainId: da.domainId,
               challengeVersionId: da.challengeVersionId,
               answers: da.answers,
             })),
@@ -365,7 +367,7 @@ export async function action({ request }: Route.ActionArgs) {
       return Response.json({ error: "Application not found" }, { status: 404 });
     }
     const generalQuestions =
-      (application.generalChallengeVersion.questions as unknown as Question[]) ?? [];
+      (application.generalChallengeVersion?.questions as unknown as Question[]) ?? [];
 
     const allDas = await prisma.domainApplication.findMany({
       where: { applicationId },
@@ -380,7 +382,7 @@ export async function action({ request }: Route.ActionArgs) {
     for (const da of domainAnswers) {
       const dbDa = allDas.find(d => d.id === da.domainApplicationId);
       if (!dbDa) continue;
-      const questions = (dbDa.challengeVersion.questions as unknown as Question[]) ?? [];
+      const questions = (dbDa.challengeVersion!.questions as unknown as Question[]) ?? [];
       Object.assign(wordCountErrors, validateWordLimits(questions, da.answers));
     }
     if (Object.keys(wordCountErrors).length > 0) {
@@ -398,12 +400,12 @@ export async function action({ request }: Route.ActionArgs) {
       }
     }
     for (const domainId of selectedDomainIds) {
-      const dbDa = allDas.find(d => d.challengeVersion.domainId === domainId);
+      const dbDa = allDas.find(d => d.domainId === domainId);
       if (!dbDa) {
         missingRequired.push(`selected domain has no application record`);
         continue;
       }
-      const questions = (dbDa.challengeVersion.questions as unknown as Question[]) ?? [];
+      const questions = (dbDa.challengeVersion!.questions as unknown as Question[]) ?? [];
       const submitted = domainAnswers.find(da => da.domainApplicationId === dbDa.id)?.answers ?? {};
       for (const q of questions) {
         if (q.required && !isAnswered(submitted[q.key], q)) {
@@ -431,8 +433,8 @@ export async function action({ request }: Route.ActionArgs) {
     }
 
     // Persist final domain selection state
-    const toSelect = allDas.filter(da => selectedDomainIds.includes(da.challengeVersion.domainId!) && !da.selected);
-    const toDeselect = allDas.filter(da => !selectedDomainIds.includes(da.challengeVersion.domainId!) && da.selected);
+    const toSelect = allDas.filter(da => selectedDomainIds.includes(da.domainId) && !da.selected);
+    const toDeselect = allDas.filter(da => !selectedDomainIds.includes(da.domainId) && da.selected);
     if (toSelect.length > 0) {
       await prisma.domainApplication.updateMany({
         where: { id: { in: toSelect.map(da => da.id) } },

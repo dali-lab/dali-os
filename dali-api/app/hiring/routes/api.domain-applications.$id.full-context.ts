@@ -17,11 +17,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           domain: { select: { id: true, name: true } },
         },
       },
+      domain: { select: { id: true, name: true } },
       application: {
         include: {
           user: { select: { firstName: true, lastName: true } },
           generalChallengeVersion: { select: { questions: true } },
-          applicationCycle: { select: { id: true, generalRubricVersionId: true } },
+          internToFullFormVersion: { select: { questions: true } },
+          applicationCycle: { select: { id: true, generalRubricVersionId: true, cycleType: true } },
         },
       },
       reviews: {
@@ -52,7 +54,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   );
   if (gate) return gate;
 
-  const domainId = da.challengeVersion.domain?.id ?? null;
+  const domainId = da.challengeVersion?.domain?.id ?? da.domainId ?? null;
   const [domainCycle, generalRubric] = await Promise.all([
     domainId
       ? prisma.domainApplicationCycle.findUnique({
@@ -77,13 +79,16 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       domainApplication: {
         id: da.id,
         answers: da.answers,
-        domain: da.challengeVersion.domain,
-        challengeQuestions: da.challengeVersion.questions,
+        domain: da.challengeVersion?.domain ?? da.domain ?? null,
+        challengeQuestions: da.challengeVersion?.questions ?? [],
       },
       application: {
         id: da.application.id,
         answers: da.application.answers,
-        generalQuestions: da.application.generalChallengeVersion?.questions ?? [],
+        generalQuestions:
+          da.application.applicationCycle.cycleType === "InternToFull"
+            ? da.application.internToFullFormVersion?.questions ?? []
+            : da.application.generalChallengeVersion?.questions ?? [],
         applicant: da.application.user,
       },
       reviews: da.reviews,

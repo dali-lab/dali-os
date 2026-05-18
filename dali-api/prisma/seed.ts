@@ -682,6 +682,7 @@ async function main() {
           {
             id: "da-alice-eng",
             challengeVersionId: engCv.id,
+            domainId: engDomain.id,
             answers: {
               "eq-00000000-0000-0000-0000-000000000001": "https://github.com/alice/fullstack-challenge",
               "eq-00000000-0000-0000-0000-000000000005": "Bash/Terminal: 4\nGit: 4\nC: 2\nC#: 0\nUnity: 0\nJavaScript: 4\nTypeScript: 3\nPython: 4\nRuby (on Rails): 0\nReact.js: 3\nReact Native: 1\nSwift: 0\nFlutter: 0\niOS: 0\nAndroid: 0\nMongoDB: 2\nExpress: 3\nNode.js: 4\nSQL: 3\nIoT: 0\nR: 1\nTidy-Verse: 0\nPandas: 2\nD3: 1\nFigma: 1\nSKlearn: 1\nDeep/Machine Learning: 1\nCloud Data Storage: 1",
@@ -730,6 +731,7 @@ async function main() {
           {
             id: "da-bob-design",
             challengeVersionId: designCv.id,
+            domainId: designDomain.id,
             answers: {
               "dq-00000000-0000-0000-0000-000000000001": "https://www.figma.com/file/abc123/bob-uiux-challenge",
               "dq-00000000-0000-0000-0000-000000000002": "https://www.figma.com/file/def456/bob-graphics-challenge",
@@ -739,6 +741,7 @@ async function main() {
           {
             id: "da-bob-pm",
             challengeVersionId: pmCv.id,
+            domainId: pmDomain.id,
             answers: {
               "pq-00000000-0000-0000-0000-000000000001": "uploads/applications/app-bob/pq-00000000-0000-0000-0000-000000000001/pm-challenge.pdf",
             },
@@ -770,6 +773,7 @@ async function main() {
         create: [
           {
             challengeVersionId: engCv.id,
+            domainId: engDomain.id,
             answers: {},
           },
         ],
@@ -911,6 +915,7 @@ async function main() {
           {
             id: "da-diego-eng",
             challengeVersionId: engCv.id,
+            domainId: engDomain.id,
             answers: {
               "eq-00000000-0000-0000-0000-000000000001": "https://github.com/diego/fullstack-challenge",
               "eq-00000000-0000-0000-0000-000000000002": "https://github.com/diego/data-challenge",
@@ -961,6 +966,7 @@ async function main() {
           {
             id: "da-eve-design",
             challengeVersionId: designCv.id,
+            domainId: designDomain.id,
             answers: {
               "dq-00000000-0000-0000-0000-000000000001": "https://www.figma.com/file/eve123/eve-uiux-challenge",
               "dq-00000000-0000-0000-0000-000000000002": "https://www.figma.com/file/eve456/eve-graphics-challenge",
@@ -1009,6 +1015,7 @@ async function main() {
           {
             id: "da-felix-pm",
             challengeVersionId: pmCv.id,
+            domainId: pmDomain.id,
             answers: {
               "pq-00000000-0000-0000-0000-000000000001": "uploads/applications/app-felix/pq-00000000-0000-0000-0000-000000000001/pm-challenge.pdf",
             },
@@ -1054,6 +1061,7 @@ async function main() {
           {
             id: "da-grace-eng",
             challengeVersionId: engCv.id,
+            domainId: engDomain.id,
             answers: {
               "eq-00000000-0000-0000-0000-000000000005": "Bash/Terminal: 1\nGit: 0\nC: 0\nC#: 0\nUnity: 0\nJavaScript: 1\nTypeScript: 0\nPython: 1\nRuby (on Rails): 0\nReact.js: 0\nReact Native: 0\nSwift: 0\nFlutter: 0\niOS: 0\nAndroid: 0\nMongoDB: 0\nExpress: 0\nNode.js: 0\nSQL: 0\nIoT: 0\nR: 0\nTidy-Verse: 0\nPandas: 0\nD3: 0\nFigma: 0\nSKlearn: 0\nDeep/Machine Learning: 0\nCloud Data Storage: 0",
             },
@@ -1100,6 +1108,7 @@ async function main() {
           {
             id: "da-harper-design",
             challengeVersionId: designCv.id,
+            domainId: designDomain.id,
             answers: {
               "dq-00000000-0000-0000-0000-000000000001": "https://www.figma.com/file/harper123/harper-uiux-challenge",
               "dq-00000000-0000-0000-0000-000000000003": "https://www.figma.com/file/harper456/harper-animation-challenge",
@@ -1148,6 +1157,7 @@ async function main() {
           {
             id: "da-ivan-eng",
             challengeVersionId: engCv.id,
+            domainId: engDomain.id,
             answers: {
               "eq-00000000-0000-0000-0000-000000000001": "https://github.com/ivan-k/fullstack-challenge",
               "eq-00000000-0000-0000-0000-000000000004": "https://github.com/ivan-k/sim-toolkit",
@@ -1199,6 +1209,7 @@ async function main() {
           {
             id: "da-jade-design",
             challengeVersionId: designCv.id,
+            domainId: designDomain.id,
             answers: {
               "dq-00000000-0000-0000-0000-000000000001": "https://www.figma.com/file/jade123/jade-uiux-challenge",
               "dq-00000000-0000-0000-0000-000000000002": "https://www.figma.com/file/jade456/jade-graphics-challenge",
@@ -1247,6 +1258,7 @@ async function main() {
           {
             id: "da-kenji-eng",
             challengeVersionId: engCv.id,
+            domainId: engDomain.id,
             answers: {
               "eq-00000000-0000-0000-0000-000000000001": "https://github.com/kenjiy/fullstack-challenge",
               "eq-00000000-0000-0000-0000-000000000004": "https://github.com/kenjiy/virtual-list-lite",
@@ -1298,6 +1310,7 @@ async function main() {
           {
             id: "da-leo-eng",
             challengeVersionId: engCv.id,
+            domainId: engDomain.id,
             answers: {
               "eq-00000000-0000-0000-0000-000000000001": "https://github.com/leo-b/fullstack-challenge",
               "eq-00000000-0000-0000-0000-000000000004": "https://github.com/leo-b/tidy-ci",
@@ -1388,6 +1401,7 @@ async function main() {
         create: [
           {
             challengeVersionId: engCv2.id,
+            domainId: engDomain.id,
             answers: {
               "eq2-00000000-0000-0000-0000-000000000001": "https://github.com/dana/fullstack-challenge",
               "eq2-00000000-0000-0000-0000-000000000003": "https://github.com/dana/collab-editor",
@@ -1534,6 +1548,7 @@ async function main() {
       domainApplications: { create: [{
         id: "da-emma-eng",
         challengeVersionId: engCv.id,
+            domainId: engDomain.id,
         answers: {
           "eq-00000000-0000-0000-0000-000000000001": "https://github.com/emma/fullstack-challenge",
           "eq-00000000-0000-0000-0000-000000000004": "https://github.com/emma/p2p-share",
@@ -1578,6 +1593,7 @@ async function main() {
         {
           id: "da-liam-eng",
           challengeVersionId: engCv.id,
+            domainId: engDomain.id,
           answers: {
             "eq-00000000-0000-0000-0000-000000000001": "https://github.com/liam/fullstack-challenge",
             "eq-00000000-0000-0000-0000-000000000004": "https://github.com/liam/go-migrate",
@@ -1588,6 +1604,7 @@ async function main() {
         {
           id: "da-liam-design",
           challengeVersionId: designCv.id,
+            domainId: designDomain.id,
           answers: {
             "dq-00000000-0000-0000-0000-000000000001": "https://www.figma.com/file/liam123/liam-uiux-challenge",
             "dq-00000000-0000-0000-0000-000000000005": "Figma: 3\nSketch/Invision: 1\nAdobe XD: 1\nAdobe Photoshop: 2\nAdobe Illustrator: 2\nAdobe After Effects: 2\nHTML/CSS: 4",
@@ -1631,6 +1648,7 @@ async function main() {
       domainApplications: { create: [{
         id: "da-sofia-design",
         challengeVersionId: designCv.id,
+            domainId: designDomain.id,
         answers: {
           "dq-00000000-0000-0000-0000-000000000001": "https://www.figma.com/file/sofia123/sofia-uiux-challenge",
           "dq-00000000-0000-0000-0000-000000000002": "https://www.figma.com/file/sofia456/sofia-graphics-challenge",
@@ -1673,6 +1691,7 @@ async function main() {
       domainApplications: { create: [{
         id: "da-noah-pm",
         challengeVersionId: pmCv.id,
+            domainId: pmDomain.id,
         answers: {
           "pq-00000000-0000-0000-0000-000000000001": "uploads/applications/app-noah/pq-00000000-0000-0000-0000-000000000001/pm-challenge.pdf",
         },
@@ -1714,6 +1733,7 @@ async function main() {
       domainApplications: { create: [{
         id: "da-olivia-eng",
         challengeVersionId: engCv.id,
+            domainId: engDomain.id,
         answers: {
           "eq-00000000-0000-0000-0000-000000000001": "https://github.com/olivia/fullstack-challenge",
           "eq-00000000-0000-0000-0000-000000000004": "https://github.com/olivia/mini-python",
@@ -1758,6 +1778,7 @@ async function main() {
         {
           id: "da-ethan-pm",
           challengeVersionId: pmCv.id,
+            domainId: pmDomain.id,
           answers: {
             "pq-00000000-0000-0000-0000-000000000001": "uploads/applications/app-ethan/pq-00000000-0000-0000-0000-000000000001/pm-challenge.pdf",
           },
@@ -1765,6 +1786,7 @@ async function main() {
         {
           id: "da-ethan-eng",
           challengeVersionId: engCv.id,
+            domainId: engDomain.id,
           answers: {
             "eq-00000000-0000-0000-0000-000000000001": "https://github.com/ethan/fullstack-challenge",
             "eq-00000000-0000-0000-0000-000000000004": "https://github.com/ethan/collab-board",
@@ -1811,6 +1833,7 @@ async function main() {
         {
           id: "da-ava-design",
           challengeVersionId: designCv.id,
+            domainId: designDomain.id,
           answers: {
             "dq-00000000-0000-0000-0000-000000000001": "I follow a double-diamond approach: diverge with research, converge on insights, diverge with ideation, converge on a tested solution. Every decision is backed by user evidence.",
             "dq-00000000-0000-0000-0000-000000000002": "figma.com/@ava-wilson-design",
@@ -1820,6 +1843,7 @@ async function main() {
         {
           id: "da-ava-pm",
           challengeVersionId: pmCv.id,
+            domainId: pmDomain.id,
           answers: {
             "pq-00000000-0000-0000-0000-000000000001": "uploads/applications/app-ava/pq-00000000-0000-0000-0000-000000000001/pm-challenge.pdf",
             "pq-00000000-0000-0000-0000-000000000002": "Choosing between two competing research findings in a summer internship. One said users wanted simplicity, the other said they wanted power features. I segmented by user type and built progressive disclosure — simple by default, powerful on demand.",
@@ -1850,6 +1874,7 @@ async function main() {
       domainApplications: { create: [{
         id: "da-mason-eng",
         challengeVersionId: engCv.id,
+            domainId: engDomain.id,
         answers: {},
       }] },
     },

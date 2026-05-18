@@ -4,6 +4,7 @@ import { parseJson } from "~/lib/validate";
 import { requireAuth } from "~/lib/auth";
 import { isHiringLead, hasCycleAccess } from "~/lib/roles";
 import { autoCloseIfExpired, findOtherActiveCycleId } from "~/hiring/lib/cycles";
+import { eligibleInternUserIds } from "~/hiring/lib/intern-eligibility";
 import { inReviewPipelineFilter } from "~/hiring/lib/application-pipeline-filter";
 import type { Route } from "./+types/api.cycles.$cycleId.status";
 
@@ -44,14 +45,21 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (body instanceof Response) return body;
   const { newStatus, force } = body;
 
-  // Single-active-cycle invariant: only one cycle can be Open or UnderReview at a time.
+  // Single-active-cycle invariant — enforced *per cycleType*. A Standard hire
+  // cycle and an InternToFull conversion cycle may overlap, but two of the
+  // same type may not. We look up this cycle's type first so the check is
+  // scoped correctly.
   if (newStatus === "Open" || newStatus === "UnderReview") {
-    const otherActiveId = await findOtherActiveCycleId(params.cycleId!);
+    const thisCycle = await prisma.applicationCycle.findUniqueOrThrow({
+      where: { id: params.cycleId! },
+      select: { cycleType: true },
+    });
+    const otherActiveId = await findOtherActiveCycleId(params.cycleId!, thisCycle.cycleType);
     if (otherActiveId) {
       return Response.json(
               {
                 error:
-                  "Another cycle is already active. Only one cycle can be Open or UnderReview at a time. Move the existing active cycle to Completed first.",
+                  "Another cycle of the same type is already active. Only one cycle per type can be Open or UnderReview at a time. Move the existing active cycle to Completed first.",
                 activeCycleId: otherActiveId,
               },
               { status: 409 },
@@ -59,7 +67,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
   }
 
-  // Draft → Open requires closeDate and every domain having a linked challenge version
+  // Draft → Open: validate per-cycleType readiness. Standard requires a
+  // linked challenge version per domain (challenge-based hiring); InternToFull
+  // skips challenges and only requires the shortform to be pinned.
   if (newStatus === "Open") {
     const cycle = await prisma.applicationCycle.findUniqueOrThrow({
       where: { id: params.cycleId! },
@@ -79,24 +89,30 @@ export async function action({ request, params }: Route.ActionArgs) {
       return Response.json({ error: "Close date must be set before opening" }, { status: 400 });
     }
 
-    const domainIds = new Set(cycle.domains.map((d) => d.domainId));
-    const coveredDomains = new Set(
-      cycle.challengeVersions.map((cv) => cv.challengeVersionId),
-    );
-    // Check that every domain has at least one challenge version linked
-    if (domainIds.size > 0) {
-      const challengeVersions = await prisma.challengeVersion.findMany({
-        where: { applicationCycles: { some: { applicationCycleId: params.cycleId! } } },
-        select: { domainId: true },
-      });
-      const coveredDomainIds = new Set(challengeVersions.map((cv) => cv.domainId));
-      for (const domainId of domainIds) {
-        if (!coveredDomainIds.has(domainId)) {
-          return Response.json(
-                      { error: "Every domain must have a challenge version linked before opening" },
-                      { status: 400 },
-                    );
+    if (cycle.cycleType === "Standard") {
+      const domainIds = new Set(cycle.domains.map((d) => d.domainId));
+      // Check that every domain has at least one challenge version linked
+      if (domainIds.size > 0) {
+        const challengeVersions = await prisma.challengeVersion.findMany({
+          where: { applicationCycles: { some: { applicationCycleId: params.cycleId! } } },
+          select: { domainId: true },
+        });
+        const coveredDomainIds = new Set(challengeVersions.map((cv) => cv.domainId));
+        for (const domainId of domainIds) {
+          if (!coveredDomainIds.has(domainId)) {
+            return Response.json(
+                        { error: "Every domain must have a challenge version linked before opening" },
+                        { status: 400 },
+                      );
+          }
         }
+      }
+    } else if (cycle.cycleType === "InternToFull") {
+      if (!cycle.internToFullFormVersionId) {
+        return Response.json(
+                { error: "Shortform must be selected before opening an InternToFull cycle" },
+                { status: 400 },
+              );
       }
     }
 
@@ -135,12 +151,62 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
   }
 
-  await prisma.applicationCycleStatusUpdate.create({
-    data: {
-      applicationCycleId: params.cycleId!,
-      newStatus,
-      userId: auth.user.sub,
-    },
+  // For InternToFull cycles opening for the first time, prepare the
+  // notification fan-out. We pre-compute the recipient list outside the
+  // transaction (it's a pure read), then commit the status transition,
+  // notification rows, and idempotency marker atomically. The
+  // internsNotifiedAt flag guards against re-spam if the lead later bounces
+  // Open→Draft→Open during setup.
+  let fanOutPlan: {
+    userIds: string[];
+    title: string;
+    body: string;
+  } | null = null;
+  if (newStatus === "Open") {
+    const cycle = await prisma.applicationCycle.findUniqueOrThrow({
+      where: { id: params.cycleId! },
+      select: { cycleType: true, closeDate: true, name: true, internsNotifiedAt: true },
+    });
+    if (cycle.cycleType === "InternToFull" && !cycle.internsNotifiedAt) {
+      const userIds = await eligibleInternUserIds();
+      const closeText = cycle.closeDate
+        ? ` Apply by ${cycle.closeDate.toLocaleDateString("en-US", { month: "long", day: "numeric" })}.`
+        : "";
+      fanOutPlan = {
+        userIds,
+        title: "Intern → Full-time application is open",
+        body: `${cycle.name} is accepting conversion applications.${closeText}`,
+      };
+    }
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.applicationCycleStatusUpdate.create({
+      data: {
+        applicationCycleId: params.cycleId!,
+        newStatus,
+        userId: auth.user.sub,
+      },
+    });
+
+    if (fanOutPlan) {
+      if (fanOutPlan.userIds.length > 0) {
+        await tx.notification.createMany({
+          data: fanOutPlan.userIds.map((recipientUserId) => ({
+            recipientUserId,
+            createdByUserId: auth.user.sub,
+            kind: "General" as const,
+            title: fanOutPlan!.title,
+            body: fanOutPlan!.body,
+            link: "/intern-to-full",
+          })),
+        });
+      }
+      await tx.applicationCycle.update({
+        where: { id: params.cycleId! },
+        data: { internsNotifiedAt: new Date() },
+      });
+    }
   });
 
   return Response.json({ currentStatus: newStatus });

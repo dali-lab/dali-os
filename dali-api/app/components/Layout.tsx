@@ -19,6 +19,7 @@ import {
   FolderKanban,
   UsersRound,
   Handshake,
+  Home,
   List,
   UserPlus,
   Building2,
@@ -75,6 +76,28 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
   useEffect(() => {
     setMobileNavOpen(false)
   }, [path])
+
+  // Listen for "open in new tab" requests from embedded iframes (e.g. a
+  // notification card in the Home tab whose link would otherwise navigate
+  // the iframe itself, trapping the user in chrome-less embed mode).
+  useEffect(() => {
+    function handler(e: MessageEvent) {
+      if (e.origin !== window.location.origin) return
+      const data = e.data
+      if (!data) return
+      if (data.type === 'dali:openTab' && typeof data.url === 'string') {
+        workspaceRef.current?.openTab({ url: data.url, label: data.label || data.url })
+      } else if (
+        data.type === 'dali:setTabLabel' &&
+        typeof data.url === 'string' &&
+        typeof data.label === 'string'
+      ) {
+        workspaceRef.current?.setTabLabel(data.url, data.label)
+      }
+    }
+    window.addEventListener('message', handler)
+    return () => window.removeEventListener('message', handler)
+  }, [])
 
   const toggleCollapsed = () => {
     setCollapsed((prev) => {
@@ -337,6 +360,22 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
 
       {/* Areas + nested sections */}
       <nav className="flex-1 overflow-y-auto py-3 px-2 flex flex-col gap-0.5">
+        {(() => {
+          const homeActive = path === '/'
+          return (
+            <button
+              type="button"
+              title={collapsed ? 'Home' : undefined}
+              onClick={() => openInWorkspace({ url: '/', label: 'Home' })}
+              className={`flex items-center gap-3 rounded-md ${collapsed ? 'px-3 py-2 justify-center' : 'px-3 py-2'} text-sm font-heading font-semibold text-left transition-colors hover:bg-white/5 ${
+                homeActive ? 'text-white' : 'text-white/65 hover:text-white'
+              }`}
+            >
+              <Home className="w-4 h-4 flex-shrink-0" />
+              {!collapsed && <span className="truncate">Home</span>}
+            </button>
+          )
+        })()}
         {(() => {
           const calendarActive = path.startsWith('/calendar')
           return (

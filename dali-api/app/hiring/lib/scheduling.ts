@@ -392,7 +392,9 @@ export async function reassignInterviewer(
     const role = assignment.role;
 
     // Applicant's domain — used for the in-domain / cross-domain filter.
-    const applicantDomainId = interview.domainApplication.challengeVersion.domainId;
+    // Interviews only exist for Standard cycles, so challengeVersion is always
+    // set here; assert non-null to satisfy TS now that the column is nullable.
+    const applicantDomainId = interview.domainApplication.challengeVersion!.domainId;
 
     // Exclude any MEMBER (not just their row) who already holds an active
     // assignment on this interview. Without this, a member with multiple

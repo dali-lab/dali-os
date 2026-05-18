@@ -102,6 +102,17 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!auth.ok) return redirect("/login");
   if (!(await isHiringLead(auth.user.sub))) return redirect("/");
 
+  // InternToFull cycles use a separate, simpler setup page (no challenges,
+  // no interview config). Forward there before any of the Standard-cycle
+  // payload is loaded.
+  const cycleTypeRow = await prisma.applicationCycle.findUnique({
+    where: { id: params.id },
+    select: { cycleType: true },
+  });
+  if (cycleTypeRow?.cycleType === "InternToFull") {
+    return redirect(`/hiring/lead/intern-to-full-cycle/${params.id}`);
+  }
+
   // Hiring leads must be able to reach this page to bind a confidentiality
   // agreement to the cycle, so we don't redirect when unsigned. Instead, the
   // loader strips every sensitive payload — applicant identities, final
@@ -210,13 +221,16 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         },
         select: {
           domainApplication: {
-            select: { challengeVersion: { select: { domainId: true } } },
+            select: {
+              domainId: true,
+              challengeVersion: { select: { domainId: true } },
+            },
           },
         },
       });
   const reviewedDomainIdSet = new Set<string>();
   for (const r of reviewsForCycle) {
-    const did = r.domainApplication.challengeVersion.domainId;
+    const did = r.domainApplication.challengeVersion?.domainId ?? r.domainApplication.domainId ?? null;
     if (did) reviewedDomainIdSet.add(did);
   }
   const reviewedDomainIds = Array.from(reviewedDomainIdSet);

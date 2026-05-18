@@ -103,8 +103,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   )
   if (confRedirect) throw confRedirect
 
-  // Rubric criteria for the applicant's domain
-  const domainId = interview.domainApplication.challengeVersion.domainId
+  // Rubric criteria for the applicant's domain. Interviews only exist on
+  // Standard cycles where challengeVersion is always set; the optional chain
+  // is just to satisfy TS now that the column is nullable.
+  const domainId = interview.domainApplication.challengeVersion?.domainId ?? null
   let rubricCriteria: any[] = []
   if (domainId) {
     const domainAppCycle = await prisma.domainApplicationCycle.findUnique({
@@ -130,7 +132,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const generalQuestions =
     (interview.domainApplication.application.generalChallengeVersion?.questions as unknown as Question[]) ?? []
   const challengeQuestions =
-    (interview.domainApplication.challengeVersion.questions as unknown as Question[]) ?? []
+    (interview.domainApplication.challengeVersion?.questions as unknown as Question[]) ?? []
   const presignedGeneralAnswers = await presignAnswers(
     generalQuestions,
     interview.domainApplication.application.answers as Record<string, string>,

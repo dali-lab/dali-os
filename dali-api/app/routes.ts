@@ -14,6 +14,7 @@ export default [
     route("hiring/domain-lead/delibs/:id", "hiring/routes/domain-lead.delibs.$id.tsx"),
     route("hiring/lead", "hiring/routes/lead.tsx"),
     route("hiring/lead/cycle/:id", "hiring/routes/lead.cycle.$id.tsx"),
+    route("hiring/lead/intern-to-full-cycle/:id", "hiring/routes/lead.intern-to-full-cycle.$id.tsx"),
     route("hiring/challenges", "hiring/routes/challenges.tsx"),
     route("hiring/challenges/:id", "hiring/routes/challenges.$id.tsx"),
     route("hiring/rubrics", "hiring/routes/rubrics.tsx"),
@@ -42,6 +43,11 @@ export default [
 
     // Partners
     route("partners", "partners/routes/partners.tsx"),
+
+    // Internal applicant portal — intern → full-time conversion. Authenticated
+    // member route (not under /portal) so interns use their existing session
+    // rather than the CAS flow built for external applicants.
+    route("intern-to-full", "routes/intern-to-full.tsx"),
   ]),
 
   // Applicant portal (lightweight layout)

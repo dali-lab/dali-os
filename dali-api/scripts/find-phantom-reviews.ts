@@ -48,7 +48,7 @@ const hasData: typeof phantoms = [];
 for (const r of phantoms) {
   const u = r.domainApplication.application.user;
   const applicant = `${u.firstName} ${u.lastName} <${u.daliEmail ?? u.dartmouthEmail ?? u.netId ?? "?"}>`;
-  const domain = r.domainApplication.challengeVersion.domain?.name ?? "?";
+  const domain = r.domainApplication.challengeVersion?.domain?.name ?? "?";
   const cycle = r.domainApplication.application.applicationCycle.name;
   const m = r.cycleReviewer.user;
   const reviewer = `${m.firstName} ${m.lastName} <${m.daliEmail}>`;

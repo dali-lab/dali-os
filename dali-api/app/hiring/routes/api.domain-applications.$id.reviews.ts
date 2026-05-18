@@ -60,6 +60,8 @@ export async function action({ request, params }: Route.ActionArgs) {
     include: {
       application: true,
       challengeVersion: { select: { domainId: true } },
+      // InternToFull links Domain directly; needed when challengeVersion is null.
+      domain: { select: { id: true } },
     },
   });
 
@@ -72,7 +74,9 @@ export async function action({ request, params }: Route.ActionArgs) {
   // ChallengeVersion.domainId is nullable because the general application form
   // is also a ChallengeVersion. A DomainApplication should never reference one,
   // so this is a data invariant error rather than a user-facing condition.
-  const domainId = domainApp.challengeVersion.domainId;
+  // InternToFull DomainApplications link Domain directly instead of via a
+  // ChallengeVersion, so fall back to the direct relation when it's set.
+  const domainId = domainApp.challengeVersion?.domainId ?? domainApp.domainId;
   if (!domainId) {
     return Response.json({ error: "Domain application is linked to a non-domain challenge version" }, { status: 500 });
   }

@@ -73,11 +73,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     include: {
       ...domainApplicationStatusInclude,
       challengeVersion: { include: { domain: true, challenge: true } },
+      domain: true,
       application: {
         include: {
           user: true,
           statusUpdates: true,
           generalChallengeVersion: true,
+          internToFullFormVersion: true,
           applicationCycle: {
             include: { statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 } },
           },
@@ -114,7 +116,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
 
   if (!da) return redirect("/hiring/domain-lead");
-  if (!leadDomainIds.includes(da.challengeVersion.domainId!)) return redirect("/hiring/domain-lead");
+  // Standard cycles link domain via challengeVersion. InternToFull links it
+  // directly. Use whichever is present.
+  const daDomainId = da.challengeVersion?.domainId ?? da.domainId ?? null;
+  if (!daDomainId || !leadDomainIds.includes(daDomainId)) return redirect("/hiring/domain-lead");
 
   const confRedirect = await requirePageSignedOrRedirect(
     auth.user.sub,
@@ -124,11 +129,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (confRedirect) return confRedirect;
 
   // Load rubric criteria for score labels
-  const dac = da.challengeVersion.domainId
+  const dac = daDomainId
     ? await prisma.domainApplicationCycle.findUnique({
         where: {
           domainId_applicationCycleId: {
-            domainId: da.challengeVersion.domainId,
+            domainId: daDomainId,
             applicationCycleId: da.application.applicationCycleId,
           },
         },
@@ -152,7 +157,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const generalQuestions =
     (da.application.generalChallengeVersion?.questions as unknown as Question[]) ?? [];
   const challengeQuestions =
-    (da.challengeVersion.questions as unknown as Question[]) ?? [];
+    (da.challengeVersion?.questions as unknown as Question[]) ?? [];
   const presignedGeneralAnswers = await presignAnswers(
     generalQuestions,
     da.application.answers as Record<string, string>,

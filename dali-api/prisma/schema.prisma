@@ -62,6 +62,7 @@ model User {
   oauthSessions                 OAuthSession[]
   sessions                      Session[]
   rubricVersions                RubricVersion[]
+  internToFullFormVersions      InternToFullFormVersion[]
   confidentialitySignatures     ConfidentialityAgreementSignature[]
 
   // ─── Calendar / scheduling relations ───────────────────────────────────────
@@ -171,10 +172,28 @@ model ApplicationCycle {
   // can re-trigger the notice.
   extensionNoticeSentAt DateTime?
 
+  // Idempotency marker for the InternToFull eligibility notification fan-out
+  // (sent when the cycle first transitions to Open). Stays set across
+  // Open→Draft→Open bounces so leads can iterate during setup without
+  // re-spamming interns. Always null on Standard cycles.
+  internsNotifiedAt DateTime?
+
   // Rubric for the general application form (reviewers score this alongside
   // the per-domain rubric set on DomainApplicationCycle).
   generalRubricVersionId String?
   generalRubricVersion   RubricVersion? @relation("CycleGeneralRubric", fields: [generalRubricVersionId], references: [id])
+
+  // Discriminator. Standard = the normal hire cycle (CAS-authed applicants,
+  // general form + per-domain challenge + interviews). InternToFull = current
+  // interns applying to convert to full-time members; uses a shorter DB-backed
+  // form, no challenges, no interviews. One active cycle per cycleType is
+  // enforced at the route layer (see findOtherActiveCycleId).
+  cycleType ApplicationCycleType @default(Standard)
+
+  // When cycleType=InternToFull, the shortform questions are pinned via this
+  // version. Always null on Standard cycles.
+  internToFullFormVersionId String?
+  internToFullFormVersion   InternToFullFormVersion? @relation(fields: [internToFullFormVersionId], references: [id])
 
   statusUpdates     ApplicationCycleStatusUpdate[]
   applications      Application[]
@@ -227,9 +246,16 @@ model Application {
   user                      User             @relation(fields: [userId], references: [id])
   applicationCycleId        String
   applicationCycle          ApplicationCycle @relation(fields: [applicationCycleId], references: [id])
-  // Pinned at application creation time so that form updates do not affect in-progress drafts.
-  generalChallengeVersionId String
-  generalChallengeVersion   ChallengeVersion @relation("ApplicationGeneralChallenge", fields: [generalChallengeVersionId], references: [id])
+  // Pinned at application creation time so that form updates do not affect
+  // in-progress drafts. Required on Standard cycles; null on InternToFull
+  // cycles (which pin `internToFullFormVersionId` instead). One of the two
+  // must be set — enforced at the app layer.
+  generalChallengeVersionId String?
+  generalChallengeVersion   ChallengeVersion? @relation("ApplicationGeneralChallenge", fields: [generalChallengeVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  // Pinned at creation time for InternToFull applications. Null on Standard.
+  internToFullFormVersionId String?
+  internToFullFormVersion   InternToFullFormVersion? @relation("ApplicationInternToFullForm", fields: [internToFullFormVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   // Phase 1: distinguishes the application's purpose. Standard = regular DALI
   // hire cycle (only value used today). Intern = shorter form for intern
@@ -251,14 +277,42 @@ enum ApplicationType {
   Transfer
 }
 
-// Domain is not stored directly — it is derivable via challengeVersion.domain.
-// Every DomainApplication is tied to a specific ChallengeVersion, which belongs to a Domain.
+// Cycle-level discriminator. Drives form rendering, eligibility gating,
+// interview/challenge presence, and delibs column layout.
+enum ApplicationCycleType {
+  Standard
+  InternToFull
+}
+
+// Immutable snapshot of the shortform used for InternToFull cycles. Never
+// update rows — create a new version. `questions` shape mirrors the JSON
+// schema used by ChallengeVersion.questions so the existing QuestionList /
+// answer-storage code can render it without forking.
+model InternToFullFormVersion {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  version   Int      @unique
+  questions Json
+
+  createdById String
+  createdBy   User   @relation(fields: [createdById], references: [id])
+
+  cycles       ApplicationCycle[]
+  applications Application[]      @relation("ApplicationInternToFullForm")
+}
+
+// On Standard cycles, the domain is derived via challengeVersion.domain (the
+// applicant answers a per-domain challenge). On InternToFull cycles there is
+// no per-domain challenge, so `challengeVersionId` is null and `domainId` is
+// set directly. Exactly one of the two is set — enforced at the app layer.
 model DomainApplication {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // answers: same shape as Application.answers, keyed by question UUID from the challenge version.
+  // answers: same shape as Application.answers, keyed by question UUID from
+  // the challenge version. Empty `{}` on InternToFull (no per-domain content).
   answers Json
 
   // Whether this domain is currently selected by the applicant.
@@ -268,8 +322,17 @@ model DomainApplication {
 
   applicationId      String
   application        Application      @relation(fields: [applicationId], references: [id])
-  challengeVersionId String
-  challengeVersion   ChallengeVersion @relation(fields: [challengeVersionId], references: [id])
+  // Pins the questions the applicant answered. Always set on Standard cycles
+  // (per-domain challenge). Null on InternToFull (questions live on the
+  // Application via internToFullFormVersionId — there's nothing per-domain
+  // to pin).
+  challengeVersionId String?
+  challengeVersion   ChallengeVersion? @relation(fields: [challengeVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  // The target Domain this DA represents. Required for every DA regardless
+  // of cycle type — single source of truth for "what domain is this for".
+  // Backfilled from challengeVersion.domainId for pre-existing Standard rows.
+  domainId           String
+  domain             Domain           @relation(fields: [domainId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   interviews Interview[]
   reviews    ApplicationReview[]
@@ -314,6 +377,8 @@ model Domain {
   cycleReviewers        CycleReviewer[]
   cycleInterviewers     CycleInterviewer[]
   delibsSessions        DelibsSession[]
+  // InternToFull DomainApplications link Domain directly (no ChallengeVersion).
+  domainApplications    DomainApplication[]
 
   // ─── Phase 1 back-relations ───────────────────────────────────────────────
   eligibilities       DomainEligibility[]

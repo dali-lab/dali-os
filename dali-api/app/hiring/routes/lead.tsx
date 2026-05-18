@@ -42,6 +42,8 @@ export async function loader({ request }: Route.LoaderArgs) {
 export async function action({ request }: Route.ActionArgs) {
   const formData = await request.formData();
   const name = (formData.get("name") as string)?.trim();
+  const cycleTypeRaw = (formData.get("cycleType") as string) ?? "Standard";
+  const cycleType = cycleTypeRaw === "InternToFull" ? "InternToFull" : "Standard";
   if (!name) return { error: "Name is required" };
 
   const auth = await requireAuth(request);
@@ -54,6 +56,7 @@ export async function action({ request }: Route.ActionArgs) {
   const cycle = await prisma.applicationCycle.create({
     data: {
       name,
+      cycleType,
       statusUpdates: {
         create: { newStatus: "Draft", userId: adminUser.id },
       },
@@ -106,6 +109,23 @@ export default function HiringLeadDashboard() {
                     className="w-full px-3 py-2 text-sm text-foreground border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
+                <div>
+                  <label htmlFor="cycle-type" className="block text-sm font-medium text-foreground/80 mb-1">
+                    Cycle type
+                  </label>
+                  <select
+                    id="cycle-type"
+                    name="cycleType"
+                    defaultValue="Standard"
+                    className="w-full px-3 py-2 text-sm text-foreground border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="Standard">Standard hire</option>
+                    <option value="InternToFull">Intern → Full-time conversion</option>
+                  </select>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    InternToFull cycles use a shortform (no challenge) and skip interviews.
+                  </p>
+                </div>
                 <div className="flex justify-end gap-2">
                   <button
                     type="button"
@@ -134,26 +154,46 @@ export default function HiringLeadDashboard() {
   );
 }
 
-// Single source of truth for hero cycle selection.
-// ActiveCycleHero features the result; PastCycles excludes it.
-// Prefers Open/UnderReview (truly active) over Draft.
-function selectHeroCycle(cycles: any[]): any | undefined {
-  return (
-    cycles.find((c: any) => {
-      const status = c.statusUpdates[0]?.newStatus;
-      return status && ["Open", "UnderReview"].includes(status);
-    }) ??
-    cycles.find((c: any) => {
-      const status = c.statusUpdates[0]?.newStatus;
-      return status === "Draft";
-    })
-  );
+const CYCLE_TYPE_LABELS: Record<string, string> = {
+  Standard: "Standard hire",
+  InternToFull: "Intern → Full-time",
+};
+
+function heroLinkFor(cycle: any): string {
+  return cycle.cycleType === "InternToFull"
+    ? `/hiring/lead/intern-to-full-cycle/${cycle.id}`
+    : `/hiring/lead/cycle/${cycle.id}`;
+}
+
+// Pick at most one hero per cycleType so Standard and InternToFull cycles
+// don't fight over the single hero slot when both are active concurrently.
+// Within a type, prefers Open/UnderReview over Draft.
+function selectHeroCycles(cycles: any[]): any[] {
+  const byType = new Map<string, any>();
+  for (const c of cycles) {
+    const status = c.statusUpdates[0]?.newStatus;
+    const isActive = status && ["Open", "UnderReview"].includes(status);
+    const isDraft = status === "Draft";
+    if (!isActive && !isDraft) continue;
+    const existing = byType.get(c.cycleType);
+    if (!existing) {
+      byType.set(c.cycleType, c);
+      continue;
+    }
+    const existingActive =
+      existing.statusUpdates[0]?.newStatus &&
+      ["Open", "UnderReview"].includes(existing.statusUpdates[0].newStatus);
+    if (isActive && !existingActive) byType.set(c.cycleType, c);
+  }
+  // Standard first so it stays visually anchored when InternToFull is also active.
+  const order = ["Standard", "InternToFull"];
+  return order.flatMap((t) => (byType.has(t) ? [byType.get(t)] : []));
 }
 
 function ActiveCycleHero({ cycles }: { cycles: any[] }) {
-  const activeCycle = selectHeroCycle(cycles);
+  const heroes = selectHeroCycles(cycles);
 
-  if (!activeCycle) {
+  if (heroes.length === 0) {
     return (
       <div className="bg-card border-2 border-dashed border-gray-300 rounded-xl p-8 text-center">
         <p className="text-muted-foreground mb-1">No active hiring cycle.</p>
@@ -162,43 +202,52 @@ function ActiveCycleHero({ cycles }: { cycles: any[] }) {
     );
   }
 
-  const currentStatus = activeCycle.statusUpdates[0]?.newStatus ?? "Draft";
-  const domains = activeCycle.domains.map((d: any) => d.domain.name);
-
   return (
-    <Link
-      to={`/hiring/lead/cycle/${activeCycle.id}`}
-      className="block bg-card border border-border rounded-xl p-6 hover:border-blue-300 hover:shadow-md transition-all"
-    >
-      <div className="flex items-start justify-between">
-        <div className="space-y-2">
-          <div className="flex items-center gap-3">
-            <span className="text-xl font-bold text-foreground">{activeCycle.name}</span>
-            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[currentStatus]}`}>
-              {STATUS_LABELS[currentStatus]}
-            </span>
-          </div>
-          <div className="flex items-center gap-4 text-sm text-muted-foreground">
-            <span>{domains.join(", ") || "No domains"}</span>
-            <span>·</span>
-            <span>{activeCycle._count.applications} application{activeCycle._count.applications !== 1 ? "s" : ""}</span>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 text-blue-600 font-medium text-sm">
-          Manage Cycle
-          <ChevronRight className="w-4 h-4" />
-        </div>
-      </div>
-    </Link>
+    <div className="space-y-3">
+      {heroes.map((c) => {
+        const currentStatus = c.statusUpdates[0]?.newStatus ?? "Draft";
+        const domains = c.domains.map((d: any) => d.domain.name);
+        return (
+          <Link
+            key={c.id}
+            to={heroLinkFor(c)}
+            className="block bg-card border border-border rounded-xl p-6 hover:border-blue-300 hover:shadow-md transition-all"
+          >
+            <div className="flex items-start justify-between">
+              <div className="space-y-2">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    {CYCLE_TYPE_LABELS[c.cycleType] ?? c.cycleType}
+                  </span>
+                  <span className="text-xl font-bold text-foreground">{c.name}</span>
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[currentStatus]}`}>
+                    {STATUS_LABELS[currentStatus]}
+                  </span>
+                </div>
+                <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                  <span>{domains.join(", ") || "No domains"}</span>
+                  <span>·</span>
+                  <span>{c._count.applications} application{c._count.applications !== 1 ? "s" : ""}</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 text-blue-600 font-medium text-sm">
+                Manage Cycle
+                <ChevronRight className="w-4 h-4" />
+              </div>
+            </div>
+          </Link>
+        );
+      })}
+    </div>
   );
 }
 
 function PastCycles({ cycles }: { cycles: any[] }) {
   const [open, setOpen] = useState(false);
 
-  // Exclude the hero cycle (same selection as ActiveCycleHero)
-  const heroCycle = selectHeroCycle(cycles);
-  const pastCycles = cycles.filter((c: any) => c.id !== heroCycle?.id);
+  // Exclude every hero (one per cycleType) so we don't double-list active cycles.
+  const heroIds = new Set(selectHeroCycles(cycles).map((c) => c.id));
+  const pastCycles = cycles.filter((c: any) => !heroIds.has(c.id));
 
   if (pastCycles.length === 0) return null;
 
@@ -219,10 +268,13 @@ function PastCycles({ cycles }: { cycles: any[] }) {
             return (
               <Link
                 key={cycle.id}
-                to={`/hiring/lead/cycle/${cycle.id}`}
+                to={heroLinkFor(cycle)}
                 className="flex items-center justify-between px-5 py-3 hover:bg-muted/50 transition-colors"
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                    {CYCLE_TYPE_LABELS[cycle.cycleType] ?? cycle.cycleType}
+                  </span>
                   <span className="text-sm font-medium text-foreground">{cycle.name}</span>
                   <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[currentStatus]}`}>
                     {STATUS_LABELS[currentStatus]}
