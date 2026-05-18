@@ -58,6 +58,17 @@ export async function postReply(
   return { ts: res.ts };
 }
 
+// Top-level (non-thread) channel message. Used by the staffing finalize
+// automation to announce a project's confirmed roster.
+export async function postMessage(
+  channel: string,
+  text: string,
+): Promise<{ ts: string }> {
+  const res = await client().chat.postMessage({ channel, text });
+  if (!res.ts) throw new Error("chat.postMessage returned no ts");
+  return { ts: res.ts };
+}
+
 export async function editMessage(channel: string, ts: string, text: string): Promise<void> {
   await client().chat.update({ channel, ts, text });
 }

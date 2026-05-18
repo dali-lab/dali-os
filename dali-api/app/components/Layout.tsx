@@ -22,10 +22,18 @@ import {
   List,
   UserPlus,
   Building2,
+  Workflow,
+  ArrowRightLeft,
+  TrendingUp,
+  Rocket,
+  ClipboardList,
+  GraduationCap,
+  ListTodo,
+  Megaphone,
 } from 'lucide-react'
 import { userInitials } from '~/lib/display'
 import { TabWorkspace, type TabWorkspaceHandle, type OpenTabRequest } from '~/components/TabWorkspace'
-import { useUnreadNotificationCount, UnreadBadge } from '~/components/NotificationBell'
+import { useUnreadNotificationCount, useOpenTasks, UnreadBadge } from '~/components/NotificationBell'
 
 interface LayoutProps {
   user: { email: string; firstName?: string; lastName?: string }
@@ -38,7 +46,7 @@ interface LayoutProps {
 const SIDEBAR_COLLAPSED_KEY = 'dali:sidebar:collapsed'
 const EXPANDED_AREAS_KEY = 'dali:sidebar:expanded-areas'
 
-type AreaKey = 'hiring' | 'projects' | 'members' | 'partners' | 'admin-console'
+type AreaKey = 'hiring' | 'projects' | 'members' | 'partners' | 'education' | 'internal-processes' | 'admin-console'
 
 export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLead = false, isInterviewer = false }: LayoutProps) {
   const location = useLocation()
@@ -53,6 +61,8 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
     projects: undefined,
     members: undefined,
     partners: undefined,
+    education: undefined,
+    'internal-processes': undefined,
     'admin-console': undefined,
   })
   const workspaceRef = useRef<TabWorkspaceHandle | null>(null)
@@ -104,6 +114,8 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
     : path.startsWith('/projects') ? 'projects'
     : path.startsWith('/members') ? 'members'
     : path.startsWith('/partners') ? 'partners'
+    : path.startsWith('/education') ? 'education'
+    : path.startsWith('/internal-processes') ? 'internal-processes'
     : null
 
   const hiringSections = [
@@ -190,11 +202,19 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
       active: path.startsWith('/admin-console/domains'),
       sub: null,
     },
+    {
+      label: 'Announcements',
+      to: '/admin-console/announcements',
+      icon: Megaphone,
+      show: isAdmin,
+      active: path.startsWith('/admin-console/announcements'),
+      sub: null,
+    },
   ].filter((s) => s.show)
 
   const projectsSections = [
     {
-      label: 'List',
+      label: 'Hub',
       to: '/projects/list',
       icon: List,
       show: true,
@@ -209,11 +229,27 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
       active: path.startsWith('/projects/staffing'),
       sub: null,
     },
+    {
+      label: 'Intent to Work',
+      to: '/projects/intent-to-work',
+      icon: FileText,
+      show: true,
+      active: path.startsWith('/projects/intent-to-work'),
+      sub: null,
+    },
+    {
+      label: 'Project Bids',
+      to: '/projects/project-bids',
+      icon: ClipboardList,
+      show: true,
+      active: path.startsWith('/projects/project-bids'),
+      sub: null,
+    },
   ].filter((s) => s.show)
 
   const membersSections = [
     {
-      label: 'Directory',
+      label: 'Database',
       to: '/members',
       icon: UsersRound,
       show: true,
@@ -236,8 +272,54 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
       to: '/partners',
       icon: Building2,
       show: true,
-      active: path === '/partners' || path.startsWith('/partners/'),
+      active: path === '/partners',
       sub: null as { label: string; to: string; active: boolean }[] | null,
+    },
+    {
+      label: 'Applications',
+      to: '/partners/applications',
+      icon: ClipboardList,
+      show: true,
+      active: path.startsWith('/partners/applications'),
+      sub: null,
+    },
+  ].filter((s) => s.show)
+
+  const educationSections = [
+    {
+      label: 'Overview',
+      to: '/education',
+      icon: GraduationCap,
+      show: true,
+      active: path === '/education' || path.startsWith('/education/'),
+      sub: null as { label: string; to: string; active: boolean }[] | null,
+    },
+  ].filter((s) => s.show)
+
+  const internalProcessesSections = [
+    {
+      label: 'Transfer',
+      to: '/internal-processes/transfer',
+      icon: ArrowRightLeft,
+      show: true,
+      active: path.startsWith('/internal-processes/transfer'),
+      sub: null as { label: string; to: string; active: boolean }[] | null,
+    },
+    {
+      label: 'Level Up',
+      to: '/internal-processes/level-up',
+      icon: TrendingUp,
+      show: true,
+      active: path.startsWith('/internal-processes/level-up'),
+      sub: null,
+    },
+    {
+      label: 'JobX',
+      to: '/internal-processes/jobx',
+      icon: Rocket,
+      show: true,
+      active: path.startsWith('/internal-processes/jobx'),
+      sub: null,
     },
   ].filter((s) => s.show)
 
@@ -280,6 +362,24 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
       sections: partnersSections,
     },
     {
+      key: 'education' as AreaKey,
+      label: 'Education',
+      to: '/education',
+      icon: GraduationCap,
+      show: true,
+      active: activeAreaKey === 'education',
+      sections: educationSections,
+    },
+    {
+      key: 'internal-processes' as AreaKey,
+      label: 'Internal Processes',
+      to: '/internal-processes/transfer',
+      icon: Workflow,
+      show: true,
+      active: activeAreaKey === 'internal-processes',
+      sections: internalProcessesSections,
+    },
+    {
       key: 'admin-console' as AreaKey,
       label: 'Admin Console',
       to: '/admin-console',
@@ -295,13 +395,20 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
 
   const initials = userInitials(user)
   const unreadCount = useUnreadNotificationCount()
+  const openTasks = useOpenTasks()
+  const taskCount = openTasks.length
   const sidebarWidth = collapsed ? 'w-16' : 'w-64'
 
   const sidebarContent = (
     <>
       {/* Brand */}
       <div className={`h-14 flex items-center flex-shrink-0 ${collapsed ? 'justify-center px-2' : 'justify-between px-3 gap-2'}`}>
-        <Link to="/" className="flex items-center gap-2.5 min-w-0 focus:outline-none" title="DALI">
+        <button
+          type="button"
+          onClick={() => openInWorkspace({ url: '/', label: 'Home' })}
+          className="flex items-center gap-2.5 min-w-0 focus:outline-none"
+          title="Home"
+        >
           <div className="w-7 h-7 bg-accent-coral rounded-md flex items-center justify-center flex-shrink-0">
             <span className="text-white font-bold text-base leading-none font-heading">D</span>
           </div>
@@ -310,7 +417,7 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
               DALI OS
             </span>
           )}
-        </Link>
+        </button>
         {!collapsed && (
           <button
             type="button"
@@ -338,6 +445,87 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
       {/* Areas + nested sections */}
       <nav className="flex-1 overflow-y-auto py-3 px-2 flex flex-col gap-0.5">
         {(() => {
+          const hasTasks = taskCount > 0
+          // Tasks has no page of its own. With no todos it's an inert label.
+          // With todos the header navigates to Home (the task overview) and
+          // sits above one subtab per todo, each linking to its own target.
+          const headerInner = (
+            <>
+              <span className="relative flex-shrink-0">
+                <ListTodo className="w-4 h-4" />
+                {/* Collapsed: a dot is the only room we have to signal pending work. */}
+                {collapsed && hasTasks && (
+                  <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-accent-coral" />
+                )}
+              </span>
+              {!collapsed && (
+                <>
+                  <span className="truncate">Tasks</span>
+                  <span
+                    className={`ml-auto inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[11px] font-bold ${
+                      hasTasks
+                        ? 'bg-accent-coral text-white'
+                        : 'bg-white/10 text-white/50'
+                    }`}
+                    aria-label={`${taskCount} open task${taskCount === 1 ? '' : 's'}`}
+                  >
+                    {taskCount > 99 ? '99+' : taskCount}
+                  </span>
+                </>
+              )}
+            </>
+          )
+          return (
+            <div className="flex flex-col">
+              {hasTasks ? (
+                <button
+                  type="button"
+                  title={collapsed ? `Tasks (${taskCount})` : undefined}
+                  onClick={() => openInWorkspace({ url: '/', label: 'Home' })}
+                  className={`relative flex items-center gap-3 rounded-md ${collapsed ? 'px-3 py-2 justify-center' : 'px-3 py-2'} text-sm font-heading font-semibold text-left text-white transition-colors hover:bg-white/5`}
+                >
+                  {headerInner}
+                </button>
+              ) : (
+                <div
+                  title={collapsed ? 'Tasks (0)' : undefined}
+                  className={`relative flex items-center gap-3 rounded-md ${collapsed ? 'px-3 py-2 justify-center' : 'px-3 py-2'} text-sm font-heading font-semibold text-white/40`}
+                >
+                  {headerInner}
+                </div>
+              )}
+
+              {!collapsed && hasTasks && (
+                <div className="mt-1 mb-1 ml-4 pl-2 border-l border-white/10 flex flex-col gap-0.5">
+                  {openTasks.map((t) => {
+                    const cls =
+                      'flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] font-medium text-left transition-colors'
+                    return t.link ? (
+                      <button
+                        key={t.id}
+                        type="button"
+                        title={t.title}
+                        onClick={() => openInWorkspace({ url: t.link!, label: t.title })}
+                        className={`${cls} text-white/55 hover:text-white hover:bg-white/5`}
+                      >
+                        <span className="truncate">{t.title}</span>
+                      </button>
+                    ) : (
+                      <div
+                        key={t.id}
+                        title={t.title}
+                        className={`${cls} text-white/40`}
+                      >
+                        <span className="truncate">{t.title}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )
+        })()}
+        {(() => {
           const calendarActive = path.startsWith('/calendar')
           return (
             <button
@@ -350,6 +538,22 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
             >
               <Calendar className="w-4 h-4 flex-shrink-0" />
               {!collapsed && <span className="truncate">Calendar</span>}
+            </button>
+          )
+        })()}
+        {(() => {
+          const formsActive = path.startsWith('/forms')
+          return (
+            <button
+              type="button"
+              title={collapsed ? 'Forms' : undefined}
+              onClick={() => openInWorkspace({ url: '/forms', label: 'Forms' })}
+              className={`flex items-center gap-3 rounded-md ${collapsed ? 'px-3 py-2 justify-center' : 'px-3 py-2'} text-sm font-heading font-semibold text-left transition-colors hover:bg-white/5 ${
+                formsActive ? 'text-white' : 'text-white/65 hover:text-white'
+              }`}
+            >
+              <ClipboardList className="w-4 h-4 flex-shrink-0" />
+              {!collapsed && <span className="truncate">Forms</span>}
             </button>
           )
         })()}
@@ -420,9 +624,9 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
         <div className={`flex items-center gap-1 px-1 py-1 ${collapsed ? 'justify-center' : ''}`}>
           <button
             type="button"
-            onClick={() => openInWorkspace({ url: '/', label: 'Home' })}
-            title={collapsed ? `Open home${unreadCount > 0 ? ` (${unreadCount} unread)` : ''}` : undefined}
-            aria-label="Open home"
+            onClick={() => openInWorkspace({ url: '/profile', label: 'Profile' })}
+            title={collapsed ? `Open profile${unreadCount > 0 ? ` (${unreadCount} unread)` : ''}` : undefined}
+            aria-label="Open profile"
             className={`flex items-center gap-2 rounded-md hover:bg-white/5 transition-colors ${
               collapsed ? 'p-1.5' : 'flex-1 min-w-0 px-2 py-1.5 text-left'
             }`}
@@ -472,19 +676,24 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
           >
             {mobileNavOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
-          <Link to="/" className="flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={() => openInWorkspace({ url: '/', label: 'Home' })}
+            className="flex items-center gap-2.5"
+            title="Home"
+          >
             <div className="w-7 h-7 bg-accent-coral rounded-md flex items-center justify-center flex-shrink-0">
               <span className="text-white font-bold text-base leading-none font-heading">D</span>
             </div>
             <span className="font-heading font-bold text-lg text-white tracking-tight">
               DALI OS
             </span>
-          </Link>
+          </button>
         </div>
         <div className="flex items-center gap-3">
           <Link
-            to="/"
-            aria-label={unreadCount > 0 ? `Home (${unreadCount} unread)` : 'Home'}
+            to="/profile"
+            aria-label={unreadCount > 0 ? `Profile (${unreadCount} unread)` : 'Profile'}
             className="relative w-8 h-8 rounded-full bg-accent-coral text-white flex items-center justify-center font-bold text-xs"
           >
             {initials}

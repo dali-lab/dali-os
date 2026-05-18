@@ -2841,6 +2841,540 @@ async function main() {
   console.log(`  ${seedTemplates.length} email templates seeded (2 legacy + 7 new + Fall 2026 decision + notification bindings)`)
   console.log(`  ${reviewSpecs.length} ApplicationReviews + ${decisionSpecs.filter(s => s.type === "InvitedToInterview").length * 3 + decisionSpecs.filter(s => s.type !== "InvitedToInterview").length * 2} Decisions + ${interviewBookings.length} booked interviews for Fall 2026`);
 
+  // ── Partners + projects ────────────────────────────────────────────────────
+  // Demo data for the /members and /projects/list views. Real ops data lives
+  // behind the Admin Console UI (per v0-reference.ts) — this is just enough
+  // to make the list pages non-empty in dev. Stable IDs keep re-runs idempotent.
+  const partnerSeeds = [
+    { id: "partner-tuck-school",  name: "Tuck School of Business", website: "https://www.tuck.dartmouth.edu", isIndividual: false },
+    { id: "partner-hood-museum",  name: "Hood Museum of Art",      website: "https://hoodmuseum.dartmouth.edu", isIndividual: false },
+    { id: "partner-thayer",       name: "Thayer School of Engineering", website: "https://engineering.dartmouth.edu", isIndividual: false },
+    { id: "partner-prof-rocket",  name: "Prof. Devin Balkcom",     website: null, isIndividual: true },
+    { id: "partner-dali-internal",name: "DALI Lab (Internal)",     website: "https://dali.dartmouth.edu", isIndividual: false },
+  ];
+  for (const p of partnerSeeds) {
+    await prisma.partnerOrg.upsert({
+      where: { id: p.id },
+      update: { name: p.name, website: p.website, isIndividual: p.isIndividual },
+      create: { id: p.id, name: p.name, website: p.website, isIndividual: p.isIndividual },
+    });
+  }
+
+  const term26S = await prisma.term.findUnique({ where: { code: "26S" }, select: { id: true } });
+  // Free hero images from Lorem Picsum (https://picsum.photos). Seeded URLs
+  // are deterministic so the same project always gets the same image.
+  const projectSeeds = [
+    { id: "project-tuck-alumni",      name: "Tuck Alumni Connect",       status: "Active"   as const, termCount: 3, partnerIds: ["partner-tuck-school"],                  imageUrl: "https://picsum.photos/seed/project-tuck-alumni/1200/400" },
+    { id: "project-hood-vr",          name: "Hood Museum AR Tour",       status: "Active"   as const, termCount: 2, partnerIds: ["partner-hood-museum"],                   imageUrl: "https://picsum.photos/seed/project-hood-vr/1200/400" },
+    { id: "project-thayer-lab",       name: "Thayer Lab Booking",        status: "Active"   as const, termCount: 1, partnerIds: ["partner-thayer", "partner-dali-internal"], imageUrl: "https://picsum.photos/seed/project-thayer-lab/1200/400" },
+    { id: "project-rocket-arm",       name: "Robotic Arm Telemetry",     status: "Paused"   as const, termCount: 4, partnerIds: ["partner-prof-rocket", "partner-thayer"],  imageUrl: "https://picsum.photos/seed/project-rocket-arm/1200/400" },
+    { id: "project-dali-os",          name: "DALI OS",                   status: "Active"   as const, termCount: 6, partnerIds: ["partner-dali-internal"],                 imageUrl: "https://picsum.photos/seed/project-dali-os/1200/400" },
+    { id: "project-archived-2023",    name: "Legacy Showcase Site",      status: "Archived" as const, termCount: 2, partnerIds: ["partner-dali-internal"],                 imageUrl: "https://picsum.photos/seed/project-archived-2023/1200/400" },
+  ];
+  for (const p of projectSeeds) {
+    await prisma.project.upsert({
+      where: { id: p.id },
+      update: { name: p.name, status: p.status, firstTermId: term26S?.id ?? null, termCount: p.termCount, imageUrl: p.imageUrl },
+      create: { id: p.id, name: p.name, status: p.status, firstTermId: term26S?.id ?? null, termCount: p.termCount, imageUrl: p.imageUrl },
+    });
+    for (const partnerOrgId of p.partnerIds) {
+      await prisma.projectPartner.upsert({
+        where: { projectId_partnerOrgId: { projectId: p.id, partnerOrgId } },
+        update: {},
+        create: { projectId: p.id, partnerOrgId },
+      });
+    }
+  }
+  console.log(`  ${partnerSeeds.length} partner orgs, ${projectSeeds.length} projects, ${projectSeeds.reduce((n, p) => n + p.partnerIds.length, 0)} project-partner links`);
+
+  // ── Partner applications ───────────────────────────────────────────────────
+  // Demo data for /partners/applications: inbound pitches at different review
+  // stages with per-domain expected scope so the term-projection chart is
+  // non-empty in dev. Stable IDs keep re-runs idempotent. SOW collab docs are
+  // created lazily when the editor first opens — not seeded here.
+  // 26X exists in the v0-reference seed (26W..28F) but not the minimal local
+  // seed (26S only). Fall back to 26S so the projection chart is still
+  // populated locally; under v0-reference it spreads across two terms.
+  const term26X =
+    (await prisma.term.findUnique({ where: { code: "26X" }, select: { id: true } })) ??
+    term26S;
+  const partnerApplicationSeeds = [
+    {
+      id: "papp-hood-kiosk",
+      title: "Interactive gallery kiosk",
+      partnerOrgId: "partner-hood-museum",
+      targetTermId: term26S?.id ?? null,
+      status: "UnderReview" as const,
+      summary: "Touchscreen kiosks that let visitors explore the permanent collection by theme.",
+      domains: [
+        { domainId: "domain-design", expectedMembers: 2, expectedChallenges: "Kiosk UX, wayfinding, and an accessible browsing flow for all ages." },
+        { domainId: "domain-eng", expectedMembers: 3, expectedChallenges: "Offline-capable kiosk app + a CMS the curators can update." },
+        { domainId: "domain-pm", expectedMembers: 1, expectedChallenges: "Scope with curatorial staff; coordinate the on-site install." },
+      ],
+    },
+    {
+      id: "papp-tuck-mentor",
+      title: "Alumni mentorship matching",
+      partnerOrgId: "partner-tuck-school",
+      targetTermId: term26S?.id ?? null,
+      status: "Accepted" as const,
+      summary: "Match current students with alumni mentors by industry and interest.",
+      domains: [
+        { domainId: "domain-eng", expectedMembers: 2, expectedChallenges: "Matching algorithm + scheduling integration." },
+        { domainId: "domain-pm", expectedMembers: 1, expectedChallenges: "Define the matching rubric with the alumni office." },
+      ],
+    },
+    {
+      id: "papp-thayer-sensors",
+      title: "Lab sensor dashboard",
+      partnerOrgId: "partner-thayer",
+      targetTermId: term26X?.id ?? null,
+      status: "Submitted" as const,
+      summary: "Real-time dashboard for shared lab equipment sensor data.",
+      domains: [
+        { domainId: "domain-eng", expectedMembers: 3, expectedChallenges: "Time-series ingestion + live dashboard." },
+      ],
+    },
+  ];
+  for (const a of partnerApplicationSeeds) {
+    await prisma.partnerApplication.upsert({
+      where: { id: a.id },
+      update: { title: a.title, partnerOrgId: a.partnerOrgId, targetTermId: a.targetTermId, status: a.status, summary: a.summary },
+      create: { id: a.id, title: a.title, partnerOrgId: a.partnerOrgId, targetTermId: a.targetTermId, status: a.status, summary: a.summary },
+    });
+    for (const d of a.domains) {
+      await prisma.partnerApplicationDomain.upsert({
+        where: { applicationId_domainId: { applicationId: a.id, domainId: d.domainId } },
+        update: { expectedMembers: d.expectedMembers, expectedChallenges: d.expectedChallenges },
+        create: { applicationId: a.id, domainId: d.domainId, expectedMembers: d.expectedMembers, expectedChallenges: d.expectedChallenges },
+      });
+    }
+  }
+  console.log(`  ${partnerApplicationSeeds.length} partner applications, ${partnerApplicationSeeds.reduce((n, a) => n + a.domains.length, 0)} domain-scope rows`);
+
+  // ── Staffing cycle + preferences ───────────────────────────────────────────
+  // Demo data for the /projects/staffing board. Staffing is always open —
+  // one cycle per term (StaffingCycle.termId is unique), keyed here on 26S.
+  // Stable id (cycle-26s-default) keeps re-runs idempotent.
+  if (term26S) {
+    const cycle = await prisma.staffingCycle.upsert({
+      where: { termId: term26S.id },
+      update: { name: "26S Staffing" },
+      create: {
+        id: "cycle-26s-default",
+        termId: term26S.id,
+        name: "26S Staffing",
+      },
+    });
+
+    // Make the admin a Staffing Lead so they can use the board. Idempotent.
+    const existingStaffingCore = await prisma.coreAssignment.findFirst({
+      where: { userId: admin.id, termId: term26S.id, leadTitle: "Staffing Lead" },
+    });
+    if (!existingStaffingCore) {
+      await prisma.coreAssignment.create({
+        data: { userId: admin.id, termId: term26S.id, leadTitle: "Staffing Lead" },
+      });
+    }
+
+    // Pool of project ids — only Active/Paused projects are biddable.
+    const biddableProjects = projectSeeds
+      .filter((p) => p.status !== "Archived")
+      .map((p) => p.id);
+
+    // Need at least one domain id to attach to preferences. Pick whichever
+    // domain seed.ts already created (Design / Engineering / Product). Falls
+    // back gracefully if domain IDs change.
+    const someDomain = await prisma.domain.findFirst({ select: { id: true } });
+    if (someDomain) {
+      // Find every DALIMember user. We bid each of them on a deterministic
+      // rotating slice of biddableProjects so the board is non-empty across
+      // multiple cycles + projects.
+      const memberUsers = await prisma.user.findMany({
+        where: { daliMember: { isNot: null } },
+        select: { id: true },
+        orderBy: { id: "asc" }, // deterministic
+      });
+
+      // Clear existing preferences for the cycle so seed is idempotent.
+      await prisma.staffingPreference.deleteMany({
+        where: { staffingCycleId: cycle.id },
+      });
+
+      const LEVELS = ["P1", "P2", "P3"] as const;
+      let prefCount = 0;
+      for (const [i, u] of memberUsers.entries()) {
+        // 3 preferences per member, rotating through projects.
+        for (let rank = 1; rank <= 3; rank++) {
+          const projectId = biddableProjects[(i + rank - 1) % biddableProjects.length];
+          const level = LEVELS[(i + rank) % LEVELS.length];
+          await prisma.staffingPreference.create({
+            data: {
+              userId: u.id,
+              staffingCycleId: cycle.id,
+              projectId,
+              domainId: someDomain.id,
+              level,
+              preferenceRank: rank,
+              notes:
+                rank === 1
+                  ? "Excited about this team — strong fit with prior work."
+                  : rank === 2
+                    ? "Solid second choice; would learn a lot here."
+                    : null,
+            },
+          });
+          prefCount++;
+        }
+      }
+      console.log(`  1 staffing cycle (Open), ${memberUsers.length} members bidding, ${prefCount} preferences`);
+
+      // ── Derived assignments + remaining v0 models ──────────────────────────
+      // Demo rows for every still-empty v0 model so list/detail pages that
+      // read them aren't blank. Idempotent: we delete-then-recreate the rows
+      // this block owns for the seeded term/cycle.
+      const dali = await prisma.project.findUnique({
+        where: { id: "project-dali-os" },
+        select: { id: true },
+      });
+      const biddable = projectSeeds.filter((p) => p.status !== "Archived");
+
+      // DomainEligibility + ProjectAssignment derived from each member's #1
+      // bid (preferenceRank=1). Eligibility is one-per-(user,domain); the
+      // assignment mirrors the project they bid highest. Coherent with the
+      // staffing board's proposed state.
+      const rank1Prefs = await prisma.staffingPreference.findMany({
+        where: { staffingCycleId: cycle.id, preferenceRank: 1 },
+        select: { userId: true, projectId: true, domainId: true, level: true },
+      });
+      await prisma.projectAssignment.deleteMany({ where: { termId: term26S.id } });
+      let eligCount = 0;
+      let assignCount = 0;
+      for (const p of rank1Prefs) {
+        await prisma.domainEligibility.upsert({
+          where: { userId_domainId: { userId: p.userId, domainId: p.domainId } },
+          update: { level: p.level, promotedBy: admin.id },
+          create: {
+            userId: p.userId,
+            domainId: p.domainId,
+            level: p.level,
+            promotedBy: admin.id,
+          },
+        });
+        eligCount++;
+        await prisma.projectAssignment.create({
+          data: {
+            userId: p.userId,
+            projectId: p.projectId,
+            termId: term26S.id,
+            domainId: p.domainId,
+            level: p.level,
+          },
+        });
+        assignCount++;
+      }
+
+      // ProjectTermStatus: every Active/Paused project continues into 26S.
+      for (const p of biddable) {
+        await prisma.projectTermStatus.upsert({
+          where: { projectId_termId: { projectId: p.id, termId: term26S.id } },
+          update: { isContinuing: true, setBy: admin.id },
+          create: {
+            projectId: p.id,
+            termId: term26S.id,
+            isContinuing: true,
+            setBy: admin.id,
+          },
+        });
+      }
+
+      // ProjectRoleRequest: a spread of role requests across all three
+      // domains per biddable project so the "required" projection is a
+      // realistic multi-domain stack (not a single flat bar). Slots vary by
+      // domain; the chart sums slots per (term, domain).
+      await prisma.projectRoleRequest.deleteMany({ where: { termId: term26S.id } });
+      const roleMix = [
+        { domainId: engDomain.id, slots: 2 },
+        { domainId: designDomain.id, slots: 1 },
+        { domainId: pmDomain.id, slots: 1 },
+      ];
+      for (const p of biddable) {
+        for (const r of roleMix) {
+          await prisma.projectRoleRequest.create({
+            data: {
+              projectId: p.id,
+              termId: term26S.id,
+              domainId: r.domainId,
+              level: "P1",
+              slots: r.slots,
+            },
+          });
+        }
+      }
+
+      // StaffingAssignment: proposed rows mirroring the derived assignments
+      // so the staffing board shows in-flight proposals on a fresh seed.
+      await prisma.staffingAssignment.deleteMany({
+        where: { staffingCycleId: cycle.id },
+      });
+      for (const p of rank1Prefs) {
+        await prisma.staffingAssignment.create({
+          data: {
+            userId: p.userId,
+            staffingCycleId: cycle.id,
+            projectId: p.projectId,
+            termId: term26S.id,
+            domainId: p.domainId,
+            level: p.level,
+            status: "Proposed",
+            assignedById: admin.id,
+          },
+        });
+      }
+
+      // EssentialityForm + ratings: one PM form on DALI OS rating the first
+      // few members.
+      if (dali) {
+        const form = await prisma.essentialityForm.upsert({
+          where: {
+            projectId_staffingCycleId: { projectId: dali.id, staffingCycleId: cycle.id },
+          },
+          update: { pmUserId: admin.id },
+          create: {
+            projectId: dali.id,
+            staffingCycleId: cycle.id,
+            pmUserId: admin.id,
+            submittedAt: new Date("2026-03-18"),
+          },
+        });
+        const ratingLevels = ["Critical", "Important", "NiceToHave"] as const;
+        for (const [i, u] of memberUsers.slice(0, 3).entries()) {
+          await prisma.essentialityRating.upsert({
+            where: {
+              essentialityFormId_userId: { essentialityFormId: form.id, userId: u.id },
+            },
+            update: { rating: ratingLevels[i] },
+            create: { essentialityFormId: form.id, userId: u.id, rating: ratingLevels[i] },
+          });
+        }
+      }
+
+      // Project workspace: one Epic → Sprint → Task chain on DALI OS.
+      if (dali) {
+        await prisma.task.deleteMany({ where: { projectId: dali.id } });
+        await prisma.sprint.deleteMany({ where: { projectId: dali.id } });
+        await prisma.epic.deleteMany({ where: { projectId: dali.id } });
+        const epic = await prisma.epic.create({
+          data: { projectId: dali.id, title: "Staffing board v1", position: 0 },
+        });
+        const sprint = await prisma.sprint.create({
+          data: {
+            projectId: dali.id,
+            epicId: epic.id,
+            name: "Sprint 1",
+            startsAt: new Date("2026-03-30"),
+            endsAt: new Date("2026-04-13"),
+            status: "Active",
+          },
+        });
+        await prisma.task.create({
+          data: {
+            projectId: dali.id,
+            sprintId: sprint.id,
+            epicId: epic.id,
+            title: "Drag-and-drop columns",
+            status: "InProgress",
+            createdById: admin.id,
+          },
+        });
+        await prisma.task.create({
+          data: {
+            projectId: dali.id,
+            title: "Backlog: confirm → ProjectAssignment promotion",
+            createdById: admin.id,
+          },
+        });
+      }
+
+      // MentorshipPair + MentorNote: pair the first two members (mentor →
+      // mentee) on their shared rank-1 project context.
+      if (memberUsers.length >= 2) {
+        const mentor = memberUsers[0];
+        const mentee = memberUsers[1];
+        const mentorPref = rank1Prefs.find((p) => p.userId === mentor.id);
+        if (mentorPref) {
+          await prisma.mentorshipPair.deleteMany({
+            where: { mentorUserId: mentor.id, termId: term26S.id },
+          });
+          await prisma.mentorshipPair.create({
+            data: {
+              menteeUserId: mentee.id,
+              mentorUserId: mentor.id,
+              projectId: mentorPref.projectId,
+              termId: term26S.id,
+              domainId: mentorPref.domainId,
+            },
+          });
+          await prisma.mentorNote.upsert({
+            where: {
+              mentorId_menteeId_projectId_termId_domainId_weekOf: {
+                mentorId: mentor.id,
+                menteeId: mentee.id,
+                projectId: mentorPref.projectId,
+                termId: term26S.id,
+                domainId: mentorPref.domainId,
+                weekOf: new Date("2026-03-30"),
+              },
+            },
+            update: {},
+            create: {
+              mentorId: mentor.id,
+              menteeId: mentee.id,
+              projectId: mentorPref.projectId,
+              termId: term26S.id,
+              domainId: mentorPref.domainId,
+              weekOf: new Date("2026-03-30"),
+              contentDocId: "mentor-note:seed-week-1",
+            },
+          });
+        }
+      }
+
+      // PartnerUser: one external contact on the Tuck partner org.
+      const tuck = await prisma.partnerOrg.findUnique({
+        where: { id: "partner-tuck-school" },
+        select: { id: true },
+      });
+      if (tuck) {
+        const partnerContact = await prisma.user.upsert({
+          where: { personalEmail: "partner.tuck@example.com" },
+          update: { firstName: "Pat", lastName: "Tuck" },
+          create: {
+            personalEmail: "partner.tuck@example.com",
+            firstName: "Pat",
+            lastName: "Tuck",
+          },
+        });
+        await prisma.partnerUser.upsert({
+          where: { userId: partnerContact.id },
+          update: { partnerOrgId: tuck.id },
+          create: {
+            userId: partnerContact.id,
+            partnerOrgId: tuck.id,
+            displayRole: "Program Sponsor",
+            authProvider: "MagicLink",
+          },
+        });
+      }
+
+      // Templates (idempotent by name): page + mentor-note.
+      const existingPageTpl = await prisma.pageTemplate.findFirst({
+        where: { name: "Project Brief" },
+        select: { id: true },
+      });
+      if (!existingPageTpl) {
+        await prisma.pageTemplate.create({
+          data: {
+            name: "Project Brief",
+            contentDocId: "page-template:project-brief",
+            isDefault: true,
+            workspaceTypes: ["Project"],
+          },
+        });
+      }
+      const existingMentorTpl = await prisma.mentorNoteTemplate.findFirst({
+        where: { isDefault: true },
+        select: { id: true },
+      });
+      if (!existingMentorTpl) {
+        await prisma.mentorNoteTemplate.create({
+          data: {
+            name: "Weekly Mentor Note",
+            contentDocId: "mentor-note-template:default",
+            isDefault: true,
+          },
+        });
+      }
+
+      // EducationOffering + InstructorAssignment: one published miniseries.
+      const offering = await prisma.educationOffering.upsert({
+        where: { id: "offering-react-miniseries" },
+        update: { title: "Intro to React" },
+        create: {
+          id: "offering-react-miniseries",
+          type: "Miniseries",
+          title: "Intro to React",
+          capacity: 25,
+          registrationOpensAt: new Date("2026-03-01"),
+          registrationClosesAt: new Date("2026-03-25"),
+          startsAt: new Date("2026-04-01"),
+          endsAt: new Date("2026-05-15"),
+          status: "Published",
+          requiresReview: true,
+        },
+      });
+      await prisma.instructorAssignment.upsert({
+        where: {
+          userId_offeringId_termId: {
+            userId: admin.id,
+            offeringId: offering.id,
+            termId: term26S.id,
+          },
+        },
+        update: {},
+        create: { userId: admin.id, offeringId: offering.id, termId: term26S.id },
+      });
+
+      // Lab-workspace Page + NotificationEvent/Preference for the admin.
+      await prisma.page.deleteMany({
+        where: { workspaceType: "Lab", title: "Lab Handbook" },
+      });
+      await prisma.page.create({
+        data: {
+          workspaceType: "Lab",
+          title: "Lab Handbook",
+          kind: "FreeForm",
+          contentDocId: "page:lab-handbook",
+          createdById: admin.id,
+        },
+      });
+      await prisma.notificationEvent.create({
+        data: {
+          type: "staffing_assignment_published",
+          recipientId: admin.id,
+          payload: { cycleId: cycle.id, note: "Seed event" },
+        },
+      });
+      await prisma.notificationPreference.upsert({
+        where: { id: "notifpref-admin-global-seed" },
+        update: {},
+        create: {
+          id: "notifpref-admin-global-seed",
+          userId: admin.id,
+          eventType: "*",
+        },
+      });
+
+      // JobCodeLookup: a couple of payroll mappings (wildcards allowed).
+      await prisma.jobCodeLookup.deleteMany({
+        where: { jobCode: { in: ["DALI-PROJ-P1", "DALI-CORE"] } },
+      });
+      await prisma.jobCodeLookup.create({
+        data: { assignmentType: "Project", level: "P1", jobCode: "DALI-PROJ-P1" },
+      });
+      await prisma.jobCodeLookup.create({
+        data: { assignmentType: "Core", jobCode: "DALI-CORE" },
+      });
+
+      console.log(
+        `  v0 demo rows: ${eligCount} eligibilities, ${assignCount} project assignments, ` +
+          `+ term-status / role-requests / staffing-assignments / essentiality / ` +
+          `epic-sprint-task / mentorship / partner-user / templates / offering / ` +
+          `page / notifications / job-codes`,
+      );
+    }
+  }
+
   // MCP OAuth clients are no longer seeded — clients register themselves
   // via RFC 7591 Dynamic Client Registration at /oauth/register.
 }

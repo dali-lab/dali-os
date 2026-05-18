@@ -90,6 +90,11 @@ model User {
   essentialityFormsAsPm EssentialityForm[]   @relation("EssentialityFormPm")
   essentialityRatings   EssentialityRating[]
   staffingAssignments   StaffingAssignment[]
+  intentToWork          IntentToWork[]
+  formsCreated     Form[]
+  formFolders      FormFolder[]
+  formVersions     FormVersion[]
+  formSubmissions  FormSubmission[]
 
   // ─── Phase 1: education back-relations ────────────────────────────────────
   educationApplications  EducationApplication[]  @relation("EducationApplicant")
@@ -320,6 +325,7 @@ model Domain {
   projectAssignments  ProjectAssignment[]
   mentorshipPairs     MentorshipPair[]
   projectRoleRequests ProjectRoleRequest[]
+  partnerApplicationDomains PartnerApplicationDomain[]
 }
 
 // Immutable snapshot of a challenge. Never update rows in this table —
@@ -1166,6 +1172,15 @@ model Notification {
   readAt          DateTime?
   createdAt       DateTime         @default(now())
 
+  // Announcement extras (kind == SystemAnnouncement). `dueAt` makes the
+  // announcement a "todo" with a deadline; `isTodo` marks it as action-needed
+  // so it surfaces in the Tasks sidebar / Home banner like a meeting invite.
+  // `formId` optionally attaches a published Form for the recipient to fill.
+  isTodo Boolean   @default(false)
+  dueAt  DateTime?
+  formId String?
+  form   Form?     @relation(fields: [formId], references: [id], onDelete: SetNull)
+
   // Set on MeetingInvite notifications so the bell can render Accept/Decline
   // buttons and the RSVP endpoint can locate the underlying meeting.
   scheduledMeetingId String?
@@ -1312,6 +1327,8 @@ model Term {
   projectRoleRequests   ProjectRoleRequest[]
   staffingAssignments   StaffingAssignment[]
   projectsAsFirstTerm   Project[]              @relation("ProjectFirstTerm")
+  partnerApplications   PartnerApplication[]
+  intentToWork          IntentToWork[]
 
   @@index([sortKey])
 }
@@ -1479,6 +1496,9 @@ enum AssignmentType {
 model Project {
   id            String        @id @default(cuid())
   name          String
+  // Short plain-text blurb shown at the top of the project detail page.
+  // Rich/long-form content lives in the collab overview page instead.
+  description   String?
   // Project-owned Google Workspace identity (e.g.,
   // "projectalpha@dali.dartmouth.edu"). Calendar events for this project
   // are owned by this identity, not the organizer's personal calendar.
@@ -1488,6 +1508,10 @@ model Project {
   // state all new Projects set this. Phase 2 enforces NOT NULL after
   // backfilling any legacy rows.
   firstTermId   String?
+  // Planned span: the project runs `termCount` consecutive terms starting at
+  // firstTerm (UI calls firstTerm the "start term"). Drives the required-
+  // headcount-per-term projection. 1 = single-term project.
+  termCount     Int           @default(1)
   status        ProjectStatus @default(Active)
 
   // Auto-created on Project creation: a top-level FreeForm Page in the
@@ -1497,8 +1521,19 @@ model Project {
   // a transaction before the Page row exists; populated immediately after.
   overviewPageId String? @unique
 
+  // Product Requirement Doc — a collab Page, same pattern as overviewPageId
+  // (loose reference; workspaceType dispatches at the app layer).
+  prdPageId String? @unique
+
+  // Project hero image, shown on the hub, partner, and public views.
+  imageUrl String?
+
+  // Git repositories for this project (URLs). Empty by default.
+  repoUrls String[] @default([])
+
   firstTerm    Term? @relation("ProjectFirstTerm", fields: [firstTermId], references: [id])
   overviewPage Page? @relation("ProjectOverview", fields: [overviewPageId], references: [id])
+  prdPage      Page? @relation("ProjectPRD", fields: [prdPageId], references: [id])
 
   partners        ProjectPartner[]
   termStatuses    ProjectTermStatus[]
@@ -1528,6 +1563,13 @@ model ProjectTermStatus {
   // Free-form actor userId.
   setBy        String?
   setAt        DateTime @default(now())
+
+  // Per-term meeting links and Statement of Work. Calendar/Zoom rotate per
+  // term; SOW is a collab Page (loose reference, app-layer dispatch like
+  // Project.overviewPageId).
+  gcalLink  String?
+  zoomLink  String?
+  sowPageId String?
 
   project Project @relation(fields: [projectId], references: [id])
   term    Term    @relation(fields: [termId], references: [id])
@@ -1559,15 +1601,24 @@ model Epic {
   id               String     @id @default(cuid())
   projectId        String
   title            String
+  // Plain-text epic description, edited in the epic detail panel.
+  description      String?
   // Description as collab doc — Notion-style rich content.
   descriptionDocId String?
   status           EpicStatus @default(Open)
+  // Explicit timeline span. Nullable: an epic may be created before its
+  // dates are known. When null, the timeline falls back to the min/max of
+  // the epic's sprint dates (see projects.$id loader).
+  startsAt         DateTime?
+  endsAt           DateTime?
   // Optional target term for cross-term epics that span multiple sprints.
   targetTermId     String?
   position         Int        @default(0)
 
-  project Project @relation(fields: [projectId], references: [id])
+  project Project     @relation(fields: [projectId], references: [id])
   tasks   Task[]
+  sprints Sprint[]
+  stories UserStory[]
 
   createdAt DateTime @default(now())
 }
@@ -1579,9 +1630,36 @@ enum EpicStatus {
   Cancelled
 }
 
+// User story under an epic. Kept lightweight: a title plus optional
+// acceptance/notes text and a status. Position keeps a stable manual order.
+model UserStory {
+  id       String          @id @default(cuid())
+  epicId   String
+  title    String
+  notes    String?
+  status   UserStoryStatus @default(Todo)
+  position Int             @default(0)
+
+  epic Epic @relation(fields: [epicId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([epicId])
+}
+
+enum UserStoryStatus {
+  Todo
+  InProgress
+  Done
+}
+
 model Sprint {
   id        String       @id @default(cuid())
   projectId String
+  // Optional epic this sprint belongs to. Null = standalone/cross-epic
+  // sprint. Tasks still carry their own epicId for cross-sprint grouping.
+  epicId    String?
   name      String
   startsAt  DateTime
   endsAt    DateTime
@@ -1591,6 +1669,7 @@ model Sprint {
   status    SprintStatus @default(Planned)
 
   project Project @relation(fields: [projectId], references: [id])
+  epic    Epic?   @relation(fields: [epicId], references: [id])
   tasks   Task[]
 
   @@index([projectId, status])
@@ -1867,28 +1946,21 @@ model EducationAnnouncement {
 
 // ─── Staffing ────────────────────────────────────────────────────────────────
 
+// Staffing is always open. There is exactly one cycle per term (the term
+// picker on /projects/staffing maps 1:1 to a cycle, auto-created on first
+// use). No status / open-close lifecycle and no opens/closes dates.
 model StaffingCycle {
-  id                      String         @id @default(cuid())
-  termId                  String
+  id                      String @id @default(cuid())
+  termId                  String @unique
   name                    String
-  opensAt                 DateTime
-  closesAt                DateTime
   // Member preference limit (UI-configurable per cycle, default 3).
-  maxPreferencesPerMember Int            @default(3)
-  status                  StaffingStatus @default(Draft)
+  maxPreferencesPerMember Int    @default(3)
 
   term              Term                 @relation(fields: [termId], references: [id])
   preferences       StaffingPreference[]
   essentialityForms EssentialityForm[]
   assignments       StaffingAssignment[]
-}
-
-enum StaffingStatus {
-  Draft
-  OpenToCoreFirst
-  OpenToMembers
-  Assigning
-  Closed
+  intentToWork      IntentToWork[]
 }
 
 model StaffingPreference {
@@ -1909,6 +1981,149 @@ model StaffingPreference {
   // level) combination. Members revise prefs by updating the existing row.
   @@unique([userId, staffingCycleId, projectId, domainId, level])
   @@index([staffingCycleId, userId])
+}
+
+// "Intent to Work" form. Collected per cycle, before bids: for each term in
+// the cycle's upcoming year a member states whether they'll be around. Drives
+// who the staffing board expects to place. One row per (user, cycle, term);
+// members revise by updating the existing row.
+model IntentToWork {
+  id              String       @id @default(cuid())
+  userId          String
+  staffingCycleId String
+  termId          String
+  status          IntentStatus
+  notes           String?
+  submittedAt     DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  user          User          @relation(fields: [userId], references: [id])
+  staffingCycle StaffingCycle @relation(fields: [staffingCycleId], references: [id])
+  term          Term          @relation(fields: [termId], references: [id])
+
+  @@unique([userId, staffingCycleId, termId])
+  @@index([staffingCycleId, termId])
+}
+
+enum IntentStatus {
+  Returning // Working this term
+  Off // Taking the term off (off-term / co-op / not enrolled)
+  Graduating // Graduating before/at this term — won't return
+  Leave // Leave of absence
+  Unsure // Hasn't decided yet
+}
+
+// ─── Generic forms ──────────────────────────────────────────────────────────
+//
+// The Forms page is a generic form builder. Users create Forms, optionally
+// grouped into FormFolders (Form.folderId nullable — null = top level; can be
+// reassigned to move a form in/out of a folder). A form's question set is
+// edited by appending immutable FormVersion rows; members fill out the latest
+// version and their answers are stored as a FormSubmission.
+
+model FormFolder {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Null = top level. Folders nest arbitrarily deep; deleting a parent sets
+  // children back to null (top level) rather than cascading them away.
+  parentId String?
+  parent   FormFolder?  @relation("FormFolderTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children FormFolder[] @relation("FormFolderTree")
+
+  createdById String
+  createdBy   User   @relation(fields: [createdById], references: [id])
+
+  forms Form[]
+
+  @@index([parentId])
+  @@index([createdById])
+}
+
+model Form {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Null = top level. Deleting a folder sets this back to null rather than
+  // cascading the forms away.
+  folderId String?
+  folder   FormFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+
+  createdById String
+  createdBy   User   @relation(fields: [createdById], references: [id])
+
+  // Publishing: when `published`, the form is fillable from outside dali-api
+  // (no auth) via its unguessable `publicToken`. Token is set on first
+  // publish and reused so a published link stays stable across re-publishes.
+  published   Boolean @default(false)
+  publicToken String? @unique
+
+  versions      FormVersion[]
+  submissions   FormSubmission[]
+  notifications Notification[]
+
+  @@index([folderId])
+  @@index([createdById])
+}
+
+// Immutable snapshot of a form's question set. Never update — append a new
+// version. `questions` is a JSON array of question objects:
+//   { id, type: "shortText"|"longText"|"select"|"multiSelect", label,
+//     required, options?: string[], max?: number }
+model FormVersion {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  versionNumber Int
+  questions     Json
+  // Free-form intro/instructions shown above the questions. Plain text.
+  intro         String?
+
+  formId String
+  form   Form   @relation(fields: [formId], references: [id], onDelete: Cascade)
+
+  createdById String
+  createdBy   User   @relation(fields: [createdById], references: [id])
+
+  submissions FormSubmission[]
+
+  @@unique([formId, versionNumber])
+  @@index([formId, versionNumber])
+}
+
+// Answers to a specific form version. `answers` is a JSON object keyed by
+// question id. Internal users submit with `userId` set; public/external fills
+// (a published form filled without auth) leave `userId` null and instead
+// capture `submitterName`/`submitterEmail`. The old per-user uniqueness was
+// dropped to allow anonymous rows — each public submission is its own row.
+model FormSubmission {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  formId String
+  form   Form   @relation(fields: [formId], references: [id], onDelete: Cascade)
+
+  formVersionId String
+  formVersion   FormVersion @relation(fields: [formVersionId], references: [id], onDelete: Cascade)
+
+  // Null for public/external submissions (no authenticated user).
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id])
+
+  // Captured only for public submissions; null for internal ones.
+  submitterName  String?
+  submitterEmail String?
+
+  answers Json
+
+  @@index([userId, formVersionId])
+  @@index([formId])
+  @@index([formVersionId])
 }
 
 model EssentialityForm {
@@ -2020,6 +2235,7 @@ model Page {
   // §"Page Tree"). Two FK constraints on one column would conflict at the
   // DB level.
   projectAsOverview Project? @relation("ProjectOverview")
+  projectAsPRD      Project? @relation("ProjectPRD")
 
   createdById  String
   createdBy    User     @relation("PageCreatedBy", fields: [createdById], references: [id])
@@ -2163,8 +2379,9 @@ model PartnerOrg {
   // second code path.
   isIndividual     Boolean @default(false)
 
-  users    PartnerUser[]
-  projects ProjectPartner[]
+  users        PartnerUser[]
+  projects     ProjectPartner[]
+  applications PartnerApplication[]
 
   createdAt DateTime @default(now())
 }
@@ -2360,4 +2577,75 @@ enum SlackBugReportStatus {
   Filed
   Cancelled
   Failed
+}
+
+// ─── Partner applications ────────────────────────────────────────────────────
+//
+// A partner's pitch for a project they want DALI to staff. Distinct from
+// `Project` (which is work already underway): this is the inbound proposal
+// and its review pipeline. On acceptance a Project is typically created and
+// linked back via `resultingProjectId` (loose ref — no Prisma relation, to
+// avoid a hard dependency cycle with Project).
+//
+// `partnerOrgId` is a required FK: applications are always tied to a known
+// PartnerOrg (Q: "linked to partner is very important").
+model PartnerApplication {
+  id           String  @id @default(cuid())
+  partnerOrgId String
+  // The term the partner wants the project to start / be staffed in. Drives
+  // the "expected lab members per term" projection on the list page.
+  targetTermId String?
+  title        String
+  // Short pitch summary. The long-form, versionable Statement of Work lives
+  // in the collab doc named `partner-sow:{id}` (see sowDocId) — same Yjs +
+  // CollabDocumentVersion machinery as project documents, so it gets
+  // automatic version snapshots and the existing version-history UI.
+  summary      String?
+  // Free-form collab doc name for the SOW. Null until the SOW is first
+  // opened/created. Not a Prisma relation: CollabDocument is keyed by its
+  // unique `name`, addressed at the app layer.
+  sowDocId     String?                    @unique
+  status       PartnerApplicationStatus   @default(Submitted)
+  // Set when status moves to Accepted and a Project is spun up. Loose ref to
+  // Project.id; no relation to avoid a Project→PartnerApplication cycle.
+  resultingProjectId String?
+
+  partnerOrg PartnerOrg                 @relation(fields: [partnerOrgId], references: [id])
+  targetTerm Term?                      @relation(fields: [targetTermId], references: [id])
+  domains    PartnerApplicationDomain[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([partnerOrgId])
+  @@index([status])
+  @@index([targetTermId])
+}
+
+// Per-domain expected scope for one application. `expectedChallenges` is the
+// free-text description of the scope/challenges the partner expects in that
+// domain; `expectedMembers` is the headcount used to project expected lab
+// numbers per term.
+model PartnerApplicationDomain {
+  id                 String  @id @default(cuid())
+  applicationId      String
+  domainId           String
+  expectedChallenges String?
+  expectedMembers    Int     @default(0)
+
+  application PartnerApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  domain      Domain             @relation(fields: [domainId], references: [id])
+
+  @@unique([applicationId, domainId])
+  @@index([domainId])
+}
+
+// Inbound-pitch pipeline. Submitted → UnderReview → (Accepted | Rejected),
+// with OnHold as a parking state.
+enum PartnerApplicationStatus {
+  Submitted
+  UnderReview
+  OnHold
+  Accepted
+  Rejected
 }

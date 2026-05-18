@@ -125,6 +125,26 @@ export async function currentTerm() {
   });
 }
 
+// ─── Staffing-board access ───────────────────────────────────────────────────
+
+/**
+ * Allowed to read + modify the staffing board: admins, or Core members whose
+ * leadTitle implies staffing authority (we match the substring "staffing"
+ * case-insensitively so titles like "Staffing Lead", "Staffing Coordinator",
+ * "Co-Lead, Staffing" all qualify without us hardcoding strings).
+ */
+export async function canManageStaffing(userId: string): Promise<boolean> {
+  if (await isAdmin(userId)) return true;
+  const core = await prisma.coreAssignment.findFirst({
+    where: {
+      userId,
+      leadTitle: { contains: "staffing", mode: "insensitive" },
+    },
+    select: { id: true },
+  });
+  return core !== null;
+}
+
 // ─── Cycle-scoped access ─────────────────────────────────────────────────────
 
 /**

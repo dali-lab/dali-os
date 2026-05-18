@@ -4,6 +4,7 @@ export default [
   // UI routes wrapped in the app layout (navbar + view toggle)
   layout("routes/layout.tsx", [
     index("routes/home.tsx"),
+    route("profile", "routes/profile.tsx"),
     route("calendar", "calendar/routes/calendar.tsx"),
 
     // Hiring section
@@ -31,17 +32,42 @@ export default [
     route("admin-console", "admin-console/routes/admin-console.tsx"),
     route("admin-console/members", "admin-console/routes/admin-console.members.tsx"),
     route("admin-console/domains", "admin-console/routes/admin-console.domains.tsx"),
+    route("admin-console/announcements", "admin-console/routes/admin-console.announcements.tsx"),
 
     // Projects
     route("projects/list", "projects/routes/projects.list.tsx"),
     route("projects/staffing", "projects/routes/projects.staffing.tsx"),
+    // Staffing input forms (member self-service). Must precede projects/:id
+    // so these literal segments aren't captured by the :id param.
+    route("projects/intent-to-work", "projects/routes/projects.intent-to-work.tsx"),
+    route("projects/project-bids", "projects/routes/projects.project-bids.tsx"),
+    route("projects/:id", "projects/routes/projects.$id.tsx"),
 
     // Members directory (separate from admin-console/members)
     route("members", "members/routes/members.tsx"),
     route("members/groups", "members/routes/members.groups.tsx"),
+    route("members/:id", "members/routes/members.$id.tsx"),
 
     // Partners
     route("partners", "partners/routes/partners.tsx"),
+    route("partners/applications", "partners/routes/partners.applications.tsx"),
+    route("partners/applications/:id", "partners/routes/partners.applications.$id.tsx"),
+
+    // Education
+    route("education", "education/routes/education.tsx"),
+
+    // Internal processes
+    route("internal-processes/transfer", "internal-processes/routes/internal-processes.transfer.tsx"),
+    route("internal-processes/level-up", "internal-processes/routes/internal-processes.level-up.tsx"),
+    route("internal-processes/jobx", "internal-processes/routes/internal-processes.jobx.tsx"),
+
+    // Forms. The :folderId form lets a folder card open its own page with
+    // nested folders + forms; the bare /forms route is the top level.
+    route("forms", "forms/routes/forms.tsx"),
+    // Static `edit` segment must precede the :folderId catch so /forms/edit/*
+    // isn't read as a folder id.
+    route("forms/edit/:formId", "forms/routes/forms.edit.$formId.tsx"),
+    route("forms/:folderId", "forms/routes/forms.$folderId.tsx"),
   ]),
 
   // Applicant portal (lightweight layout)
@@ -50,6 +76,10 @@ export default [
     route("portal/apply", "routes/portal.apply.tsx"),
     route("portal/application", "routes/portal.application.tsx"),
   ]),
+
+  // Public published-form fill (no layout, NO AUTH — token-addressed)
+  route("f/:token", "routes/f.$token.tsx"),
+  route("api/f/:token", "routes/api.f.$token.ts"),
 
   // Login (no layout)
   route("login", "routes/login.tsx"),
@@ -101,6 +131,35 @@ export default [
   // Slack bot (webhook receivers; signature-verified, no auth middleware)
   route("api/slack/events", "slack/routes/api.slack.events.ts"),
   route("api/slack/interactivity", "slack/routes/api.slack.interactivity.ts"),
+
+  // Staffing input forms (member self-service)
+  route("api/projects/intent-to-work", "projects/routes/api.intent-to-work.ts"),
+  route("api/projects/project-bids", "projects/routes/api.project-bids.ts"),
+
+  // Staffing board (always open; one cycle per term, auto-created on view)
+  route("api/staffing/assign", "projects/routes/api.staffing.assign.ts"),
+  route("api/staffing/finalize", "projects/routes/api.staffing.finalize.ts"),
+
+  // Project task board
+  route("api/projects/:id/tasks", "projects/routes/api.projects.$id.tasks.ts"),
+  route("api/tasks/:id/move", "projects/routes/api.tasks.$id.move.ts"),
+
+  // Project epics & sprints
+  route("api/projects/:id/epics", "projects/routes/api.projects.$id.epics.ts"),
+  route("api/epics/:id", "projects/routes/api.epics.$id.ts"),
+  route("api/epics/:id/stories", "projects/routes/api.epics.$id.stories.ts"),
+  route("api/stories/:id", "projects/routes/api.stories.$id.ts"),
+  route("api/projects/:id/sprints", "projects/routes/api.projects.$id.sprints.ts"),
+  route("api/sprints/:id", "projects/routes/api.sprints.$id.ts"),
+
+  // Project documents (collab Pages scoped to the project)
+  route("api/projects/:id/documents", "projects/routes/api.projects.$id.documents.ts"),
+  route("api/documents/:id", "projects/routes/api.documents.$id.ts"),
+
+  // Partner application status (board drag-and-drop) + domain scope
+  route("api/partner-applications/:id/status", "partners/routes/api.partner-applications.$id.status.ts"),
+  route("api/partner-applications/:id/domains", "partners/routes/api.partner-applications.$id.domains.ts"),
+  route("api/partner-application-domains/:id", "partners/routes/api.partner-application-domains.$id.ts"),
 
 
   // Hiring API — cycles, scheduling, applications, reviews, decisions, interviews, delibs

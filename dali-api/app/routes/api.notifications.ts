@@ -2,6 +2,7 @@ import type { Route } from "./+types/api.notifications";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
+import { listOpenTasks } from "~/lib/tasks";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const preflight = handlePreflight(request);
@@ -11,7 +12,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!auth.ok) return withCors(request, auth.response);
 
   const userId = auth.user.sub;
-  const [items, unreadCount] = await Promise.all([
+  const [items, unreadCount, tasks] = await Promise.all([
     prisma.notification.findMany({
       where: { recipientUserId: userId },
       orderBy: { createdAt: "desc" },
@@ -20,9 +21,13 @@ export async function loader({ request }: Route.LoaderArgs) {
     prisma.notification.count({
       where: { recipientUserId: userId, readAt: null },
     }),
+    listOpenTasks(userId),
   ]);
 
-  return withCors(request, Response.json({ items, unreadCount }));
+  return withCors(
+    request,
+    Response.json({ items, unreadCount, taskCount: tasks.length, tasks }),
+  );
 }
 
 export async function action({ request }: Route.ActionArgs) {

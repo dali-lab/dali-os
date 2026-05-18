@@ -76,5 +76,31 @@ export async function authorizeCollabDoc(
     return false;
   }
 
+  // doc:{pageId}:body — project document pages. Access mirrors the project
+  // edit gate used by the project document API routes (isHiringLead ===
+  // Admin || Core). The page must be a live (non-archived) Project page.
+  if (entity === "doc") {
+    const page = await prisma.page.findUnique({
+      where: { id },
+      select: { workspaceType: true, archivedAt: true },
+    });
+    if (!page || page.workspaceType !== "Project" || page.archivedAt !== null) {
+      return false;
+    }
+    return isHiringLead(userSub);
+  }
+
+  // partnersow:{applicationId}:body — the versionable Statement of Work for a
+  // partner application. Same edit gate as the partner-application routes
+  // (isHiringLead === Admin || Core). The application must exist.
+  if (entity === "partnersow") {
+    const application = await prisma.partnerApplication.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!application) return false;
+    return isHiringLead(userSub);
+  }
+
   return false;
 }
