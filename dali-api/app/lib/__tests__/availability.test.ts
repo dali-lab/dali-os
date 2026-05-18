@@ -1,4 +1,8 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+
+vi.mock("~/lib/db");
+vi.mock("~/lib/google-calendar");
+
 import { computeFreeIntervals, type ComputeInput, type Interval } from "~/lib/availability";
 
 // Helpers ------------------------------------------------------------------

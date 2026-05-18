@@ -30,6 +30,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     include: {
       user: true,
       generalChallengeVersion: true,
+      internToFullFormVersion: true,
       applicationCycle: {
         include: {
           statusUpdates: { orderBy: { createdAt: 'desc' }, take: 1 },
@@ -44,6 +45,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       },
     },
   })
+
+  const isInternToFull = applicationBase.applicationCycle.cycleType === 'InternToFull'
 
   if (!(await hasCycleAccess(auth.user.sub, applicationBase.applicationCycleId)))
     throw redirect('/login')
@@ -73,12 +76,18 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       where: {
         applicationId: params.id,
         selected: true,
-        challengeVersion: { domainId: { in: reviewerDomainIds } },
+        // Standard cycles link Domain via challengeVersion; InternToFull cycles
+        // link Domain directly. Match whichever path is set.
+        OR: [
+          { challengeVersion: { domainId: { in: reviewerDomainIds } } },
+          { domainId: { in: reviewerDomainIds } },
+        ],
       },
       include: {
         challengeVersion: {
           include: { domain: true, challenge: true },
         },
+        domain: true,
       },
     }),
     prisma.applicationReview.findFirst({
@@ -89,10 +98,21 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     }),
   ])
 
+  // Helper: resolve a domainApplication's effective Domain regardless of cycleType.
+  function daDomain(da: (typeof domainApplications)[number]) {
+    return da.domain ?? da.challengeVersion?.domain ?? null
+  }
+  function daDomainId(da: (typeof domainApplications)[number]): string | null {
+    return da.domainId ?? da.challengeVersion?.domainId ?? null
+  }
+
   // Presign file-type answers so the viewer can render real download links
-  // instead of raw S3 keys.
-  const generalQuestionsForPresign =
-    (applicationBase.generalChallengeVersion?.questions as unknown as Question[]) ?? []
+  // instead of raw S3 keys. For InternToFull cycles, the application's
+  // "general" questions live on internToFullFormVersion, and per-domain
+  // entries carry no challenge content.
+  const generalQuestionsForPresign = isInternToFull
+    ? ((applicationBase.internToFullFormVersion?.questions as unknown as Question[]) ?? [])
+    : ((applicationBase.generalChallengeVersion?.questions as unknown as Question[]) ?? [])
   const presignedGeneralAnswers = await presignAnswers(
     generalQuestionsForPresign,
     applicationBase.answers as Record<string, string>,
@@ -101,7 +121,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     domainApplications.map(async (da: any) => ({
       ...da,
       answers: await presignAnswers(
-        (da.challengeVersion.questions as unknown as Question[]) ?? [],
+        (da.challengeVersion?.questions as unknown as Question[]) ?? [],
         da.answers as Record<string, string>,
       ),
     })),
@@ -121,12 +141,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   let review = existingReview
   if (!review) {
     const cycleReviewer = cycleReviewers.find((cr) =>
-      domainApplications.some((da) => da.challengeVersion.domainId === cr.domainId),
+      domainApplications.some((da) => daDomainId(da) === cr.domainId),
     )
     const matchingDa = cycleReviewer
-      ? domainApplications.find(
-          (da) => da.challengeVersion.domainId === cycleReviewer.domainId,
-        )
+      ? domainApplications.find((da) => daDomainId(da) === cycleReviewer.domainId)
       : null
     if (cycleReviewer && matchingDa) {
       review = await prisma.applicationReview.upsert({
@@ -189,8 +207,11 @@ export default function ReviewerApplicationReview() {
   const submit = useSubmit()
 
   const cycle = application.applicationCycle
+  const isInternToFull = cycle.cycleType === 'InternToFull'
   const generalCv = application.generalChallengeVersion
-  const formQuestions = (generalCv?.questions as unknown as Question[]) ?? []
+  const formQuestions = isInternToFull
+    ? ((application.internToFullFormVersion?.questions as unknown as Question[]) ?? [])
+    : ((generalCv?.questions as unknown as Question[]) ?? [])
 
   // Collect all rubric criteria: general form rubric + per-domain-application rubrics
   const allCriteria: { sectionLabel: string; criteria: RubricCriterion[] }[] = []
@@ -200,12 +221,15 @@ export default function ReviewerApplicationReview() {
     if (criteria.length > 0) allCriteria.push({ sectionLabel: 'General Application', criteria })
   }
   for (const da of application.domainApplications) {
-    const domainCycle = cycle.domains?.find((dc: any) => dc.domainId === da.challengeVersion.domainId)
+    const dDomainId = (da as any).domainId ?? (da as any).challengeVersion?.domainId ?? null
+    const dDomain = (da as any).domain ?? (da as any).challengeVersion?.domain ?? null
+    if (!dDomainId || !dDomain) continue
+    const domainCycle = cycle.domains?.find((dc: any) => dc.domainId === dDomainId)
     const rv = domainCycle?.rubricVersion
     if (rv) {
       const criteria = rv.criteria as unknown as RubricCriterion[]
       if (criteria.length > 0) {
-        allCriteria.push({ sectionLabel: da.challengeVersion.domain.name, criteria })
+        allCriteria.push({ sectionLabel: dDomain.displayName ?? dDomain.name, criteria })
       }
     }
   }
@@ -277,7 +301,7 @@ export default function ReviewerApplicationReview() {
     questionLabels[q.key] = q.data.label
   }
   for (const da of application.domainApplications) {
-    const qs = da.challengeVersion.questions as unknown as Question[]
+    const qs = ((da as any).challengeVersion?.questions as unknown as Question[]) ?? []
     for (const q of qs) {
       questionLabels[q.key] = q.data.label
     }

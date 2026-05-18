@@ -1,26 +1,29 @@
 import { prisma } from "~/lib/db";
-import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
+import type { ApplicationCycleStatus, ApplicationCycleType } from "~/generated/prisma/enums";
 
 // A cycle is "active" when its latest status is Open or UnderReview — those are
 // the stages where applicants are submitting and reviewers are reading/interviewing.
 // Draft and Completed are not active. By convention we enforce at most one active
-// cycle at a time (see api.cycles.$cycleId.status.ts).
+// cycle per cycleType at a time (see api.cycles.$cycleId.status.ts).
 export const ACTIVE_STATUSES = ["Open", "UnderReview"] as const;
 export type ActiveStatus = (typeof ACTIVE_STATUSES)[number];
 
 /**
- * Find the single currently-active cycle, or null if none.
+ * Find the single currently-active cycle for a given cycleType, or null if
+ * none. Default cycleType is `Standard` so legacy callers keep their old
+ * behavior. Different cycleTypes may be active concurrently (e.g. a Standard
+ * hire cycle running alongside an InternToFull conversion cycle).
  *
  * Pure read — does not write. If an Open cycle is past its `closeDate`, the
  * returned `currentStatus` is derived as `UnderReview`; the DB row is
  * materialized separately via `autoCloseIfExpired`.
- *
- * If the invariant is somehow violated (multiple cycles active at once),
- * returns the most recently-active one.
  */
-export async function getActiveCycle() {
+export async function getActiveCycle(cycleType: ApplicationCycleType = "Standard") {
   const recentActiveUpdate = await prisma.applicationCycleStatusUpdate.findFirst({
-    where: { newStatus: { in: ACTIVE_STATUSES as unknown as ApplicationCycleStatus[] } },
+    where: {
+      newStatus: { in: ACTIVE_STATUSES as unknown as ApplicationCycleStatus[] },
+      applicationCycle: { cycleType },
+    },
     orderBy: { createdAt: "desc" },
     include: {
       applicationCycle: {
@@ -156,14 +159,16 @@ export async function inferUnderReviewStage(
 }
 
 /**
- * Returns the id of any *other* cycle (i.e. not `excludingCycleId`) that is
- * currently active, or null if none. Used to enforce single-active-cycle when
- * advancing a cycle into Open.
+ * Returns the id of any *other* cycle of the given cycleType (i.e. not
+ * `excludingCycleId`) that is currently active, or null if none. Used to
+ * enforce single-active-cycle *per type* when advancing a cycle into Open.
+ * Defaults to Standard so existing callers keep their old behavior.
  */
 export async function findOtherActiveCycleId(
   excludingCycleId: string,
+  cycleType: ApplicationCycleType = "Standard",
 ): Promise<string | null> {
-  const active = await getActiveCycle();
+  const active = await getActiveCycle(cycleType);
   if (!active || active.id === excludingCycleId) return null;
   return active.id;
 }

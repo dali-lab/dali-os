@@ -7,6 +7,7 @@ import { sendEmail } from "~/lib/gmail";
 import { getApplicationsGmailRefreshToken } from "~/lib/gmail-integration";
 import { renderForSlot, notificationSlot } from "~/hiring/lib/email-variables";
 import { getActiveCycle } from "~/hiring/lib/cycles";
+import { reconcileDomainApplications } from "~/hiring/lib/domain-application";
 import { checkGitHubUrl, checkFigmaUrl, checkDriveUrl } from "~/hiring/lib/submission-check";
 import type { SubmissionCheckResult } from "~/hiring/lib/submission-check";
 import { validateWordLimits } from "~/lib/word-count";
@@ -116,10 +117,10 @@ export async function loader({ request }: Route.LoaderArgs) {
             answers: draft.answers as Record<string, string>,
             selectedDomainIds: draft.domainApplications
               .filter(da => da.selected)
-              .map(da => da.challengeVersion.domainId),
+              .map(da => da.domainId),
             domainApplications: draft.domainApplications.map(da => ({
               id: da.id,
-              domainId: da.challengeVersion.domainId,
+              domainId: da.domainId,
               challengeVersionId: da.challengeVersionId,
               answers: da.answers as Record<string, string>,
             })),
@@ -184,6 +185,7 @@ export async function action({ request }: Route.ActionArgs) {
         },
         domainApplications: {
           create: validSelections.map(s => ({
+            domainId: s.domainId,
             challengeVersionId: s.challengeVersionId,
             answers: {},
           })),
@@ -201,11 +203,11 @@ export async function action({ request }: Route.ActionArgs) {
             id: application.id,
             answers: application.answers,
             selectedDomainIds: application.domainApplications.map(
-              (da) => da.challengeVersion.domainId,
+              (da) => da.domainId,
             ),
             domainApplications: application.domainApplications.map((da) => ({
               id: da.id,
-              domainId: da.challengeVersion.domainId,
+              domainId: da.domainId,
               challengeVersionId: da.challengeVersionId,
               answers: da.answers,
             })),
@@ -238,56 +240,11 @@ export async function action({ request }: Route.ActionArgs) {
     const newDomainIds = validSelections.map(s => s.domainId);
     const desiredCvByDomain = new Map(validSelections.map(s => [s.domainId, s.challengeVersionId]));
 
-    // Existing DAs for this application, keyed by domainId
-    const existing = await prisma.domainApplication.findMany({
-      where: { applicationId },
-      include: { challengeVersion: { select: { domainId: true } } },
+    await reconcileDomainApplications({
+      applicationId,
+      domainIds: newDomainIds,
+      challengeVersionByDomain: desiredCvByDomain,
     });
-    const existingByDomain = new Map<string, (typeof existing)[number]>();
-    for (const da of existing) {
-      const did = da.challengeVersion.domainId;
-      if (did) existingByDomain.set(did, da);
-    }
-
-    // For each desired (domainId, cvId): create new DA, reselect, or switch CV.
-    for (const sel of validSelections) {
-      const ex = existingByDomain.get(sel.domainId);
-      if (!ex) {
-        await prisma.domainApplication.create({
-          data: {
-            applicationId,
-            challengeVersionId: sel.challengeVersionId,
-            answers: {},
-          },
-        });
-        continue;
-      }
-      const updates: { selected?: boolean; challengeVersionId?: string; answers?: any } = {};
-      if (!ex.selected) updates.selected = true;
-      if (ex.challengeVersionId !== sel.challengeVersionId) {
-        // Switching the picked challenge wipes that domain's answers — the
-        // question set is different. The applicant is warned client-side.
-        updates.challengeVersionId = sel.challengeVersionId;
-        updates.answers = {};
-      }
-      if (Object.keys(updates).length > 0) {
-        await prisma.domainApplication.update({
-          where: { id: ex.id },
-          data: updates,
-        });
-      }
-    }
-
-    // Domains the applicant deselected — preserve answers but mark unselected.
-    const toDeselectIds = existing
-      .filter(da => da.challengeVersion.domainId && !newDomainIds.includes(da.challengeVersion.domainId))
-      .map(da => da.id);
-    if (toDeselectIds.length > 0) {
-      await prisma.domainApplication.updateMany({
-        where: { id: { in: toDeselectIds } },
-        data: { selected: false },
-      });
-    }
 
     // Return full updated draft
     const updatedApp = await prisma.application.findUnique({
@@ -306,7 +263,7 @@ export async function action({ request }: Route.ActionArgs) {
             selectedDomainIds: newDomainIds,
             domainApplications: updatedApp.domainApplications.map((da) => ({
               id: da.id,
-              domainId: da.challengeVersion.domainId,
+              domainId: da.domainId,
               challengeVersionId: da.challengeVersionId,
               answers: da.answers,
             })),
@@ -365,7 +322,7 @@ export async function action({ request }: Route.ActionArgs) {
       return Response.json({ error: "Application not found" }, { status: 404 });
     }
     const generalQuestions =
-      (application.generalChallengeVersion.questions as unknown as Question[]) ?? [];
+      (application.generalChallengeVersion?.questions as unknown as Question[]) ?? [];
 
     const allDas = await prisma.domainApplication.findMany({
       where: { applicationId },
@@ -380,7 +337,7 @@ export async function action({ request }: Route.ActionArgs) {
     for (const da of domainAnswers) {
       const dbDa = allDas.find(d => d.id === da.domainApplicationId);
       if (!dbDa) continue;
-      const questions = (dbDa.challengeVersion.questions as unknown as Question[]) ?? [];
+      const questions = (dbDa.challengeVersion!.questions as unknown as Question[]) ?? [];
       Object.assign(wordCountErrors, validateWordLimits(questions, da.answers));
     }
     if (Object.keys(wordCountErrors).length > 0) {
@@ -398,12 +355,12 @@ export async function action({ request }: Route.ActionArgs) {
       }
     }
     for (const domainId of selectedDomainIds) {
-      const dbDa = allDas.find(d => d.challengeVersion.domainId === domainId);
+      const dbDa = allDas.find(d => d.domainId === domainId);
       if (!dbDa) {
         missingRequired.push(`selected domain has no application record`);
         continue;
       }
-      const questions = (dbDa.challengeVersion.questions as unknown as Question[]) ?? [];
+      const questions = (dbDa.challengeVersion!.questions as unknown as Question[]) ?? [];
       const submitted = domainAnswers.find(da => da.domainApplicationId === dbDa.id)?.answers ?? {};
       for (const q of questions) {
         if (q.required && !isAnswered(submitted[q.key], q)) {
@@ -431,8 +388,8 @@ export async function action({ request }: Route.ActionArgs) {
     }
 
     // Persist final domain selection state
-    const toSelect = allDas.filter(da => selectedDomainIds.includes(da.challengeVersion.domainId!) && !da.selected);
-    const toDeselect = allDas.filter(da => !selectedDomainIds.includes(da.challengeVersion.domainId!) && da.selected);
+    const toSelect = allDas.filter(da => selectedDomainIds.includes(da.domainId) && !da.selected);
+    const toDeselect = allDas.filter(da => !selectedDomainIds.includes(da.domainId) && da.selected);
     if (toSelect.length > 0) {
       await prisma.domainApplication.updateMany({
         where: { id: { in: toSelect.map(da => da.id) } },
@@ -1301,7 +1258,7 @@ export default function PortalApply() {
   // Render domain pill selector (shared between both states)
   function renderDomainSelector() {
     return (
-      <div className="px-6 py-5 rounded-2xl bg-[#E8F4FA]">
+      <div className="px-6 py-5 rounded-2xl bg-brand-tint">
         <h3 className="font-heading text-base font-bold text-dark-blue mb-1">
           Domains <span className="text-accent-coral">*</span>
         </h3>
@@ -1400,7 +1357,7 @@ export default function PortalApply() {
         {(() => {
           const beforeQuestions = (formQuestions as Question[]).filter(q => !q.data.afterDomains);
           return beforeQuestions.length > 0 ? (
-            <div id="section-general-before" className="rounded-2xl bg-[#E8F4FA] px-6 py-5 space-y-6 scroll-mt-24">
+            <div id="section-general-before" className="rounded-2xl bg-brand-tint px-6 py-5 space-y-6 scroll-mt-24">
               <h3 className="font-heading text-sm font-bold text-dark-blue uppercase tracking-wider">General Questions</h3>
               {!isEmptyDoc(generalDescription) && (
                 <div className="text-dark-blue">
@@ -1542,7 +1499,7 @@ export default function PortalApply() {
         {(() => {
           const afterQuestions = (formQuestions as Question[]).filter(q => q.data.afterDomains);
           return afterQuestions.length > 0 ? (
-            <div id="section-general-after" className="rounded-2xl bg-[#E8F4FA] px-6 py-5 space-y-6 scroll-mt-24">
+            <div id="section-general-after" className="rounded-2xl bg-brand-tint px-6 py-5 space-y-6 scroll-mt-24">
               <h3 className="font-heading text-sm font-bold text-dark-blue uppercase tracking-wider">Anything Else</h3>
               {afterQuestions.map(q => (
                 <div key={q.key} id={`question-${q.key}`}>
@@ -1661,7 +1618,7 @@ export default function PortalApply() {
           {(() => {
             const beforeQuestions = (formQuestions as Question[]).filter(q => !q.data.afterDomains);
             return beforeQuestions.length > 0 ? (
-              <div className="rounded-2xl bg-[#E8F4FA] px-5 py-4">
+              <div className="rounded-2xl bg-brand-tint px-5 py-4">
                 <h4 className="font-heading text-xs font-bold text-dark-blue uppercase tracking-wider mb-4">
                   General Questions
                 </h4>
@@ -1700,7 +1657,7 @@ export default function PortalApply() {
           {(() => {
             const afterQuestions = (formQuestions as Question[]).filter(q => q.data.afterDomains);
             return afterQuestions.length > 0 ? (
-              <div className="rounded-2xl bg-[#E8F4FA] px-5 py-4">
+              <div className="rounded-2xl bg-brand-tint px-5 py-4">
                 <h4 className="font-heading text-xs font-bold text-dark-blue uppercase tracking-wider mb-4">
                   Anything Else
                 </h4>

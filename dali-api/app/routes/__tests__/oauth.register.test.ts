@@ -135,10 +135,32 @@ describe("POST /oauth/register", () => {
     expect(body.error).toBe("invalid_client_metadata");
   });
 
-  it("rejects unsupported grant_types", async () => {
+  it("accepts grant_types: ['authorization_code']", async () => {
     const req = makeRequest({
       redirect_uris: ["http://127.0.0.1/callback"],
-      grant_types: ["client_credentials"],
+      grant_types: ["authorization_code"],
+    });
+    const res = await action({ request: req } as any);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.grant_types).toEqual(["authorization_code"]);
+  });
+
+  it("accepts grant_types containing authorization_code + refresh_token, echoes only authorization_code", async () => {
+    const req = makeRequest({
+      redirect_uris: ["http://127.0.0.1/callback"],
+      grant_types: ["authorization_code", "refresh_token"],
+    });
+    const res = await action({ request: req } as any);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.grant_types).toEqual(["authorization_code"]);
+  });
+
+  it("rejects grant_types without authorization_code", async () => {
+    const req = makeRequest({
+      redirect_uris: ["http://127.0.0.1/callback"],
+      grant_types: ["refresh_token"],
     });
     const res = await action({ request: req } as any);
     expect(res.status).toBe(400);
@@ -146,7 +168,50 @@ describe("POST /oauth/register", () => {
     expect(body.error).toBe("invalid_client_metadata");
   });
 
-  it("rejects unsupported response_types", async () => {
+  it("rejects empty grant_types array", async () => {
+    const req = makeRequest({
+      redirect_uris: ["http://127.0.0.1/callback"],
+      grant_types: [],
+    });
+    const res = await action({ request: req } as any);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("invalid_client_metadata");
+  });
+
+  it("defaults grant_types to ['authorization_code'] when omitted", async () => {
+    const req = makeRequest({
+      redirect_uris: ["http://127.0.0.1/callback"],
+    });
+    const res = await action({ request: req } as any);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.grant_types).toEqual(["authorization_code"]);
+  });
+
+  it("accepts response_types: ['code']", async () => {
+    const req = makeRequest({
+      redirect_uris: ["http://127.0.0.1/callback"],
+      response_types: ["code"],
+    });
+    const res = await action({ request: req } as any);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.response_types).toEqual(["code"]);
+  });
+
+  it("accepts response_types containing code + token, echoes only code", async () => {
+    const req = makeRequest({
+      redirect_uris: ["http://127.0.0.1/callback"],
+      response_types: ["code", "token"],
+    });
+    const res = await action({ request: req } as any);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.response_types).toEqual(["code"]);
+  });
+
+  it("rejects response_types without code", async () => {
     const req = makeRequest({
       redirect_uris: ["http://127.0.0.1/callback"],
       response_types: ["token"],
@@ -155,6 +220,27 @@ describe("POST /oauth/register", () => {
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error).toBe("invalid_client_metadata");
+  });
+
+  it("rejects empty response_types array", async () => {
+    const req = makeRequest({
+      redirect_uris: ["http://127.0.0.1/callback"],
+      response_types: [],
+    });
+    const res = await action({ request: req } as any);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("invalid_client_metadata");
+  });
+
+  it("defaults response_types to ['code'] when omitted", async () => {
+    const req = makeRequest({
+      redirect_uris: ["http://127.0.0.1/callback"],
+    });
+    const res = await action({ request: req } as any);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.response_types).toEqual(["code"]);
   });
 
   it("rate-limits 6th registration from same IP", async () => {

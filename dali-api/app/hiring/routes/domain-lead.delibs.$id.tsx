@@ -1,5 +1,5 @@
-import { useState, useCallback, useRef } from "react";
-import { redirect, useLoaderData, useNavigate } from "react-router";
+import { useState, useCallback, useRef, useEffect } from "react";
+import { redirect, useLoaderData, useNavigate, useRevalidator } from "react-router";
 import type { Route } from "./+types/domain-lead.delibs.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
@@ -41,20 +41,37 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   // Load domain applications that qualify for this delibs type.
   // Initial: all reviews submitted, at least one review, no Final/Released decision.
-  // Final: interview completed, no post-interview Final/Released decision.
+  // Final: interview completed (Standard) OR all reviews submitted (InternToFull,
+  //   which has no interview round), no post-interview Final/Released decision.
+  const cycleTypeRow = await prisma.applicationCycle.findUniqueOrThrow({
+    where: { id: session.applicationCycleId },
+    select: { cycleType: true },
+  });
+  const isInternToFull = cycleTypeRow.cycleType === "InternToFull";
+
   const qualifyingFilter = session.type === "Initial"
     ? {
         reviews: { every: { submittedAt: { not: null } }, some: {} },
         decisions: { none: { stage: { in: ["Final" as const, "Released" as const] } } },
       }
-    : {
-        interviews: { some: { status: "Completed" as const } },
-      };
+    : isInternToFull
+      ? {
+          reviews: { every: { submittedAt: { not: null } }, some: {} },
+          decisions: { none: { stage: { in: ["Final" as const, "Released" as const] } } },
+        }
+      : {
+          interviews: { some: { status: "Completed" as const } },
+        };
 
   const domainApplications = await prisma.domainApplication.findMany({
     where: {
       selected: true,
-      challengeVersion: { domainId: session.domainId },
+      // Standard cycles join Domain via challengeVersion. InternToFull cycles
+      // store Domain directly.
+      OR: [
+        { challengeVersion: { domainId: session.domainId } },
+        { domainId: session.domainId },
+      ],
       application: {
         applicationCycleId: session.applicationCycleId,
         ...inReviewPipelineFilter,
@@ -142,6 +159,34 @@ export default function DelibsKanban() {
   // HTML5 drag-and-drop fires a stray `click` after `dragend` on some browsers;
   // suppress the modal-open click that immediately follows a drag.
   const wasDragging = useRef(false);
+
+  // Resync local columnOrder from the loader after a revalidation, so concurrent
+  // moves by other leads (or newly qualifying apps) show up without a reload.
+  // Skip while the user is mid-drag or while a move POST is in flight — the
+  // optimistic local state is authoritative until the server response lands.
+  const dragItemRef = useRef(dragItem);
+  const savingRef = useRef(saving);
+  dragItemRef.current = dragItem;
+  savingRef.current = saving;
+  useEffect(() => {
+    if (dragItemRef.current || savingRef.current) return;
+    setColumnOrder(initialOrder);
+    // initialOrder is recomputed every render from loader data + columns;
+    // depending on its JSON form keeps the effect tied to actual data changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(initialOrder)]);
+
+  // Poll the loader every 5s while the session is active so other leads' moves
+  // and newly qualifying applications surface without a manual refresh.
+  const revalidator = useRevalidator();
+  useEffect(() => {
+    if (session.status !== "Active") return;
+    const t = setInterval(() => {
+      if (dragItemRef.current || savingRef.current) return;
+      if (revalidator.state === "idle") revalidator.revalidate();
+    }, 5000);
+    return () => clearInterval(t);
+  }, [session.status, revalidator]);
 
   const sendMove = useCallback(
     async (cardId: string, toColumn: string) => {

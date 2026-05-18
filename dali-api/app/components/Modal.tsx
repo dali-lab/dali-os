@@ -56,7 +56,7 @@ export function Modal({
   initialFocusRef,
   disableEscape = false,
   className = "fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 sm:p-6 overflow-y-auto",
-  containerClassName = "bg-card rounded-2xl shadow-xl max-w-md w-full p-5 sm:p-6 my-auto",
+  containerClassName = "bg-card rounded-2xl shadow-brand-2 max-w-md w-full p-5 sm:p-6 my-auto",
 }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLElement | null>(null);

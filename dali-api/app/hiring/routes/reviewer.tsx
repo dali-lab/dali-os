@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Link, useLoaderData } from 'react-router'
+import { Link, useLoaderData, useRevalidator } from 'react-router'
 import {
   ChevronRight,
   ChevronDown,
@@ -11,10 +11,12 @@ import {
   ListOrdered,
 } from 'lucide-react'
 import { getReviewStatus } from '~/hiring/lib/review-status'
+import { CycleSelector } from '~/hiring/components/CycleSelector'
 import { getActiveCycle, cycleStatusToStage, inferUnderReviewStage } from '~/hiring/lib/cycles'
 import { getCycleConfidentialityState } from '~/hiring/lib/confidentiality'
 import { ConfidentialityGate } from '~/hiring/components/ConfidentialityGate'
 import { INITIAL_COLUMNS, FINAL_COLUMNS } from '~/hiring/lib/delibs'
+import { ApplicantContextModal } from '~/hiring/components/delibs/ApplicantContextModal'
 import CalendarGrid from '~/hiring/components/CalendarGrid'
 import { getZonedYMD } from '~/lib/timezone'
 
@@ -35,7 +37,8 @@ export const meta: Route.MetaFunction = () => [{ title: "Reviewer · DALI OS" }]
 
 export async function loader({ request }: Route.LoaderArgs) {
   const empty = {
-    activeCycle: null as { id: string; name: string } | null,
+    activeCycle: null as { id: string; name: string; cycleType: string } | null,
+    availableCycles: [] as Array<{ id: string; name: string; cycleType: string }>,
     currentStage: 'challengeSetup' as ReturnType<typeof cycleStatusToStage>,
     reviewerUserId: null as string | null,
     memberId: null as string | null,
@@ -53,19 +56,43 @@ export async function loader({ request }: Route.LoaderArgs) {
   const member = await prisma.dALIMember.findUnique({ where: { userId: auth.user.sub } })
   if (!member) return { ...empty, reviewerUserId: auth.user.sub }
 
-  // Anchor on the single active cycle (invariant: at most one cycle is in
-  // Open/UnderReview at a time). Older code here picked "most recent cycle
-  // that ever had an Open/UnderReview status update", which matched completed
-  // cycles that had historically passed through UnderReview.
-  const active = await getActiveCycle()
-  if (!active) return { ...empty, reviewerUserId: auth.user.sub }
+  // The single-active-cycle invariant is per-cycleType, so a Standard and an
+  // InternToFull cycle can be Open simultaneously. Probe both, collect the
+  // ones the reviewer is actually assigned on, and let the user switch
+  // between them via ?cycle=<id>. Default = first match (Standard preferred).
+  const [standardActive, internToFullActive] = await Promise.all([
+    getActiveCycle("Standard"),
+    getActiveCycle("InternToFull"),
+  ])
+  const candidates = [standardActive, internToFullActive].filter(
+    (c): c is NonNullable<typeof standardActive> => c !== null,
+  )
+  if (candidates.length === 0) return { ...empty, reviewerUserId: auth.user.sub }
 
-  // Fetch all CycleReviewer records for this member in this cycle (may span multiple domains)
-  const myReviewerIds = await prisma.cycleReviewer.findMany({
-    where: { userId: auth.user.sub, applicationCycleId: active.id },
-    select: { id: true, domainId: true },
-  })
-  if (myReviewerIds.length === 0) return { ...empty, reviewerUserId: auth.user.sub }
+  const assignmentsPerCycle = await Promise.all(
+    candidates.map(async (c) => ({
+      cycle: c,
+      reviewerRows: await prisma.cycleReviewer.findMany({
+        where: { userId: auth.user.sub, applicationCycleId: c.id },
+        select: { id: true, domainId: true },
+      }),
+    })),
+  )
+  const onCycles = assignmentsPerCycle.filter(({ reviewerRows }) => reviewerRows.length > 0)
+  if (onCycles.length === 0) return { ...empty, reviewerUserId: auth.user.sub }
+
+  const availableCycles = onCycles.map(({ cycle }) => ({
+    id: cycle.id,
+    name: cycle.name,
+    cycleType: cycle.cycleType as string,
+  }))
+
+  const url = new URL(request.url)
+  const requested = url.searchParams.get("cycle")
+  const selectedEntry =
+    (requested && onCycles.find(({ cycle }) => cycle.id === requested)) ?? onCycles[0]
+  const active = selectedEntry.cycle
+  const myReviewerIds = selectedEntry.reviewerRows
   const reviewerIds = myReviewerIds.map(r => r.id)
   const myDomainIds = Array.from(new Set(myReviewerIds.map(r => r.domainId)))
 
@@ -128,7 +155,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Initial sessions are blinded; Final sessions show real names.
   if (confidentialityRequired) {
     return {
-      activeCycle: { id: active.id, name: active.name },
+      activeCycle: { id: active.id, name: active.name, cycleType: active.cycleType as string },
+      availableCycles,
       currentStage,
       reviewerUserId: auth.user.sub,
       memberId: member.id,
@@ -218,7 +246,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   const delibsApplications = Array.from(hydratedDaIds).map(id => daIdToSummary.get(id));
 
   return {
-      activeCycle: { id: active.id, name: active.name },
+      activeCycle: { id: active.id, name: active.name, cycleType: active.cycleType as string },
+      availableCycles,
       currentStage,
       reviewerUserId: auth.user.sub,
       memberId: member.id,
@@ -234,6 +263,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 export default function ReviewerDashboard() {
   const {
     activeCycle,
+    availableCycles,
     currentStage,
     myReviews,
     isCycleInterviewer,
@@ -260,6 +290,24 @@ export default function ReviewerDashboard() {
   const submittedReviews = reviews.filter(r => getReviewStatus(r) === 'submitted')
   const inProgressReviews = reviews.filter(r => getReviewStatus(r) === 'inProgress')
   const pendingReviews = reviews.filter(r => getReviewStatus(r) === 'notStarted')
+
+  // Poll the loader every 5s while any delibs session is visible, so column
+  // moves made by the domain lead surface in this mirror view without a manual
+  // refresh.
+  const revalidator = useRevalidator()
+  const hasActiveDelibs = (delibsSessions?.length ?? 0) > 0
+  useEffect(() => {
+    if (!hasActiveDelibs) return
+    const t = setInterval(() => {
+      if (revalidator.state === 'idle') revalidator.revalidate()
+    }, 5000)
+    return () => clearInterval(t)
+  }, [hasActiveDelibs, revalidator])
+
+  // Selected delibs card → opens the same applicant-context modal the domain
+  // lead uses. /full-context permits any reviewer with cycle access, so this
+  // gives non-leads visibility into all reviews on apps in their domain.
+  const [selectedDelibsDaId, setSelectedDelibsDaId] = useState<string | null>(null)
 
   // Lookup table of every domainApplication referenced in an active delibs
   // session, so we can render per-column cards from columnOrder.
@@ -397,13 +445,16 @@ export default function ReviewerDashboard() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">
-          Reviewer Dashboard
-        </h1>
-        <p className="mt-1 text-muted-foreground">
-          Manage your hiring responsibilities.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">
+            Reviewer Dashboard
+          </h1>
+          <p className="mt-1 text-muted-foreground">
+            Manage your hiring responsibilities.
+          </p>
+        </div>
+        <CycleSelector cycles={availableCycles} activeId={activeCycle.id} />
       </div>
 
       <Section
@@ -654,11 +705,19 @@ export default function ReviewerDashboard() {
                 key={session.id}
                 session={session}
                 appMap={delibsAppMap}
+                onSelect={(daId) => setSelectedDelibsDaId(daId)}
               />
             ))}
           </div>
         )}
       </Section>
+
+      {selectedDelibsDaId && (
+        <ApplicantContextModal
+          domainApplicationId={selectedDelibsDaId}
+          onClose={() => setSelectedDelibsDaId(null)}
+        />
+      )}
     </div>
   )
 }
@@ -738,9 +797,11 @@ const FINAL_COLUMN_STYLES: Record<string, { label: string; classes: string; head
 function DelibsSessionView({
   session,
   appMap,
+  onSelect,
 }: {
   session: any
   appMap: Map<string, any>
+  onSelect: (domainApplicationId: string) => void
 }) {
   const isInitial = session.type === 'Initial'
   const columnOrder = (session.columnOrder ?? {}) as Record<string, string[]>
@@ -774,15 +835,17 @@ function DelibsSessionView({
                   const user = da?.application?.user
                   const label = user ? `${user.firstName} ${user.lastName}` : 'Applicant'
                   return (
-                    <div
+                    <button
                       key={id}
-                      className="bg-white p-3 rounded-md border border-gray-200 shadow-sm flex items-center gap-2"
+                      type="button"
+                      onClick={() => onSelect(id)}
+                      className="w-full text-left bg-white p-3 rounded-md border border-gray-200 shadow-sm flex items-center gap-2 hover:shadow-md hover:border-blue-300 transition cursor-pointer"
                     >
                       {!isInitial && col === 'Waitlist' && (
                         <span className="text-gray-400 font-bold text-xs w-4">{i + 1}.</span>
                       )}
                       <span className="font-medium text-gray-900 text-sm">{label}</span>
-                    </div>
+                    </button>
                   )
                 })}
                 {ids.length === 0 && (

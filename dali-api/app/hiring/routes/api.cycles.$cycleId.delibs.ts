@@ -57,6 +57,20 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (body instanceof Response) return body;
   const { domainId, type } = body;
 
+  // InternToFull cycles skip the Initial → interview → Final pipeline. There's
+  // only one round of deliberation (review → decision), so we hard-block
+  // anyone trying to open an Initial session on these cycles.
+  const cycleType = await prisma.applicationCycle.findUniqueOrThrow({
+    where: { id: params.cycleId },
+    select: { cycleType: true },
+  });
+  if (cycleType.cycleType === "InternToFull" && type === "Initial") {
+    return Response.json(
+      { error: "InternToFull cycles only run a single Final deliberation round." },
+      { status: 400 },
+    );
+  }
+
   // Upsert: reopen if previously closed, create if new
   const session = await prisma.delibsSession.upsert({
     where: {

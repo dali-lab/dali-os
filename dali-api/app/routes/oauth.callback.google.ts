@@ -7,6 +7,9 @@ import {
   exchangeGoogleCode,
 } from "~/lib/oauth";
 import { upsertUserFromGoogle } from "~/lib/user-provisioning";
+import { issueSession } from "~/lib/session";
+import { setSessionCookie } from "~/lib/cookies";
+import { getClientIp } from "~/lib/request-meta";
 
 export async function action() {
   return new Response("Method not allowed", { status: 405 });
@@ -129,13 +132,23 @@ export async function loader({ request }: Route.LoaderArgs) {
     }
   }
 
+  // Issue a first-party cookie session so the consent screen (and any
+  // subsequent first-party page load) can verify the user is signed in.
+  // This is the same cookie shape `/auth/callback/google` issues; the MCP
+  // grant-bound session is separate and gets minted at /oauth/token.
+  const cookieSession = await issueSession({
+    userId: user.id,
+    userAgent: request.headers.get("user-agent") ?? undefined,
+    ip: getClientIp(request),
+  });
+
   if (isFirstParty || matchingGrant || !client) {
     const code = await generateAuthorizationCode(session.id, user.id);
     const params = new URLSearchParams({ code, state: session.state });
-    return new Response(null, {
-      status: 302,
-      headers: { Location: `${session.redirectUri}?${params}` },
-    });
+    const headers = new Headers();
+    setSessionCookie(headers, cookieSession.rawId);
+    headers.set("Location", `${session.redirectUri}?${params}`);
+    return new Response(null, { status: 302, headers });
   }
 
   // Pre-set userId so the consent screen can render the client + scopes
@@ -144,10 +157,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     where: { id: session.id },
     data: { userId: user.id },
   });
-  return new Response(null, {
-    status: 302,
-    headers: {
-      Location: `/oauth/consent?session_id=${session.id}`,
-    },
-  });
+  const headers = new Headers();
+  setSessionCookie(headers, cookieSession.rawId);
+  headers.set("Location", `/oauth/consent?session_id=${session.id}`);
+  return new Response(null, { status: 302, headers });
 }

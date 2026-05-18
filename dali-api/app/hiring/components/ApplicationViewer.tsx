@@ -293,7 +293,9 @@ function AnnotatableField({
   )
 }
 
-// Shape of the application as returned by the reviewer.application.$id loader
+// Shape of the application as returned by the reviewer.application.$id loader.
+// On InternToFull cycles, `challengeVersion` is null and the domain is loaded
+// directly via the `domain` relation instead.
 export interface ApplicationViewerProps {
   application: {
     answers: unknown
@@ -301,12 +303,13 @@ export interface ApplicationViewerProps {
     domainApplications: Array<{
       id: string
       answers: unknown
-      challengeVersion: {
+      challengeVersion?: {
         questions: unknown
         description?: unknown
-        domain: { name: string }
+        domain: { name: string; displayName?: string }
         challenge: { name: string }
-      }
+      } | null
+      domain?: { name: string; displayName?: string } | null
     }>
   }
   questionLabels: Record<string, string>
@@ -385,8 +388,21 @@ export function ApplicationViewer({ application, questionLabels, initialAnnotati
 
       {/* Domain challenge answers */}
       {application.domainApplications.map((dapp) => {
-        const domainName = dapp.challengeVersion.domain.name
-        const challengeQuestions = dapp.challengeVersion.questions as unknown as Question[]
+        const cv = dapp.challengeVersion
+        const directDomain = dapp.domain
+        const domainName = cv?.domain.displayName ?? cv?.domain.name ?? directDomain?.displayName ?? directDomain?.name ?? 'Domain'
+        if (!cv) {
+          // InternToFull domain selection — no challenge content to render.
+          return (
+            <div key={dapp.id} className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
+              <div className="px-6 py-4 border-b border-border bg-muted/50">
+                <h2 className="text-lg font-semibold text-foreground">{domainName}</h2>
+                <p className="text-xs text-muted-foreground mt-1">Target domain selected (no challenge for fellowship applications).</p>
+              </div>
+            </div>
+          )
+        }
+        const challengeQuestions = cv.questions as unknown as Question[]
         const challengeQuestionsByKey = buildQuestionMap(challengeQuestions)
         return (
           <div key={dapp.id} className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
@@ -394,9 +410,9 @@ export function ApplicationViewer({ application, questionLabels, initialAnnotati
               <h2 className="text-lg font-semibold text-foreground">{domainName} Challenge</h2>
             </div>
             <div className="p-6 space-y-6">
-              {!isEmptyDoc(dapp.challengeVersion.description) && (
+              {!isEmptyDoc(cv.description) && (
                 <div className="border border-border rounded-md bg-muted/30 px-4 py-3">
-                  <RichTextViewer content={dapp.challengeVersion.description} />
+                  <RichTextViewer content={cv.description} />
                 </div>
               )}
               {Object.entries(dapp.answers as Record<string, unknown>).map(([key, value]) => {

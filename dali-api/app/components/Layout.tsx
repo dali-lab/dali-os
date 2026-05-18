@@ -19,6 +19,7 @@ import {
   FolderKanban,
   UsersRound,
   Handshake,
+  Home,
   List,
   UserPlus,
   Building2,
@@ -87,6 +88,28 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
   useEffect(() => {
     setMobileNavOpen(false)
   }, [path])
+
+  // Listen for "open in new tab" requests from embedded iframes (e.g. a
+  // notification card in the Home tab whose link would otherwise navigate
+  // the iframe itself, trapping the user in chrome-less embed mode).
+  useEffect(() => {
+    function handler(e: MessageEvent) {
+      if (e.origin !== window.location.origin) return
+      const data = e.data
+      if (!data) return
+      if (data.type === 'dali:openTab' && typeof data.url === 'string') {
+        workspaceRef.current?.openTab({ url: data.url, label: data.label || data.url })
+      } else if (
+        data.type === 'dali:setTabLabel' &&
+        typeof data.url === 'string' &&
+        typeof data.label === 'string'
+      ) {
+        workspaceRef.current?.setTabLabel(data.url, data.label)
+      }
+    }
+    window.addEventListener('message', handler)
+    return () => window.removeEventListener('message', handler)
+  }, [])
 
   const toggleCollapsed = () => {
     setCollapsed((prev) => {
@@ -411,9 +434,13 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
           className="flex items-center gap-2.5 min-w-0 focus:outline-none"
           title="Home"
         >
-          <div className="w-7 h-7 bg-accent-coral rounded-md flex items-center justify-center flex-shrink-0">
-            <span className="text-white font-bold text-base leading-none font-heading">D</span>
-          </div>
+          {/* #566 brand logo, kept on the workspace-tab nav (not a <Link>) */}
+          <img
+            src="/icon-white.svg"
+            alt=""
+            aria-hidden="true"
+            className="w-8 h-8 flex-shrink-0"
+          />
           {!collapsed && (
             <span className="font-heading font-bold text-lg text-white tracking-tight truncate">
               DALI OS
@@ -448,6 +475,7 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
       <nav className="flex-1 overflow-y-auto py-3 px-2 flex flex-col gap-0.5">
         {(() => {
           const hasTasks = taskCount > 0
+          const homeActive = path === '/'
           // Tasks has no page of its own. With no todos it's an inert label.
           // With todos the header navigates to Home (the task overview) and
           // sits above one subtab per todo, each linking to its own target.
@@ -477,54 +505,70 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
               )}
             </>
           )
+          // dev (#566 era) added an explicit Home nav button; HEAD added the
+          // Tasks section (Tasks-nav feature). Keep both: Home on top, then
+          // the Tasks header + per-todo subtabs.
           return (
-            <div className="flex flex-col">
-              {hasTasks ? (
-                <button
-                  type="button"
-                  title={collapsed ? `Tasks (${taskCount})` : undefined}
-                  onClick={() => openInWorkspace({ url: '/', label: 'Home' })}
-                  className={`relative flex items-center gap-3 rounded-md ${collapsed ? 'px-3 py-2 justify-center' : 'px-3 py-2'} text-sm font-heading font-semibold text-left text-white transition-colors hover:bg-white/5`}
-                >
-                  {headerInner}
-                </button>
-              ) : (
-                <div
-                  title={collapsed ? 'Tasks (0)' : undefined}
-                  className={`relative flex items-center gap-3 rounded-md ${collapsed ? 'px-3 py-2 justify-center' : 'px-3 py-2'} text-sm font-heading font-semibold text-white/40`}
-                >
-                  {headerInner}
-                </div>
-              )}
+            <>
+              <button
+                type="button"
+                title={collapsed ? 'Home' : undefined}
+                onClick={() => openInWorkspace({ url: '/', label: 'Home' })}
+                className={`flex items-center gap-3 rounded-md ${collapsed ? 'px-3 py-2 justify-center' : 'px-3 py-2'} text-sm font-heading font-semibold text-left transition-colors hover:bg-white/5 ${
+                  homeActive ? 'text-white' : 'text-white/65 hover:text-white'
+                }`}
+              >
+                <Home className="w-4 h-4 flex-shrink-0" />
+                {!collapsed && <span className="truncate">Home</span>}
+              </button>
+              <div className="flex flex-col">
+                {hasTasks ? (
+                  <button
+                    type="button"
+                    title={collapsed ? `Tasks (${taskCount})` : undefined}
+                    onClick={() => openInWorkspace({ url: '/', label: 'Home' })}
+                    className={`relative flex items-center gap-3 rounded-md ${collapsed ? 'px-3 py-2 justify-center' : 'px-3 py-2'} text-sm font-heading font-semibold text-left text-white transition-colors hover:bg-white/5`}
+                  >
+                    {headerInner}
+                  </button>
+                ) : (
+                  <div
+                    title={collapsed ? 'Tasks (0)' : undefined}
+                    className={`relative flex items-center gap-3 rounded-md ${collapsed ? 'px-3 py-2 justify-center' : 'px-3 py-2'} text-sm font-heading font-semibold text-white/40`}
+                  >
+                    {headerInner}
+                  </div>
+                )}
 
-              {!collapsed && hasTasks && (
-                <div className="mt-1 mb-1 ml-4 pl-2 border-l border-white/10 flex flex-col gap-0.5">
-                  {openTasks.map((t) => {
-                    const cls =
-                      'flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] font-medium text-left transition-colors'
-                    return t.link ? (
-                      <button
-                        key={t.id}
-                        type="button"
-                        title={t.title}
-                        onClick={() => openInWorkspace({ url: t.link!, label: t.title })}
-                        className={`${cls} text-white/55 hover:text-white hover:bg-white/5`}
-                      >
-                        <span className="truncate">{t.title}</span>
-                      </button>
-                    ) : (
-                      <div
-                        key={t.id}
-                        title={t.title}
-                        className={`${cls} text-white/40`}
-                      >
-                        <span className="truncate">{t.title}</span>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
+                {!collapsed && hasTasks && (
+                  <div className="mt-1 mb-1 ml-4 pl-2 border-l border-white/10 flex flex-col gap-0.5">
+                    {openTasks.map((t) => {
+                      const cls =
+                        'flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] font-medium text-left transition-colors'
+                      return t.link ? (
+                        <button
+                          key={t.id}
+                          type="button"
+                          title={t.title}
+                          onClick={() => openInWorkspace({ url: t.link!, label: t.title })}
+                          className={`${cls} text-white/55 hover:text-white hover:bg-white/5`}
+                        >
+                          <span className="truncate">{t.title}</span>
+                        </button>
+                      ) : (
+                        <div
+                          key={t.id}
+                          title={t.title}
+                          className={`${cls} text-white/40`}
+                        >
+                          <span className="truncate">{t.title}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            </>
           )
         })()}
         {(() => {
@@ -657,16 +701,16 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
   )
 
   return (
-    <div className="min-h-screen min-h-dvh bg-section-bg flex flex-col md:flex-row pt-14 md:pt-0">
+    <div className="min-h-screen min-h-dvh bg-page flex flex-col md:flex-row pt-14 md:pt-0">
       {/* Desktop sidebar */}
       <aside
-        className={`hidden md:flex flex-col fixed inset-y-0 left-0 z-20 ${sidebarWidth} bg-[hsl(203,38%,23%)] dark:bg-[hsl(215,35%,10%)] transition-[width] duration-200`}
+        className={`hidden md:flex flex-col fixed inset-y-0 left-0 z-20 ${sidebarWidth} bg-sidebar-bg transition-[width] duration-200`}
       >
         {sidebarContent}
       </aside>
 
       {/* Mobile top bar */}
-      <div className="md:hidden fixed inset-x-0 top-0 z-20 h-14 bg-[hsl(203,38%,23%)] dark:bg-[hsl(215,35%,10%)] flex items-center justify-between px-3">
+      <div className="md:hidden fixed inset-x-0 top-0 z-20 h-14 bg-sidebar-bg flex items-center justify-between px-3">
         <div className="flex items-center gap-2.5">
           <button
             type="button"
@@ -684,9 +728,13 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
             className="flex items-center gap-2.5"
             title="Home"
           >
-            <div className="w-7 h-7 bg-accent-coral rounded-md flex items-center justify-center flex-shrink-0">
-              <span className="text-white font-bold text-base leading-none font-heading">D</span>
-            </div>
+            {/* #566 brand logo, kept on the workspace-tab nav (not a <Link>) */}
+            <img
+              src="/icon-white.svg"
+              alt=""
+              aria-hidden="true"
+              className="w-8 h-8 flex-shrink-0"
+            />
             <span className="font-heading font-bold text-lg text-white tracking-tight">
               DALI OS
             </span>
@@ -744,7 +792,7 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
           />
           <aside
             id="mobile-nav-panel"
-            className="md:hidden fixed inset-y-0 left-0 z-40 w-64 bg-[hsl(203,38%,23%)] dark:bg-[hsl(215,35%,10%)] flex flex-col shadow-xl"
+            className="md:hidden fixed inset-y-0 left-0 z-40 w-64 bg-sidebar-bg flex flex-col shadow-xl"
           >
             {sidebarContent}
           </aside>

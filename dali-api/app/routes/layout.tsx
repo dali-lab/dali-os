@@ -60,10 +60,35 @@ export default function AppLayoutRoute() {
     }
   }, [])
 
+  const embedded = isEmbedded || isClientEmbedded || searchParams.get('embed') === '1'
+
+  // When embedded, announce our preferred tab label to the parent workspace.
+  // Source: document.title (set by each route's Route.MetaFunction), with the
+  // shared `· DALI OS` suffix stripped. setTimeout(0) gives React Router a
+  // tick to write the title from meta before we read it.
+  useEffect(() => {
+    if (!embedded) return
+    if (typeof window === 'undefined') return
+    const id = window.setTimeout(() => {
+      const raw = document.title
+      const label = raw.replace(/\s*·\s*DALI OS\s*$/, '').trim() || raw
+      if (!label) return
+      window.parent.postMessage(
+        {
+          type: 'dali:setTabLabel',
+          url: window.location.pathname + window.location.search,
+          label,
+        },
+        window.location.origin,
+      )
+    }, 50)
+    return () => window.clearTimeout(id)
+  }, [embedded])
+
   // Skip the sidebar shell when rendered inside a TabWorkspace iframe.
-  if (isEmbedded || isClientEmbedded || searchParams.get('embed') === '1') {
+  if (embedded) {
     return (
-      <div className="min-h-dvh bg-section-bg overflow-x-hidden">
+      <div className="min-h-dvh bg-page overflow-x-hidden">
         <div className="w-full px-3 sm:px-6 lg:px-10 pt-4 sm:pt-8 md:pt-12 pb-6 sm:pb-8">
           <Outlet />
         </div>

@@ -3,6 +3,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { listOpenTasks } from "~/lib/tasks";
+import { listMyNotifications } from "~/lib/notifications";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const preflight = handlePreflight(request);
@@ -12,15 +13,11 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!auth.ok) return withCors(request, auth.response);
 
   const userId = auth.user.sub;
-  const [items, unreadCount, tasks] = await Promise.all([
-    prisma.notification.findMany({
-      where: { recipientUserId: userId },
-      orderBy: { createdAt: "desc" },
-      take: 50,
-    }),
-    prisma.notification.count({
-      where: { recipientUserId: userId, readAt: null },
-    }),
+  // dev (#…) refactored notification fetching into listMyNotifications();
+  // keep that helper and layer the open-tasks payload on top so the bell
+  // still shows tasks (Tasks-nav feature).
+  const [{ items, unreadCount }, tasks] = await Promise.all([
+    listMyNotifications(userId),
     listOpenTasks(userId),
   ]);
 

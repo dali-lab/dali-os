@@ -27,6 +27,8 @@ beforeEach(() => {
   (mockPrisma as any).interview = { count: vi.fn() };
   (mockPrisma as any).domainApplication = { count: vi.fn() };
   (mockPrisma as any).applicationCycleStatusUpdate = { create: vi.fn().mockResolvedValue({}) };
+  // Pass-through $transaction so inner calls hit the same mocks.
+  (mockPrisma as any).$transaction = vi.fn(async (fn: any) => fn(mockPrisma));
   vi.mocked(requireAuth).mockResolvedValue({ ok: true, user: { sub: USER_ID } } as any);
   vi.mocked(isHiringLead).mockResolvedValue(true);
   vi.mocked(findOtherActiveCycleId).mockResolvedValue(null);

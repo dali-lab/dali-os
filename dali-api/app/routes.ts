@@ -15,6 +15,7 @@ export default [
     route("hiring/domain-lead/delibs/:id", "hiring/routes/domain-lead.delibs.$id.tsx"),
     route("hiring/lead", "hiring/routes/lead.tsx"),
     route("hiring/lead/cycle/:id", "hiring/routes/lead.cycle.$id.tsx"),
+    route("hiring/lead/intern-to-full-cycle/:id", "hiring/routes/lead.intern-to-full-cycle.$id.tsx"),
     route("hiring/challenges", "hiring/routes/challenges.tsx"),
     route("hiring/challenges/:id", "hiring/routes/challenges.$id.tsx"),
     route("hiring/rubrics", "hiring/routes/rubrics.tsx"),
@@ -68,6 +69,11 @@ export default [
     // isn't read as a folder id.
     route("forms/edit/:formId", "forms/routes/forms.edit.$formId.tsx"),
     route("forms/:folderId", "forms/routes/forms.$folderId.tsx"),
+
+    // Internal applicant portal — intern → full-time conversion. Authenticated
+    // member route (not under /portal) so interns use their existing session
+    // rather than the CAS flow built for external applicants.
+    route("intern-to-full", "routes/intern-to-full.tsx"),
   ]),
 
   // Applicant portal (lightweight layout)
@@ -102,6 +108,16 @@ export default [
 
   // MCP foundation (no layout)
   route(".well-known/oauth-authorization-server", "routes/well-known.oauth-authorization-server.ts"),
+  route(
+    ".well-known/oauth-protected-resource",
+    "routes/well-known.oauth-protected-resource.ts",
+    { id: "well-known.oauth-protected-resource" },
+  ),
+  route(
+    ".well-known/oauth-protected-resource/mcp",
+    "routes/well-known.oauth-protected-resource.ts",
+    { id: "well-known.oauth-protected-resource.mcp" },
+  ),
   route("mcp", "routes/mcp.ts"),
   route("help/mcp", "routes/help.mcp.tsx"),
   route("settings/connected-apps", "routes/settings.connected-apps.tsx"),

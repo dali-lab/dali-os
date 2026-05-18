@@ -102,7 +102,7 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-section-bg flex relative overflow-hidden">
+    <div className="min-h-screen bg-page flex relative overflow-hidden">
       {/* Decorative blocks along right edge — rotated so original width spans viewport height */}
       <img
         src="/spread-out-blocks.png"
@@ -111,8 +111,13 @@ export default function Login() {
         style={{ top: "50%", right: "-30vh", width: "100vh", transform: "translateY(-50%) rotate(-90deg)" }}
       />
       {/* Left decorative panel */}
-      <div className="hidden md:flex w-1/2 min-h-screen bg-[#E8F4FA] dark:bg-card flex-col justify-center px-12 lg:px-16 relative overflow-hidden">
+      <div className="hidden md:flex w-1/2 min-h-screen bg-brand-tint flex-col justify-center px-12 lg:px-16 relative overflow-hidden">
         <div className="relative z-10">
+          <img
+            src="/logo-blue.svg"
+            alt="DALI Lab"
+            className="h-16 lg:h-20 w-auto mb-10"
+          />
           <h2 className="font-heading text-4xl lg:text-5xl font-bold text-dark-blue leading-tight mb-6">
             Welcome to
             <br />
@@ -133,8 +138,14 @@ export default function Login() {
       </div>
 
       {/* Right form panel */}
-      <div className="w-full md:w-1/2 min-h-screen flex items-center justify-center px-6 md:px-12 lg:px-16 bg-section-bg">
+      <div className="w-full md:w-1/2 min-h-screen flex items-center justify-center px-6 md:px-12 lg:px-16 bg-page">
         <div className="w-full max-w-sm">
+          {/* Mobile-only logo (left panel is hidden on small screens) */}
+          <img
+            src="/logo-blue.svg"
+            alt="DALI Lab"
+            className="md:hidden h-12 w-auto mb-8"
+          />
           <h1 className="font-heading text-3xl font-bold text-dark-blue mb-2">
             Sign in
           </h1>
@@ -154,7 +165,7 @@ export default function Login() {
               <input type="hidden" name="provider" value="google" />
               <button
                 type="submit"
-                className="w-full flex items-center gap-4 p-5 rounded-2xl border-2 border-transparent bg-[#E8F4FA] dark:bg-secondary hover:border-accent-coral transition group text-left"
+                className="w-full flex items-center gap-4 p-5 rounded-2xl border-2 border-transparent bg-brand-tint hover:border-accent-coral transition group text-left"
               >
                 <div className="w-10 h-10 rounded-full bg-accent-coral/10 flex items-center justify-center flex-shrink-0">
                   <svg
@@ -200,7 +211,7 @@ export default function Login() {
               <input type="hidden" name="provider" value="cas" />
               <button
                 type="submit"
-                className="w-full flex items-center gap-4 p-5 rounded-2xl border-2 border-transparent bg-[#E8F4FA] dark:bg-secondary hover:border-accent-coral transition group text-left"
+                className="w-full flex items-center gap-4 p-5 rounded-2xl border-2 border-transparent bg-brand-tint hover:border-accent-coral transition group text-left"
               >
                 <div className="w-10 h-10 rounded-full bg-card flex items-center justify-center flex-shrink-0 shadow-sm">
                   <svg

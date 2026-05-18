@@ -30,12 +30,16 @@ export type McpAuthFailure = {
 export type McpAuthResult = McpAuthSuccess | McpAuthFailure;
 
 function unauthorized(reason: string): Response {
+  const issuer = process.env.API_BASE_URL;
+  const resourceMetadata = issuer
+    ? `, resource_metadata="${issuer}/.well-known/oauth-protected-resource/mcp"`
+    : "";
   return Response.json(
     { jsonrpc: "2.0", error: { code: -32001, message: `Unauthorized: ${reason}` }, id: null },
     {
       status: 401,
       headers: {
-        "WWW-Authenticate": `Bearer realm="dali-os-mcp", error="${reason}"`,
+        "WWW-Authenticate": `Bearer realm="dali-os-mcp", error="${reason}"${resourceMetadata}`,
       },
     },
   );

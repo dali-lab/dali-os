@@ -109,6 +109,8 @@ export interface Question {
     // app/forms/lib/reference-sources.ts). The stored answer is the chosen
     // row's id (its `value`), not its label.
     | 'reference'
+    // A non-question prose block rendered inline in the form (see `body`).
+    | 'info'
   required: boolean
   data: {
     label: string
@@ -123,6 +125,9 @@ export interface Question {
     // source (label shown, value = stored answer / DB id). Never persisted —
     // save-version rebuilds `data` and drops it.
     referenceOptions?: { value: string; label: string }[]
+    // For type === 'info': free-form prose rendered as a non-question text
+    // block in the form. Plain text; line breaks preserved.
+    body?: string
   }
 }
 

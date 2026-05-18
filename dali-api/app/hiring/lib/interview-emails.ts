@@ -110,7 +110,7 @@ export async function sendInterviewInviteEmails(
       where: { id: domainApplicationId },
       include: { challengeVersion: { include: { domain: { select: { name: true } } } } },
     });
-    const domainName = da?.challengeVersion.domain?.name ?? "DALI Lab";
+    const domainName = da?.challengeVersion?.domain?.name ?? "DALI Lab";
 
     const baseVars: Omit<InterpolationVars, "firstName"> = {
       domain: domainName,
@@ -188,7 +188,7 @@ export async function sendInterviewCancelEmails(
       where: { id: domainApplicationId },
       include: { challengeVersion: { include: { domain: { select: { name: true } } } } },
     });
-    const domainName = da?.challengeVersion.domain?.name ?? "DALI Lab";
+    const domainName = da?.challengeVersion?.domain?.name ?? "DALI Lab";
 
     const baseVars: Omit<InterpolationVars, "firstName"> = {
       domain: domainName,
@@ -265,7 +265,7 @@ export async function sendReassignmentEmails(
       where: { id: domainApplicationId },
       include: { challengeVersion: { include: { domain: { select: { name: true } } } } },
     });
-    const domainName = da?.challengeVersion.domain?.name ?? "DALI Lab";
+    const domainName = da?.challengeVersion?.domain?.name ?? "DALI Lab";
 
     const baseVars: Omit<InterpolationVars, "firstName"> = {
       domain: domainName,
@@ -357,7 +357,7 @@ export async function sendLocationChangeEmails(
       where: { id: domainApplicationId },
       include: { challengeVersion: { include: { domain: { select: { name: true } } } } },
     });
-    const domainName = da?.challengeVersion.domain?.name ?? "DALI Lab";
+    const domainName = da?.challengeVersion?.domain?.name ?? "DALI Lab";
 
     const baseVars: Omit<InterpolationVars, "firstName"> = {
       domain: domainName,
