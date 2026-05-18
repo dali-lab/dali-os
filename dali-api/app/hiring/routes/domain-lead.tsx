@@ -89,6 +89,35 @@ function CyclePicker({
 
 export const meta: Route.MetaFunction = () => [{ title: "Domain lead · DALI OS" }];
 
+// Picker selection rules, in order:
+//   1. Honor ?cycle=<id> when it matches one of the candidates.
+//   2. Prefer a Standard cycle in Open/UnderReview — keeps the existing
+//      single-cycle UX unchanged when a Standard cycle is the "main" one.
+//   3. Any cycle in Open/UnderReview (InternToFull falls here).
+//   4. Any Draft cycle.
+//   5. Otherwise null (the loader caller falls back to a "no active cycle" card).
+// Pure function so it's directly unit-testable without standing up the full
+// loader's prisma mocks.
+export function selectActiveCycleForDomainLead<
+  C extends { id: string; cycleType: string; statusUpdates: Array<{ newStatus: string }> },
+>(candidates: C[], requestedId: string | null): C | null {
+  if (requestedId) {
+    const found = candidates.find((c) => c.id === requestedId);
+    if (found) return found;
+  }
+  const isActive = (c: C) => {
+    const s = c.statusUpdates[0]?.newStatus;
+    return s === "Open" || s === "UnderReview";
+  };
+  const isDraft = (c: C) => c.statusUpdates[0]?.newStatus === "Draft";
+  return (
+    candidates.find((c) => c.cycleType === "Standard" && isActive(c)) ??
+    candidates.find(isActive) ??
+    candidates.find(isDraft) ??
+    null
+  );
+}
+
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return { domainData: [] };
@@ -171,29 +200,8 @@ export async function loader({ request }: Route.LoaderArgs) {
         cycleType: c.cycleType as string,
       }));
 
-      // Honor ?cycle=<id> if present and valid for this assignment; else
-      // prefer the most recent Standard Open/UnderReview, then any
-      // Open/UnderReview, then Draft. Standard wins by default so the
-      // existing single-cycle UX stays unchanged.
       const requestedCycleId = new URL(request.url).searchParams.get("cycle");
-      const activeCycle =
-        (requestedCycleId && candidateCycles.find((c) => c.id === requestedCycleId)) ??
-        candidateCycles.find((c) => {
-          const status = c.statusUpdates[0]?.newStatus;
-          return (
-            c.cycleType === "Standard" &&
-            status && ["Open", "UnderReview"].includes(status)
-          );
-        }) ??
-        candidateCycles.find((c) => {
-          const status = c.statusUpdates[0]?.newStatus;
-          return status && ["Open", "UnderReview"].includes(status);
-        }) ??
-        candidateCycles.find((c) => {
-          const status = c.statusUpdates[0]?.newStatus;
-          return status === "Draft";
-        }) ??
-        null;
+      const activeCycle = selectActiveCycleForDomainLead(candidateCycles, requestedCycleId);
 
       if (!activeCycle) return [{ assignment, cycle: null, availableCycles, apps: [], challengeVersionOptions: [], linkedChallengeVersions: [], isChallengeReady: false, interviews: [], reviewers: [], delibsSessions: [], draftDecisions: [], cycleReviewersForDomain: [], initialDelibsCount: 0, finalDelibsCount: 0, rubricVersionOptions: [], currentRubricVersionId: null, rubricCriteria: [], interviewers: [], hasApplicationReviews: false, confidentialityRequired: null as null | "no_agreement" | "unsigned" }];
 
@@ -691,6 +699,7 @@ export default function DomainLeadDashboard() {
       <h1 className="text-2xl font-bold text-foreground">Domain Lead Dashboard</h1>
 
       {domainData.map(({ assignment, cycle, availableCycles, apps, challengeVersionOptions, linkedChallengeVersions, isChallengeReady, interviews, reviewers: cycleReviewers, delibsSessions, draftDecisions, cycleReviewersForDomain, initialDelibsCount, finalDelibsCount, rubricVersionOptions, currentRubricVersionId, rubricCriteria, interviewers, hasApplicationReviews, confidentialityRequired }: any, idx: number) => {
+        const isInternToFull = cycle?.cycleType === "InternToFull";
         const hasLinkedChallenge = (linkedChallengeVersions ?? []).length > 0;
         const currentStatus = cycle?.statusUpdates[0]?.newStatus ?? null;
 
@@ -749,8 +758,8 @@ export default function DomainLeadDashboard() {
                 </div>
 
                 <div className="p-4 sm:p-6 space-y-4">
-                  {/* Setup — Draft only */}
-                  {currentStatus === "Draft" && (
+                  {/* Setup — Draft only. Hidden on InternToFull (no challenges). */}
+                  {currentStatus === "Draft" && !isInternToFull && (
                     <Section
                       title="Challenges (setup)"
                       subtitle="Pick which challenge versions applicants answer."
@@ -778,8 +787,9 @@ export default function DomainLeadDashboard() {
                     </Section>
                   )}
 
-                  {/* Setup — just the domain challenges (read-only after Draft) */}
-                  {currentStatus !== "Draft" && (currentStatus === "Open" || currentStatus === "UnderReview") && (
+                  {/* Setup — just the domain challenges (read-only after Draft).
+                      Hidden on InternToFull (no challenges). */}
+                  {currentStatus !== "Draft" && (currentStatus === "Open" || currentStatus === "UnderReview") && !isInternToFull && (
                     <Section
                       title="Challenges (locked)"
                       subtitle={
@@ -872,20 +882,29 @@ export default function DomainLeadDashboard() {
                     </div>
                   </Section>
 
-                  {/* Team — Reviewers + Interviewers for this domain */}
+                  {/* Team — Reviewers (+ Interviewers for Standard cycles only). */}
                   <Section
                     title="Team"
-                    subtitle="Reviewers and interviewers assigned to this domain."
+                    subtitle={
+                      isInternToFull
+                        ? "Reviewers assigned to this domain."
+                        : "Reviewers and interviewers assigned to this domain."
+                    }
                     badge={
                       <span className="text-xs text-muted-foreground">
-                        {cycleReviewers.length} reviewer{cycleReviewers.length !== 1 ? "s" : ""}, {(interviewers ?? []).length} interviewer{(interviewers ?? []).length !== 1 ? "s" : ""}
+                        {cycleReviewers.length} reviewer{cycleReviewers.length !== 1 ? "s" : ""}
+                        {!isInternToFull && (
+                          <>, {(interviewers ?? []).length} interviewer{(interviewers ?? []).length !== 1 ? "s" : ""}</>
+                        )}
                       </span>
                     }
                     defaultOpen={currentStatus === "Draft" || currentStatus === "Open"}
                   >
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className={`grid grid-cols-1 ${isInternToFull ? "" : "md:grid-cols-2"} gap-4`}>
                       <ReviewerSection cycleId={cycle.id} domainId={assignment.domainId} initialReviewers={cycleReviewers} />
-                      <InterviewerSection cycleId={cycle.id} domainId={assignment.domainId} initialInterviewers={interviewers ?? []} />
+                      {!isInternToFull && (
+                        <InterviewerSection cycleId={cycle.id} domainId={assignment.domainId} initialInterviewers={interviewers ?? []} />
+                      )}
                     </div>
                   </Section>
 
@@ -941,8 +960,12 @@ export default function DomainLeadDashboard() {
                           <span className="text-xs text-muted-foreground">hidden</span>
                         ) : (
                           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                            <span>{initialDelibsCount ?? 0} ready for initial</span>
-                            <span>·</span>
+                            {!isInternToFull && (
+                              <>
+                                <span>{initialDelibsCount ?? 0} ready for initial</span>
+                                <span>·</span>
+                              </>
+                            )}
                             <span>{finalDelibsCount ?? 0} ready for final</span>
                           </div>
                         )
@@ -961,8 +984,9 @@ export default function DomainLeadDashboard() {
                     </Section>
                   )}
 
-                  {/* Interviews — show when any applicant has been invited */}
-                  {confidentialityRequired && currentStatus === "UnderReview" ? (
+                  {/* Interviews — Standard cycles only (InternToFull has no
+                      interview round). */}
+                  {isInternToFull ? null : confidentialityRequired && currentStatus === "UnderReview" ? (
                     <Section
                       title="Interviews"
                       badge={<span className="text-xs text-muted-foreground">hidden</span>}
