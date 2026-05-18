@@ -151,17 +151,17 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
   }
 
-  await prisma.applicationCycleStatusUpdate.create({
-    data: {
-      applicationCycleId: params.cycleId!,
-      newStatus,
-      userId: auth.user.sub,
-    },
-  });
-
-  // Fan out the "cycle is open" notification to all current-term interns the
-  // first time an InternToFull cycle is opened. internsNotifiedAt guards
-  // against re-spam if the lead bounces Open→Draft→Open during setup.
+  // For InternToFull cycles opening for the first time, prepare the
+  // notification fan-out. We pre-compute the recipient list outside the
+  // transaction (it's a pure read), then commit the status transition,
+  // notification rows, and idempotency marker atomically. The
+  // internsNotifiedAt flag guards against re-spam if the lead later bounces
+  // Open→Draft→Open during setup.
+  let fanOutPlan: {
+    userIds: string[];
+    title: string;
+    body: string;
+  } | null = null;
   if (newStatus === "Open") {
     const cycle = await prisma.applicationCycle.findUniqueOrThrow({
       where: { id: params.cycleId! },
@@ -169,27 +169,45 @@ export async function action({ request, params }: Route.ActionArgs) {
     });
     if (cycle.cycleType === "InternToFull" && !cycle.internsNotifiedAt) {
       const userIds = await eligibleInternUserIds();
-      if (userIds.length > 0) {
-        const closeText = cycle.closeDate
-          ? ` Apply by ${cycle.closeDate.toLocaleDateString("en-US", { month: "long", day: "numeric" })}.`
-          : "";
-        await prisma.notification.createMany({
-          data: userIds.map((recipientUserId) => ({
+      const closeText = cycle.closeDate
+        ? ` Apply by ${cycle.closeDate.toLocaleDateString("en-US", { month: "long", day: "numeric" })}.`
+        : "";
+      fanOutPlan = {
+        userIds,
+        title: "Intern → Full-time application is open",
+        body: `${cycle.name} is accepting conversion applications.${closeText}`,
+      };
+    }
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.applicationCycleStatusUpdate.create({
+      data: {
+        applicationCycleId: params.cycleId!,
+        newStatus,
+        userId: auth.user.sub,
+      },
+    });
+
+    if (fanOutPlan) {
+      if (fanOutPlan.userIds.length > 0) {
+        await tx.notification.createMany({
+          data: fanOutPlan.userIds.map((recipientUserId) => ({
             recipientUserId,
             createdByUserId: auth.user.sub,
             kind: "General" as const,
-            title: "Intern → Full-time application is open",
-            body: `${cycle.name} is accepting conversion applications.${closeText}`,
+            title: fanOutPlan!.title,
+            body: fanOutPlan!.body,
             link: "/intern-to-full",
           })),
         });
       }
-      await prisma.applicationCycle.update({
+      await tx.applicationCycle.update({
         where: { id: params.cycleId! },
         data: { internsNotifiedAt: new Date() },
       });
     }
-  }
+  });
 
   return Response.json({ currentStatus: newStatus });
 }

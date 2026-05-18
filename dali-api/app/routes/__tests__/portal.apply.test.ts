@@ -465,8 +465,8 @@ describe("POST /portal/apply (create-draft) — multi-challenge", () => {
       id: APP_ID,
       answers: {},
       domainApplications: [
-        { id: "da-1", challengeVersionId: CV_A2, challengeVersion: { domainId: DOMAIN_A }, answers: {} },
-        { id: "da-2", challengeVersionId: CV_B1, challengeVersion: { domainId: DOMAIN_B }, answers: {} },
+        { id: "da-1", domainId: DOMAIN_A, challengeVersionId: CV_A2, challengeVersion: { domainId: DOMAIN_A }, answers: {} },
+        { id: "da-2", domainId: DOMAIN_B, challengeVersionId: CV_B1, challengeVersion: { domainId: DOMAIN_B }, answers: {} },
       ],
     });
 
@@ -482,8 +482,8 @@ describe("POST /portal/apply (create-draft) — multi-challenge", () => {
     expect(mockPrisma.application.upsert).toHaveBeenCalledTimes(1);
     const callArg = mockPrisma.application.upsert.mock.calls[0][0];
     expect(callArg.create.domainApplications.create).toEqual([
-      { challengeVersionId: CV_A2, answers: {} },
-      { challengeVersionId: CV_B1, answers: {} },
+      { domainId: DOMAIN_A, challengeVersionId: CV_A2, answers: {} },
+      { domainId: DOMAIN_B, challengeVersionId: CV_B1, answers: {} },
     ]);
   });
 
@@ -495,7 +495,7 @@ describe("POST /portal/apply (create-draft) — multi-challenge", () => {
       id: APP_ID,
       answers: {},
       domainApplications: [
-        { id: "da-1", challengeVersionId: CV_A1, challengeVersion: { domainId: DOMAIN_A }, answers: {} },
+        { id: "da-1", domainId: DOMAIN_A, challengeVersionId: CV_A1, challengeVersion: { domainId: DOMAIN_A }, answers: {} },
       ],
     });
 
@@ -511,7 +511,7 @@ describe("POST /portal/apply (create-draft) — multi-challenge", () => {
 
     const callArg = mockPrisma.application.upsert.mock.calls[0][0];
     expect(callArg.create.domainApplications.create).toEqual([
-      { challengeVersionId: CV_A1, answers: {} },
+      { domainId: DOMAIN_A, challengeVersionId: CV_A1, answers: {} },
     ]);
   });
 
@@ -551,6 +551,7 @@ describe("POST /portal/apply (update-domains) — multi-challenge", () => {
       {
         id: "da-1",
         applicationId: APP_ID,
+        domainId: DOMAIN_A,
         challengeVersionId: CV_A1,
         challengeVersion: { domainId: DOMAIN_A },
         selected: true,
@@ -572,7 +573,7 @@ describe("POST /portal/apply (update-domains) — multi-challenge", () => {
     } as any);
 
     expect(mockPrisma.domainApplication.create).toHaveBeenCalledWith({
-      data: { applicationId: APP_ID, challengeVersionId: CV_B1, answers: {} },
+      data: { applicationId: APP_ID, domainId: DOMAIN_B, challengeVersionId: CV_B1, answers: {} },
     });
   });
 
@@ -585,6 +586,7 @@ describe("POST /portal/apply (update-domains) — multi-challenge", () => {
       {
         id: "da-1",
         applicationId: APP_ID,
+        domainId: DOMAIN_A,
         challengeVersionId: CV_A1,
         challengeVersion: { domainId: DOMAIN_A },
         selected: true,
@@ -618,6 +620,7 @@ describe("POST /portal/apply (update-domains) — multi-challenge", () => {
       {
         id: "da-1",
         applicationId: APP_ID,
+        domainId: DOMAIN_A,
         challengeVersionId: CV_A1,
         challengeVersion: { domainId: DOMAIN_A },
         selected: false,
@@ -652,6 +655,7 @@ describe("POST /portal/apply (update-domains) — multi-challenge", () => {
       {
         id: "da-1",
         applicationId: APP_ID,
+        domainId: DOMAIN_A,
         challengeVersionId: CV_A1,
         challengeVersion: { domainId: DOMAIN_A },
         selected: true,
@@ -659,6 +663,7 @@ describe("POST /portal/apply (update-domains) — multi-challenge", () => {
       {
         id: "da-2",
         applicationId: APP_ID,
+        domainId: DOMAIN_B,
         challengeVersionId: CV_B1,
         challengeVersion: { domainId: DOMAIN_B },
         selected: true,

@@ -322,13 +322,17 @@ model DomainApplication {
 
   applicationId      String
   application        Application      @relation(fields: [applicationId], references: [id])
-  // Standard cycles: required (pins challenge questions). InternToFull: null.
+  // Pins the questions the applicant answered. Always set on Standard cycles
+  // (per-domain challenge). Null on InternToFull (questions live on the
+  // Application via internToFullFormVersionId — there's nothing per-domain
+  // to pin).
   challengeVersionId String?
   challengeVersion   ChallengeVersion? @relation(fields: [challengeVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  // InternToFull cycles: required (the target domain the intern is applying
-  // to). Standard cycles: null (derive via challengeVersion.domain).
-  domainId           String?
-  domain             Domain?          @relation(fields: [domainId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  // The target Domain this DA represents. Required for every DA regardless
+  // of cycle type — single source of truth for "what domain is this for".
+  // Backfilled from challengeVersion.domainId for pre-existing Standard rows.
+  domainId           String
+  domain             Domain           @relation(fields: [domainId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   interviews Interview[]
   reviews    ApplicationReview[]
