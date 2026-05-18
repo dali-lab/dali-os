@@ -174,8 +174,8 @@ export async function action({ request, params }: Route.ActionArgs) {
         : "";
       fanOutPlan = {
         userIds,
-        title: "Intern → Full-time application is open",
-        body: `${cycle.name} is accepting conversion applications.${closeText}`,
+        title: "Fellowship application is open",
+        body: `${cycle.name} is accepting fellowship applications.${closeText}`,
       };
     }
   }

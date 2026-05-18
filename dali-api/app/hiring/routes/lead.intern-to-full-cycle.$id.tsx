@@ -9,7 +9,7 @@ import type { Prisma } from "~/generated/prisma/client";
 import { CycleSetupSection as Section } from "~/hiring/components/CycleSetupSection";
 
 export const meta: Route.MetaFunction = () => [
-  { title: "Intern → Full-time cycle · DALI OS" },
+  { title: "Fellowship cycle · DALI OS" },
 ];
 
 const MIN_POOL_SIZE = 2;
@@ -322,7 +322,7 @@ export default function InternToFullCycleSetup() {
           </Link>
           <h1 className="font-heading text-2xl font-bold text-dark-blue mt-1">{cycle.name}</h1>
           <p className="text-xs text-muted-foreground mt-1">
-            Intern → Full-time conversion cycle · {cycle.status}
+            Fellowship cycle · {cycle.status}
           </p>
         </div>
         <StatusButton cycleId={cycle.id} currentStatus={cycle.status} />
@@ -411,7 +411,13 @@ function FormVersionSection({
       {current ? (
         <div className="mb-3">
           <p className="text-sm font-medium text-dark-blue">
-            v{current.version} ({current.questions.length} question{current.questions.length === 1 ? "" : "s"})
+            {(() => {
+              const qCount = current.questions.filter((q) => q.type !== "info").length;
+              const iCount = current.questions.length - qCount;
+              const parts = [`${qCount} question${qCount === 1 ? "" : "s"}`];
+              if (iCount > 0) parts.push(`${iCount} info block${iCount === 1 ? "" : "s"}`);
+              return `v${current.version} (${parts.join(", ")})`;
+            })()}
           </p>
         </div>
       ) : (
@@ -475,8 +481,23 @@ function CreateFormVersionModal({
   function addQ() {
     setQs((prev) => [...prev, { key: crypto.randomUUID(), type: "textarea", required: false, data: { label: "" } }]);
   }
+  function addInfo() {
+    setQs((prev) => [
+      ...prev,
+      { key: crypto.randomUUID(), type: "info", required: false, data: { label: "", body: "" } },
+    ]);
+  }
   function removeQ(idx: number) {
     setQs((prev) => prev.filter((_, i) => i !== idx));
+  }
+  function move(idx: number, dir: -1 | 1) {
+    setQs((prev) => {
+      const target = idx + dir;
+      if (target < 0 || target >= prev.length) return prev;
+      const next = [...prev];
+      [next[idx], next[target]] = [next[target], next[idx]];
+      return next;
+    });
   }
   function update(
     idx: number,
@@ -499,53 +520,93 @@ function CreateFormVersionModal({
           <button onClick={onClose} className="text-muted-foreground/70">✕</button>
         </div>
         <div className="space-y-3">
-          {qs.map((q, idx) => (
-            <div key={q.key} className="border border-border rounded-md p-3 space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs text-muted-foreground">Question {idx + 1}</span>
-                <button onClick={() => removeQ(idx)} className="text-xs text-red-600 hover:underline">
-                  Remove
-                </button>
-              </div>
-              <input
-                value={q.data.label}
-                onChange={(e) => update(idx, { data: { label: e.target.value } })}
-                placeholder="Question prompt"
-                className="w-full px-2 py-1.5 text-sm border border-border rounded-md"
-              />
-              <input
-                value={q.data.description ?? ""}
-                onChange={(e) => update(idx, { data: { description: e.target.value } })}
-                placeholder="Description (optional, e.g. 'Keep it under 200 words.')"
-                className="w-full px-2 py-1.5 text-xs border border-border rounded-md text-muted-foreground"
-              />
-              <div className="flex items-center gap-4 text-xs">
-                <label className="flex items-center gap-1">
-                  <input
-                    type="checkbox"
-                    checked={q.required}
-                    onChange={(e) => update(idx, { required: e.target.checked })}
+          {qs.map((q, idx) => {
+            const isInfo = q.type === "info";
+            return (
+              <div key={q.key} className="border border-border rounded-md p-3 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs text-muted-foreground">
+                    {isInfo ? "Info text" : "Question"} {idx + 1}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => move(idx, -1)}
+                      disabled={idx === 0}
+                      className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-30"
+                      title="Move up"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      onClick={() => move(idx, 1)}
+                      disabled={idx === qs.length - 1}
+                      className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-30"
+                      title="Move down"
+                    >
+                      ↓
+                    </button>
+                    <button onClick={() => removeQ(idx)} className="text-xs text-red-600 hover:underline">
+                      Remove
+                    </button>
+                  </div>
+                </div>
+                {isInfo ? (
+                  <textarea
+                    value={q.data.body ?? ""}
+                    onChange={(e) => update(idx, { data: { body: e.target.value } })}
+                    placeholder="Free-form text shown to the applicant (e.g. instructions or context)."
+                    rows={4}
+                    className="w-full px-2 py-1.5 text-sm border border-border rounded-md"
                   />
-                  Required
-                </label>
-                <label className="flex items-center gap-1">
-                  Type:
-                  <select
-                    value={q.type}
-                    onChange={(e) => update(idx, { type: e.target.value as Question["type"] })}
-                    className="px-2 py-0.5 border border-border rounded"
-                  >
-                    <option value="textarea">Long answer</option>
-                    <option value="text">Short answer</option>
-                  </select>
-                </label>
+                ) : (
+                  <>
+                    <input
+                      value={q.data.label}
+                      onChange={(e) => update(idx, { data: { label: e.target.value } })}
+                      placeholder="Question prompt"
+                      className="w-full px-2 py-1.5 text-sm border border-border rounded-md"
+                    />
+                    <input
+                      value={q.data.description ?? ""}
+                      onChange={(e) => update(idx, { data: { description: e.target.value } })}
+                      placeholder="Description (optional, e.g. 'Keep it under 200 words.')"
+                      className="w-full px-2 py-1.5 text-xs border border-border rounded-md text-muted-foreground"
+                    />
+                    <div className="flex items-center gap-4 text-xs">
+                      <label className="flex items-center gap-1">
+                        <input
+                          type="checkbox"
+                          checked={q.required}
+                          onChange={(e) => update(idx, { required: e.target.checked })}
+                        />
+                        Required
+                      </label>
+                      <label className="flex items-center gap-1">
+                        Type:
+                        <select
+                          value={q.type}
+                          onChange={(e) => update(idx, { type: e.target.value as Question["type"] })}
+                          className="px-2 py-0.5 border border-border rounded"
+                        >
+                          <option value="textarea">Long answer</option>
+                          <option value="text">Short answer</option>
+                        </select>
+                      </label>
+                    </div>
+                  </>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
-        <button onClick={addQ} className="text-sm text-blue-700 hover:underline">
-          + Add question
-        </button>
+        <div className="flex items-center gap-4">
+          <button onClick={addQ} className="text-sm text-blue-700 hover:underline">
+            + Add question
+          </button>
+          <button onClick={addInfo} className="text-sm text-blue-700 hover:underline">
+            + Add info text
+          </button>
+        </div>
         <div className="flex justify-end gap-2 pt-3 border-t border-border">
           <button
             onClick={onClose}
@@ -555,7 +616,9 @@ function CreateFormVersionModal({
           </button>
           <button
             onClick={() => {
-              const cleaned = qs.filter((q) => q.data.label.trim());
+              const cleaned = qs.filter((q) =>
+                q.type === "info" ? (q.data.body ?? "").trim() : q.data.label.trim(),
+              );
               if (cleaned.length === 0) return;
               onSubmit(cleaned);
             }}

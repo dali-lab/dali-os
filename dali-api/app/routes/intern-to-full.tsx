@@ -14,7 +14,7 @@ import type { Question } from "~/types";
 import { ChallengeQuestionField } from "~/hiring/components/ChallengeQuestionField";
 
 export const meta: Route.MetaFunction = () => [
-  { title: "Intern → Full-time · DALI OS" },
+  { title: "Fellowship · DALI OS" },
 ];
 
 // This route is the *internal* applicant portal for InternToFull cycles. It
@@ -135,7 +135,7 @@ export async function action({ request }: Route.ActionArgs) {
 
     if (intent === "submit") {
       const missing = questions
-        .filter((q) => q.required && !isAnswered(answers[q.key]))
+        .filter((q) => q.type !== "info" && q.required && !isAnswered(answers[q.key]))
         .map((q) => q.data.label || q.key);
       if (missing.length > 0) {
         return Response.json(
@@ -237,15 +237,15 @@ export default function InternToFullRoute() {
   if (data.reason === "not-eligible") {
     return (
       <Message title="Not eligible">
-        Conversion applications are only open to members currently in an intern-program
+        Fellowship applications are only open to members currently in an intern-program
         domain (ERAS, EEJUST, WISP) during an active term.
       </Message>
     );
   }
   if (data.reason === "no-active-cycle") {
     return (
-      <Message title="No open conversion cycle">
-        There's no intern-to-full-time application cycle open right now. The hiring
+      <Message title="No open fellowship cycle">
+        There's no fellowship application cycle open right now. The hiring
         leads will let interns know when one opens.
       </Message>
     );
@@ -259,7 +259,7 @@ export default function InternToFullRoute() {
     <div className="max-w-3xl mx-auto py-10 px-6">
       <header className="mb-8">
         <h1 className="font-heading text-2xl font-bold text-dark-blue mb-1">
-          Intern → Full-time Application
+          Fellowship Application
         </h1>
         <p className="text-sm text-muted-foreground">
           {cycle.name}
@@ -286,7 +286,7 @@ export default function InternToFullRoute() {
 
       {withdrawn ? (
         <Message title="Application withdrawn">
-          You withdrew this conversion application. Contact the hiring lead if you
+          You withdrew this fellowship application. Contact the hiring lead if you
           want to reopen it.
         </Message>
       ) : submitted ? (
@@ -397,22 +397,34 @@ function FormView({
           Questions
         </h2>
         <div className="space-y-5">
-          {cycle.questions.map((q) => (
-            <div key={q.key}>
-              <label className="block text-sm font-semibold text-dark-blue mb-1">
-                {q.data.label}
-                {q.required && <span className="text-accent-coral ml-0.5">*</span>}
-              </label>
-              {q.data.description && (
-                <p className="text-xs text-muted-foreground mb-1">{q.data.description}</p>
-              )}
-              <ChallengeQuestionField
-                question={q}
-                value={answers[q.key] ?? ""}
-                onChange={(v) => setAnswers((prev) => ({ ...prev, [q.key]: v }))}
-              />
-            </div>
-          ))}
+          {cycle.questions.map((q) => {
+            if (q.type === "info") {
+              return (
+                <div
+                  key={q.key}
+                  className="rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground whitespace-pre-wrap"
+                >
+                  {q.data.body ?? ""}
+                </div>
+              );
+            }
+            return (
+              <div key={q.key}>
+                <label className="block text-sm font-semibold text-dark-blue mb-1">
+                  {q.data.label}
+                  {q.required && <span className="text-accent-coral ml-0.5">*</span>}
+                </label>
+                {q.data.description && (
+                  <p className="text-xs text-muted-foreground mb-1">{q.data.description}</p>
+                )}
+                <ChallengeQuestionField
+                  question={q}
+                  value={answers[q.key] ?? ""}
+                  onChange={(v) => setAnswers((prev) => ({ ...prev, [q.key]: v }))}
+                />
+              </div>
+            );
+          })}
         </div>
       </section>
 
@@ -460,7 +472,7 @@ function SubmittedView({ draftId }: { draftId?: string } = {}) {
           Submitted
         </h2>
         <p className="text-sm text-muted-foreground">
-          Your conversion application is in. Hiring leads will review it and reach out
+          Your fellowship application is in. Hiring leads will review it and reach out
           with a decision.
         </p>
       </div>

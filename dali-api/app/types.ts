@@ -94,7 +94,7 @@ export interface Rubric {
 
 export interface Question {
   key: string
-  type: 'text' | 'textarea' | 'select' | 'github_url' | 'figma_url' | 'drive_url' | 'file' | 'skills_rating'
+  type: 'text' | 'textarea' | 'select' | 'github_url' | 'figma_url' | 'drive_url' | 'file' | 'skills_rating' | 'info'
   required: boolean
   data: {
     label: string
@@ -103,6 +103,9 @@ export interface Question {
     afterDomains?: boolean
     accept?: string
     maxWords?: number
+    // For type === 'info': free-form prose rendered as a non-question text
+    // block in the form. Plain text; line breaks preserved.
+    body?: string
   }
 }
 
