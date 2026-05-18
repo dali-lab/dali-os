@@ -262,6 +262,35 @@ async function main() {
     data: { applicationCycleId: cycle.id, newStatus: "Open", userId: admin.id },
   });
 
+  // Mirror the route's notification fan-out (api.cycles.$cycleId.status.ts).
+  // We're bypassing the API here, so without this the in-app notification
+  // never surfaces and the intern can't see the "cycle is open" prompt.
+  // Inline rather than imported because this is the only non-route caller —
+  // if a second one shows up later, extract a shared helper.
+  const eligibleAssignments = await prisma.projectAssignment.findMany({
+    where: { termId: term.id, domain: { isInternProgram: true } },
+    select: { userId: true },
+    distinct: ["userId"],
+  });
+  if (eligibleAssignments.length > 0) {
+    const closeText = ` Apply by ${closeDate.toLocaleDateString("en-US", { month: "long", day: "numeric" })}.`;
+    await prisma.notification.createMany({
+      data: eligibleAssignments.map(({ userId }) => ({
+        recipientUserId: userId,
+        createdByUserId: admin.id,
+        kind: "General" as const,
+        title: "Intern → Full-time application is open",
+        body: `${cycle.name} is accepting conversion applications.${closeText}`,
+        link: "/intern-to-full",
+      })),
+    });
+  }
+  await prisma.applicationCycle.update({
+    where: { id: cycle.id },
+    data: { internsNotifiedAt: new Date() },
+  });
+  console.log(`✓ Notified ${eligibleAssignments.length} eligible intern(s)`);
+
   console.log("\n✓ InternToFull demo cycle is Open\n");
   console.log(`  Cycle:   /hiring/lead/intern-to-full-cycle/${cycle.id}`);
   console.log("  Apply:   /intern-to-full   (log in as intern@dali.dartmouth.edu via /dev-login-as)");
