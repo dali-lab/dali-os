@@ -105,9 +105,13 @@ export function ProjectDirectory({
           defaultTermId={currentTermId}
           partnerOrgs={partnerOrgs}
           pmEligibleMembers={pmEligibleMembers}
-          onCreated={() => {
+          onCreated={(projectId) => {
             setCreateOpen(false);
-            revalidator.revalidate();
+            if (projectId) {
+              navigate(`/projects/${projectId}`);
+            } else {
+              revalidator.revalidate();
+            }
           }}
         />
       )}

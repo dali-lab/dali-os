@@ -43,42 +43,6 @@ async function seedContent(name: string): Promise<string | null> {
     if (field === "rejectionRationale") return review.rejectionRationale;
   }
 
-  if (entity === "education-offering" && field === "description") {
-    const offering = await prisma.educationOffering.findUnique({
-      where: { id },
-      select: { id: true },
-    });
-    return offering ? "" : null;
-  }
-  if (entity === "education-session" && field === "materials") {
-    const session = await prisma.educationSession.findUnique({
-      where: { id },
-      select: { id: true },
-    });
-    return session ? "" : null;
-  }
-  if (entity === "education-assignment" && field === "instructions") {
-    const assignment = await prisma.educationAssignment.findUnique({
-      where: { id },
-      select: { id: true },
-    });
-    return assignment ? "" : null;
-  }
-  if (entity === "education-submission" && (field === "content" || field === "feedback")) {
-    const submission = await prisma.educationSubmission.findUnique({
-      where: { id },
-      select: { id: true },
-    });
-    return submission ? "" : null;
-  }
-  if (entity === "education-application" && field === "review") {
-    const application = await prisma.educationApplication.findUnique({
-      where: { id },
-      select: { id: true },
-    });
-    return application ? "" : null;
-  }
-
   if (entity === "project" && field === "overview") {
     const project = await prisma.project.findUnique({
       where: { id },
