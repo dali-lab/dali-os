@@ -110,6 +110,8 @@ describe("GET /api/hiring/domain-applications/:id/full-context", () => {
     ]);
     expect(json.reviews).toHaveLength(1);
     expect(json.reviews[0].overallRecommendation).toBe("Hire");
+    expect(json.reviews[0].feedback).toBe("good");
+    expect(json.reviews[0].rejectionRationale).toBe("");
     expect(json.decisions).toHaveLength(1);
     expect(json.decisions[0].notes).toBe("moved from Initial delibs");
     expect(json.rubric.generalCriteria).toEqual([{ key: "g1c", label: "General", maxScore: 5 }]);
