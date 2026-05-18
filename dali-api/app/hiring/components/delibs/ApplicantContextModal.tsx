@@ -271,7 +271,7 @@ function ReviewAnnotations({
   );
 }
 
-function ReviewsSection({
+export function ReviewsSection({
   reviews,
   criteria,
   fieldContext,
@@ -343,17 +343,34 @@ function ReviewsSection({
                   </div>
                 )}
 
-                {review.feedback && (
-                  <p className="mt-2 text-xs text-muted-foreground bg-muted/50 rounded p-2 whitespace-pre-wrap">
-                    {review.feedback}
-                  </p>
-                )}
-                {review.rejectionRationale && (
-                  <p className="mt-2 text-xs text-red-600 bg-red-50 rounded p-2 whitespace-pre-wrap">
-                    <span className="font-medium">Rejection rationale:</span>{" "}
-                    {review.rejectionRationale}
-                  </p>
-                )}
+                <div className="mt-2">
+                  <div className="text-[10px] uppercase tracking-wide font-semibold text-muted-foreground/70 mb-1">
+                    Internal Feedback
+                  </div>
+                  {review.feedback ? (
+                    <p className="text-xs text-muted-foreground bg-muted/50 rounded p-2 whitespace-pre-wrap">
+                      {review.feedback}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground/70 italic">
+                      No internal feedback provided
+                    </p>
+                  )}
+                </div>
+                <div className="mt-2">
+                  <div className="text-[10px] uppercase tracking-wide font-semibold text-muted-foreground/70 mb-1">
+                    Rejection Rationale
+                  </div>
+                  {review.rejectionRationale ? (
+                    <p className="text-xs text-red-600 bg-red-50 rounded p-2 whitespace-pre-wrap">
+                      {review.rejectionRationale}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground/70 italic">
+                      No rejection rationale provided
+                    </p>
+                  )}
+                </div>
                 <ReviewAnnotations
                   annotations={Array.isArray(review.annotations) ? review.annotations : []}
                   fieldContext={fieldContext}
