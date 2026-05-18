@@ -1401,6 +1401,7 @@ async function main() {
         create: [
           {
             challengeVersionId: engCv2.id,
+            domainId: engDomain.id,
             answers: {
               "eq2-00000000-0000-0000-0000-000000000001": "https://github.com/dana/fullstack-challenge",
               "eq2-00000000-0000-0000-0000-000000000003": "https://github.com/dana/collab-editor",
