@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { redirect, useLoaderData } from "react-router";
+import { redirect, useLoaderData, useRevalidator } from "react-router";
 import {
   Bell,
   Check,
@@ -104,6 +104,22 @@ function relativeTime(iso: string): string {
 
 function NotificationsPanel({ notifications }: { notifications: HomeNotification[] }) {
   const unread = notifications.filter((n) => !n.readAt).length;
+  const revalidator = useRevalidator();
+  const [markingAll, setMarkingAll] = useState(false);
+
+  async function markAllRead() {
+    setMarkingAll(true);
+    try {
+      await fetch("/api/notifications", {
+        method: "POST",
+        credentials: "include",
+      });
+      revalidator.revalidate();
+    } finally {
+      setMarkingAll(false);
+    }
+  }
+
   return (
     <aside className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
@@ -111,9 +127,21 @@ function NotificationsPanel({ notifications }: { notifications: HomeNotification
           <Bell className="w-4 h-4 text-accent-coral" />
           Notifications
         </h2>
-        <span className="text-xs text-muted-foreground">
-          {unread > 0 ? `${unread} unread` : `${notifications.length} total`}
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-muted-foreground">
+            {unread > 0 ? `${unread} unread` : `${notifications.length} total`}
+          </span>
+          {unread > 0 && (
+            <button
+              type="button"
+              onClick={markAllRead}
+              disabled={markingAll}
+              className="text-xs font-medium text-accent-coral hover:underline disabled:opacity-50"
+            >
+              {markingAll ? "Marking…" : "Mark all read"}
+            </button>
+          )}
+        </div>
       </div>
       <div className="flex flex-col gap-2">
         {notifications.length === 0 ? (
@@ -170,6 +198,17 @@ function NotificationCard({ notification }: { notification: HomeNotification }) 
           {notification.link && (
             <a
               href={notification.link}
+              onClick={() => {
+                if (!notification.readAt) {
+                  // keepalive: true so the POST survives the navigation
+                  // that the anchor's default action is about to start.
+                  fetch(`/api/notifications/${notification.id}/read`, {
+                    method: "POST",
+                    credentials: "include",
+                    keepalive: true,
+                  });
+                }
+              }}
               className="text-muted-foreground hover:text-foreground"
               aria-label="Open linked page"
             >
