@@ -54,19 +54,35 @@ export async function loader({ request }: Route.LoaderArgs) {
   const member = await prisma.dALIMember.findUnique({ where: { userId: auth.user.sub } })
   if (!member) return { ...empty, reviewerUserId: auth.user.sub }
 
-  // Anchor on the single active cycle (invariant: at most one cycle is in
-  // Open/UnderReview at a time). Older code here picked "most recent cycle
-  // that ever had an Open/UnderReview status update", which matched completed
-  // cycles that had historically passed through UnderReview.
-  const active = await getActiveCycle()
-  if (!active) return { ...empty, reviewerUserId: auth.user.sub }
+  // Anchor on an active cycle the reviewer is assigned on. After the
+  // single-active-cycle invariant became per-cycleType, two cycles can be
+  // Open/UnderReview at once (Standard + InternToFull). Check both and pick
+  // the first one the user has CycleReviewer rows on; prefer Standard. A
+  // user on both cycles will only see the Standard one here — multi-cycle
+  // review UX is a follow-up.
+  const [standardActive, internToFullActive] = await Promise.all([
+    getActiveCycle("Standard"),
+    getActiveCycle("InternToFull"),
+  ])
+  const candidates = [standardActive, internToFullActive].filter(
+    (c): c is NonNullable<typeof standardActive> => c !== null,
+  )
+  if (candidates.length === 0) return { ...empty, reviewerUserId: auth.user.sub }
 
-  // Fetch all CycleReviewer records for this member in this cycle (may span multiple domains)
-  const myReviewerIds = await prisma.cycleReviewer.findMany({
-    where: { userId: auth.user.sub, applicationCycleId: active.id },
-    select: { id: true, domainId: true },
-  })
-  if (myReviewerIds.length === 0) return { ...empty, reviewerUserId: auth.user.sub }
+  let active: (typeof candidates)[number] | null = null
+  let myReviewerIds: Array<{ id: string; domainId: string }> = []
+  for (const candidate of candidates) {
+    const ids = await prisma.cycleReviewer.findMany({
+      where: { userId: auth.user.sub, applicationCycleId: candidate.id },
+      select: { id: true, domainId: true },
+    })
+    if (ids.length > 0) {
+      active = candidate
+      myReviewerIds = ids
+      break
+    }
+  }
+  if (!active) return { ...empty, reviewerUserId: auth.user.sub }
   const reviewerIds = myReviewerIds.map(r => r.id)
   const myDomainIds = Array.from(new Set(myReviewerIds.map(r => r.domainId)))
 
