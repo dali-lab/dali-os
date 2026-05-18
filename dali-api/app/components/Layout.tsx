@@ -19,6 +19,7 @@ import {
   FolderKanban,
   UsersRound,
   Handshake,
+  Home,
   List,
   UserPlus,
   Building2,
@@ -337,6 +338,22 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
 
       {/* Areas + nested sections */}
       <nav className="flex-1 overflow-y-auto py-3 px-2 flex flex-col gap-0.5">
+        {(() => {
+          const homeActive = path === '/'
+          return (
+            <button
+              type="button"
+              title={collapsed ? 'Home' : undefined}
+              onClick={() => openInWorkspace({ url: '/', label: 'Home' })}
+              className={`flex items-center gap-3 rounded-md ${collapsed ? 'px-3 py-2 justify-center' : 'px-3 py-2'} text-sm font-heading font-semibold text-left transition-colors hover:bg-white/5 ${
+                homeActive ? 'text-white' : 'text-white/65 hover:text-white'
+              }`}
+            >
+              <Home className="w-4 h-4 flex-shrink-0" />
+              {!collapsed && <span className="truncate">Home</span>}
+            </button>
+          )
+        })()}
         {(() => {
           const calendarActive = path.startsWith('/calendar')
           return (
