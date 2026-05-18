@@ -6,12 +6,13 @@ import { requireAuth } from "~/lib/auth";
 import { isHiringLead } from "~/lib/roles";
 import type { Question } from "~/types";
 import type { Prisma } from "~/generated/prisma/client";
+import { CycleSetupSection as Section } from "~/hiring/components/CycleSetupSection";
 
 export const meta: Route.MetaFunction = () => [
   { title: "Intern → Full-time cycle · DALI OS" },
 ];
 
-const MIN_REVIEWERS_PER_DOMAIN = 2;
+const MIN_POOL_SIZE = 2;
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -86,13 +87,24 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           : null,
         isReady: d.isReady,
       })),
-      reviewers: cycle.cycleReviewers.map((r) => ({
-        id: r.id,
-        userId: r.userId,
-        domainId: r.domainId,
-        domainCode: r.domain.code,
-        displayName: [r.user.firstName, r.user.lastName].filter(Boolean).join(" ") || r.user.daliEmail || r.userId,
-      })),
+      // InternToFull uses a single reviewer pool: each member reads every DA
+      // across all target domains. The schema still stores one CycleReviewer
+      // row per (user, cycle, domain) so the existing fan-out (auto-assign,
+      // review submission) works unchanged — dedupe by userId for the UI.
+      reviewers: Array.from(
+        new Map(
+          cycle.cycleReviewers.map((r) => [
+            r.userId,
+            {
+              userId: r.userId,
+              displayName:
+                [r.user.firstName, r.user.lastName].filter(Boolean).join(" ") ||
+                r.user.daliEmail ||
+                r.userId,
+            },
+          ]),
+        ).values(),
+      ),
     },
     allDomains: allDomains.map((d) => ({ id: d.id, code: d.code, displayName: d.displayName })),
     allFormVersions: allFormVersions.map((fv) => ({
@@ -187,15 +199,49 @@ export async function action({ request, params }: Route.ActionArgs) {
           { status: 409 },
         );
       }
-      await prisma.domainApplicationCycle.deleteMany({
-        where: { applicationCycleId: cycleId, domainId: { in: toRemove } },
-      });
     }
-    if (toAdd.length > 0) {
-      await prisma.domainApplicationCycle.createMany({
-        data: toAdd.map((domainId) => ({ applicationCycleId: cycleId, domainId })),
-      });
-    }
+
+    // Pool members are stored as one CycleReviewer row per (user, cycle, domain);
+    // sync the rowset whenever the target-domain set changes so the pool
+    // invariant "every member is on every active domain" holds.
+    const poolUserIds = Array.from(
+      new Set(
+        (
+          await prisma.cycleReviewer.findMany({
+            where: { applicationCycleId: cycleId },
+            select: { userId: true },
+          })
+        ).map((r) => r.userId),
+      ),
+    );
+
+    await prisma.$transaction(async (tx) => {
+      if (toRemove.length > 0) {
+        await tx.cycleReviewer.deleteMany({
+          where: { applicationCycleId: cycleId, domainId: { in: toRemove } },
+        });
+        await tx.domainApplicationCycle.deleteMany({
+          where: { applicationCycleId: cycleId, domainId: { in: toRemove } },
+        });
+      }
+      if (toAdd.length > 0) {
+        await tx.domainApplicationCycle.createMany({
+          data: toAdd.map((domainId) => ({ applicationCycleId: cycleId, domainId })),
+        });
+        if (poolUserIds.length > 0) {
+          await tx.cycleReviewer.createMany({
+            data: toAdd.flatMap((domainId) =>
+              poolUserIds.map((userId) => ({
+                userId,
+                applicationCycleId: cycleId,
+                domainId,
+              })),
+            ),
+            skipDuplicates: true,
+          });
+        }
+      }
+    });
     return { ok: true };
   }
 
@@ -223,26 +269,37 @@ export async function action({ request, params }: Route.ActionArgs) {
     return { ok: true };
   }
 
-  if (intent === "add-reviewer") {
+  if (intent === "add-reviewer-pool") {
+    // InternToFull cycles use a single reviewer pool. Adding a pool member
+    // creates one CycleReviewer row per current target domain so the existing
+    // per-domain fan-out (auto-assign, review join keys) keeps working.
     const userId = formData.get("userId") as string;
-    const domainId = formData.get("domainId") as string;
-    await prisma.cycleReviewer.upsert({
-      where: {
-        userId_applicationCycleId_domainId: {
-          userId,
-          applicationCycleId: cycleId,
-          domainId,
-        },
-      },
-      update: {},
-      create: { userId, applicationCycleId: cycleId, domainId },
+    const targetDomains = await prisma.domainApplicationCycle.findMany({
+      where: { applicationCycleId: cycleId },
+      select: { domainId: true },
+    });
+    if (targetDomains.length === 0) {
+      return Response.json(
+        { error: "Pick at least one target domain before adding reviewers." },
+        { status: 409 },
+      );
+    }
+    await prisma.cycleReviewer.createMany({
+      data: targetDomains.map((d) => ({
+        userId,
+        applicationCycleId: cycleId,
+        domainId: d.domainId,
+      })),
+      skipDuplicates: true,
     });
     return { ok: true };
   }
 
-  if (intent === "remove-reviewer") {
-    const reviewerId = formData.get("reviewerId") as string;
-    await prisma.cycleReviewer.delete({ where: { id: reviewerId } });
+  if (intent === "remove-reviewer-pool") {
+    const userId = formData.get("userId") as string;
+    await prisma.cycleReviewer.deleteMany({
+      where: { userId, applicationCycleId: cycleId },
+    });
     return { ok: true };
   }
 
@@ -295,26 +352,6 @@ export default function InternToFullCycleSetup() {
         members={members}
       />
     </div>
-  );
-}
-
-function Section({
-  title,
-  description,
-  children,
-}: {
-  title: string;
-  description?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="rounded-2xl border border-border bg-card px-6 py-5">
-      <h2 className="font-heading text-sm font-bold uppercase tracking-wider text-dark-blue">
-        {title}
-      </h2>
-      {description && <p className="text-xs text-muted-foreground mt-1 mb-4">{description}</p>}
-      <div className={description ? "" : "mt-4"}>{children}</div>
-    </section>
   );
 }
 
@@ -441,8 +478,15 @@ function CreateFormVersionModal({
   function removeQ(idx: number) {
     setQs((prev) => prev.filter((_, i) => i !== idx));
   }
-  function update(idx: number, patch: Partial<Question>) {
-    setQs((prev) => prev.map((q, i) => (i === idx ? { ...q, ...patch, data: { ...q.data, ...(patch.data ?? {}) } } : q)));
+  function update(
+    idx: number,
+    patch: Partial<Omit<Question, "data">> & { data?: Partial<Question["data"]> },
+  ) {
+    setQs((prev) =>
+      prev.map((q, i) =>
+        i === idx ? { ...q, ...patch, data: { ...q.data, ...(patch.data ?? {}) } } : q,
+      ),
+    );
   }
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
@@ -468,6 +512,12 @@ function CreateFormVersionModal({
                 onChange={(e) => update(idx, { data: { label: e.target.value } })}
                 placeholder="Question prompt"
                 className="w-full px-2 py-1.5 text-sm border border-border rounded-md"
+              />
+              <input
+                value={q.data.description ?? ""}
+                onChange={(e) => update(idx, { data: { description: e.target.value } })}
+                placeholder="Description (optional, e.g. 'Keep it under 200 words.')"
+                className="w-full px-2 py-1.5 text-xs border border-border rounded-md text-muted-foreground"
               />
               <div className="flex items-center gap-4 text-xs">
                 <label className="flex items-center gap-1">
@@ -675,89 +725,82 @@ function ReviewersSection({
   members,
 }: {
   cycleId: string;
-  reviewers: { id: string; userId: string; domainId: string; domainCode: string; displayName: string }[];
+  reviewers: { userId: string; displayName: string }[];
   targetDomains: { domainId: string; code: string; displayName: string }[];
   members: { userId: string; displayName: string }[];
 }) {
   const fetcher = useFetcher();
-  const byDomain = new Map<string, typeof reviewers>();
-  for (const d of targetDomains) byDomain.set(d.domainId, []);
-  for (const r of reviewers) {
-    const list = byDomain.get(r.domainId) ?? [];
-    list.push(r);
-    byDomain.set(r.domainId, list);
-  }
+  const assignedIds = new Set(reviewers.map((r) => r.userId));
+  const candidates = members.filter((m) => !assignedIds.has(m.userId));
+  const meetsMin = reviewers.length >= MIN_POOL_SIZE;
+  const error =
+    fetcher.data && typeof fetcher.data === "object" && "error" in fetcher.data
+      ? (fetcher.data.error as string)
+      : null;
 
   return (
     <Section
       title="Reviewers"
-      description={`Assign at least ${MIN_REVIEWERS_PER_DOMAIN} reviewers per target domain.`}
+      description={`Single reviewer pool — every reviewer reads every application across all target domains. Add at least ${MIN_POOL_SIZE}.`}
     >
       {targetDomains.length === 0 ? (
         <p className="text-sm text-muted-foreground">Pick target domains first.</p>
       ) : (
-        <div className="space-y-4">
-          {targetDomains.map((d) => {
-            const assigned = byDomain.get(d.domainId) ?? [];
-            const assignedIds = new Set(assigned.map((r) => r.userId));
-            const candidates = members.filter((m) => !assignedIds.has(m.userId));
-            const meetsMin = assigned.length >= MIN_REVIEWERS_PER_DOMAIN;
-            return (
-              <div key={d.domainId} className="border border-border rounded-md p-3">
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-sm font-semibold text-dark-blue">{d.displayName}</h3>
-                  <span
-                    className={`text-xs px-2 py-0.5 rounded-full ${
-                      meetsMin ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-800"
-                    }`}
-                  >
-                    {assigned.length} / {MIN_REVIEWERS_PER_DOMAIN}
-                  </span>
-                </div>
-                <ul className="space-y-1 mb-2">
-                  {assigned.map((r) => (
-                    <li key={r.id} className="flex items-center justify-between text-sm">
-                      <span>{r.displayName}</span>
-                      <button
-                        onClick={() =>
-                          fetcher.submit(
-                            { intent: "remove-reviewer", reviewerId: r.id },
-                            { method: "post" },
-                          )
-                        }
-                        className="text-xs text-red-600 hover:underline"
-                      >
-                        Remove
-                      </button>
-                    </li>
-                  ))}
-                  {assigned.length === 0 && (
-                    <li className="text-xs text-muted-foreground italic">No reviewers assigned yet.</li>
-                  )}
-                </ul>
-                <select
-                  defaultValue=""
-                  onChange={(e) => {
-                    const userId = e.target.value;
-                    if (!userId) return;
+        <div className="border border-border rounded-md p-3">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-semibold text-dark-blue">Reviewer pool</h3>
+            <span
+              className={`text-xs px-2 py-0.5 rounded-full ${
+                meetsMin ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-800"
+              }`}
+            >
+              {reviewers.length} / {MIN_POOL_SIZE}
+            </span>
+          </div>
+          <ul className="space-y-1 mb-2">
+            {reviewers.map((r) => (
+              <li key={r.userId} className="flex items-center justify-between text-sm">
+                <span>{r.displayName}</span>
+                <button
+                  onClick={() =>
                     fetcher.submit(
-                      { intent: "add-reviewer", userId, domainId: d.domainId },
+                      { intent: "remove-reviewer-pool", userId: r.userId },
                       { method: "post" },
-                    );
-                    e.currentTarget.value = "";
-                  }}
-                  className="text-sm px-2 py-1.5 border border-border rounded"
+                    )
+                  }
+                  className="text-xs text-red-600 hover:underline"
                 >
-                  <option value="">+ Add reviewer…</option>
-                  {candidates.map((m) => (
-                    <option key={m.userId} value={m.userId}>
-                      {m.displayName}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            );
-          })}
+                  Remove
+                </button>
+              </li>
+            ))}
+            {reviewers.length === 0 && (
+              <li className="text-xs text-muted-foreground italic">No reviewers in the pool yet.</li>
+            )}
+          </ul>
+          <select
+            defaultValue=""
+            onChange={(e) => {
+              const userId = e.target.value;
+              if (!userId) return;
+              fetcher.submit(
+                { intent: "add-reviewer-pool", userId },
+                { method: "post" },
+              );
+              e.currentTarget.value = "";
+            }}
+            className="text-sm px-2 py-1.5 border border-border rounded"
+          >
+            <option value="">+ Add reviewer…</option>
+            {candidates.map((m) => (
+              <option key={m.userId} value={m.userId}>
+                {m.displayName}
+              </option>
+            ))}
+          </select>
+          {error && (
+            <p className="mt-2 text-xs text-red-600">{error}</p>
+          )}
         </div>
       )}
     </Section>
