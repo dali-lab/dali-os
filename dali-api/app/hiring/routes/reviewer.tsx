@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Link, useLoaderData, useRevalidator, useSearchParams } from 'react-router'
+import { Link, useLoaderData, useRevalidator } from 'react-router'
 import {
   ChevronRight,
   ChevronDown,
@@ -11,6 +11,7 @@ import {
   ListOrdered,
 } from 'lucide-react'
 import { getReviewStatus } from '~/hiring/lib/review-status'
+import { CycleSelector } from '~/hiring/components/CycleSelector'
 import { getActiveCycle, cycleStatusToStage, inferUnderReviewStage } from '~/hiring/lib/cycles'
 import { getCycleConfidentialityState } from '~/hiring/lib/confidentiality'
 import { ConfidentialityGate } from '~/hiring/components/ConfidentialityGate'
@@ -259,48 +260,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     }
 }
 
-const CYCLE_TYPE_LABELS: Record<string, string> = {
-  Standard: "Standard hire",
-  InternToFull: "Intern → Full-time",
-}
-
-function CyclePicker({
-  cycles,
-  activeId,
-}: {
-  cycles: Array<{ id: string; name: string; cycleType: string }>
-  activeId: string
-}) {
-  const [searchParams, setSearchParams] = useSearchParams()
-  if (cycles.length < 2) return null
-  return (
-    <div className="inline-flex rounded-md border border-border bg-card p-0.5 text-xs">
-      {cycles.map((c) => {
-        const isActive = c.id === activeId
-        return (
-          <button
-            key={c.id}
-            type="button"
-            onClick={() => {
-              const next = new URLSearchParams(searchParams)
-              next.set("cycle", c.id)
-              setSearchParams(next, { replace: true })
-            }}
-            className={`px-3 py-1.5 rounded font-medium transition ${
-              isActive
-                ? "bg-blue-600 text-white"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-            title={c.name}
-          >
-            {CYCLE_TYPE_LABELS[c.cycleType] ?? c.cycleType}
-          </button>
-        )
-      })}
-    </div>
-  )
-}
-
 export default function ReviewerDashboard() {
   const {
     activeCycle,
@@ -495,7 +454,7 @@ export default function ReviewerDashboard() {
             Manage your hiring responsibilities.
           </p>
         </div>
-        <CyclePicker cycles={availableCycles} activeId={activeCycle.id} />
+        <CycleSelector cycles={availableCycles} activeId={activeCycle.id} />
       </div>
 
       <Section

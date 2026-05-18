@@ -7,6 +7,7 @@ import { sendEmail } from "~/lib/gmail";
 import { getApplicationsGmailRefreshToken } from "~/lib/gmail-integration";
 import { renderForSlot, notificationSlot } from "~/hiring/lib/email-variables";
 import { getActiveCycle } from "~/hiring/lib/cycles";
+import { reconcileDomainApplications } from "~/hiring/lib/domain-application";
 import { checkGitHubUrl, checkFigmaUrl, checkDriveUrl } from "~/hiring/lib/submission-check";
 import type { SubmissionCheckResult } from "~/hiring/lib/submission-check";
 import { validateWordLimits } from "~/lib/word-count";
@@ -239,57 +240,11 @@ export async function action({ request }: Route.ActionArgs) {
     const newDomainIds = validSelections.map(s => s.domainId);
     const desiredCvByDomain = new Map(validSelections.map(s => [s.domainId, s.challengeVersionId]));
 
-    // Existing DAs for this application, keyed by domainId
-    const existing = await prisma.domainApplication.findMany({
-      where: { applicationId },
-      include: { challengeVersion: { select: { domainId: true } } },
+    await reconcileDomainApplications({
+      applicationId,
+      domainIds: newDomainIds,
+      challengeVersionByDomain: desiredCvByDomain,
     });
-    const existingByDomain = new Map<string, (typeof existing)[number]>();
-    for (const da of existing) {
-      const did = da.domainId;
-      if (did) existingByDomain.set(did, da);
-    }
-
-    // For each desired (domainId, cvId): create new DA, reselect, or switch CV.
-    for (const sel of validSelections) {
-      const ex = existingByDomain.get(sel.domainId);
-      if (!ex) {
-        await prisma.domainApplication.create({
-          data: {
-            applicationId,
-            domainId: sel.domainId,
-            challengeVersionId: sel.challengeVersionId,
-            answers: {},
-          },
-        });
-        continue;
-      }
-      const updates: { selected?: boolean; challengeVersionId?: string; answers?: any } = {};
-      if (!ex.selected) updates.selected = true;
-      if (ex.challengeVersionId !== sel.challengeVersionId) {
-        // Switching the picked challenge wipes that domain's answers — the
-        // question set is different. The applicant is warned client-side.
-        updates.challengeVersionId = sel.challengeVersionId;
-        updates.answers = {};
-      }
-      if (Object.keys(updates).length > 0) {
-        await prisma.domainApplication.update({
-          where: { id: ex.id },
-          data: updates,
-        });
-      }
-    }
-
-    // Domains the applicant deselected — preserve answers but mark unselected.
-    const toDeselectIds = existing
-      .filter(da => da.domainId && !newDomainIds.includes(da.domainId))
-      .map(da => da.id);
-    if (toDeselectIds.length > 0) {
-      await prisma.domainApplication.updateMany({
-        where: { id: { in: toDeselectIds } },
-        data: { selected: false },
-      });
-    }
 
     // Return full updated draft
     const updatedApp = await prisma.application.findUnique({

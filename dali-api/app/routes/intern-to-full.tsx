@@ -5,11 +5,13 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { requireMember } from "~/lib/roles";
 import { getActiveCycle } from "~/hiring/lib/cycles";
+import { reconcileDomainApplications } from "~/hiring/lib/domain-application";
 import {
   isInternToFullEligible,
   currentInternDomains,
 } from "~/hiring/lib/intern-eligibility";
 import type { Question } from "~/types";
+import { ChallengeQuestionField } from "~/hiring/components/ChallengeQuestionField";
 
 export const meta: Route.MetaFunction = () => [
   { title: "Intern → Full-time · DALI OS" },
@@ -172,40 +174,10 @@ export async function action({ request }: Route.ActionArgs) {
       },
     });
 
-    // Reconcile DomainApplication rows: create missing, reselect deselected,
-    // deselect (preserve row) any no-longer-picked.
-    const existing = await prisma.domainApplication.findMany({
-      where: { applicationId: application.id },
-      select: { id: true, domainId: true, selected: true },
+    await reconcileDomainApplications({
+      applicationId: application.id,
+      domainIds: selectedDomainIds,
     });
-    const byDomain = new Map(existing.filter((da) => da.domainId).map((da) => [da.domainId!, da]));
-
-    for (const domainId of selectedDomainIds) {
-      const ex = byDomain.get(domainId);
-      if (!ex) {
-        await prisma.domainApplication.create({
-          data: {
-            applicationId: application.id,
-            domainId,
-            answers: {},
-          },
-        });
-      } else if (!ex.selected) {
-        await prisma.domainApplication.update({
-          where: { id: ex.id },
-          data: { selected: true },
-        });
-      }
-    }
-    const toDeselect = existing
-      .filter((da) => da.domainId && !selectedDomainIds.includes(da.domainId) && da.selected)
-      .map((da) => da.id);
-    if (toDeselect.length > 0) {
-      await prisma.domainApplication.updateMany({
-        where: { id: { in: toDeselect } },
-        data: { selected: false },
-      });
-    }
 
     if (intent === "submit") {
       const alreadySubmitted = await prisma.applicationStatusUpdate.findFirst({
@@ -426,12 +398,20 @@ function FormView({
         </h2>
         <div className="space-y-5">
           {cycle.questions.map((q) => (
-            <QuestionField
-              key={q.key}
-              question={q}
-              value={answers[q.key] ?? ""}
-              onChange={(v) => setAnswers((prev) => ({ ...prev, [q.key]: v }))}
-            />
+            <div key={q.key}>
+              <label className="block text-sm font-semibold text-dark-blue mb-1">
+                {q.data.label}
+                {q.required && <span className="text-accent-coral ml-0.5">*</span>}
+              </label>
+              {q.data.description && (
+                <p className="text-xs text-muted-foreground mb-1">{q.data.description}</p>
+              )}
+              <ChallengeQuestionField
+                question={q}
+                value={answers[q.key] ?? ""}
+                onChange={(v) => setAnswers((prev) => ({ ...prev, [q.key]: v }))}
+              />
+            </div>
           ))}
         </div>
       </section>
@@ -465,50 +445,6 @@ function FormView({
           {busy && fetcher.formData?.get("intent") === "submit" ? "Submitting…" : "Submit"}
         </button>
       </div>
-    </div>
-  );
-}
-
-function QuestionField({
-  question,
-  value,
-  onChange,
-}: {
-  question: Question;
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  const label = (
-    <div className="mb-1.5">
-      <span className="text-sm font-semibold text-dark-blue">{question.data.label}</span>
-      {question.required && <span className="text-red-500 ml-1">*</span>}
-      {question.data.description && (
-        <p className="text-xs text-muted-foreground mt-1">{question.data.description}</p>
-      )}
-    </div>
-  );
-  if (question.type === "textarea") {
-    return (
-      <div>
-        {label}
-        <textarea
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          rows={5}
-          className="w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral/30 focus:border-accent-coral"
-        />
-      </div>
-    );
-  }
-  return (
-    <div>
-      {label}
-      <input
-        type="text"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral/30 focus:border-accent-coral"
-      />
     </div>
   );
 }
