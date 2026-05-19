@@ -873,6 +873,7 @@ type CoverageData = {
 }
 
 function CoverageHeatmap({ coverage }: { coverage: CoverageData | null }) {
+  const [showEmpty, setShowEmpty] = useState(false)
   if (!coverage) {
     return (
       <div className="bg-card rounded-xl border border-border shadow-sm p-6 text-sm text-muted-foreground">
@@ -908,7 +909,7 @@ function CoverageHeatmap({ coverage }: { coverage: CoverageData | null }) {
     byDay.get(dayKey)!.push(slot)
   }
   const days = Array.from(byDay.keys()).sort()
-  const times = Array.from(timeKeys).sort()
+  const allTimes = Array.from(timeKeys).sort()
 
   // Lookup: (dayKey, timeKey) -> slot
   const lookup = new Map<string, typeof coverage.slots[number]>()
@@ -918,6 +919,17 @@ function CoverageHeatmap({ coverage }: { coverage: CoverageData | null }) {
     const timeKey = d.toLocaleTimeString('en-US', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false })
     lookup.set(`${dayKey}|${timeKey}`, slot)
   }
+
+  // Rows where at least one day has free interviewers or a booked interview.
+  // These are the "interesting" rows — most slots end up all-zero.
+  const activeTimes = allTimes.filter((time) =>
+    days.some((day) => {
+      const s = lookup.get(`${day}|${time}`)
+      return s && (s.freeInterviewerCount > 0 || s.bookedInterviewCount > 0)
+    }),
+  )
+  const hiddenCount = allTimes.length - activeTimes.length
+  const times = showEmpty ? allTimes : activeTimes
 
   // Totals
   const totalFreeHours = coverage.slots.reduce((sum, s) => sum + (s.freeInterviewerCount * coverage.slotDurationMinutes) / 60, 0)
@@ -949,20 +961,29 @@ function CoverageHeatmap({ coverage }: { coverage: CoverageData | null }) {
     <div className="bg-card rounded-xl border border-border shadow-sm p-4 sm:p-6 space-y-4">
       <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
         <h3 className="text-sm font-bold text-foreground/80">Lab-wide availability coverage</h3>
-        <div className="text-xs text-muted-foreground">
+        <div className="text-xs text-muted-foreground flex-1">
           <span className="font-semibold text-foreground">{totalFreeHours.toFixed(0)}</span> interviewer-hours offered ·{' '}
           <span className="font-semibold text-foreground">{totalBooked}</span> interview{totalBooked === 1 ? '' : 's'} booked ·{' '}
           <span className="font-semibold text-foreground">{coverage.totalInterviewers ?? 0}</span> interviewer{coverage.totalInterviewers === 1 ? '' : 's'} ·{' '}
           {slotHours < 1 ? `${coverage.slotDurationMinutes} min` : `${slotHours} h`} slots
         </div>
+        {hiddenCount > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowEmpty((v) => !v)}
+            className="text-xs text-blue-700 hover:text-blue-800 hover:underline"
+          >
+            {showEmpty ? `Hide ${hiddenCount} empty slot${hiddenCount === 1 ? '' : 's'}` : `Show ${hiddenCount} empty slot${hiddenCount === 1 ? '' : 's'}`}
+          </button>
+        )}
       </div>
       <div className="overflow-x-auto">
-        <table className="text-xs border-separate border-spacing-0.5">
+        <table className="text-[11px] border-separate border-spacing-[2px] leading-none">
           <thead>
             <tr>
-              <th className="text-left px-2 py-1 text-muted-foreground font-medium sticky left-0 bg-card z-10">Time</th>
+              <th className="text-left px-1.5 py-0.5 text-muted-foreground font-medium sticky left-0 bg-card z-10">Time</th>
               {days.map((day) => (
-                <th key={day} className="px-2 py-1 text-center font-semibold text-foreground/80 whitespace-nowrap">
+                <th key={day} className="px-1.5 py-0.5 text-center font-semibold text-foreground/80 whitespace-nowrap">
                   {formatDay(day)}
                 </th>
               ))}
@@ -971,13 +992,13 @@ function CoverageHeatmap({ coverage }: { coverage: CoverageData | null }) {
           <tbody>
             {times.map((time) => (
               <tr key={time}>
-                <td className="px-2 py-1 text-right text-muted-foreground font-medium sticky left-0 bg-card whitespace-nowrap">
+                <td className="px-1.5 py-0.5 text-right text-muted-foreground font-medium sticky left-0 bg-card whitespace-nowrap">
                   {formatTime(time)}
                 </td>
                 {days.map((day) => {
                   const slot = lookup.get(`${day}|${time}`)
                   if (!slot) {
-                    return <td key={`${day}-${time}`} className="px-2 py-1 bg-transparent" />
+                    return <td key={`${day}-${time}`} className="px-1.5 py-0.5 bg-transparent" />
                   }
                   const free = slot.freeInterviewerCount
                   const booked = slot.bookedInterviewCount
@@ -985,7 +1006,7 @@ function CoverageHeatmap({ coverage }: { coverage: CoverageData | null }) {
                     <td
                       key={`${day}-${time}`}
                       title={`${free} interviewer${free === 1 ? '' : 's'} free${booked > 0 ? ` · ${booked} booked` : ''}`}
-                      className={`px-2 py-1 text-center font-semibold rounded ${cellColor(free)} relative min-w-[44px]`}
+                      className={`px-1.5 py-0.5 text-center font-semibold rounded ${cellColor(free)} relative min-w-[36px]`}
                     >
                       {free}
                       {booked > 0 && (
