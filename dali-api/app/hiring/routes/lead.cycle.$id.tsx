@@ -1804,7 +1804,15 @@ export default function HiringLeadCycleDetails() {
               )}
             </ul>
           </div>
+        </div>
+      )}
 
+      {/* ── Interviewers Roster (shown under Interview Setup) ── */}
+      {tab === 'config' && (
+        <div className="space-y-4 mt-4">
+          <h3 className="text-base font-bold text-foreground/90 flex items-center gap-2">
+            <Users className="w-4 h-4" /> Interviewers
+          </h3>
           {/* Add interviewer form */}
           <div className="bg-card rounded-xl border border-border shadow-sm p-4 sm:p-6">
             <h3 className="text-sm font-bold text-foreground/80 mb-4 flex items-center gap-2">
