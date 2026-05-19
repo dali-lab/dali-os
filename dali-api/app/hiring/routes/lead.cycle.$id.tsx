@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, Fragment } from 'react'
 import { Form, Link, useParams, useLoaderData, redirect } from 'react-router'
 import type { Route } from "./+types/lead.cycle.$id";
 import { prisma } from "~/lib/db";
@@ -848,6 +848,172 @@ function formatHour(h: number) {
   return `${h - 12} PM`
 }
 
+// ─── Coverage Heatmap ────────────────────────────────────────────────────────
+
+type CoverageData = {
+  configured: boolean
+  slots: { startTime: string; endTime: string; freeInterviewerCount: number; bookedInterviewCount: number }[]
+  slotDurationMinutes: number
+  timezone: string
+  totalInterviewers?: number
+}
+
+function CoverageHeatmap({ coverage }: { coverage: CoverageData | null }) {
+  if (!coverage) {
+    return (
+      <div className="bg-card rounded-xl border border-border shadow-sm p-6 text-sm text-muted-foreground">
+        Loading availability coverage…
+      </div>
+    )
+  }
+  if (!coverage.configured) {
+    return (
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-900">
+        Set an interview window and slot length in <span className="font-semibold">Interview Config</span> to see availability coverage.
+      </div>
+    )
+  }
+  if (coverage.slots.length === 0) {
+    return (
+      <div className="bg-muted/30 border border-border rounded-xl p-4 text-sm text-muted-foreground">
+        No future slots fall inside the configured interview window.
+      </div>
+    )
+  }
+
+  const tz = coverage.timezone
+  // Group slots by local date (YYYY-MM-DD in cycle timezone).
+  const byDay = new Map<string, typeof coverage.slots>()
+  const timeKeys = new Set<string>()
+  for (const slot of coverage.slots) {
+    const d = new Date(slot.startTime)
+    const dayKey = d.toLocaleDateString('en-CA', { timeZone: tz }) // YYYY-MM-DD
+    const timeKey = d.toLocaleTimeString('en-US', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false })
+    timeKeys.add(timeKey)
+    if (!byDay.has(dayKey)) byDay.set(dayKey, [])
+    byDay.get(dayKey)!.push(slot)
+  }
+  const days = Array.from(byDay.keys()).sort()
+  const times = Array.from(timeKeys).sort()
+
+  // Lookup: (dayKey, timeKey) -> slot
+  const lookup = new Map<string, typeof coverage.slots[number]>()
+  for (const slot of coverage.slots) {
+    const d = new Date(slot.startTime)
+    const dayKey = d.toLocaleDateString('en-CA', { timeZone: tz })
+    const timeKey = d.toLocaleTimeString('en-US', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false })
+    lookup.set(`${dayKey}|${timeKey}`, slot)
+  }
+
+  // Totals
+  const totalFreeHours = coverage.slots.reduce((sum, s) => sum + (s.freeInterviewerCount * coverage.slotDurationMinutes) / 60, 0)
+  const totalBooked = coverage.slots.reduce((sum, s) => sum + s.bookedInterviewCount, 0)
+  const slotHours = coverage.slotDurationMinutes / 60
+
+  function cellColor(freeCount: number) {
+    if (freeCount === 0) return 'bg-muted/40 text-muted-foreground/60'
+    if (freeCount <= 2) return 'bg-amber-100 text-amber-900'
+    if (freeCount <= 4) return 'bg-emerald-100 text-emerald-900'
+    if (freeCount <= 6) return 'bg-emerald-200 text-emerald-900'
+    return 'bg-emerald-300 text-emerald-950'
+  }
+
+  function formatTime(timeKey: string) {
+    const [hh, mm] = timeKey.split(':').map(Number)
+    const period = hh >= 12 ? 'p' : 'a'
+    const h12 = hh % 12 === 0 ? 12 : hh % 12
+    return mm === 0 ? `${h12}${period}` : `${h12}:${String(mm).padStart(2, '0')}${period}`
+  }
+
+  function formatDay(dayKey: string) {
+    // dayKey is YYYY-MM-DD; parse as UTC noon to avoid TZ drift then format.
+    const d = new Date(`${dayKey}T12:00:00Z`)
+    return d.toLocaleDateString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric', timeZone: tz })
+  }
+
+  return (
+    <div className="bg-card rounded-xl border border-border shadow-sm p-4 sm:p-6 space-y-4">
+      <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
+        <h3 className="text-sm font-bold text-foreground/80">Lab-wide availability coverage</h3>
+        <div className="text-xs text-muted-foreground">
+          <span className="font-semibold text-foreground">{totalFreeHours.toFixed(0)}</span> interviewer-hours offered ·{' '}
+          <span className="font-semibold text-foreground">{totalBooked}</span> interview{totalBooked === 1 ? '' : 's'} booked ·{' '}
+          <span className="font-semibold text-foreground">{coverage.totalInterviewers ?? 0}</span> interviewer{coverage.totalInterviewers === 1 ? '' : 's'} ·{' '}
+          {slotHours < 1 ? `${coverage.slotDurationMinutes} min` : `${slotHours} h`} slots
+        </div>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="text-xs border-separate border-spacing-0.5">
+          <thead>
+            <tr>
+              <th className="text-left px-2 py-1 text-muted-foreground font-medium sticky left-0 bg-card z-10">Time</th>
+              {days.map((day) => (
+                <th key={day} className="px-2 py-1 text-center font-semibold text-foreground/80 whitespace-nowrap">
+                  {formatDay(day)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {times.map((time) => (
+              <tr key={time}>
+                <td className="px-2 py-1 text-right text-muted-foreground font-medium sticky left-0 bg-card whitespace-nowrap">
+                  {formatTime(time)}
+                </td>
+                {days.map((day) => {
+                  const slot = lookup.get(`${day}|${time}`)
+                  if (!slot) {
+                    return <td key={`${day}-${time}`} className="px-2 py-1 bg-transparent" />
+                  }
+                  const free = slot.freeInterviewerCount
+                  const booked = slot.bookedInterviewCount
+                  return (
+                    <td
+                      key={`${day}-${time}`}
+                      title={`${free} interviewer${free === 1 ? '' : 's'} free${booked > 0 ? ` · ${booked} booked` : ''}`}
+                      className={`px-2 py-1 text-center font-semibold rounded ${cellColor(free)} relative min-w-[44px]`}
+                    >
+                      {free}
+                      {booked > 0 && (
+                        <span className="absolute top-0.5 right-0.5 flex gap-0.5">
+                          {Array.from({ length: Math.min(booked, 3) }).map((_, i) => (
+                            <span key={i} className="w-1.5 h-1.5 rounded-full bg-blue-600" />
+                          ))}
+                          {booked > 3 && <span className="text-[9px] text-blue-700 font-bold leading-none">+</span>}
+                        </span>
+                      )}
+                    </td>
+                  )
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+        <span className="inline-flex items-center gap-1.5">
+          <span className="w-3 h-3 rounded bg-muted/40 border border-border" />0
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="w-3 h-3 rounded bg-amber-100" />1–2 thin
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="w-3 h-3 rounded bg-emerald-100" />3–4
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="w-3 h-3 rounded bg-emerald-200" />5–6
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="w-3 h-3 rounded bg-emerald-300" />7+
+        </span>
+        <span className="inline-flex items-center gap-1.5 ml-2">
+          <span className="w-1.5 h-1.5 rounded-full bg-blue-600" />booked
+        </span>
+      </div>
+    </div>
+  )
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function HiringLeadCycleDetails() {
@@ -881,9 +1047,19 @@ export default function HiringLeadCycleDetails() {
   const [interviewers, setInterviewers] = useState<any[]>([])
   const [newInterviewerMemberId, setNewInterviewerMemberId] = useState('')
   const [newInterviewerDomainId, setNewInterviewerDomainId] = useState('')
+  const [expandedInterviewers, setExpandedInterviewers] = useState<Set<string>>(new Set())
 
   // ── Interviews state ──
   const [interviews, setInterviews] = useState<InterviewRow[]>([])
+
+  // ── Coverage heatmap state ──
+  const [coverage, setCoverage] = useState<{
+    configured: boolean
+    slots: { startTime: string; endTime: string; freeInterviewerCount: number; bookedInterviewCount: number }[]
+    slotDurationMinutes: number
+    timezone: string
+    totalInterviewers?: number
+  } | null>(null)
 
   // ── Cycle status ──
   const [cycleStatus, setCycleStatus] = useState<string>('Draft')
@@ -974,6 +1150,14 @@ export default function HiringLeadCycleDetails() {
     } catch {}
   }, [cycleId])
 
+  const loadCoverage = useCallback(async () => {
+    if (!cycleId) return
+    try {
+      const r = await fetch(`/api/hiring/cycles/${cycleId}/coverage`, { credentials: 'include' })
+      setCoverage(r.ok ? await r.json() : null)
+    } catch {}
+  }, [cycleId])
+
   async function advanceStatus(force = false) {
     if (!cycleId) return
     const idx = STATUS_FLOW.indexOf(cycleStatus as any)
@@ -1015,7 +1199,8 @@ export default function HiringLeadCycleDetails() {
     loadDomains()
     loadInterviewers()
     loadInterviews()
-  }, [cycleId, loadStatus, loadConfig, loadReviewers, loadMembers, loadDomains, loadInterviewers, loadInterviews])
+    loadCoverage()
+  }, [cycleId, loadStatus, loadConfig, loadReviewers, loadMembers, loadDomains, loadInterviewers, loadInterviews, loadCoverage])
 
   // ── Handlers ──
 
@@ -1667,13 +1852,31 @@ export default function HiringLeadCycleDetails() {
           </div>
 
           {/* Interviewer roster table */}
+          {interviewers.length > 0 && (() => {
+            const submitted = interviewers.filter((i: any) => (i.availabilityBlockCount ?? 0) > 0).length
+            const total = interviewers.length
+            const allSubmitted = submitted === total
+            return (
+              <div className={`rounded-lg px-4 py-3 text-sm border ${
+                allSubmitted
+                  ? 'bg-green-50 border-green-200 text-green-900'
+                  : 'bg-amber-50 border-amber-200 text-amber-900'
+              }`}>
+                <span className="font-semibold">{submitted} of {total}</span> interviewer{total === 1 ? '' : 's'} ha{submitted === 1 ? 's' : 've'} submitted availability
+                {!allSubmitted && total - submitted > 0 && (
+                  <span className="text-amber-800/80"> · {total - submitted} pending</span>
+                )}
+              </div>
+            )
+          })()}
           <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
             <div className="hidden sm:block overflow-x-auto">
-            <table className="w-full text-sm min-w-[480px]">
+            <table className="w-full text-sm min-w-[640px]">
               <thead className="bg-muted/50 border-b border-border">
                 <tr>
                   <th className="text-left px-4 py-3 font-bold text-foreground/80">Interviewer</th>
                   <th className="text-left px-4 py-3 font-bold text-foreground/80">Domain</th>
+                  <th className="text-left px-4 py-3 font-bold text-foreground/80">Availability</th>
                   <th className="text-right px-4 py-3 font-bold text-foreground/80">Actions</th>
                 </tr>
               </thead>
@@ -1681,20 +1884,85 @@ export default function HiringLeadCycleDetails() {
                 {interviewers.map((i: any) => {
                   const m = i.user
                   const name = m?.firstName && m?.lastName ? `${m.firstName} ${m.lastName}` : m?.daliEmail ?? i.userId
+                  const hours = i.availabilityHours ?? 0
+                  const blocks = i.availabilityBlockCount ?? 0
+                  const hasAvail = blocks > 0
+                  const isExpanded = expandedInterviewers.has(i.id)
+                  const toggle = () => setExpandedInterviewers(prev => {
+                    const next = new Set(prev)
+                    if (next.has(i.id)) next.delete(i.id); else next.add(i.id)
+                    return next
+                  })
                   return (
-                    <tr key={i.id} className="hover:bg-muted/50 transition">
-                      <td className="px-4 py-3 font-medium text-foreground">{name}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{i.domain?.name ?? ''}</td>
-                      <td className="px-4 py-3 text-right">
-                        <button onClick={() => removeInterviewer(i.id)} className="text-red-500 hover:text-red-700 transition">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </td>
-                    </tr>
+                    <Fragment key={i.id}>
+                      <tr className="hover:bg-muted/50 transition">
+                        <td className="px-4 py-3 font-medium text-foreground">
+                          {hasAvail ? (
+                            <button onClick={toggle} className="inline-flex items-center gap-1.5 text-left hover:underline">
+                              <span className={`text-muted-foreground transition-transform inline-block ${isExpanded ? 'rotate-90' : ''}`}>▸</span>
+                              {name}
+                            </button>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="w-2" />
+                              {name}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-muted-foreground">{i.domain?.name ?? ''}</td>
+                        <td className="px-4 py-3">
+                          {hasAvail ? (
+                            <span className="inline-flex items-center gap-1.5 text-green-700">
+                              <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                              {hours.toFixed(1)}h <span className="text-muted-foreground">({blocks} block{blocks === 1 ? '' : 's'})</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 text-amber-700">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                              Not submitted
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <button onClick={() => removeInterviewer(i.id)} className="text-red-500 hover:text-red-700 transition">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                      {isExpanded && hasAvail && (
+                        <tr className="bg-muted/20">
+                          <td colSpan={4} className="px-4 py-3">
+                            <div className="ml-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-1.5 text-xs">
+                              {(i.availabilityBlocks ?? []).map((b: any, idx: number) => {
+                                const start = new Date(b.startTime)
+                                const end = new Date(b.endTime)
+                                const sameDay = start.toDateString() === end.toDateString()
+                                const dur = (end.getTime() - start.getTime()) / (1000 * 60 * 60)
+                                return (
+                                  <div key={idx} className="flex items-baseline gap-2">
+                                    <span className="font-medium text-foreground whitespace-nowrap">
+                                      {start.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+                                    </span>
+                                    <span className="text-muted-foreground">
+                                      {start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+                                      {' – '}
+                                      {sameDay
+                                        ? end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+                                        : `${end.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`}
+                                    </span>
+                                    <span className="text-muted-foreground/60">({dur.toFixed(1)}h)</span>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   )
                 })}
                 {interviewers.length === 0 && (
-                  <tr><td colSpan={3} className="px-4 py-8 text-center text-muted-foreground/70"><span className="sr-only">Table empty: </span>No interviewers assigned yet.</td></tr>
+                  <tr><td colSpan={4} className="px-4 py-8 text-center text-muted-foreground/70"><span className="sr-only">Table empty: </span>No interviewers assigned yet.</td></tr>
                 )}
               </tbody>
             </table>
@@ -1703,19 +1971,69 @@ export default function HiringLeadCycleDetails() {
               {interviewers.map((i: any) => {
                 const m = i.user
                 const name = m?.firstName && m?.lastName ? `${m.firstName} ${m.lastName}` : m?.daliEmail ?? i.userId
+                const hours = i.availabilityHours ?? 0
+                const blocks = i.availabilityBlockCount ?? 0
+                const hasAvail = blocks > 0
+                const isExpanded = expandedInterviewers.has(i.id)
+                const toggle = () => setExpandedInterviewers(prev => {
+                  const next = new Set(prev)
+                  if (next.has(i.id)) next.delete(i.id); else next.add(i.id)
+                  return next
+                })
                 return (
-                  <li key={i.id} className="px-4 py-3 flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="font-medium text-foreground truncate">{name}</div>
-                      <div className="text-xs text-muted-foreground mt-0.5">{i.domain?.name ?? ''}</div>
+                  <li key={i.id} className="px-4 py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <button
+                        onClick={hasAvail ? toggle : undefined}
+                        className="min-w-0 text-left flex-1"
+                        disabled={!hasAvail}
+                      >
+                        <div className="font-medium text-foreground truncate flex items-center gap-1.5">
+                          {hasAvail && <span className={`text-muted-foreground transition-transform inline-block ${isExpanded ? 'rotate-90' : ''}`}>▸</span>}
+                          {name}
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-0.5">{i.domain?.name ?? ''}</div>
+                        <div className="text-xs mt-1">
+                          {hasAvail ? (
+                            <span className="inline-flex items-center gap-1.5 text-green-700">
+                              <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                              {hours.toFixed(1)}h · {blocks} block{blocks === 1 ? '' : 's'}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 text-amber-700">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                              No availability yet
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                      <button
+                        onClick={() => removeInterviewer(i.id)}
+                        aria-label="Remove interviewer"
+                        className="p-2 -m-2 text-red-500 hover:text-red-700 transition flex-shrink-0"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
-                    <button
-                      onClick={() => removeInterviewer(i.id)}
-                      aria-label="Remove interviewer"
-                      className="p-2 -m-2 text-red-500 hover:text-red-700 transition flex-shrink-0"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    {isExpanded && hasAvail && (
+                      <div className="mt-2 pl-4 space-y-1 text-xs">
+                        {(i.availabilityBlocks ?? []).map((b: any, idx: number) => {
+                          const start = new Date(b.startTime)
+                          const end = new Date(b.endTime)
+                          const sameDay = start.toDateString() === end.toDateString()
+                          return (
+                            <div key={idx} className="text-muted-foreground">
+                              <span className="font-medium text-foreground">
+                                {start.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+                              </span>{' '}
+                              {start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} – {sameDay
+                                ? end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+                                : `${end.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
                   </li>
                 )
               })}
@@ -1736,6 +2054,7 @@ export default function HiringLeadCycleDetails() {
         />
       ) : tab === 'dashboard' && (
         <div className="space-y-4">
+          <CoverageHeatmap coverage={coverage} />
           <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
             <div className="hidden sm:block overflow-x-auto">
             <table className="w-full text-sm min-w-[820px]">

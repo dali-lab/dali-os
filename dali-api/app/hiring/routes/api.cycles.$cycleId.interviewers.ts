@@ -26,11 +26,28 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     include: {
       user: { select: { firstName: true, lastName: true, daliEmail: true } },
       domain: { select: { id: true, name: true } },
+      availabilityBlocks: { select: { startTime: true, endTime: true } },
     },
     orderBy: { createdAt: "asc" },
   });
 
-  return Response.json(interviewers);
+  const withStats = interviewers.map((i) => {
+    const sorted = [...i.availabilityBlocks].sort(
+      (a, b) => a.startTime.getTime() - b.startTime.getTime(),
+    );
+    const totalMs = sorted.reduce(
+      (sum, b) => sum + (b.endTime.getTime() - b.startTime.getTime()),
+      0,
+    );
+    return {
+      ...i,
+      availabilityBlocks: sorted,
+      availabilityBlockCount: sorted.length,
+      availabilityHours: totalMs / (1000 * 60 * 60),
+    };
+  });
+
+  return Response.json(withStats);
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
