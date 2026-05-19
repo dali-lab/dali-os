@@ -16,7 +16,7 @@ import {
 } from "~/hiring/lib/email-variables";
 import { Modal } from "~/components/Modal";
 import { ChallengePreviewModal } from "~/hiring/components/ChallengePreviewModal";
-import { Settings, Users, Calendar, AlertTriangle, Trash2, Plus, CheckCircle, ArrowRight, Circle, ChevronRight, X, LayoutDashboard, Eye } from 'lucide-react'
+import { Settings, Users, Calendar, AlertTriangle, Trash2, Plus, CheckCircle, ArrowRight, Circle, ChevronRight, X, LayoutDashboard, Eye, Mail } from 'lucide-react'
 import { formatVersionLabel, buildVersionNumberMap } from "~/lib/formatVersion";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { sendExtensionNoticeIfDue, resendExtensionNotice } from "~/hiring/lib/extension-notice";
@@ -846,6 +846,20 @@ function formatHour(h: number) {
   if (h < 12) return `${h} AM`
   if (h === 12) return '12 PM'
   return `${h - 12} PM`
+}
+
+// Inline marker for any control that sends an email when committed.
+// Hover the icon to see exactly who receives mail.
+function EmailMarker({ recipients, label = 'Sends email' }: { recipients: string; label?: string }) {
+  return (
+    <span
+      title={`${label} — ${recipients}`}
+      aria-label={`${label}: ${recipients}`}
+      className="inline-flex items-center justify-center align-middle text-blue-600/80 ml-1"
+    >
+      <Mail className="w-3.5 h-3.5" />
+    </span>
+  )
 }
 
 // ─── Coverage Heatmap ────────────────────────────────────────────────────────
@@ -2062,6 +2076,10 @@ export default function HiringLeadCycleDetails() {
         />
       ) : tab === 'dashboard' && (
         <div className="space-y-4">
+          <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-2.5 text-xs text-blue-900 inline-flex items-center gap-2">
+            <Mail className="w-3.5 h-3.5 flex-shrink-0" aria-hidden />
+            <span>Controls marked with <Mail className="w-3 h-3 inline-block align-middle text-blue-600" /> send an email when committed. Hover the icon to see who receives it.</span>
+          </div>
           <CoverageHeatmap coverage={coverage} />
           <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
             <div className="hidden sm:block overflow-x-auto">
@@ -2106,32 +2124,35 @@ export default function HiringLeadCycleDetails() {
                       </td>
                       <td className="px-4 py-3">
                         {isFuture && interview.status === 'Scheduled' ? (
-                          <select
-                            value={interview.location}
-                            onChange={async (e) => {
-                              const newLocation = e.target.value
-                              const res = await fetch(`/api/hiring/interviews/${interview.id}/location`, {
-                                method: 'PATCH',
-                                credentials: 'include',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ location: newLocation }),
-                              })
-                              if (res.ok) {
-                                const updated = await res.json()
-                                setInterviews(prev => prev.map(i =>
-                                  i.id === interview.id ? { ...i, location: newLocation, zoomJoinUrl: updated.zoomJoinUrl ?? null } : i
-                                ))
-                              } else {
-                                const body = await res.json().catch(() => ({}))
-                                alert(body.error ?? 'Failed to update location')
-                              }
-                            }}
-                            className="text-xs border border-border rounded px-1.5 py-0.5 bg-card"
-                          >
-                            <option value="PodAppa">Pod Appa</option>
-                            <option value="PodMomo">Pod Momo</option>
-                            <option value="Online">Online</option>
-                          </select>
+                          <span className="inline-flex items-center gap-1">
+                            <select
+                              value={interview.location}
+                              onChange={async (e) => {
+                                const newLocation = e.target.value
+                                const res = await fetch(`/api/hiring/interviews/${interview.id}/location`, {
+                                  method: 'PATCH',
+                                  credentials: 'include',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ location: newLocation }),
+                                })
+                                if (res.ok) {
+                                  const updated = await res.json()
+                                  setInterviews(prev => prev.map(i =>
+                                    i.id === interview.id ? { ...i, location: newLocation, zoomJoinUrl: updated.zoomJoinUrl ?? null } : i
+                                  ))
+                                } else {
+                                  const body = await res.json().catch(() => ({}))
+                                  alert(body.error ?? 'Failed to update location')
+                                }
+                              }}
+                              className="text-xs border border-border rounded px-1.5 py-0.5 bg-card"
+                            >
+                              <option value="PodAppa">Pod Appa</option>
+                              <option value="PodMomo">Pod Momo</option>
+                              <option value="Online">Online</option>
+                            </select>
+                            <EmailMarker recipients="applicant + both interviewers" label="Changing fires location-change email" />
+                          </span>
                         ) : (
                           <span className="text-xs text-muted-foreground">
                             {interview.location === 'PodAppa' ? 'Pod Appa' :
@@ -2141,7 +2162,8 @@ export default function HiringLeadCycleDetails() {
                         {interview.location === 'Online' && isFuture && interview.status === 'Scheduled' && (
                           <input
                             type="url"
-                            placeholder="Paste meeting link"
+                            placeholder="Paste meeting link (emails on save)"
+                            title="Sends location-change email to applicant + both interviewers when you tab away"
                             defaultValue={interview.zoomJoinUrl ?? ''}
                             onBlur={async (e) => {
                               let meetingUrl = e.target.value.trim()
@@ -2210,6 +2232,9 @@ export default function HiringLeadCycleDetails() {
                                         return <option key={i.id} value={i.id}>{iName}</option>
                                       })}
                                   </select>
+                                )}
+                                {isFuture && interview.status === 'Scheduled' && (
+                                  <EmailMarker recipients="removed + replacement interviewer" label="Reassigning fires emails" />
                                 )}
                               </div>
                             )
@@ -2364,6 +2389,9 @@ export default function HiringLeadCycleDetails() {
                                       })}
                                   </select>
                                 )}
+                                {editable && (
+                                  <EmailMarker recipients="removed + replacement interviewer" label="Reassigning fires emails" />
+                                )}
                               </div>
                             )
                           })}
@@ -2389,6 +2417,10 @@ export default function HiringLeadCycleDetails() {
         />
       ) : tab === 'decisions' && (
         <div className="space-y-4">
+          <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-2.5 text-xs text-blue-900 inline-flex items-center gap-2">
+            <Mail className="w-3.5 h-3.5 flex-shrink-0" aria-hidden />
+            <span><span className="font-semibold">Release</span> emails the applicant the decision (using the bound template). It cannot be undone.</span>
+          </div>
           <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
             <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-border bg-muted/50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <h3 className="font-bold text-foreground">Final Decisions Ready for Release</h3>
@@ -2412,8 +2444,9 @@ export default function HiringLeadCycleDetails() {
                         ? `${skipped} decision${skipped === 1 ? '' : 's'} skipped — no email template bound on the Setup tab`
                         : undefined
                     }
-                    className="px-3 py-1.5 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition self-start sm:self-auto disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="px-3 py-1.5 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition self-start sm:self-auto disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1"
                   >
+                    <Mail className="w-3.5 h-3.5" aria-hidden />
                     Release All ({releasable.length})
                     {skipped > 0 && ` — ${skipped} skipped, no template bound`}
                   </button>
@@ -2477,8 +2510,9 @@ export default function HiringLeadCycleDetails() {
                               ? `No email template bound to ${d.type} in this cycle. Bind one on the Setup tab → Decision Emails before releasing.`
                               : undefined
                           }
-                          className="px-3 py-1 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="px-3 py-1 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1"
                         >
+                          <Mail className="w-3.5 h-3.5" aria-hidden />
                           {releasing === d.id ? 'Releasing...' : 'Release'}
                         </button>
                       </div>
@@ -2543,8 +2577,9 @@ export default function HiringLeadCycleDetails() {
                             ? `No email template bound to ${d.type} in this cycle. Bind one on the Setup tab → Decision Emails before releasing.`
                             : undefined
                         }
-                        className="px-3 py-1.5 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="px-3 py-1.5 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1"
                       >
+                        <Mail className="w-3.5 h-3.5" aria-hidden />
                         {releasing === d.id ? 'Releasing...' : 'Release'}
                       </button>
                     </div>
