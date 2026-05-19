@@ -1,36 +1,43 @@
 import { useState } from "react";
-import { useLoaderData } from "react-router";
-import type { Route } from "./+types/f.$token";
+import { redirect, useLoaderData } from "react-router";
+import type { Route } from "./+types/forms.fill.$token";
+import { requireAuth } from "~/lib/auth";
+import { requireMember } from "~/lib/roles";
 import { loadPublicForm } from "~/forms/lib/public-form";
 import { ChallengeQuestionField } from "~/hiring/components/ChallengeQuestionField";
 import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
 import type { Question } from "~/types";
 
 export const meta: Route.MetaFunction = ({ data }) => [
-  { title: `${(data as { name?: string })?.name ?? "Form"} · DALI` },
+  { title: `${(data as { name?: string })?.name ?? "Form"} · DALI OS` },
 ];
 
-// PUBLIC, UNAUTHENTICATED loader — no requireAuth. A 404 (thrown Response)
-// covers unknown token, unpublished form, and no-version uniformly so we
-// don't leak which.
-export async function loader({ params }: Route.LoaderArgs) {
+// AUTHENTICATED member fill route for slot-bound forms (Project Bids etc.).
+// Identity comes from the session — no name/email capture — which is what
+// lets a submission be interpreted into StaffingPreference for this member.
+// Reuses loadPublicForm (token-addressed, published-only) for the form body.
+export async function loader({ request, params }: Route.LoaderArgs) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return redirect("/login");
+  if (auth.user.type === "applicant") return redirect("/portal");
+  // Only lab members submit staffing forms; the level/eligibility a bid needs
+  // only exists for members.
+  if (!(await requireMember(auth.user.sub))) return redirect("/");
+
   const form = await loadPublicForm(params.token!);
   if (!form) throw new Response("Not found", { status: 404 });
-  return form;
+  // loadPublicForm doesn't echo the token back; the submit endpoint is
+  // addressed by it, so pass it through explicitly.
+  return { ...form, token: params.token! };
 }
 
-export default function PublicFormFill() {
-  const data = useLoaderData();
+export default function MemberFormFill() {
+  const data = useLoaderData<typeof loader>();
   const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
   const [state, setState] = useState<"idle" | "submitting" | "done">("idle");
   const [error, setError] = useState<string | null>(null);
 
   const questions: Question[] = data.questions;
-  const hasRequiredFile = questions.some(
-    (q) => q.required && q.type === "file",
-  );
 
   function set(key: string, v: string) {
     setAnswers((a) => ({ ...a, [key]: v }));
@@ -39,7 +46,6 @@ export default function PublicFormFill() {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    // Client-side required check (server re-validates).
     for (const q of questions) {
       if (!q.required || q.type === "file") continue;
       if (!answers[q.key]?.trim()) {
@@ -49,15 +55,11 @@ export default function PublicFormFill() {
     }
     setState("submitting");
     try {
-      const res = await fetch(`/api/f/${data.token}`, {
+      const res = await fetch(`/api/forms/fill/${data.token}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          versionId: data.versionId,
-          answers,
-          submitterName: name || undefined,
-          submitterEmail: email || undefined,
-        }),
+        credentials: "include",
+        body: JSON.stringify({ versionId: data.versionId, answers }),
       });
       const out = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
@@ -77,7 +79,7 @@ export default function PublicFormFill() {
       <Shell>
         <div className="text-center py-10">
           <h1 className="font-heading text-xl font-bold text-dark-blue">
-            Thanks!
+            Submitted
           </h1>
           <p className="text-sm text-muted-foreground mt-2">
             Your response to “{data.name}” has been recorded.
@@ -95,13 +97,6 @@ export default function PublicFormFill() {
       {data.description && !isEmptyDoc(data.description) && (
         <div className="mt-2 text-sm text-muted-foreground">
           <RichTextViewer content={data.description} />
-        </div>
-      )}
-
-      {hasRequiredFile && (
-        <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          This form has a required file upload, which isn’t supported on the
-          public link. Please contact the lab to complete it another way.
         </div>
       )}
 
@@ -125,7 +120,7 @@ export default function PublicFormFill() {
             )}
             {q.type === "file" ? (
               <div className="text-xs text-muted-foreground italic border border-dashed border-border rounded-md px-3 py-2">
-                File uploads aren’t available on the public link.
+                File uploads aren’t available here.
               </div>
             ) : (
               <ChallengeQuestionField
@@ -136,28 +131,6 @@ export default function PublicFormFill() {
             )}
           </div>
         ))}
-
-        <div className="border-t border-border pt-5 flex flex-col gap-3">
-          <p className="text-xs text-muted-foreground">
-            Optional — so we know who responded.
-          </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <input
-              type="text"
-              placeholder="Your name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="rounded-lg border border-border bg-card text-sm px-3 py-2 text-dark-blue"
-            />
-            <input
-              type="email"
-              placeholder="Your email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="rounded-lg border border-border bg-card text-sm px-3 py-2 text-dark-blue"
-            />
-          </div>
-        </div>
 
         <button
           type="submit"
@@ -173,7 +146,7 @@ export default function PublicFormFill() {
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-section-bg p-4 sm:p-8">
+    <div className="min-h-screen bg-section-bg p-4 sm:p-8 pt-10 sm:pt-16">
       <div className="mx-auto max-w-2xl bg-card border border-border rounded-xl p-6 sm:p-8">
         <div className="flex items-center gap-2 mb-6">
           <div className="w-7 h-7 bg-accent-coral rounded-md flex items-center justify-center">
@@ -182,7 +155,7 @@ function Shell({ children }: { children: React.ReactNode }) {
             </span>
           </div>
           <span className="font-heading text-sm font-bold text-dark-blue">
-            DALI
+            DALI OS
           </span>
         </div>
         {children}

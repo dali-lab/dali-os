@@ -1,5 +1,13 @@
 import { PrismaClient } from "../app/generated/prisma/client.js";
 import { PrismaPg } from "@prisma/adapter-pg";
+import { interpretBidForm } from "../app/projects/lib/bid-form-interpreter.js";
+import {
+  validateBids,
+  replaceBidSet,
+} from "../app/projects/lib/bid-validation.js";
+import { interpretIntentForm } from "../app/projects/lib/intent-form-interpreter.js";
+import { replaceIntentSet } from "../app/projects/lib/intent-validation.js";
+import type { Question } from "../app/types.js";
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
 const prisma = new PrismaClient({ adapter });
@@ -3031,38 +3039,323 @@ async function main() {
         orderBy: { id: "asc" }, // deterministic
       });
 
-      // Clear existing preferences for the cycle so seed is idempotent.
+      // ── Form-sourced bids ──────────────────────────────────────────────
+      // A bid only exists through the cycle's bound Project Bids form. The
+      // seed therefore (1) opens role requests so projects are biddable,
+      // (2) grants each member eligibility in a domain that has open roles,
+      // (3) binds a real Project Bids form, then (4) runs each member's
+      // answers through the SAME interpret→validate→replaceBidSet pipeline a
+      // live submission uses. This keeps StaffingPreference (and everything
+      // derived from it below) populated without any direct write.
+
+      // (1) ProjectRoleRequest must exist BEFORE bids — validateBids rejects a
+      // bid whose (term, domain) has no open role. (Moved ahead of bids; the
+      // later block that used to create these is now gone.)
+      await prisma.projectRoleRequest.deleteMany({ where: { termId: term26S.id } });
+      const roleMix = [
+        { domainId: engDomain.id, slots: 2 },
+        { domainId: designDomain.id, slots: 1 },
+        { domainId: pmDomain.id, slots: 1 },
+      ];
+      const biddableForRoles = projectSeeds.filter((p) => p.status !== "Archived");
+      for (const p of biddableForRoles) {
+        for (const r of roleMix) {
+          await prisma.projectRoleRequest.create({
+            data: {
+              projectId: p.id,
+              termId: term26S.id,
+              domainId: r.domainId,
+              level: "P1",
+              slots: r.slots,
+            },
+          });
+        }
+      }
+
+      // (2) Eligibility before bids — validateBids derives the bid's level
+      // from the member's DomainEligibility. Everyone gets Engineering (it
+      // always has open roles via roleMix), at a rotating level.
+      const ELIG_LEVELS = ["P1", "P2", "P3"] as const;
+      const bidDomainId = engDomain.id;
+      for (const [i, u] of memberUsers.entries()) {
+        await prisma.domainEligibility.upsert({
+          where: { userId_domainId: { userId: u.id, domainId: bidDomainId } },
+          update: { level: ELIG_LEVELS[i % 3], promotedBy: admin.id },
+          create: {
+            userId: u.id,
+            domainId: bidDomainId,
+            level: ELIG_LEVELS[i % 3],
+            promotedBy: admin.id,
+          },
+        });
+      }
+
+      // (3) The bound Project Bids form: 3 ranked (project, domain, notes)
+      // groups. The form is flexible; a saved column mapping (built below)
+      // tells the interpreter which question is which. Project questions use
+      // "projects:open-this-term" and domain "domains:active" so their answers
+      // are real ids. Stable ids keep the seed idempotent.
+      const bidQuestions: Question[] = [1, 2, 3].flatMap((rank) => [
+        {
+          key: `bid-${rank}-project`,
+          type: "reference" as const,
+          required: rank === 1,
+          data: {
+            label: `Choice ${rank}: Project`,
+            referenceSource: "projects:open-this-term",
+          },
+        },
+        {
+          key: `bid-${rank}-domain`,
+          type: "reference" as const,
+          required: rank === 1,
+          data: {
+            label: `Choice ${rank}: Domain`,
+            referenceSource: "domains:active",
+          },
+        },
+        {
+          key: `bid-${rank}-notes`,
+          type: "textarea" as const,
+          required: false,
+          data: { label: `Choice ${rank}: Notes (optional)` },
+        },
+      ]);
+
+      // The saved column mapping: which question fills each ranked column.
+      // Order of project entries = bid rank (matches interpreter grouping).
+      const bidMapping = {
+        version: 1 as const,
+        entries: [1, 2, 3].flatMap((rank) => [
+          {
+            source: "question" as const,
+            questionKey: `bid-${rank}-project`,
+            role: "project",
+            label: `Choice ${rank} project`,
+          },
+          {
+            source: "question" as const,
+            questionKey: `bid-${rank}-domain`,
+            role: "domain",
+            label: `Choice ${rank} domain`,
+          },
+          {
+            source: "question" as const,
+            questionKey: `bid-${rank}-notes`,
+            role: "notes",
+            label: `Choice ${rank} notes`,
+          },
+        ]),
+      };
+
+      const bidForm = await prisma.form.upsert({
+        where: { id: "form-project-bids-26s" },
+        update: { published: true },
+        create: {
+          id: "form-project-bids-26s",
+          name: "26S Project Bids",
+          createdById: admin.id,
+          published: true,
+          publicToken: "seed-project-bids-26s",
+        },
+      });
+      // One version, replaced on re-seed so question edits take effect.
+      await prisma.formVersion.deleteMany({ where: { formId: bidForm.id } });
+      const bidFormVersion = await prisma.formVersion.create({
+        data: {
+          formId: bidForm.id,
+          versionNumber: 1,
+          questions: bidQuestions as object,
+          createdById: admin.id,
+        },
+      });
+      await prisma.staffingCycleFormBinding.upsert({
+        where: {
+          staffingCycleId_slot: {
+            staffingCycleId: cycle.id,
+            slot: "project-bids",
+          },
+        },
+        update: {
+          formId: bidForm.id,
+          updatedById: admin.id,
+          columnMapping: bidMapping as object,
+        },
+        create: {
+          staffingCycleId: cycle.id,
+          slot: "project-bids",
+          formId: bidForm.id,
+          updatedById: admin.id,
+          columnMapping: bidMapping as object,
+        },
+      });
+
+      // (4) Idempotency: clear this cycle's prefs + prior seeded form
+      // submissions, then replay each member's answers through the real
+      // pipeline.
       await prisma.staffingPreference.deleteMany({
         where: { staffingCycleId: cycle.id },
       });
+      await prisma.formSubmission.deleteMany({
+        where: { staffingCycleId: cycle.id, slot: "project-bids" },
+      });
 
-      const LEVELS = ["P1", "P2", "P3"] as const;
+      const bidCycle = {
+        id: cycle.id,
+        termId: term26S.id,
+        maxPreferencesPerMember: cycle.maxPreferencesPerMember,
+      };
       let prefCount = 0;
+      let bidderCount = 0;
       for (const [i, u] of memberUsers.entries()) {
-        // 3 preferences per member, rotating through projects.
+        // 3 ranked picks rotating through biddable projects, all in the
+        // Engineering domain the member is eligible in.
+        const answers: Record<string, unknown> = {};
         for (let rank = 1; rank <= 3; rank++) {
-          const projectId = biddableProjects[(i + rank - 1) % biddableProjects.length];
-          const level = LEVELS[(i + rank) % LEVELS.length];
-          await prisma.staffingPreference.create({
+          const projectId =
+            biddableProjects[(i + rank - 1) % biddableProjects.length];
+          answers[`bid-${rank}-project`] = projectId;
+          answers[`bid-${rank}-domain`] = bidDomainId;
+          answers[`bid-${rank}-notes`] =
+            rank === 1
+              ? "Excited about this team — strong fit with prior work."
+              : rank === 2
+                ? "Solid second choice; would learn a lot here."
+                : "";
+        }
+
+        const interpreted = interpretBidForm(answers, bidMapping);
+        if (!interpreted.ok) {
+          throw new Error(
+            `Seed: bid form interpret failed for ${u.id}: ${interpreted.error}`,
+          );
+        }
+        const validated = await validateBids(u.id, bidCycle, interpreted.bids);
+        if (!validated.ok) {
+          throw new Error(
+            `Seed: bid validation failed for ${u.id}: ${validated.error}`,
+          );
+        }
+
+        await prisma.$transaction(async (tx) => {
+          await tx.formSubmission.create({
             data: {
+              formId: bidForm.id,
+              formVersionId: bidFormVersion.id,
               userId: u.id,
               staffingCycleId: cycle.id,
-              projectId,
-              domainId: someDomain.id,
-              level,
-              preferenceRank: rank,
-              notes:
-                rank === 1
-                  ? "Excited about this team — strong fit with prior work."
-                  : rank === 2
-                    ? "Solid second choice; would learn a lot here."
-                    : null,
+              slot: "project-bids",
+              answers: answers as object,
             },
           });
-          prefCount++;
-        }
+          await replaceBidSet(tx, u.id, cycle.id, validated.bids);
+        });
+        prefCount += validated.bids.length;
+        bidderCount++;
       }
-      console.log(`  1 staffing cycle (Open), ${memberUsers.length} members bidding, ${prefCount} preferences`);
+      console.log(`  1 staffing cycle (Open), bound Project Bids form, ${bidderCount} members bidding via form, ${prefCount} preferences`);
+
+      // ── Intent to Work: bound form + per-term mapping, same pattern ────────
+      // One availability question for the cycle's term. The saved mapping
+      // ties that question to the intent-status role for term26S; submissions
+      // replay through the real interpret → replaceIntentSet pipeline.
+      const intentQuestions: Question[] = [
+        {
+          key: "itw-status",
+          type: "select" as const,
+          required: true,
+          data: {
+            label: "Will you be working at the lab in 26S?",
+            options: ["Returning", "Not this term", "Graduating", "On leave", "Unsure"],
+          },
+        },
+      ];
+      const intentMapping = {
+        version: 1 as const,
+        entries: [
+          {
+            source: "question" as const,
+            questionKey: "itw-status",
+            role: "intent-status",
+            label: "26S availability",
+            termId: term26S.id,
+          },
+        ],
+      };
+      const intentForm = await prisma.form.upsert({
+        where: { id: "form-intent-to-work-26s" },
+        update: { published: true },
+        create: {
+          id: "form-intent-to-work-26s",
+          name: "26S Intent to Work",
+          createdById: admin.id,
+          published: true,
+          publicToken: "seed-intent-to-work-26s",
+        },
+      });
+      await prisma.formVersion.deleteMany({ where: { formId: intentForm.id } });
+      const intentFormVersion = await prisma.formVersion.create({
+        data: {
+          formId: intentForm.id,
+          versionNumber: 1,
+          questions: intentQuestions as object,
+          createdById: admin.id,
+        },
+      });
+      await prisma.staffingCycleFormBinding.upsert({
+        where: {
+          staffingCycleId_slot: {
+            staffingCycleId: cycle.id,
+            slot: "intent-to-work",
+          },
+        },
+        update: {
+          formId: intentForm.id,
+          updatedById: admin.id,
+          columnMapping: intentMapping as object,
+        },
+        create: {
+          staffingCycleId: cycle.id,
+          slot: "intent-to-work",
+          formId: intentForm.id,
+          updatedById: admin.id,
+          columnMapping: intentMapping as object,
+        },
+      });
+      await prisma.intentToWork.deleteMany({
+        where: { staffingCycleId: cycle.id },
+      });
+      await prisma.formSubmission.deleteMany({
+        where: { staffingCycleId: cycle.id, slot: "intent-to-work" },
+      });
+      const INTENT_ROTATION = ["Returning", "Unsure", "Not this term"];
+      let intentCount = 0;
+      for (const [i, u] of memberUsers.entries()) {
+        const answers = { "itw-status": INTENT_ROTATION[i % 3] };
+        const interpreted = interpretIntentForm(answers, intentMapping, [
+          term26S.id,
+        ]);
+        if (!interpreted.ok) {
+          throw new Error(
+            `Seed: intent interpret failed for ${u.id}: ${interpreted.error}`,
+          );
+        }
+        await prisma.$transaction(async (tx) => {
+          await tx.formSubmission.create({
+            data: {
+              formId: intentForm.id,
+              formVersionId: intentFormVersion.id,
+              userId: u.id,
+              staffingCycleId: cycle.id,
+              slot: "intent-to-work",
+              answers: answers as object,
+            },
+          });
+          await replaceIntentSet(tx, u.id, cycle.id, interpreted.rows);
+        });
+        intentCount++;
+      }
+      console.log(`  bound Intent to Work form, ${intentCount} members' intent via form`);
 
       // ── Derived assignments + remaining v0 models ──────────────────────────
       // Demo rows for every still-empty v0 model so list/detail pages that
@@ -3123,29 +3416,8 @@ async function main() {
         });
       }
 
-      // ProjectRoleRequest: a spread of role requests across all three
-      // domains per biddable project so the "required" projection is a
-      // realistic multi-domain stack (not a single flat bar). Slots vary by
-      // domain; the chart sums slots per (term, domain).
-      await prisma.projectRoleRequest.deleteMany({ where: { termId: term26S.id } });
-      const roleMix = [
-        { domainId: engDomain.id, slots: 2 },
-        { domainId: designDomain.id, slots: 1 },
-        { domainId: pmDomain.id, slots: 1 },
-      ];
-      for (const p of biddable) {
-        for (const r of roleMix) {
-          await prisma.projectRoleRequest.create({
-            data: {
-              projectId: p.id,
-              termId: term26S.id,
-              domainId: r.domainId,
-              level: "P1",
-              slots: r.slots,
-            },
-          });
-        }
-      }
+      // (ProjectRoleRequest is now created earlier, before bids, since
+      // validateBids depends on open roles existing. See step (1) above.)
 
       // StaffingAssignment: proposed rows mirroring the derived assignments
       // so the staffing board shows in-flight proposals on a fresh seed.

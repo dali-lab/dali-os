@@ -113,9 +113,17 @@ function AttentionBanner({
   tasks: Task[];
   notifications: HomeNotification[];
 }) {
-  // "Needs attention" = open tasks + unread notifications. Read notifications
-  // still render below (so RSVP stays reachable) but don't inflate the count.
-  const unread = notifications.filter((n) => !n.readAt).length;
+  // Tasks are themselves notification rows (Task.id === Notification.id), so a
+  // task (e.g. an announcement-todo) also appears in the raw notifications
+  // list. Drop those duplicates — the task card is the richer rendering
+  // (deadline + form link) — so each item shows once.
+  const taskIds = new Set(tasks.map((t) => t.id));
+  const extraNotifications = notifications.filter((n) => !taskIds.has(n.id));
+
+  // "Needs attention" = open tasks + unread non-task notifications. Read
+  // notifications still render below (so RSVP stays reachable) but don't
+  // inflate the count.
+  const unread = extraNotifications.filter((n) => !n.readAt).length;
   const count = tasks.length + unread;
 
   return (
@@ -170,11 +178,11 @@ function AttentionBanner({
         </div>
       )}
 
-      {notifications.length > 0 && (
+      {extraNotifications.length > 0 && (
         <div
           className={`flex flex-col gap-2 ${tasks.length > 0 ? "mt-3 pt-3 border-t border-accent-coral/20" : ""}`}
         >
-          {notifications.map((n) => (
+          {extraNotifications.map((n) => (
             <NotificationCard key={n.id} notification={n} />
           ))}
         </div>

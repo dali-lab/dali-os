@@ -9,11 +9,19 @@ import {
   getSlotBinding,
   listSelectableForms,
   setSlotBinding,
+  setSlotColumnMapping,
 } from "../lib/form-slots";
 import { SubmissionFilters } from "../components/SubmissionFilters";
 import { SlotFormPicker } from "../components/SlotFormPicker";
+import { SlotColumnMapper } from "../components/SlotColumnMapper";
 import { TermFilter } from "~/components/TermFilter";
 import { resolveTermFilter } from "~/lib/terms";
+import {
+  parseColumnMapping,
+  validateMapping,
+  type ColumnMapping,
+} from "../lib/slot-roles";
+import type { Question } from "~/types";
 
 const SLOT = "intent-to-work" as const;
 
@@ -22,8 +30,8 @@ export const meta: Route.MetaFunction = () => [
 ];
 
 // Read-only database of received Intent-to-Work submissions for the current
-// cycle. Core/Admin only — members submit via the Intent to Work form
-// (POST /api/projects/intent-to-work).
+// cycle. Core/Admin only — members submit via the bound Intent to Work form
+// at /forms/fill/:token; there is no direct submit endpoint.
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
@@ -67,21 +75,43 @@ export async function loader({ request }: Route.LoaderArgs) {
     singleCycleId = cycle.id;
   }
 
-  // The mirrored IntentToWork rows are the source of truth for the board;
-  // the table reads them directly so it stays correct regardless of which
-  // form version a member answered. Term columns are derived from the rows
-  // present, so a single cycle and the all-terms aggregate render the same.
-  const rows = await prisma.intentToWork.findMany({
-    where: { staffingCycleId: { in: cycleIds } },
-    select: {
-      userId: true,
-      termId: true,
-      status: true,
-      updatedAt: true,
-      term: { select: { code: true, sortKey: true } },
-      user: { select: { firstName: true, lastName: true, daliEmail: true } },
+  // A submission only exists in relation to a bound form: only show intent
+  // for members who actually submitted the cycle's Intent to Work form (a
+  // FormSubmission stamped with this cycle + the intent-to-work slot). This
+  // filters out legacy/seed IntentToWork rows that never came through a form.
+  //
+  // NOTE: no form→IntentToWork interpreter exists yet (unlike project bids),
+  // so nothing currently writes these form-linked submissions — this set is
+  // expectedly empty until that interpreter is built. That's intentional
+  // under the "form is the submission" model, not a regression.
+  const formSubs = await prisma.formSubmission.findMany({
+    where: {
+      staffingCycleId: { in: cycleIds },
+      slot: SLOT,
+      userId: { not: null },
     },
+    select: { userId: true },
   });
+  const submittedUserIds = [
+    ...new Set(formSubs.map((s) => s.userId).filter((id): id is string => !!id)),
+  ];
+
+  const rows = submittedUserIds.length
+    ? await prisma.intentToWork.findMany({
+        where: {
+          staffingCycleId: { in: cycleIds },
+          userId: { in: submittedUserIds },
+        },
+        select: {
+          userId: true,
+          termId: true,
+          status: true,
+          updatedAt: true,
+          term: { select: { code: true, sortKey: true } },
+          user: { select: { firstName: true, lastName: true, daliEmail: true } },
+        },
+      })
+    : [];
 
   // Distinct terms touched by these submissions, oldest → newest, for the
   // table's status columns.
@@ -165,6 +195,41 @@ export async function loader({ request }: Route.LoaderArgs) {
       : Promise.resolve([]),
   ]);
 
+  const noFormConnected = !isAll && !binding;
+
+  // Bound form's questions drive the column mapper; validate the saved
+  // mapping against them so a manager is warned before members submit.
+  let formQuestions: {
+    key: string;
+    label: string;
+    type: string;
+    referenceSource?: string;
+  }[] = [];
+  let mappingWarning: string | null = null;
+  if (binding) {
+    const latest = await prisma.formVersion.findFirst({
+      where: { form: { id: binding.formId } },
+      orderBy: { versionNumber: "desc" },
+      select: { questions: true },
+    });
+    const qs = (latest?.questions as unknown as Question[]) ?? [];
+    formQuestions = qs.map((q) => ({
+      key: q.key,
+      label: q.data.label,
+      type: q.type,
+      referenceSource: q.data.referenceSource,
+    }));
+    const check = validateMapping("intent-to-work", qs, binding.mapping);
+    if (!check.ok) mappingWarning = check.reason;
+  }
+
+  // Intent maps one status question per term; the manager chooses which
+  // terms from the full list (newest first).
+  const allTerms = await prisma.term.findMany({
+    orderBy: { sortKey: "desc" },
+    select: { id: true, code: true },
+  });
+
   return {
     gate: "ok" as const,
     cycle: { name: cycleName },
@@ -177,6 +242,10 @@ export async function loader({ request }: Route.LoaderArgs) {
     canManage,
     binding,
     selectableForms,
+    noFormConnected,
+    formQuestions,
+    mappingWarning,
+    allTerms,
   };
 }
 
@@ -195,13 +264,56 @@ export async function action({ request }: Route.ActionArgs) {
   const cycle = await ensureStaffingCycle(term.id, term.code);
 
   const form = await request.formData();
-  if (String(form.get("intent")) !== "set-slot-form")
-    return Response.json({ error: "Unknown intent" }, { status: 400 });
+  const intent = String(form.get("intent"));
 
-  const formId = String(form.get("formId") ?? "");
-  const result = await setSlotBinding(cycle.id, SLOT, formId, auth.user.sub);
-  if (!result.ok) return Response.json({ error: result.error }, { status: 400 });
-  return Response.json({ ok: true });
+  if (intent === "set-slot-form") {
+    const formId = String(form.get("formId") ?? "");
+    const result = await setSlotBinding(cycle.id, SLOT, formId, auth.user.sub);
+    if (!result.ok)
+      return Response.json({ error: result.error }, { status: 400 });
+    return Response.json({ ok: true });
+  }
+
+  if (intent === "set-slot-mapping") {
+    const binding = await getSlotBinding(cycle.id, SLOT);
+    if (!binding)
+      return Response.json(
+        { error: "Bind a form before mapping its columns." },
+        { status: 400 },
+      );
+    const mapping = parseColumnMapping(safeJsonParse(form.get("mapping")));
+    if (!mapping)
+      return Response.json({ error: "Invalid mapping." }, { status: 400 });
+    const latest = await prisma.formVersion.findFirst({
+      where: { form: { id: binding.formId } },
+      orderBy: { versionNumber: "desc" },
+      select: { questions: true },
+    });
+    const qs = (latest?.questions as unknown as Question[]) ?? [];
+    const check = validateMapping(SLOT, qs, mapping);
+    if (!check.ok)
+      return Response.json({ error: check.reason }, { status: 400 });
+    const result = await setSlotColumnMapping(
+      cycle.id,
+      SLOT,
+      mapping as ColumnMapping,
+      auth.user.sub,
+    );
+    if (!result.ok)
+      return Response.json({ error: result.error }, { status: 400 });
+    return Response.json({ ok: true });
+  }
+
+  return Response.json({ error: "Unknown intent" }, { status: 400 });
+}
+
+function safeJsonParse(v: FormDataEntryValue | null): unknown {
+  if (typeof v !== "string") return null;
+  try {
+    return JSON.parse(v);
+  } catch {
+    return null;
+  }
 }
 
 const STATUS_PILL: Record<string, string> = {
@@ -266,6 +378,23 @@ function Loaded({
         />
       )}
 
+      {!data.isAll && data.binding && (
+        <SlotColumnMapper
+          slot="intent-to-work"
+          questions={data.formQuestions}
+          mapping={data.binding.mapping}
+          cycleTerms={data.allTerms}
+          canManage={data.canManage}
+        />
+      )}
+
+      {data.mappingWarning && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          <span className="font-medium">Intent won’t be recorded yet:</span>{" "}
+          {data.mappingWarning}
+        </div>
+      )}
+
       <div className="flex flex-col sm:flex-row gap-2">
         <div className="flex-1">
           <SubmissionFilters
@@ -291,7 +420,17 @@ function Loaded({
             {data.submissions.length === 1 ? "" : "s"}
           </span>
         </div>
-        {data.submissions.length === 0 ? (
+        {data.noFormConnected ? (
+          <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+            No Intent to Work form is connected for this term. Connect a form
+            above so members can submit — intent only exists through the form.
+            <br />
+            <span className="text-xs">
+              (Form-driven intent capture is not yet available; connecting a
+              form does not yet record submissions.)
+            </span>
+          </div>
+        ) : data.submissions.length === 0 ? (
           <div className="px-4 py-8 text-center text-sm text-muted-foreground">
             No intent submissions yet.
           </div>

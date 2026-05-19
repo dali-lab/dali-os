@@ -88,7 +88,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           startsAt: true,
           endsAt: true,
           descriptionDocId: true,
-          sprints: { select: { startsAt: true, endsAt: true } },
           stories: {
             orderBy: { position: "asc" },
             select: { id: true, title: true, notes: true, status: true },
@@ -148,10 +147,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     auth.user.email;
 
   // Timeline span: prefer the epic's explicit startsAt/endsAt; fall back to
-  // the min/max of its sprint dates when either is unset.
+  // the min/max of its sprint dates when either is unset. Each epic also
+  // carries its own sprint rows (ordered by start) so the timeline can render
+  // one bar per sprint with connectors, not just a single epic bar.
   const epics: TimelineEpic[] = project.epics.map((e) => {
-    const starts = e.sprints.map((s) => s.startsAt.getTime());
-    const ends = e.sprints.map((s) => s.endsAt.getTime());
+    const epicSprints = project.sprints
+      .filter((s) => s.epicId === e.id)
+      .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
+    const starts = epicSprints.map((s) => s.startsAt.getTime());
+    const ends = epicSprints.map((s) => s.endsAt.getTime());
     const sprintStart = starts.length ? new Date(Math.min(...starts)).toISOString() : null;
     const sprintEnd = ends.length ? new Date(Math.max(...ends)).toISOString() : null;
     return {
@@ -160,7 +164,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       status: e.status as EpicStatus,
       startsAt: e.startsAt ? e.startsAt.toISOString() : sprintStart,
       endsAt: e.endsAt ? e.endsAt.toISOString() : sprintEnd,
-      sprintCount: e.sprints.length,
+      sprintCount: epicSprints.length,
+      sprints: epicSprints.map((s) => ({
+        id: s.id,
+        name: s.name,
+        status: s.status as TimelineEpic["sprints"][number]["status"],
+        startsAt: s.startsAt.toISOString(),
+        endsAt: s.endsAt.toISOString(),
+      })),
     };
   });
 
@@ -396,13 +407,16 @@ export default function ProjectDetail() {
           userName={userName}
         />
       ) : (
+        // Work tab keys off the raw edit permission, not the page-level
+        // Edit-mode toggle: epics/sprints/tasks each gate their own inline
+        // edit affordances, so there's nothing to "turn on" first.
         <WorkTab
           projectId={project.id}
           epics={epics}
           editableEpics={editableEpics}
           sprints={sprints}
           tasks={tasks}
-          canEdit={canEdit}
+          canEdit={canEditPerm}
         />
       )}
     </div>

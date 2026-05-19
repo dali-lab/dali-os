@@ -98,9 +98,12 @@ export async function listOpenTasks(userId: string): Promise<Task[]> {
   }));
 
   const announcementTasks: Task[] = announcements.map((n) => {
+    // Authenticated fill route (not the public /f/ one): the recipient is a
+    // logged-in user, and the authed submit is what marks this todo read so
+    // the task clears + the count drops once they submit.
     const formLink =
       n.form?.published && n.form.publicToken
-        ? `/f/${n.form.publicToken}`
+        ? `/forms/fill/${n.form.publicToken}`
         : null;
     return {
       id: n.id,

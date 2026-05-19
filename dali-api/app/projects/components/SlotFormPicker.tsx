@@ -36,9 +36,13 @@ export function SlotFormPicker({
       : null;
   const dirty = selected !== (binding?.formId ?? "");
 
+  // Slot-bound forms are filled through the AUTHENTICATED member route so the
+  // submission is attributed to the member (and, for Project Bids, can be
+  // interpreted into their StaffingPreference). The token is still the form's
+  // publicToken — it's only the addressing key; that route requires a session.
   const fillUrl =
     binding?.published && binding.publicToken
-      ? `/f/${binding.publicToken}`
+      ? `/forms/fill/${binding.publicToken}`
       : null;
 
   return (

@@ -4,6 +4,7 @@ import { requireAuth } from "~/lib/auth";
 import { canManageStaffing, canViewStaffing } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { ensureStaffingCycle } from "../lib/staffing-cycle";
+import { getSlotBinding } from "../lib/form-slots";
 import { StaffingBoard } from "../components/StaffingBoard";
 import type {
   Assignment,
@@ -154,6 +155,12 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const domainNames = Object.fromEntries(domains.map((d) => [d.id, d.displayName]));
 
+  // Bids only exist through a bound Project Bids form. If none is bound, the
+  // board legitimately has no new bids to staff — surface that so a lead
+  // doesn't read an empty board as a bug. (Legacy StaffingPreference rows
+  // may still appear; that's the documented exception.)
+  const bidsFormBound = !!(await getSlotBinding(cycle.id, "project-bids"));
+
   return {
     cycle: {
       id: cycle.id,
@@ -165,6 +172,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     members,
     initialAssignments,
     domainNames,
+    bidsFormBound,
   };
 }
 
@@ -194,6 +202,14 @@ export default function StaffingPage() {
             : "Pick a term to view its proposed assignments."}
         </p>
       </header>
+
+      {!data.bidsFormBound && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          No Project Bids form is connected for this term, so there are no new
+          bids to staff from. Connect one on the Project Bids page — bids only
+          exist through the form.
+        </div>
+      )}
 
       <StaffingBoard
         cycleId={data.cycle.id}

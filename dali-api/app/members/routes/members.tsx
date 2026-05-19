@@ -320,29 +320,23 @@ export default function MembersList() {
         <TermFilter terms={terms} selected={selectedTerm} />
         <DomainFilter domains={domains} selected={selectedDomain} />
         <ViewToggle value={view} onChange={setView} />
+        <span className="text-xs text-muted-foreground ml-auto">
+          {filtered.length} {filtered.length === 1 ? "member" : "members"}
+          {query && filtered.length !== rows.length ? ` of ${rows.length}` : ""}
+        </span>
       </div>
 
-      <div className="bg-card border border-border rounded-lg">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-          <h2 className="text-sm font-medium text-foreground">All members</h2>
-          <span className="text-xs text-muted-foreground">
-            {filtered.length} {filtered.length === 1 ? "member" : "members"}
-            {query && filtered.length !== rows.length ? ` of ${rows.length}` : ""}
-          </span>
+      {filtered.length === 0 ? (
+        <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+          {query
+            ? "No members match this search."
+            : "No members match these filters."}
         </div>
-
-        {filtered.length === 0 ? (
-          <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-            {query
-              ? "No members match this search."
-              : "No members match these filters."}
-          </div>
-        ) : view === "list" ? (
-          <MembersTable rows={filtered} />
-        ) : (
-          <MembersCards rows={filtered} />
-        )}
-      </div>
+      ) : view === "list" ? (
+        <MembersTable rows={filtered} />
+      ) : (
+        <MembersCards rows={filtered} />
+      )}
     </div>
   );
 }

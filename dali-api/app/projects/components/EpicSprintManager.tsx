@@ -80,6 +80,9 @@ export function EpicSprintManager({
   const [newEpicOpen, setNewEpicOpen] = useState(false);
   // The selected epic opens its detail view in a modal over the list.
   const [openEpicId, setOpenEpicId] = useState<string | null>(null);
+  // When opened via the row's "Edit" affordance the detail panel jumps
+  // straight into the epic edit form rather than the read view.
+  const [openInEdit, setOpenInEdit] = useState(false);
 
   function run(fn: () => Promise<void>) {
     setBusy(true);
@@ -106,7 +109,10 @@ export function EpicSprintManager({
 
       <Modal
         open={openEpic != null}
-        onClose={() => setOpenEpicId(null)}
+        onClose={() => {
+          setOpenEpicId(null);
+          setOpenInEdit(false);
+        }}
         labelledBy="epic-detail-title"
         disableEscape={busy}
         containerClassName="bg-card rounded-2xl shadow-xl max-w-2xl w-full p-5 sm:p-6 my-auto"
@@ -118,10 +124,17 @@ export function EpicSprintManager({
             sprints={sprints.filter((s) => s.epicId === openEpic.id)}
             canManage={canManage}
             busy={busy}
+            startInEdit={openInEdit}
             run={run}
             api={api}
-            onClose={() => setOpenEpicId(null)}
-            onDeleted={() => setOpenEpicId(null)}
+            onClose={() => {
+              setOpenEpicId(null);
+              setOpenInEdit(false);
+            }}
+            onDeleted={() => {
+              setOpenEpicId(null);
+              setOpenInEdit(false);
+            }}
           />
         )}
       </Modal>
@@ -161,13 +174,18 @@ export function EpicSprintManager({
             {epics.map((epic) => {
               const sprintCount = sprints.filter((s) => s.epicId === epic.id).length;
               return (
-                <button
+                <div
                   key={epic.id}
-                  type="button"
-                  onClick={() => setOpenEpicId(epic.id)}
-                  className="py-2 flex items-center justify-between gap-3 text-sm text-left hover:bg-muted/50 -mx-2 px-2 rounded transition-colors"
+                  className="py-2 flex items-center justify-between gap-3 text-sm hover:bg-muted/50 -mx-2 px-2 rounded transition-colors"
                 >
-                  <div className="min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOpenInEdit(false);
+                      setOpenEpicId(epic.id);
+                    }}
+                    className="min-w-0 text-left flex-1"
+                  >
                     <span className="text-foreground">{epic.title}</span>
                     {epic.startsAt && epic.endsAt && (
                       <span className="text-[11px] text-muted-foreground ml-2">
@@ -179,12 +197,34 @@ export function EpicSprintManager({
                       {epic.stories.length}{" "}
                       {epic.stories.length === 1 ? "story" : "stories"}
                     </span>
-                  </div>
+                  </button>
                   <div className="flex items-center gap-3 flex-shrink-0">
                     <span className="text-[11px] text-muted-foreground">{epic.status}</span>
-                    <span className="text-xs text-muted-foreground">›</span>
+                    {canManage && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOpenInEdit(true);
+                          setOpenEpicId(epic.id);
+                        }}
+                        className="text-xs font-medium text-accent-coral hover:underline"
+                      >
+                        Edit
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOpenInEdit(false);
+                        setOpenEpicId(epic.id);
+                      }}
+                      aria-label={`Open ${epic.title}`}
+                      className="text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      ›
+                    </button>
                   </div>
-                </button>
+                </div>
               );
             })}
           </div>
@@ -243,6 +283,7 @@ function EpicDetail({
   sprints,
   canManage,
   busy,
+  startInEdit,
   run,
   api,
   onClose,
@@ -253,12 +294,15 @@ function EpicDetail({
   sprints: EditableSprint[];
   canManage: boolean;
   busy: boolean;
+  // When true the detail panel opens with the epic edit form already
+  // expanded (entered via the row's "Edit" affordance).
+  startInEdit: boolean;
   run: (fn: () => Promise<void>) => void;
   api: (url: string, method: "POST" | "DELETE", body?: unknown) => Promise<void>;
   onClose: () => void;
   onDeleted: () => void;
 }) {
-  const [editEpicOpen, setEditEpicOpen] = useState(false);
+  const [editEpicOpen, setEditEpicOpen] = useState(canManage && startInEdit);
   const [newSprintOpen, setNewSprintOpen] = useState(false);
   const [editSprintId, setEditSprintId] = useState<string | null>(null);
   const [newStoryOpen, setNewStoryOpen] = useState(false);

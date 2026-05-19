@@ -24,10 +24,15 @@ const PRIORITY_TONE: Record<Priority, string> = {
   Urgent: "text-accent-coral font-semibold",
 };
 
+// New tasks always land in the first column ("To do"); they can be dragged
+// onward from there. One add affordance for the whole board, not per column.
+const CREATE_STATUS: TaskStatus = TASK_STATUSES[0];
+
 export function TaskBoard({ projectId, initialTasks, canManage }: Props) {
   const [tasks, setTasks] = useState<TaskCardModel[]>(initialTasks);
   const [error, setError] = useState<string | null>(null);
-  const [creatingIn, setCreatingIn] = useState<TaskStatus | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
+  const [draft, setDraft] = useState("");
 
   const board = useMemo(() => buildTaskBoard(tasks), [tasks]);
 
@@ -57,7 +62,7 @@ export function TaskBoard({ projectId, initialTasks, canManage }: Props) {
     });
   }
 
-  async function handleCreate(status: TaskStatus, title: string) {
+  async function handleCreate(title: string) {
     const trimmed = title.trim();
     if (!trimmed) return;
     setError(null);
@@ -66,7 +71,7 @@ export function TaskBoard({ projectId, initialTasks, canManage }: Props) {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: trimmed, status }),
+        body: JSON.stringify({ title: trimmed, status: CREATE_STATUS }),
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -78,15 +83,16 @@ export function TaskBoard({ projectId, initialTasks, canManage }: Props) {
         {
           id,
           title: trimmed,
-          status,
+          status: CREATE_STATUS,
           priority: "Normal",
-          position: nextPositionInColumn(board, status),
+          position: nextPositionInColumn(board, CREATE_STATUS),
           epicId: null,
           sprintId: null,
           assigneeNames: [],
         },
       ]);
-      setCreatingIn(null);
+      setDraft("");
+      setIsCreating(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create task");
     }
@@ -100,6 +106,60 @@ export function TaskBoard({ projectId, initialTasks, canManage }: Props) {
         </div>
       )}
 
+      {/* One add affordance for the whole board. New tasks enter the first
+          column and can be dragged onward. */}
+      {canManage && (
+        <div>
+          {isCreating ? (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void handleCreate(draft);
+              }}
+              className="flex items-center gap-1.5"
+            >
+              <input
+                autoFocus
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    setIsCreating(false);
+                    setDraft("");
+                  }
+                }}
+                placeholder={`New task in "${TASK_STATUS_LABELS[CREATE_STATUS]}"`}
+                className="flex-1 max-w-sm px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+              />
+              <button
+                type="submit"
+                className="px-3 py-1.5 text-xs font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
+              >
+                Add
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCreating(false);
+                  setDraft("");
+                }}
+                className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors"
+              >
+                Cancel
+              </button>
+            </form>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setIsCreating(true)}
+              className="px-3 py-1.5 text-xs font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
+            >
+              + Add task
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Stable id so SSR/client agree when multiple DndContexts mount (see
           StaffingBoard for the hydration-mismatch rationale). */}
       <DndContext id="task-board" onDragEnd={handleDragEnd}>
@@ -110,10 +170,6 @@ export function TaskBoard({ projectId, initialTasks, canManage }: Props) {
               status={status}
               cards={board[status] ?? []}
               canManage={canManage}
-              isCreating={creatingIn === status}
-              onStartCreate={() => setCreatingIn(status)}
-              onCancelCreate={() => setCreatingIn(null)}
-              onCreate={(title) => handleCreate(status, title)}
             />
           ))}
         </div>
@@ -126,21 +182,12 @@ function Column({
   status,
   cards,
   canManage,
-  isCreating,
-  onStartCreate,
-  onCancelCreate,
-  onCreate,
 }: {
   status: TaskStatus;
   cards: TaskCardModel[];
   canManage: boolean;
-  isCreating: boolean;
-  onStartCreate: () => void;
-  onCancelCreate: () => void;
-  onCreate: (title: string) => void;
 }) {
   const { isOver, setNodeRef } = useDroppable({ id: status });
-  const [draft, setDraft] = useState("");
 
   return (
     <div
@@ -157,7 +204,7 @@ function Column({
       </div>
 
       <div className="flex flex-col gap-2 p-2 min-h-[120px]">
-        {cards.length === 0 && !isCreating ? (
+        {cards.length === 0 ? (
           <div className="text-xs text-muted-foreground italic text-center py-4">
             Empty
           </div>
@@ -165,59 +212,6 @@ function Column({
           cards.map((card) => (
             <TaskCard key={card.id} card={card} draggable={canManage} />
           ))
-        )}
-
-        {isCreating ? (
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              onCreate(draft);
-              setDraft("");
-            }}
-            className="flex flex-col gap-1.5"
-          >
-            <input
-              autoFocus
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Escape") {
-                  onCancelCreate();
-                  setDraft("");
-                }
-              }}
-              placeholder="Task title"
-              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-            />
-            <div className="flex gap-1.5">
-              <button
-                type="submit"
-                className="px-2 py-1 text-xs font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
-              >
-                Add
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  onCancelCreate();
-                  setDraft("");
-                }}
-                className="px-2 py-1 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          </form>
-        ) : (
-          canManage && (
-            <button
-              type="button"
-              onClick={onStartCreate}
-              className="text-xs text-muted-foreground hover:text-foreground text-left px-2 py-1.5 rounded-md hover:bg-muted/30 transition-colors"
-            >
-              + Add task
-            </button>
-          )
         )}
       </div>
     </div>

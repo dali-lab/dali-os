@@ -287,7 +287,12 @@ function CardMenu({
           >
             <button
               type="button"
-              onClick={() => {
+              onClick={(e) => {
+                // This menu lives inside a navigating <Link>; without these
+                // the click bubbles to the Link and routes into the folder,
+                // unmounting the page before the dialog can act.
+                e.preventDefault();
+                e.stopPropagation();
                 setOpen(false);
                 onRename();
               }}
@@ -302,7 +307,9 @@ function CardMenu({
               <select
                 value={currentTargetId ?? ""}
                 disabled={busy}
+                onClick={(e) => e.stopPropagation()}
                 onChange={(e) => {
+                  e.stopPropagation();
                   setOpen(false);
                   onMove(e.target.value || null);
                 }}
@@ -318,7 +325,9 @@ function CardMenu({
             </div>
             <button
               type="button"
-              onClick={() => {
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
                 setOpen(false);
                 onDelete();
               }}

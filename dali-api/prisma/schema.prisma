@@ -2028,6 +2028,7 @@ model StaffingCycle {
   assignments       StaffingAssignment[]
   intentToWork      IntentToWork[]
   formBindings      StaffingCycleFormBinding[]
+  formSubmissions   FormSubmission[]
 }
 
 model StaffingPreference {
@@ -2187,11 +2188,23 @@ model FormSubmission {
   submitterName  String?
   submitterEmail String?
 
+  // Staffing context, set only when this submission was filled through a
+  // staffing-cycle slot binding (e.g. the "project-bids" slot). Null for
+  // every ordinary form submission (announcements, public forms). Nullable +
+  // SetNull so deleting a cycle doesn't cascade-delete the answer record;
+  // pre-existing rows intentionally stay null (no backfill).
+  staffingCycleId String?
+  staffingCycle   StaffingCycle? @relation(fields: [staffingCycleId], references: [id], onDelete: SetNull)
+  // Which slot it was filled for (mirrors StaffingCycleFormBinding.slot, e.g.
+  // "project-bids"). Null unless staffingCycleId is set.
+  slot String?
+
   answers Json
 
   @@index([userId, formVersionId])
   @@index([formId])
   @@index([formVersionId])
+  @@index([staffingCycleId, slot])
 }
 
 // Binds a generic Form to a named "slot" within one staffing cycle, so an
@@ -2208,6 +2221,13 @@ model StaffingCycleFormBinding {
   formId          String
   updatedAt       DateTime @updatedAt
   updatedById     String
+
+  // Per-binding question→column mapping: which of the bound form's questions
+  // fills each structured role for this slot, plus the manager's renamed
+  // column label. Shape: { version, entries: [{ questionKey, role, label,
+  // termId? }] }. Null = not mapped yet (the slot can't interpret submissions
+  // until a manager defines this). App-layer validated (see slot-roles.ts).
+  columnMapping Json?
 
   staffingCycle StaffingCycle @relation(fields: [staffingCycleId], references: [id], onDelete: Cascade)
   form          Form          @relation(fields: [formId], references: [id], onDelete: Cascade)

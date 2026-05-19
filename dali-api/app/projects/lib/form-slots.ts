@@ -1,4 +1,5 @@
 import { prisma } from "~/lib/db";
+import { parseColumnMapping, type ColumnMapping } from "./slot-roles";
 
 // A "form slot" is a named place in the app that expects an admin-chosen
 // generic Form, scoped to one staffing cycle (i.e. per term). Intent to Work
@@ -24,6 +25,9 @@ export type SlotBinding = {
   published: boolean;
   publicToken: string | null;
   updatedAt: string;
+  // The saved question→column mapping for this binding, parsed/defended.
+  // null = not mapped yet (the slot can't interpret submissions).
+  mapping: ColumnMapping | null;
 } | null;
 
 export async function getSlotBinding(
@@ -34,6 +38,7 @@ export async function getSlotBinding(
     where: { staffingCycleId_slot: { staffingCycleId, slot } },
     select: {
       updatedAt: true,
+      columnMapping: true,
       form: {
         select: { id: true, name: true, published: true, publicToken: true },
       },
@@ -46,7 +51,31 @@ export async function getSlotBinding(
     published: row.form.published,
     publicToken: row.form.publicToken,
     updatedAt: row.updatedAt.toISOString(),
+    mapping: parseColumnMapping(row.columnMapping),
   };
+}
+
+// Save the question→column mapping for a binding. The binding must already
+// exist (a form is bound first). Shape is validated against the bound form's
+// latest version by the caller before this is reached.
+export async function setSlotColumnMapping(
+  staffingCycleId: string,
+  slot: Slot,
+  mapping: ColumnMapping,
+  userId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const binding = await prisma.staffingCycleFormBinding.findUnique({
+    where: { staffingCycleId_slot: { staffingCycleId, slot } },
+    select: { id: true },
+  });
+  if (!binding)
+    return { ok: false, error: "Bind a form before mapping its columns." };
+
+  await prisma.staffingCycleFormBinding.update({
+    where: { id: binding.id },
+    data: { columnMapping: mapping as object, updatedById: userId },
+  });
+  return { ok: true };
 }
 
 // Upsert the binding for (cycle, slot). `formId` is validated against an

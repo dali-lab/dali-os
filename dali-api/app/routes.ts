@@ -83,9 +83,12 @@ export default [
     route("portal/application", "routes/portal.application.tsx"),
   ]),
 
-  // Public published-form fill (no layout, NO AUTH — token-addressed)
-  route("f/:token", "routes/f.$token.tsx"),
-  route("api/f/:token", "routes/api.f.$token.ts"),
+  // Authenticated member form fill (no layout), token-addressed. Every form
+  // is filled while logged in — the submitter is always the session user, so
+  // there's no name/email capture and submissions can drive StaffingPreference
+  // / close the recipient's task.
+  route("forms/fill/:token", "routes/forms.fill.$token.tsx"),
+  route("api/forms/fill/:token", "routes/api.forms.fill.$token.ts"),
 
   // Login (no layout)
   route("login", "routes/login.tsx"),
@@ -148,9 +151,8 @@ export default [
   route("api/slack/events", "slack/routes/api.slack.events.ts"),
   route("api/slack/interactivity", "slack/routes/api.slack.interactivity.ts"),
 
-  // Staffing input forms (member self-service)
-  route("api/projects/intent-to-work", "projects/routes/api.intent-to-work.ts"),
-  route("api/projects/project-bids", "projects/routes/api.project-bids.ts"),
+  // Staffing input (bids / intent to work) is collected exclusively through
+  // bound forms at /forms/fill/:token — there are no direct submit endpoints.
 
   // Staffing board (always open; one cycle per term, auto-created on view)
   route("api/staffing/assign", "projects/routes/api.staffing.assign.ts"),

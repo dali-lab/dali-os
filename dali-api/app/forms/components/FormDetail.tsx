@@ -290,9 +290,9 @@ export function FormDetail() {
   );
 }
 
-// Publish toggle + shareable public link. A published form is fillable from
-// outside dali-api (no login) at /f/:publicToken; unpublishing 404s that
-// route but keeps the token so re-publishing restores the same link.
+// Publish toggle + shareable link. A published form is fillable by logged-in
+// members at /forms/fill/:publicToken; unpublishing 404s that route but keeps
+// the token so re-publishing restores the same link.
 function PublishControl({
   formId,
   published,
@@ -314,7 +314,7 @@ function PublishControl({
 
   const publicUrl =
     published && publicToken
-      ? `${typeof window !== "undefined" ? window.location.origin : ""}/f/${publicToken}`
+      ? `${typeof window !== "undefined" ? window.location.origin : ""}/forms/fill/${publicToken}`
       : null;
 
   function toggle() {
@@ -348,7 +348,7 @@ function PublishControl({
           </span>
           <span className="text-muted-foreground">
             {published
-              ? "Anyone with the link can fill this out — no login."
+              ? "Logged-in members can fill this out via the link."
               : "Only lab staff can see this form."}
           </span>
         </div>
