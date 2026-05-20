@@ -395,6 +395,7 @@ model Domain {
   eligibilities       DomainEligibility[]
   projectAssignments  ProjectAssignment[]
   mentorshipPairs     MentorshipPair[]
+  tasks               Task[]
   projectRoleRequests ProjectRoleRequest[]
   partnerApplicationDomains PartnerApplicationDomain[]
 }
@@ -1770,6 +1771,11 @@ model Task {
   // TaskReminder, added in a follow-up). Null = no reminders fire.
   dueAt            DateTime?
 
+  // Optional domain label (Design, Dev, etc.) — shown as a chip on the card
+  // and editable in the task modal. Independent of who's assigned so the
+  // label survives reassignment.
+  domainId         String?
+
   // Subtasks: simple checklist field rather than hierarchical Task→Task
   // children (Linear/Notion style).
   // JSON shape: [{ "text": "...", "done": false }]
@@ -1778,6 +1784,7 @@ model Task {
   project   Project        @relation(fields: [projectId], references: [id])
   sprint    Sprint?        @relation(fields: [sprintId], references: [id])
   epic      Epic?          @relation(fields: [epicId], references: [id])
+  domain    Domain?        @relation(fields: [domainId], references: [id])
   assignees TaskAssignee[]
   comments  TaskComment[]
 

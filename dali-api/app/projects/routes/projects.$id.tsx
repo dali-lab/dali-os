@@ -24,7 +24,12 @@ import {
 import { CollaborativeEditor } from "~/components/CollaborativeEditor";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { EditModeToggle, useEditMode } from "~/components/EditModeToggle";
-import type { TaskCardModel, TaskStatus, Priority } from "../lib/task-board";
+import type {
+  TaskBoardOptions,
+  TaskCardModel,
+  TaskStatus,
+  Priority,
+} from "../lib/task-board";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const p = (data as { project?: { name: string } } | undefined)?.project;
@@ -73,7 +78,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       assignments: {
         select: {
           level: true,
-          user: { select: { firstName: true, lastName: true } },
+          user: { select: { id: true, firstName: true, lastName: true } },
           term: { select: { code: true, sortKey: true } },
           domain: { select: { name: true } },
         },
@@ -116,7 +121,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           dueAt: true,
           epicId: true,
           sprintId: true,
-          assignees: { select: { user: { select: { firstName: true, lastName: true } } } },
+          domain: { select: { id: true, displayName: true } },
+          assignees: {
+            select: {
+              user: { select: { id: true, firstName: true, lastName: true } },
+            },
+          },
         },
       },
     },
@@ -210,8 +220,37 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     dueAt: t.dueAt ? t.dueAt.toISOString() : null,
     epicId: t.epicId,
     sprintId: t.sprintId,
-    assigneeNames: t.assignees.map((a) => `${a.user.firstName} ${a.user.lastName}`.trim()),
+    assignees: t.assignees.map((a) => ({
+      id: a.user.id,
+      name: `${a.user.firstName} ${a.user.lastName}`.trim(),
+    })),
+    domain: t.domain
+      ? { id: t.domain.id, name: t.domain.displayName }
+      : null,
   }));
+
+  // Board option lists for the TaskModal: members assignable on this project
+  // (deduped across terms — same person across multiple terms shows once) and
+  // every active domain.
+  const memberMap = new Map<string, string>();
+  for (const a of project.assignments) {
+    const id = a.user.id;
+    if (!memberMap.has(id)) {
+      memberMap.set(id, `${a.user.firstName} ${a.user.lastName}`.trim());
+    }
+  }
+  const boardOptions: TaskBoardOptions = {
+    members: [...memberMap.entries()]
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+    domains: (
+      await prisma.domain.findMany({
+        where: { active: true },
+        orderBy: { displayName: "asc" },
+        select: { id: true, displayName: true },
+      })
+    ).map((d) => ({ id: d.id, name: d.displayName })),
+  };
 
   // Team grouped by term, newest term first. Current = highest sortKey.
   const teamByTerm = new Map<
@@ -257,6 +296,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     editableEpics,
     sprints,
     tasks,
+    boardOptions,
     canEdit,
     collabToken,
     userName,
@@ -339,6 +379,7 @@ export default function ProjectDetail() {
     editableEpics,
     sprints,
     tasks,
+    boardOptions,
     canEdit: canEditPerm,
     collabToken,
     userName,
@@ -380,13 +421,19 @@ export default function ProjectDetail() {
         canEdit={canEdit}
       />
 
-      {/* Tab bar */}
+      {/* Tab bar. Leaving Overview drops edit mode: the editable surfaces
+          all live on Overview, and a stale "Edit" button on the Work tab
+          (which has no editable fields here) just adds confusion. Field
+          auto-save means there's nothing to lose by exiting silently. */}
       <div className="flex items-center gap-1 border-b border-border">
         {TABS.map((t) => (
           <button
             key={t}
             type="button"
-            onClick={() => setTab(t)}
+            onClick={() => {
+              if (editMode && t !== "overview") setEditMode(false);
+              setTab(t);
+            }}
             className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
               tab === t
                 ? "border-accent-coral text-foreground"
@@ -418,7 +465,10 @@ export default function ProjectDetail() {
           editableEpics={editableEpics}
           sprints={sprints}
           tasks={tasks}
+          boardOptions={boardOptions}
           canEdit={canEditPerm}
+          collabToken={collabToken}
+          userName={userName}
         />
       )}
     </div>
@@ -529,7 +579,7 @@ function DescriptionSegment({
   description: string | null;
   canEdit: boolean;
 }) {
-  const [editing, setEditing] = useState(false);
+  const submit = useSubmit();
 
   if (!canEdit) {
     return (
@@ -544,56 +594,25 @@ function DescriptionSegment({
     );
   }
 
+  // In edit mode the textarea is ALWAYS live and auto-saves on blur — no
+  // per-segment "Edit" / "+ Add description" gate, no Save button. The
+  // page-level Done toggle is the natural exit and there's nothing left to
+  // commit by then. Placeholder doubles as the "add description" affordance
+  // when the field is empty.
   return (
     <section className="bg-card border border-border rounded-lg p-4">
-      <div className="flex items-center justify-between mb-2">
-        <h2 className="text-sm font-semibold text-foreground">Description</h2>
-        {!editing && (
-          <button
-            type="button"
-            onClick={() => setEditing(true)}
-            className="text-xs font-medium text-accent-coral hover:underline"
-          >
-            {description ? "Edit" : "+ Add description"}
-          </button>
-        )}
-      </div>
-      {editing ? (
-        <Form
-          method="post"
-          onSubmit={() => setEditing(false)}
-          className="flex flex-col gap-2"
-        >
-          <input type="hidden" name="intent" value="description" />
-          <textarea
-            name="description"
-            rows={4}
-            autoFocus
-            defaultValue={description ?? ""}
-            placeholder="What is this project about?"
-            className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-          />
-          <div className="flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => setEditing(false)}
-              className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-3 py-1.5 text-xs font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
-            >
-              Save
-            </button>
-          </div>
-        </Form>
-      ) : description ? (
-        <p className="text-sm text-foreground whitespace-pre-wrap">{description}</p>
-      ) : (
-        <p className="text-sm text-muted-foreground italic">No description yet.</p>
-      )}
+      <h2 className="text-sm font-semibold text-foreground mb-2">Description</h2>
+      <Form method="post" className="flex flex-col gap-2">
+        <input type="hidden" name="intent" value="description" />
+        <textarea
+          name="description"
+          rows={4}
+          defaultValue={description ?? ""}
+          placeholder="+ Add description"
+          onBlur={(e) => submit(e.currentTarget.form)}
+          className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+        />
+      </Form>
     </section>
   );
 }
@@ -670,6 +689,8 @@ function OverviewTab({
   collabToken: string | null;
   userName: string;
 }) {
+  const submit = useSubmit();
+
   return (
     <div className="flex flex-col gap-4">
       {actionError && (
@@ -681,6 +702,13 @@ function OverviewTab({
       {/* Description — its own segment on top, separate from Project details */}
       <DescriptionSegment description={project.description} canEdit={canEdit} />
 
+      {/* Project details. Each editable field auto-saves on blur (text) or
+          change (number/textarea — number's onBlur isn't reliable across
+          browsers when the value's just typed in). No "Save changes" button:
+          exiting edit mode via the page-level Done is the natural endpoint
+          and there's nothing left to commit by then. The whole form posts
+          intent=details with the FULL field set every time, so the action
+          handler stays unchanged. */}
       <Form
         method="post"
         className="bg-card border border-border rounded-lg p-4 flex flex-col gap-4 w-full"
@@ -697,6 +725,7 @@ function OverviewTab({
                 type="email"
                 defaultValue={project.calendarEmail ?? ""}
                 placeholder="projectname@dali.dartmouth.edu"
+                onBlur={(e) => submit(e.currentTarget.form)}
                 className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
               />
             ) : (
@@ -714,6 +743,7 @@ function OverviewTab({
                 type="url"
                 defaultValue={project.imageUrl ?? ""}
                 placeholder="https://…"
+                onBlur={(e) => submit(e.currentTarget.form)}
                 className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
               />
             ) : (
@@ -733,6 +763,7 @@ function OverviewTab({
                 type="number"
                 min={1}
                 defaultValue={project.termCount}
+                onBlur={(e) => submit(e.currentTarget.form)}
                 className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
               />
             ) : (
@@ -752,6 +783,7 @@ function OverviewTab({
               rows={3}
               defaultValue={project.repoUrls.join("\n")}
               placeholder="https://github.com/dali-lab/…"
+              onBlur={(e) => submit(e.currentTarget.form)}
               className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 font-mono"
             />
           ) : project.repoUrls.length > 0 ? (
@@ -776,17 +808,6 @@ function OverviewTab({
 
         {/* Team — read-only. Current term by default, expandable to all. */}
         <TeamSection teams={teams} />
-
-        {canEdit && (
-          <div className="flex justify-end">
-            <button
-              type="submit"
-              className="px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
-            >
-              Save changes
-            </button>
-          </div>
-        )}
       </Form>
 
       {/* Documents block */}
@@ -1029,14 +1050,20 @@ function WorkTab({
   editableEpics,
   sprints,
   tasks,
+  boardOptions,
   canEdit,
+  collabToken,
+  userName,
 }: {
   projectId: string;
   epics: TimelineEpic[];
   editableEpics: EditableEpic[];
   sprints: EditableSprint[];
   tasks: TaskCardModel[];
+  boardOptions: TaskBoardOptions;
   canEdit: boolean;
+  collabToken: string | null;
+  userName: string;
 }) {
   return (
     <div className="flex flex-col gap-6">
@@ -1048,12 +1075,19 @@ function WorkTab({
           epics={editableEpics}
           sprints={sprints}
           canManage={canEdit}
+          collabToken={collabToken}
+          userName={userName}
         />
       </section>
 
       <section>
         <h2 className="text-sm font-semibold text-foreground mb-3">Task board</h2>
-        <TaskBoard projectId={projectId} initialTasks={tasks} canManage={canEdit} />
+        <TaskBoard
+          projectId={projectId}
+          initialTasks={tasks}
+          options={boardOptions}
+          canManage={canEdit}
+        />
       </section>
     </div>
   );

@@ -328,9 +328,9 @@ export async function submitMemberForm(args: {
 }
 
 // Mark the member's open announcement-todo notifications that pointed at this
-// form as read. That's exactly the "open task" predicate listOpenTasks /
-// countOpenTasks use (kind SystemAnnouncement, isTodo, readAt null), so once
-// these flip the Home banner item disappears and the sidebar count drops.
+// form as read. listOpenTasks / countOpenTasks treat any unread notification
+// as an open task, so once these flip the Home banner item disappears and
+// the sidebar count drops.
 async function closeFormTodos(
   tx: Pick<typeof prisma, "notification">,
   userId: string,

@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRevalidator } from "react-router";
 import { Modal } from "~/components/Modal";
+import { CollaborativeEditor } from "~/components/CollaborativeEditor";
+import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { EpicsTimeline, type TimelineEpic } from "./EpicsTimeline";
 
 export type EditableStory = {
@@ -46,6 +48,12 @@ type Props = {
   epics: EditableEpic[];
   sprints: EditableSprint[];
   canManage: boolean;
+  // Hocuspocus WebSocket auth token; userName labels the presence cursor.
+  // Both are forwarded into the EpicDetail modal where the description
+  // CollaborativeEditor lives. Null token = signed-out / no-cookie state;
+  // the editor's read-only fallback handles it.
+  collabToken: string | null;
+  userName: string;
 };
 
 function dateInputValue(iso: string): string {
@@ -72,6 +80,8 @@ export function EpicSprintManager({
   epics,
   sprints,
   canManage,
+  collabToken,
+  userName,
 }: Props) {
   const revalidator = useRevalidator();
   const [error, setError] = useState<string | null>(null);
@@ -127,6 +137,8 @@ export function EpicSprintManager({
             startInEdit={openInEdit}
             run={run}
             api={api}
+            collabToken={collabToken}
+            userName={userName}
             onClose={() => {
               setOpenEpicId(null);
               setOpenInEdit(false);
@@ -199,7 +211,13 @@ export function EpicSprintManager({
                     </span>
                   </button>
                   <div className="flex items-center gap-3 flex-shrink-0">
-                    <span className="text-[11px] text-muted-foreground">{epic.status}</span>
+                    {/* Status as a pill so it doesn't read as a clickable
+                        action — the literal text "Open" used to be visually
+                        indistinguishable from the actual open-modal button
+                        below, which made the wrong target the obvious one. */}
+                    <span className="text-[11px] px-1.5 py-0.5 rounded-full border border-border text-muted-foreground bg-muted/30">
+                      {epic.status}
+                    </span>
                     {canManage && (
                       <button
                         type="button"
@@ -219,9 +237,9 @@ export function EpicSprintManager({
                         setOpenEpicId(epic.id);
                       }}
                       aria-label={`Open ${epic.title}`}
-                      className="text-xs text-muted-foreground hover:text-foreground"
+                      className="text-xs font-medium text-muted-foreground hover:text-foreground inline-flex items-center gap-0.5"
                     >
-                      ›
+                      Open <span aria-hidden>›</span>
                     </button>
                   </div>
                 </div>
@@ -286,6 +304,8 @@ function EpicDetail({
   startInEdit,
   run,
   api,
+  collabToken,
+  userName,
   onClose,
   onDeleted,
 }: {
@@ -299,6 +319,8 @@ function EpicDetail({
   startInEdit: boolean;
   run: (fn: () => Promise<void>) => void;
   api: (url: string, method: "POST" | "DELETE", body?: unknown) => Promise<void>;
+  collabToken: string | null;
+  userName: string;
   onClose: () => void;
   onDeleted: () => void;
 }) {
@@ -307,6 +329,41 @@ function EpicDetail({
   const [editSprintId, setEditSprintId] = useState<string | null>(null);
   const [newStoryOpen, setNewStoryOpen] = useState(false);
   const [editStoryId, setEditStoryId] = useState<string | null>(null);
+  // The epic's collab room name. Already populated for epics that have been
+  // opened in edit mode before; null otherwise (auto-provisioned on open if
+  // the user has edit perms, via POST /api/epics/:id/description-doc).
+  const [descriptionDocId, setDescriptionDocId] = useState<string | null>(
+    epic.descriptionDocId,
+  );
+  useEffect(() => {
+    // Already provisioned (this epic, or any past visit by anyone) — nothing
+    // to do; the editor mounts on the existing room name.
+    if (descriptionDocId) return;
+    // Viewers can't trigger the write — they'd just see a "No description
+    // yet" placeholder until a manager opens the epic. That's fine.
+    if (!canManage) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/epics/${epic.id}/description-doc`, {
+          method: "POST",
+          credentials: "include",
+        });
+        if (!res.ok) return;
+        const body = (await res.json()) as { descriptionDocId?: string };
+        if (!cancelled && body.descriptionDocId) {
+          setDescriptionDocId(body.descriptionDocId);
+        }
+      } catch {
+        // Network failure: the modal still shows the rest of the epic;
+        // the description block falls back to "No description yet." A
+        // future open retries.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [descriptionDocId, canManage, epic.id]);
 
   return (
     <div className="flex flex-col gap-4 max-h-[80vh] overflow-y-auto">
@@ -362,7 +419,10 @@ function EpicDetail({
         </div>
       </div>
 
-      {/* Epic details */}
+      {/* Epic details (title / status / dates) — Edit toggles the form. The
+          description is no longer part of this form; it has its own collab
+          editor below so it stays live and visible regardless of which
+          metadata-edit state we're in. */}
       <section className="bg-card border border-border rounded-lg p-4">
         {editEpicOpen ? (
           <EpicForm
@@ -377,29 +437,70 @@ function EpicDetail({
             }
           />
         ) : (
-          <div className="flex flex-col gap-2">
-            <div className="flex items-start justify-between gap-3">
-              <span className="text-xs text-muted-foreground">Description</span>
-              {canManage && (
-                <button
-                  type="button"
-                  onClick={() => setEditEpicOpen(true)}
-                  className="text-xs text-muted-foreground hover:text-foreground flex-shrink-0"
-                >
-                  Edit
-                </button>
+          <div className="flex items-center justify-between text-xs">
+            <div className="flex flex-wrap items-center gap-3 text-muted-foreground">
+              <span>Status: <span className="text-foreground">{epic.status}</span></span>
+              {epic.startsAt && (
+                <span>
+                  Start:{" "}
+                  <span className="text-foreground">
+                    {dateInputValue(epic.startsAt)}
+                  </span>
+                </span>
+              )}
+              {epic.endsAt && (
+                <span>
+                  End:{" "}
+                  <span className="text-foreground">
+                    {dateInputValue(epic.endsAt)}
+                  </span>
+                </span>
               )}
             </div>
-            {epic.description ? (
-              <p className="text-sm text-foreground whitespace-pre-wrap">
-                {epic.description}
-              </p>
-            ) : (
-              <p className="text-sm text-muted-foreground italic">
-                No description yet.
-              </p>
+            {canManage && (
+              <button
+                type="button"
+                onClick={() => setEditEpicOpen(true)}
+                className="text-xs text-muted-foreground hover:text-foreground flex-shrink-0"
+              >
+                Edit details
+              </button>
             )}
           </div>
+        )}
+      </section>
+
+      {/* Description — always live as a collab editor (the project's
+          Overview/PRD pattern). The room name is the epic's descriptionDocId
+          (lazily provisioned on first open by a manager). For viewers or
+          while provisioning is in flight, falls back to a quiet placeholder
+          so the modal isn't empty. */}
+      <section className="bg-card border border-border rounded-lg p-4">
+        <h3 className="text-sm font-semibold text-foreground mb-2">Description</h3>
+        {descriptionDocId && collabToken ? (
+          <PresenceProvider
+            pageId={`epic:${descriptionDocId}`}
+            token={collabToken}
+            userName={userName}
+          >
+            <CollaborativeEditor
+              editorId={`epic:${descriptionDocId}:description`}
+              documentName={`epic:${descriptionDocId}:description`}
+              token={collabToken}
+              userName={userName}
+              disabled={!canManage}
+              placeholder="What is this epic about?"
+              className="border border-border rounded-md"
+            />
+          </PresenceProvider>
+        ) : (
+          <p className="text-sm text-muted-foreground italic">
+            {canManage
+              ? "Preparing editor…"
+              : collabToken
+                ? "No description yet."
+                : "Sign in again to see the description."}
+          </p>
         )}
       </section>
 
@@ -603,7 +704,6 @@ function EpicForm({
   busy: boolean;
   onSubmit: (values: {
     title: string;
-    description: string | null;
     status: string;
     startsAt: string | null;
     endsAt: string | null;
@@ -611,7 +711,6 @@ function EpicForm({
   onCancel: () => void;
 }) {
   const [title, setTitle] = useState(initial?.title ?? "");
-  const [description, setDescription] = useState(initial?.description ?? "");
   const [status, setStatus] = useState(initial?.status ?? "Open");
   const [startsAt, setStartsAt] = useState(
     initial?.startsAt ? dateInputValue(initial.startsAt) : "",
@@ -626,8 +725,6 @@ function EpicForm({
         e.preventDefault();
         onSubmit({
           title,
-          // Empty → null clears the description.
-          description: description.trim() ? description.trim() : null,
           status,
           // Dates are optional for epics; empty → null clears the field.
           startsAt: startsAt ? new Date(startsAt).toISOString() : null,
@@ -679,17 +776,6 @@ function EpicForm({
           />
         </label>
       </div>
-
-      <label className="flex flex-col gap-1 text-xs">
-        <span className="text-muted-foreground">Description</span>
-        <textarea
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          rows={4}
-          placeholder="What is this epic about?"
-          className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-        />
-      </label>
 
       <div className="flex gap-1.5">
         <button

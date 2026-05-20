@@ -174,6 +174,10 @@ export default [
   // Project epics & sprints
   route("api/projects/:id/epics", "projects/routes/api.projects.$id.epics.ts"),
   route("api/epics/:id", "projects/routes/api.epics.$id.ts"),
+  route(
+    "api/epics/:id/description-doc",
+    "projects/routes/api.epics.$id.description-doc.ts",
+  ),
   route("api/epics/:id/stories", "projects/routes/api.epics.$id.stories.ts"),
   route("api/stories/:id", "projects/routes/api.stories.$id.ts"),
   route("api/projects/:id/sprints", "projects/routes/api.projects.$id.sprints.ts"),

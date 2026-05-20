@@ -152,9 +152,9 @@ function AttentionBanner({
                   </span>
                 ) : (
                   <span className="block text-[11px] text-muted-foreground mt-1">
-                    {t.source === "announcement"
-                      ? "Action needed"
-                      : "Awaiting your response"}
+                    {t.source === "meeting"
+                      ? "Awaiting your response"
+                      : "Action needed"}
                   </span>
                 )}
               </>

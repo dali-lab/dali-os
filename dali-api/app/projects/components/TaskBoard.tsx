@@ -1,18 +1,22 @@
 import { useMemo, useState } from "react";
 import { DndContext, useDraggable, useDroppable, type DragEndEvent } from "@dnd-kit/core";
+import { GripVertical } from "lucide-react";
 import {
   buildTaskBoard,
   nextPositionInColumn,
   TASK_STATUSES,
   TASK_STATUS_LABELS,
+  type TaskBoardOptions,
   type TaskCardModel,
   type TaskStatus,
   type Priority,
 } from "../lib/task-board";
+import { TaskModal } from "./TaskModal";
 
 type Props = {
   projectId: string;
   initialTasks: TaskCardModel[];
+  options: TaskBoardOptions;
   /** Admin/Core can drag + create. Others get a read-only board. */
   canManage: boolean;
 };
@@ -28,39 +32,44 @@ const PRIORITY_TONE: Record<Priority, string> = {
 // onward from there. One add affordance for the whole board, not per column.
 const CREATE_STATUS: TaskStatus = TASK_STATUSES[0];
 
-export function TaskBoard({ projectId, initialTasks, canManage }: Props) {
+export function TaskBoard({ projectId, initialTasks, options, canManage }: Props) {
   const [tasks, setTasks] = useState<TaskCardModel[]>(initialTasks);
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [draft, setDraft] = useState("");
   // Optional <input type="date"> value for the new task. Empty = no deadline.
   const [draftDueAt, setDraftDueAt] = useState("");
+  const [openTaskId, setOpenTaskId] = useState<string | null>(null);
 
   const board = useMemo(() => buildTaskBoard(tasks), [tasks]);
+  const openTask = openTaskId ? tasks.find((t) => t.id === openTaskId) ?? null : null;
 
-  // Optimistic update for an inline due-date change. On failure the caller
-  // restores the previous value; we centralise both the local-state write
-  // and the network call so the two paths stay in sync.
-  async function handleDueAtChange(taskId: string, isoOrNull: string | null) {
+  // Apply an optimistic local patch, then PATCH the row. On failure restore
+  // and surface the error. Used by both inline (card) edits and the modal.
+  async function patchTask(taskId: string, patch: Partial<TaskCardModel>) {
     const prev = tasks;
-    setTasks((cur) =>
-      cur.map((t) => (t.id === taskId ? { ...t, dueAt: isoOrNull } : t)),
-    );
+    setTasks((cur) => cur.map((t) => (t.id === taskId ? { ...t, ...patch } : t)));
     setError(null);
     try {
+      const body: Record<string, unknown> = {};
+      if ("dueAt" in patch) body.dueAt = patch.dueAt;
+      if ("domain" in patch) body.domainId = patch.domain?.id ?? null;
+      if ("assignees" in patch) body.assigneeIds = (patch.assignees ?? []).map((a) => a.id);
+      if ("title" in patch) body.title = patch.title;
+      if ("priority" in patch) body.priority = patch.priority;
       const res = await fetch(`/api/tasks/${taskId}`, {
         method: "PATCH",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dueAt: isoOrNull }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error ?? `Request failed: ${res.status}`);
+        const j = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(j.error ?? `Request failed: ${res.status}`);
       }
     } catch (err) {
       setTasks(prev);
-      setError(err instanceof Error ? err.message : "Failed to update deadline");
+      setError(err instanceof Error ? err.message : "Failed to update task");
     }
   }
 
@@ -94,12 +103,7 @@ export function TaskBoard({ projectId, initialTasks, canManage }: Props) {
     const trimmed = title.trim();
     if (!trimmed) return;
     setError(null);
-    // `<input type="date">` produces a date-only string (YYYY-MM-DD). Send
-    // the ISO timestamp pinned to end-of-day local time so reminders fire at
-    // a sensible hour rather than midnight UTC.
-    const dueAtIso = draftDueAt
-      ? endOfDayIso(draftDueAt)
-      : null;
+    const dueAtIso = draftDueAt ? endOfDayIso(draftDueAt) : null;
     try {
       const res = await fetch(`/api/projects/${projectId}/tasks`, {
         method: "POST",
@@ -127,7 +131,8 @@ export function TaskBoard({ projectId, initialTasks, canManage }: Props) {
           dueAt: dueAtIso,
           epicId: null,
           sprintId: null,
-          assigneeNames: [],
+          assignees: [],
+          domain: null,
         },
       ]);
       setDraft("");
@@ -146,8 +151,6 @@ export function TaskBoard({ projectId, initialTasks, canManage }: Props) {
         </div>
       )}
 
-      {/* One add affordance for the whole board. New tasks enter the first
-          column and can be dragged onward. */}
       {canManage && (
         <div>
           {isCreating ? (
@@ -209,8 +212,7 @@ export function TaskBoard({ projectId, initialTasks, canManage }: Props) {
         </div>
       )}
 
-      {/* Stable id so SSR/client agree when multiple DndContexts mount (see
-          StaffingBoard for the hydration-mismatch rationale). */}
+      {/* Stable id so SSR/client agree when multiple DndContexts mount. */}
       <DndContext id="task-board" onDragEnd={handleDragEnd}>
         <div className="flex gap-3 overflow-x-auto pb-3">
           {TASK_STATUSES.map((status) => (
@@ -219,11 +221,21 @@ export function TaskBoard({ projectId, initialTasks, canManage }: Props) {
               status={status}
               cards={board[status] ?? []}
               canManage={canManage}
-              onDueAtChange={handleDueAtChange}
+              onOpen={(id) => setOpenTaskId(id)}
             />
           ))}
         </div>
       </DndContext>
+
+      {openTask && (
+        <TaskModal
+          task={openTask}
+          options={options}
+          canManage={canManage}
+          onClose={() => setOpenTaskId(null)}
+          onPatch={(patch) => patchTask(openTask.id, patch)}
+        />
+      )}
     </div>
   );
 }
@@ -232,12 +244,12 @@ function Column({
   status,
   cards,
   canManage,
-  onDueAtChange,
+  onOpen,
 }: {
   status: TaskStatus;
   cards: TaskCardModel[];
   canManage: boolean;
-  onDueAtChange: (taskId: string, isoOrNull: string | null) => void;
+  onOpen: (taskId: string) => void;
 }) {
   const { isOver, setNodeRef } = useDroppable({ id: status });
 
@@ -266,8 +278,7 @@ function Column({
               key={card.id}
               card={card}
               draggable={canManage}
-              canManage={canManage}
-              onDueAtChange={onDueAtChange}
+              onOpen={() => onOpen(card.id)}
             />
           ))
         )}
@@ -276,29 +287,30 @@ function Column({
   );
 }
 
+// The drag handle and the card body are split so the body's click can open
+// the modal without dnd-kit's pointer listeners swallowing it. Listeners go
+// only on the GripVertical handle; the rest of the card has a regular
+// onClick. Keyboard activation (Enter/Space) also opens the modal so the
+// card stays operable without a pointer.
 function TaskCard({
   card,
   draggable,
-  canManage,
-  onDueAtChange,
+  onOpen,
 }: {
   card: TaskCardModel;
   draggable: boolean;
-  canManage: boolean;
-  onDueAtChange: (taskId: string, isoOrNull: string | null) => void;
+  onOpen: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: card.id,
     data: { taskId: card.id, fromStatus: card.status },
     disabled: !draggable,
   });
-  const [isEditingDue, setIsEditingDue] = useState(false);
 
   const style: React.CSSProperties = transform
     ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 50 }
     : {};
 
-  const dragProps = draggable ? { ...attributes, ...listeners } : {};
   const overdue =
     card.dueAt != null &&
     card.status !== "Done" &&
@@ -309,108 +321,57 @@ function TaskCard({
     <div
       ref={setNodeRef}
       style={style}
-      {...dragProps}
-      className={`border border-border rounded-md bg-background p-2.5 text-sm ${
-        draggable ? "cursor-grab active:cursor-grabbing" : ""
-      } ${isDragging ? "opacity-60 shadow-lg" : "hover:bg-muted/20"}`}
+      className={`border border-border rounded-md bg-background text-sm flex ${
+        isDragging ? "opacity-60 shadow-lg" : "hover:bg-muted/20"
+      }`}
     >
-      <div className="text-foreground">{card.title}</div>
-      <div className="mt-1.5 flex items-center justify-between gap-2">
-        <span className={`text-[11px] ${PRIORITY_TONE[card.priority]}`}>
-          {card.priority}
-        </span>
-        {card.assigneeNames.length > 0 && (
-          <span className="text-[11px] text-muted-foreground truncate">
-            {card.assigneeNames.join(", ")}
-          </span>
-        )}
-      </div>
-      {/* Due date row: a small pill when set, a subtle "+ Due" affordance
-          when not. Both open an inline date editor for managers. The editor
-          uses pointer/keyboard events with stopPropagation so the dnd-kit
-          drag listeners on the card don't swallow input focus. */}
-      {isEditingDue && canManage ? (
+      {draggable && (
         <div
-          className="mt-2 flex items-center gap-1.5"
-          onPointerDown={(e) => e.stopPropagation()}
-          onKeyDown={(e) => e.stopPropagation()}
+          {...attributes}
+          {...listeners}
+          aria-label="Drag task"
+          className="flex-shrink-0 px-1 py-2.5 cursor-grab active:cursor-grabbing text-muted-foreground/60 hover:text-muted-foreground"
         >
-          <input
-            type="date"
-            autoFocus
-            defaultValue={card.dueAt ? dateInputValue(card.dueAt) : ""}
-            onBlur={(e) => {
-              const next = e.currentTarget.value;
-              const nextIso = next ? endOfDayIso(next) : null;
-              if (nextIso !== card.dueAt) onDueAtChange(card.id, nextIso);
-              setIsEditingDue(false);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") {
-                e.preventDefault();
-                setIsEditingDue(false);
-              }
-            }}
-            className="px-1.5 py-1 text-[11px] border border-border rounded-md bg-background text-foreground"
-          />
-          {card.dueAt && (
-            <button
-              type="button"
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation();
-                onDueAtChange(card.id, null);
-                setIsEditingDue(false);
-              }}
-              className="text-[11px] text-muted-foreground hover:text-destructive"
-            >
-              clear
-            </button>
+          <GripVertical className="w-4 h-4" />
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex-1 min-w-0 text-left p-2.5 pl-1.5 focus:outline-none focus:ring-2 focus:ring-accent-coral/30 rounded-md"
+      >
+        <div className="text-foreground">{card.title}</div>
+        <div className="mt-1.5 flex items-center justify-between gap-2">
+          <span className={`text-[11px] ${PRIORITY_TONE[card.priority]}`}>
+            {card.priority}
+          </span>
+          {card.assignees.length > 0 && (
+            <span className="text-[11px] text-muted-foreground truncate">
+              {card.assignees.map((a) => a.name).join(", ")}
+            </span>
           )}
         </div>
-      ) : card.dueAt ? (
-        <button
-          type="button"
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation();
-            if (canManage) setIsEditingDue(true);
-          }}
-          disabled={!canManage}
-          className={`mt-2 text-[11px] px-1.5 py-0.5 rounded-md border ${
-            overdue
-              ? "border-accent-coral/40 text-accent-coral bg-accent-coral/10"
-              : "border-border text-muted-foreground"
-          } ${canManage ? "hover:bg-muted/40" : ""}`}
-        >
-          Due {formatDuePill(card.dueAt)}
-        </button>
-      ) : canManage ? (
-        <button
-          type="button"
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation();
-            setIsEditingDue(true);
-          }}
-          className="mt-2 text-[11px] text-muted-foreground hover:text-foreground"
-        >
-          + Due
-        </button>
-      ) : null}
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          {card.dueAt && (
+            <span
+              className={`text-[11px] px-1.5 py-0.5 rounded-md border ${
+                overdue
+                  ? "border-accent-coral/40 text-accent-coral bg-accent-coral/10"
+                  : "border-border text-muted-foreground"
+              }`}
+            >
+              Due {formatDuePill(card.dueAt)}
+            </span>
+          )}
+          {card.domain && (
+            <span className="text-[11px] px-1.5 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-100">
+              {card.domain.name}
+            </span>
+          )}
+        </div>
+      </button>
     </div>
   );
-}
-
-// Convert an ISO timestamp to the YYYY-MM-DD value an `<input type="date">`
-// expects, in the user's local timezone (so a deadline picked as "Mar 12"
-// shows up as Mar 12 on the editor regardless of how it serialized to UTC).
-function dateInputValue(iso: string): string {
-  const d = new Date(iso);
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
 }
 
 // A date-only input (YYYY-MM-DD) is timezone-agnostic on the client; pin it
@@ -418,7 +379,6 @@ function dateInputValue(iso: string): string {
 // reminder a day early in Eastern. Returns an ISO UTC string.
 function endOfDayIso(dateOnly: string): string {
   const [y, m, d] = dateOnly.split("-").map(Number);
-  // 23:59:59 local time on the chosen day.
   const local = new Date(y, (m ?? 1) - 1, d ?? 1, 23, 59, 59);
   return local.toISOString();
 }

@@ -34,7 +34,19 @@ export type TaskCardModel = {
   dueAt: string | null;
   epicId: string | null;
   sprintId: string | null;
-  assigneeNames: string[];
+  // Each assignee with id + display name. Id powers the modal's assignee
+  // dropdown; name powers the card chip.
+  assignees: { id: string; name: string }[];
+  // Optional domain label on the task itself (Domain.code/displayName).
+  // Independent of who's assigned.
+  domain: { id: string; name: string } | null;
+};
+
+// Choices the TaskModal needs to populate its assignee + domain dropdowns.
+// Loader fetches once per board render and passes through to TaskBoard.
+export type TaskBoardOptions = {
+  members: { id: string; name: string }[];
+  domains: { id: string; name: string }[];
 };
 
 export type TaskBoard = Record<TaskStatus, TaskCardModel[]>;

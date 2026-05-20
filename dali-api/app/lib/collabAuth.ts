@@ -102,5 +102,20 @@ export async function authorizeCollabDoc(
     return isHiringLead(userSub);
   }
 
+  // epic:{descriptionDocId}:description — the rich description on an Epic.
+  // `id` is the opaque cuid stored on Epic.descriptionDocId (a room name,
+  // NOT a Page row). The lookup goes by that column rather than by Epic.id
+  // because the editor only knows the room name. Same edit gate as the
+  // epic write API (isHiringLead === Admin || Core); no separate read gate
+  // since reading an epic is already gated by the page that renders it.
+  if (entity === "epic") {
+    const epic = await prisma.epic.findFirst({
+      where: { descriptionDocId: id },
+      select: { id: true },
+    });
+    if (!epic) return false;
+    return isHiringLead(userSub);
+  }
+
   return false;
 }
