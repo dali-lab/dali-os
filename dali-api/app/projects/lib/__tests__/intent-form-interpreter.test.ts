@@ -61,8 +61,8 @@ describe("interpretIntentForm", () => {
     if (!r.ok) expect(r.error).toMatch(/out of date/);
   });
 
-  it("errors when nothing was submitted", () => {
+  it("returns no rows (not an error) when nothing was submitted", () => {
     const r = interpretIntentForm({}, mapping, ["t1", "t2"]);
-    expect(r).toMatchObject({ ok: false });
+    expect(r).toEqual({ ok: true, rows: [] });
   });
 });

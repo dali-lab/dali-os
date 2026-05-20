@@ -24,7 +24,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // only exists for members.
   if (!(await requireMember(auth.user.sub))) return redirect("/");
 
-  const form = await loadPublicForm(params.token!);
+  // Pass the member's id so member-scoped reference sources (e.g. a bid's
+  // domain dropdown limited to the member's own eligibility) populate.
+  const form = await loadPublicForm(params.token!, auth.user.sub);
   if (!form) throw new Response("Not found", { status: 404 });
   // loadPublicForm doesn't echo the token back; the submit endpoint is
   // addressed by it, so pass it through explicitly.

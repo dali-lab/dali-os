@@ -29,6 +29,11 @@ model User {
   // Personal (non-Dartmouth) email. Used by alumni post-grad after
   // @dali.dartmouth.edu revocation and as the magic-link target for partners.
   personalEmail  String? @unique
+  // Slack user id (e.g. "U0123ABCD"), populated by a daliEmail → Slack
+  // lookup (see slack-client.lookupSlackUserByEmail in the reminders
+  // follow-up). Nullable: a user with no resolved Slack id silently skips
+  // any DM-based notification rather than blocking the feature.
+  slackUserId    String? @unique
 
   // ─── Names — single source of truth ───────────────────────────────────────
   firstName String
@@ -1760,6 +1765,10 @@ model Task {
   status           TaskStatus @default(Todo)
   priority         Priority   @default(Normal)
   position         Int        @default(0)
+  // Optional deadline. UTC instant; UI formats in local time. When set,
+  // assignees get a Slack DM 24h before and at the moment (see
+  // TaskReminder, added in a follow-up). Null = no reminders fire.
+  dueAt            DateTime?
 
   // Subtasks: simple checklist field rather than hierarchical Task→Task
   // children (Linear/Notion style).

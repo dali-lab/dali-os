@@ -94,8 +94,9 @@ export function interpretIntentForm(
     rows.push({ termId: e.termId, status });
   }
 
-  if (rows.length === 0) {
-    return { ok: false, error: "No availability was submitted." };
-  }
+  // No rows is NOT an error any more: the raw submission is still recorded by
+  // the caller regardless, this just produces no IntentToWork rows. Genuine
+  // misconfigurations (bad status value, stale term) above still fail so a
+  // manager fixes them.
   return { ok: true, rows };
 }

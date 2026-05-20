@@ -29,6 +29,9 @@ type MemberRow = {
   photoUrl: string | null;
   isAdmin: boolean;
   coreTitles: string[];
+  // Each domain the member is eligible for, with their level — rendered as
+  // pills in the Roles column. Same source as the staffing boards.
+  domainRoles: { domainName: string; level: string }[];
 };
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -84,6 +87,12 @@ export async function loader({ request }: Route.LoaderArgs) {
       photoUrl: true,
       adminMembership: { select: { id: true } },
       coreAssignments: { select: { leadTitle: true } },
+      domainEligibilities: {
+        select: {
+          level: true,
+          domain: { select: { displayName: true } },
+        },
+      },
     },
   });
 
@@ -101,6 +110,10 @@ export async function loader({ request }: Route.LoaderArgs) {
     coreTitles: Array.from(
       new Set(u.coreAssignments.map((a) => a.leadTitle).filter((t): t is string => !!t)),
     ),
+    domainRoles: u.domainEligibilities.map((e) => ({
+      domainName: e.domain.displayName,
+      level: e.level,
+    })),
   }));
 
   const canEdit = await isHiringLead(auth.user.sub);
@@ -431,7 +444,11 @@ function MembersTable({ rows }: { rows: MemberRow[] }) {
               </td>
               <td className="px-4 py-2 text-muted-foreground">{m.email ?? "—"}</td>
               <td className="px-4 py-2">
-                <RolePills isAdmin={m.isAdmin} coreTitles={m.coreTitles} />
+                <RolePills
+                  isAdmin={m.isAdmin}
+                  coreTitles={m.coreTitles}
+                  domainRoles={m.domainRoles}
+                />
               </td>
             </tr>
           ))}
@@ -473,7 +490,11 @@ function MemberCard({ member }: { member: MemberRow }) {
           <div className="text-xs text-muted-foreground truncate mt-0.5">{member.email}</div>
         )}
         <div className="mt-2">
-          <RolePills isAdmin={member.isAdmin} coreTitles={member.coreTitles} />
+          <RolePills
+            isAdmin={member.isAdmin}
+            coreTitles={member.coreTitles}
+            domainRoles={member.domainRoles}
+          />
         </div>
       </div>
     </Link>
@@ -497,8 +518,16 @@ function Avatar({ photoUrl, name }: { photoUrl: string | null; name: string }) {
   );
 }
 
-function RolePills({ isAdmin, coreTitles }: { isAdmin: boolean; coreTitles: string[] }) {
-  if (!isAdmin && coreTitles.length === 0) {
+function RolePills({
+  isAdmin,
+  coreTitles,
+  domainRoles,
+}: {
+  isAdmin: boolean;
+  coreTitles: string[];
+  domainRoles: { domainName: string; level: string }[];
+}) {
+  if (!isAdmin && coreTitles.length === 0 && domainRoles.length === 0) {
     return <span className="text-muted-foreground text-xs">—</span>;
   }
   return (
@@ -514,6 +543,14 @@ function RolePills({ isAdmin, coreTitles }: { isAdmin: boolean; coreTitles: stri
           className="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded bg-muted text-foreground"
         >
           {title}
+        </span>
+      ))}
+      {domainRoles.map((d) => (
+        <span
+          key={`${d.domainName}-${d.level}`}
+          className="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded bg-blue-50 text-blue-700 border border-blue-100"
+        >
+          {d.domainName} · {d.level}
         </span>
       ))}
     </div>

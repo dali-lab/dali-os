@@ -44,8 +44,13 @@ function safeParse(s: string | null): unknown {
 // Resolve a public token to its form's latest version. Returns null when the
 // token is unknown, the form is unpublished, or it has no versions yet —
 // callers must treat all three as an indistinguishable 404 (don't leak which).
+// `userId`, when given, is the authenticated member viewing the form. It's
+// passed to reference-source resolution so member-scoped sources (e.g.
+// "domains:my-eligibility") can populate. On the public/unauthenticated path
+// it's absent and those sources resolve to an empty option list.
 export async function loadPublicForm(
   token: string,
+  userId?: string | null,
 ): Promise<PublicForm | null> {
   if (!token) return null;
   const form = await prisma.form.findUnique({
@@ -73,7 +78,9 @@ export async function loadPublicForm(
   const resolved = await Promise.all(
     questions.map(async (q) => {
       if (q.type !== "reference") return q;
-      const options = await resolveReferenceOptions(q.data.referenceSource);
+      const options = await resolveReferenceOptions(q.data.referenceSource, {
+        userId,
+      });
       return { ...q, data: { ...q.data, referenceOptions: options } };
     }),
   );
@@ -92,6 +99,7 @@ export async function loadPublicForm(
 async function validateAnswers(
   questions: Question[],
   answers: Record<string, unknown>,
+  userId: string,
 ): Promise<{ error: string; status: number } | null> {
   // Enforce required answers. `file` questions can't be completed without an
   // authenticated upload presign, so a required file question makes the form
@@ -121,7 +129,9 @@ async function validateAnswers(
     if (q.type !== "reference") continue;
     const answer = answers[q.key];
     if (answer == null || answer === "") continue; // required-ness handled above
-    const options = await resolveReferenceOptions(q.data.referenceSource);
+    const options = await resolveReferenceOptions(q.data.referenceSource, {
+      userId,
+    });
     if (!options.some((o) => o.value === answer)) {
       return {
         error: `"${q.data.label}": that choice is no longer available.`,
@@ -200,7 +210,7 @@ export async function submitMemberForm(args: {
   }
 
   const questions = (version.questions as unknown as Question[]) ?? [];
-  const bad = await validateAnswers(questions, args.answers);
+  const bad = await validateAnswers(questions, args.answers, args.userId);
   if (bad) return bad;
 
   // Is this form bound to a staffing slot for the *current* term's cycle?
@@ -235,30 +245,38 @@ export async function submitMemberForm(args: {
     return { ok: true };
   }
 
-  // A bound staffing form is interpreted via its SAVED column mapping (not
-  // reference-source guessing). No mapping, or a mapping that no longer fits
-  // the current form version, fails closed — nothing is written and the
-  // member is told to ask a manager to (re)map it.
+  // A bound staffing form ALWAYS records its raw submission — the slot's
+  // board is a database view of submissions, not a fixed-shape record. The
+  // saved column mapping is additive: when project/domain (or intent-status)
+  // columns are mapped, those answers ALSO feed StaffingPreference /
+  // IntentToWork so existing staffing logic stays fed. A missing, partial, or
+  // since-broken mapping no longer rejects the member — it just produces no
+  // staffing rows for this submission.
   const slot = staffingBinding.slot as Slot;
   const cycle = staffingBinding.staffingCycle;
   const mapping = parseColumnMapping(staffingBinding.columnMapping);
   const mapCheck = validateMapping(slot, questions, mapping);
-  if (!mapCheck.ok) {
-    return {
-      error: `This form isn't set up to collect ${
-        slot === "project-bids" ? "bids" : "intent"
-      } yet — a staffing manager must map its questions to columns. (${mapCheck.reason})`,
-      status: 400,
-    };
-  }
-  const map = mapping as ColumnMapping; // validateMapping guaranteed non-null
+  // A genuinely broken mapping (wrong question type, stale key) can't be
+  // interpreted, but the submission still belongs in the database — record it
+  // and skip the staffing feed rather than losing the member's answers.
+  const feedStaffing = mapCheck.ok && mapping != null;
 
   if (slot === "project-bids") {
-    const interpreted = interpretBidForm(args.answers, map);
-    if (!interpreted.ok) return { error: interpreted.error, status: 400 };
-
-    const validated = await validateBids(args.userId, cycle, interpreted.bids);
-    if (!validated.ok) return { error: validated.error, status: 400 };
+    const interpreted = feedStaffing
+      ? interpretBidForm(args.answers, mapping as ColumnMapping)
+      : { ok: true as const, bids: [] };
+    // interpretBidForm no longer hard-fails; on the unexpected error shape
+    // just skip the feed rather than reject the submission.
+    const rawBids = interpreted.ok ? interpreted.bids : [];
+    // validateBids resolves level from DomainEligibility and drops bids the
+    // member isn't eligible for. Under the database model an eligibility
+    // mismatch shouldn't discard the whole submission, so on failure we
+    // record with no preference rows instead of erroring.
+    const validated =
+      rawBids.length > 0
+        ? await validateBids(args.userId, cycle, rawBids)
+        : { ok: true as const, bids: [] };
+    const bidsToWrite = validated.ok ? validated.bids : [];
 
     await prisma.$transaction(async (tx) => {
       await tx.formSubmission.create({
@@ -271,22 +289,26 @@ export async function submitMemberForm(args: {
           answers: args.answers as object,
         },
       });
-      await replaceBidSet(tx, args.userId, cycle.id, validated.bids);
+      // Replace (not merge) so a resubmission with fewer bids removes the
+      // old ones; an empty set clears them, matching prior behaviour.
+      await replaceBidSet(tx, args.userId, cycle.id, bidsToWrite);
       await closeFormTodos(tx, args.userId, form.id);
     });
     return { ok: true };
   }
 
-  // slot === "intent-to-work": one IntentToWork row per mapped term. The
-  // mapping decides which terms it collects (entries[].termId); validation
-  // only requires those be real Term ids.
+  // slot === "intent-to-work": one IntentToWork row per mapped term, when the
+  // intent-status columns are mapped. Otherwise the submission is still
+  // recorded with no intent rows.
   const termRows = await prisma.term.findMany({ select: { id: true } });
-  const interpreted = interpretIntentForm(
-    args.answers,
-    map,
-    termRows.map((t) => t.id),
-  );
-  if (!interpreted.ok) return { error: interpreted.error, status: 400 };
+  const interpreted = feedStaffing
+    ? interpretIntentForm(
+        args.answers,
+        mapping as ColumnMapping,
+        termRows.map((t) => t.id),
+      )
+    : { ok: true as const, rows: [] };
+  const intentRows = interpreted.ok ? interpreted.rows : [];
 
   await prisma.$transaction(async (tx) => {
     await tx.formSubmission.create({
@@ -299,7 +321,7 @@ export async function submitMemberForm(args: {
         answers: args.answers as object,
       },
     });
-    await replaceIntentSet(tx, args.userId, cycle.id, interpreted.rows);
+    await replaceIntentSet(tx, args.userId, cycle.id, intentRows);
     await closeFormTodos(tx, args.userId, form.id);
   });
   return { ok: true };

@@ -12,8 +12,9 @@ import {
   setSlotColumnMapping,
 } from "../lib/form-slots";
 import { SubmissionFilters } from "../components/SubmissionFilters";
-import { SlotFormPicker } from "../components/SlotFormPicker";
-import { SlotColumnMapper } from "../components/SlotColumnMapper";
+import { SlotAdvancedSettingsModal } from "../components/SlotAdvancedSettingsModal";
+import { SubmissionDatabase } from "../components/SubmissionDatabase";
+import { DomainFilter } from "../components/DomainFilter";
 import { TermFilter } from "~/components/TermFilter";
 import { resolveTermFilter } from "~/lib/terms";
 import {
@@ -21,6 +22,7 @@ import {
   validateMapping,
   type ColumnMapping,
 } from "../lib/slot-roles";
+import { buildSubmissionView } from "../lib/submission-view.server";
 import type { Question } from "~/types";
 
 const SLOT = "project-bids" as const;
@@ -75,106 +77,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     singleCycleId = cycle.id;
   }
 
-  // A submission only exists in relation to a bound form: a member's bids
-  // show here only if they actually submitted the cycle's Project Bids form
-  // (a FormSubmission stamped with this cycle + the project-bids slot). This
-  // filters out legacy/seed StaffingPreference rows that never came through a
-  // form, so an unbound cycle shows nothing rather than phantom bids.
-  const formSubs = await prisma.formSubmission.findMany({
-    where: {
-      staffingCycleId: { in: cycleIds },
-      slot: SLOT,
-      userId: { not: null },
-    },
-    select: { userId: true },
-  });
-  const submittedUserIds = [
-    ...new Set(formSubs.map((s) => s.userId).filter((id): id is string => !!id)),
-  ];
-
-  const rows = submittedUserIds.length
-    ? await prisma.staffingPreference.findMany({
-        where: {
-          staffingCycleId: { in: cycleIds },
-          userId: { in: submittedUserIds },
-        },
-        orderBy: [{ userId: "asc" }, { preferenceRank: "asc" }],
-        select: {
-          userId: true,
-          projectId: true,
-          domainId: true,
-          preferenceRank: true,
-          level: true,
-          notes: true,
-          user: { select: { firstName: true, lastName: true, daliEmail: true } },
-        },
-      })
-    : [];
-
-  // StaffingPreference stores projectId/domainId as bare strings (no
-  // relations), so resolve display names in one batched lookup each.
-  const projectIds = [...new Set(rows.map((r) => r.projectId))];
-  const domainIds = [...new Set(rows.map((r) => r.domainId))];
-  const [projects, domains] = await Promise.all([
-    prisma.project.findMany({
-      where: { id: { in: projectIds } },
-      select: { id: true, name: true },
-    }),
-    prisma.domain.findMany({
-      where: { id: { in: domainIds } },
-      select: { id: true, displayName: true },
-    }),
-  ]);
-  const projectName = new Map(projects.map((p) => [p.id, p.name]));
-  const domainName = new Map(domains.map((d) => [d.id, d.displayName]));
-
-  const byUser = new Map<
-    string,
-    {
-      userId: string;
-      name: string;
-      email: string | null;
-      bids: {
-        rank: number;
-        project: string;
-        domainId: string;
-        domain: string;
-        level: string;
-        notes: string | null;
-      }[];
-    }
-  >();
-  for (const r of rows) {
-    const existing = byUser.get(r.userId);
-    const bid = {
-      rank: r.preferenceRank,
-      project: projectName.get(r.projectId) ?? "(unknown project)",
-      domainId: r.domainId,
-      domain: domainName.get(r.domainId) ?? "(unknown domain)",
-      level: r.level as string,
-      notes: r.notes,
-    };
-    if (!existing) {
-      byUser.set(r.userId, {
-        userId: r.userId,
-        name: `${r.user.firstName} ${r.user.lastName}`,
-        email: r.user.daliEmail,
-        bids: [bid],
-      });
-    } else {
-      existing.bids.push(bid);
-    }
-  }
-
-  const submissions = [...byUser.values()].sort((a, b) =>
-    a.name.localeCompare(b.name),
-  );
-
-  // Distinct domains across all bids, for the filter dropdown.
-  const domainFilter = [...domainName.entries()]
-    .map(([id, name]) => ({ id, name }))
-    .sort((a, b) => a.name.localeCompare(b.name));
-
   // The generic-form slot binding is per-cycle, so it only applies to the
   // single-term view. In the all-terms aggregate there's no one slot to bind,
   // so the picker is hidden (singleCycleId === null).
@@ -186,6 +88,23 @@ export async function loader({ request }: Route.LoaderArgs) {
       : Promise.resolve([]),
   ]);
 
+  // The board is a database view of the raw submissions: every member who
+  // submitted the bound form shows here, with whatever columns the manager
+  // configured (order/visibility from the saved mapping). StaffingPreference
+  // is still written by the submit path when project/domain columns are
+  // mapped, but the table reads submissions so partial/zero mappings still
+  // show the data.
+  const view = await buildSubmissionView({
+    cycleIds,
+    slot: SLOT,
+    formId: binding?.formId ?? null,
+  });
+  const submissions = view.rows;
+  const tableColumns = view.tableColumns.map((c) => ({
+    key: c.key,
+    label: c.label,
+  }));
+
   // The bound form's latest-version questions drive the column mapper, and
   // validating the saved mapping against them warns a manager (before any
   // member submits) that the mapping is missing/stale.
@@ -195,6 +114,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     type: string;
     referenceSource?: string;
   }[] = [];
+  // Submissions always record now; a mapping problem only means some columns
+  // can't feed staffing / can't render. Surface it as advisory, not a block.
   let mappingWarning: string | null = null;
   if (binding) {
     const latest = await prisma.formVersion.findFirst({
@@ -218,6 +139,11 @@ export async function loader({ request }: Route.LoaderArgs) {
   // (The all-terms aggregate has no single slot to bind, so it's exempt.)
   const noFormConnected = !isAll && !binding;
 
+  const domainOptions = await prisma.domain.findMany({
+    orderBy: { displayName: "asc" },
+    select: { id: true, displayName: true },
+  });
+
   return {
     gate: "ok" as const,
     cycle: { name: cycleName },
@@ -225,13 +151,14 @@ export async function loader({ request }: Route.LoaderArgs) {
     selectedTerm,
     isAll,
     submissions,
-    domainFilter,
+    tableColumns,
     canManage,
     binding,
     selectableForms,
     formQuestions,
     mappingWarning,
     noFormConnected,
+    domainOptions,
   };
 }
 
@@ -327,38 +254,46 @@ function Loaded({
 }) {
   const [query, setQuery] = useState("");
   const [domainId, setDomainId] = useState("");
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return data.submissions.filter((s) => {
-      if (q && !`${s.name} ${s.email ?? ""}`.toLowerCase().includes(q)) {
+      if (q && !`${s.name} ${s.email ?? ""}`.toLowerCase().includes(q))
         return false;
-      }
-      if (domainId && !s.bids.some((b) => b.domainId === domainId)) {
-        return false;
-      }
+      if (domainId && !s.domainIds.includes(domainId)) return false;
       return true;
     });
   }, [data.submissions, query, domainId]);
 
+  const domains = useMemo(
+    () => data.domainOptions.map((d) => ({ id: d.id, name: d.displayName })),
+    [data.domainOptions],
+  );
+
+  // The form/columns settings only make sense per-cycle; the all-terms
+  // aggregate has no single binding to edit, so the trigger is hidden there.
+  const canOpenSettings = !data.isAll;
+
   return (
     <div className="flex flex-col gap-4">
-      <Header cycleName={data.cycle.name} />
+      <Header
+        cycleName={data.cycle.name}
+        onOpenSettings={
+          canOpenSettings ? () => setSettingsOpen(true) : undefined
+        }
+        settingsLabel={data.canManage ? "Advanced settings" : "View settings"}
+      />
 
-      {!data.isAll && (
-        <SlotFormPicker
+      {canOpenSettings && (
+        <SlotAdvancedSettingsModal
+          open={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+          slot="project-bids"
           slotLabel="Project Bids"
           binding={data.binding}
-          forms={data.selectableForms}
-          canManage={data.canManage}
-        />
-      )}
-
-      {!data.isAll && data.binding && (
-        <SlotColumnMapper
-          slot="project-bids"
-          questions={data.formQuestions}
-          mapping={data.binding.mapping}
+          selectableForms={data.selectableForms}
+          formQuestions={data.formQuestions}
           cycleTerms={[]}
           canManage={data.canManage}
         />
@@ -366,106 +301,76 @@ function Loaded({
 
       {data.mappingWarning && (
         <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          <span className="font-medium">Bids won’t be recorded yet:</span>{" "}
-          {data.mappingWarning}
+          <span className="font-medium">Heads up:</span> {data.mappingWarning}{" "}
+          Submissions are still recorded; affected columns just won’t feed
+          staffing until you fix the mapping.
         </div>
       )}
 
       <div className="flex flex-col sm:flex-row gap-2">
         <div className="flex-1">
-          <SubmissionFilters
-            query={query}
-            onQueryChange={setQuery}
-            domainId={domainId}
-            onDomainChange={setDomainId}
-            domains={data.domainFilter}
-          />
+          <SubmissionFilters query={query} onQueryChange={setQuery} />
         </div>
+        <DomainFilter
+          domains={domains}
+          value={domainId}
+          onChange={setDomainId}
+        />
         <TermFilter terms={data.termOptions} selected={data.selectedTerm} />
       </div>
 
-      <div className="bg-card border border-border rounded-lg">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-          <h2 className="text-sm font-medium text-foreground">Submissions</h2>
-          <span className="text-xs text-muted-foreground">
-            {filtered.length}
-            {filtered.length === data.submissions.length
-              ? ""
-              : ` of ${data.submissions.length}`}{" "}
-            member
-            {data.submissions.length === 1 ? "" : "s"}
-          </span>
-        </div>
+      <div className="bg-card border border-border rounded-lg overflow-hidden">
         {data.noFormConnected ? (
           <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-            No Project Bids form is connected for this term. Connect a form
-            above so members can submit bids — bids only exist through the
-            form.
-          </div>
-        ) : data.submissions.length === 0 ? (
-          <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-            No bid submissions yet.
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-            No members match the current filters.
+            No Project Bids form is connected for this term. Open{" "}
+            <em>Advanced settings</em> to connect one so members can submit
+            bids — bids only exist through the form.
           </div>
         ) : (
-          <ul className="divide-y divide-border">
-            {filtered.map((s) => (
-              <li key={s.userId} className="px-4 py-3">
-                <div className="mb-2">
-                  <div className="text-sm text-foreground">{s.name}</div>
-                  {s.email && (
-                    <div className="text-xs text-muted-foreground">
-                      {s.email}
-                    </div>
-                  )}
-                </div>
-                <ol className="flex flex-wrap gap-x-4 gap-y-1.5">
-                  {s.bids.map((b) => (
-                    <li
-                      key={b.rank}
-                      className="flex items-start gap-2 text-sm"
-                    >
-                      <span className="shrink-0 w-5 h-5 rounded-full bg-accent-coral text-white text-xs font-semibold flex items-center justify-center">
-                        {b.rank}
-                      </span>
-                      <div className="min-w-0">
-                        <div className="text-foreground">
-                          {b.project}
-                          <span className="text-muted-foreground">
-                            {" "}
-                            · {b.domain} · {b.level}
-                          </span>
-                        </div>
-                        {b.notes && (
-                          <div className="text-xs text-muted-foreground mt-0.5">
-                            {b.notes}
-                          </div>
-                        )}
-                      </div>
-                    </li>
-                  ))}
-                </ol>
-              </li>
-            ))}
-          </ul>
+          <SubmissionDatabase
+            columns={data.tableColumns}
+            rows={filtered}
+            detailBase="/projects/project-bids"
+            emptyMessage={
+              data.submissions.length === 0
+                ? "No bid submissions yet."
+                : "No members match the current filters."
+            }
+          />
         )}
       </div>
     </div>
   );
 }
 
-function Header({ cycleName }: { cycleName?: string }) {
+function Header({
+  cycleName,
+  onOpenSettings,
+  settingsLabel,
+}: {
+  cycleName?: string;
+  onOpenSettings?: () => void;
+  settingsLabel?: string;
+}) {
   return (
-    <header>
-      <h1 className="font-heading text-2xl font-bold text-foreground">
-        Project Bids
-      </h1>
-      <p className="text-sm text-muted-foreground mt-1">
-        Received bid submissions{cycleName ? ` for ${cycleName}` : ""}.
-      </p>
+    <header className="flex items-start justify-between gap-3">
+      <div>
+        <h1 className="font-heading text-2xl font-bold text-foreground">
+          Project Bids
+        </h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          Received bid submissions{cycleName ? ` for ${cycleName}` : ""}.
+        </p>
+      </div>
+      {onOpenSettings && (
+        <button
+          type="button"
+          onClick={onOpenSettings}
+          className="shrink-0 px-3 py-1.5 text-sm font-medium rounded-md border border-border text-foreground hover:bg-muted"
+        >
+          {settingsLabel ?? "Advanced settings"}
+        </button>
+      )}
     </header>
   );
 }

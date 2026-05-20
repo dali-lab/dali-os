@@ -8,6 +8,9 @@ export const REFERENCE_SOURCE_LABELS = {
   "projects:open-this-term": "Projects — open this term",
   "projects:active": "Projects — all active",
   "domains:active": "Domains — active",
+  // Member-scoped: only the domains THIS member is eligible in. Resolved per
+  // filling member, so it's empty on the public (unauthenticated) fill path.
+  "domains:my-eligibility": "Domains — my eligibility",
 } as const;
 
 export type ReferenceSourceKey = keyof typeof REFERENCE_SOURCE_LABELS;

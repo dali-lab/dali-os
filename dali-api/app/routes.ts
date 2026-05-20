@@ -41,7 +41,15 @@ export default [
     // Staffing input forms (member self-service). Must precede projects/:id
     // so these literal segments aren't captured by the :id param.
     route("projects/intent-to-work", "projects/routes/projects.intent-to-work.tsx"),
+    route(
+      "projects/intent-to-work/:userId",
+      "projects/routes/projects.intent-to-work.$userId.tsx",
+    ),
     route("projects/project-bids", "projects/routes/projects.project-bids.tsx"),
+    route(
+      "projects/project-bids/:userId",
+      "projects/routes/projects.project-bids.$userId.tsx",
+    ),
     route("projects/:id", "projects/routes/projects.$id.tsx"),
 
     // Members directory (separate from admin-console/members)
@@ -161,6 +169,7 @@ export default [
   // Project task board
   route("api/projects/:id/tasks", "projects/routes/api.projects.$id.tasks.ts"),
   route("api/tasks/:id/move", "projects/routes/api.tasks.$id.move.ts"),
+  route("api/tasks/:id", "projects/routes/api.tasks.$id.ts"),
 
   // Project epics & sprints
   route("api/projects/:id/epics", "projects/routes/api.projects.$id.epics.ts"),

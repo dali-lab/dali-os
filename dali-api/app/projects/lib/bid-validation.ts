@@ -1,14 +1,17 @@
 // Shared validation + level-resolution for a member's project bids, used by
-// BOTH submission paths so they can't drift:
-//   - the structured JSON endpoint (api.project-bids.ts), and
-//   - the form-driven path (bid-form-interpreter.ts → public-form.ts).
+// the form-driven submission path (bid-form-interpreter.ts → public-form.ts).
 //
-// A bid is (project, domain). `level` is NOT supplied by the caller — it is
-// the member's DomainEligibility level in that domain. A bid is only valid in
-// a domain the member is eligible in, and only for a project that has an open
-// ProjectRoleRequest in that (term, domain). These are exactly the rules the
-// original endpoint enforced; they live here now so there is one source of
-// truth.
+// A bid is now JUST a projectId (rank = array index). Domain is no longer
+// asked on the form — instead, each bid expands server-side into one
+// StaffingPreference per (project, eligibility) the member has, with that
+// eligibility's level. Anything outside that eligibility set is silently
+// dropped; anything inside it is recorded so the staffing board can see
+// every (project, domain) combination the member is eligible to fill.
+//
+// Bids must still match an open ProjectRoleRequest for (term, domain) — a
+// project with no open roles in any of the member's eligibility domains is
+// rejected. preferenceRank carries the bid's rank, so all expansions of bid
+// N share rank N.
 
 import { prisma } from "~/lib/db";
 
@@ -18,15 +21,14 @@ export type BidLevel = "P1" | "P2" | "P3";
 
 export type RawBid = {
   projectId: string;
-  domainId: string;
-  notes?: string | null;
 };
 
 export type ValidatedBid = {
   projectId: string;
   domainId: string;
   level: BidLevel;
-  // 1-based; array order in = rank out (index 0 → rank 1).
+  // 1-based; matches the originating bid's rank. Multiple expanded rows
+  // share a rank when one bid yields several (domain) expansions.
   preferenceRank: number;
   notes: string | null;
 };
@@ -41,13 +43,9 @@ export type BidCycle = {
   maxPreferencesPerMember: number;
 };
 
-// Validate a member's whole bid set for one cycle and resolve each bid's
-// level from the member's eligibility. Order of `bids` IS the ranking.
-//
-// Pure of HTTP — returns a discriminated result; callers map it to a Response
-// (endpoint) or to a thrown/returned error (interpreter). Mirrors the gates
-// from the original api.project-bids.ts exactly, including the error strings,
-// so behaviour is unchanged for the existing endpoint.
+// Validate a member's bid set for one cycle. Each input bid is one projectId;
+// the output is one ValidatedBid per (projectId, eligible domain with an
+// open role) combination. Order of `bids` IS the ranking.
 export async function validateBids(
   userId: string,
   cycle: BidCycle,
@@ -58,22 +56,31 @@ export async function validateBids(
     return { ok: false, error: `You can bid on at most ${maxBids} projects.` };
   }
 
-  // No duplicate (project, domain) pairs — that would be the same bid twice.
-  const seen = new Set(bids.map((b) => `${b.projectId}:${b.domainId}`));
+  // No duplicate projects — a member ranks distinct projects, not the same
+  // project twice.
+  const seen = new Set(bids.map((b) => b.projectId));
   if (seen.size !== bids.length) {
     return { ok: false, error: "Duplicate bid" };
   }
 
-  // The member's eligibility map: domainId -> level. A bid is only valid in a
-  // domain they're eligible in, and we record that eligibility level.
+  // The member's eligibility map: domainId -> level. Each bid expands into
+  // one row per eligibility (where the project has an open role).
   const eligibilities = await prisma.domainEligibility.findMany({
     where: { userId },
     select: { domainId: true, level: true },
   });
-  const levelByDomain = new Map(eligibilities.map((e) => [e.domainId, e.level]));
+  if (eligibilities.length === 0) {
+    return {
+      ok: false,
+      error: "You have no domain eligibility — no bids can be recorded.",
+    };
+  }
+  const levelByDomain = new Map(
+    eligibilities.map((e) => [e.domainId, e.level]),
+  );
 
-  // Projects that actually have an open role in (term, domain) the member is
-  // eligible for. Keyed for O(1) validation below.
+  // Open roles for this term, restricted to the member's eligibility
+  // domains. Keyed (project,domain) for O(1) cross-check.
   const roleRequests = await prisma.projectRoleRequest.findMany({
     where: {
       termId: cycle.termId,
@@ -88,27 +95,21 @@ export async function validateBids(
   const validated: ValidatedBid[] = [];
   for (let i = 0; i < bids.length; i++) {
     const b = bids[i];
-    const level = levelByDomain.get(b.domainId);
-    if (!level) {
-      return {
-        ok: false,
-        error: "You are not eligible in one of the chosen domains.",
-      };
+    const rank = i + 1;
+    // Each eligibility the project has an open role in becomes a row. If
+    // the project has no open role in any eligibility domain, the bid
+    // contributes nothing — silently dropped so the rest of the submission
+    // still records (eligibility/open-role drift shouldn't reject the form).
+    for (const [domainId, level] of levelByDomain) {
+      if (!openRoles.has(`${b.projectId}:${domainId}`)) continue;
+      validated.push({
+        projectId: b.projectId,
+        domainId,
+        level: level as BidLevel,
+        preferenceRank: rank,
+        notes: null,
+      });
     }
-    if (!openRoles.has(`${b.projectId}:${b.domainId}`)) {
-      return {
-        ok: false,
-        error:
-          "One of the chosen projects has no open role in that domain this term.",
-      };
-    }
-    validated.push({
-      projectId: b.projectId,
-      domainId: b.domainId,
-      level: level as BidLevel,
-      preferenceRank: i + 1,
-      notes: b.notes?.trim() || null,
-    });
   }
 
   return { ok: true, bids: validated };

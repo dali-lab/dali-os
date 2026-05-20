@@ -33,8 +33,36 @@ export function TaskBoard({ projectId, initialTasks, canManage }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [draft, setDraft] = useState("");
+  // Optional <input type="date"> value for the new task. Empty = no deadline.
+  const [draftDueAt, setDraftDueAt] = useState("");
 
   const board = useMemo(() => buildTaskBoard(tasks), [tasks]);
+
+  // Optimistic update for an inline due-date change. On failure the caller
+  // restores the previous value; we centralise both the local-state write
+  // and the network call so the two paths stay in sync.
+  async function handleDueAtChange(taskId: string, isoOrNull: string | null) {
+    const prev = tasks;
+    setTasks((cur) =>
+      cur.map((t) => (t.id === taskId ? { ...t, dueAt: isoOrNull } : t)),
+    );
+    setError(null);
+    try {
+      const res = await fetch(`/api/tasks/${taskId}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dueAt: isoOrNull }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? `Request failed: ${res.status}`);
+      }
+    } catch (err) {
+      setTasks(prev);
+      setError(err instanceof Error ? err.message : "Failed to update deadline");
+    }
+  }
 
   function handleDragEnd(event: DragEndEvent) {
     if (!canManage) return;
@@ -66,12 +94,22 @@ export function TaskBoard({ projectId, initialTasks, canManage }: Props) {
     const trimmed = title.trim();
     if (!trimmed) return;
     setError(null);
+    // `<input type="date">` produces a date-only string (YYYY-MM-DD). Send
+    // the ISO timestamp pinned to end-of-day local time so reminders fire at
+    // a sensible hour rather than midnight UTC.
+    const dueAtIso = draftDueAt
+      ? endOfDayIso(draftDueAt)
+      : null;
     try {
       const res = await fetch(`/api/projects/${projectId}/tasks`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: trimmed, status: CREATE_STATUS }),
+        body: JSON.stringify({
+          title: trimmed,
+          status: CREATE_STATUS,
+          dueAt: dueAtIso,
+        }),
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -86,12 +124,14 @@ export function TaskBoard({ projectId, initialTasks, canManage }: Props) {
           status: CREATE_STATUS,
           priority: "Normal",
           position: nextPositionInColumn(board, CREATE_STATUS),
+          dueAt: dueAtIso,
           epicId: null,
           sprintId: null,
           assigneeNames: [],
         },
       ]);
       setDraft("");
+      setDraftDueAt("");
       setIsCreating(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create task");
@@ -116,7 +156,7 @@ export function TaskBoard({ projectId, initialTasks, canManage }: Props) {
                 e.preventDefault();
                 void handleCreate(draft);
               }}
-              className="flex items-center gap-1.5"
+              className="flex flex-wrap items-center gap-1.5"
             >
               <input
                 autoFocus
@@ -126,10 +166,18 @@ export function TaskBoard({ projectId, initialTasks, canManage }: Props) {
                   if (e.key === "Escape") {
                     setIsCreating(false);
                     setDraft("");
+                    setDraftDueAt("");
                   }
                 }}
                 placeholder={`New task in "${TASK_STATUS_LABELS[CREATE_STATUS]}"`}
                 className="flex-1 max-w-sm px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+              />
+              <input
+                type="date"
+                aria-label="Due date (optional)"
+                value={draftDueAt}
+                onChange={(e) => setDraftDueAt(e.target.value)}
+                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
               />
               <button
                 type="submit"
@@ -142,6 +190,7 @@ export function TaskBoard({ projectId, initialTasks, canManage }: Props) {
                 onClick={() => {
                   setIsCreating(false);
                   setDraft("");
+                  setDraftDueAt("");
                 }}
                 className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors"
               >
@@ -170,6 +219,7 @@ export function TaskBoard({ projectId, initialTasks, canManage }: Props) {
               status={status}
               cards={board[status] ?? []}
               canManage={canManage}
+              onDueAtChange={handleDueAtChange}
             />
           ))}
         </div>
@@ -182,10 +232,12 @@ function Column({
   status,
   cards,
   canManage,
+  onDueAtChange,
 }: {
   status: TaskStatus;
   cards: TaskCardModel[];
   canManage: boolean;
+  onDueAtChange: (taskId: string, isoOrNull: string | null) => void;
 }) {
   const { isOver, setNodeRef } = useDroppable({ id: status });
 
@@ -210,7 +262,13 @@ function Column({
           </div>
         ) : (
           cards.map((card) => (
-            <TaskCard key={card.id} card={card} draggable={canManage} />
+            <TaskCard
+              key={card.id}
+              card={card}
+              draggable={canManage}
+              canManage={canManage}
+              onDueAtChange={onDueAtChange}
+            />
           ))
         )}
       </div>
@@ -218,18 +276,34 @@ function Column({
   );
 }
 
-function TaskCard({ card, draggable }: { card: TaskCardModel; draggable: boolean }) {
+function TaskCard({
+  card,
+  draggable,
+  canManage,
+  onDueAtChange,
+}: {
+  card: TaskCardModel;
+  draggable: boolean;
+  canManage: boolean;
+  onDueAtChange: (taskId: string, isoOrNull: string | null) => void;
+}) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: card.id,
     data: { taskId: card.id, fromStatus: card.status },
     disabled: !draggable,
   });
+  const [isEditingDue, setIsEditingDue] = useState(false);
 
   const style: React.CSSProperties = transform
     ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 50 }
     : {};
 
   const dragProps = draggable ? { ...attributes, ...listeners } : {};
+  const overdue =
+    card.dueAt != null &&
+    card.status !== "Done" &&
+    card.status !== "Cancelled" &&
+    new Date(card.dueAt).getTime() < Date.now();
 
   return (
     <div
@@ -251,8 +325,113 @@ function TaskCard({ card, draggable }: { card: TaskCardModel; draggable: boolean
           </span>
         )}
       </div>
+      {/* Due date row: a small pill when set, a subtle "+ Due" affordance
+          when not. Both open an inline date editor for managers. The editor
+          uses pointer/keyboard events with stopPropagation so the dnd-kit
+          drag listeners on the card don't swallow input focus. */}
+      {isEditingDue && canManage ? (
+        <div
+          className="mt-2 flex items-center gap-1.5"
+          onPointerDown={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          <input
+            type="date"
+            autoFocus
+            defaultValue={card.dueAt ? dateInputValue(card.dueAt) : ""}
+            onBlur={(e) => {
+              const next = e.currentTarget.value;
+              const nextIso = next ? endOfDayIso(next) : null;
+              if (nextIso !== card.dueAt) onDueAtChange(card.id, nextIso);
+              setIsEditingDue(false);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.preventDefault();
+                setIsEditingDue(false);
+              }
+            }}
+            className="px-1.5 py-1 text-[11px] border border-border rounded-md bg-background text-foreground"
+          />
+          {card.dueAt && (
+            <button
+              type="button"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                onDueAtChange(card.id, null);
+                setIsEditingDue(false);
+              }}
+              className="text-[11px] text-muted-foreground hover:text-destructive"
+            >
+              clear
+            </button>
+          )}
+        </div>
+      ) : card.dueAt ? (
+        <button
+          type="button"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (canManage) setIsEditingDue(true);
+          }}
+          disabled={!canManage}
+          className={`mt-2 text-[11px] px-1.5 py-0.5 rounded-md border ${
+            overdue
+              ? "border-accent-coral/40 text-accent-coral bg-accent-coral/10"
+              : "border-border text-muted-foreground"
+          } ${canManage ? "hover:bg-muted/40" : ""}`}
+        >
+          Due {formatDuePill(card.dueAt)}
+        </button>
+      ) : canManage ? (
+        <button
+          type="button"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            setIsEditingDue(true);
+          }}
+          className="mt-2 text-[11px] text-muted-foreground hover:text-foreground"
+        >
+          + Due
+        </button>
+      ) : null}
     </div>
   );
+}
+
+// Convert an ISO timestamp to the YYYY-MM-DD value an `<input type="date">`
+// expects, in the user's local timezone (so a deadline picked as "Mar 12"
+// shows up as Mar 12 on the editor regardless of how it serialized to UTC).
+function dateInputValue(iso: string): string {
+  const d = new Date(iso);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+// A date-only input (YYYY-MM-DD) is timezone-agnostic on the client; pin it
+// to end-of-day LOCAL time so a deadline of "Mar 12" doesn't fire its
+// reminder a day early in Eastern. Returns an ISO UTC string.
+function endOfDayIso(dateOnly: string): string {
+  const [y, m, d] = dateOnly.split("-").map(Number);
+  // 23:59:59 local time on the chosen day.
+  const local = new Date(y, (m ?? 1) - 1, d ?? 1, 23, 59, 59);
+  return local.toISOString();
+}
+
+// Short label for the pill: "Mar 12" if it's this year, otherwise "Mar 12, 2027".
+function formatDuePill(iso: string): string {
+  const d = new Date(iso);
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    ...(sameYear ? {} : { year: "numeric" }),
+  });
 }
 
 async function persistMove(

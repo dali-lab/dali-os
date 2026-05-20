@@ -25,6 +25,7 @@ export type QuestionTypeConstraint =
   | "choice" // select/text answer coerced to a fixed enum (intent status)
   | "text" // free text/textarea
   | "person" // not a question — the authenticated submitter (builtin source)
+  | "display" // not staffing-feeding — view-only (builtin or any question)
   | "any";
 
 // Built-in (non-question) column sources. A "person" role can only be filled
@@ -34,6 +35,10 @@ export type QuestionTypeConstraint =
 // entry only carries its display label, never an identity value.
 export const BUILTIN_SOURCES = {
   submitter: { defaultLabel: "Submitted by", constraint: "person" as const },
+  // The filling member's DomainEligibility (domain + level), resolved
+  // server-side at render time. View-only: it informs no staffing write, it's
+  // just shown so a manager sees what the member is eligible for.
+  hiredRoles: { defaultLabel: "Hired roles", constraint: "display" as const },
 } as const;
 
 export type BuiltinSource = keyof typeof BUILTIN_SOURCES;
@@ -45,17 +50,27 @@ export function isBuiltinSource(v: unknown): v is BuiltinSource {
 export type RoleDef = {
   role: string;
   defaultLabel: string;
+  // Legacy flag; still read for display purposes. Required-count enforcement
+  // lives in `requiredCount` below — leave this `false` and use that instead.
   required: boolean;
   constraint: QuestionTypeConstraint;
   // Intent maps one status question per cycle term, so its role instances are
   // parameterised by termId at mapping time (see SlotColumnMapper).
   perTerm?: boolean;
+  // A role the manager may add MORE than one of (the 3 ranked project picks,
+  // and their per-bid domain/notes). Repeated entries are paired positionally
+  // by the bid interpreter; ordering comes from each entry's `order`.
+  repeatable?: boolean;
+  // Minimum number of mapped columns this role needs for the slot's mapping
+  // to be considered complete (validateMapping enforces, the UI surfaces what
+  // is still missing). 0 = optional. For repeatable roles this is the floor,
+  // not the ceiling — e.g. project-bids needs 3 ranked `project` columns.
+  requiredCount?: number;
 };
 
-// Every slot also exposes this role: who submitted the form. It's filled by
-// the `submitter` builtin (the authenticated member), never a question, and
-// is optional so legacy mappings stay valid. Defined once and appended to
-// every slot rather than duplicated per slot.
+// Every slot also exposes this role: who submitted the form. Filled by the
+// `submitter` builtin (the authenticated member), never a question. Defined
+// once and appended to every slot rather than duplicated per slot.
 export const SUBMITTER_ROLE: RoleDef = {
   role: "submitter",
   defaultLabel: "Submitted by",
@@ -63,41 +78,73 @@ export const SUBMITTER_ROLE: RoleDef = {
   constraint: "person",
 };
 
-// The role set each slot exposes. Adding a slot (e.g. applications later) is a
-// registry addition here, not a component change. Every slot gets the shared
-// SUBMITTER_ROLE appended.
+// Every slot also exposes a free display column: a question (or the
+// hiredRoles builtin) the manager wants visible in the table but which feeds
+// no staffing write. This is what makes the view an arbitrary-columns
+// database rather than a fixed role list.
+export const DISPLAY_ROLE: RoleDef = {
+  role: "display",
+  defaultLabel: "Column",
+  required: false,
+  constraint: "display",
+  repeatable: true,
+};
+
+// View-only column derived server-side from the filling member's
+// DomainEligibility (what they could be staffed as). Each slot that wants it
+// declares it; project-bids treats it as required so a manager can compare
+// bids against eligibility at a glance.
+export const HIRED_ROLES_ROLE: RoleDef = {
+  role: "hiredRoles",
+  defaultLabel: "Hired roles",
+  required: false,
+  constraint: "display",
+};
+
+// The role PALETTE each slot exposes — meanings a column MAY carry, none
+// required. A column mapped to project/domain/intent-status feeds staffing;
+// anything else (or "display") is view-only. Adding a slot is a registry
+// addition here, not a component change.
 export const SLOT_ROLES: Record<Slot, RoleDef[]> = {
   "project-bids": [
     {
       role: "project",
       defaultLabel: "Project",
-      required: true,
-      constraint: "reference-project",
-    },
-    {
-      role: "domain",
-      defaultLabel: "Domain",
-      required: true,
-      constraint: "reference-domain",
-    },
-    {
-      role: "notes",
-      defaultLabel: "Notes",
       required: false,
-      constraint: "text",
+      constraint: "reference-project",
+      repeatable: true,
+      // The bid spine is three ranked project picks — anything fewer leaves
+      // the board with empty slots, so the mapping isn't considered complete
+      // until all three are placed. There is no per-bid domain or notes
+      // question any more: domain is expanded server-side from the member's
+      // DomainEligibility set (one StaffingPreference per project ×
+      // eligibility), and free-form text lives on extra display columns.
+      requiredCount: 3,
     },
+    DISPLAY_ROLE,
     SUBMITTER_ROLE,
+    HIRED_ROLES_ROLE,
   ],
   "intent-to-work": [
     {
       role: "intent-status",
       defaultLabel: "Status",
-      required: true,
+      required: false,
       constraint: "choice",
       perTerm: true,
     },
+    DISPLAY_ROLE,
     SUBMITTER_ROLE,
   ],
+};
+
+// Builtins a slot must include in its mapping for the configuration to be
+// considered complete. Save fails and the board shows a warning until they're
+// placed. project-bids needs both `submitter` (who bid) and `hiredRoles`
+// (what they can be staffed as) so a manager isn't looking at anonymous rows.
+export const REQUIRED_BUILTINS: Record<Slot, BuiltinSource[]> = {
+  "project-bids": ["submitter", "hiredRoles"],
+  "intent-to-work": [],
 };
 
 // A column is filled from one of two source kinds: a form question, or a
@@ -110,6 +157,13 @@ type CommonEntry = {
   // Only for per-term roles (intent-status): which cycle term this entry's
   // answer applies to.
   termId?: string;
+  // Position of this column in the table (ascending). Absent on legacy
+  // entries — those keep their array order via parseColumnMapping. Repeated
+  // roles (project/domain) are paired by this order in the bid interpreter.
+  order?: number;
+  // Hidden from the default table but still shown on the row's detail page.
+  // Absent/false = visible.
+  hidden?: boolean;
 };
 
 export type ColumnMappingEntry =
@@ -127,6 +181,12 @@ export type ColumnMapping = {
   entries: ColumnMappingEntry[];
 };
 
+// Roles that older mappings may still carry but the current registry has
+// removed. parseColumnMapping silently drops them on load so an existing
+// project-bids binding keeps working through the role redesign — the JSON
+// stays as it was, but the dropped entries don't render or feed staffing.
+const RETIRED_ROLES = new Set(["domain", "notes"]);
+
 // Defensive parse of the Json column — never trust its shape (mirrors the
 // safeParse discipline in public-form.ts). Returns null for absent/garbage.
 export function parseColumnMapping(json: unknown): ColumnMapping | null {
@@ -134,15 +194,23 @@ export function parseColumnMapping(json: unknown): ColumnMapping | null {
   const o = json as Record<string, unknown>;
   if (o.version !== 1 || !Array.isArray(o.entries)) return null;
   const entries: ColumnMappingEntry[] = [];
-  for (const e of o.entries) {
+  for (let idx = 0; idx < o.entries.length; idx++) {
+    const e = o.entries[idx];
     if (!e || typeof e !== "object") return null;
     const r = e as Record<string, unknown>;
     if (typeof r.role !== "string" || typeof r.label !== "string") return null;
+    if (RETIRED_ROLES.has(r.role)) continue;
     if (r.termId !== undefined && typeof r.termId !== "string") return null;
+    if (r.order !== undefined && typeof r.order !== "number") return null;
+    if (r.hidden !== undefined && typeof r.hidden !== "boolean") return null;
     const common = {
       role: r.role,
       label: r.label,
       ...(typeof r.termId === "string" ? { termId: r.termId } : {}),
+      // Legacy entries (no `order`) keep their array position so an old
+      // mapping renders in the same order it always did.
+      order: typeof r.order === "number" ? r.order : idx,
+      ...(r.hidden === true ? { hidden: true } : {}),
     };
     // Back-compat: entries saved before builtins have no `source` and are
     // question-sourced. A missing/"question" source needs a questionKey; a
@@ -166,6 +234,9 @@ function questionFitsConstraint(
 ): boolean {
   switch (constraint) {
     case "any":
+    case "display":
+      // A display column just shows whatever the question holds — it feeds no
+      // staffing write, so any question type fits.
       return true;
     case "text":
       return q.type === "text" || q.type === "textarea";
@@ -194,26 +265,26 @@ function questionFitsConstraint(
 export type MappingCheck = { ok: true } | { ok: false; reason: string };
 
 // Validate a saved mapping against a slot's role set and the form's CURRENT
-// question list. Catches: required role unmapped, a role's question of the
-// wrong type/source, an entry pointing at a since-deleted question (the form
-// was re-versioned), a duplicate (role[,termId]) assignment.
+// question list.
+//
+// Catches per-entry misconfigurations (unknown role, wrong question
+// type/source, stale questionKey from a re-versioned form, two intent-status
+// columns fighting over the same term) AND slot-level completeness gaps
+// (project-bids needs 3 `project` columns + `submitter` + `hiredRoles`
+// builtins). Repeated project/domain/notes/display columns are intentionally
+// allowed and paired positionally by the bid interpreter.
 export function validateMapping(
   slot: Slot,
   questions: Question[],
   mapping: ColumnMapping | null,
 ): MappingCheck {
-  if (!mapping || mapping.entries.length === 0) {
-    return {
-      ok: false,
-      reason:
-        "No column mapping is set up for this form yet — map its questions to columns.",
-    };
-  }
   const roleDefs = SLOT_ROLES[slot];
   const byKey = new Map(questions.map((q) => [q.key, q]));
-  const seen = new Set<string>();
+  // Only per-term roles (intent-status) still reject a duplicate: two status
+  // columns for the same term is a real conflict. Repeatable roles don't.
+  const seenPerTerm = new Set<string>();
 
-  for (const e of mapping.entries) {
+  for (const e of mapping?.entries ?? []) {
     const def = roleDefs.find((d) => d.role === e.role);
     if (!def) {
       return { ok: false, reason: `Unknown column "${e.role}" in mapping.` };
@@ -244,28 +315,63 @@ export function validateMapping(
         };
       }
     }
-    const dupKey = def.perTerm ? `${e.role}:${e.termId ?? ""}` : e.role;
-    if (!def.perTerm && seen.has(dupKey)) {
-      return {
-        ok: false,
-        reason: `The "${def.defaultLabel}" column is mapped more than once.`,
-      };
+    if (def.perTerm) {
+      const dupKey = `${e.role}:${e.termId ?? ""}`;
+      if (seenPerTerm.has(dupKey)) {
+        return {
+          ok: false,
+          reason: `The "${def.defaultLabel}" column is mapped more than once for the same term.`,
+        };
+      }
+      seenPerTerm.add(dupKey);
     }
-    seen.add(dupKey);
   }
 
-  // Every required, non-per-term role must be mapped at least once. Per-term
-  // roles are validated by the caller against the cycle's actual terms.
-  for (const def of roleDefs) {
-    if (!def.required || def.perTerm) continue;
-    if (!mapping.entries.some((e) => e.role === def.role)) {
-      return {
-        ok: false,
-        reason: `The required "${def.defaultLabel}" column isn't mapped to any question.`,
-      };
-    }
+  // Slot-level completeness — required role counts + required builtins must
+  // all be present. Reported as one combined "Still need" message so a
+  // manager fixes everything in one pass instead of one save at a time.
+  const missing = missingRequirements(slot, mapping);
+  if (missing.length > 0) {
+    return {
+      ok: false,
+      reason: `Still need: ${missing.join(", ")}.`,
+    };
   }
+
   return { ok: true };
+}
+
+// What's still missing from a slot's mapping for it to be considered
+// complete. Returns the role/builtin labels in display order so the UI can
+// say e.g. "Still need: Project (2 more), Submitted by, Hired roles". Pure
+// on the mapping shape — no DB.
+export function missingRequirements(
+  slot: Slot,
+  mapping: ColumnMapping | null,
+): string[] {
+  const missing: string[] = [];
+  const entries = mapping?.entries ?? [];
+
+  for (const def of SLOT_ROLES[slot]) {
+    const need = def.requiredCount ?? 0;
+    if (need === 0) continue;
+    const have = entries.filter((e) => e.role === def.role).length;
+    if (have >= need) continue;
+    missing.push(
+      need > 1
+        ? `${def.defaultLabel} (${need - have} more)`
+        : def.defaultLabel,
+    );
+  }
+
+  const placed = new Set(
+    entries.filter((e) => e.source === "builtin").map((e) => e.builtin),
+  );
+  for (const name of REQUIRED_BUILTINS[slot]) {
+    if (!placed.has(name)) missing.push(BUILTIN_SOURCES[name].defaultLabel);
+  }
+
+  return missing;
 }
 
 // Label a structured role currently has in this mapping (for display

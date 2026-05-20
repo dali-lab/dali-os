@@ -17,6 +17,8 @@ type Body = {
   status?: string;
   sprintId?: string | null;
   epicId?: string | null;
+  // ISO timestamp (or null/absent for no deadline).
+  dueAt?: string | null;
 };
 
 function isBody(x: unknown): x is Body {
@@ -26,7 +28,15 @@ function isBody(x: unknown): x is Body {
   if (o.status !== undefined && typeof o.status !== "string") return false;
   if (o.sprintId != null && typeof o.sprintId !== "string") return false;
   if (o.epicId != null && typeof o.epicId !== "string") return false;
+  if (o.dueAt != null && typeof o.dueAt !== "string") return false;
   return true;
+}
+
+function parseDueAt(raw: string | null | undefined): Date | null | "invalid" {
+  if (raw == null || raw === "") return null;
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return "invalid";
+  return d;
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -63,6 +73,11 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Invalid status" }, { status: 400 }));
   }
 
+  const dueAt = parseDueAt(body.dueAt);
+  if (dueAt === "invalid") {
+    return withCors(request, Response.json({ error: "Invalid dueAt" }, { status: 400 }));
+  }
+
   const project = await prisma.project.findUnique({
     where: { id: params.id },
     select: { id: true },
@@ -87,6 +102,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       position,
       sprintId: body.sprintId ?? null,
       epicId: body.epicId ?? null,
+      dueAt,
       createdById: auth.user.sub,
     },
     select: { id: true },

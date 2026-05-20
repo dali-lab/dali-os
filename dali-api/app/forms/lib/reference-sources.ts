@@ -25,6 +25,12 @@ import {
 
 export type ReferenceOption = { value: string; label: string };
 
+// Context a loader may use to scope its options. `userId` is the member
+// filling the form, when known — absent on the public/unauthenticated path.
+// Most loaders ignore it; member-scoped sources require it and degrade to []
+// without it.
+export type ReferenceContext = { userId?: string | null };
+
 const LOADERS = {
   // Projects with at least one open role this term — mirrors the projects a
   // member can actually bid on (see api.project-bids.ts role-request gate).
@@ -62,7 +68,25 @@ const LOADERS = {
     });
     return domains.map((d) => ({ value: d.id, label: d.displayName }));
   },
-} satisfies Record<ReferenceSourceKey, () => Promise<ReferenceOption[]>>;
+  // Only the domains the FILLING member is eligible in (their
+  // DomainEligibility rows). Member-scoped: with no userId (public path) it
+  // resolves to [] so the dropdown is simply empty rather than leaking the
+  // full domain list. The stored value is the domainId, same as
+  // domains:active, so a ranked bid's domain is a trustworthy id downstream.
+  "domains:my-eligibility": async (ctx?: ReferenceContext) => {
+    if (!ctx?.userId) return [];
+    const rows = await prisma.domainEligibility.findMany({
+      where: { userId: ctx.userId },
+      select: { domainId: true, domain: { select: { displayName: true } } },
+    });
+    return rows
+      .map((r) => ({ value: r.domainId, label: r.domain.displayName }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  },
+} satisfies Record<
+  ReferenceSourceKey,
+  (ctx?: ReferenceContext) => Promise<ReferenceOption[]>
+>;
 
 // Re-export the client-safe helpers so server callers have one import.
 export {
@@ -74,10 +98,12 @@ export type { ReferenceSourceKey } from "./reference-sources.shared";
 
 // Resolve one source's options, or [] if the key is unknown (a form that
 // references a since-removed source degrades to an empty dropdown rather than
-// throwing).
+// throwing). `ctx` carries the filling member when known; member-scoped
+// sources need it and return [] without it.
 export async function resolveReferenceOptions(
   key: string | undefined | null,
+  ctx?: ReferenceContext,
 ): Promise<ReferenceOption[]> {
   if (!isReferenceSourceKey(key)) return [];
-  return LOADERS[key]();
+  return LOADERS[key](ctx);
 }

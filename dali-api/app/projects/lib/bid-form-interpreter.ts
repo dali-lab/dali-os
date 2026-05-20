@@ -1,20 +1,18 @@
 // Turn a bound form's answers into ranked project bids, using the binding's
-// saved column mapping (slot-roles.ts) — NOT reference-source guessing. The
-// form is fully flexible; a staffing manager explicitly maps which question
-// is the Project / Domain / Notes column for each ranked choice.
+// saved column mapping (slot-roles.ts). A bid is now just a project — domain
+// is expanded server-side in validateBids() from the member's
+// DomainEligibility set (one StaffingPreference per project × eligibility).
+// Free-form text lives on submission-scoped display columns, not on the bid.
 //
-// Ranking = the order of `project` entries in mapping.entries. Each project
-// entry pairs with the `domain` entry and (optional) `notes` entry that
-// follow it before the next project entry. Reference answers are real DB ids
-// (projectId/domainId) — public-form.ts re-validates them against live
-// options before storing, so a stored reference answer is a trustworthy id.
+// Ranking = the `order` of the `project` entries (1st mapped project column
+// is rank 1, etc.). A column whose answer is blank is a skipped choice; it
+// is NOT an error, because the raw submission is still recorded by the
+// caller regardless.
 //
-// `level` is NOT collected by the form; the caller resolves it from the
-// member's DomainEligibility via validateBids(). Pure (no DB/HTTP) so it is
-// exhaustively unit-testable.
+// Pure (no DB/HTTP) so it is exhaustively unit-testable.
 
 import type { RawBid } from "./bid-validation";
-import type { ColumnMapping } from "./slot-roles";
+import type { ColumnMapping, ColumnMappingEntry } from "./slot-roles";
 
 function asId(v: unknown): string | null {
   return typeof v === "string" && v.trim() !== "" ? v : null;
@@ -24,67 +22,35 @@ export type InterpretResult =
   | { ok: true; bids: RawBid[] }
   | { ok: false; error: string };
 
-// Group mapping entries into ranked bids by the order of `project` entries,
-// then read each group's answers. Mapping validity (required roles present,
-// right question types, no stale keys) is the caller's responsibility via
-// validateMapping(); this only assembles + checks completeness of answers.
+// Entries for one role, in the manager's column order. `order` is always set
+// by parseColumnMapping (legacy entries get their array index), so this is a
+// stable rank.
+function entriesForRole(
+  mapping: ColumnMapping,
+  role: string,
+): ColumnMappingEntry[] {
+  return mapping.entries
+    .filter((e) => e.role === role && e.source === "question")
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+}
+
 export function interpretBidForm(
   answers: Record<string, unknown>,
   mapping: ColumnMapping,
 ): InterpretResult {
+  const projects = entriesForRole(mapping, "project");
+
   const bids: RawBid[] = [];
-  let cur:
-    | { projectId: string | null; domainId: string | null; notes: string | null }
-    | null = null;
-
-  const flush = (): InterpretResult | null => {
-    if (!cur) return null;
-    // A group with neither side answered is a skipped (optional) choice —
-    // drop it silently rather than erroring.
-    if (cur.projectId == null && cur.domainId == null) {
-      cur = null;
-      return null;
-    }
-    if (cur.projectId == null || cur.domainId == null) {
-      return {
-        ok: false,
-        error: "Incomplete bid: choose both a project and a domain.",
-      };
-    }
-    bids.push({
-      projectId: cur.projectId,
-      domainId: cur.domainId,
-      notes: cur.notes,
-    });
-    cur = null;
-    return null;
-  };
-
-  for (const e of mapping.entries) {
-    // Builtin columns (e.g. the submitter) carry no answer to interpret —
-    // the submitter is keyed from the session in public-form.ts, not here.
-    if (e.source === "builtin") continue;
-    if (e.role === "project") {
-      const flushed = flush();
-      if (flushed) return flushed;
-      cur = { projectId: asId(answers[e.questionKey]), domainId: null, notes: null };
-      continue;
-    }
-    if (!cur) continue; // entries before the first project entry
-    if (e.role === "domain") {
-      if (cur.domainId == null) cur.domainId = asId(answers[e.questionKey]);
-      continue;
-    }
-    if (e.role === "notes" && cur.notes == null) {
-      const v = answers[e.questionKey];
-      cur.notes = typeof v === "string" && v.trim() !== "" ? v.trim() : null;
-    }
+  for (const pEntry of projects) {
+    if (pEntry.source !== "question") continue;
+    const projectId = asId(answers[pEntry.questionKey]);
+    // Blank ranked choice → the member skipped this pick; drop it but keep
+    // the rest of their bids (and the raw submission) flowing.
+    if (projectId == null) continue;
+    bids.push({ projectId });
   }
-  const tail = flush();
-  if (tail) return tail;
 
-  if (bids.length === 0) {
-    return { ok: false, error: "No bids were submitted." };
-  }
+  // No completed bids isn't an interpreter error — the submission is still
+  // recorded by the caller; it just produces no StaffingPreference rows.
   return { ok: true, bids };
 }

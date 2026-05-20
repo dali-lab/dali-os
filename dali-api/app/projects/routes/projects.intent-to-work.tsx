@@ -12,8 +12,9 @@ import {
   setSlotColumnMapping,
 } from "../lib/form-slots";
 import { SubmissionFilters } from "../components/SubmissionFilters";
-import { SlotFormPicker } from "../components/SlotFormPicker";
-import { SlotColumnMapper } from "../components/SlotColumnMapper";
+import { SlotAdvancedSettingsModal } from "../components/SlotAdvancedSettingsModal";
+import { SubmissionDatabase } from "../components/SubmissionDatabase";
+import { DomainFilter } from "../components/DomainFilter";
 import { TermFilter } from "~/components/TermFilter";
 import { resolveTermFilter } from "~/lib/terms";
 import {
@@ -21,6 +22,7 @@ import {
   validateMapping,
   type ColumnMapping,
 } from "../lib/slot-roles";
+import { buildSubmissionView } from "../lib/submission-view.server";
 import type { Question } from "~/types";
 
 const SLOT = "intent-to-work" as const;
@@ -75,115 +77,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     singleCycleId = cycle.id;
   }
 
-  // A submission only exists in relation to a bound form: only show intent
-  // for members who actually submitted the cycle's Intent to Work form (a
-  // FormSubmission stamped with this cycle + the intent-to-work slot). This
-  // filters out legacy/seed IntentToWork rows that never came through a form.
-  //
-  // NOTE: no form→IntentToWork interpreter exists yet (unlike project bids),
-  // so nothing currently writes these form-linked submissions — this set is
-  // expectedly empty until that interpreter is built. That's intentional
-  // under the "form is the submission" model, not a regression.
-  const formSubs = await prisma.formSubmission.findMany({
-    where: {
-      staffingCycleId: { in: cycleIds },
-      slot: SLOT,
-      userId: { not: null },
-    },
-    select: { userId: true },
-  });
-  const submittedUserIds = [
-    ...new Set(formSubs.map((s) => s.userId).filter((id): id is string => !!id)),
-  ];
-
-  const rows = submittedUserIds.length
-    ? await prisma.intentToWork.findMany({
-        where: {
-          staffingCycleId: { in: cycleIds },
-          userId: { in: submittedUserIds },
-        },
-        select: {
-          userId: true,
-          termId: true,
-          status: true,
-          updatedAt: true,
-          term: { select: { code: true, sortKey: true } },
-          user: { select: { firstName: true, lastName: true, daliEmail: true } },
-        },
-      })
-    : [];
-
-  // Distinct terms touched by these submissions, oldest → newest, for the
-  // table's status columns.
-  const terms = [
-    ...new Map(
-      rows.map((r) => [
-        r.termId,
-        { id: r.termId, code: r.term.code, sortKey: r.term.sortKey },
-      ]),
-    ).values(),
-  ]
-    .sort((a, b) => a.sortKey - b.sortKey)
-    .map((t) => ({ id: t.id, code: t.code }));
-
-  // IntentToWork rows carry no domain; a member's domain(s) come from their
-  // DomainEligibility. Fetch eligibilities for the submitting members so the
-  // table can be filtered by domain.
-  const userIds = [...new Set(rows.map((r) => r.userId))];
-  const eligibilities = await prisma.domainEligibility.findMany({
-    where: { userId: { in: userIds } },
-    select: {
-      userId: true,
-      domain: { select: { id: true, displayName: true } },
-    },
-  });
-  const domainsByUser = new Map<string, { id: string; name: string }[]>();
-  for (const e of eligibilities) {
-    const list = domainsByUser.get(e.userId) ?? [];
-    list.push({ id: e.domain.id, name: e.domain.displayName });
-    domainsByUser.set(e.userId, list);
-  }
-
-  const byUser = new Map<
-    string,
-    {
-      userId: string;
-      name: string;
-      email: string | null;
-      domains: { id: string; name: string }[];
-      statuses: Record<string, string>;
-      updatedAt: string;
-    }
-  >();
-  for (const r of rows) {
-    const existing = byUser.get(r.userId);
-    const updatedAt = r.updatedAt.toISOString();
-    if (!existing) {
-      byUser.set(r.userId, {
-        userId: r.userId,
-        name: `${r.user.firstName} ${r.user.lastName}`,
-        email: r.user.daliEmail,
-        domains: domainsByUser.get(r.userId) ?? [],
-        statuses: { [r.termId]: r.status },
-        updatedAt,
-      });
-    } else {
-      existing.statuses[r.termId] = r.status;
-      if (updatedAt > existing.updatedAt) existing.updatedAt = updatedAt;
-    }
-  }
-
-  const submissions = [...byUser.values()].sort((a, b) =>
-    a.name.localeCompare(b.name),
-  );
-
-  // Distinct domains across all submitting members, for the filter dropdown.
-  const domainFilter = [
-    ...new Map(
-      submissions.flatMap((s) => s.domains).map((d) => [d.id, d]),
-    ).values(),
-  ].sort((a, b) => a.name.localeCompare(b.name));
-
   // The generic-form slot binding is per-cycle, so it only applies to the
   // single-term view. In the all-terms aggregate there's no one slot to bind,
   // so the picker is hidden (singleCycleId === null).
@@ -197,6 +90,22 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const noFormConnected = !isAll && !binding;
 
+  // Database view of the raw Intent to Work submissions: every member who
+  // submitted the bound form, with the manager-configured columns. The
+  // IntentToWork interpreter still runs on submit (when status columns are
+  // mapped) to feed staffing; the table itself reads submissions so it shows
+  // data even with a partial/zero mapping.
+  const view = await buildSubmissionView({
+    cycleIds,
+    slot: SLOT,
+    formId: binding?.formId ?? null,
+  });
+  const submissions = view.rows;
+  const tableColumns = view.tableColumns.map((c) => ({
+    key: c.key,
+    label: c.label,
+  }));
+
   // Bound form's questions drive the column mapper; validate the saved
   // mapping against them so a manager is warned before members submit.
   let formQuestions: {
@@ -205,6 +114,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     type: string;
     referenceSource?: string;
   }[] = [];
+  // Submissions always record; a mapping problem just means status columns
+  // can't feed IntentToWork / render. Advisory, not a block.
   let mappingWarning: string | null = null;
   if (binding) {
     const latest = await prisma.formVersion.findFirst({
@@ -230,15 +141,19 @@ export async function loader({ request }: Route.LoaderArgs) {
     select: { id: true, code: true },
   });
 
+  const domainOptions = await prisma.domain.findMany({
+    orderBy: { displayName: "asc" },
+    select: { id: true, displayName: true },
+  });
+
   return {
     gate: "ok" as const,
     cycle: { name: cycleName },
-    terms,
     termOptions,
     selectedTerm,
     isAll,
     submissions,
-    domainFilter,
+    tableColumns,
     canManage,
     binding,
     selectableForms,
@@ -246,6 +161,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     formQuestions,
     mappingWarning,
     allTerms,
+    domainOptions,
   };
 }
 
@@ -316,14 +232,6 @@ function safeJsonParse(v: FormDataEntryValue | null): unknown {
   }
 }
 
-const STATUS_PILL: Record<string, string> = {
-  Returning: "bg-emerald-500/15 text-emerald-600",
-  Off: "bg-muted text-foreground",
-  Leave: "bg-amber-500/15 text-amber-600",
-  Graduating: "bg-sky-500/15 text-sky-600",
-  Unsure: "bg-muted text-muted-foreground",
-};
-
 export default function IntentToWorkDatabase() {
   const data = useLoaderData<typeof loader>();
 
@@ -351,38 +259,44 @@ function Loaded({
 }) {
   const [query, setQuery] = useState("");
   const [domainId, setDomainId] = useState("");
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return data.submissions.filter((s) => {
-      if (q && !`${s.name} ${s.email ?? ""}`.toLowerCase().includes(q)) {
+      if (q && !`${s.name} ${s.email ?? ""}`.toLowerCase().includes(q))
         return false;
-      }
-      if (domainId && !s.domains.some((d) => d.id === domainId)) {
-        return false;
-      }
+      if (domainId && !s.domainIds.includes(domainId)) return false;
       return true;
     });
   }, [data.submissions, query, domainId]);
 
+  const domains = useMemo(
+    () => data.domainOptions.map((d) => ({ id: d.id, name: d.displayName })),
+    [data.domainOptions],
+  );
+
+  const canOpenSettings = !data.isAll;
+
   return (
     <div className="flex flex-col gap-4">
-      <Header cycleName={data.cycle.name} />
+      <Header
+        cycleName={data.cycle.name}
+        onOpenSettings={
+          canOpenSettings ? () => setSettingsOpen(true) : undefined
+        }
+        settingsLabel={data.canManage ? "Advanced settings" : "View settings"}
+      />
 
-      {!data.isAll && (
-        <SlotFormPicker
+      {canOpenSettings && (
+        <SlotAdvancedSettingsModal
+          open={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+          slot="intent-to-work"
           slotLabel="Intent to Work"
           binding={data.binding}
-          forms={data.selectableForms}
-          canManage={data.canManage}
-        />
-      )}
-
-      {!data.isAll && data.binding && (
-        <SlotColumnMapper
-          slot="intent-to-work"
-          questions={data.formQuestions}
-          mapping={data.binding.mapping}
+          selectableForms={data.selectableForms}
+          formQuestions={data.formQuestions}
           cycleTerms={data.allTerms}
           canManage={data.canManage}
         />
@@ -390,126 +304,76 @@ function Loaded({
 
       {data.mappingWarning && (
         <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          <span className="font-medium">Intent won’t be recorded yet:</span>{" "}
-          {data.mappingWarning}
+          <span className="font-medium">Heads up:</span> {data.mappingWarning}{" "}
+          Submissions are still recorded; affected columns just won’t feed
+          staffing until you fix the mapping.
         </div>
       )}
 
       <div className="flex flex-col sm:flex-row gap-2">
         <div className="flex-1">
-          <SubmissionFilters
-            query={query}
-            onQueryChange={setQuery}
-            domainId={domainId}
-            onDomainChange={setDomainId}
-            domains={data.domainFilter}
-          />
+          <SubmissionFilters query={query} onQueryChange={setQuery} />
         </div>
+        <DomainFilter
+          domains={domains}
+          value={domainId}
+          onChange={setDomainId}
+        />
         <TermFilter terms={data.termOptions} selected={data.selectedTerm} />
       </div>
 
-      <div className="bg-card border border-border rounded-lg">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-          <h2 className="text-sm font-medium text-foreground">Submissions</h2>
-          <span className="text-xs text-muted-foreground">
-            {filtered.length}
-            {filtered.length === data.submissions.length
-              ? ""
-              : ` of ${data.submissions.length}`}{" "}
-            member
-            {data.submissions.length === 1 ? "" : "s"}
-          </span>
-        </div>
+      <div className="bg-card border border-border rounded-lg overflow-hidden">
         {data.noFormConnected ? (
           <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-            No Intent to Work form is connected for this term. Connect a form
-            above so members can submit — intent only exists through the form.
-            <br />
-            <span className="text-xs">
-              (Form-driven intent capture is not yet available; connecting a
-              form does not yet record submissions.)
-            </span>
-          </div>
-        ) : data.submissions.length === 0 ? (
-          <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-            No intent submissions yet.
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-            No members match the current filters.
+            No Intent to Work form is connected for this term. Open{" "}
+            <em>Advanced settings</em> to connect one so members can submit —
+            intent only exists through the form.
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[640px]">
-              <thead className="bg-muted/30 text-muted-foreground text-xs uppercase tracking-wide">
-                <tr>
-                  <th className="text-left font-medium px-4 py-2">Member</th>
-                  {data.terms.map((t) => (
-                    <th
-                      key={t.id}
-                      className="text-left font-medium px-4 py-2"
-                    >
-                      {t.code}
-                    </th>
-                  ))}
-                  <th className="text-left font-medium px-4 py-2">Updated</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((s) => (
-                  <tr
-                    key={s.userId}
-                    className="border-t border-border hover:bg-muted/20"
-                  >
-                    <td className="px-4 py-2">
-                      <div className="text-foreground">{s.name}</div>
-                      {s.email && (
-                        <div className="text-xs text-muted-foreground">
-                          {s.email}
-                        </div>
-                      )}
-                    </td>
-                    {data.terms.map((t) => {
-                      const st = s.statuses[t.id];
-                      return (
-                        <td key={t.id} className="px-4 py-2">
-                          {st ? (
-                            <span
-                              className={`inline-flex items-center px-2 py-0.5 text-xs font-medium rounded ${
-                                STATUS_PILL[st] ?? "bg-muted text-foreground"
-                              }`}
-                            >
-                              {st}
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
-                        </td>
-                      );
-                    })}
-                    <td className="px-4 py-2 text-muted-foreground">
-                      {new Date(s.updatedAt).toLocaleDateString()}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <SubmissionDatabase
+            columns={data.tableColumns}
+            rows={filtered}
+            detailBase="/projects/intent-to-work"
+            emptyMessage={
+              data.submissions.length === 0
+                ? "No intent submissions yet."
+                : "No members match the current filters."
+            }
+          />
         )}
       </div>
     </div>
   );
 }
 
-function Header({ cycleName }: { cycleName?: string }) {
+function Header({
+  cycleName,
+  onOpenSettings,
+  settingsLabel,
+}: {
+  cycleName?: string;
+  onOpenSettings?: () => void;
+  settingsLabel?: string;
+}) {
   return (
-    <header>
-      <h1 className="font-heading text-2xl font-bold text-foreground">
-        Intent to Work
-      </h1>
-      <p className="text-sm text-muted-foreground mt-1">
-        Received intent submissions{cycleName ? ` for ${cycleName}` : ""}.
-      </p>
+    <header className="flex items-start justify-between gap-3">
+      <div>
+        <h1 className="font-heading text-2xl font-bold text-foreground">
+          Intent to Work
+        </h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          Received intent submissions{cycleName ? ` for ${cycleName}` : ""}.
+        </p>
+      </div>
+      {onOpenSettings && (
+        <button
+          type="button"
+          onClick={onOpenSettings}
+          className="shrink-0 px-3 py-1.5 text-sm font-medium rounded-md border border-border text-foreground hover:bg-muted"
+        >
+          {settingsLabel ?? "Advanced settings"}
+        </button>
+      )}
     </header>
   );
 }

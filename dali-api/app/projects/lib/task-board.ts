@@ -28,6 +28,10 @@ export type TaskCardModel = {
   status: TaskStatus;
   priority: Priority;
   position: number;
+  // ISO timestamp (UTC) or null. The pill on TaskCard formats it for display.
+  // Stored as a string here so the model serializes cleanly through the
+  // loader → client boundary without a Date round-trip.
+  dueAt: string | null;
   epicId: string | null;
   sprintId: string | null;
   assigneeNames: string[];
