@@ -86,4 +86,20 @@ describe("ChallengePreview", () => {
     );
     expect(html).toContain("Shown after domain questions");
   });
+
+  it("renders info-type questions as a muted prose block (not as a fallback text input)", () => {
+    const infoQ: Question = {
+      key: "intro",
+      type: "info",
+      required: false,
+      data: { label: "", body: "Read this before answering.\nIt's important." },
+    };
+    const html = renderToStaticMarkup(
+      createElement(ChallengePreview, { questions: [infoQ] }),
+    );
+    expect(html).toContain("Read this before answering.\nIt&#x27;s important.");
+    expect(html).toContain("whitespace-pre-wrap");
+    // Regression: info blocks must not fall through to <input type="text">.
+    expect(html).not.toMatch(/<input[^>]*type="text"/);
+  });
 });

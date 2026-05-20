@@ -7,6 +7,7 @@ import { isHiringLead } from "~/lib/roles";
 import type { Question } from "~/types";
 import type { Prisma } from "~/generated/prisma/client";
 import { CycleSetupSection as Section } from "~/hiring/components/CycleSetupSection";
+import { ChallengePreviewModal } from "~/hiring/components/ChallengePreviewModal";
 
 export const meta: Route.MetaFunction = () => [
   { title: "Fellowship cycle · DALI OS" },
@@ -403,13 +404,14 @@ function FormVersionSection({
 }) {
   const fetcher = useFetcher();
   const [creating, setCreating] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
   return (
     <Section
       title="Shortform"
       description="DB-backed questions interns will answer. Pin a version (or create a new one) — once the cycle is Open, the version is frozen for in-progress drafts."
     >
       {current ? (
-        <div className="mb-3">
+        <div className="mb-3 flex flex-wrap items-center gap-3">
           <p className="text-sm font-medium text-dark-blue">
             {(() => {
               const qCount = current.questions.filter((q) => q.type !== "info").length;
@@ -419,6 +421,13 @@ function FormVersionSection({
               return `v${current.version} (${parts.join(", ")})`;
             })()}
           </p>
+          <button
+            type="button"
+            onClick={() => setPreviewing(true)}
+            className="text-xs font-medium text-blue-700 hover:underline"
+          >
+            Preview
+          </button>
         </div>
       ) : (
         <p className="text-sm text-muted-foreground mb-3">No shortform pinned yet.</p>
@@ -464,6 +473,15 @@ function FormVersionSection({
           }}
         />
       )}
+      {previewing && current && (
+        <ChallengePreviewModal
+          challengeVersionId={current.id}
+          challengeName="Shortform"
+          versionLabel={`v${current.version}`}
+          questions={current.questions}
+          onClose={() => setPreviewing(false)}
+        />
+      )}
     </Section>
   );
 }
@@ -478,6 +496,7 @@ function CreateFormVersionModal({
   const [qs, setQs] = useState<Question[]>([
     { key: crypto.randomUUID(), type: "textarea", required: true, data: { label: "" } },
   ]);
+  const [previewing, setPreviewing] = useState(false);
   function addQ() {
     setQs((prev) => [...prev, { key: crypto.randomUUID(), type: "textarea", required: false, data: { label: "" } }]);
   }
@@ -615,6 +634,12 @@ function CreateFormVersionModal({
             Cancel
           </button>
           <button
+            onClick={() => setPreviewing(true)}
+            className="px-3 py-2 text-sm font-medium text-blue-700 bg-card border border-blue-300 rounded-md hover:bg-blue-50"
+          >
+            Preview
+          </button>
+          <button
             onClick={() => {
               const cleaned = qs.filter((q) =>
                 q.type === "info" ? (q.data.body ?? "").trim() : q.data.label.trim(),
@@ -628,6 +653,21 @@ function CreateFormVersionModal({
           </button>
         </div>
       </div>
+      {previewing && (
+        // Stop propagation so the preview's overlay/close don't bubble up to
+        // the create modal's outer onClick={onClose} and dismiss the draft.
+        <div onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+          <ChallengePreviewModal
+            challengeVersionId="draft"
+            challengeName="Shortform"
+            versionLabel="Draft"
+            questions={qs.filter((q) =>
+              q.type === "info" ? (q.data.body ?? "").trim() : q.data.label.trim(),
+            )}
+            onClose={() => setPreviewing(false)}
+          />
+        </div>
+      )}
     </div>
   );
 }
