@@ -26,28 +26,40 @@ export function ChallengePreview({ description, questions }: ChallengePreviewPro
         <p className="text-sm text-muted-foreground/70 italic">No questions in this version.</p>
       ) : (
         <div className="space-y-6">
-          {questions.map(q => (
-            <div key={q.key}>
-              <label className="block text-sm font-semibold text-dark-blue mb-1">
-                {q.data.label}
-                {q.required && <span className="text-accent-coral ml-0.5">*</span>}
-                {q.data.afterDomains && (
-                  <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-800 align-middle">
-                    Shown after domain questions
-                  </span>
+          {questions.map(q => {
+            if (q.type === "info") {
+              return (
+                <div
+                  key={q.key}
+                  className="rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground whitespace-pre-wrap"
+                >
+                  {q.data.body ?? ""}
+                </div>
+              );
+            }
+            return (
+              <div key={q.key}>
+                <label className="block text-sm font-semibold text-dark-blue mb-1">
+                  {q.data.label}
+                  {q.required && <span className="text-accent-coral ml-0.5">*</span>}
+                  {q.data.afterDomains && (
+                    <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-800 align-middle">
+                      Shown after domain questions
+                    </span>
+                  )}
+                </label>
+                {q.data.description && (
+                  <p className="text-xs text-muted-foreground mb-1">{q.data.description}</p>
                 )}
-              </label>
-              {q.data.description && (
-                <p className="text-xs text-muted-foreground mb-1">{q.data.description}</p>
-              )}
-              <ChallengeQuestionField
-                question={q}
-                value=""
-                onChange={noop}
-                disabled
-              />
-            </div>
-          ))}
+                <ChallengeQuestionField
+                  question={q}
+                  value=""
+                  onChange={noop}
+                  disabled
+                />
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
