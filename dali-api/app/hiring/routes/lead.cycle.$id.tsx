@@ -76,6 +76,17 @@ interface InterviewRow {
   }[]
 }
 
+interface PendingInviteRow {
+  id: string
+  invitedAt: string
+  domainApplication: {
+    id: string
+    domain: { name: string }
+    challengeVersion: { domain: { name: string } } | null
+    application: { user: { id: string; firstName: string | null; lastName: string | null } }
+  }
+}
+
 // ─── Status helpers ───────────────────────────────────────────────────────────
 
 const STATUS_SEQUENCE = [
@@ -1089,6 +1100,7 @@ export default function HiringLeadCycleDetails() {
 
   // ── Interviews state ──
   const [interviews, setInterviews] = useState<InterviewRow[]>([])
+  const [pendingInvites, setPendingInvites] = useState<PendingInviteRow[]>([])
 
   // ── Coverage heatmap state ──
   const [coverage, setCoverage] = useState<{
@@ -1184,7 +1196,14 @@ export default function HiringLeadCycleDetails() {
     if (!cycleId) return
     try {
       const r = await fetch(`/api/hiring/cycles/${cycleId}/interviews`, { credentials: 'include' })
-      setInterviews(r.ok ? await r.json() : [])
+      if (r.ok) {
+        const body = await r.json()
+        setInterviews(Array.isArray(body) ? body : (body.interviews ?? []))
+        setPendingInvites(Array.isArray(body) ? [] : (body.pending ?? []))
+      } else {
+        setInterviews([])
+        setPendingInvites([])
+      }
     } catch {}
   }, [cycleId])
 
@@ -2130,6 +2149,31 @@ export default function HiringLeadCycleDetails() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
+                {pendingInvites.map(p => {
+                  const u = p.domainApplication.application.user
+                  const domainName = p.domainApplication.challengeVersion?.domain.name
+                    ?? p.domainApplication.domain.name
+                  const invited = new Date(p.invitedAt)
+                  return (
+                    <tr key={`pending-${p.id}`} className="bg-amber-50/40 hover:bg-amber-50 transition">
+                      <td className="px-4 py-3 font-medium text-foreground">
+                        {u.firstName} {u.lastName}
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground">{domainName || '—'}</td>
+                      <td className="px-4 py-3 text-muted-foreground text-xs italic">
+                        Invited {invited.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800">
+                          Awaiting Schedule
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground">—</td>
+                      <td className="px-4 py-3 text-muted-foreground text-xs">—</td>
+                      <td className="px-4 py-3 text-right text-muted-foreground">—</td>
+                    </tr>
+                  )
+                })}
                 {interviews.map(interview => {
                   const isFuture = new Date(interview.startTime) > new Date()
                   const domainName = interview.domainApplication.challengeVersion.domain.name
@@ -2280,13 +2324,37 @@ export default function HiringLeadCycleDetails() {
                     </tr>
                   )
                 })}
-                {interviews.length === 0 && (
-                  <tr><td colSpan={6} className="px-4 py-8 text-center text-muted-foreground/70"><span className="sr-only">Table empty: </span>No interviews scheduled yet.</td></tr>
+                {interviews.length === 0 && pendingInvites.length === 0 && (
+                  <tr><td colSpan={7} className="px-4 py-8 text-center text-muted-foreground/70"><span className="sr-only">Table empty: </span>No interviews scheduled yet.</td></tr>
                 )}
               </tbody>
             </table>
             </div>
             <ul className="sm:hidden divide-y divide-border">
+              {pendingInvites.map(p => {
+                const u = p.domainApplication.application.user
+                const domainName = p.domainApplication.challengeVersion?.domain.name
+                  ?? p.domainApplication.domain.name
+                const invited = new Date(p.invitedAt)
+                return (
+                  <li key={`pending-${p.id}`} className="px-4 py-3 space-y-1 bg-amber-50/40">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="font-medium text-foreground truncate">
+                          {u.firstName} {u.lastName}
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-0.5">{domainName || '—'}</div>
+                      </div>
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold flex-shrink-0 bg-amber-100 text-amber-800">
+                        Awaiting Schedule
+                      </span>
+                    </div>
+                    <div className="text-xs text-muted-foreground italic">
+                      Invited {invited.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                    </div>
+                  </li>
+                )
+              })}
               {interviews.map(interview => {
                 const isFuture = new Date(interview.startTime) > new Date()
                 const domainName = interview.domainApplication.challengeVersion.domain.name
@@ -2434,7 +2502,7 @@ export default function HiringLeadCycleDetails() {
                   </li>
                 )
               })}
-              {interviews.length === 0 && (
+              {interviews.length === 0 && pendingInvites.length === 0 && (
                 <li className="px-4 py-8 text-center text-sm text-muted-foreground/70">No interviews scheduled yet.</li>
               )}
             </ul>
