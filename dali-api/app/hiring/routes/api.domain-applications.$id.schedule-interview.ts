@@ -73,6 +73,14 @@ export async function action({ request, params }: Route.ActionArgs) {
   const slotStart = new Date(startTime);
   const slotEnd = new Date(slotStart.getTime() + config.slotDurationMinutes * 60_000);
 
+  const earliestBookable = new Date(Date.now() + config.bookingNoticeHours * 60 * 60_000);
+  if (slotStart < earliestBookable) {
+    return Response.json(
+      { error: `Interviews must be booked at least ${config.bookingNoticeHours} hours in advance` },
+      { status: 409 },
+    );
+  }
+
   try {
     const interview = await assignInterviewers(
       da.application.applicationCycleId,

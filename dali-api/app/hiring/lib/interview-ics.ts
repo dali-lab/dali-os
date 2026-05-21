@@ -2,6 +2,11 @@
 // Produces RFC 5545 VCALENDAR strings that Gmail, Outlook, and Apple Calendar
 // handle as inline calendar invites when attached via the `ics` param on sendEmail.
 
+export interface IcsAttendee {
+  email: string;
+  name?: string;
+}
+
 export interface IcsEventParams {
   interviewId: string;
   summary: string;
@@ -10,6 +15,8 @@ export interface IcsEventParams {
   location: string; // "Pod Appa, DALI Lab" / "Pod Momo, DALI Lab" / "Online"
   meetingUrl?: string | null;
   description?: string;
+  organizer: IcsAttendee;
+  attendees: IcsAttendee[];
 }
 
 function formatIcsDate(d: Date): string {
@@ -24,8 +31,18 @@ function uid(interviewId: string): string {
   return `interview-${interviewId}@dali.dartmouth.edu`;
 }
 
+function organizerLine(org: IcsAttendee): string {
+  const cn = org.name ? `;CN=${escapeIcsText(org.name)}` : "";
+  return `ORGANIZER${cn}:mailto:${org.email}`;
+}
+
+function attendeeLine(att: IcsAttendee): string {
+  const cn = att.name ? `;CN=${escapeIcsText(att.name)}` : "";
+  return `ATTENDEE${cn};RSVP=TRUE;PARTSTAT=NEEDS-ACTION;ROLE=REQ-PARTICIPANT:mailto:${att.email}`;
+}
+
 export function buildInviteIcs(params: IcsEventParams): string {
-  const { interviewId, summary, startTime, endTime, location, meetingUrl, description } = params;
+  const { interviewId, summary, startTime, endTime, location, meetingUrl, description, organizer, attendees } = params;
 
   const locationLine = meetingUrl ? `${location} — ${meetingUrl}` : location;
   const descLines = [description, meetingUrl ? `Join: ${meetingUrl}` : null].filter(Boolean).join("\\n");
@@ -44,6 +61,8 @@ export function buildInviteIcs(params: IcsEventParams): string {
     `SUMMARY:${escapeIcsText(summary)}`,
     `LOCATION:${escapeIcsText(locationLine)}`,
     ...(descLines ? [`DESCRIPTION:${escapeIcsText(descLines)}`] : []),
+    organizerLine(organizer),
+    ...attendees.map(attendeeLine),
     "SEQUENCE:0",
     "STATUS:CONFIRMED",
     "END:VEVENT",
@@ -53,8 +72,10 @@ export function buildInviteIcs(params: IcsEventParams): string {
   return lines.join("\r\n");
 }
 
-export function buildCancelIcs(params: Pick<IcsEventParams, "interviewId" | "summary" | "startTime" | "endTime">): string {
-  const { interviewId, summary, startTime, endTime } = params;
+export function buildCancelIcs(
+  params: Pick<IcsEventParams, "interviewId" | "summary" | "startTime" | "endTime" | "organizer" | "attendees">,
+): string {
+  const { interviewId, summary, startTime, endTime, organizer, attendees } = params;
 
   const lines = [
     "BEGIN:VCALENDAR",
@@ -68,6 +89,8 @@ export function buildCancelIcs(params: Pick<IcsEventParams, "interviewId" | "sum
     `DTSTART:${formatIcsDate(startTime)}`,
     `DTEND:${formatIcsDate(endTime)}`,
     `SUMMARY:${escapeIcsText(summary)}`,
+    organizerLine(organizer),
+    ...attendees.map(attendeeLine),
     "SEQUENCE:1",
     "STATUS:CANCELLED",
     "END:VEVENT",
