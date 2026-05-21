@@ -61,11 +61,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const cycleId = da.application.applicationCycleId;
   const effectiveDomainId = da.domainId; // always set (backfilled)
 
-  // Access: Core sees everything; a reviewer only domains they cover for
-  // this cycle. A reviewer hitting a URL outside their domain bounces back
-  // to the list rather than seeing content.
+  // Access: Core/Admin and domain leads see every domain (matching the
+  // analytics + list views). A plain reviewer sees only the domains they
+  // cover for this cycle — hitting a URL outside their domain bounces back
+  // to the list rather than leaking content.
   const roles = await getUserRoles(auth.user.sub);
-  if (!roles.isHiringLead) {
+  if (!roles.isHiringLead && !roles.isDomainLead) {
     const assigned = await prisma.cycleReviewer.findFirst({
       where: {
         userId: auth.user.sub,
