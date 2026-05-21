@@ -57,6 +57,11 @@ export default [
     route("portal/application", "routes/portal.application.tsx"),
   ]),
 
+  // Public policy pages (no auth, no layout) — linked from the Google OAuth
+  // consent screen, so they must load for an unauthenticated reviewer.
+  route("privacy", "routes/privacy.tsx"),
+  route("terms", "routes/terms.tsx"),
+
   // Login (no layout)
   route("login", "routes/login.tsx"),
   route("dev-login", "routes/dev-login.ts"),
