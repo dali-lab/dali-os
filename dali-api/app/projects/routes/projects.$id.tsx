@@ -303,10 +303,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }));
 
   // Planned terms for the scope grid: starting at firstTerm (by sortKey), the
-  // next `termCount` terms chronologically. Falls back to an empty list when
-  // no firstTerm is set (legacy project rows) — the scopes section then just
-  // doesn't render, no crash.
-  const plannedTerms: { id: string; code: string; sortKey: number }[] =
+  // next `termCount` terms chronologically. We fetch them ascending so the
+  // `take: termCount` slice cuts off the future, then reverse so the display
+  // surfaces the most recent term first. Falls back to an empty list when
+  // no firstTerm is set (legacy project rows) — the scopes section then
+  // just doesn't render, no crash.
+  const plannedTerms: { id: string; code: string; sortKey: number }[] = (
     project.firstTerm
       ? await prisma.term.findMany({
           where: { sortKey: { gte: project.firstTerm.sortKey } },
@@ -314,7 +316,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           take: Math.max(1, project.termCount),
           select: { id: true, code: true, sortKey: true },
         })
-      : [];
+      : []
+  )
+    .slice()
+    .sort((a, b) => b.sortKey - a.sortKey);
 
   // Fetch all scope rows for this project (small N — at most |declared| ×
   // termCount, both single-digit in practice). Keyed by domainId+termId so
@@ -1042,11 +1047,11 @@ function DomainScopesSegment({
       {({ editing }) => (
         <Form method="post" ref={formRef} className="flex flex-col gap-4">
           <input type="hidden" name="intent" value="scopesBulk" />
-          {domains.map((d) => (
-            <div key={d.id} className="flex flex-col gap-2">
-              <h3 className="text-sm font-semibold text-foreground">{d.name}</h3>
+          {terms.map((t) => (
+            <div key={t.id} className="flex flex-col gap-2">
+              <h3 className="text-sm font-semibold text-foreground">{t.code}</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {terms.map((t) => {
+                {domains.map((d) => {
                   const value = cell(d.id, t.id);
                   return (
                     <div
@@ -1054,7 +1059,7 @@ function DomainScopesSegment({
                       className="rounded-md border border-border p-2 flex flex-col gap-1"
                     >
                       <span className="text-[11px] font-medium text-muted-foreground">
-                        {t.code}
+                        {d.name}
                       </span>
                       {editing ? (
                         <textarea
