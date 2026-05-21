@@ -18,32 +18,84 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const gate = await requireApiSignedOrForbidden(auth.user.sub, params.cycleId!);
   if (gate) return withCors(request, gate);
 
-  const interviews = await prisma.interview.findMany({
-    where: { applicationCycleId: params.cycleId },
-    include: {
-      domainApplication: {
-        include: {
-          application: {
-            include: {
-              user: { select: { id: true, firstName: true, lastName: true } },
+  const [interviews, pendingCandidates] = await Promise.all([
+    prisma.interview.findMany({
+      where: { applicationCycleId: params.cycleId },
+      include: {
+        domainApplication: {
+          include: {
+            application: {
+              include: {
+                user: { select: { id: true, firstName: true, lastName: true } },
+              },
             },
-          },
-          challengeVersion: { include: { domain: true } },
-        },
-      },
-      assignments: {
-        include: {
-          cycleInterviewer: {
-            include: {
-              user: true,
-              domain: true,
-            },
+            challengeVersion: { include: { domain: true } },
           },
         },
+        assignments: {
+          include: {
+            cycleInterviewer: {
+              include: {
+                user: true,
+                domain: true,
+              },
+            },
+          },
+        },
       },
-    },
-    orderBy: { startTime: "asc" },
-  });
+      orderBy: { startTime: "asc" },
+    }),
+    // Pre-filter: DAs in this cycle that have at least one Released
+    // InvitedToInterview decision and no Scheduled interview. We still need
+    // to confirm the *latest* Released decision is InvitedToInterview in JS
+    // (a follow-up Rejected/Waitlisted would override).
+    prisma.domainApplication.findMany({
+      where: {
+        selected: true,
+        application: { applicationCycleId: params.cycleId },
+        decisions: {
+          some: { type: "InvitedToInterview", stage: "Released" },
+        },
+        interviews: { none: { status: "Scheduled" } },
+      },
+      include: {
+        application: {
+          include: {
+            user: { select: { id: true, firstName: true, lastName: true } },
+          },
+        },
+        domain: true,
+        challengeVersion: { include: { domain: true } },
+        decisions: {
+          where: { stage: "Released" },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: { id: true, type: true, createdAt: true },
+        },
+      },
+    }),
+  ]);
 
-  return withCors(request, Response.json(interviews));
+  const pending = pendingCandidates
+    .filter((da) => da.decisions[0]?.type === "InvitedToInterview")
+    .map((da) => ({
+      id: da.id,
+      invitedAt: da.decisions[0]!.createdAt,
+      domainApplication: {
+        id: da.id,
+        domain: { name: da.domain.name },
+        challengeVersion: da.challengeVersion?.domain
+          ? { domain: { name: da.challengeVersion.domain.name } }
+          : null,
+        application: {
+          user: {
+            id: da.application.user.id,
+            firstName: da.application.user.firstName,
+            lastName: da.application.user.lastName,
+          },
+        },
+      },
+    }));
+
+  return withCors(request, Response.json({ interviews, pending }));
 }
