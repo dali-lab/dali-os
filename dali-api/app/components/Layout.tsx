@@ -68,6 +68,19 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
     'internal-processes': undefined,
     'admin-console': undefined,
   })
+  // Last subtab URL the user was on within each area. Updated whenever the
+  // focused workspace tab points into an area. Used so re-clicking the parent
+  // after closing/leaving the area reopens the subtab you were last on,
+  // instead of jumping to the first subtab.
+  const [lastSubtabUrl, setLastSubtabUrl] = useState<Record<AreaKey, string | undefined>>({
+    hiring: undefined,
+    projects: undefined,
+    members: undefined,
+    partners: undefined,
+    education: undefined,
+    'internal-processes': undefined,
+    'admin-console': undefined,
+  })
   const workspaceRef = useRef<TabWorkspaceHandle | null>(null)
 
   const openInWorkspace = (req: OpenTabRequest) => {
@@ -87,6 +100,24 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
 
   useEffect(() => {
     setMobileNavOpen(false)
+  }, [path])
+
+  // Remember the last subtab URL inside each area. The area key is derived
+  // from the path prefix so this stays in lockstep with activeAreaKey below.
+  useEffect(() => {
+    const areaKey: AreaKey | null =
+      path.startsWith('/admin-console') ? 'admin-console'
+      : path.startsWith('/hiring') ? 'hiring'
+      : path.startsWith('/projects') ? 'projects'
+      : path.startsWith('/members') ? 'members'
+      : path.startsWith('/partners') ? 'partners'
+      : path.startsWith('/education') ? 'education'
+      : path.startsWith('/internal-processes') ? 'internal-processes'
+      : null
+    if (!areaKey) return
+    setLastSubtabUrl((prev) =>
+      prev[areaKey] === path ? prev : { ...prev, [areaKey]: path },
+    )
   }, [path])
 
   // Listen for "open in new tab" requests from embedded iframes (e.g. a
@@ -633,14 +664,32 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
                   title={collapsed ? area.label : undefined}
                   aria-expanded={expanded}
                   onClick={() => {
-                    // Clicking the parent label opens its group AND navigates
-                    // to the first subtab (or area.to if there are none).
-                    // Chevron click (next to this button) keeps the pure
-                    // toggle, so users who want to just collapse a group
-                    // still can.
+                    // Clicking the parent label:
+                    //   - if you're already on this area AND its subtabs are
+                    //     open, collapse them (re-click to close);
+                    //   - otherwise, expand the group and navigate. Prefer
+                    //     (1) the currently-active subtab, then (2) the last
+                    //     subtab the user visited inside this area (so
+                    //     reopening after closing the tab returns you there),
+                    //     and fall back to the first subtab / area.to.
+                    // The chevron beside this button is still a pure toggle.
+                    if (area.active && expanded && area.sections.length > 0) {
+                      toggleAreaExpanded(area.key, area.active)
+                      return
+                    }
                     setAreaExpanded(area.key)
-                    const target = area.sections[0]?.to ?? area.to
-                    const label = area.sections[0]?.label ?? area.label
+                    const activeSection = area.sections.find((s) => s.active)
+                    const remembered = lastSubtabUrl[area.key]
+                    const rememberedSection = remembered
+                      ? area.sections.find((s) => s.to === remembered)
+                      : undefined
+                    const target =
+                      activeSection?.to ?? remembered ?? area.sections[0]?.to ?? area.to
+                    const label =
+                      activeSection?.label ??
+                      rememberedSection?.label ??
+                      area.sections[0]?.label ??
+                      area.label
                     openInWorkspace({ url: target, label })
                   }}
                   className={`flex-1 flex items-center gap-3 ${collapsed ? 'px-3 py-2 justify-center' : 'pl-3 pr-1 py-2'} text-sm font-heading font-semibold text-left transition-colors ${

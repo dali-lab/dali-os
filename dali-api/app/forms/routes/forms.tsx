@@ -33,7 +33,7 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function FormsPage() {
-  const { folders, forms, allFolders } = useLoaderData<typeof loader>();
+  const { folders, forms } = useLoaderData<typeof loader>();
 
   return (
     <div className="flex flex-col gap-4">
@@ -48,12 +48,7 @@ export default function FormsPage() {
         </p>
       </header>
 
-      <FormsBrowser
-        folderId={null}
-        folders={folders}
-        forms={forms}
-        allFolders={allFolders}
-      />
+      <FormsBrowser folderId={null} folders={folders} forms={forms} />
     </div>
   );
 }

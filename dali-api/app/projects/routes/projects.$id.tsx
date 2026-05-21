@@ -829,7 +829,6 @@ function DomainsSegment({
 }) {
   const submit = useSubmit();
   const formRef = useRef<HTMLFormElement | null>(null);
-  const selected = new Set(declared.map((d) => d.id));
 
   return (
     <EditableSection
@@ -837,45 +836,25 @@ function DomainsSegment({
       canEdit={canEdit}
       onSave={() => { if (formRef.current) submit(formRef.current); }}
     >
-      {({ editing }) =>
+      {({ editing, resetKey }) =>
         editing ? (
-          <Form method="post" ref={formRef} className="flex flex-col gap-2">
-            <input type="hidden" name="intent" value="domains" />
-            <div className="flex flex-wrap gap-2">
-              {allDomains.map((d) => {
-                const isOn = selected.has(d.id);
-                return (
-                  <label
-                    key={d.id}
-                    className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md border text-sm cursor-pointer transition-colors ${
-                      isOn
-                        ? "bg-accent-coral/15 border-accent-coral/40 text-foreground"
-                        : "bg-background border-border text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      name="domainId"
-                      value={d.id}
-                      defaultChecked={isOn}
-                      className="sr-only"
-                    />
-                    {d.name}
-                  </label>
-                );
-              })}
-            </div>
-            {derived.length > 0 && declared.length === 0 && (
-              <p className="text-xs text-muted-foreground">
-                No domains declared yet — current bids and assignments
-                suggest:{" "}
-                <span className="text-foreground">
-                  {derived.map((d) => d.name).join(", ")}
-                </span>
-                .
-              </p>
-            )}
-          </Form>
+          // Controlled chip toggles. The previous markup wrapped a hidden
+          // checkbox in a styled <label> and keyed the chip's "selected"
+          // styling off the prop-derived `isOn` — clicking the label
+          // toggled the checkbox in the DOM but `isOn` (a render closure)
+          // never re-read it, so the chip looked unchanged. Now an explicit
+          // local Set tracks selection, the chip is a <button>, and the
+          // form's `domainId` entries are emitted as hidden inputs at
+          // submit time. `resetKey` (bumped by EditableSection on Cancel)
+          // is the dependency that resets state back to `declared`.
+          <DomainsChipsEditor
+            key={resetKey}
+            formRef={formRef}
+            initialSelectedIds={declared.map((d) => d.id)}
+            allDomains={allDomains}
+            derived={derived}
+            declaredCount={declared.length}
+          />
         ) : declared.length > 0 ? (
           <DomainChips items={declared} />
         ) : derived.length > 0 ? (
@@ -891,6 +870,71 @@ function DomainsSegment({
         )
       }
     </EditableSection>
+  );
+}
+
+function DomainsChipsEditor({
+  formRef,
+  initialSelectedIds,
+  allDomains,
+  derived,
+  declaredCount,
+}: {
+  formRef: React.MutableRefObject<HTMLFormElement | null>;
+  initialSelectedIds: string[];
+  allDomains: { id: string; name: string }[];
+  derived: { id: string; name: string }[];
+  declaredCount: number;
+}) {
+  const [selected, setSelected] = useState<Set<string>>(
+    () => new Set(initialSelectedIds),
+  );
+  function toggle(id: string) {
+    setSelected((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  return (
+    <Form method="post" ref={formRef} className="flex flex-col gap-2">
+      <input type="hidden" name="intent" value="domains" />
+      {/* Selected ids are submitted as repeated form fields the action
+          collects via form.getAll("domainId"). */}
+      {[...selected].map((id) => (
+        <input key={id} type="hidden" name="domainId" value={id} />
+      ))}
+      <div className="flex flex-wrap gap-2">
+        {allDomains.map((d) => {
+          const isOn = selected.has(d.id);
+          return (
+            <button
+              key={d.id}
+              type="button"
+              onClick={() => toggle(d.id)}
+              aria-pressed={isOn}
+              className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md border text-sm cursor-pointer transition-colors ${
+                isOn
+                  ? "bg-accent-coral/15 border-accent-coral/40 text-foreground"
+                  : "bg-background border-border text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {d.name}
+            </button>
+          );
+        })}
+      </div>
+      {derived.length > 0 && declaredCount === 0 && (
+        <p className="text-xs text-muted-foreground">
+          No domains declared yet — current bids and assignments suggest:{" "}
+          <span className="text-foreground">
+            {derived.map((d) => d.name).join(", ")}
+          </span>
+          .
+        </p>
+      )}
+    </Form>
   );
 }
 
@@ -1039,8 +1083,8 @@ function DomainScopesSegment({
 
   return (
     <EditableSection
-      title="Domain scopes"
-      description="Free-text scope for each declared domain in each planned term."
+      title="Domain challenges"
+      description="Free-text challenge brief for each declared domain in each planned term."
       canEdit={canEdit}
       onSave={() => { if (formRef.current) submit(formRef.current); }}
     >
@@ -1066,7 +1110,7 @@ function DomainScopesSegment({
                           name={`scope:${d.id}:${t.id}`}
                           defaultValue={value}
                           rows={3}
-                          placeholder="+ Add scope"
+                          placeholder="+ Add challenge"
                           className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 resize-y"
                         />
                       ) : value ? (
@@ -1075,7 +1119,7 @@ function DomainScopesSegment({
                         </p>
                       ) : (
                         <p className="text-sm text-muted-foreground italic">
-                          No scope.
+                          No challenge.
                         </p>
                       )}
                     </div>

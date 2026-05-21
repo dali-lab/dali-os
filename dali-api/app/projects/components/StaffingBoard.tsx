@@ -17,6 +17,12 @@ import { FinalizeModal } from "./FinalizeModal";
 
 type ProjectMeta = { id: string; name: string; status: "Active" | "Paused" | "Archived" };
 
+// Expected headcount per (project, domain) for this term — already summed
+// across levels and sorted by domain name in the loader. Keyed by projectId.
+// Absent / empty entries render as no demand chips (a project with no
+// ProjectRoleRequest rows this term).
+export type DomainDemand = { domainId: string; domainName: string; slots: number };
+
 type Props = {
   cycleId: string;
   termCode: string;
@@ -25,6 +31,7 @@ type Props = {
   members: MemberInput[];
   initialAssignments: Assignment[];
   domainNames: Record<string, string>;
+  demandByProject: Record<string, DomainDemand[]>;
   /** Staffing leads can drag. Members get a read-only board. */
   canManage: boolean;
 };
@@ -37,6 +44,7 @@ export function StaffingBoard({
   members,
   initialAssignments,
   domainNames,
+  demandByProject,
   canManage,
 }: Props) {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -189,6 +197,7 @@ export function StaffingBoard({
               tone={p.status === "Active" ? "active" : "dim"}
               cards={board[p.id] ?? []}
               projectNames={projectNames}
+              demand={demandByProject[p.id]}
               onOpenBid={setOpenBidUserId}
               draggable={canManage}
               onFinalize={canManage ? () => setFinalizeProjectId(p.id) : undefined}
@@ -231,6 +240,7 @@ function Column({
   tone,
   cards,
   projectNames,
+  demand,
   onOpenBid,
   draggable,
   onFinalize,
@@ -241,6 +251,10 @@ function Column({
   tone: ColumnTone;
   cards: MemberCardModel[];
   projectNames: Record<string, string>;
+  // Per-domain expected headcount for this project this term. Absent for
+  // the Unassigned column and for projects with no ProjectRoleRequest rows;
+  // rendered as small chips under the assigned count.
+  demand?: DomainDemand[];
   onOpenBid: (userId: string) => void;
   draggable: boolean;
   // Only set for project columns the user can manage; renders the finalize
@@ -279,6 +293,19 @@ function Column({
           )}
         </div>
         <div className="text-[11px] text-muted-foreground">{subtitle}</div>
+        {demand && demand.length > 0 && (
+          <div className="mt-1 flex flex-wrap gap-1">
+            {demand.map((d) => (
+              <span
+                key={d.domainId}
+                className="text-[10px] px-1.5 py-0.5 rounded-full border border-border bg-background text-muted-foreground"
+                title={`Expected ${d.slots} ${d.domainName} this term`}
+              >
+                {d.domainName} · {d.slots}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
       <div className="flex flex-col gap-2 p-2 min-h-[28rem]">
         {cards.length === 0 ? (

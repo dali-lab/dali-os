@@ -1,11 +1,7 @@
 import { useState } from "react";
 import { Link, useFetcher } from "react-router";
 import { Folder, FileText, MoreVertical } from "lucide-react";
-import type {
-  FormCard,
-  FolderCard,
-  FolderCrumb,
-} from "~/forms/lib/forms-data";
+import type { FormCard, FolderCard } from "~/forms/lib/forms-data";
 
 function errorOf(data: unknown): string | null {
   if (data && typeof data === "object" && "error" in data) {
@@ -36,14 +32,12 @@ export function FormsBrowser({
   folderId,
   folders,
   forms,
-  allFolders,
 }: {
   // The folder this view is showing (null = top level). New forms/folders
-  // are created here; "move" pickers list every folder.
+  // are created in this folder.
   folderId: string | null;
   folders: FolderCard[];
   forms: FormCard[];
-  allFolders: FolderCrumb[];
 }) {
   const fetcher = useFetcher();
   const [dialog, setDialog] = useState<Dialog | null>(null);
@@ -107,13 +101,6 @@ export function FormsBrowser({
       submit: { intent: "delete-form", id: f.id },
     });
   }
-  function moveForm(f: FormCard, target: string | null) {
-    if (f.folderId === target) return;
-    fetcher.submit(
-      { intent: "move-form", id: f.id, folderId: target ?? "" },
-      { method: "post" },
-    );
-  }
   function renameFolder(d: FolderCard) {
     setDialog({
       kind: "prompt",
@@ -133,14 +120,6 @@ export function FormsBrowser({
       submit: { intent: "delete-folder", id: d.id },
     });
   }
-  function moveFolder(d: FolderCard, target: string | null) {
-    if (d.parentId === target) return;
-    fetcher.submit(
-      { intent: "move-folder", id: d.id, parentId: target ?? "" },
-      { method: "post" },
-    );
-  }
-
   function submitDialog(name?: string) {
     if (!dialog) return;
     if (dialog.kind === "prompt") {
@@ -206,10 +185,8 @@ export function FormsBrowser({
               key={d.id}
               folder={d}
               busy={busy}
-              allFolders={allFolders}
               onRename={() => renameFolder(d)}
               onDelete={() => deleteFolder(d)}
-              onMove={(target) => moveFolder(d, target)}
             />
           ))}
           {visibleForms.map((f) => (
@@ -217,10 +194,8 @@ export function FormsBrowser({
               key={f.id}
               form={f}
               busy={busy}
-              allFolders={allFolders}
               onRename={() => renameForm(f)}
               onDelete={() => deleteForm(f)}
-              onMove={(target) => moveForm(f, target)}
             />
           ))}
         </div>
@@ -240,20 +215,12 @@ export function FormsBrowser({
 
 function CardMenu({
   busy,
-  allFolders,
-  moveLabel,
-  currentTargetId,
   onRename,
   onDelete,
-  onMove,
 }: {
   busy: boolean;
-  allFolders: FolderCrumb[];
-  moveLabel: string;
-  currentTargetId: string | null;
   onRename: () => void;
   onDelete: () => void;
-  onMove: (target: string | null) => void;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -300,29 +267,6 @@ function CardMenu({
             >
               Rename
             </button>
-            <div className="px-2 py-1.5">
-              <label className="block text-xs text-muted-foreground mb-1">
-                {moveLabel}
-              </label>
-              <select
-                value={currentTargetId ?? ""}
-                disabled={busy}
-                onClick={(e) => e.stopPropagation()}
-                onChange={(e) => {
-                  e.stopPropagation();
-                  setOpen(false);
-                  onMove(e.target.value || null);
-                }}
-                className="w-full text-xs px-2 py-1 border border-border rounded-md bg-background text-foreground"
-              >
-                <option value="">Top level</option>
-                {allFolders.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.name}
-                  </option>
-                ))}
-              </select>
-            </div>
             <button
               type="button"
               onClick={(e) => {
@@ -345,26 +289,22 @@ function CardMenu({
 function FolderCardView({
   folder,
   busy,
-  allFolders,
   onRename,
   onDelete,
-  onMove,
 }: {
   folder: FolderCard;
   busy: boolean;
-  allFolders: FolderCrumb[];
   onRename: () => void;
   onDelete: () => void;
-  onMove: (target: string | null) => void;
 }) {
   const childCount = folder.formCount + folder.folderCount;
   return (
     <Link
       to={`/forms/${folder.id}`}
-      className="group flex items-start gap-3 bg-card border border-border rounded-lg p-4 hover:border-accent-coral/60 hover:shadow-sm transition-all"
+      className="group flex items-start gap-3 bg-accent-coral/5 border-2 border-accent-coral/30 rounded-lg p-4 hover:border-accent-coral/70 hover:bg-accent-coral/10 hover:shadow-sm transition-all"
     >
       <div className="mt-0.5 text-accent-coral">
-        <Folder className="w-6 h-6" />
+        <Folder className="w-6 h-6 fill-accent-coral/20" />
       </div>
       <div className="min-w-0 flex-1">
         <div className="text-sm font-semibold text-foreground truncate">
@@ -384,15 +324,7 @@ function FolderCardView({
         </div>
       </div>
       {/* Inside a Link: menu stops propagation so clicks don't navigate. */}
-      <CardMenu
-        busy={busy}
-        allFolders={allFolders.filter((f) => f.id !== folder.id)}
-        moveLabel="Move folder to"
-        currentTargetId={folder.parentId}
-        onRename={onRename}
-        onDelete={onDelete}
-        onMove={onMove}
-      />
+      <CardMenu busy={busy} onRename={onRename} onDelete={onDelete} />
     </Link>
   );
 }
@@ -400,17 +332,13 @@ function FolderCardView({
 function FormCardView({
   form,
   busy,
-  allFolders,
   onRename,
   onDelete,
-  onMove,
 }: {
   form: FormCard;
   busy: boolean;
-  allFolders: FolderCrumb[];
   onRename: () => void;
   onDelete: () => void;
-  onMove: (target: string | null) => void;
 }) {
   return (
     <div className="group flex items-start gap-3 bg-card border border-border rounded-lg p-4 hover:border-accent-coral/60 hover:shadow-sm transition-all">
@@ -432,15 +360,7 @@ function FormCardView({
           </div>
         </div>
       </Link>
-      <CardMenu
-        busy={busy}
-        allFolders={allFolders}
-        moveLabel="Move form to"
-        currentTargetId={form.folderId}
-        onRename={onRename}
-        onDelete={onDelete}
-        onMove={onMove}
-      />
+      <CardMenu busy={busy} onRename={onRename} onDelete={onDelete} />
     </div>
   );
 }

@@ -37,8 +37,7 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function FormsFolderPage() {
-  const { current, crumbs, folders, forms, allFolders } =
-    useLoaderData<typeof loader>();
+  const { current, crumbs, folders, forms } = useLoaderData<typeof loader>();
 
   return (
     <div className="flex flex-col gap-4">
@@ -70,7 +69,6 @@ export default function FormsFolderPage() {
         folderId={current?.id ?? null}
         folders={folders}
         forms={forms}
-        allFolders={allFolders}
       />
     </div>
   );

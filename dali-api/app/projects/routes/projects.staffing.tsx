@@ -85,7 +85,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const memberUserIds = Array.from(new Set(preferences.map((p) => p.userId)));
 
-  const [users, assignmentRows, projects, domains] = await Promise.all([
+  const [users, assignmentRows, projects, domains, roleRequests] = await Promise.all([
     prisma.user.findMany({
       where: { id: { in: memberUserIds } },
       select: {
@@ -115,6 +115,14 @@ export async function loader({ request }: Route.LoaderArgs) {
       select: { id: true, name: true, status: true },
     }),
     prisma.domain.findMany({ select: { id: true, displayName: true } }),
+    // Expected headcount per (project, domain) for THIS term. ProjectRoleRequest
+    // is keyed (projectId, termId, domainId, level), so we sum slots across
+    // levels to get the headline number a staffing lead actually cares about
+    // ("we need 3 devs on this project") and show it under each column title.
+    prisma.projectRoleRequest.findMany({
+      where: { termId: selectedTerm.id },
+      select: { projectId: true, domainId: true, slots: true },
+    }),
   ]);
 
   const prefsByUser = new Map<string, Preference[]>();
@@ -155,6 +163,31 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const domainNames = Object.fromEntries(domains.map((d) => [d.id, d.displayName]));
 
+  // Sum slots per (project, domain), drop zero rows, sort the per-project
+  // list alphabetically so the chip order is stable run-to-run.
+  const demandTotals = new Map<string, number>();
+  for (const r of roleRequests) {
+    const key = `${r.projectId}:${r.domainId}`;
+    demandTotals.set(key, (demandTotals.get(key) ?? 0) + r.slots);
+  }
+  const demandByProject: Record<
+    string,
+    Array<{ domainId: string; domainName: string; slots: number }>
+  > = {};
+  for (const [key, slots] of demandTotals) {
+    if (slots <= 0) continue;
+    const [projectId, domainId] = key.split(":");
+    const list = demandByProject[projectId] ?? (demandByProject[projectId] = []);
+    list.push({
+      domainId,
+      domainName: domainNames[domainId] ?? domainId,
+      slots,
+    });
+  }
+  for (const list of Object.values(demandByProject)) {
+    list.sort((a, b) => a.domainName.localeCompare(b.domainName));
+  }
+
   // Bids only exist through a bound Project Bids form. If none is bound, the
   // board legitimately has no new bids to staff — surface that so a lead
   // doesn't read an empty board as a bug. (Legacy StaffingPreference rows
@@ -172,6 +205,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     members,
     initialAssignments,
     domainNames,
+    demandByProject,
     bidsFormBound,
   };
 }
@@ -219,6 +253,7 @@ export default function StaffingPage() {
         members={data.members}
         initialAssignments={data.initialAssignments}
         domainNames={data.domainNames}
+        demandByProject={data.demandByProject}
         canManage={data.canManage}
       />
     </div>
