@@ -121,6 +121,21 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
     })
   }
 
+  // Force-expand without toggling. Used when clicking a parent label so the
+  // sidebar reveals the parent's subtabs alongside the navigation, rather
+  // than collapsing them off-screen if the user had previously closed the
+  // group.
+  const setAreaExpanded = (key: AreaKey) => {
+    setUserExpanded((prev) => {
+      if (prev[key] === true) return prev
+      const next = { ...prev, [key]: true }
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(EXPANDED_AREAS_KEY, JSON.stringify(next))
+      }
+      return next
+    })
+  }
+
   const activeAreaKey: AreaKey | null =
     path.startsWith('/admin-console') ? 'admin-console'
     : path.startsWith('/hiring') ? 'hiring'
@@ -409,7 +424,17 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
                   type="button"
                   title={collapsed ? area.label : undefined}
                   aria-expanded={expanded}
-                  onClick={() => toggleAreaExpanded(area.key, area.active)}
+                  onClick={() => {
+                    // Clicking the parent label opens its group AND navigates
+                    // to the first subtab (or area.to if there are none).
+                    // Chevron click (next to this button) keeps the pure
+                    // toggle, so users who want to just collapse a group
+                    // still can.
+                    setAreaExpanded(area.key)
+                    const target = area.sections[0]?.to ?? area.to
+                    const label = area.sections[0]?.label ?? area.label
+                    openInWorkspace({ url: target, label })
+                  }}
                   className={`flex-1 flex items-center gap-3 ${collapsed ? 'px-3 py-2 justify-center' : 'pl-3 pr-1 py-2'} text-sm font-heading font-semibold text-left transition-colors ${
                     area.active ? 'text-white' : 'text-white/65 hover:text-white'
                   }`}
