@@ -834,7 +834,12 @@ export default function DomainLeadDashboard() {
                     <div className={`grid grid-cols-1 ${isInternToFull ? "" : "md:grid-cols-2"} gap-4`}>
                       <ReviewerSection cycleId={cycle.id} domainId={assignment.domainId} initialReviewers={cycleReviewers} />
                       {!isInternToFull && (
-                        <InterviewerSection cycleId={cycle.id} domainId={assignment.domainId} initialInterviewers={interviewers ?? []} />
+                        <InterviewerSection
+                          cycleId={cycle.id}
+                          domainId={assignment.domainId}
+                          initialInterviewers={interviewers ?? []}
+                          reviewers={cycleReviewers}
+                        />
                       )}
                     </div>
                   </Section>
@@ -1592,15 +1597,18 @@ function RubricPicker({ cycleId, domainId, options, selectedId, locked }: {
   );
 }
 
-function InterviewerSection({ cycleId, domainId, initialInterviewers }: {
+function InterviewerSection({ cycleId, domainId, initialInterviewers, reviewers }: {
   cycleId: string;
   domainId: string;
   initialInterviewers: any[];
+  reviewers: any[];
 }) {
   const [interviewers, setInterviewers] = useState(initialInterviewers);
   const [members, setMembers] = useState<any[]>([]);
   const [selectedMemberId, setSelectedMemberId] = useState("");
   const [pendingRemove, setPendingRemove] = useState<any | null>(null);
+  const [pendingApplyReviewers, setPendingApplyReviewers] = useState(false);
+  const [applyingReviewers, setApplyingReviewers] = useState(false);
 
   // Resync from props after the loader revalidates.
   useEffect(() => { setInterviewers(initialInterviewers); }, [initialInterviewers]);
@@ -1627,6 +1635,34 @@ function InterviewerSection({ cycleId, domainId, initialInterviewers }: {
     }
   }
 
+  async function applyAllReviewers() {
+    setApplyingReviewers(true);
+    try {
+      const res = await fetch(`/api/hiring/cycles/${cycleId}/interviewers`, {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "applyAllReviewers", domainId }),
+      });
+      if (res.ok) {
+        const result = await res.json();
+        const added = (result.interviewers ?? []).map((i: any) => ({
+          ...i,
+          availabilityHours: 0,
+          availabilityBlockCount: 0,
+          availabilityBlocks: [],
+        }));
+        setInterviewers(prev => [...prev, ...added]);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(`Failed to apply reviewers: ${err.error ?? res.statusText}`);
+      }
+    } catch (e) {
+      alert(`Failed to apply reviewers: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setApplyingReviewers(false);
+    }
+  }
+
   async function removeInterviewer(interviewerId: string) {
     try {
       const res = await fetch(`/api/hiring/cycles/${cycleId}/interviewers`, {
@@ -1649,6 +1685,7 @@ function InterviewerSection({ cycleId, domainId, initialInterviewers }: {
 
   const existingMemberIds = new Set(interviewers.map((i: any) => i.userId));
   const availableMembers = members.filter(m => !existingMemberIds.has(m.id));
+  const reviewersToApply = reviewers.filter((r: any) => !existingMemberIds.has(r.userId));
   const pendingName = pendingRemove
     ? (pendingRemove.user?.firstName && pendingRemove.user?.lastName
         ? `${pendingRemove.user.firstName} ${pendingRemove.user.lastName}`
@@ -1683,6 +1720,22 @@ function InterviewerSection({ cycleId, domainId, initialInterviewers }: {
             className="flex items-center gap-1 px-3 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition disabled:opacity-50"
           >
             <Plus className="w-4 h-4" /> Add
+          </button>
+        </div>
+        <div className="flex items-center justify-between gap-2 pt-1">
+          <span className="text-xs text-muted-foreground">
+            {reviewersToApply.length > 0
+              ? `${reviewersToApply.length} reviewer${reviewersToApply.length === 1 ? "" : "s"} not yet assigned as interviewer${reviewersToApply.length === 1 ? "" : "s"}.`
+              : reviewers.length > 0
+                ? "All reviewers are already interviewers."
+                : "No reviewers assigned to this domain yet."}
+          </span>
+          <button
+            onClick={() => setPendingApplyReviewers(true)}
+            disabled={reviewersToApply.length === 0 || applyingReviewers}
+            className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg border border-border bg-card hover:bg-muted/50 text-foreground transition disabled:opacity-50"
+          >
+            Apply all reviewers
           </button>
         </div>
         {interviewers.length > 0 ? (
@@ -1740,6 +1793,21 @@ function InterviewerSection({ cycleId, domainId, initialInterviewers }: {
           onConfirm={() => {
             if (pendingRemove) removeInterviewer(pendingRemove.id);
             setPendingRemove(null);
+          }}
+        />
+        <ConfirmDialog
+          open={pendingApplyReviewers}
+          title={`Apply ${reviewersToApply.length} reviewer${reviewersToApply.length === 1 ? "" : "s"} as interviewer${reviewersToApply.length === 1 ? "" : "s"}?`}
+          body={
+            <p>
+              Every reviewer for this domain who isn't already an interviewer will be added. They'll still need to submit availability before they can be scheduled.
+            </p>
+          }
+          confirmLabel="Apply reviewers"
+          onCancel={() => setPendingApplyReviewers(false)}
+          onConfirm={() => {
+            setPendingApplyReviewers(false);
+            applyAllReviewers();
           }}
         />
       </div>
