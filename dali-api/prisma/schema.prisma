@@ -90,6 +90,7 @@ model User {
   createdTasks  Task[]         @relation("TaskCreatedBy")
   taskAssignees TaskAssignee[]
   taskComments  TaskComment[]
+  projectDomainScopesUpdated ProjectDomainScope[] @relation("ProjectDomainScopeUpdatedBy")
 
   // ─── Phase 1: staffing back-relations ─────────────────────────────────────
   staffingPreferences   StaffingPreference[]
@@ -399,6 +400,7 @@ model Domain {
   projectRoleRequests ProjectRoleRequest[]
   partnerApplicationDomains PartnerApplicationDomain[]
   projects            ProjectDomain[]
+  projectScopes       ProjectDomainScope[]
 }
 
 // Immutable snapshot of a challenge. Never update rows in this table —
@@ -1403,6 +1405,7 @@ model Term {
   projectsAsFirstTerm   Project[]              @relation("ProjectFirstTerm")
   partnerApplications   PartnerApplicationTargetTerm[]
   intentToWork          IntentToWork[]
+  projectDomainScopes   ProjectDomainScope[]
 
   @@index([sortKey])
 }
@@ -1621,6 +1624,7 @@ model Project {
   // and editable by Admin/Core/Hiring Lead. Display-only today; staffing
   // gating off this set is a follow-up.
   domains         ProjectDomain[]
+  domainScopes    ProjectDomainScope[]
 
   createdAt DateTime @default(now())
 }
@@ -1639,6 +1643,40 @@ model ProjectDomain {
 
   @@id([projectId, domainId])
   @@index([domainId])
+}
+
+// Per-term, per-domain free-text scope for a project. One cell per
+// (project, domain, term): rendered as a grid on the project's Overview
+// tab — declared domains down one axis, the project's planned terms
+// across the other. Plain text, not markdown — keep it simple.
+//
+// Cells are rows in this table only when they have text; an empty cell
+// means "no scope written yet" and the UI shows a placeholder.
+model ProjectDomainScope {
+  id        String @id @default(cuid())
+  projectId String
+  domainId  String
+  termId    String
+  // Free-form scope description for this (domain, term) slot. Multi-line
+  // plain text; the UI auto-saves on blur. May be the empty string while
+  // a user clears it before tabbing out — the action treats empty as
+  // delete-row to keep the grid clean.
+  scope     String
+
+  // Editor accountability.
+  updatedById String?
+  updatedBy   User?    @relation("ProjectDomainScopeUpdatedBy", fields: [updatedById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  domain  Domain  @relation(fields: [domainId], references: [id])
+  term    Term    @relation(fields: [termId], references: [id])
+
+  @@unique([projectId, domainId, termId])
+  @@index([projectId])
+  @@index([domainId])
+  @@index([termId])
 }
 
 enum ProjectStatus {

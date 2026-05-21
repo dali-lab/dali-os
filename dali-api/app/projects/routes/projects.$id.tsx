@@ -4,6 +4,7 @@ import {
   Link,
   redirect,
   useActionData,
+  useFetcher,
   useLoaderData,
   useRevalidator,
   useSearchParams,
@@ -62,7 +63,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       repoUrls: true,
       overviewPageId: true,
       prdPageId: true,
-      firstTerm: { select: { code: true } },
+      firstTerm: { select: { id: true, code: true, sortKey: true } },
       termCount: true,
       partners: { select: { partnerOrg: { select: { name: true } } } },
       termStatuses: {
@@ -300,6 +301,43 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     id: d.domain.id,
     name: d.domain.displayName,
   }));
+
+  // Planned terms for the scope grid: starting at firstTerm (by sortKey), the
+  // next `termCount` terms chronologically. Falls back to an empty list when
+  // no firstTerm is set (legacy project rows) — the scopes section then just
+  // doesn't render, no crash.
+  const plannedTerms: { id: string; code: string; sortKey: number }[] =
+    project.firstTerm
+      ? await prisma.term.findMany({
+          where: { sortKey: { gte: project.firstTerm.sortKey } },
+          orderBy: { sortKey: "asc" },
+          take: Math.max(1, project.termCount),
+          select: { id: true, code: true, sortKey: true },
+        })
+      : [];
+
+  // Fetch all scope rows for this project (small N — at most |declared| ×
+  // termCount, both single-digit in practice). Keyed by domainId+termId so
+  // the UI can index in O(1) when building the grid.
+  const scopeRows = await prisma.projectDomainScope.findMany({
+    where: { projectId: project.id },
+    select: { domainId: true, termId: true, scope: true },
+  });
+  const scopeByCell = new Map<string, string>();
+  for (const r of scopeRows) {
+    scopeByCell.set(`${r.domainId}:${r.termId}`, r.scope);
+  }
+  // Grid: one entry per (declared domain, planned term) cell, with the
+  // current scope text (empty string if no row exists).
+  const domainScopeGrid = declaredDomains.flatMap((d) =>
+    plannedTerms.map((t) => ({
+      domainId: d.id,
+      domainName: d.name,
+      termId: t.id,
+      termCode: t.code,
+      scope: scopeByCell.get(`${d.id}:${t.id}`) ?? "",
+    })),
+  );
   // Derived fallback: union of (declared) + (bid domains) + (assignment domains).
   // Used only when declaredDomains is empty.
   const derivedDomainIds = new Set<string>();
@@ -331,6 +369,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       derivedDomains,
     },
     allDomainOptions: allDomains.map((d) => ({ id: d.id, name: d.displayName })),
+    plannedTerms: plannedTerms.map((t) => ({ id: t.id, code: t.code })),
+    domainScopeGrid,
     teams,
     termStatuses,
     documents,
@@ -380,6 +420,45 @@ export async function action({ request, params }: Route.ActionArgs) {
       where: { id: params.id },
       data: { description: descriptionRaw === "" ? null : descriptionRaw },
     });
+    return redirect(`/projects/${params.id}`);
+  }
+
+  // Per-(domain, term) scope cell. Single-cell upsert (or delete on empty)
+  // so the page can save one textarea at a time. Validates that the domain
+  // is declared on this project and that the term is part of the project's
+  // planned span — drops the write rather than erroring so a stale form
+  // submission doesn't 500.
+  if (intent === "scope") {
+    const domainId = String(form.get("domainId") ?? "");
+    const termId = String(form.get("termId") ?? "");
+    const scope = String(form.get("scope") ?? "");
+    if (!domainId || !termId) {
+      return redirect(`/projects/${params.id}`);
+    }
+    const trimmed = scope.trim();
+    if (trimmed === "") {
+      await prisma.projectDomainScope.deleteMany({
+        where: { projectId: params.id, domainId, termId },
+      });
+    } else {
+      await prisma.projectDomainScope.upsert({
+        where: {
+          projectId_domainId_termId: {
+            projectId: params.id,
+            domainId,
+            termId,
+          },
+        },
+        update: { scope: trimmed, updatedById: auth.user.sub },
+        create: {
+          projectId: params.id,
+          domainId,
+          termId,
+          scope: trimmed,
+          updatedById: auth.user.sub,
+        },
+      });
+    }
     return redirect(`/projects/${params.id}`);
   }
 
@@ -450,6 +529,8 @@ export default function ProjectDetail() {
     tasks,
     boardOptions,
     allDomainOptions,
+    plannedTerms,
+    domainScopeGrid,
     canEdit: canEditPerm,
     collabToken,
     userName,
@@ -521,6 +602,8 @@ export default function ProjectDetail() {
           teams={teams}
           documents={documents}
           allDomainOptions={allDomainOptions}
+          plannedTerms={plannedTerms}
+          domainScopeGrid={domainScopeGrid}
           canEdit={canEdit}
           actionError={actionData?.error}
           collabToken={collabToken}
@@ -783,6 +866,125 @@ function DomainsSegment({
   );
 }
 
+// Per-(domain, term) scope grid. Plain textareas, auto-save on blur. Each
+// textarea posts intent=scope with {domainId, termId, scope} via fetcher
+// so the cells don't block the rest of the form. Empty value deletes the
+// row server-side, keeping the table clean.
+function DomainScopesSegment({
+  domains,
+  terms,
+  grid,
+  canEdit,
+}: {
+  domains: { id: string; name: string }[];
+  terms: { id: string; code: string }[];
+  grid: {
+    domainId: string;
+    domainName: string;
+    termId: string;
+    termCode: string;
+    scope: string;
+  }[];
+  canEdit: boolean;
+}) {
+  const cell = (domainId: string, termId: string): string =>
+    grid.find((c) => c.domainId === domainId && c.termId === termId)?.scope ??
+    "";
+
+  return (
+    <section className="bg-card border border-border rounded-lg p-4">
+      <h2 className="text-sm font-semibold text-foreground mb-1">
+        Domain scopes
+      </h2>
+      <p className="text-xs text-muted-foreground mb-3">
+        Free-text scope for each declared domain in each planned term. Edits
+        auto-save on blur.
+      </p>
+      <div className="flex flex-col gap-4">
+        {domains.map((d) => (
+          <div key={d.id} className="flex flex-col gap-2">
+            <h3 className="text-sm font-semibold text-foreground">{d.name}</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {terms.map((t) => (
+                <ScopeCell
+                  key={`${d.id}:${t.id}`}
+                  domainId={d.id}
+                  termId={t.id}
+                  termCode={t.code}
+                  initialScope={cell(d.id, t.id)}
+                  canEdit={canEdit}
+                />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ScopeCell({
+  domainId,
+  termId,
+  termCode,
+  initialScope,
+  canEdit,
+}: {
+  domainId: string;
+  termId: string;
+  termCode: string;
+  initialScope: string;
+  canEdit: boolean;
+}) {
+  // useFetcher so each cell submits independently — typing in one cell
+  // doesn't reset the others, and the page-level loader still re-runs to
+  // refresh `updatedAt` etc.
+  const fetcher = useFetcher();
+  if (!canEdit) {
+    return (
+      <div className="rounded-md border border-border p-2 flex flex-col gap-1">
+        <span className="text-[11px] font-medium text-muted-foreground">
+          {termCode}
+        </span>
+        {initialScope ? (
+          <p className="text-sm text-foreground whitespace-pre-wrap">
+            {initialScope}
+          </p>
+        ) : (
+          <p className="text-sm text-muted-foreground italic">No scope.</p>
+        )}
+      </div>
+    );
+  }
+  return (
+    <fetcher.Form
+      method="post"
+      className="rounded-md border border-border p-2 flex flex-col gap-1"
+    >
+      <input type="hidden" name="intent" value="scope" />
+      <input type="hidden" name="domainId" value={domainId} />
+      <input type="hidden" name="termId" value={termId} />
+      <label className="text-[11px] font-medium text-muted-foreground">
+        {termCode}
+      </label>
+      <textarea
+        name="scope"
+        defaultValue={initialScope}
+        rows={3}
+        placeholder="+ Add scope"
+        onBlur={(e) => {
+          // Only submit when the value actually changed — avoids a fetch on
+          // every focus/blur. The form's defaultValue is the last-saved text.
+          if (e.currentTarget.value !== initialScope) {
+            fetcher.submit(e.currentTarget.form);
+          }
+        }}
+        className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 resize-y"
+      />
+    </fetcher.Form>
+  );
+}
+
 function DomainChips({
   items,
   muted = false,
@@ -868,6 +1070,8 @@ function OverviewTab({
   teams,
   documents,
   allDomainOptions,
+  plannedTerms,
+  domainScopeGrid,
   canEdit,
   actionError,
   collabToken,
@@ -877,6 +1081,8 @@ function OverviewTab({
   teams: LoaderData["teams"];
   documents: LoaderData["documents"];
   allDomainOptions: LoaderData["allDomainOptions"];
+  plannedTerms: LoaderData["plannedTerms"];
+  domainScopeGrid: LoaderData["domainScopeGrid"];
   canEdit: boolean;
   actionError?: string;
   collabToken: string | null;
@@ -904,6 +1110,18 @@ function OverviewTab({
         allDomains={allDomainOptions}
         canEdit={canEdit}
       />
+
+      {/* Per-domain, per-term scope grid. One cell per (declared domain ×
+          planned term). Empty cell = no scope written yet. Auto-saves on
+          blur; clearing a cell to empty deletes the row. */}
+      {project.domains.length > 0 && plannedTerms.length > 0 && (
+        <DomainScopesSegment
+          domains={project.domains}
+          terms={plannedTerms}
+          grid={domainScopeGrid}
+          canEdit={canEdit}
+        />
+      )}
 
       {/* Project details. Each editable field auto-saves on blur (text) or
           change (number/textarea — number's onBlur isn't reliable across
