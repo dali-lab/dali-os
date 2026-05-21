@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import { Link, redirect, useLoaderData, useSearchParams } from "react-router";
 import type { Route } from "./+types/applications";
 import { requireAuth } from "~/lib/auth";
@@ -84,6 +85,19 @@ export async function loader({ request }: Route.LoaderArgs) {
     ? allCycleDomainIds
     : reviewerDomainIdsThisCycle;
 
+  // Domain filter options — the domains this user can see for the selected
+  // cycle, with display names. Drives the (client-side) domain dropdown,
+  // shown whenever there's more than one domain to choose between.
+  const domainOptions = visibleDomainIds.length
+    ? (
+        await prisma.domain.findMany({
+          where: { id: { in: visibleDomainIds } },
+          orderBy: { displayName: "asc" },
+          select: { id: true, displayName: true },
+        })
+      ).map((d) => ({ id: d.id, name: d.displayName }))
+    : [];
+
   // DomainApplications for the selected cycle, scoped to visible domains.
   // Standard cycles link Domain via challengeVersion; InternToFull links
   // Domain directly — match whichever path is set (mirrors reviewer route).
@@ -134,6 +148,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         id: da.id,
         name: `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || "—",
         email: u.daliEmail ?? u.dartmouthEmail ?? null,
+        domainId: da.domainId,
         domain:
           da.domain?.displayName ??
           da.challengeVersion?.domain?.displayName ??
@@ -158,6 +173,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     })),
     selectedCycleId: selected.id,
     selectedCycleName: selected.name,
+    domainOptions,
     rows,
   };
 }
@@ -179,6 +195,16 @@ const STATUS_TONE: Record<string, string> = {
 export default function ApplicationsDatabase() {
   const data = useLoaderData<typeof loader>();
   const [searchParams, setSearchParams] = useSearchParams();
+  // Client-side domain filter. "" = all visible domains. Reset when the
+  // cycle changes (different cycle = different domain set) by keying off the
+  // selected cycle id in the dependency below.
+  const [domainId, setDomainId] = useState("");
+
+  const rows = data.gate === "ok" ? data.rows : [];
+  const filteredRows = useMemo(
+    () => (domainId ? rows.filter((r) => r.domainId === domainId) : rows),
+    [rows, domainId],
+  );
 
   if (data.gate === "empty") {
     return (
@@ -192,6 +218,10 @@ export default function ApplicationsDatabase() {
       </div>
     );
   }
+
+  // Only worth showing the domain filter when there's more than one domain
+  // to choose between (Core/Admin, or a reviewer covering multiple domains).
+  const showDomainFilter = data.domainOptions.length > 1;
 
   return (
     <div className="flex flex-col gap-4">
@@ -208,6 +238,7 @@ export default function ApplicationsDatabase() {
           id="cycle-select"
           value={data.selectedCycleId}
           onChange={(e) => {
+            setDomainId("");
             const next = new URLSearchParams(searchParams);
             next.set("cycle", e.target.value);
             setSearchParams(next);
@@ -220,14 +251,32 @@ export default function ApplicationsDatabase() {
             </option>
           ))}
         </select>
+        {showDomainFilter && (
+          <select
+            aria-label="Filter by domain"
+            value={domainId}
+            onChange={(e) => setDomainId(e.target.value)}
+            className="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground sm:w-48"
+          >
+            <option value="">All domains</option>
+            {data.domainOptions.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}
+              </option>
+            ))}
+          </select>
+        )}
         <span className="text-xs text-muted-foreground sm:ml-auto">
-          {data.rows.length}{" "}
-          {data.rows.length === 1 ? "submission" : "submissions"}
+          {filteredRows.length}
+          {filteredRows.length === data.rows.length
+            ? ""
+            : ` of ${data.rows.length}`}{" "}
+          {filteredRows.length === 1 ? "submission" : "submissions"}
         </span>
       </div>
 
       <div className="bg-card border border-border rounded-lg overflow-hidden">
-        {data.rows.length === 0 ? (
+        {filteredRows.length === 0 ? (
           <div className="px-4 py-8 text-center text-sm text-muted-foreground">
             No submissions for {data.selectedCycleName}
             {data.isCore ? "" : " in your domains"}.
@@ -245,7 +294,7 @@ export default function ApplicationsDatabase() {
                 </tr>
               </thead>
               <tbody>
-                {data.rows.map((r) => (
+                {filteredRows.map((r) => (
                   <tr
                     key={r.id}
                     className="border-t border-border hover:bg-muted/20"
