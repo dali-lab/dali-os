@@ -21,6 +21,7 @@ import { formatVersionLabel, buildVersionNumberMap } from "~/lib/formatVersion";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { sendExtensionNoticeIfDue, resendExtensionNotice } from "~/hiring/lib/extension-notice";
 import { ConfidentialityGate } from "~/hiring/components/ConfidentialityGate";
+import { PhaseProgressStrip } from "~/hiring/components/PhaseProgressStrip";
 import { zonedDayStartUtc, zonedDayEndUtc, getZonedYMD } from "~/lib/timezone";
 
 const APPLICATION_TZ = "America/New_York";
@@ -1115,7 +1116,14 @@ export default function HiringLeadCycleDetails() {
   }
 
   // ── Active tab ──
-  const [tab, setTab] = useState<'setup' | 'config' | 'reviewers' | 'dashboard' | 'decisions'>('setup')
+  // setup       : close date, domains (incl. per-domain challenge/rubric),
+  //               general form, general rubric
+  // review      : reviewer roster + confidentiality agreement
+  // interviews  : interview config + interviewer roster + coverage heatmap
+  //               + interview dashboard table
+  // decisions   : final decisions table + decision-release email bindings
+  // settings    : notification email bindings (configured once, forgotten)
+  const [tab, setTab] = useState<'setup' | 'review' | 'interviews' | 'decisions' | 'settings'>('setup')
 
   // ── Decisions state ──
   const [pendingDecisions, setPendingDecisions] = useState<any[]>(loaderData?.finalDecisions ?? [])
@@ -1417,80 +1425,34 @@ export default function HiringLeadCycleDetails() {
         </div>
       )}
 
-      {/* Draft Checklist */}
-      {cycleStatus === 'Draft' && (() => {
-        const hasCloseDate = !!cycle?.closeDate;
-        const domains = cycle?.domains ?? [];
-        const challengeVersions = cycle?.challengeVersions ?? [];
-        const coveredDomainIds = new Set(challengeVersions.map((cv: any) => cv.challengeVersion?.domainId));
-        const allDomainsCovered = domains.length > 0 && domains.every((d: any) => coveredDomainIds.has(d.domainId));
-        const hasGeneralForm = challengeVersions.some((cv: any) => cv.challengeVersion?.domainId === null);
-        const allDomainsReady = domains.length > 0 && domains.every((d: any) => d.isReady);
-        const hasGeneralRubric = !!cycle?.generalRubricVersionId;
-        const ready = hasCloseDate && allDomainsCovered && hasGeneralForm && allDomainsReady;
-        return (
-          <div className={`rounded-xl border p-4 space-y-3 ${ready ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200'}`}>
-            <h3 className="text-sm font-bold text-foreground">Checklist to Open Applications</h3>
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 text-sm">
-                {hasCloseDate
-                  ? <CheckCircle className="w-4 h-4 text-green-600" />
-                  : <Circle className="w-4 h-4 text-muted-foreground/70" />}
-                <span className={hasCloseDate ? 'text-green-800' : 'text-muted-foreground'}>Close date is set</span>
-              </div>
-              <div className="flex items-center gap-2 text-sm">
-                {allDomainsCovered
-                  ? <CheckCircle className="w-4 h-4 text-green-600" />
-                  : <Circle className="w-4 h-4 text-muted-foreground/70" />}
-                <span className={allDomainsCovered ? 'text-green-800' : 'text-muted-foreground'}>
-                  Every domain has a challenge version linked
-                  {domains.length === 0 && ' (no domains added)'}
-                </span>
-              </div>
-              <div className="flex items-center gap-2 text-sm">
-                {hasGeneralForm
-                  ? <CheckCircle className="w-4 h-4 text-green-600" />
-                  : <Circle className="w-4 h-4 text-muted-foreground/70" />}
-                <span className={hasGeneralForm ? 'text-green-800' : 'text-muted-foreground'}>General application form is linked</span>
-              </div>
-              <div className="flex items-center gap-2 text-sm">
-                {allDomainsReady
-                  ? <CheckCircle className="w-4 h-4 text-green-600" />
-                  : <Circle className="w-4 h-4 text-muted-foreground/70" />}
-                <span className={allDomainsReady ? 'text-green-800' : 'text-muted-foreground'}>
-                  Every domain is marked ready
-                  {domains.length === 0 && ' (no domains added)'}
-                </span>
-              </div>
-            </div>
-            {!hasGeneralRubric && (
-              <p className="text-xs text-muted-foreground border-t border-yellow-200 pt-2">
-                Heads up: the general application rubric isn't set yet. You can open applications without it, but reviewers can't be assigned until a rubric is in place.
-              </p>
-            )}
+      {/* Phase strip — at-a-glance lifecycle marker. Replaces the older
+          Draft checklist + "needs rubric" warning cards. The full readiness
+          checks are now visible inline as you scroll Setup, and the
+          rubric-missing warning collapses to a small chip below the
+          strip when it's still relevant. */}
+      <PhaseProgressStrip status={cycleStatus} />
+      {(cycleStatus === 'Draft' || cycleStatus === 'Open') &&
+        !cycle?.generalRubricVersionId && (
+          <div className="rounded-md border border-yellow-200 bg-yellow-50 px-3 py-2 flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-yellow-700 flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-yellow-800">
+              <span className="font-semibold text-yellow-900">
+                General application rubric not set.
+              </span>{' '}
+              You can open applications without it, but reviewer assignment
+              is blocked until a rubric is in place.
+            </p>
           </div>
-        );
-      })()}
-
-      {/* Reminder while Open: rubric still needed before reviewer assignment */}
-      {cycleStatus === 'Open' && !cycle?.generalRubricVersionId && (
-        <div className="rounded-xl border border-yellow-200 bg-yellow-50 p-4 flex items-start gap-3">
-          <AlertTriangle className="w-5 h-5 text-yellow-700 flex-shrink-0 mt-0.5" />
-          <div className="flex-1 space-y-0.5">
-            <p className="text-sm font-bold text-yellow-900">General application rubric not set</p>
-            <p className="text-sm text-yellow-800">Set the general rubric before review begins — reviewer assignment is blocked without it.</p>
-          </div>
-        </div>
-      )}
+        )}
 
       {/* Tabs */}
       <div className="flex gap-1 bg-muted rounded-lg p-1 overflow-x-auto">
         {([
-          { key: 'setup' as const, label: 'Cycle Setup', icon: LayoutDashboard },
-          { key: 'config' as const, label: 'Interview Setup', icon: Settings },
-          { key: 'reviewers' as const, label: 'Reviewer Roster', icon: Users },
-          { key: 'dashboard' as const, label: 'Interview Dashboard', icon: Calendar },
+          { key: 'setup' as const, label: 'Setup', icon: LayoutDashboard },
+          { key: 'review' as const, label: 'Review', icon: Users },
+          { key: 'interviews' as const, label: 'Interviews', icon: Calendar },
           { key: 'decisions' as const, label: 'Decisions', icon: CheckCircle },
+          { key: 'settings' as const, label: 'Settings', icon: Settings },
         ]).map(t => (
           <button
             key={t.key}
@@ -1606,30 +1568,11 @@ export default function HiringLeadCycleDetails() {
             locked={(loaderData?.cycleApplicationReviewCount ?? 0) > 0}
           />
 
-          {/* Confidentiality Agreement */}
-          <ConfidentialityAgreementPicker
-            currentBinding={loaderData?.currentConfidentialityBinding ?? null}
-            agreementOptions={loaderData?.confidentialityAgreementOptions ?? []}
-            signatures={loaderData?.confidentialitySignatures ?? []}
-          />
-
-          {/* Decision-release email bindings */}
-          <DecisionEmailsSection
-            emailTemplates={loaderData?.emailTemplates ?? []}
-            currentDecisionEmails={loaderData?.currentDecisionEmails ?? []}
-            releasedDecisionTypes={loaderData?.releasedDecisionTypes ?? []}
-          />
-
-          {/* Non-decision notification email bindings */}
-          <NotificationEmailsSection
-            emailTemplates={loaderData?.emailTemplates ?? []}
-            currentNotificationEmails={loaderData?.currentNotificationEmails ?? []}
-          />
         </div>
       )}
 
       {/* ── Interview Setup Tab ── */}
-      {tab === 'config' && (
+      {tab === 'interviews' && (
         <div className="space-y-6">
           {/* Interview Config */}
           <div className="bg-card rounded-xl border border-border shadow-sm p-6 space-y-6">
@@ -1745,7 +1688,7 @@ export default function HiringLeadCycleDetails() {
       )}
 
       {/* ── Reviewer Roster Tab ── */}
-      {tab === 'reviewers' && (
+      {tab === 'review' && (
         <div className="space-y-4">
           {/* Add reviewer form */}
           <div className="bg-card rounded-xl border border-border shadow-sm p-4 sm:p-6">
@@ -1851,11 +1794,19 @@ export default function HiringLeadCycleDetails() {
               )}
             </ul>
           </div>
+
+          {/* Confidentiality agreement — gates which reviewers can open
+              applications, so it lives next to the reviewer roster. */}
+          <ConfidentialityAgreementPicker
+            currentBinding={loaderData?.currentConfidentialityBinding ?? null}
+            agreementOptions={loaderData?.confidentialityAgreementOptions ?? []}
+            signatures={loaderData?.confidentialitySignatures ?? []}
+          />
         </div>
       )}
 
       {/* ── Interviewers Roster (shown under Interview Setup) ── */}
-      {tab === 'config' && (
+      {tab === 'interviews' && (
         <div className="space-y-4 mt-4">
           <h3 className="text-base font-bold text-foreground/90 flex items-center gap-2">
             <Users className="w-4 h-4" /> Interviewers
@@ -2101,13 +2052,13 @@ export default function HiringLeadCycleDetails() {
       )}
 
       {/* ── Interview Dashboard Tab ── */}
-      {tab === 'dashboard' && loaderData?.confidentialityRequired ? (
+      {tab === 'interviews' && loaderData?.confidentialityRequired ? (
         <ConfidentialityGate
           cycleId={cycleId ?? ''}
           reason={loaderData.confidentialityRequired}
           next={`/hiring/lead/cycle/${cycleId}?tab=dashboard`}
         />
-      ) : tab === 'dashboard' && (
+      ) : tab === 'interviews' && (
         <div className="space-y-4">
           <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-2.5 text-xs text-blue-900 inline-flex items-center gap-2">
             <Mail className="w-3.5 h-3.5 flex-shrink-0" aria-hidden />
@@ -2636,6 +2587,28 @@ export default function HiringLeadCycleDetails() {
               />
             )
           })()}
+
+          {/* Decision-release email bindings — moved here from Setup. Lives
+              with the decisions it sends so a manager configures the email
+              right next to the release flow it powers. */}
+          <DecisionEmailsSection
+            emailTemplates={loaderData?.emailTemplates ?? []}
+            currentDecisionEmails={loaderData?.currentDecisionEmails ?? []}
+            releasedDecisionTypes={loaderData?.releasedDecisionTypes ?? []}
+          />
+        </div>
+      )}
+
+      {/* ── Settings Tab ── */}
+      {tab === 'settings' && (
+        <div className="space-y-4">
+          {/* Non-decision notification email bindings — the one-time wire-up
+              for things like reviewer-assigned / interview-scheduled emails.
+              Configured once per cycle and rarely revisited. */}
+          <NotificationEmailsSection
+            emailTemplates={loaderData?.emailTemplates ?? []}
+            currentNotificationEmails={loaderData?.currentNotificationEmails ?? []}
+          />
         </div>
       )}
     </div>
