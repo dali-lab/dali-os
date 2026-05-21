@@ -1,0 +1,367 @@
+import { Link, redirect, useLoaderData, useSearchParams } from "react-router";
+import { ArrowLeft } from "lucide-react";
+import type { Route } from "./+types/applications.$domainApplicationId";
+import { prisma } from "~/lib/db";
+import { requireAuth } from "~/lib/auth";
+import { getUserRoles } from "~/lib/roles";
+import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
+import { presignAnswers } from "~/hiring/lib/presign";
+import { ApplicationViewer } from "~/hiring/components/ApplicationViewer";
+import type { Question } from "~/types";
+
+export const meta: Route.MetaFunction = ({ data }) => {
+  const name = (data as { applicantName?: string } | undefined)?.applicantName;
+  return [{ title: `${name ?? "Application"} · Applications · DALI OS` }];
+};
+
+// Read-only view of one (applicant, domain) submission with a selectable
+// reviewer-review viewer. Reachable from the Applications database list.
+//
+// Access mirrors the list: Core/Admin can open any domain application;
+// reviewers only domain applications in domains they're assigned to for the
+// cycle. Both gated by the cycle's confidentiality agreement.
+//
+// Reviews shown here are SUBMITTED reviews only (submittedAt set), rendered
+// fully read-only — the page never lets you edit someone else's review.
+export async function loader({ request, params }: Route.LoaderArgs) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return redirect("/login");
+  if (auth.user.type === "applicant") return redirect("/portal");
+
+  const da = await prisma.domainApplication.findUnique({
+    where: { id: params.domainApplicationId },
+    select: {
+      id: true,
+      domainId: true,
+      answers: true,
+      domain: { select: { displayName: true } },
+      challengeVersion: {
+        select: {
+          questions: true,
+          description: true,
+          domain: { select: { id: true, name: true, displayName: true } },
+          challenge: { select: { name: true } },
+        },
+      },
+      application: {
+        select: {
+          id: true,
+          answers: true,
+          applicationCycleId: true,
+          generalChallengeVersion: { select: { questions: true, description: true } },
+          internToFullFormVersion: { select: { questions: true } },
+          applicationCycle: { select: { name: true, cycleType: true } },
+          user: { select: { firstName: true, lastName: true } },
+        },
+      },
+    },
+  });
+  if (!da) return redirect("/hiring/applications");
+
+  const cycleId = da.application.applicationCycleId;
+  const effectiveDomainId = da.domainId; // always set (backfilled)
+
+  // Access: Core sees everything; a reviewer only domains they cover for
+  // this cycle. A reviewer hitting a URL outside their domain bounces back
+  // to the list rather than seeing content.
+  const roles = await getUserRoles(auth.user.sub);
+  if (!roles.isHiringLead) {
+    const assigned = await prisma.cycleReviewer.findFirst({
+      where: {
+        userId: auth.user.sub,
+        applicationCycleId: cycleId,
+        domainId: effectiveDomainId,
+      },
+      select: { id: true },
+    });
+    if (!assigned) return redirect("/hiring/applications");
+  }
+
+  // Confidentiality gate — redirects to the signing page when unsigned.
+  const confRedirect = await requirePageSignedOrRedirect(auth.user.sub, cycleId, request);
+  if (confRedirect) return confRedirect;
+
+  const isInternToFull = da.application.applicationCycle.cycleType === "InternToFull";
+
+  // Presign file answers so the viewer renders download links, not S3 keys.
+  const generalQuestions = isInternToFull
+    ? ((da.application.internToFullFormVersion?.questions as unknown as Question[]) ?? [])
+    : ((da.application.generalChallengeVersion?.questions as unknown as Question[]) ?? []);
+  const [generalAnswers, domainAnswers] = await Promise.all([
+    presignAnswers(generalQuestions, da.application.answers as Record<string, string>),
+    presignAnswers(
+      (da.challengeVersion?.questions as unknown as Question[]) ?? [],
+      da.answers as Record<string, string>,
+    ),
+  ]);
+
+  // Question labels for the viewer (general + this domain's challenge).
+  const questionLabels: Record<string, string> = {};
+  for (const q of generalQuestions) questionLabels[q.key] = q.data.label;
+  for (const q of (da.challengeVersion?.questions as unknown as Question[]) ?? []) {
+    questionLabels[q.key] = q.data.label;
+  }
+
+  // Submitted reviews for THIS domain application, with reviewer identity.
+  const reviewRows = await prisma.applicationReview.findMany({
+    where: { domainApplicationId: da.id, submittedAt: { not: null } },
+    orderBy: { submittedAt: "asc" },
+    select: {
+      id: true,
+      scores: true,
+      feedback: true,
+      rejectionRationale: true,
+      overallRecommendation: true,
+      annotations: true,
+      submittedAt: true,
+      submittedBy: { select: { firstName: true, lastName: true } },
+    },
+  });
+  const reviews = reviewRows.map((r) => ({
+    id: r.id,
+    reviewerName:
+      [r.submittedBy?.firstName, r.submittedBy?.lastName].filter(Boolean).join(" ").trim() ||
+      "Reviewer",
+    scores: r.scores as Record<string, number>,
+    feedback: r.feedback,
+    rejectionRationale: r.rejectionRationale,
+    overallRecommendation: r.overallRecommendation,
+    annotations: (r.annotations as object[]) ?? [],
+    submittedAt: r.submittedAt ? r.submittedAt.toISOString() : null,
+  }));
+
+  // Selected review = ?review= if valid, else the first.
+  const url = new URL(request.url);
+  const requested = url.searchParams.get("review");
+  const selectedReviewId =
+    (requested && reviews.find((r) => r.id === requested)?.id) ??
+    reviews[0]?.id ??
+    null;
+
+  // Shape the application object the way ApplicationViewer expects: a single
+  // domainApplication (this one), plus general answers.
+  const domainName =
+    da.domain?.displayName ?? da.challengeVersion?.domain?.displayName ?? "Domain";
+  const application = {
+    answers: generalAnswers,
+    generalChallengeVersion: da.application.generalChallengeVersion
+      ? {
+          questions: da.application.generalChallengeVersion.questions,
+          description: da.application.generalChallengeVersion.description,
+        }
+      : null,
+    domainApplications: [
+      {
+        id: da.id,
+        answers: domainAnswers,
+        challengeVersion: {
+          questions: da.challengeVersion?.questions ?? [],
+          description: da.challengeVersion?.description,
+          domain: { name: da.challengeVersion?.domain?.name ?? domainName },
+          challenge: { name: da.challengeVersion?.challenge?.name ?? "Challenge" },
+        },
+      },
+    ],
+  };
+
+  return {
+    applicantName:
+      [da.application.user.firstName, da.application.user.lastName]
+        .filter(Boolean)
+        .join(" ")
+        .trim() || "Applicant",
+    cycleName: da.application.applicationCycle.name,
+    domainName,
+    application,
+    questionLabels,
+    reviews,
+    selectedReviewId,
+  };
+}
+
+const RECOMMENDATION_TONE: Record<string, string> = {
+  "Strong Hire": "bg-green-100 text-green-800",
+  Hire: "bg-green-50 text-green-700",
+  "Lean Hire": "bg-lime-50 text-lime-700",
+  "Lean No Hire": "bg-amber-50 text-amber-700",
+  "No Hire": "bg-red-50 text-red-700",
+};
+
+export default function ApplicationReadOnlyDetail() {
+  const data = useLoaderData<typeof loader>();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const selected =
+    data.reviews.find((r) => r.id === data.selectedReviewId) ?? null;
+
+  return (
+    <div className="space-y-6 pb-12">
+      <div>
+        <Link
+          to="/hiring/applications"
+          className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground/80"
+        >
+          <ArrowLeft className="w-4 h-4 mr-1" /> Back to Applications
+        </Link>
+        <h1 className="text-2xl font-bold text-foreground mt-2">
+          {data.applicantName}
+        </h1>
+        <p className="mt-1 text-muted-foreground">
+          {data.domainName} · {data.cycleName}
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Left: application content (read-only annotations from the selected
+            review render inline). */}
+        <div className="lg:col-span-2">
+          <ApplicationViewer
+            application={data.application}
+            questionLabels={data.questionLabels}
+            initialAnnotations={selected?.annotations ?? []}
+            readOnly
+          />
+        </div>
+
+        {/* Right: review viewer. */}
+        <div className="space-y-4">
+          <div className="bg-card rounded-xl border border-border shadow-sm sticky top-24">
+            <div className="px-6 py-4 border-b border-border bg-muted/50">
+              <h2 className="text-lg font-bold text-foreground">Reviews</h2>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {data.reviews.length === 0
+                  ? "No submitted reviews yet."
+                  : `${data.reviews.length} submitted`}
+              </p>
+            </div>
+
+            {data.reviews.length > 0 && (
+              <div className="p-6 space-y-5">
+                {/* Reviewer selector */}
+                <div>
+                  <label
+                    htmlFor="review-select"
+                    className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1"
+                  >
+                    Reviewer
+                  </label>
+                  <select
+                    id="review-select"
+                    value={data.selectedReviewId ?? ""}
+                    onChange={(e) => {
+                      const next = new URLSearchParams(searchParams);
+                      next.set("review", e.target.value);
+                      setSearchParams(next);
+                    }}
+                    className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
+                  >
+                    {data.reviews.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.reviewerName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {selected && <ReviewView review={selected} />}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ReviewView({
+  review,
+}: {
+  review: {
+    reviewerName: string;
+    scores: Record<string, number>;
+    feedback: string;
+    rejectionRationale: string;
+    overallRecommendation: string | null;
+    submittedAt: string | null;
+  };
+}) {
+  const scoreEntries = Object.entries(review.scores ?? {});
+  return (
+    <div className="space-y-5">
+      {/* Overall recommendation */}
+      {review.overallRecommendation && (
+        <div>
+          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">
+            Overall Recommendation
+          </h3>
+          <span
+            className={`inline-flex items-center px-2.5 py-1 rounded-md text-sm font-medium ${
+              RECOMMENDATION_TONE[review.overallRecommendation] ??
+              "bg-muted text-foreground"
+            }`}
+          >
+            {review.overallRecommendation}
+          </span>
+        </div>
+      )}
+
+      {/* Scores */}
+      {scoreEntries.length > 0 && (
+        <div>
+          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">
+            Scores
+          </h3>
+          <ul className="space-y-1">
+            {scoreEntries.map(([key, value]) => (
+              <li
+                key={key}
+                className="flex items-center justify-between text-sm border-b border-border/60 py-1"
+              >
+                <span className="text-muted-foreground">{key}</span>
+                <span className="font-medium text-foreground">{value}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Feedback */}
+      <div>
+        <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">
+          Internal Feedback
+        </h3>
+        {review.feedback.trim() ? (
+          <p className="text-sm text-foreground whitespace-pre-wrap">
+            {review.feedback}
+          </p>
+        ) : (
+          <p className="text-sm text-muted-foreground italic">No feedback.</p>
+        )}
+      </div>
+
+      {/* Rejection rationale */}
+      {review.rejectionRationale.trim() && (
+        <div>
+          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">
+            Rejection Rationale
+          </h3>
+          <p className="text-sm text-foreground whitespace-pre-wrap">
+            {review.rejectionRationale}
+          </p>
+        </div>
+      )}
+
+      {review.submittedAt && (
+        <p className="text-[11px] text-muted-foreground/70 pt-2 border-t border-border">
+          Submitted{" "}
+          {new Date(review.submittedAt).toLocaleDateString(undefined, {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+          })}
+          . Highlighted passages from this review appear inline on the left.
+        </p>
+      )}
+    </div>
+  );
+}

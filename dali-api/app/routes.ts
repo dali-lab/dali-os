@@ -10,6 +10,10 @@ export default [
     // Hiring section
     route("hiring/reviewer", "hiring/routes/reviewer.tsx"),
     route("hiring/reviewer/application/:id", "hiring/routes/reviewer.application.$id.tsx"),
+    // Applications database: list of all submissions for a cycle, scoped by
+    // role (Core = all domains, reviewer = own domains). Read-only detail.
+    route("hiring/applications", "hiring/routes/applications.tsx"),
+    route("hiring/applications/:domainApplicationId", "hiring/routes/applications.$domainApplicationId.tsx"),
     route("hiring/domain-lead", "hiring/routes/domain-lead.tsx"),
     route("hiring/domain-lead/application/:id", "hiring/routes/domain-lead.application.$id.tsx"),
     route("hiring/domain-lead/delibs/:id", "hiring/routes/domain-lead.delibs.$id.tsx"),

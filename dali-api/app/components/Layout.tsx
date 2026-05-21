@@ -207,6 +207,18 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
       sub: null,
     },
     {
+      // Database view of all submissions for a cycle. Core sees every
+      // domain; reviewers see only their assigned domains. The route
+      // itself handles users with no access (empty state), so the tab is
+      // shown to everyone like Reviews.
+      label: 'Applications',
+      to: '/hiring/applications',
+      icon: FileText,
+      show: true,
+      active: path.startsWith('/hiring/applications'),
+      sub: null,
+    },
+    {
       label: 'Cycles',
       to: '/hiring/lead',
       icon: Calendar,

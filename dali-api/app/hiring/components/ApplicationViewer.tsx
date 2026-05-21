@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { X } from 'lucide-react'
 import type { Question } from '~/types'
 import { RichTextViewer, isEmptyDoc } from '~/components/RichTextViewer'
@@ -162,6 +162,10 @@ interface AnnotatableFieldProps {
   onAddAnnotation: (ann: Omit<Annotation, 'id'>) => void
   onUpdateAnnotation: (id: string, updates: Partial<Annotation>) => void
   onDeleteAnnotation: (id: string) => void
+  // When true, existing annotations render and are clickable to read the
+  // comment, but no new annotation can be created and the popover has no
+  // edit/delete controls. Used by the read-only review viewer.
+  readOnly?: boolean
 }
 
 function AnnotatableField({
@@ -171,6 +175,7 @@ function AnnotatableField({
   onAddAnnotation,
   onUpdateAnnotation,
   onDeleteAnnotation,
+  readOnly = false,
 }: AnnotatableFieldProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [popover, setPopover] = useState<Popover | null>(null)
@@ -178,6 +183,7 @@ function AnnotatableField({
   const [pendingColor, setPendingColor] = useState<HighlightColor>('yellow')
 
   const handleMouseUp = useCallback(() => {
+    if (readOnly) return
     const sel = window.getSelection()
     if (!sel || sel.isCollapsed || !containerRef.current) return
     const range = sel.getRangeAt(0)
@@ -202,7 +208,7 @@ function AnnotatableField({
     setPendingComment('')
     setPendingColor('yellow')
     sel.removeAllRanges()
-  }, [fieldKey])
+  }, [fieldKey, readOnly])
 
   const handleAnnotationClick = useCallback(
     (annotationId: string, x: number, y: number) => {
@@ -259,33 +265,43 @@ function AnnotatableField({
           >
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                {popover.annotationId ? 'Edit annotation' : 'Add annotation'}
+                {readOnly ? 'Annotation' : popover.annotationId ? 'Edit annotation' : 'Add annotation'}
               </span>
               <button onClick={() => setPopover(null)} className="text-muted-foreground/70 hover:text-muted-foreground">
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
-            <div className="flex gap-1.5 mb-2">
-              {COLOR_OPTIONS.map((c) => (
-                <button key={c} onClick={() => setPendingColor(c)}
-                  className={`w-6 h-6 rounded-full border-2 transition-transform ${c === 'yellow' ? 'bg-yellow-300' : c === 'green' ? 'bg-green-300' : c === 'red' ? 'bg-red-300' : 'bg-blue-300'} ${pendingColor === c ? 'border-gray-700 scale-110' : 'border-transparent'}`} />
-              ))}
-            </div>
-            <textarea autoFocus rows={3} value={pendingComment}
-              onChange={(e) => setPendingComment(e.target.value)}
-              placeholder="Add a comment... (optional)"
-              className="w-full text-sm text-foreground border border-border rounded-lg p-2 resize-none focus:outline-none focus:ring-1 focus:ring-blue-400"
-              onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSave(); if (e.key === 'Escape') setPopover(null) }}
-            />
-            <div className="flex gap-2 mt-2">
-              <button onClick={handleSave} className="flex-1 text-xs font-medium bg-blue-600 text-white rounded-lg py-1.5 hover:bg-blue-700">
-                {popover.annotationId ? 'Update' : 'Highlight'}
-              </button>
-              {popover.annotationId && (
-                <button onClick={handleDelete} className="text-xs font-medium text-red-600 hover:text-red-800 px-2">Remove</button>
-              )}
-            </div>
-            <p className="text-[10px] text-muted-foreground/70 mt-1.5 text-center">⌘↵ to save · Esc to cancel</p>
+            {readOnly ? (
+              pendingComment ? (
+                <p className="text-sm text-foreground whitespace-pre-wrap">{pendingComment}</p>
+              ) : (
+                <p className="text-sm text-muted-foreground italic">Highlighted, no comment.</p>
+              )
+            ) : (
+              <>
+                <div className="flex gap-1.5 mb-2">
+                  {COLOR_OPTIONS.map((c) => (
+                    <button key={c} onClick={() => setPendingColor(c)}
+                      className={`w-6 h-6 rounded-full border-2 transition-transform ${c === 'yellow' ? 'bg-yellow-300' : c === 'green' ? 'bg-green-300' : c === 'red' ? 'bg-red-300' : 'bg-blue-300'} ${pendingColor === c ? 'border-gray-700 scale-110' : 'border-transparent'}`} />
+                  ))}
+                </div>
+                <textarea autoFocus rows={3} value={pendingComment}
+                  onChange={(e) => setPendingComment(e.target.value)}
+                  placeholder="Add a comment... (optional)"
+                  className="w-full text-sm text-foreground border border-border rounded-lg p-2 resize-none focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSave(); if (e.key === 'Escape') setPopover(null) }}
+                />
+                <div className="flex gap-2 mt-2">
+                  <button onClick={handleSave} className="flex-1 text-xs font-medium bg-blue-600 text-white rounded-lg py-1.5 hover:bg-blue-700">
+                    {popover.annotationId ? 'Update' : 'Highlight'}
+                  </button>
+                  {popover.annotationId && (
+                    <button onClick={handleDelete} className="text-xs font-medium text-red-600 hover:text-red-800 px-2">Remove</button>
+                  )}
+                </div>
+                <p className="text-[10px] text-muted-foreground/70 mt-1.5 text-center">⌘↵ to save · Esc to cancel</p>
+              </>
+            )}
           </div>
         </>
       )}
@@ -315,6 +331,9 @@ export interface ApplicationViewerProps {
   questionLabels: Record<string, string>
   initialAnnotations?: object[]
   onAnnotationsChange?: (annotations: object[]) => void
+  // Read-only mode: render annotations but disallow creating / editing /
+  // deleting them. Used to display another reviewer's review.
+  readOnly?: boolean
 }
 
 function buildQuestionMap(questions: Question[]): Record<string, Question> {
@@ -323,8 +342,14 @@ function buildQuestionMap(questions: Question[]): Record<string, Question> {
   return map
 }
 
-export function ApplicationViewer({ application, questionLabels, initialAnnotations, onAnnotationsChange }: ApplicationViewerProps) {
+export function ApplicationViewer({ application, questionLabels, initialAnnotations, onAnnotationsChange, readOnly = false }: ApplicationViewerProps) {
   const [annotations, setAnnotations] = useState<Annotation[]>((initialAnnotations as Annotation[]) ?? [])
+
+  // Re-sync when the parent swaps the annotation set (e.g. selecting a
+  // different reviewer's review in the read-only viewer).
+  useEffect(() => {
+    setAnnotations((initialAnnotations as Annotation[]) ?? [])
+  }, [initialAnnotations])
 
   const addAnnotation = (ann: Omit<Annotation, 'id'>) => {
     setAnnotations((prev) => {
@@ -350,7 +375,7 @@ export function ApplicationViewer({ application, questionLabels, initialAnnotati
     })
   }
 
-  const fieldProps = { annotations, onAddAnnotation: addAnnotation, onUpdateAnnotation: updateAnnotation, onDeleteAnnotation: deleteAnnotation }
+  const fieldProps = { annotations, onAddAnnotation: addAnnotation, onUpdateAnnotation: updateAnnotation, onDeleteAnnotation: deleteAnnotation, readOnly }
 
   const generalQuestions =
     (application.generalChallengeVersion?.questions as unknown as Question[] | undefined) ?? []
