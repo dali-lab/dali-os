@@ -58,12 +58,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   return {
     record: { name: row.name, email: row.email },
-    columns: view.allColumns.map((c) => ({
-      key: c.key,
-      label: c.label,
-      hidden: c.hidden,
-      value: row.cells[c.key] ?? "",
-    })),
+    // Every question on the form (in form order) + builtins. Independent of
+    // the manager's column mapping so partial / missing mappings still show
+    // the full submission. `mapped: false` rows are flagged so a manager
+    // can see they're not currently surfaced in the board table.
+    fields: row.detailFields,
     cycleName: cycle.name,
   };
 }
@@ -89,30 +88,30 @@ export default function ProjectBidSubmissionDetail() {
         )}
       </div>
 
-      {data.columns.length === 0 ? (
+      {data.fields.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No columns are configured for this view yet.
+          This submission is empty.
         </p>
       ) : (
         <dl className="bg-card border border-border rounded-lg divide-y divide-border">
-          {data.columns.map((c) => (
+          {data.fields.map((f) => (
             <div
-              key={c.key}
+              key={f.key}
               className="px-4 py-3 flex flex-col sm:flex-row sm:gap-4"
             >
               <dt className="sm:w-56 shrink-0 text-sm font-medium text-foreground">
-                {c.label}
-                {c.hidden && (
+                {f.label}
+                {!f.mapped && (
                   <span className="ml-2 text-[11px] text-muted-foreground">
                     (not in table)
                   </span>
                 )}
               </dt>
-              <dd className="text-sm text-foreground mt-1 sm:mt-0">
-                {c.value === "" ? (
+              <dd className="text-sm text-foreground mt-1 sm:mt-0 whitespace-pre-wrap break-words">
+                {f.value === "" ? (
                   <span className="text-muted-foreground">—</span>
                 ) : (
-                  c.value
+                  f.value
                 )}
               </dd>
             </div>

@@ -22,8 +22,27 @@ export type ResolvedRow = {
   // Domain ids the member has eligibility in — used by the board's domain
   // filter dropdown. Order is whatever DomainEligibility returns.
   domainIds: string[];
-  // columnKey → display string, for every (incl. hidden) column.
+  // columnKey → display string, for every (incl. hidden) mapped column.
+  // Drives the board table.
   cells: Record<string, string>;
+  // Every field this submission contains, in form order: each form question
+  // first, then the always-on builtins (submitter, hiredRoles). Drives the
+  // detail page so it shows raw form answers even when no column mapping is
+  // configured. Populated for every row — cheap, and lets callers render the
+  // detail view without a second query.
+  detailFields: DetailField[];
+};
+
+// One row's worth of "everything we know about this submission" for the
+// detail page. `mapped` reports whether the manager's column mapping
+// includes this field at all (table or hidden) — purely informational; the
+// detail page shows everything regardless.
+export type DetailField = {
+  key: string;
+  label: string;
+  value: string;
+  source: "question" | "builtin";
+  mapped: boolean;
 };
 
 export type SubmissionView = {
@@ -156,6 +175,24 @@ export async function buildSubmissionView(args: {
     domainIdsByUser.set(e.userId, ids);
   }
 
+  // Which form-question keys / builtins the mapping covers — used to flag
+  // each detail field as mapped vs not. The detail page renders both either
+  // way, the flag is informational.
+  const mappedQuestionKeys = new Set<string>();
+  const mappedBuiltins = new Set<string>();
+  if (mapping) {
+    for (const e of mapping.entries) {
+      if (e.source === "question") mappedQuestionKeys.add(e.questionKey);
+      else mappedBuiltins.add(e.builtin);
+    }
+  }
+  // Builtin labels for the detail view. Kept short; the mapping can rename
+  // them in the table without renaming them here.
+  const BUILTIN_LABELS: Record<string, string> = {
+    submitter: "Submitter",
+    hiredRoles: "Hired roles",
+  };
+
   const rows: ResolvedRow[] = rowsRaw.map((s) => {
     const ans = (s.answers as Record<string, unknown>) ?? {};
     const answerText: Record<string, string> = {};
@@ -168,12 +205,34 @@ export async function buildSubmissionView(args: {
       submitter: `${s.user!.firstName} ${s.user!.lastName}`,
       hiredRoles: hiredByUser.get(s.userId!) ?? "",
     };
+
+    // Detail-page field list: every question in form order, then builtins.
+    // Independent of the column mapping so partial / missing mappings still
+    // show every answer the form actually has.
+    const detailFields: DetailField[] = [
+      ...questions.map((q) => ({
+        key: `q:${q.key}`,
+        label: q.data.label,
+        value: answerText[q.key] ?? "",
+        source: "question" as const,
+        mapped: mappedQuestionKeys.has(q.key),
+      })),
+      ...Object.keys(BUILTIN_LABELS).map((b) => ({
+        key: `builtin:${b}`,
+        label: BUILTIN_LABELS[b],
+        value: builtinText[b] ?? "",
+        source: "builtin" as const,
+        mapped: mappedBuiltins.has(b),
+      })),
+    ];
+
     return {
       userId: s.userId!,
       name: `${s.user!.firstName} ${s.user!.lastName}`,
       email: s.user!.daliEmail,
       domainIds: domainIdsByUser.get(s.userId!) ?? [],
       cells: rowCells(mapping, { answerText, builtinText }),
+      detailFields,
     };
   });
 
