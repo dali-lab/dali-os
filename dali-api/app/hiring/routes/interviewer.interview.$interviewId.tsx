@@ -55,7 +55,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     where: { id: auth.user.sub },
     select: { id: true, firstName: true, lastName: true, daliMember: { select: { id: true } } },
   })
-  if (!member?.daliMember) throw redirect('/hiring/interviewer')
+  if (!member?.daliMember) throw redirect('/hiring/reviewer')
 
   const interview = await prisma.interview.findUnique({
     where: { id: params.interviewId },
@@ -88,13 +88,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
   })
 
-  if (!interview) throw redirect('/hiring/interviewer')
+  if (!interview) throw redirect('/hiring/reviewer')
 
   const myAssignment = interview.assignments.find(
     (a: any) => a.cycleInterviewer.userId === auth.user.sub,
   )
 
-  if (!myAssignment) throw redirect('/hiring/interviewer')
+  if (!myAssignment) throw redirect('/hiring/reviewer')
 
   const confRedirect = await requirePageSignedOrRedirect(
     auth.user.sub,
@@ -272,7 +272,7 @@ export default function InterviewDetailPage() {
         },
       )
       if (res.ok) {
-        window.location.href = '/hiring/interviewer'
+        window.location.href = '/hiring/reviewer'
         return
       }
       if (res.status === 409) {
@@ -306,7 +306,7 @@ export default function InterviewDetailPage() {
       {/* Back button + presence avatars inline */}
       <div className="flex items-center justify-between">
         <Link
-          to="/hiring/interviewer"
+          to="/hiring/reviewer"
           className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground/80"
         >
           <ArrowLeft className="w-4 h-4 mr-1" />

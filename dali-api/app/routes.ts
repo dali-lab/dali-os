@@ -24,7 +24,6 @@ export default [
     route("hiring/confidentiality-agreements", "hiring/routes/confidentiality-agreements.tsx"),
     route("hiring/confidentiality-agreements/:id", "hiring/routes/confidentiality-agreements.$id.tsx"),
     route("hiring/cycles/:cycleId/confidentiality", "hiring/routes/cycles.$cycleId.confidentiality.tsx"),
-    route("hiring/interviewer", "hiring/routes/interviewer.tsx"),
     route("hiring/interviewer/interview/:interviewId", "hiring/routes/interviewer.interview.$interviewId.tsx"),
     route("hiring/analytics", "hiring/routes/analytics.tsx"),
 

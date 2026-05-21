@@ -158,7 +158,7 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
       to: '/hiring/reviewer',
       icon: MessageSquare,
       show: true,
-      active: path.startsWith('/hiring/reviewer') || path.startsWith('/hiring/interviewer'),
+      active: path.startsWith('/hiring/reviewer') || path.startsWith('/hiring/interviewer/interview'),
       sub: null,
     },
     {
