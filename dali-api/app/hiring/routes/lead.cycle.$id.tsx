@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, Fragment } from 'react'
-import { Form, Link, useParams, useLoaderData, redirect } from 'react-router'
+import { Form, Link, useParams, useLoaderData, useSearchParams, redirect } from 'react-router'
 import type { Route } from "./+types/lead.cycle.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
@@ -101,6 +101,32 @@ type CycleStatus = (typeof STATUS_SEQUENCE)[number];
 function nextStatus(current: CycleStatus): CycleStatus | null {
   const idx = STATUS_SEQUENCE.indexOf(current);
   return idx < STATUS_SEQUENCE.length - 1 ? STATUS_SEQUENCE[idx + 1] : null;
+}
+
+// ─── Tab helpers ───────────────────────────────────────────────────────────────
+
+export const CYCLE_TABS = [
+  "overview",
+  "setup",
+  "interviews",
+  "reviewers",
+  "decisions",
+] as const;
+export type CycleTab = (typeof CYCLE_TABS)[number];
+
+// Pre-reorganization deep-links (and the ConfidentialityGate) used these tab
+// keys; map them onto the current IA so shared/bookmarked URLs keep working.
+const LEGACY_TAB_ALIASES: Record<string, CycleTab> = {
+  config: "interviews",
+  dashboard: "interviews",
+};
+
+export function resolveCycleTab(param: string | null | undefined): CycleTab {
+  if (!param) return "overview";
+  const mapped = LEGACY_TAB_ALIASES[param] ?? param;
+  return (CYCLE_TABS as readonly string[]).includes(mapped)
+    ? (mapped as CycleTab)
+    : "overview";
 }
 
 // ─── Loader ──────────────────────────────────────────────────────────────────
@@ -1127,8 +1153,18 @@ export default function HiringLeadCycleDetails() {
     UnderReview: 'bg-yellow-100 text-yellow-700', Completed: 'bg-blue-100 text-blue-700',
   }
 
-  // ── Active tab ──
-  const [tab, setTab] = useState<'setup' | 'config' | 'reviewers' | 'dashboard' | 'decisions'>('setup')
+  // ── Active tab (URL-synced: deep-links, reload, and back/forward all work) ──
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tab = resolveCycleTab(searchParams.get('tab'))
+  const setTab = useCallback((next: CycleTab) => {
+    setSearchParams(prev => {
+      const sp = new URLSearchParams(prev)
+      // Overview is the default landing tab, so keep its URL clean.
+      if (next === 'overview') sp.delete('tab')
+      else sp.set('tab', next)
+      return sp
+    }, { preventScrollReset: true })
+  }, [setSearchParams])
 
   // ── Decisions state ──
   const [pendingDecisions, setPendingDecisions] = useState<any[]>(loaderData?.finalDecisions ?? [])
@@ -1353,49 +1389,17 @@ export default function HiringLeadCycleDetails() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">Cycle Management</h1>
-        <p className="text-muted-foreground mt-1">Configure interviews for cycle <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">{cycleId}</span></p>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <h1 className="text-2xl font-bold text-foreground">{cycle?.name ?? 'Cycle Management'}</h1>
+        <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-bold ${STATUS_COLORS[cycleStatus] ?? ''}`}>
+          {STATUS_LABELS[cycleStatus] ?? cycleStatus}
+        </span>
+        <p className="w-full text-xs text-muted-foreground">
+          Cycle ID <span className="font-mono bg-muted px-1.5 py-0.5 rounded">{cycleId}</span>
+        </p>
       </div>
 
       <CloseDateNotice />
-
-      {/* Cycle Status */}
-      <div className="bg-card rounded-xl border border-border shadow-sm p-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <span className="text-sm font-medium text-muted-foreground">Status:</span>
-          <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-bold ${STATUS_COLORS[cycleStatus]}`}>
-            {STATUS_LABELS[cycleStatus] ?? cycleStatus}
-          </span>
-        </div>
-        {STATUS_FLOW.indexOf(cycleStatus as any) < STATUS_FLOW.length - 1 && (() => {
-          const draftChecklistMet = cycleStatus !== 'Draft' || (() => {
-            const hasCloseDate = !!cycle?.closeDate;
-            const domains = cycle?.domains ?? [];
-            const challengeVersions = cycle?.challengeVersions ?? [];
-            const coveredDomainIds = new Set(challengeVersions.map((cv: any) => cv.challengeVersion?.domainId));
-            const hasGeneralForm = challengeVersions.some((cv: any) => cv.challengeVersion?.domainId === null);
-            const allDomainsReady = domains.length > 0 && domains.every((d: any) => d.isReady);
-            return hasCloseDate && domains.length > 0 && domains.every((d: any) => coveredDomainIds.has(d.domainId)) && hasGeneralForm && allDomainsReady;
-          })();
-          return (
-            <button
-              onClick={
-                cycleStatus === 'UnderReview'
-                  ? () => setShowCompleteConfirm(true)
-                  : cycleStatus === 'Draft'
-                    ? () => setShowOpenConfirm(true)
-                    : () => advanceStatus()
-              }
-              disabled={statusUpdating || !draftChecklistMet}
-              className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition disabled:opacity-50"
-            >
-              {statusUpdating ? 'Updating...' : cycleStatus === 'Draft' ? 'Open Applications' : cycleStatus === 'Open' ? 'Close Applications' : 'Mark as Completed'}
-              <ArrowRight className="w-4 h-4" />
-            </button>
-          );
-        })()}
-      </div>
 
       {showCompleteConfirm && (
         <CompleteConfirmModal
@@ -1437,81 +1441,15 @@ export default function HiringLeadCycleDetails() {
         </div>
       )}
 
-      {/* Draft Checklist */}
-      {cycleStatus === 'Draft' && (() => {
-        const hasCloseDate = !!cycle?.closeDate;
-        const domains = cycle?.domains ?? [];
-        const challengeVersions = cycle?.challengeVersions ?? [];
-        const coveredDomainIds = new Set(challengeVersions.map((cv: any) => cv.challengeVersion?.domainId));
-        const allDomainsCovered = domains.length > 0 && domains.every((d: any) => coveredDomainIds.has(d.domainId));
-        const hasGeneralForm = challengeVersions.some((cv: any) => cv.challengeVersion?.domainId === null);
-        const allDomainsReady = domains.length > 0 && domains.every((d: any) => d.isReady);
-        const hasGeneralRubric = !!cycle?.generalRubricVersionId;
-        const ready = hasCloseDate && allDomainsCovered && hasGeneralForm && allDomainsReady;
-        return (
-          <div className={`rounded-xl border p-4 space-y-3 ${ready ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200'}`}>
-            <h3 className="text-sm font-bold text-foreground">Checklist to Open Applications</h3>
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 text-sm">
-                {hasCloseDate
-                  ? <CheckCircle className="w-4 h-4 text-green-600" />
-                  : <Circle className="w-4 h-4 text-muted-foreground/70" />}
-                <span className={hasCloseDate ? 'text-green-800' : 'text-muted-foreground'}>Close date is set</span>
-              </div>
-              <div className="flex items-center gap-2 text-sm">
-                {allDomainsCovered
-                  ? <CheckCircle className="w-4 h-4 text-green-600" />
-                  : <Circle className="w-4 h-4 text-muted-foreground/70" />}
-                <span className={allDomainsCovered ? 'text-green-800' : 'text-muted-foreground'}>
-                  Every domain has a challenge version linked
-                  {domains.length === 0 && ' (no domains added)'}
-                </span>
-              </div>
-              <div className="flex items-center gap-2 text-sm">
-                {hasGeneralForm
-                  ? <CheckCircle className="w-4 h-4 text-green-600" />
-                  : <Circle className="w-4 h-4 text-muted-foreground/70" />}
-                <span className={hasGeneralForm ? 'text-green-800' : 'text-muted-foreground'}>General application form is linked</span>
-              </div>
-              <div className="flex items-center gap-2 text-sm">
-                {allDomainsReady
-                  ? <CheckCircle className="w-4 h-4 text-green-600" />
-                  : <Circle className="w-4 h-4 text-muted-foreground/70" />}
-                <span className={allDomainsReady ? 'text-green-800' : 'text-muted-foreground'}>
-                  Every domain is marked ready
-                  {domains.length === 0 && ' (no domains added)'}
-                </span>
-              </div>
-            </div>
-            {!hasGeneralRubric && (
-              <p className="text-xs text-muted-foreground border-t border-yellow-200 pt-2">
-                Heads up: the general application rubric isn't set yet. You can open applications without it, but reviewers can't be assigned until a rubric is in place.
-              </p>
-            )}
-          </div>
-        );
-      })()}
-
-      {/* Reminder while Open: rubric still needed before reviewer assignment */}
-      {cycleStatus === 'Open' && !cycle?.generalRubricVersionId && (
-        <div className="rounded-xl border border-yellow-200 bg-yellow-50 p-4 flex items-start gap-3">
-          <AlertTriangle className="w-5 h-5 text-yellow-700 flex-shrink-0 mt-0.5" />
-          <div className="flex-1 space-y-0.5">
-            <p className="text-sm font-bold text-yellow-900">General application rubric not set</p>
-            <p className="text-sm text-yellow-800">Set the general rubric before review begins — reviewer assignment is blocked without it.</p>
-          </div>
-        </div>
-      )}
-
       {/* Tabs */}
       <div className="flex gap-1 bg-muted rounded-lg p-1 overflow-x-auto">
         {([
-          { key: 'setup' as const, label: 'Cycle Setup', icon: LayoutDashboard },
-          { key: 'config' as const, label: 'Interview Setup', icon: Settings },
-          { key: 'reviewers' as const, label: 'Reviewer Roster', icon: Users },
-          { key: 'dashboard' as const, label: 'Interview Dashboard', icon: Calendar },
-          { key: 'decisions' as const, label: 'Decisions', icon: CheckCircle },
-        ]).map(t => (
+          { key: 'overview', label: 'Overview', icon: LayoutDashboard },
+          { key: 'setup', label: 'Setup', icon: Settings },
+          { key: 'interviews', label: 'Interviews', icon: Calendar, badge: interviews.length || undefined },
+          { key: 'reviewers', label: 'Reviewers', icon: Users, badge: reviewers.length || undefined },
+          { key: 'decisions', label: 'Decisions', icon: CheckCircle, badge: pendingDecisions.length || undefined },
+        ] as { key: CycleTab; label: string; icon: typeof LayoutDashboard; badge?: number }[]).map(t => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
@@ -1521,11 +1459,179 @@ export default function HiringLeadCycleDetails() {
           >
             <t.icon className="w-4 h-4" />
             {t.label}
+            {t.badge ? (
+              <span className="ml-0.5 inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-foreground/10 text-xs font-bold">
+                {t.badge}
+              </span>
+            ) : null}
           </button>
         ))}
       </div>
 
-      {/* ── Cycle Setup Tab ── */}
+      {/* ── Overview Tab ── */}
+      {tab === 'overview' && (() => {
+        const currentIdx = STATUS_FLOW.indexOf(cycleStatus as any)
+        const atTerminal = currentIdx < 0 || currentIdx >= STATUS_FLOW.length - 1
+        const draftChecklistMet = cycleStatus !== 'Draft' || (() => {
+          const hasCloseDate = !!cycle?.closeDate;
+          const domains = cycle?.domains ?? [];
+          const challengeVersions = cycle?.challengeVersions ?? [];
+          const coveredDomainIds = new Set(challengeVersions.map((cv: any) => cv.challengeVersion?.domainId));
+          const hasGeneralForm = challengeVersions.some((cv: any) => cv.challengeVersion?.domainId === null);
+          const allDomainsReady = domains.length > 0 && domains.every((d: any) => d.isReady);
+          return hasCloseDate && domains.length > 0 && domains.every((d: any) => coveredDomainIds.has(d.domainId)) && hasGeneralForm && allDomainsReady;
+        })();
+        const nextStepCopy: Record<string, string> = {
+          Draft: 'Finish the checklist below, then open applications to applicants.',
+          Open: 'Applications are open. Close them when ready to begin review.',
+          UnderReview: 'Review is underway. Release decisions, then mark the cycle completed.',
+          Completed: 'This cycle is complete — everything here is read-only history.',
+        };
+        const counts = [
+          { label: 'Domains', value: cycle?.domains?.length ?? 0, tab: 'setup' as CycleTab },
+          { label: 'Reviewers', value: reviewers.length, tab: 'reviewers' as CycleTab },
+          { label: 'Interviewers', value: interviewers.length, tab: 'interviews' as CycleTab },
+          { label: 'Scheduled interviews', value: interviews.length, tab: 'interviews' as CycleTab },
+          { label: 'Decisions to release', value: pendingDecisions.length, tab: 'decisions' as CycleTab },
+        ];
+        return (
+          <div className="space-y-6">
+            {/* Lifecycle stepper */}
+            <div className="bg-card rounded-xl border border-border shadow-sm p-4 sm:p-6">
+              <h3 className="text-sm font-bold text-foreground/80 mb-4">Cycle progress</h3>
+              <ol className="flex items-center">
+                {STATUS_FLOW.map((s, i) => {
+                  const done = i < currentIdx
+                  const active = i === currentIdx
+                  return (
+                    <Fragment key={s}>
+                      <li className="flex items-center gap-2 flex-shrink-0">
+                        <span className={`flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold ${
+                          active ? 'bg-blue-600 text-white' : done ? 'bg-green-100 text-green-700' : 'bg-muted text-muted-foreground'
+                        }`}>
+                          {done ? <CheckCircle className="w-4 h-4" /> : i + 1}
+                        </span>
+                        <span className={`text-sm font-medium whitespace-nowrap ${active ? 'text-foreground' : 'text-muted-foreground'}`}>
+                          {STATUS_LABELS[s]}
+                        </span>
+                      </li>
+                      {i < STATUS_FLOW.length - 1 && (
+                        <span className={`flex-1 h-px mx-2 sm:mx-3 ${i < currentIdx ? 'bg-green-300' : 'bg-border'}`} />
+                      )}
+                    </Fragment>
+                  )
+                })}
+              </ol>
+            </div>
+
+            {/* Next step + advance action */}
+            <div className="bg-card rounded-xl border border-border shadow-sm p-4 sm:p-6 flex flex-wrap items-center justify-between gap-3">
+              <div className="space-y-1 min-w-0">
+                <h3 className="text-sm font-bold text-foreground">Next step</h3>
+                <p className="text-sm text-muted-foreground">{nextStepCopy[cycleStatus] ?? ''}</p>
+              </div>
+              {!atTerminal && (
+                <button
+                  onClick={
+                    cycleStatus === 'UnderReview'
+                      ? () => setShowCompleteConfirm(true)
+                      : cycleStatus === 'Draft'
+                        ? () => setShowOpenConfirm(true)
+                        : () => advanceStatus()
+                  }
+                  disabled={statusUpdating || !draftChecklistMet}
+                  className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition disabled:opacity-50"
+                >
+                  {statusUpdating ? 'Updating...' : cycleStatus === 'Draft' ? 'Open Applications' : cycleStatus === 'Open' ? 'Close Applications' : 'Mark as Completed'}
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            {/* Draft Checklist */}
+            {cycleStatus === 'Draft' && (() => {
+              const hasCloseDate = !!cycle?.closeDate;
+              const domains = cycle?.domains ?? [];
+              const challengeVersions = cycle?.challengeVersions ?? [];
+              const coveredDomainIds = new Set(challengeVersions.map((cv: any) => cv.challengeVersion?.domainId));
+              const allDomainsCovered = domains.length > 0 && domains.every((d: any) => coveredDomainIds.has(d.domainId));
+              const hasGeneralForm = challengeVersions.some((cv: any) => cv.challengeVersion?.domainId === null);
+              const allDomainsReady = domains.length > 0 && domains.every((d: any) => d.isReady);
+              const hasGeneralRubric = !!cycle?.generalRubricVersionId;
+              const ready = hasCloseDate && allDomainsCovered && hasGeneralForm && allDomainsReady;
+              return (
+                <div className={`rounded-xl border p-4 space-y-3 ${ready ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200'}`}>
+                  <h3 className="text-sm font-bold text-foreground">Checklist to Open Applications</h3>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-sm">
+                      {hasCloseDate
+                        ? <CheckCircle className="w-4 h-4 text-green-600" />
+                        : <Circle className="w-4 h-4 text-muted-foreground/70" />}
+                      <span className={hasCloseDate ? 'text-green-800' : 'text-muted-foreground'}>Close date is set</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm">
+                      {allDomainsCovered
+                        ? <CheckCircle className="w-4 h-4 text-green-600" />
+                        : <Circle className="w-4 h-4 text-muted-foreground/70" />}
+                      <span className={allDomainsCovered ? 'text-green-800' : 'text-muted-foreground'}>
+                        Every domain has a challenge version linked
+                        {domains.length === 0 && ' (no domains added)'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm">
+                      {hasGeneralForm
+                        ? <CheckCircle className="w-4 h-4 text-green-600" />
+                        : <Circle className="w-4 h-4 text-muted-foreground/70" />}
+                      <span className={hasGeneralForm ? 'text-green-800' : 'text-muted-foreground'}>General application form is linked</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm">
+                      {allDomainsReady
+                        ? <CheckCircle className="w-4 h-4 text-green-600" />
+                        : <Circle className="w-4 h-4 text-muted-foreground/70" />}
+                      <span className={allDomainsReady ? 'text-green-800' : 'text-muted-foreground'}>
+                        Every domain is marked ready
+                        {domains.length === 0 && ' (no domains added)'}
+                      </span>
+                    </div>
+                  </div>
+                  {!hasGeneralRubric && (
+                    <p className="text-xs text-muted-foreground border-t border-yellow-200 pt-2">
+                      Heads up: the general application rubric isn't set yet. You can open applications without it, but reviewers can't be assigned until a rubric is in place.
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* Reminder while Open: rubric still needed before reviewer assignment */}
+            {cycleStatus === 'Open' && !cycle?.generalRubricVersionId && (
+              <div className="rounded-xl border border-yellow-200 bg-yellow-50 p-4 flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-yellow-700 flex-shrink-0 mt-0.5" />
+                <div className="flex-1 space-y-0.5">
+                  <p className="text-sm font-bold text-yellow-900">General application rubric not set</p>
+                  <p className="text-sm text-yellow-800">Set the general rubric before review begins — reviewer assignment is blocked without it.</p>
+                </div>
+              </div>
+            )}
+
+            {/* At-a-glance counts — each jumps to the relevant tab */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+              {counts.map(c => (
+                <button
+                  key={c.label}
+                  onClick={() => setTab(c.tab)}
+                  className="bg-card rounded-xl border border-border shadow-sm p-4 text-left hover:border-blue-300 hover:shadow transition"
+                >
+                  <div className="text-2xl font-bold text-foreground">{c.value}</div>
+                  <div className="text-xs text-muted-foreground mt-1">{c.label}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── Setup Tab ── */}
       {tab === 'setup' && (
         <div className="space-y-6">
           {/* Close Date + Extension + Effective Close */}
@@ -1648,9 +1754,12 @@ export default function HiringLeadCycleDetails() {
         </div>
       )}
 
-      {/* ── Interview Setup Tab ── */}
-      {tab === 'config' && (
+      {/* ── Interviews Tab — config + interviewers + live schedule ── */}
+      {tab === 'interviews' && (
         <div className="space-y-6">
+          <h3 className="text-base font-bold text-foreground/90 flex items-center gap-2">
+            <Settings className="w-4 h-4" /> Interview Configuration
+          </h3>
           {/* Interview Config */}
           <div className="bg-card rounded-xl border border-border shadow-sm p-6 space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1874,8 +1983,8 @@ export default function HiringLeadCycleDetails() {
         </div>
       )}
 
-      {/* ── Interviewers Roster (shown under Interview Setup) ── */}
-      {tab === 'config' && (
+      {/* ── Interviewers Roster (shown under Interviews) ── */}
+      {tab === 'interviews' && (
         <div className="space-y-4 mt-4">
           <h3 className="text-base font-bold text-foreground/90 flex items-center gap-2">
             <Users className="w-4 h-4" /> Interviewers
@@ -2120,14 +2229,19 @@ export default function HiringLeadCycleDetails() {
         </div>
       )}
 
-      {/* ── Interview Dashboard Tab ── */}
-      {tab === 'dashboard' && loaderData?.confidentialityRequired ? (
+      {/* ── Interviews Tab — live schedule + coverage ── */}
+      {tab === 'interviews' && (
+        <h3 className="text-base font-bold text-foreground/90 flex items-center gap-2 mt-4 pt-4 border-t border-border">
+          <Calendar className="w-4 h-4" /> Schedule &amp; Coverage
+        </h3>
+      )}
+      {tab === 'interviews' && loaderData?.confidentialityRequired ? (
         <ConfidentialityGate
           cycleId={cycleId ?? ''}
           reason={loaderData.confidentialityRequired}
-          next={`/hiring/lead/cycle/${cycleId}?tab=dashboard`}
+          next={`/hiring/lead/cycle/${cycleId}?tab=interviews`}
         />
-      ) : tab === 'dashboard' && (
+      ) : tab === 'interviews' && (
         <div className="space-y-4">
           <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-2.5 text-xs text-blue-900 inline-flex items-center gap-2">
             <Mail className="w-3.5 h-3.5 flex-shrink-0" aria-hidden />
