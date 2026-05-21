@@ -1050,7 +1050,7 @@ function DomainScopesSegment({
           {terms.map((t) => (
             <div key={t.id} className="flex flex-col gap-2">
               <h3 className="text-sm font-semibold text-foreground">{t.code}</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div className="flex flex-col gap-3">
                 {domains.map((d) => {
                   const value = cell(d.id, t.id);
                   return (
