@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { redirect, useLoaderData, useRevalidator } from "react-router";
 import {
-  Bell,
+  ListTodo,
   Check,
   X as XIcon,
   CalendarDays,
@@ -9,9 +9,11 @@ import {
   ChevronRight,
   ExternalLink,
   HelpCircle,
+  CalendarClock,
 } from "lucide-react";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
+import { listOpenTasks, type Task } from "~/lib/tasks";
 import type { Route } from "./+types/home";
 
 type HomeNotification = {
@@ -58,11 +60,12 @@ export async function loader({ request }: Route.LoaderArgs) {
     scheduledMeetingId: n.scheduledMeetingId,
     rsvp: n.rsvp,
   }));
-  return { user: auth.user, notifications };
+  const tasks = await listOpenTasks(auth.user.sub);
+  return { user: auth.user, notifications, tasks };
 }
 
 export default function Home() {
-  const { user, notifications } = useLoaderData<typeof loader>();
+  const { user, notifications, tasks } = useLoaderData<typeof loader>();
   const firstName = user.firstName || user.email.split("@")[0];
 
   return (
@@ -76,8 +79,11 @@ export default function Home() {
         </p>
       </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-6">
-        <NotificationsPanel notifications={notifications} />
+      {(tasks.length > 0 || notifications.length > 0) && (
+        <AttentionBanner tasks={tasks} notifications={notifications} />
+      )}
+
+      <div className="flex flex-col gap-6">
         <WeekCalendarPanel />
       </div>
     </div>
@@ -85,7 +91,108 @@ export default function Home() {
 }
 
 /* ------------------------------------------------------------------ */
-/* Notifications panel                                                  */
+/* Attention banner — the single home surface for things needing the    */
+/* user: open tasks plus notifications (incl. meeting-invite RSVP).      */
+/* Only rendered when there's at least one of either.                    */
+/* ------------------------------------------------------------------ */
+
+function formatDeadline(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function AttentionBanner({
+  tasks,
+  notifications,
+}: {
+  tasks: Task[];
+  notifications: HomeNotification[];
+}) {
+  // Tasks are themselves notification rows (Task.id === Notification.id), so a
+  // task (e.g. an announcement-todo) also appears in the raw notifications
+  // list. Drop those duplicates — the task card is the richer rendering
+  // (deadline + form link) — so each item shows once.
+  const taskIds = new Set(tasks.map((t) => t.id));
+  const extraNotifications = notifications.filter((n) => !taskIds.has(n.id));
+
+  // "Needs attention" = open tasks + unread non-task notifications. Read
+  // notifications still render below (so RSVP stays reachable) but don't
+  // inflate the count.
+  const unread = extraNotifications.filter((n) => !n.readAt).length;
+  const count = tasks.length + unread;
+
+  return (
+    <div className="bg-accent-coral/10 border border-accent-coral/30 rounded-lg p-3">
+      <div className="flex items-center gap-2 mb-2">
+        <ListTodo className="w-4 h-4 text-accent-coral" />
+        <span className="font-heading font-semibold text-sm text-foreground">
+          {count > 0
+            ? `${count} ${count === 1 ? "item needs" : "items need"} your attention`
+            : "Your notifications"}
+        </span>
+      </div>
+
+      {tasks.length > 0 && (
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {tasks.map((t) => {
+            const inner = (
+              <>
+                <span className="block text-sm font-semibold text-foreground truncate">
+                  {t.title}
+                </span>
+                {t.dueAt ? (
+                  <span className="inline-flex items-center gap-1 text-[11px] font-medium text-accent-coral mt-1">
+                    <CalendarClock className="w-3 h-3" />
+                    {formatDeadline(t.dueAt)}
+                  </span>
+                ) : (
+                  <span className="block text-[11px] text-muted-foreground mt-1">
+                    {t.source === "meeting"
+                      ? "Awaiting your response"
+                      : "Action needed"}
+                  </span>
+                )}
+              </>
+            );
+            const cls =
+              "flex-shrink-0 w-56 bg-card border border-border rounded-md px-3 py-2";
+            return t.link ? (
+              <a
+                key={t.id}
+                href={t.link}
+                className={`${cls} hover:border-accent-coral/50 transition-colors`}
+              >
+                {inner}
+              </a>
+            ) : (
+              <div key={t.id} className={cls}>
+                {inner}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {extraNotifications.length > 0 && (
+        <div
+          className={`flex flex-col gap-2 ${tasks.length > 0 ? "mt-3 pt-3 border-t border-accent-coral/20" : ""}`}
+        >
+          {extraNotifications.map((n) => (
+            <NotificationCard key={n.id} notification={n} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Notification card (rendered inside the attention banner)             */
 /* ------------------------------------------------------------------ */
 
 function relativeTime(iso: string): string {
@@ -102,59 +209,6 @@ function relativeTime(iso: string): string {
   return new Date(iso).toLocaleDateString();
 }
 
-function NotificationsPanel({ notifications }: { notifications: HomeNotification[] }) {
-  const unread = notifications.filter((n) => !n.readAt).length;
-  const revalidator = useRevalidator();
-  const [markingAll, setMarkingAll] = useState(false);
-
-  async function markAllRead() {
-    setMarkingAll(true);
-    try {
-      await fetch("/api/notifications", {
-        method: "POST",
-        credentials: "include",
-      });
-      revalidator.revalidate();
-    } finally {
-      setMarkingAll(false);
-    }
-  }
-
-  return (
-    <aside className="flex flex-col gap-3">
-      <div className="flex items-center justify-between">
-        <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
-          <Bell className="w-4 h-4 text-accent-coral" />
-          Notifications
-        </h2>
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-muted-foreground">
-            {unread > 0 ? `${unread} unread` : `${notifications.length} total`}
-          </span>
-          {unread > 0 && (
-            <button
-              type="button"
-              onClick={markAllRead}
-              disabled={markingAll}
-              className="text-xs font-medium text-accent-coral hover:underline disabled:opacity-50"
-            >
-              {markingAll ? "Marking…" : "Mark all read"}
-            </button>
-          )}
-        </div>
-      </div>
-      <div className="flex flex-col gap-2">
-        {notifications.length === 0 ? (
-          <p className="text-sm text-muted-foreground px-3 py-6 bg-card border border-border rounded-md text-center">
-            No notifications yet.
-          </p>
-        ) : (
-          notifications.map((n) => <NotificationCard key={n.id} notification={n} />)
-        )}
-      </div>
-    </aside>
-  );
-}
 
 function NotificationCard({ notification }: { notification: HomeNotification }) {
   const isUnread = !notification.readAt;

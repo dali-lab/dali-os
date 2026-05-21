@@ -88,6 +88,7 @@ async function main() {
         create: [
           {
             challengeVersionId: domainCv.challengeVersionId,
+            domainId: domainCv.challengeVersion.domainId!,
             answers: {
               "sample-dq1": "I've worked with React and Node.js on several projects.",
               "sample-dq2": "https://github.com/testapplicant",

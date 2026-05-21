@@ -76,5 +76,46 @@ export async function authorizeCollabDoc(
     return false;
   }
 
+  // doc:{pageId}:body — project document pages. Access mirrors the project
+  // edit gate used by the project document API routes (isHiringLead ===
+  // Admin || Core). The page must be a live (non-archived) Project page.
+  if (entity === "doc") {
+    const page = await prisma.page.findUnique({
+      where: { id },
+      select: { workspaceType: true, archivedAt: true },
+    });
+    if (!page || page.workspaceType !== "Project" || page.archivedAt !== null) {
+      return false;
+    }
+    return isHiringLead(userSub);
+  }
+
+  // partnersow:{applicationId}:body — the versionable Statement of Work for a
+  // partner application. Same edit gate as the partner-application routes
+  // (isHiringLead === Admin || Core). The application must exist.
+  if (entity === "partnersow") {
+    const application = await prisma.partnerApplication.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!application) return false;
+    return isHiringLead(userSub);
+  }
+
+  // epic:{descriptionDocId}:description — the rich description on an Epic.
+  // `id` is the opaque cuid stored on Epic.descriptionDocId (a room name,
+  // NOT a Page row). The lookup goes by that column rather than by Epic.id
+  // because the editor only knows the room name. Same edit gate as the
+  // epic write API (isHiringLead === Admin || Core); no separate read gate
+  // since reading an epic is already gated by the page that renders it.
+  if (entity === "epic") {
+    const epic = await prisma.epic.findFirst({
+      where: { descriptionDocId: id },
+      select: { id: true },
+    });
+    if (!epic) return false;
+    return isHiringLead(userSub);
+  }
+
   return false;
 }

@@ -5,6 +5,7 @@ vi.mock("~/lib/db", () => ({
     applicationReview: { findUnique: vi.fn() },
     interviewAssignment: { findFirst: vi.fn() },
     interview: { findUnique: vi.fn() },
+    epic: { findFirst: vi.fn() },
   },
 }));
 
@@ -106,6 +107,24 @@ describe("authorizeCollabDoc", () => {
       (isHiringLead as any).mockResolvedValue(true);
 
       expect(await authorizeCollabDoc("user1", "interview:int1:notes")).toBe(true);
+    });
+  });
+
+  describe("epic description docs", () => {
+    it("rejects when no epic has that descriptionDocId", async () => {
+      mockPrisma.epic.findFirst.mockResolvedValue(null);
+      expect(await authorizeCollabDoc("user1", "epic:abc:description")).toBe(false);
+    });
+
+    it("rejects non-leads even when the epic exists", async () => {
+      mockPrisma.epic.findFirst.mockResolvedValue({ id: "e1" });
+      expect(await authorizeCollabDoc("user1", "epic:abc:description")).toBe(false);
+    });
+
+    it("allows hiring leads when the epic exists", async () => {
+      mockPrisma.epic.findFirst.mockResolvedValue({ id: "e1" });
+      (isHiringLead as any).mockResolvedValue(true);
+      expect(await authorizeCollabDoc("user1", "epic:abc:description")).toBe(true);
     });
   });
 });

@@ -3,7 +3,7 @@ import { redirect, useLoaderData, useFetcher } from "react-router";
 import type { Route } from "./+types/members.groups";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isAdmin } from "~/lib/roles";
+import { canViewForms } from "~/lib/roles";
 import { Users, Plus, Trash2, X } from "lucide-react";
 
 export const meta: Route.MetaFunction = () => [{ title: "Groups · Members · DALI OS" }];
@@ -24,7 +24,7 @@ type UserOption = {
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
-  if (!(await isAdmin(auth.user.sub))) return redirect("/members");
+  if (!(await canViewForms(auth.user.sub))) return redirect("/members");
 
   const [groups, users] = await Promise.all([
     prisma.groupDefinition.findMany({ orderBy: { name: "asc" } }),
@@ -40,7 +40,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
-  if (!(await isAdmin(auth.user.sub)))
+  if (!(await canViewForms(auth.user.sub)))
     return Response.json({ error: "Forbidden" }, { status: 403 });
 
   const formData = await request.formData();
@@ -103,6 +103,12 @@ export default function AdminConsoleGroups() {
   const { groups, users } = useLoaderData<typeof loader>();
   const usersById = new Map(users.map((u) => [u.id, u]));
   const [creating, setCreating] = useState(false);
+  const [query, setQuery] = useState("");
+
+  const q = query.trim().toLowerCase();
+  const visibleGroups = q
+    ? groups.filter((g: GroupRow) => g.name.toLowerCase().includes(q))
+    : groups;
 
   return (
     <div className="space-y-6">
@@ -127,13 +133,28 @@ export default function AdminConsoleGroups() {
         <CreateGroupForm users={users} onDone={() => setCreating(false)} />
       )}
 
+      {groups.length > 0 && (
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search groups by name"
+          className="w-full max-w-sm px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+        />
+      )}
+
       <div className="space-y-3">
         {groups.length === 0 && !creating && (
           <div className="text-sm text-muted-foreground/70 px-4 py-8 text-center bg-card border border-border rounded-lg">
             No groups yet. Click "New group" to create one.
           </div>
         )}
-        {groups.map((g: GroupRow) => (
+        {groups.length > 0 && visibleGroups.length === 0 && (
+          <div className="text-sm text-muted-foreground/70 px-4 py-8 text-center bg-card border border-border rounded-lg">
+            No groups match "{query.trim()}".
+          </div>
+        )}
+        {visibleGroups.map((g: GroupRow) => (
           <GroupCard key={g.id} group={g} users={users} usersById={usersById} />
         ))}
       </div>

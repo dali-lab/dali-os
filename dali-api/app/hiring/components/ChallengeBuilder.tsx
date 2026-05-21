@@ -1,7 +1,8 @@
-import React, { useCallback, useState, useRef } from 'react'
+import React, { useState } from 'react'
 import { GripVertical, Plus, Pencil, Trash2, Save } from 'lucide-react'
 import type { Question } from '~/types'
 import { RichTextEditor } from '~/components/RichTextEditor'
+import { referenceSourceChoices } from '~/forms/lib/reference-sources.shared'
 
 const ACCEPT_PRESETS = [
   { label: 'PDF', value: 'application/pdf' },
@@ -45,6 +46,7 @@ export interface BuildQuestionInput {
   isGeneralForm?: boolean
   maxWordsEnabled?: boolean
   maxWordsValue?: number | string
+  referenceSource?: string
 }
 
 export function buildQuestion(input: BuildQuestionInput): Question {
@@ -60,6 +62,7 @@ export function buildQuestion(input: BuildQuestionInput): Question {
     isGeneralForm,
     maxWordsEnabled,
     maxWordsValue,
+    referenceSource,
   } = input
 
   let maxWords: number | undefined
@@ -86,6 +89,8 @@ export function buildQuestion(input: BuildQuestionInput): Question {
       accept: type === 'file' ? accept || undefined : undefined,
       afterDomains: isGeneralForm && afterDomains ? true : undefined,
       maxWords,
+      referenceSource:
+        type === 'reference' ? referenceSource || undefined : undefined,
     },
   }
 }
@@ -114,45 +119,38 @@ export function FormBuilderTab({
   const [maxWordsValue, setMaxWordsValue] = useState<string>('')
   const [acceptPresets, setAcceptPresets] = useState<Set<string>>(new Set())
   const [acceptCustom, setAcceptCustom] = useState('')
-  // Drag and drop state
-  const dragItemRef = useRef<number | null>(null)
-  const dragOverItemRef = useRef<number | null>(null)
-  const [isDragging, setIsDragging] = useState(false)
-  const handleDragStart = (e: React.DragEvent, index: number) => {
-    dragItemRef.current = index
-    dragOverItemRef.current = index
-    setIsDragging(true)
+  // Drag and drop state. Track the source by key (stable across reorders) so
+  // mid-drag splices don't invalidate it. Reorder happens on dragover of each
+  // row, picking before/after based on whether the cursor is past the row's
+  // vertical midpoint — more stable than dragenter, which can fire on inner
+  // children and skip rows.
+  const [dragKey, setDragKey] = useState<string | null>(null)
+  const handleDragStart = (e: React.DragEvent, key: string) => {
+    setDragKey(key)
     e.dataTransfer.effectAllowed = 'move'
-    e.dataTransfer.setData('text/plain', String(index))
-    const el = e.currentTarget as HTMLElement
-    requestAnimationFrame(() => {
-      el.style.opacity = '0.4'
-    })
+    e.dataTransfer.setData('text/plain', key)
   }
-  const handleDragOver = useCallback((e: React.DragEvent) => {
+  const handleRowDragOver = (e: React.DragEvent, overKey: string) => {
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
-  }, [])
-  const handleDragEnter = useCallback((e: React.DragEvent, index: number) => {
-    e.preventDefault()
-    if (dragItemRef.current === null) return
-    if (dragOverItemRef.current === index) return
-    dragOverItemRef.current = index
+    if (!dragKey || dragKey === overKey) return
+    const rect = e.currentTarget.getBoundingClientRect()
+    const after = e.clientY > rect.top + rect.height / 2
     setQuestions((prev) => {
-      const from = dragItemRef.current!
+      const from = prev.findIndex((q) => q.key === dragKey)
+      const overIdx = prev.findIndex((q) => q.key === overKey)
+      if (from === -1 || overIdx === -1) return prev
+      let to = after ? overIdx + 1 : overIdx
+      if (from < to) to -= 1
+      if (from === to) return prev
       const updated = [...prev]
       const [moved] = updated.splice(from, 1)
-      updated.splice(index, 0, moved)
-      dragItemRef.current = index
+      updated.splice(to, 0, moved)
       return updated
     })
-  }, [])
-  const handleDragEnd = (e: React.DragEvent) => {
-    const el = e.currentTarget as HTMLElement
-    el.style.opacity = '1'
-    dragItemRef.current = null
-    dragOverItemRef.current = null
-    setIsDragging(false)
+  }
+  const handleDragEnd = () => {
+    setDragKey(null)
   }
   const resetEditState = () => {
     setEditingKey(null)
@@ -197,6 +195,7 @@ export function FormBuilderTab({
       isGeneralForm,
       maxWordsEnabled,
       maxWordsValue,
+      referenceSource: editForm.data.referenceSource,
     })
     if (isAdding) {
       setQuestions([...questions, updatedQuestion])
@@ -274,6 +273,7 @@ export function FormBuilderTab({
               <option value="drive_url">Google Drive URL</option>
               <option value="file">File Upload</option>
               <option value="skills_rating">Skills Rating</option>
+              <option value="reference">Reference (from database)</option>
             </select>
           </div>
 
@@ -390,6 +390,38 @@ export function FormBuilderTab({
             </div>
           )}
 
+          {editForm.type === 'reference' && (
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-foreground/80 mb-1">
+                Data source
+              </label>
+              <select
+                value={editForm.data?.referenceSource || ''}
+                onChange={(e) =>
+                  setEditForm({
+                    ...editForm,
+                    data: {
+                      ...editForm.data!,
+                      referenceSource: e.target.value,
+                    },
+                  })
+                }
+                className="block w-full rounded-md border border-gray-300 bg-card text-foreground shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
+              >
+                <option value="">Select a source…</option>
+                {referenceSourceChoices().map((s) => (
+                  <option key={s.key} value={s.key}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-muted-foreground mt-1">
+                Choices are pulled live when the form is filled — e.g. projects
+                open for staffing this term.
+              </p>
+            </div>
+          )}
+
           {editForm.type === 'file' && (
             <div className="col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -464,22 +496,22 @@ export function FormBuilderTab({
           placeholder="Describe this challenge for applicants…"
         />
       </div>
-      <div className="space-y-2" onDragOver={handleDragOver}>
+      <div className="space-y-2">
         {questions.map((q, index) => (
           <div
             key={q.key}
             draggable={editingKey !== q.key}
-            onDragStart={(e) => handleDragStart(e, index)}
-            onDragEnter={(e) => handleDragEnter(e, index)}
+            onDragStart={(e) => handleDragStart(e, q.key)}
+            onDragOver={(e) => handleRowDragOver(e, q.key)}
             onDragEnd={handleDragEnd}
-            onDragOver={(e) => e.preventDefault()}
-            className="rounded-xl"
+            onDrop={(e) => e.preventDefault()}
+            className={`rounded-xl ${dragKey === q.key ? 'opacity-40' : ''}`}
           >
             {editingKey === q.key ? (
               renderEditForm(false)
             ) : (
               <div
-                className={`flex items-start gap-4 bg-card p-4 rounded-xl border shadow-sm group transition-colors duration-150 ${isDragging ? 'border-gray-300' : 'border-border'}`}
+                className={`flex items-start gap-4 bg-card p-4 rounded-xl border shadow-sm group transition-colors duration-150 ${dragKey ? 'border-gray-300' : 'border-border'}`}
               >
                 <div className="mt-1 cursor-grab active:cursor-grabbing text-muted-foreground/70 hover:text-muted-foreground select-none">
                   <GripVertical className="w-5 h-5" />

@@ -90,7 +90,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   const url = new URL(request.url)
   const requested = url.searchParams.get("cycle")
   const selectedEntry =
-    (requested && onCycles.find(({ cycle }) => cycle.id === requested)) ?? onCycles[0]
+    (requested ? onCycles.find(({ cycle }) => cycle.id === requested) : undefined) ??
+    onCycles[0]
   const active = selectedEntry.cycle
   const myReviewerIds = selectedEntry.reviewerRows
   const reviewerIds = myReviewerIds.map(r => r.id)
