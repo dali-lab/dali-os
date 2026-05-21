@@ -70,6 +70,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     id: c.id,
     name: c.name,
     status: c.statusUpdates[0]?.newStatus ?? "Draft",
+    cycleType: c.cycleType,
   }));
 
   if (cycles.length === 0) {
@@ -88,9 +89,15 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const url = new URL(request.url);
   const requestedCycleId = url.searchParams.get("cycleId");
+  const isActive = (c: { status: string }) =>
+    ["Open", "UnderReview"].includes(c.status);
+  // Prefer a Standard active cycle over an InternToFull (Fellowship) one when
+  // both are open simultaneously — Fellowship runs in parallel but views
+  // should default to the main hiring cycle.
   const selectedCycle =
     (requestedCycleId ? cycles.find((c) => c.id === requestedCycleId) : null) ??
-    cycles.find((c) => ["Open", "UnderReview"].includes(c.status)) ??
+    cycles.find((c) => isActive(c) && c.cycleType === "Standard") ??
+    cycles.find(isActive) ??
     cycles[0];
   const cycleId = selectedCycle.id;
   const cycleStatus = selectedCycle.status as
