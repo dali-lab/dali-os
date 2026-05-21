@@ -611,11 +611,8 @@ export default function ReviewerDashboard() {
               if (!interview) return null
               const startDate = new Date(interview.startTime)
               const endDate = new Date(interview.endTime)
-              const applicant = interview.application?.user
-              const domains = interview.application?.domainApplications
-                ?.map((da: any) => da.challengeVersion?.domain?.name)
-                .filter(Boolean)
-                .join(', ')
+              const applicant = interview.domainApplication?.application?.user
+              const domains = interview.domainApplication?.challengeVersion?.domain?.name
 
               return (
                 <div
@@ -631,7 +628,7 @@ export default function ReviewerDashboard() {
                         <p className="text-xs text-gray-500">{domains}</p>
                       )}
                       <Link
-                        to={`/hiring/reviewer/application/${interview.applicationId}`}
+                        to={`/hiring/reviewer/application/${interview.domainApplication?.application?.id}`}
                         className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center mt-1"
                       >
                         View Application{' '}

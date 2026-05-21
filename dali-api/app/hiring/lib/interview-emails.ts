@@ -8,7 +8,12 @@ import { sendEmail } from "~/lib/gmail";
 import { type InterpolationVars } from "~/lib/email";
 import { getApplicationsGmailRefreshToken } from "~/lib/gmail-integration";
 import { renderForSlot, notificationSlot } from "./email-variables";
-import { buildInviteIcs, buildCancelIcs } from "./interview-ics";
+import { buildInviteIcs, buildCancelIcs, type IcsAttendee } from "./interview-ics";
+
+const ORGANIZER: IcsAttendee = {
+  email: "applications@dali.dartmouth.edu",
+  name: "DALI Lab",
+};
 
 function formatLocation(location: string, meetingUrl?: string | null): string {
   if (location === "PodAppa") return "Pod Appa, DALI Lab";
@@ -119,6 +124,14 @@ export async function sendInterviewInviteEmails(
       meetingUrl: interview.zoomJoinUrl ?? undefined,
     };
 
+    const applicant = await getApplicantRecipient(domainApplicationId);
+    const interviewers = await getInterviewerRecipients(interviewId);
+
+    const attendees: IcsAttendee[] = [
+      ...(applicant ? [{ email: applicant.email, name: applicant.firstName }] : []),
+      ...interviewers.map((i) => ({ email: i.email, name: i.firstName })),
+    ];
+
     const ics = buildInviteIcs({
       interviewId: interview.id,
       summary: `DALI Interview — ${domainName}`,
@@ -126,10 +139,9 @@ export async function sendInterviewInviteEmails(
       endTime: interview.endTime,
       location: formatLocation(interview.location, interview.zoomJoinUrl),
       meetingUrl: interview.zoomJoinUrl,
+      organizer: ORGANIZER,
+      attendees,
     });
-
-    const applicant = await getApplicantRecipient(domainApplicationId);
-    const interviewers = await getInterviewerRecipients(interviewId);
 
     const sends: Promise<any>[] = [];
 
@@ -196,15 +208,22 @@ export async function sendInterviewCancelEmails(
       location: formatLocation(interview.location, interview.zoomJoinUrl),
     };
 
+    const applicant = await getApplicantRecipient(domainApplicationId);
+    const interviewers = await getInterviewerRecipients(interviewId);
+
+    const attendees: IcsAttendee[] = [
+      ...(applicant ? [{ email: applicant.email, name: applicant.firstName }] : []),
+      ...interviewers.map((i) => ({ email: i.email, name: i.firstName })),
+    ];
+
     const ics = buildCancelIcs({
       interviewId: interview.id,
       summary: `DALI Interview — ${domainName}`,
       startTime: interview.startTime,
       endTime: interview.endTime,
+      organizer: ORGANIZER,
+      attendees,
     });
-
-    const applicant = await getApplicantRecipient(domainApplicationId);
-    const interviewers = await getInterviewerRecipients(interviewId);
 
     const sends: Promise<any>[] = [];
 
@@ -282,13 +301,16 @@ export async function sendReassignmentEmails(
       include: { user: { select: { firstName: true, daliEmail: true } } },
     });
     if (removedCI?.user.daliEmail) {
+      const removedName = removedCI.user.firstName ?? "Interviewer";
       const cancelIcs = buildCancelIcs({
         interviewId: interview.id,
         summary: `DALI Interview — ${domainName}`,
         startTime: interview.startTime,
         endTime: interview.endTime,
+        organizer: ORGANIZER,
+        attendees: [{ email: removedCI.user.daliEmail, name: removedName }],
       });
-      const firstName = removedCI.user.firstName ?? "Interviewer";
+      const firstName = removedName;
       const rendered = await renderFromBinding(
         interview.applicationCycleId,
         "InterviewCancelledInterviewer",
@@ -311,6 +333,8 @@ export async function sendReassignmentEmails(
       include: { user: { select: { firstName: true, daliEmail: true } } },
     });
     if (newCI?.user.daliEmail) {
+      const applicant = await getApplicantRecipient(domainApplicationId);
+      const interviewers = await getInterviewerRecipients(interviewId);
       const inviteIcs = buildInviteIcs({
         interviewId: interview.id,
         summary: `DALI Interview — ${domainName}`,
@@ -318,6 +342,11 @@ export async function sendReassignmentEmails(
         endTime: interview.endTime,
         location: formatLocation(interview.location, interview.zoomJoinUrl),
         meetingUrl: interview.zoomJoinUrl,
+        organizer: ORGANIZER,
+        attendees: [
+          ...(applicant ? [{ email: applicant.email, name: applicant.firstName }] : []),
+          ...interviewers.map((i) => ({ email: i.email, name: i.firstName })),
+        ],
       });
       const firstName = newCI.user.firstName ?? "Interviewer";
       const rendered = await renderFromBinding(
@@ -366,6 +395,14 @@ export async function sendLocationChangeEmails(
       meetingUrl: interview.zoomJoinUrl ?? undefined,
     };
 
+    const applicant = await getApplicantRecipient(domainApplicationId);
+    const interviewers = await getInterviewerRecipients(interviewId);
+
+    const attendees: IcsAttendee[] = [
+      ...(applicant ? [{ email: applicant.email, name: applicant.firstName }] : []),
+      ...interviewers.map((i) => ({ email: i.email, name: i.firstName })),
+    ];
+
     const ics = buildInviteIcs({
       interviewId: interview.id,
       summary: `DALI Interview — ${domainName}`,
@@ -374,10 +411,9 @@ export async function sendLocationChangeEmails(
       location: formatLocation(interview.location, interview.zoomJoinUrl),
       meetingUrl: interview.zoomJoinUrl,
       description: "Updated location",
+      organizer: ORGANIZER,
+      attendees,
     });
-
-    const applicant = await getApplicantRecipient(domainApplicationId);
-    const interviewers = await getInterviewerRecipients(interviewId);
 
     const sends: Promise<any>[] = [];
 

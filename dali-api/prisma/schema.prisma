@@ -494,6 +494,7 @@ model InterviewConfig {
 
   rescheduleNoticeHours Int @default(12) // minimum hours before interview to allow reschedule
   cancelNoticeHours     Int @default(0) // minimum hours before interview to allow cancel (0 = up until start)
+  bookingNoticeHours    Int @default(12) // minimum hours an applicant must book in the future
 
   timezone String @default("America/New_York")
 }

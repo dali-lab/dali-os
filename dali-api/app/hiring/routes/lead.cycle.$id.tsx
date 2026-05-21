@@ -38,6 +38,7 @@ interface InterviewConfig {
   interviewEndDate: string
   rescheduleNoticeHours: number
   cancelNoticeHours: number
+  bookingNoticeHours: number
   timezone: string
 }
 
@@ -1066,6 +1067,7 @@ export default function HiringLeadCycleDetails() {
     interviewEndDate: '',
     rescheduleNoticeHours: 12,
     cancelNoticeHours: 0,
+    bookingNoticeHours: 12,
     timezone: 'America/New_York',
   })
   const [configSaved, setConfigSaved] = useState(false)
@@ -1695,6 +1697,16 @@ export default function HiringLeadCycleDetails() {
                 onChange={e => setConfig(c => ({ ...c, interviewEndDate: e.target.value }))}
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
               />
+            </div>
+            <div>
+              <label className="block text-sm font-bold text-foreground/80 mb-1">Booking Notice</label>
+              <select
+                value={config.bookingNoticeHours}
+                onChange={e => setConfig(c => ({ ...c, bookingNoticeHours: Number(e.target.value) }))}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              >
+                {[0, 1, 2, 4, 6, 8, 12, 24, 48].map(h => <option key={h} value={h}>{h === 0 ? 'No minimum' : `${h} hours ahead`}</option>)}
+              </select>
             </div>
             <div>
               <label className="block text-sm font-bold text-foreground/80 mb-1">Reschedule Notice</label>

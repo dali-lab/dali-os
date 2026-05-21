@@ -69,7 +69,8 @@ export async function computeAvailableSlots(
   });
   if (!config) return [];
 
-  const { slotDurationMinutes, bufferMinutes, dayStartHour, dayEndHour, interviewStartDate, interviewEndDate, timezone } = config;
+  const { slotDurationMinutes, bufferMinutes, dayStartHour, dayEndHour, interviewStartDate, interviewEndDate, timezone, bookingNoticeHours } = config;
+  const earliestBookable = new Date(Date.now() + bookingNoticeHours * 60 * 60_000);
 
   // Load all cycle interviewers with their availability and booked interviews.
   // The interviewAssignments include filters out assignments whose parent
@@ -129,6 +130,7 @@ export async function computeAvailableSlots(
   const results: AvailableSlot[] = [];
 
   for (const slotStart of candidates) {
+    if (slotStart < earliestBookable) continue;
     const slotEnd = new Date(slotStart.getTime() + slotDurationMinutes * 60_000);
 
     // Require two distinct humans — one free in-domain, one free cross-domain.

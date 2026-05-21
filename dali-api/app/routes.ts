@@ -25,7 +25,6 @@ export default [
     route("hiring/confidentiality-agreements", "hiring/routes/confidentiality-agreements.tsx"),
     route("hiring/confidentiality-agreements/:id", "hiring/routes/confidentiality-agreements.$id.tsx"),
     route("hiring/cycles/:cycleId/confidentiality", "hiring/routes/cycles.$cycleId.confidentiality.tsx"),
-    route("hiring/interviewer", "hiring/routes/interviewer.tsx"),
     route("hiring/interviewer/interview/:interviewId", "hiring/routes/interviewer.interview.$interviewId.tsx"),
     route("hiring/analytics", "hiring/routes/analytics.tsx"),
 
@@ -97,6 +96,11 @@ export default [
   // / close the recipient's task.
   route("forms/fill/:token", "routes/forms.fill.$token.tsx"),
   route("api/forms/fill/:token", "routes/api.forms.fill.$token.ts"),
+
+  // Public policy pages (no auth, no layout) — linked from the Google OAuth
+  // consent screen, so they must load for an unauthenticated reviewer.
+  route("privacy", "routes/privacy.tsx"),
+  route("terms", "routes/terms.tsx"),
 
   // Login (no layout)
   route("login", "routes/login.tsx"),
