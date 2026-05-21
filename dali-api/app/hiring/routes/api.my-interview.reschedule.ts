@@ -71,6 +71,12 @@ export async function action({ request }: Route.ActionArgs) {
           throw new Error("__TOO_LATE_TO_RESCHEDULE__");
         }
 
+        const bookingNoticeHours = config?.bookingNoticeHours ?? 12;
+        const earliestBookable = new Date(Date.now() + bookingNoticeHours * 60 * 60_000);
+        if (new Date(newStart) < earliestBookable) {
+          throw new Error("__TOO_SOON_TO_BOOK__");
+        }
+
         // DomainApplications always attach to a domain-scoped challenge
         // version on Standard cycles (the only cycleType that schedules
         // interviews); filter out any null domainIds defensively.
@@ -123,6 +129,9 @@ export async function action({ request }: Route.ActionArgs) {
     }
     if (err?.message === "__TOO_LATE_TO_RESCHEDULE__") {
       return withCors(request, Response.json({ error: "Too late to reschedule — please contact the DALI team" }, { status: 403 }));
+    }
+    if (err?.message === "__TOO_SOON_TO_BOOK__") {
+      return withCors(request, Response.json({ error: "That slot is too soon — pick a time further out" }, { status: 409 }));
     }
     return withCors(request, Response.json({ error: err?.message ?? "Failed to reschedule" }, { status: 409 }));
   }
