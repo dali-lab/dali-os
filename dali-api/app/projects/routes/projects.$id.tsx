@@ -80,7 +80,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           level: true,
           user: { select: { id: true, firstName: true, lastName: true } },
           term: { select: { code: true, sortKey: true } },
-          domain: { select: { name: true } },
+          domain: { select: { id: true, name: true } },
         },
       },
       epics: {
@@ -128,6 +128,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
             },
           },
         },
+      },
+      // Declared domains for this project — editable from the Overview tab.
+      // Distinct from per-assignment domains (which describe who's actually
+      // staffed in which domain this term).
+      domains: {
+        select: { domain: { select: { id: true, displayName: true } } },
       },
     },
   });
@@ -274,6 +280,39 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     (a, b) => b.term.sortKey - a.term.sortKey,
   );
 
+  // Domain editor option list + fallback-from-staffing data. The detail page
+  // displays declared domains directly; if none are declared, it falls back
+  // to the union of domains seen on this project's bids + assignments so a
+  // project that's actively being staffed still shows its domain footprint.
+  const [allDomains, bidDomains] = await Promise.all([
+    prisma.domain.findMany({
+      where: { active: true },
+      orderBy: { displayName: "asc" },
+      select: { id: true, displayName: true },
+    }),
+    prisma.staffingPreference.findMany({
+      where: { projectId: project.id },
+      select: { domainId: true },
+      distinct: ["domainId"],
+    }),
+  ]);
+  const declaredDomains = project.domains.map((d) => ({
+    id: d.domain.id,
+    name: d.domain.displayName,
+  }));
+  // Derived fallback: union of (declared) + (bid domains) + (assignment domains).
+  // Used only when declaredDomains is empty.
+  const derivedDomainIds = new Set<string>();
+  for (const b of bidDomains) derivedDomainIds.add(b.domainId);
+  for (const a of project.assignments) {
+    const dom = (a.domain as { id?: string } | null)?.id;
+    if (dom) derivedDomainIds.add(dom);
+  }
+  const idToName = new Map(allDomains.map((d) => [d.id, d.displayName]));
+  const derivedDomains = [...derivedDomainIds]
+    .map((id) => ({ id, name: idToName.get(id) ?? "(unknown)" }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
   return {
     project: {
       id: project.id,
@@ -288,7 +327,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       firstTerm: project.firstTerm,
       termCount: project.termCount,
       partners: project.partners,
+      domains: declaredDomains,
+      derivedDomains,
     },
+    allDomainOptions: allDomains.map((d) => ({ id: d.id, name: d.displayName })),
     teams,
     termStatuses,
     documents,
@@ -341,6 +383,33 @@ export async function action({ request, params }: Route.ActionArgs) {
     return redirect(`/projects/${params.id}`);
   }
 
+  // Declared domains for this project. Full-replacement: incoming set wins.
+  // Filtered down to active, real Domain ids so a stale dropdown value can't
+  // create orphan rows. Wrapped in a transaction so a partial failure leaves
+  // the project's domain list untouched.
+  if (intent === "domains") {
+    const incoming = form.getAll("domainId").map((v) => String(v));
+    const valid = incoming.length
+      ? await prisma.domain.findMany({
+          where: { id: { in: incoming }, active: true },
+          select: { id: true },
+        })
+      : [];
+    const ids = valid.map((d) => d.id);
+    await prisma.$transaction([
+      prisma.projectDomain.deleteMany({ where: { projectId: params.id } }),
+      ...(ids.length
+        ? [
+            prisma.projectDomain.createMany({
+              data: ids.map((domainId) => ({ projectId: params.id, domainId })),
+              skipDuplicates: true,
+            }),
+          ]
+        : []),
+    ]);
+    return redirect(`/projects/${params.id}`);
+  }
+
   // Details form: calendar email, image, repos. (Description + name/status
   // are saved by their own segments above.)
   const calendarEmailRaw = (form.get("calendarEmail") as string | null)?.trim() ?? "";
@@ -380,6 +449,7 @@ export default function ProjectDetail() {
     sprints,
     tasks,
     boardOptions,
+    allDomainOptions,
     canEdit: canEditPerm,
     collabToken,
     userName,
@@ -450,6 +520,7 @@ export default function ProjectDetail() {
           project={project}
           teams={teams}
           documents={documents}
+          allDomainOptions={allDomainOptions}
           canEdit={canEdit}
           actionError={actionData?.error}
           collabToken={collabToken}
@@ -565,6 +636,15 @@ function ProjectHeader({
               {project.status}
             </span>
           )}
+
+          {/* Domain chips at a glance. Falls back to the derived set (bids +
+              assignments) so a project that hasn't declared anything yet
+              still telegraphs its staffing footprint. */}
+          {project.domains.length > 0 ? (
+            <DomainChips items={project.domains} />
+          ) : project.derivedDomains.length > 0 ? (
+            <DomainChips items={project.derivedDomains} muted />
+          ) : null}
         </div>
         {subtitle}
       </div>
@@ -614,6 +694,117 @@ function DescriptionSegment({
         />
       </Form>
     </section>
+  );
+}
+
+// Declared-domain editor for the project. Multi-select via checkboxes (3–8
+// active domains; click-to-toggle reads faster than a multi-select). Saves
+// the full set on every toggle so the row order doesn't matter and a stale
+// optimistic state can't accumulate. When no domains are declared and the
+// project has bids/assignments, the derived union is shown read-only as a
+// hint so the user can see what staffing has implied so far.
+function DomainsSegment({
+  declared,
+  derived,
+  allDomains,
+  canEdit,
+}: {
+  declared: { id: string; name: string }[];
+  derived: { id: string; name: string }[];
+  allDomains: { id: string; name: string }[];
+  canEdit: boolean;
+}) {
+  const submit = useSubmit();
+  const showDerived = declared.length === 0 && derived.length > 0;
+  const selected = new Set(declared.map((d) => d.id));
+
+  if (!canEdit) {
+    return (
+      <section className="bg-card border border-border rounded-lg p-4">
+        <h2 className="text-sm font-semibold text-foreground mb-2">Domains</h2>
+        {declared.length > 0 ? (
+          <DomainChips items={declared} />
+        ) : derived.length > 0 ? (
+          <>
+            <DomainChips items={derived} muted />
+            <p className="text-xs text-muted-foreground mt-2">
+              Derived from current bids and assignments — no domains have
+              been declared on the project yet.
+            </p>
+          </>
+        ) : (
+          <p className="text-sm text-muted-foreground italic">No domains.</p>
+        )}
+      </section>
+    );
+  }
+
+  return (
+    <section className="bg-card border border-border rounded-lg p-4">
+      <h2 className="text-sm font-semibold text-foreground mb-2">Domains</h2>
+      <Form method="post" className="flex flex-col gap-2">
+        <input type="hidden" name="intent" value="domains" />
+        <div className="flex flex-wrap gap-2">
+          {allDomains.map((d) => {
+            const isOn = selected.has(d.id);
+            return (
+              <label
+                key={d.id}
+                className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md border text-sm cursor-pointer transition-colors ${
+                  isOn
+                    ? "bg-accent-coral/15 border-accent-coral/40 text-foreground"
+                    : "bg-background border-border text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  name="domainId"
+                  value={d.id}
+                  defaultChecked={isOn}
+                  onChange={(e) => submit(e.currentTarget.form)}
+                  className="sr-only"
+                />
+                {d.name}
+              </label>
+            );
+          })}
+        </div>
+        {showDerived && (
+          <p className="text-xs text-muted-foreground">
+            No domains declared yet — current bids and assignments suggest:{" "}
+            <span className="text-foreground">
+              {derived.map((d) => d.name).join(", ")}
+            </span>
+            .
+          </p>
+        )}
+      </Form>
+    </section>
+  );
+}
+
+function DomainChips({
+  items,
+  muted = false,
+}: {
+  items: { id: string; name: string }[];
+  muted?: boolean;
+}) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {items.map((d) => (
+        <span
+          key={d.id}
+          className={`inline-flex items-center px-2 py-0.5 text-xs font-medium rounded ${
+            muted
+              ? "bg-muted text-muted-foreground"
+              : "bg-blue-50 text-blue-700 border border-blue-100"
+          }`}
+        >
+          {d.name}
+        </span>
+      ))}
+    </div>
   );
 }
 
@@ -676,6 +867,7 @@ function OverviewTab({
   project,
   teams,
   documents,
+  allDomainOptions,
   canEdit,
   actionError,
   collabToken,
@@ -684,6 +876,7 @@ function OverviewTab({
   project: LoaderData["project"];
   teams: LoaderData["teams"];
   documents: LoaderData["documents"];
+  allDomainOptions: LoaderData["allDomainOptions"];
   canEdit: boolean;
   actionError?: string;
   collabToken: string | null;
@@ -701,6 +894,16 @@ function OverviewTab({
 
       {/* Description — its own segment on top, separate from Project details */}
       <DescriptionSegment description={project.description} canEdit={canEdit} />
+
+      {/* Declared domains — editable; if none declared the derived set from
+          assignments + bids is shown as a fallback so a freshly-created
+          project that's mid-staffing still has visible domain context. */}
+      <DomainsSegment
+        declared={project.domains}
+        derived={project.derivedDomains}
+        allDomains={allDomainOptions}
+        canEdit={canEdit}
+      />
 
       {/* Project details. Each editable field auto-saves on blur (text) or
           change (number/textarea — number's onBlur isn't reliable across

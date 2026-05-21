@@ -398,6 +398,7 @@ model Domain {
   tasks               Task[]
   projectRoleRequests ProjectRoleRequest[]
   partnerApplicationDomains PartnerApplicationDomain[]
+  projects            ProjectDomain[]
 }
 
 // Immutable snapshot of a challenge. Never update rows in this table —
@@ -1616,8 +1617,28 @@ model Project {
   sprints         Sprint[]
   epics           Epic[]
   tasks           Task[]
+  // Declared domains for the project — surfaced on the project detail page
+  // and editable by Admin/Core/Hiring Lead. Display-only today; staffing
+  // gating off this set is a follow-up.
+  domains         ProjectDomain[]
 
   createdAt DateTime @default(now())
+}
+
+// Many-to-many join: which domains a project has declared. Distinct from
+// ProjectAssignment.domainId (the per-member, per-term concrete assignment),
+// which is downstream of staffing.
+model ProjectDomain {
+  projectId String
+  domainId  String
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  domain  Domain  @relation(fields: [domainId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@id([projectId, domainId])
+  @@index([domainId])
 }
 
 enum ProjectStatus {
