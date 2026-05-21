@@ -14,6 +14,12 @@ import { prisma } from "~/lib/db";
 import { ViewToggle, useViewPreference } from "~/components/ViewToggle";
 import { TermFilter } from "~/components/TermFilter";
 import { resolveTermFilter } from "~/lib/terms";
+import {
+  useTableFilters,
+  FilterableValue,
+  ActiveFilters,
+  type TableFilters,
+} from "~/components/table/click-filter";
 
 export const meta: Route.MetaFunction = () => [{ title: "Projects · DALI OS" }];
 
@@ -143,15 +149,24 @@ export default function ProjectsListPage() {
   const [creating, setCreating] = useState(false);
   const [query, setQuery] = useState("");
   const [view, setView] = useViewPreference("dali:view:projects", "list");
+  const filters = useTableFilters();
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return rows;
     return rows.filter((r) => {
+      if (
+        !filters.matches({
+          status: r.status,
+          partner: r.partners.map((p) => p.name),
+        })
+      ) {
+        return false;
+      }
+      if (!q) return true;
       if (r.name.toLowerCase().includes(q)) return true;
       return r.partners.some((p) => p.name.toLowerCase().includes(q));
     });
-  }, [rows, query]);
+  }, [rows, query, filters]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -283,16 +298,22 @@ export default function ProjectsListPage() {
         <ViewToggle value={view} onChange={setView} />
         <span className="text-xs text-muted-foreground ml-auto">
           {filtered.length} {filtered.length === 1 ? "project" : "projects"}
-          {query && filtered.length !== rows.length ? ` of ${rows.length}` : ""}
+          {(query || filters.active.length > 0) && filtered.length !== rows.length
+            ? ` of ${rows.length}`
+            : ""}
         </span>
       </div>
 
+      <ActiveFilters filters={filters} />
+
       {filtered.length === 0 ? (
         <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-          {query ? "No projects match this search." : "No projects yet."}
+          {query || filters.active.length > 0
+            ? "No projects match these filters."
+            : "No projects yet."}
         </div>
       ) : view === "list" ? (
-        <ProjectsTable rows={filtered} />
+        <ProjectsTable rows={filtered} filters={filters} />
       ) : (
         <ProjectsCards rows={filtered} />
       )}
@@ -300,7 +321,13 @@ export default function ProjectsListPage() {
   );
 }
 
-function ProjectsTable({ rows }: { rows: ProjectRow[] }) {
+function ProjectsTable({
+  rows,
+  filters,
+}: {
+  rows: ProjectRow[];
+  filters: TableFilters;
+}) {
   const navigate = useNavigate();
   return (
     <div className="overflow-x-auto">
@@ -321,10 +348,27 @@ function ProjectsTable({ rows }: { rows: ProjectRow[] }) {
             >
               <td className="px-4 py-2 text-foreground">{p.name}</td>
               <td className="px-4 py-2">
-                <StatusPill status={p.status} />
+                <FilterableValue
+                  filters={filters}
+                  column="status"
+                  value={p.status}
+                  className={`inline-flex items-center px-2 py-0.5 text-xs font-medium rounded cursor-pointer hover:opacity-80 ${STATUS_PALETTE[p.status]}`}
+                />
               </td>
               <td className="px-4 py-2 text-muted-foreground">
-                {p.partners.length > 0 ? p.partners.map((pp) => pp.name).join(", ") : "—"}
+                {p.partners.length > 0
+                  ? p.partners.map((pp, i) => (
+                      <span key={pp.name}>
+                        {i > 0 && ", "}
+                        <FilterableValue
+                          filters={filters}
+                          column="partner"
+                          value={pp.name}
+                          className="rounded cursor-pointer hover:text-foreground hover:underline"
+                        />
+                      </span>
+                    ))
+                  : "—"}
               </td>
             </tr>
           ))}
@@ -390,15 +434,16 @@ function PartnerChip({ partner }: { partner: ProjectPartnerOut }) {
   );
 }
 
+const STATUS_PALETTE: Record<ProjectStatus, string> = {
+  Active: "bg-accent-teal/15 text-accent-teal",
+  Paused: "bg-muted text-foreground",
+  Archived: "bg-muted/50 text-muted-foreground",
+};
+
 function StatusPill({ status }: { status: ProjectStatus }) {
-  const palette: Record<ProjectStatus, string> = {
-    Active: "bg-accent-teal/15 text-accent-teal",
-    Paused: "bg-muted text-foreground",
-    Archived: "bg-muted/50 text-muted-foreground",
-  };
   return (
     <span
-      className={`inline-flex items-center px-2 py-0.5 text-xs font-medium rounded ${palette[status]}`}
+      className={`inline-flex items-center px-2 py-0.5 text-xs font-medium rounded ${STATUS_PALETTE[status]}`}
     >
       {status}
     </span>

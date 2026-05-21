@@ -24,6 +24,12 @@ import {
   type PartnerApplicationStatus as Status,
 } from "../lib/partner-application";
 import { useChartColors } from "~/hiring/components/analytics/useChartColors";
+import {
+  useTableFilters,
+  FilterableValue,
+  ActiveFilters,
+  type TableFilters,
+} from "~/components/table/click-filter";
 
 export const meta: Route.MetaFunction = () => [
   { title: "Partner Applications · DALI OS" },
@@ -183,6 +189,7 @@ export default function PartnersApplications() {
   const [domainFilter, setDomainFilter] = useState<string>("all");
   const [view, setView] = useState<"list" | "board">("list");
   const [creating, setCreating] = useState(false);
+  const filters = useTableFilters();
   // Board drag applies a status change here and persists it via the API.
   // Held at this level (not inside the board) so the projection chart and the
   // list both reflect a pending move without a full loader refetch — the
@@ -215,12 +222,22 @@ export default function PartnersApplications() {
       if (statusFilter !== "all" && r.status !== statusFilter) return false;
       if (domainFilter !== "all" && !r.domains.some((d) => d.domainId === domainFilter))
         return false;
+      if (
+        !filters.matches({
+          status: r.status,
+          partner: r.partnerName,
+          term: r.targetTerms.map((t) => t.code),
+          domain: r.domains.map((d) => d.domainName),
+        })
+      ) {
+        return false;
+      }
       if (!q) return true;
       if (r.title.toLowerCase().includes(q)) return true;
       if (r.partnerName.toLowerCase().includes(q)) return true;
       return r.domains.some((d) => d.domainName.toLowerCase().includes(q));
     });
-  }, [effectiveRows, query, statusFilter, domainFilter]);
+  }, [effectiveRows, query, statusFilter, domainFilter, filters]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -370,6 +387,8 @@ export default function PartnersApplications() {
         </div>
       </div>
 
+      <ActiveFilters filters={filters} />
+
       {view === "list" ? (
         <div className="bg-card border border-border rounded-lg">
           <div className="flex items-center justify-between px-4 py-3 border-b border-border">
@@ -388,7 +407,7 @@ export default function PartnersApplications() {
                 : "No applications match these filters."}
             </div>
           ) : (
-            <ApplicationsTable rows={filtered} />
+            <ApplicationsTable rows={filtered} filters={filters} />
           )}
         </div>
       ) : (
@@ -708,7 +727,13 @@ function StatusPill({ status }: { status: Status }) {
   );
 }
 
-function ApplicationsTable({ rows }: { rows: ApplicationRow[] }) {
+function ApplicationsTable({
+  rows,
+  filters,
+}: {
+  rows: ApplicationRow[];
+  filters: TableFilters;
+}) {
   const navigate = useNavigate();
   return (
     <div className="overflow-x-auto">
@@ -731,18 +756,51 @@ function ApplicationsTable({ rows }: { rows: ApplicationRow[] }) {
               className="border-t border-border hover:bg-muted/20 cursor-pointer"
             >
               <td className="px-4 py-2 text-foreground">{a.title}</td>
-              <td className="px-4 py-2 text-muted-foreground">{a.partnerName}</td>
+              <td className="px-4 py-2 text-muted-foreground">
+                <FilterableValue
+                  filters={filters}
+                  column="partner"
+                  value={a.partnerName}
+                  className="rounded cursor-pointer hover:text-foreground hover:underline"
+                />
+              </td>
               <td className="px-4 py-2">
-                <StatusPill status={a.status} />
+                <FilterableValue
+                  filters={filters}
+                  column="status"
+                  value={a.status}
+                  label={STATUS_LABEL[a.status]}
+                  className={`inline-flex items-center px-2 py-0.5 text-xs font-medium rounded cursor-pointer hover:opacity-80 ${PARTNER_APPLICATION_STATUS_PILL[a.status]}`}
+                />
               </td>
               <td className="px-4 py-2 text-muted-foreground">
                 {a.targetTerms.length > 0
-                  ? a.targetTerms.map((t) => t.code).join(", ")
+                  ? a.targetTerms.map((t, i) => (
+                      <span key={t.code}>
+                        {i > 0 && ", "}
+                        <FilterableValue
+                          filters={filters}
+                          column="term"
+                          value={t.code}
+                          className="rounded cursor-pointer hover:text-foreground hover:underline"
+                        />
+                      </span>
+                    ))
                   : "—"}
               </td>
               <td className="px-4 py-2 text-muted-foreground">
                 {a.domains.length > 0
-                  ? a.domains.map((d) => d.domainName).join(", ")
+                  ? a.domains.map((d, i) => (
+                      <span key={d.domainId}>
+                        {i > 0 && ", "}
+                        <FilterableValue
+                          filters={filters}
+                          column="domain"
+                          value={d.domainName}
+                          className="rounded cursor-pointer hover:text-foreground hover:underline"
+                        />
+                      </span>
+                    ))
                   : "—"}
               </td>
               <td className="px-4 py-2 text-right text-foreground tabular-nums">

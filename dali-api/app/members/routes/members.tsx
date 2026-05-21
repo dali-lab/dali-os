@@ -16,6 +16,12 @@ import { initialsFromName } from "~/lib/display";
 import { ViewToggle, useViewPreference } from "~/components/ViewToggle";
 import { TermFilter } from "~/components/TermFilter";
 import { resolveTermFilter } from "~/lib/terms";
+import {
+  useTableFilters,
+  FilterableValue,
+  ActiveFilters,
+  type TableFilters,
+} from "~/components/table/click-filter";
 
 export const meta: Route.MetaFunction = () => [{ title: "Members · DALI OS" }];
 
@@ -33,6 +39,22 @@ type MemberRow = {
   // pills in the Roles column. Same source as the staffing boards.
   domainRoles: { domainName: string; level: string }[];
 };
+
+// The label shown on a domain-role chip, also used as its filter value so a
+// click filters on that exact domain+level pairing.
+function domainRoleValue(d: { domainName: string; level: string }) {
+  return `${d.domainName} · ${d.level}`;
+}
+
+// Every role chip a member renders, flattened to the strings the click-filter
+// matches against (column "role").
+function roleValues(m: MemberRow): string[] {
+  const values: string[] = [];
+  if (m.isAdmin) values.push("Admin");
+  values.push(...m.coreTitles);
+  values.push(...m.domainRoles.map(domainRoleValue));
+  return values;
+}
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -235,16 +257,18 @@ export default function MembersList() {
   const [creating, setCreating] = useState(false);
   const [query, setQuery] = useState("");
   const [view, setView] = useViewPreference("dali:view:members", "list");
+  const filters = useTableFilters();
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return rows;
     return rows.filter((r) => {
+      if (!filters.matches({ role: roleValues(r) })) return false;
+      if (!q) return true;
       const name = `${r.firstName} ${r.lastName}`.toLowerCase();
       const email = (r.email ?? "").toLowerCase();
       return name.includes(q) || email.includes(q);
     });
-  }, [rows, query]);
+  }, [rows, query, filters]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -335,9 +359,13 @@ export default function MembersList() {
         <ViewToggle value={view} onChange={setView} />
         <span className="text-xs text-muted-foreground ml-auto">
           {filtered.length} {filtered.length === 1 ? "member" : "members"}
-          {query && filtered.length !== rows.length ? ` of ${rows.length}` : ""}
+          {(query || filters.active.length > 0) && filtered.length !== rows.length
+            ? ` of ${rows.length}`
+            : ""}
         </span>
       </div>
+
+      <ActiveFilters filters={filters} />
 
       {filtered.length === 0 ? (
         <div className="px-4 py-8 text-center text-sm text-muted-foreground">
@@ -346,9 +374,9 @@ export default function MembersList() {
             : "No members match these filters."}
         </div>
       ) : view === "list" ? (
-        <MembersTable rows={filtered} />
+        <MembersTable rows={filtered} filters={filters} />
       ) : (
-        <MembersCards rows={filtered} />
+        <MembersCards rows={filtered} filters={filters} />
       )}
     </div>
   );
@@ -420,7 +448,13 @@ function DomainFilter({
   );
 }
 
-function MembersTable({ rows }: { rows: MemberRow[] }) {
+function MembersTable({
+  rows,
+  filters,
+}: {
+  rows: MemberRow[];
+  filters: TableFilters;
+}) {
   const navigate = useNavigate();
   return (
     <div className="overflow-x-auto">
@@ -448,6 +482,7 @@ function MembersTable({ rows }: { rows: MemberRow[] }) {
                   isAdmin={m.isAdmin}
                   coreTitles={m.coreTitles}
                   domainRoles={m.domainRoles}
+                  filters={filters}
                 />
               </td>
             </tr>
@@ -458,17 +493,29 @@ function MembersTable({ rows }: { rows: MemberRow[] }) {
   );
 }
 
-function MembersCards({ rows }: { rows: MemberRow[] }) {
+function MembersCards({
+  rows,
+  filters,
+}: {
+  rows: MemberRow[];
+  filters: TableFilters;
+}) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 p-3">
       {rows.map((m) => (
-        <MemberCard key={m.id} member={m} />
+        <MemberCard key={m.id} member={m} filters={filters} />
       ))}
     </div>
   );
 }
 
-function MemberCard({ member }: { member: MemberRow }) {
+function MemberCard({
+  member,
+  filters,
+}: {
+  member: MemberRow;
+  filters: TableFilters;
+}) {
   const fullName = `${member.firstName} ${member.lastName}`.trim();
   return (
     <Link
@@ -494,6 +541,7 @@ function MemberCard({ member }: { member: MemberRow }) {
             isAdmin={member.isAdmin}
             coreTitles={member.coreTitles}
             domainRoles={member.domainRoles}
+            filters={filters}
           />
         </div>
       </div>
@@ -522,10 +570,12 @@ function RolePills({
   isAdmin,
   coreTitles,
   domainRoles,
+  filters,
 }: {
   isAdmin: boolean;
   coreTitles: string[];
   domainRoles: { domainName: string; level: string }[];
+  filters: TableFilters;
 }) {
   if (!isAdmin && coreTitles.length === 0 && domainRoles.length === 0) {
     return <span className="text-muted-foreground text-xs">—</span>;
@@ -533,25 +583,30 @@ function RolePills({
   return (
     <div className="flex flex-wrap gap-1.5">
       {isAdmin && (
-        <span className="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded bg-accent-coral/15 text-accent-coral">
-          Admin
-        </span>
+        <FilterableValue
+          filters={filters}
+          column="role"
+          value="Admin"
+          className="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded cursor-pointer hover:opacity-80 bg-accent-coral/15 text-accent-coral"
+        />
       )}
       {coreTitles.map((title) => (
-        <span
+        <FilterableValue
           key={title}
-          className="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded bg-muted text-foreground"
-        >
-          {title}
-        </span>
+          filters={filters}
+          column="role"
+          value={title}
+          className="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded cursor-pointer hover:opacity-80 bg-muted text-foreground"
+        />
       ))}
       {domainRoles.map((d) => (
-        <span
+        <FilterableValue
           key={`${d.domainName}-${d.level}`}
-          className="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded bg-blue-50 text-blue-700 border border-blue-100"
-        >
-          {d.domainName} · {d.level}
-        </span>
+          filters={filters}
+          column="role"
+          value={domainRoleValue(d)}
+          className="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded cursor-pointer hover:opacity-80 bg-blue-50 text-blue-700 border border-blue-100"
+        />
       ))}
     </div>
   );
