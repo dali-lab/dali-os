@@ -1,15 +1,16 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   Form,
   Link,
   redirect,
   useActionData,
-  useFetcher,
   useLoaderData,
   useRevalidator,
   useSearchParams,
   useSubmit,
 } from "react-router";
+import { Check, Pencil, X } from "lucide-react";
+import { EditableSection } from "~/components/EditableSection";
 import type { Route } from "./+types/projects.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
@@ -24,7 +25,6 @@ import {
 } from "../components/EpicSprintManager";
 import { CollaborativeEditor } from "~/components/CollaborativeEditor";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
-import { EditModeToggle, useEditMode } from "~/components/EditModeToggle";
 import type {
   TaskBoardOptions,
   TaskCardModel,
@@ -423,42 +423,47 @@ export async function action({ request, params }: Route.ActionArgs) {
     return redirect(`/projects/${params.id}`);
   }
 
-  // Per-(domain, term) scope cell. Single-cell upsert (or delete on empty)
-  // so the page can save one textarea at a time. Validates that the domain
-  // is declared on this project and that the term is part of the project's
-  // planned span — drops the write rather than erroring so a stale form
-  // submission doesn't 500.
-  if (intent === "scope") {
-    const domainId = String(form.get("domainId") ?? "");
-    const termId = String(form.get("termId") ?? "");
-    const scope = String(form.get("scope") ?? "");
-    if (!domainId || !termId) {
+  // Per-(domain, term) scope cells. Bulk write: the form names cells as
+  // "scope:<domainId>:<termId>" so a single Save commits every cell at
+  // once. Empty values delete the row to keep the table tidy. A stale
+  // domainId/termId is silently dropped rather than erroring so a partial
+  // form (e.g. domain unlisted after first render) doesn't 500.
+  if (intent === "scopesBulk") {
+    type CellWrite = { domainId: string; termId: string; scope: string };
+    const writes: CellWrite[] = [];
+    for (const [key, value] of form.entries()) {
+      if (!key.startsWith("scope:")) continue;
+      const [, domainId, termId] = key.split(":");
+      if (!domainId || !termId) continue;
+      writes.push({ domainId, termId, scope: String(value).trim() });
+    }
+    if (writes.length === 0) {
       return redirect(`/projects/${params.id}`);
     }
-    const trimmed = scope.trim();
-    if (trimmed === "") {
-      await prisma.projectDomainScope.deleteMany({
-        where: { projectId: params.id, domainId, termId },
-      });
-    } else {
-      await prisma.projectDomainScope.upsert({
-        where: {
-          projectId_domainId_termId: {
-            projectId: params.id,
-            domainId,
-            termId,
-          },
-        },
-        update: { scope: trimmed, updatedById: auth.user.sub },
-        create: {
-          projectId: params.id,
-          domainId,
-          termId,
-          scope: trimmed,
-          updatedById: auth.user.sub,
-        },
-      });
-    }
+    const ops = writes.map(({ domainId, termId, scope }) =>
+      scope === ""
+        ? prisma.projectDomainScope.deleteMany({
+            where: { projectId: params.id, domainId, termId },
+          })
+        : prisma.projectDomainScope.upsert({
+            where: {
+              projectId_domainId_termId: {
+                projectId: params.id,
+                domainId,
+                termId,
+              },
+            },
+            update: { scope, updatedById: auth.user.sub },
+            create: {
+              projectId: params.id,
+              domainId,
+              termId,
+              scope,
+              updatedById: auth.user.sub,
+            },
+          }),
+    );
+    await prisma.$transaction(ops);
     return redirect(`/projects/${params.id}`);
   }
 
@@ -531,11 +536,10 @@ export default function ProjectDetail() {
     allDomainOptions,
     plannedTerms,
     domainScopeGrid,
-    canEdit: canEditPerm,
+    canEdit,
     collabToken,
     userName,
   } = useLoaderData() as LoaderData;
-  const { editing: canEdit, editMode, setEditMode } = useEditMode(canEditPerm);
   const actionData = useActionData<typeof action>();
   const [searchParams, setSearchParams] = useSearchParams();
   const partnerNames = project.partners.map((p) => p.partnerOrg.name);
@@ -554,16 +558,12 @@ export default function ProjectDetail() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <Link to="/projects/list" className="text-sm text-muted-foreground hover:text-foreground">
-          ← Back to projects
-        </Link>
-        <EditModeToggle
-          canEdit={canEditPerm}
-          editMode={editMode}
-          setEditMode={setEditMode}
-        />
-      </div>
+      <Link
+        to="/projects/list"
+        className="text-sm text-muted-foreground hover:text-foreground"
+      >
+        ← Back to projects
+      </Link>
 
       {/* Overview header — always on top, not behind a tab */}
       <ProjectHeader
@@ -572,19 +572,14 @@ export default function ProjectDetail() {
         canEdit={canEdit}
       />
 
-      {/* Tab bar. Leaving Overview drops edit mode: the editable surfaces
-          all live on Overview, and a stale "Edit" button on the Work tab
-          (which has no editable fields here) just adds confusion. Field
-          auto-save means there's nothing to lose by exiting silently. */}
+      {/* Tab bar. Each section now owns its own edit button — there's no
+          page-level edit mode left to clear when switching tabs. */}
       <div className="flex items-center gap-1 border-b border-border">
         {TABS.map((t) => (
           <button
             key={t}
             type="button"
-            onClick={() => {
-              if (editMode && t !== "overview") setEditMode(false);
-              setTab(t);
-            }}
+            onClick={() => setTab(t)}
             className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
               tab === t
                 ? "border-accent-coral text-foreground"
@@ -620,7 +615,7 @@ export default function ProjectDetail() {
           sprints={sprints}
           tasks={tasks}
           boardOptions={boardOptions}
-          canEdit={canEditPerm}
+          canEdit={canEdit}
           collabToken={collabToken}
           userName={userName}
         />
@@ -643,6 +638,9 @@ function ProjectHeader({
   canEdit: boolean;
 }) {
   const submit = useSubmit();
+  const formRef = useRef<HTMLFormElement | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [resetKey, setResetKey] = useState(0);
 
   const subtitle = (
     <p className="text-sm text-muted-foreground mt-1">
@@ -666,68 +664,97 @@ function ProjectHeader({
         />
       )}
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2 flex-wrap">
-          {canEdit ? (
-            // In edit mode the name is directly editable and auto-saves on
-            // blur — same pattern as the status dropdown, no separate Save.
-            // Carries the current status as a hidden field so the
-            // intent=header action branch (which requires both) is unchanged.
-            <Form method="post" className="flex items-center gap-2">
-              <input type="hidden" name="intent" value="header" />
-              <input type="hidden" name="status" value={project.status} />
-              <input
-                name="name"
-                defaultValue={project.name}
-                aria-label="Project name"
-                onBlur={(e) => {
-                  const next = e.currentTarget.value.trim();
-                  if (next && next !== project.name) {
-                    submit(e.currentTarget.form);
-                  }
-                }}
-                className="font-heading text-xl font-bold text-foreground px-2 py-1 border border-border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-              />
-            </Form>
-          ) : (
-            <h1 className="font-heading text-2xl font-bold text-foreground">
-              {project.name}
-            </h1>
-          )}
-
-          {/* Status: always-visible dropdown that auto-saves on change.
-              Carries the current name as a hidden field so the intent=header
-              branch gets both. Read-only badge when the user can't edit. */}
-          {canEdit ? (
-            <Form method="post" onChange={(e) => submit(e.currentTarget)}>
-              <input type="hidden" name="intent" value="header" />
-              <input type="hidden" name="name" value={project.name} />
-              <select
-                name="status"
-                defaultValue={project.status}
-                aria-label="Project status"
-                className="text-xs px-2 py-1 border border-border rounded-full bg-background text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+        <div className="flex items-start justify-between gap-3">
+          <div key={resetKey} className="flex items-center gap-2 flex-wrap">
+            {editing && canEdit ? (
+              <Form
+                method="post"
+                ref={formRef}
+                className="flex items-center gap-2 flex-wrap"
               >
-                {STATUSES.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-            </Form>
-          ) : (
-            <span className="text-[11px] px-2 py-0.5 rounded-full border border-border text-muted-foreground">
-              {project.status}
-            </span>
-          )}
+                <input type="hidden" name="intent" value="header" />
+                <input
+                  name="name"
+                  defaultValue={project.name}
+                  aria-label="Project name"
+                  autoFocus
+                  className="font-heading text-xl font-bold text-foreground px-2 py-1 border border-border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                />
+                <select
+                  name="status"
+                  defaultValue={project.status}
+                  aria-label="Project status"
+                  className="text-xs px-2 py-1 border border-border rounded-full bg-background text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                >
+                  {STATUSES.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </Form>
+            ) : (
+              <>
+                <h1 className="font-heading text-2xl font-bold text-foreground">
+                  {project.name}
+                </h1>
+                <span className="text-[11px] px-2 py-0.5 rounded-full border border-border text-muted-foreground">
+                  {project.status}
+                </span>
+              </>
+            )}
 
-          {/* Domain chips at a glance. Falls back to the derived set (bids +
-              assignments) so a project that hasn't declared anything yet
-              still telegraphs its staffing footprint. */}
-          {project.domains.length > 0 ? (
-            <DomainChips items={project.domains} />
-          ) : project.derivedDomains.length > 0 ? (
-            <DomainChips items={project.derivedDomains} muted />
-          ) : null}
+            {/* Domain chips at a glance. Falls back to the derived set (bids
+                + assignments) so a project that hasn't declared anything yet
+                still telegraphs its staffing footprint. */}
+            {!editing &&
+              (project.domains.length > 0 ? (
+                <DomainChips items={project.domains} />
+              ) : project.derivedDomains.length > 0 ? (
+                <DomainChips items={project.derivedDomains} muted />
+              ) : null)}
+          </div>
+
+          {canEdit && (
+            <div className="flex items-center gap-1.5 shrink-0">
+              {editing ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setResetKey((k) => k + 1);
+                      setEditing(false);
+                    }}
+                    className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (formRef.current) submit(formRef.current);
+                      setEditing(false);
+                    }}
+                    className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    Save
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setEditing(true)}
+                  aria-label="Edit project name and status"
+                  className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                  Edit
+                </button>
+              )}
+            </div>
+          )}
         </div>
         {subtitle}
       </div>
@@ -743,40 +770,38 @@ function DescriptionSegment({
   canEdit: boolean;
 }) {
   const submit = useSubmit();
+  const formRef = useRef<HTMLFormElement | null>(null);
 
-  if (!canEdit) {
-    return (
-      <section className="bg-card border border-border rounded-lg p-4">
-        <h2 className="text-sm font-semibold text-foreground mb-2">Description</h2>
-        {description ? (
-          <p className="text-sm text-foreground whitespace-pre-wrap">{description}</p>
-        ) : (
-          <p className="text-sm text-muted-foreground italic">No description.</p>
-        )}
-      </section>
-    );
-  }
-
-  // In edit mode the textarea is ALWAYS live and auto-saves on blur — no
-  // per-segment "Edit" / "+ Add description" gate, no Save button. The
-  // page-level Done toggle is the natural exit and there's nothing left to
-  // commit by then. Placeholder doubles as the "add description" affordance
-  // when the field is empty.
   return (
-    <section className="bg-card border border-border rounded-lg p-4">
-      <h2 className="text-sm font-semibold text-foreground mb-2">Description</h2>
-      <Form method="post" className="flex flex-col gap-2">
-        <input type="hidden" name="intent" value="description" />
-        <textarea
-          name="description"
-          rows={4}
-          defaultValue={description ?? ""}
-          placeholder="+ Add description"
-          onBlur={(e) => submit(e.currentTarget.form)}
-          className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-        />
-      </Form>
-    </section>
+    <EditableSection
+      title="Description"
+      canEdit={canEdit}
+      onSave={() => { if (formRef.current) submit(formRef.current); }}
+    >
+      {({ editing }) =>
+        editing ? (
+          <Form method="post" ref={formRef} className="flex flex-col gap-2">
+            <input type="hidden" name="intent" value="description" />
+            <textarea
+              name="description"
+              rows={4}
+              defaultValue={description ?? ""}
+              placeholder="Add a short description…"
+              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+              autoFocus
+            />
+          </Form>
+        ) : description ? (
+          <p className="text-sm text-foreground whitespace-pre-wrap">
+            {description}
+          </p>
+        ) : (
+          <p className="text-sm text-muted-foreground italic">
+            No description.
+          </p>
+        )
+      }
+    </EditableSection>
   );
 }
 
@@ -798,14 +823,55 @@ function DomainsSegment({
   canEdit: boolean;
 }) {
   const submit = useSubmit();
-  const showDerived = declared.length === 0 && derived.length > 0;
+  const formRef = useRef<HTMLFormElement | null>(null);
   const selected = new Set(declared.map((d) => d.id));
 
-  if (!canEdit) {
-    return (
-      <section className="bg-card border border-border rounded-lg p-4">
-        <h2 className="text-sm font-semibold text-foreground mb-2">Domains</h2>
-        {declared.length > 0 ? (
+  return (
+    <EditableSection
+      title="Domains"
+      canEdit={canEdit}
+      onSave={() => { if (formRef.current) submit(formRef.current); }}
+    >
+      {({ editing }) =>
+        editing ? (
+          <Form method="post" ref={formRef} className="flex flex-col gap-2">
+            <input type="hidden" name="intent" value="domains" />
+            <div className="flex flex-wrap gap-2">
+              {allDomains.map((d) => {
+                const isOn = selected.has(d.id);
+                return (
+                  <label
+                    key={d.id}
+                    className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md border text-sm cursor-pointer transition-colors ${
+                      isOn
+                        ? "bg-accent-coral/15 border-accent-coral/40 text-foreground"
+                        : "bg-background border-border text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      name="domainId"
+                      value={d.id}
+                      defaultChecked={isOn}
+                      className="sr-only"
+                    />
+                    {d.name}
+                  </label>
+                );
+              })}
+            </div>
+            {derived.length > 0 && declared.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                No domains declared yet — current bids and assignments
+                suggest:{" "}
+                <span className="text-foreground">
+                  {derived.map((d) => d.name).join(", ")}
+                </span>
+                .
+              </p>
+            )}
+          </Form>
+        ) : declared.length > 0 ? (
           <DomainChips items={declared} />
         ) : derived.length > 0 ? (
           <>
@@ -817,59 +883,132 @@ function DomainsSegment({
           </>
         ) : (
           <p className="text-sm text-muted-foreground italic">No domains.</p>
-        )}
-      </section>
-    );
-  }
-
-  return (
-    <section className="bg-card border border-border rounded-lg p-4">
-      <h2 className="text-sm font-semibold text-foreground mb-2">Domains</h2>
-      <Form method="post" className="flex flex-col gap-2">
-        <input type="hidden" name="intent" value="domains" />
-        <div className="flex flex-wrap gap-2">
-          {allDomains.map((d) => {
-            const isOn = selected.has(d.id);
-            return (
-              <label
-                key={d.id}
-                className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md border text-sm cursor-pointer transition-colors ${
-                  isOn
-                    ? "bg-accent-coral/15 border-accent-coral/40 text-foreground"
-                    : "bg-background border-border text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  name="domainId"
-                  value={d.id}
-                  defaultChecked={isOn}
-                  onChange={(e) => submit(e.currentTarget.form)}
-                  className="sr-only"
-                />
-                {d.name}
-              </label>
-            );
-          })}
-        </div>
-        {showDerived && (
-          <p className="text-xs text-muted-foreground">
-            No domains declared yet — current bids and assignments suggest:{" "}
-            <span className="text-foreground">
-              {derived.map((d) => d.name).join(", ")}
-            </span>
-            .
-          </p>
-        )}
-      </Form>
-    </section>
+        )
+      }
+    </EditableSection>
   );
 }
 
-// Per-(domain, term) scope grid. Plain textareas, auto-save on blur. Each
-// textarea posts intent=scope with {domainId, termId, scope} via fetcher
-// so the cells don't block the rest of the form. Empty value deletes the
-// row server-side, keeping the table clean.
+// Calendar email + image URL + term count + repo URLs. One form posting
+// intent=details with the full field set, so the action handler stays
+// unchanged. Section-level Save submits; Cancel reverts via the wrapper.
+function DetailsSegment({
+  project,
+  canEdit,
+}: {
+  project: LoaderData["project"];
+  canEdit: boolean;
+}) {
+  const submit = useSubmit();
+  const formRef = useRef<HTMLFormElement | null>(null);
+
+  return (
+    <EditableSection
+      title="Project details"
+      canEdit={canEdit}
+      onSave={() => { if (formRef.current) submit(formRef.current); }}
+    >
+      {({ editing }) => (
+        <Form method="post" ref={formRef} className="flex flex-col gap-4 w-full">
+          <input type="hidden" name="intent" value="details" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="text-muted-foreground">Calendar email</span>
+              {editing ? (
+                <input
+                  name="calendarEmail"
+                  type="email"
+                  defaultValue={project.calendarEmail ?? ""}
+                  placeholder="projectname@dali.dartmouth.edu"
+                  className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                />
+              ) : (
+                <span className="px-2 py-1.5 text-sm text-foreground">
+                  {project.calendarEmail ?? "—"}
+                </span>
+              )}
+            </label>
+
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="text-muted-foreground">Image URL</span>
+              {editing ? (
+                <input
+                  name="imageUrl"
+                  type="url"
+                  defaultValue={project.imageUrl ?? ""}
+                  placeholder="https://…"
+                  className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                />
+              ) : (
+                <span className="px-2 py-1.5 text-sm text-foreground">
+                  {project.imageUrl ?? "—"}
+                </span>
+              )}
+            </label>
+
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="text-muted-foreground">
+                Terms required (planned span)
+              </span>
+              {editing ? (
+                <input
+                  name="termCount"
+                  type="number"
+                  min={1}
+                  defaultValue={project.termCount}
+                  className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                />
+              ) : (
+                <span className="px-2 py-1.5 text-sm text-foreground">
+                  {project.termCount}{" "}
+                  {project.termCount === 1 ? "term" : "terms"}
+                </span>
+              )}
+            </label>
+          </div>
+
+          <label className="flex flex-col gap-1 text-xs">
+            <span className="text-muted-foreground">
+              Repositories (one URL per line)
+            </span>
+            {editing ? (
+              <textarea
+                name="repoUrls"
+                rows={3}
+                defaultValue={project.repoUrls.join("\n")}
+                placeholder="https://github.com/dali-lab/…"
+                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 font-mono"
+              />
+            ) : project.repoUrls.length > 0 ? (
+              <ul className="flex flex-col gap-1 px-2 py-1.5">
+                {project.repoUrls.map((url) => (
+                  <li key={url}>
+                    <a
+                      href={url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-sm text-accent-coral hover:underline break-all"
+                    >
+                      {url}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <span className="px-2 py-1.5 text-sm text-muted-foreground">
+                —
+              </span>
+            )}
+          </label>
+        </Form>
+      )}
+    </EditableSection>
+  );
+}
+
+// Per-(domain, term) scope grid. One Edit button for the whole section;
+// Save commits every cell at once via intent=scopesBulk. Empty cells in
+// the submitted set delete their row server-side.
 function DomainScopesSegment({
   domains,
   terms,
@@ -887,101 +1026,62 @@ function DomainScopesSegment({
   }[];
   canEdit: boolean;
 }) {
+  const submit = useSubmit();
+  const formRef = useRef<HTMLFormElement | null>(null);
   const cell = (domainId: string, termId: string): string =>
     grid.find((c) => c.domainId === domainId && c.termId === termId)?.scope ??
     "";
 
   return (
-    <section className="bg-card border border-border rounded-lg p-4">
-      <h2 className="text-sm font-semibold text-foreground mb-1">
-        Domain scopes
-      </h2>
-      <p className="text-xs text-muted-foreground mb-3">
-        Free-text scope for each declared domain in each planned term. Edits
-        auto-save on blur.
-      </p>
-      <div className="flex flex-col gap-4">
-        {domains.map((d) => (
-          <div key={d.id} className="flex flex-col gap-2">
-            <h3 className="text-sm font-semibold text-foreground">{d.name}</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {terms.map((t) => (
-                <ScopeCell
-                  key={`${d.id}:${t.id}`}
-                  domainId={d.id}
-                  termId={t.id}
-                  termCode={t.code}
-                  initialScope={cell(d.id, t.id)}
-                  canEdit={canEdit}
-                />
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function ScopeCell({
-  domainId,
-  termId,
-  termCode,
-  initialScope,
-  canEdit,
-}: {
-  domainId: string;
-  termId: string;
-  termCode: string;
-  initialScope: string;
-  canEdit: boolean;
-}) {
-  // useFetcher so each cell submits independently — typing in one cell
-  // doesn't reset the others, and the page-level loader still re-runs to
-  // refresh `updatedAt` etc.
-  const fetcher = useFetcher();
-  if (!canEdit) {
-    return (
-      <div className="rounded-md border border-border p-2 flex flex-col gap-1">
-        <span className="text-[11px] font-medium text-muted-foreground">
-          {termCode}
-        </span>
-        {initialScope ? (
-          <p className="text-sm text-foreground whitespace-pre-wrap">
-            {initialScope}
-          </p>
-        ) : (
-          <p className="text-sm text-muted-foreground italic">No scope.</p>
-        )}
-      </div>
-    );
-  }
-  return (
-    <fetcher.Form
-      method="post"
-      className="rounded-md border border-border p-2 flex flex-col gap-1"
+    <EditableSection
+      title="Domain scopes"
+      description="Free-text scope for each declared domain in each planned term."
+      canEdit={canEdit}
+      onSave={() => { if (formRef.current) submit(formRef.current); }}
     >
-      <input type="hidden" name="intent" value="scope" />
-      <input type="hidden" name="domainId" value={domainId} />
-      <input type="hidden" name="termId" value={termId} />
-      <label className="text-[11px] font-medium text-muted-foreground">
-        {termCode}
-      </label>
-      <textarea
-        name="scope"
-        defaultValue={initialScope}
-        rows={3}
-        placeholder="+ Add scope"
-        onBlur={(e) => {
-          // Only submit when the value actually changed — avoids a fetch on
-          // every focus/blur. The form's defaultValue is the last-saved text.
-          if (e.currentTarget.value !== initialScope) {
-            fetcher.submit(e.currentTarget.form);
-          }
-        }}
-        className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 resize-y"
-      />
-    </fetcher.Form>
+      {({ editing }) => (
+        <Form method="post" ref={formRef} className="flex flex-col gap-4">
+          <input type="hidden" name="intent" value="scopesBulk" />
+          {domains.map((d) => (
+            <div key={d.id} className="flex flex-col gap-2">
+              <h3 className="text-sm font-semibold text-foreground">{d.name}</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {terms.map((t) => {
+                  const value = cell(d.id, t.id);
+                  return (
+                    <div
+                      key={`${d.id}:${t.id}`}
+                      className="rounded-md border border-border p-2 flex flex-col gap-1"
+                    >
+                      <span className="text-[11px] font-medium text-muted-foreground">
+                        {t.code}
+                      </span>
+                      {editing ? (
+                        <textarea
+                          name={`scope:${d.id}:${t.id}`}
+                          defaultValue={value}
+                          rows={3}
+                          placeholder="+ Add scope"
+                          className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 resize-y"
+                        />
+                      ) : value ? (
+                        <p className="text-sm text-foreground whitespace-pre-wrap">
+                          {value}
+                        </p>
+                      ) : (
+                        <p className="text-sm text-muted-foreground italic">
+                          No scope.
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </Form>
+      )}
+    </EditableSection>
   );
 }
 
@@ -1123,113 +1223,16 @@ function OverviewTab({
         />
       )}
 
-      {/* Project details. Each editable field auto-saves on blur (text) or
-          change (number/textarea — number's onBlur isn't reliable across
-          browsers when the value's just typed in). No "Save changes" button:
-          exiting edit mode via the page-level Done is the natural endpoint
-          and there's nothing left to commit by then. The whole form posts
-          intent=details with the FULL field set every time, so the action
-          handler stays unchanged. */}
-      <Form
-        method="post"
-        className="bg-card border border-border rounded-lg p-4 flex flex-col gap-4 w-full"
-      >
-        <input type="hidden" name="intent" value="details" />
-        <h2 className="text-sm font-semibold text-foreground">Project details</h2>
+      {/* Project details. Editable as one section; commits via intent=details
+          which expects the full field set. Section-level Save submits and
+          closes; Cancel reverts (the wrapper remounts the body which resets
+          defaultValue inputs). */}
+      <DetailsSegment project={project} canEdit={canEdit} />
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="text-muted-foreground">Calendar email</span>
-            {canEdit ? (
-              <input
-                name="calendarEmail"
-                type="email"
-                defaultValue={project.calendarEmail ?? ""}
-                placeholder="projectname@dali.dartmouth.edu"
-                onBlur={(e) => submit(e.currentTarget.form)}
-                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-              />
-            ) : (
-              <span className="px-2 py-1.5 text-sm text-foreground">
-                {project.calendarEmail ?? "—"}
-              </span>
-            )}
-          </label>
-
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="text-muted-foreground">Image URL</span>
-            {canEdit ? (
-              <input
-                name="imageUrl"
-                type="url"
-                defaultValue={project.imageUrl ?? ""}
-                placeholder="https://…"
-                onBlur={(e) => submit(e.currentTarget.form)}
-                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-              />
-            ) : (
-              <span className="px-2 py-1.5 text-sm text-foreground">
-                {project.imageUrl ?? "—"}
-              </span>
-            )}
-          </label>
-
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="text-muted-foreground">
-              Terms required (planned span)
-            </span>
-            {canEdit ? (
-              <input
-                name="termCount"
-                type="number"
-                min={1}
-                defaultValue={project.termCount}
-                onBlur={(e) => submit(e.currentTarget.form)}
-                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-              />
-            ) : (
-              <span className="px-2 py-1.5 text-sm text-foreground">
-                {project.termCount}{" "}
-                {project.termCount === 1 ? "term" : "terms"}
-              </span>
-            )}
-          </label>
-        </div>
-
-        <label className="flex flex-col gap-1 text-xs">
-          <span className="text-muted-foreground">Repositories (one URL per line)</span>
-          {canEdit ? (
-            <textarea
-              name="repoUrls"
-              rows={3}
-              defaultValue={project.repoUrls.join("\n")}
-              placeholder="https://github.com/dali-lab/…"
-              onBlur={(e) => submit(e.currentTarget.form)}
-              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 font-mono"
-            />
-          ) : project.repoUrls.length > 0 ? (
-            <ul className="flex flex-col gap-1 px-2 py-1.5">
-              {project.repoUrls.map((url) => (
-                <li key={url}>
-                  <a
-                    href={url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-sm text-accent-coral hover:underline break-all"
-                  >
-                    {url}
-                  </a>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <span className="px-2 py-1.5 text-sm text-muted-foreground">—</span>
-          )}
-        </label>
-
-        {/* Team — read-only. Current term by default, expandable to all. */}
+      {/* Team — read-only summary, separate from the editable details. */}
+      <section className="bg-card border border-border rounded-lg p-4">
         <TeamSection teams={teams} />
-      </Form>
+      </section>
 
       {/* Documents block */}
       <DocumentsBlock

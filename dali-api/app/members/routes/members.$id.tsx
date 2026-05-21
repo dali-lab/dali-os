@@ -1,10 +1,11 @@
-import { Form, Link, redirect, useActionData, useLoaderData } from "react-router";
+import { useRef } from "react";
+import { Form, Link, redirect, useActionData, useLoaderData, useSubmit } from "react-router";
 import type { Route } from "./+types/members.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
 import { initialsFromName } from "~/lib/display";
-import { EditModeToggle, useEditMode } from "~/components/EditModeToggle";
+import { EditableSection } from "~/components/EditableSection";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const m = (data as { member?: { firstName: string; lastName: string } } | undefined)?.member;
@@ -118,22 +119,16 @@ const FIELD_LABELS: Record<string, string> = {
 };
 
 export default function MemberDetail() {
-  const { member, canEdit: canEditPerm } = useLoaderData<typeof loader>();
-  const { editing: canEdit, editMode, setEditMode } = useEditMode(canEditPerm);
+  const { member, canEdit } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
+  const submit = useSubmit();
+  const formRef = useRef<HTMLFormElement | null>(null);
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <Link to="/members" className="text-sm text-muted-foreground hover:text-foreground">
-          ← Back to members
-        </Link>
-        <EditModeToggle
-          canEdit={canEditPerm}
-          editMode={editMode}
-          setEditMode={setEditMode}
-        />
-      </div>
+      <Link to="/members" className="text-sm text-muted-foreground hover:text-foreground">
+        ← Back to members
+      </Link>
 
       <header className="flex flex-col items-center gap-4 text-center">
         {member.photoUrl ? (
@@ -164,37 +159,40 @@ export default function MemberDetail() {
         </div>
       )}
 
-      <Form method="post" className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3 w-full">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {TEXT_FIELDS.map((field) => (
-            <Field
-              key={field}
-              name={field}
-              label={FIELD_LABELS[field]}
-              defaultValue={(member[field] as string | null) ?? ""}
-              readOnly={!canEdit}
-            />
-          ))}
-          <Field
-            name="classYear"
-            label="Class year"
-            type="number"
-            defaultValue={member.classYear?.toString() ?? ""}
-            readOnly={!canEdit}
-          />
-        </div>
-
-        {canEdit && (
-          <div className="flex justify-end">
-            <button
-              type="submit"
-              className="px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
-            >
-              Save changes
-            </button>
-          </div>
+      <EditableSection
+        title="Profile"
+        canEdit={canEdit}
+        onSave={() => {
+          if (formRef.current) submit(formRef.current);
+        }}
+      >
+        {({ editing }) => (
+          <Form
+            method="post"
+            ref={formRef}
+            className="flex flex-col gap-3 w-full"
+          >
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {TEXT_FIELDS.map((field) => (
+                <Field
+                  key={field}
+                  name={field}
+                  label={FIELD_LABELS[field]}
+                  defaultValue={(member[field] as string | null) ?? ""}
+                  readOnly={!editing}
+                />
+              ))}
+              <Field
+                name="classYear"
+                label="Class year"
+                type="number"
+                defaultValue={member.classYear?.toString() ?? ""}
+                readOnly={!editing}
+              />
+            </div>
+          </Form>
         )}
-      </Form>
+      </EditableSection>
     </div>
   );
 }
