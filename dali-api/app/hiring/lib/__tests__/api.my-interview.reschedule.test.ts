@@ -40,7 +40,7 @@ beforeEach(() => {
 
   mockTx.interview.findFirst = vi.fn();
   mockTx.interview.update = vi.fn();
-  mockTx.interviewConfig.findUnique = vi.fn().mockResolvedValue({ rescheduleNoticeHours: 12 });
+  mockTx.interviewConfig.findUnique = vi.fn().mockResolvedValue({ rescheduleNoticeHours: 12, bookingNoticeHours: 0 });
 
   // $transaction receives (callback, options); invoke the callback with mockTx
   (mockPrisma as any).$transaction = vi.fn(async (cb: any) => cb(mockTx));
@@ -64,7 +64,7 @@ function makeRequest(body: Record<string, unknown>) {
 describe("POST /api/hiring/my-interview/reschedule", () => {
   it("returns 400 when domainApplicationId is missing", async () => {
     const res = await action({
-      request: makeRequest({ newStart: "2026-01-01T10:00:00Z", newEnd: "2026-01-01T10:30:00Z" }),
+      request: makeRequest({ newStart: "2027-01-01T10:00:00Z", newEnd: "2027-01-01T10:30:00Z" }),
       params: {},
       context: {},
     } as any);
@@ -93,8 +93,8 @@ describe("POST /api/hiring/my-interview/reschedule", () => {
     await action({
       request: makeRequest({
         domainApplicationId: DA_ID_A,
-        newStart: "2026-01-01T10:00:00Z",
-        newEnd: "2026-01-01T10:30:00Z",
+        newStart: "2027-01-01T10:00:00Z",
+        newEnd: "2027-01-01T10:30:00Z",
       }),
       params: {},
       context: {},
@@ -131,8 +131,8 @@ describe("POST /api/hiring/my-interview/reschedule", () => {
     const res = await action({
       request: makeRequest({
         domainApplicationId: DA_ID_A,
-        newStart: "2026-01-01T10:00:00Z",
-        newEnd: "2026-01-01T10:30:00Z",
+        newStart: "2027-01-01T10:00:00Z",
+        newEnd: "2027-01-01T10:30:00Z",
       }),
       params: {},
       context: {},
@@ -164,8 +164,8 @@ describe("POST /api/hiring/my-interview/reschedule", () => {
     const res = await action({
       request: makeRequest({
         domainApplicationId: DA_ID_B,
-        newStart: "2026-01-01T10:00:00Z",
-        newEnd: "2026-01-01T10:30:00Z",
+        newStart: "2027-01-01T10:00:00Z",
+        newEnd: "2027-01-01T10:30:00Z",
       }),
       params: {},
       context: {},

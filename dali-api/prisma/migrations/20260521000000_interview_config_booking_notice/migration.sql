@@ -1,0 +1,1 @@
+ALTER TABLE "InterviewConfig" ADD COLUMN "bookingNoticeHours" INTEGER NOT NULL DEFAULT 12;
