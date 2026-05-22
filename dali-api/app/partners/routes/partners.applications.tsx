@@ -15,7 +15,6 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/core";
 import { MouseSensor, KeyboardSensor } from "../lib/dnd-sensors";
-import { GripVertical } from "lucide-react";
 import type { Route } from "./+types/partners.applications";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
@@ -727,23 +726,15 @@ function ApplicationCard({
     <div
       ref={setNodeRef}
       style={style}
+      {...(draggable ? { ...attributes, ...listeners } : {})}
       className={`border border-border rounded-md bg-background text-sm flex flex-col gap-2 ${
-        isDragging ? "opacity-60 shadow-lg" : "hover:bg-muted/20"
-      } ${isRejected ? "opacity-60" : ""}`}
+        draggable ? "cursor-grab active:cursor-grabbing" : ""
+      } ${isDragging ? "opacity-60 shadow-lg" : "hover:bg-muted/20"} ${isRejected ? "opacity-60" : ""}`}
     >
-      {draggable && (
-        <div
-          {...attributes}
-          {...listeners}
-          className="flex items-center justify-end px-2 pt-1.5 cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground/70"
-        >
-          <GripVertical className="w-3.5 h-3.5" />
-        </div>
-      )}
       <Link
         to={`/partners/applications/${app.id}`}
         data-no-dnd
-        className={`flex flex-col gap-2 ${draggable ? "px-2.5 pb-2.5" : "p-2.5"} cursor-pointer`}
+        className={`flex flex-col gap-2 p-2.5 cursor-pointer`}
       >
       <span className="font-semibold text-foreground leading-snug">
         {app.title}
