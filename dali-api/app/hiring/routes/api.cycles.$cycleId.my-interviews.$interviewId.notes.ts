@@ -14,13 +14,21 @@ async function getAssignment(userId: string, cycleId: string, interviewId: strin
   const member = await prisma.dALIMember.findUnique({ where: { userId } });
   if (!member) return null;
 
-  const interviewer = await prisma.cycleInterviewer.findFirst({
+  // A member can have multiple CycleInterviewer rows in the same cycle (one
+  // per domain) — match across all of them so manually-reassigned interviews
+  // resolve to the correct assignment regardless of which row was used.
+  const interviewerRows = await prisma.cycleInterviewer.findMany({
     where: { userId, applicationCycleId: cycleId },
+    select: { id: true },
   });
-  if (!interviewer) return null;
+  if (interviewerRows.length === 0) return null;
 
   return prisma.interviewAssignment.findFirst({
-    where: { interviewId, cycleInterviewerId: interviewer.id, status: "Active" },
+    where: {
+      interviewId,
+      cycleInterviewerId: { in: interviewerRows.map((r) => r.id) },
+      status: "Active",
+    },
   });
 }
 
