@@ -258,6 +258,18 @@ export default function Login() {
               </button>
             </Form>
           </div>
+
+          {/* Public policy links. This page doubles as the app's public home
+              page for Google OAuth verification, which requires the home page
+              to link to the privacy policy. */}
+          <footer className="mt-10 flex items-center gap-4 text-xs text-muted-foreground">
+            <a href="/privacy" className="hover:text-foreground underline">
+              Privacy Policy
+            </a>
+            <a href="/terms" className="hover:text-foreground underline">
+              Terms of Service
+            </a>
+          </footer>
         </div>
       </div>
     </div>
