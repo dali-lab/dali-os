@@ -329,6 +329,23 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       });
   const releasedDecisionTypes = releasedDecisions.map((d) => d.type);
 
+  // Domain leads per cycle domain — used by the Overview Inbox to name who
+  // owes the next setup action. DomainLeadAssignment has no "current" flag;
+  // ordering by createdAt desc picks the most-recently-assigned lead first,
+  // and we dedupe by user across terms.
+  const domainLeadAssignments = domainIds.length > 0
+    ? await prisma.domainLeadAssignment.findMany({
+        where: { domainId: { in: domainIds } },
+        include: { user: { select: { id: true, firstName: true, lastName: true } } },
+        orderBy: { createdAt: "desc" },
+      })
+    : [];
+  const domainLeadsByDomain: Record<string, Array<{ id: string; firstName: string | null; lastName: string | null }>> = {};
+  for (const a of domainLeadAssignments) {
+    const list = (domainLeadsByDomain[a.domainId] ??= []);
+    if (!list.some((u) => u.id === a.user.id)) list.push(a.user);
+  }
+
   // ChallengeVersion has no `versionNumber` column on the schema, so derive
   // one per challenge family by ranking siblings by createdAt asc. We pull
   // all sibling versions for any challenge surfaced in this loader so the
@@ -370,6 +387,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       domainChallengeVersions: domainChallengeVersions.map(withCvNumber),
       domainRubricVersions,
       reviewedDomainIds,
+      domainLeadsByDomain,
       confidentialityAgreementOptions,
       currentConfidentialityBinding,
       confidentialitySignatures,
@@ -1464,18 +1482,88 @@ export default function HiringLeadCycleDetails() {
           return hasCloseDate && domains.length > 0 && domains.every((d: any) => coveredDomainIds.has(d.domainId)) && hasGeneralForm && allDomainsReady;
         })();
         const nextStepCopy: Record<string, string> = {
-          Draft: 'Finish the checklist below, then open applications to applicants.',
+          Draft: 'Work the inbox below, then open applications to applicants.',
           Open: 'Applications are open. Close them when ready to begin review.',
           UnderReview: 'Review is underway. Release decisions, then mark the cycle completed.',
           Completed: 'This cycle is complete — everything here is read-only history.',
         };
-        const counts = [
-          { label: 'Domains', value: cycle?.domains?.length ?? 0, tab: 'setup' as CycleTab },
-          { label: 'Reviewers', value: reviewers.length, tab: 'reviewers' as CycleTab },
-          { label: 'Interviewers', value: interviewers.length, tab: 'interviews' as CycleTab },
-          { label: 'Scheduled interviews', value: interviews.length, tab: 'interviews' as CycleTab },
-          { label: 'Decisions to release', value: pendingDecisions.length, tab: 'decisions' as CycleTab },
-        ];
+
+        // ── Inbox computation ────────────────────────────────────────────
+        // "Your actions": items only the hiring lead can resolve. Folds in
+        // the Draft-checklist conditions owned by the hiring lead.
+        const hasGeneralForm = (cycle?.challengeVersions ?? []).some(
+          (cv: any) => cv.challengeVersion?.domainId === null
+        );
+        const hasGeneralRubric = !!cycle?.generalRubricVersionId;
+        const boundDecisionTypes = new Set(
+          (loaderData?.currentDecisionEmails ?? []).map((b: any) => b.decisionType)
+        );
+        const pendingByType = new Map<string, number>();
+        for (const d of pendingDecisions) {
+          pendingByType.set(d.type, (pendingByType.get(d.type) ?? 0) + 1);
+        }
+        const unboundPendingTypes = [...pendingByType.keys()].filter((t) => !boundDecisionTypes.has(t));
+
+        type InboxAction = { key: string; label: string; tab: CycleTab };
+        const myActions: InboxAction[] = [];
+        if (cycleStatus === 'Draft' && (cycle?.domains ?? []).length === 0) {
+          myActions.push({ key: 'no-domains', label: 'Add at least one domain to this cycle', tab: 'setup' });
+        }
+        if (cycleStatus === 'Draft' && !cycle?.closeDate) {
+          myActions.push({ key: 'close-date', label: 'Set the application close date', tab: 'setup' });
+        }
+        if (cycleStatus === 'Draft' && !hasGeneralForm) {
+          myActions.push({ key: 'general-form', label: 'Link the general application form', tab: 'setup' });
+        }
+        if (!hasGeneralRubric && cycleStatus !== 'Completed') {
+          myActions.push({
+            key: 'general-rubric',
+            label: cycleStatus === 'Draft'
+              ? 'Set the general application rubric'
+              : 'Set the general application rubric (blocks reviewer assignment)',
+            tab: 'setup',
+          });
+        }
+        for (const t of unboundPendingTypes) {
+          const n = pendingByType.get(t) ?? 0;
+          myActions.push({
+            key: `email-binding-${t}`,
+            label: `Bind an email template for ${t} (${n} ready to release)`,
+            tab: 'setup',
+          });
+        }
+
+        // "Waiting on domain leads": per-domain blockers with named leads.
+        // Only populated in Draft today — domain leads' work is concentrated
+        // there. Later phases delegate to Reviewers/Interviews/Decisions tabs.
+        type DomainBlocker = {
+          domainId: string;
+          name: string;
+          leads: Array<{ firstName: string | null; lastName: string | null }>;
+          issues: string[];
+        };
+        const domainBlockers: DomainBlocker[] = [];
+        if (cycleStatus === 'Draft') {
+          for (const d of (cycle?.domains ?? [])) {
+            const issues: string[] = [];
+            const linkedCv = (cycle?.challengeVersions ?? []).find(
+              (cv: any) => cv.challengeVersion?.domainId === d.domainId
+            );
+            if (!linkedCv) issues.push('missing challenge');
+            if (!d.rubricVersionId) issues.push('missing rubric');
+            if (!d.isReady) issues.push('not marked ready');
+            if (issues.length === 0) continue;
+            const leads = (loaderData?.domainLeadsByDomain ?? {})[d.domainId] ?? [];
+            domainBlockers.push({
+              domainId: d.domainId,
+              name: d.domain?.name ?? d.domainId,
+              leads,
+              issues,
+            });
+          }
+        }
+
+        const inboxEmpty = myActions.length === 0 && domainBlockers.length === 0;
         return (
           <div className="space-y-6">
             {/* Lifecycle stepper */}
@@ -1530,85 +1618,69 @@ export default function HiringLeadCycleDetails() {
               )}
             </div>
 
-            {/* Draft Checklist */}
-            {cycleStatus === 'Draft' && (() => {
-              const hasCloseDate = !!cycle?.closeDate;
-              const domains = cycle?.domains ?? [];
-              const challengeVersions = cycle?.challengeVersions ?? [];
-              const coveredDomainIds = new Set(challengeVersions.map((cv: any) => cv.challengeVersion?.domainId));
-              const allDomainsCovered = domains.length > 0 && domains.every((d: any) => coveredDomainIds.has(d.domainId));
-              const hasGeneralForm = challengeVersions.some((cv: any) => cv.challengeVersion?.domainId === null);
-              const allDomainsReady = domains.length > 0 && domains.every((d: any) => d.isReady);
-              const hasGeneralRubric = !!cycle?.generalRubricVersionId;
-              const ready = hasCloseDate && allDomainsCovered && hasGeneralForm && allDomainsReady;
-              return (
-                <div className={`rounded-xl border p-4 space-y-3 ${ready ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200'}`}>
-                  <h3 className="text-sm font-bold text-foreground">Checklist to Open Applications</h3>
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-sm">
-                      {hasCloseDate
-                        ? <CheckCircle className="w-4 h-4 text-green-600" />
-                        : <Circle className="w-4 h-4 text-muted-foreground/70" />}
-                      <span className={hasCloseDate ? 'text-green-800' : 'text-muted-foreground'}>Close date is set</span>
+            {/* Inbox: actions owed by the hiring lead + per-domain blockers */}
+            {!inboxEmpty && (
+              <div className="space-y-4">
+                {myActions.length > 0 && (
+                  <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
+                    <div className="px-4 sm:px-6 py-3 border-b border-border bg-muted/50">
+                      <h3 className="text-sm font-bold text-foreground/80">Your actions</h3>
                     </div>
-                    <div className="flex items-center gap-2 text-sm">
-                      {allDomainsCovered
-                        ? <CheckCircle className="w-4 h-4 text-green-600" />
-                        : <Circle className="w-4 h-4 text-muted-foreground/70" />}
-                      <span className={allDomainsCovered ? 'text-green-800' : 'text-muted-foreground'}>
-                        Every domain has a challenge version linked
-                        {domains.length === 0 && ' (no domains added)'}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2 text-sm">
-                      {hasGeneralForm
-                        ? <CheckCircle className="w-4 h-4 text-green-600" />
-                        : <Circle className="w-4 h-4 text-muted-foreground/70" />}
-                      <span className={hasGeneralForm ? 'text-green-800' : 'text-muted-foreground'}>General application form is linked</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-sm">
-                      {allDomainsReady
-                        ? <CheckCircle className="w-4 h-4 text-green-600" />
-                        : <Circle className="w-4 h-4 text-muted-foreground/70" />}
-                      <span className={allDomainsReady ? 'text-green-800' : 'text-muted-foreground'}>
-                        Every domain is marked ready
-                        {domains.length === 0 && ' (no domains added)'}
-                      </span>
-                    </div>
+                    <ul className="divide-y divide-border">
+                      {myActions.map((a) => (
+                        <li key={a.key} className="px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <Circle className="w-4 h-4 text-yellow-600 flex-shrink-0" />
+                            <span className="text-sm text-foreground">{a.label}</span>
+                          </div>
+                          <button
+                            onClick={() => setTab(a.tab)}
+                            className="text-xs font-medium text-blue-600 hover:text-blue-700 inline-flex items-center gap-1 flex-shrink-0"
+                          >
+                            {a.tab === 'setup' ? 'Setup' : a.tab.charAt(0).toUpperCase() + a.tab.slice(1)}
+                            <ChevronRight className="w-3 h-3" />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
-                  {!hasGeneralRubric && (
-                    <p className="text-xs text-muted-foreground border-t border-yellow-200 pt-2">
-                      Heads up: the general application rubric isn't set yet. You can open applications without it, but reviewers can't be assigned until a rubric is in place.
-                    </p>
-                  )}
-                </div>
-              );
-            })()}
+                )}
 
-            {/* Reminder while Open: rubric still needed before reviewer assignment */}
-            {cycleStatus === 'Open' && !cycle?.generalRubricVersionId && (
-              <div className="rounded-xl border border-yellow-200 bg-yellow-50 p-4 flex items-start gap-3">
-                <AlertTriangle className="w-5 h-5 text-yellow-700 flex-shrink-0 mt-0.5" />
-                <div className="flex-1 space-y-0.5">
-                  <p className="text-sm font-bold text-yellow-900">General application rubric not set</p>
-                  <p className="text-sm text-yellow-800">Set the general rubric before review begins — reviewer assignment is blocked without it.</p>
-                </div>
+                {domainBlockers.length > 0 && (
+                  <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
+                    <div className="px-4 sm:px-6 py-3 border-b border-border bg-muted/50 flex items-center justify-between gap-3">
+                      <h3 className="text-sm font-bold text-foreground/80">Waiting on domain leads</h3>
+                      <span className="text-xs text-muted-foreground">{domainBlockers.length} domain{domainBlockers.length === 1 ? '' : 's'}</span>
+                    </div>
+                    <ul className="divide-y divide-border">
+                      {domainBlockers.map((d) => (
+                        <li
+                          key={d.domainId}
+                          className="px-4 sm:px-6 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"
+                        >
+                          <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 min-w-0 flex-1">
+                            <div className="font-medium text-foreground sm:w-32 flex-shrink-0">{d.name}</div>
+                            <div className="text-xs text-muted-foreground sm:w-40 sm:flex-shrink-0 truncate">
+                              {d.leads.length > 0
+                                ? d.leads.map((l) => `${l.firstName ?? ''} ${l.lastName ?? ''}`.trim() || 'Unnamed').join(', ')
+                                : <span className="italic">no lead assigned</span>}
+                            </div>
+                            <div className="text-sm text-foreground/90 truncate">{d.issues.join(' · ')}</div>
+                          </div>
+                          <button
+                            onClick={() => setTab('setup')}
+                            className="text-xs font-medium text-blue-600 hover:text-blue-700 inline-flex items-center gap-1 self-start sm:self-auto flex-shrink-0"
+                          >
+                            Setup
+                            <ChevronRight className="w-3 h-3" />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
             )}
-
-            {/* At-a-glance counts — each jumps to the relevant tab */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-              {counts.map(c => (
-                <button
-                  key={c.label}
-                  onClick={() => setTab(c.tab)}
-                  className="bg-card rounded-xl border border-border shadow-sm p-4 text-left hover:border-blue-300 hover:shadow transition"
-                >
-                  <div className="text-2xl font-bold text-foreground">{c.value}</div>
-                  <div className="text-xs text-muted-foreground mt-1">{c.label}</div>
-                </button>
-              ))}
-            </div>
           </div>
         );
       })()}
