@@ -310,21 +310,20 @@ describe("validateMapping (project-bids)", () => {
     expect(r).toEqual({ ok: true });
   });
 
-  it("still fails when a project column points at a non-reference question", () => {
+  it("accepts a non-reference question on the project role (type constraint dropped)", () => {
+    // A plain text question mapped to `project` no longer fails validation —
+    // question-type constraints aren't enforced. The bid interpreter coerces
+    // the answer to an id at read time and skips it if it isn't a real
+    // project, so a mismatched type is a no-op rather than a save error. Here
+    // `p` is a 4th (repeatable) project column on top of the required spine.
     const r = validateMapping(
       "project-bids",
       [q("p", "text"), ...REQ_PROJ_QS],
-      withBidRequirements(
-        [
-          { source: "question", questionKey: "p", role: "project", label: "P", order: 0 },
-        ],
-        { skipProjects: true },
-      ),
+      withBidRequirements([
+        { source: "question", questionKey: "p", role: "project", label: "P", order: 0 },
+      ]),
     );
-    // Only 1 project column, and the one supplied is non-reference. The
-    // type mismatch is the per-entry failure that fires before completeness
-    // is checked.
-    expect(r).toMatchObject({ ok: false });
+    expect(r).toEqual({ ok: true });
   });
 
   it("still fails when an entry points at a since-deleted question", () => {
