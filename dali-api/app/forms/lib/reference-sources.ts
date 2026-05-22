@@ -27,9 +27,14 @@ export type ReferenceOption = { value: string; label: string };
 
 // Context a loader may use to scope its options. `userId` is the member
 // filling the form, when known — absent on the public/unauthenticated path.
-// Most loaders ignore it; member-scoped sources require it and degrade to []
-// without it.
-export type ReferenceContext = { userId?: string | null };
+// `termId` is per-question authoring config (the term the form author chose
+// for a term-scoped source), not member context. Most loaders ignore both;
+// member-scoped sources require userId, term-scoped sources require termId,
+// and each degrades to [] without what it needs.
+export type ReferenceContext = {
+  userId?: string | null;
+  termId?: string | null;
+};
 
 const LOADERS = {
   // Projects with at least one open role this term — mirrors the projects a
@@ -54,6 +59,22 @@ const LOADERS = {
   "projects:active": async () => {
     const projects = await prisma.project.findMany({
       where: { status: { not: "Archived" } },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    });
+    return projects.map((p) => ({ value: p.id, label: p.name }));
+  },
+  // Non-archived projects whose term set includes the term the form author
+  // chose (ctx.termId, from the question's data.referenceTermId). Term-scoped:
+  // with no termId it resolves to [] rather than listing every project, so a
+  // misconfigured question yields an empty dropdown instead of wrong data.
+  "projects:active-in-term": async (ctx?: ReferenceContext) => {
+    if (!ctx?.termId) return [];
+    const projects = await prisma.project.findMany({
+      where: {
+        status: { not: "Archived" },
+        projectTerms: { some: { termId: ctx.termId } },
+      },
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     });
@@ -93,6 +114,7 @@ export {
   REFERENCE_SOURCE_LABELS,
   isReferenceSourceKey,
   referenceSourceChoices,
+  referenceSourceNeedsTerm,
 } from "./reference-sources.shared";
 export type { ReferenceSourceKey } from "./reference-sources.shared";
 

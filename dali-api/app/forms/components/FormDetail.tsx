@@ -34,7 +34,7 @@ function formatDateTime(iso: string) {
 // version, and a read-only preview of the selected version otherwise. Saving
 // appends a new immutable version (handled by the route action).
 export function FormDetail() {
-  const { form, backTo } = useLoaderData<typeof loader>();
+  const { form, terms, backTo } = useLoaderData<typeof loader>();
   const submit = useSubmit();
 
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(
@@ -180,6 +180,7 @@ export function FormDetail() {
               <FormBuilderTab
                 initialQuestions={selectedVersion?.questions ?? []}
                 initialDescription={selectedVersion?.description ?? null}
+                terms={terms}
                 onSave={handleSave}
                 onCancel={
                   form.versions.length === 0

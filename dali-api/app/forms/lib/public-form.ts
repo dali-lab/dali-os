@@ -80,6 +80,7 @@ export async function loadPublicForm(
       if (q.type !== "reference") return q;
       const options = await resolveReferenceOptions(q.data.referenceSource, {
         userId,
+        termId: q.data.referenceTermId,
       });
       return { ...q, data: { ...q.data, referenceOptions: options } };
     }),
@@ -131,6 +132,7 @@ async function validateAnswers(
     if (answer == null || answer === "") continue; // required-ness handled above
     const options = await resolveReferenceOptions(q.data.referenceSource, {
       userId,
+      termId: q.data.referenceTermId,
     });
     if (!options.some((o) => o.value === answer)) {
       return {

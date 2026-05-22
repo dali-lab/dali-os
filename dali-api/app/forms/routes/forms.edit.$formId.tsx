@@ -2,6 +2,7 @@ import { redirect } from "react-router";
 import type { Route } from "./+types/forms.edit.$formId";
 import { requireAuth } from "~/lib/auth";
 import { isHiringLead } from "~/lib/roles";
+import { prisma } from "~/lib/db";
 import { loadFormForEdit, runFormsAction } from "~/forms/lib/forms-data";
 import { FormDetail } from "~/forms/components/FormDetail";
 
@@ -17,8 +18,18 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const form = await loadFormForEdit(params.formId);
   if (!form) return redirect("/forms");
+  // Terms for term-scoped reference questions (e.g. projects active in a
+  // chosen term). Newest first so the most likely choices are at the top.
+  const terms = await prisma.term.findMany({
+    orderBy: { sortKey: "desc" },
+    select: { id: true, code: true },
+  });
   // Return the user to the form's folder (or top level) on "Back".
-  return { form, backTo: form.folderId ? `/forms/${form.folderId}` : "/forms" };
+  return {
+    form,
+    terms,
+    backTo: form.folderId ? `/forms/${form.folderId}` : "/forms",
+  };
 }
 
 export async function action({ request }: Route.ActionArgs) {
