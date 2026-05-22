@@ -10,13 +10,6 @@ const CreateInterviewerSchema = z.object({
   domainId: z.string().min(1).max(100),
 });
 
-const ApplyReviewersSchema = z.object({
-  action: z.literal("applyAllReviewers"),
-  domainId: z.string().min(1).max(100),
-});
-
-const PostBodySchema = z.union([ApplyReviewersSchema, CreateInterviewerSchema]);
-
 const DeleteInterviewerSchema = z.object({
   interviewerId: z.string().min(1).max(100),
 });
@@ -68,60 +61,8 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   if (request.method === "POST") {
-    const body = await parseJson(request, PostBodySchema);
+    const body = await parseJson(request, CreateInterviewerSchema);
     if (body instanceof Response) return body;
-
-    if ("action" in body) {
-      const { domainId } = body;
-
-      const [reviewers, existingInterviewers] = await Promise.all([
-        prisma.cycleReviewer.findMany({
-          where: { applicationCycleId: params.cycleId, domainId },
-          select: { userId: true },
-        }),
-        prisma.cycleInterviewer.findMany({
-          where: { applicationCycleId: params.cycleId, domainId },
-          select: { userId: true },
-        }),
-      ]);
-
-      const existing = new Set(existingInterviewers.map((i) => i.userId));
-      const toCreate = reviewers
-        .map((r) => r.userId)
-        .filter((userId) => !existing.has(userId));
-
-      if (toCreate.length > 0) {
-        await prisma.cycleInterviewer.createMany({
-          data: toCreate.map((userId) => ({
-            userId,
-            applicationCycleId: params.cycleId!,
-            domainId,
-          })),
-          skipDuplicates: true,
-        });
-      }
-
-      const created = await prisma.cycleInterviewer.findMany({
-        where: {
-          applicationCycleId: params.cycleId,
-          domainId,
-          userId: { in: toCreate },
-        },
-        include: {
-          user: { select: { firstName: true, lastName: true, daliEmail: true } },
-        },
-      });
-
-      return Response.json(
-        {
-          added: created.length,
-          skipped: reviewers.length - created.length,
-          interviewers: created,
-        },
-        { status: 201 },
-      );
-    }
-
     const { userId, domainId } = body;
 
     const interviewer = await prisma.cycleInterviewer.create({

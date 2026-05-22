@@ -53,11 +53,11 @@ export function ConfidentialityAgreementDetail() {
     <div className="space-y-6 max-w-5xl mx-auto">
       <div>
         <Link
-          to="/hiring/confidentiality-agreements"
+          to="/hiring/library?tab=agreements"
           className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="w-4 h-4 mr-1" />
-          Back to confidentiality agreements
+          Back to Library
         </Link>
       </div>
 
@@ -80,7 +80,7 @@ export function ConfidentialityAgreementDetail() {
               />
               <button
                 type="submit"
-                className="px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
+                className="px-3 py-2 text-sm font-medium text-white bg-accent-coral rounded-md hover:bg-accent-coral/90"
               >
                 Save
               </button>
@@ -122,7 +122,7 @@ export function ConfidentialityAgreementDetail() {
           <button
             type="button"
             onClick={handleStartCreate}
-            className="inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 shadow-sm"
+            className="inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg text-white bg-accent-coral hover:bg-accent-coral/90 shadow-sm"
           >
             <Plus className="w-4 h-4 mr-2" />
             New Version
@@ -206,7 +206,7 @@ export function ConfidentialityAgreementDetail() {
                 <button
                   type="submit"
                   disabled={isEmptyDoc(draftBody)}
-                  className="px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50"
+                  className="px-3 py-2 text-sm font-medium text-white bg-accent-coral rounded-md hover:bg-accent-coral/90 disabled:opacity-50"
                 >
                   Save Version
                 </button>

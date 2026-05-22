@@ -112,10 +112,10 @@ export function ChallengeDetail() {
     <div className="space-y-6">
       <div>
         <Link
-          to="/hiring/challenges"
+          to="/hiring/library?tab=challenges"
           className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground/80 mb-4"
         >
-          <ArrowLeft className="w-4 h-4 mr-1" /> Back to Challenges
+          <ArrowLeft className="w-4 h-4 mr-1" /> Back to Library
         </Link>
         <div className="flex justify-between items-start">
           <div>
@@ -130,7 +130,7 @@ export function ChallengeDetail() {
                 if (selectedVersion && selectedVersion.domainId) setSelectedDomainId(selectedVersion.domainId)
                 setIsCreatingVersion(true)
               }}
-              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 shadow-sm"
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-accent-coral hover:bg-accent-coral/90 shadow-sm"
             >
               <Plus className="w-4 h-4 mr-2" />
               New Version
@@ -305,7 +305,7 @@ export function ChallengeDetail() {
               <div className="mt-6">
                 <button
                   onClick={() => setIsCreatingVersion(true)}
-                  className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
+                  className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-accent-coral hover:bg-accent-coral/90"
                 >
                   <Plus className="w-4 h-4 mr-2" />
                   Create Version

@@ -4,7 +4,7 @@
 // component just renders them. Each row links to that submission's detail
 // page, where hidden (not-in-table) columns are also shown.
 
-import { Link } from "react-router";
+import { useNavigate } from "react-router";
 
 export type DbColumn = { key: string; label: string };
 
@@ -29,6 +29,8 @@ export function SubmissionDatabase({
   detailBase: string;
   emptyMessage: string;
 }) {
+  const navigate = useNavigate();
+
   if (rows.length === 0) {
     return (
       <div className="px-4 py-8 text-center text-sm text-muted-foreground">
@@ -54,15 +56,11 @@ export function SubmissionDatabase({
           {rows.map((r) => (
             <tr
               key={r.userId}
-              className="border-t border-border hover:bg-muted/20"
+              onClick={() => navigate(`${detailBase}/${r.userId}`)}
+              className="border-t border-border hover:bg-muted/20 cursor-pointer"
             >
               <td className="px-4 py-2">
-                <Link
-                  to={`${detailBase}/${r.userId}`}
-                  className="text-accent-coral hover:underline"
-                >
-                  {r.name}
-                </Link>
+                <span className="text-foreground">{r.name}</span>
                 {r.email && (
                   <div className="text-xs text-muted-foreground">
                     {r.email}
