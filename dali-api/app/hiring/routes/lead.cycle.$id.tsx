@@ -75,6 +75,17 @@ interface InterviewRow {
   }[]
 }
 
+interface PendingInviteRow {
+  id: string
+  invitedAt: string
+  domainApplication: {
+    id: string
+    domain: { name: string }
+    challengeVersion: { domain: { name: string } } | null
+    application: { user: { id: string; firstName: string | null; lastName: string | null } }
+  }
+}
+
 // ─── Status helpers ───────────────────────────────────────────────────────────
 
 const STATUS_SEQUENCE = [
@@ -1157,6 +1168,10 @@ export default function HiringLeadCycleDetails() {
 
   // ── Interviews state ──
   const [interviews, setInterviews] = useState<InterviewRow[]>([])
+  const [pendingInvites, setPendingInvites] = useState<PendingInviteRow[]>([])
+  // Filters for the interviews table — domain + status. "all" disables.
+  const [interviewDomainFilter, setInterviewDomainFilter] = useState<string>('all')
+  const [interviewStatusFilter, setInterviewStatusFilter] = useState<string>('all')
 
   // ── Coverage heatmap state ──
   const [coverage, setCoverage] = useState<{
@@ -1270,7 +1285,16 @@ export default function HiringLeadCycleDetails() {
     if (!cycleId) return
     try {
       const r = await fetch(`/api/hiring/cycles/${cycleId}/interviews`, { credentials: 'include' })
-      setInterviews(r.ok ? await r.json() : [])
+      if (!r.ok) {
+        setInterviews([])
+        setPendingInvites([])
+        return
+      }
+      const body = await r.json()
+      // Tolerate the legacy array shape so reverting the API doesn't break
+      // the client; new shape returns { interviews, pending }.
+      setInterviews(Array.isArray(body) ? body : (body.interviews ?? []))
+      setPendingInvites(Array.isArray(body) ? [] : (body.pending ?? []))
     } catch {}
   }, [cycleId])
 
@@ -1478,7 +1502,7 @@ export default function HiringLeadCycleDetails() {
           { key: 'overview', label: 'Overview', icon: LayoutDashboard },
           { key: 'setup', label: 'Setup', icon: Settings },
           { key: 'reviewers', label: 'Reviewers', icon: Users, badge: reviewers.length || undefined },
-          { key: 'interviews', label: 'Interviews', icon: Calendar, badge: interviews.length || undefined },
+          { key: 'interviews', label: 'Interviews', icon: Calendar, badge: (interviews.length + pendingInvites.length) || undefined },
           { key: 'decisions', label: 'Decisions', icon: CheckCircle, badge: pendingDecisions.length || undefined },
         ] as { key: CycleTab; label: string; icon: typeof LayoutDashboard; badge?: number }[]).map(t => (
           <button
@@ -2326,7 +2350,32 @@ export default function HiringLeadCycleDetails() {
           reason={loaderData.confidentialityRequired}
           next={`/hiring/lead/cycle/${cycleId}?tab=interviews`}
         />
-      ) : tab === 'interviews' && (
+      ) : tab === 'interviews' && (() => {
+        // Filter inputs derived from current data so empty options never show.
+        const domainFor = (p: PendingInviteRow) => p.domainApplication.challengeVersion?.domain.name ?? p.domainApplication.domain.name
+        const availableDomains = Array.from(new Set<string>([
+          ...interviews.map(i => i.domainApplication.challengeVersion.domain.name).filter(Boolean),
+          ...pendingInvites.map(domainFor).filter(Boolean),
+        ])).sort()
+        const availableStatuses = Array.from(new Set<string>([
+          ...(pendingInvites.length > 0 ? ['Awaiting Schedule'] : []),
+          ...interviews.map(i => i.status),
+        ]))
+        const filtersActive = interviewDomainFilter !== 'all' || interviewStatusFilter !== 'all'
+        const filteredInterviews = interviews.filter(i => {
+          if (interviewDomainFilter !== 'all' && i.domainApplication.challengeVersion.domain.name !== interviewDomainFilter) return false
+          if (interviewStatusFilter !== 'all' && i.status !== interviewStatusFilter) return false
+          return true
+        })
+        const filteredPending = pendingInvites.filter(p => {
+          if (interviewDomainFilter !== 'all' && domainFor(p) !== interviewDomainFilter) return false
+          if (interviewStatusFilter !== 'all' && interviewStatusFilter !== 'Awaiting Schedule') return false
+          return true
+        })
+        const totalRows = filteredInterviews.length + filteredPending.length
+        const totalAll = interviews.length + pendingInvites.length
+        const tableEmpty = totalRows === 0
+        return (
         <div className="space-y-4">
           <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-2.5 text-xs text-blue-900 inline-flex items-center gap-2">
             <Mail className="w-3.5 h-3.5 flex-shrink-0" aria-hidden />
@@ -2334,6 +2383,49 @@ export default function HiringLeadCycleDetails() {
           </div>
           <CoverageHeatmap coverage={coverage} />
           <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
+            {totalAll > 0 && (
+              <div className="px-4 sm:px-6 py-3 border-b border-border bg-card flex flex-wrap items-center gap-3">
+                <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+                  <span className="font-medium">Domain</span>
+                  <select
+                    value={interviewDomainFilter}
+                    onChange={(e) => setInterviewDomainFilter(e.target.value)}
+                    className="text-sm rounded-md border border-border bg-card px-2 py-1 text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/40"
+                  >
+                    <option value="all">All domains</option>
+                    {availableDomains.map(name => (
+                      <option key={name} value={name}>{name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+                  <span className="font-medium">Status</span>
+                  <select
+                    value={interviewStatusFilter}
+                    onChange={(e) => setInterviewStatusFilter(e.target.value)}
+                    className="text-sm rounded-md border border-border bg-card px-2 py-1 text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/40"
+                  >
+                    <option value="all">All statuses</option>
+                    {availableStatuses.map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </label>
+                {filtersActive && (
+                  <button
+                    type="button"
+                    onClick={() => { setInterviewDomainFilter('all'); setInterviewStatusFilter('all') }}
+                    className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground transition"
+                  >
+                    <X className="w-3 h-3" aria-hidden />
+                    Clear filters
+                  </button>
+                )}
+                <span className="ml-auto text-xs text-muted-foreground">
+                  Showing {totalRows} of {totalAll}
+                </span>
+              </div>
+            )}
             <div className="hidden sm:block overflow-x-auto">
             <table className="w-full text-sm min-w-[820px]">
               <thead className="bg-muted/50 border-b border-border">
@@ -2348,7 +2440,31 @@ export default function HiringLeadCycleDetails() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {interviews.map(interview => {
+                {filteredPending.map(p => {
+                  const u = p.domainApplication.application.user
+                  const domainName = domainFor(p)
+                  const invited = new Date(p.invitedAt)
+                  return (
+                    <tr key={`pending-${p.id}`} className="bg-amber-50/40 hover:bg-amber-50 transition">
+                      <td className="px-4 py-3 font-medium text-foreground">
+                        {u.firstName} {u.lastName}
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground">{domainName || '—'}</td>
+                      <td className="px-4 py-3 text-muted-foreground text-xs italic">
+                        Invited {invited.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800">
+                          Awaiting Schedule
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground">—</td>
+                      <td className="px-4 py-3 text-muted-foreground text-xs">—</td>
+                      <td className="px-4 py-3 text-right text-muted-foreground">—</td>
+                    </tr>
+                  )
+                })}
+                {filteredInterviews.map(interview => {
                   const isFuture = new Date(interview.startTime) > new Date()
                   const domainName = interview.domainApplication.challengeVersion.domain.name
                   const start = new Date(interview.startTime)
@@ -2498,14 +2614,37 @@ export default function HiringLeadCycleDetails() {
                     </tr>
                   )
                 })}
-                {interviews.length === 0 && (
-                  <tr><td colSpan={6} className="px-4 py-8 text-center text-muted-foreground/70"><span className="sr-only">Table empty: </span>No interviews scheduled yet.</td></tr>
+                {tableEmpty && (
+                  <tr><td colSpan={7} className="px-4 py-8 text-center text-muted-foreground/70"><span className="sr-only">Table empty: </span>{totalAll === 0 ? 'No interviews scheduled yet.' : 'No interviews match the current filter.'}</td></tr>
                 )}
               </tbody>
             </table>
             </div>
             <ul className="sm:hidden divide-y divide-border">
-              {interviews.map(interview => {
+              {filteredPending.map(p => {
+                const u = p.domainApplication.application.user
+                const domainName = domainFor(p)
+                const invited = new Date(p.invitedAt)
+                return (
+                  <li key={`pending-${p.id}`} className="px-4 py-3 space-y-1 bg-amber-50/40">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="font-medium text-foreground truncate">
+                          {u.firstName} {u.lastName}
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-0.5">{domainName || '—'}</div>
+                      </div>
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold flex-shrink-0 bg-amber-100 text-amber-800">
+                        Awaiting Schedule
+                      </span>
+                    </div>
+                    <div className="text-xs text-muted-foreground italic">
+                      Invited {invited.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                    </div>
+                  </li>
+                )
+              })}
+              {filteredInterviews.map(interview => {
                 const isFuture = new Date(interview.startTime) > new Date()
                 const domainName = interview.domainApplication.challengeVersion.domain.name
                 const start = new Date(interview.startTime)
@@ -2652,13 +2791,14 @@ export default function HiringLeadCycleDetails() {
                   </li>
                 )
               })}
-              {interviews.length === 0 && (
-                <li className="px-4 py-8 text-center text-sm text-muted-foreground/70">No interviews scheduled yet.</li>
+              {tableEmpty && (
+                <li className="px-4 py-8 text-center text-sm text-muted-foreground/70">{totalAll === 0 ? 'No interviews scheduled yet.' : 'No interviews match the current filter.'}</li>
               )}
             </ul>
           </div>
         </div>
-      )}
+        )
+      })()}
 
       {/* ── Decisions Tab ── */}
       {tab === 'decisions' && loaderData?.confidentialityRequired ? (
