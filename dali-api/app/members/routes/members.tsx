@@ -27,7 +27,6 @@ type MemberRow = {
   pronouns: string | null;
   classYear: number | null;
   photoUrl: string | null;
-  isAdmin: boolean;
   coreTitles: string[];
   // Each domain the member is eligible for, with their level — rendered as
   // pills in the Roles column. Same source as the staffing boards.
@@ -85,7 +84,6 @@ export async function loader({ request }: Route.LoaderArgs) {
       pronouns: true,
       classYear: true,
       photoUrl: true,
-      adminMembership: { select: { id: true } },
       coreAssignments: { select: { leadTitle: true } },
       domainEligibilities: {
         select: {
@@ -104,12 +102,11 @@ export async function loader({ request }: Route.LoaderArgs) {
     pronouns: u.pronouns,
     classYear: u.classYear,
     photoUrl: u.photoUrl,
-    isAdmin: u.adminMembership !== null,
-    // Dedupe lead titles across terms — a "Hiring Lead" who held the title
-    // for three terms should still show one chip.
-    coreTitles: Array.from(
-      new Set(u.coreAssignments.map((a) => a.leadTitle).filter((t): t is string => !!t)),
-    ),
+    // Core pills: one per distinct lead title (deduped across terms — a
+    // "Hiring Lead" who held the title for three terms shows one chip). A Core
+    // member with assignments but no title set still gets a plain "Core" pill
+    // so their Core status is visible rather than dropped.
+    coreTitles: deriveCoreTitles(u.coreAssignments),
     domainRoles: u.domainEligibilities.map((e) => ({
       domainName: e.domain.displayName,
       level: e.level,
@@ -126,6 +123,21 @@ export async function loader({ request }: Route.LoaderArgs) {
     selectedDomain: domainId,
     canEdit,
   };
+}
+
+// Distinct Core lead titles for a member's Roles column. Title-less Core
+// assignments collapse to a single "Core" pill so a Core member without a
+// specific title still shows up (rather than contributing no pill at all).
+function deriveCoreTitles(
+  assignments: { leadTitle: string | null }[],
+): string[] {
+  if (assignments.length === 0) return [];
+  const titles = new Set(
+    assignments.map((a) => a.leadTitle).filter((t): t is string => !!t),
+  );
+  const hasUntitled = assignments.some((a) => !a.leadTitle);
+  if (hasUntitled) titles.add("Core");
+  return Array.from(titles);
 }
 
 // Profile fields offered on the create form. Mirrors the editable text fields
@@ -445,7 +457,6 @@ function MembersTable({ rows }: { rows: MemberRow[] }) {
               <td className="px-4 py-2 text-muted-foreground">{m.email ?? "—"}</td>
               <td className="px-4 py-2">
                 <RolePills
-                  isAdmin={m.isAdmin}
                   coreTitles={m.coreTitles}
                   domainRoles={m.domainRoles}
                 />
@@ -491,7 +502,6 @@ function MemberCard({ member }: { member: MemberRow }) {
         )}
         <div className="mt-2">
           <RolePills
-            isAdmin={member.isAdmin}
             coreTitles={member.coreTitles}
             domainRoles={member.domainRoles}
           />
@@ -519,24 +529,17 @@ function Avatar({ photoUrl, name }: { photoUrl: string | null; name: string }) {
 }
 
 function RolePills({
-  isAdmin,
   coreTitles,
   domainRoles,
 }: {
-  isAdmin: boolean;
   coreTitles: string[];
   domainRoles: { domainName: string; level: string }[];
 }) {
-  if (!isAdmin && coreTitles.length === 0 && domainRoles.length === 0) {
+  if (coreTitles.length === 0 && domainRoles.length === 0) {
     return <span className="text-muted-foreground text-xs">—</span>;
   }
   return (
     <div className="flex flex-wrap gap-1.5">
-      {isAdmin && (
-        <span className="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded bg-accent-coral/15 text-accent-coral">
-          Admin
-        </span>
-      )}
       {coreTitles.map((title) => (
         <span
           key={title}
