@@ -9,6 +9,9 @@ primary_region = "iad"
 
 [env]
   NODE_ENV = "production"
+  # Where the browser opens the Hocuspocus WebSocket. Must match the
+  # [[services]] block below; CSP also derives connect-src from this.
+  COLLAB_URL = "wss://os.dali.dartmouth.edu:3002"
 
 [build]
 
@@ -17,7 +20,25 @@ primary_region = "iad"
   force_https = true
   auto_stop_machines = "stop"
   auto_start_machines = true
-  min_machines_running = 1
+  # Two machines minimum so the Hocuspocus Redis fan-out path is actually
+  # exercised under steady-state traffic — with min=1, two interviewers on
+  # the same doc would always land on the same machine and sync locally,
+  # masking any breakage in the cross-machine layer.
+  min_machines_running = 2
+
+# Hocuspocus collab server runs in the same Node process on a second port.
+# Without this services block, port 3002 isn't exposed at Fly's edge and
+# every collaborative editor falls back to "connect, immediately disconnect."
+# Originally added in #68; accidentally dropped by the dark-mode PR (#130)
+# and the regression went unnoticed until interview notes in prod stopped
+# syncing.
+[[services]]
+  internal_port = 3002
+  protocol = "tcp"
+
+  [[services.ports]]
+    port = 3002
+    handlers = ["tls"]
 
 [[vm]]
   memory = "1gb"
