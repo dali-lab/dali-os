@@ -23,9 +23,17 @@ export async function action({ request, params }: Route.ActionArgs) {
   const groupId = params.groupId!;
 
   if (request.method === "DELETE") {
-    const existing = await prisma.groupDefinition.findUnique({ where: { id: groupId } });
+    const existing = await prisma.groupDefinition.findUnique({
+      where: { id: groupId },
+      select: { systemKey: true },
+    });
     if (!existing)
       return withCors(request, Response.json({ error: "Not found" }, { status: 404 }));
+    if (existing.systemKey)
+      return withCors(
+        request,
+        Response.json({ error: "System-managed groups cannot be deleted" }, { status: 400 }),
+      );
     await prisma.groupDefinition.delete({ where: { id: groupId } });
     return withCors(request, new Response(null, { status: 204 }));
   }
@@ -33,6 +41,26 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (request.method === "PUT" || request.method === "PATCH") {
     const body = await parseJson(request, UpdateGroupSchema);
     if (body instanceof Response) return withCors(request, body);
+
+    const existing = await prisma.groupDefinition.findUnique({
+      where: { id: groupId },
+      select: { type: true, systemKey: true },
+    });
+    if (!existing)
+      return withCors(request, Response.json({ error: "Not found" }, { status: 404 }));
+    // Member edits are blocked on Dynamic groups (resolution is derived from
+    // assignments). A name change on a system group would also drift from the
+    // ensure*Group canonical label, so we block that too.
+    if (existing.systemKey)
+      return withCors(
+        request,
+        Response.json({ error: "System-managed groups cannot be edited" }, { status: 400 }),
+      );
+    if (existing.type !== "Static" && body.staticMemberIds !== undefined)
+      return withCors(
+        request,
+        Response.json({ error: "Dynamic groups update automatically from assignments" }, { status: 400 }),
+      );
 
     const updated = await prisma.groupDefinition.update({
       where: { id: groupId },

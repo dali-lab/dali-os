@@ -1,6 +1,7 @@
 import type { Route } from "./+types/api.groups";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
+import { listVisibleGroupsForUser } from "~/lib/groups";
 import { requireAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
@@ -20,9 +21,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!(await isAdmin(auth.user.sub)))
     return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
 
-  const groups = await prisma.groupDefinition.findMany({
-    orderBy: { name: "asc" },
-  });
+  // Per-viewer visibility: a group surfaces only when the caller is a member.
+  const groups = await listVisibleGroupsForUser(auth.user.sub);
   return withCors(request, Response.json(groups));
 }
 

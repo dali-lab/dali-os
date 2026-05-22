@@ -1291,10 +1291,20 @@ model GroupDefinition {
   id              String    @id @default(cuid())
   name            String
   type            GroupType
-  // For dynamic groups: structured query identifier (e.g. "core:current-term").
+  // For dynamic groups: structured query identifier dispatched in app code.
+  // Recognized forms:
+  //   - "term:<termId>"     – members with any assignment/mentorship in that term
+  //   - "project:<projectId>" – members assigned to that project (any term)
+  //   - "domain:<domainId>" – members holding eligibility in that domain
+  //   - "core"              – Core members for the current term
   dynamicQuery    String?
   // For static groups: explicit member list.
   staticMemberIds String[]
+  // Marks a group as system-managed (auto-created and kept in sync with an
+  // underlying entity). Matches the canonical dynamicQuery form for default
+  // groups, or null for user-created groups. Used to prevent duplicate
+  // backfill and block manual edits/deletes from the UI.
+  systemKey       String?   @unique
 
   createdAt DateTime @default(now())
 }
