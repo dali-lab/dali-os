@@ -595,6 +595,12 @@ model Interview {
   recommendation      String?
   recommendationNotes String?
 
+  // RFC 5545 SEQUENCE for the ICS calendar event tied to this interview.
+  // Bumped before each location-change / reassignment / cancel ICS send so
+  // receiving calendars actually apply the update instead of treating the
+  // new ICS as a duplicate of the previous publish.
+  icsSequence Int @default(0)
+
   assignments InterviewAssignment[]
 
   @@index([applicationCycleId, startTime])
