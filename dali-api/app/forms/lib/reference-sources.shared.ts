@@ -7,6 +7,11 @@
 export const REFERENCE_SOURCE_LABELS = {
   "projects:open-this-term": "Projects — open this term",
   "projects:active": "Projects — all active",
+  // Projects whose term set includes a specific term chosen by the form
+  // author (stored on the question as `data.referenceTermId`). Unlike
+  // `open-this-term`, the term is fixed at authoring time rather than
+  // resolved to the current term at fill time.
+  "projects:active-in-term": "Projects — active in a chosen term",
   "domains:active": "Domains — active",
   // Member-scoped: only the domains THIS member is eligible in. Resolved per
   // filling member, so it's empty on the public (unauthenticated) fill path.
@@ -19,6 +24,19 @@ export function isReferenceSourceKey(
   key: string | undefined | null,
 ): key is ReferenceSourceKey {
   return !!key && key in REFERENCE_SOURCE_LABELS;
+}
+
+// Sources whose options depend on a term the form author picks, stored on the
+// question as `data.referenceTermId`. The editor shows a term picker for these
+// and the server loader filters by that term.
+const TERM_SCOPED_SOURCES = new Set<ReferenceSourceKey>([
+  "projects:active-in-term",
+]);
+
+export function referenceSourceNeedsTerm(
+  key: string | undefined | null,
+): boolean {
+  return isReferenceSourceKey(key) && TERM_SCOPED_SOURCES.has(key);
 }
 
 // For the editor's source dropdown: [{ key, label }] in declaration order.

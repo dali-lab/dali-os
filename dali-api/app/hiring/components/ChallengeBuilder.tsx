@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { GripVertical, Plus, Pencil, Trash2, Save } from 'lucide-react'
 import type { Question } from '~/types'
 import { RichTextEditor } from '~/components/RichTextEditor'
-import { referenceSourceChoices } from '~/forms/lib/reference-sources.shared'
+import { referenceSourceChoices, referenceSourceNeedsTerm } from '~/forms/lib/reference-sources.shared'
 
 const ACCEPT_PRESETS = [
   { label: 'PDF', value: 'application/pdf' },
@@ -47,6 +47,7 @@ export interface BuildQuestionInput {
   maxWordsEnabled?: boolean
   maxWordsValue?: number | string
   referenceSource?: string
+  referenceTermId?: string
 }
 
 export function buildQuestion(input: BuildQuestionInput): Question {
@@ -63,6 +64,7 @@ export function buildQuestion(input: BuildQuestionInput): Question {
     maxWordsEnabled,
     maxWordsValue,
     referenceSource,
+    referenceTermId,
   } = input
 
   let maxWords: number | undefined
@@ -91,6 +93,10 @@ export function buildQuestion(input: BuildQuestionInput): Question {
       maxWords,
       referenceSource:
         type === 'reference' ? referenceSource || undefined : undefined,
+      referenceTermId:
+        type === 'reference' && referenceSourceNeedsTerm(referenceSource)
+          ? referenceTermId || undefined
+          : undefined,
     },
   }
 }
@@ -101,6 +107,9 @@ interface FormBuilderTabProps {
   onSave?: (payload: { questions: Question[]; description: unknown }) => void
   onCancel?: () => void
   isGeneralForm?: boolean
+  // Terms offered for term-scoped reference sources (e.g. projects active in a
+  // chosen term). Empty/omitted when no term picker is needed.
+  terms?: { id: string; code: string }[]
 }
 export function FormBuilderTab({
   initialQuestions = [],
@@ -108,6 +117,7 @@ export function FormBuilderTab({
   onSave,
   onCancel,
   isGeneralForm = false,
+  terms = [],
 }: FormBuilderTabProps) {
   const [questions, setQuestions] = useState<Question[]>(initialQuestions)
   const [description, setDescription] = useState<unknown>(initialDescription ?? null)
@@ -196,6 +206,7 @@ export function FormBuilderTab({
       maxWordsEnabled,
       maxWordsValue,
       referenceSource: editForm.data.referenceSource,
+      referenceTermId: editForm.data.referenceTermId,
     })
     if (isAdding) {
       setQuestions([...questions, updatedQuestion])
@@ -419,6 +430,37 @@ export function FormBuilderTab({
                 Choices are pulled live when the form is filled — e.g. projects
                 open for staffing this term.
               </p>
+
+              {referenceSourceNeedsTerm(editForm.data?.referenceSource) && (
+                <div className="mt-3">
+                  <label className="block text-sm font-medium text-foreground/80 mb-1">
+                    Term
+                  </label>
+                  <select
+                    value={editForm.data?.referenceTermId || ''}
+                    onChange={(e) =>
+                      setEditForm({
+                        ...editForm,
+                        data: {
+                          ...editForm.data!,
+                          referenceTermId: e.target.value || undefined,
+                        },
+                      })
+                    }
+                    className="block w-full rounded-md border border-gray-300 bg-card text-foreground shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
+                  >
+                    <option value="">Select a term…</option>
+                    {terms.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.code}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Projects whose term set includes this term will be listed.
+                  </p>
+                </div>
+              )}
             </div>
           )}
 

@@ -11,7 +11,7 @@
 import { z } from "zod";
 import { prisma } from "~/lib/db";
 import type { Question } from "~/types";
-import { isReferenceSourceKey } from "./reference-sources.shared";
+import { isReferenceSourceKey, referenceSourceNeedsTerm } from "./reference-sources.shared";
 
 const QUESTION_TYPES: Question["type"][] = [
   "text",
@@ -364,6 +364,15 @@ export async function runFormsAction(
         if (q.type === "reference" && !isReferenceSourceKey(q.data.referenceSource))
           return {
             error: `"${q.data.label}" is a reference question but has no valid data source.`,
+            status: 400,
+          };
+        if (
+          q.type === "reference" &&
+          referenceSourceNeedsTerm(q.data.referenceSource) &&
+          !q.data.referenceTermId
+        )
+          return {
+            error: `"${q.data.label}" needs a term selected for its data source.`,
             status: 400,
           };
       }
