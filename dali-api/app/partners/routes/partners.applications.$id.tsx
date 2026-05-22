@@ -145,7 +145,8 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (!isPartnerApplicationStatus(status)) {
       return { error: "Invalid status." };
     }
-    await prisma.partnerApplication.update({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (prisma.partnerApplication as any).update({
       where: { id: params.id },
       data: { status },
     });
@@ -251,6 +252,17 @@ export async function action({ request, params }: Route.ActionArgs) {
       return created;
     });
     return redirect(`/projects/${project.id}`);
+  } else if (intent === "delete") {
+    await prisma.$transaction([
+      prisma.partnerApplicationTargetTerm.deleteMany({
+        where: { applicationId: params.id },
+      }),
+      prisma.partnerApplicationDomain.deleteMany({
+        where: { applicationId: params.id },
+      }),
+      prisma.partnerApplication.delete({ where: { id: params.id } }),
+    ]);
+    return redirect("/partners/applications");
   } else {
     return { error: "Unknown action." };
   }
@@ -270,7 +282,7 @@ export default function PartnerApplicationDetail() {
     collabToken,
     userName,
   } = useLoaderData() as LoaderData;
-  const { editing: canEdit, editMode, setEditMode } = useEditMode(canEditPerm);
+  const { editing: canEdit, editMode, setEditMode } = useEditMode(canEditPerm, true);
   const actionData = useActionData<typeof action>();
 
   return (
@@ -398,7 +410,7 @@ function Header({
           </Form>
         ) : (
           <span className="text-[11px] px-2 py-0.5 rounded-full border border-border text-muted-foreground">
-            {STATUS_LABEL[application.status]}
+            {STATUS_LABEL[application.status as import("../lib/partner-application").PartnerApplicationStatus]}
           </span>
         )}
       </div>
@@ -426,28 +438,52 @@ function Header({
         )}
       </p>
 
-      {canEdit && !application.resultingProjectId && (
-        <Form
-          method="post"
-          onSubmit={(e) => {
-            if (
-              !window.confirm(
-                "Create a project from this application? It will carry over the partner, start term, and per-domain role requests, and the two will be linked.",
-              )
-            ) {
-              e.preventDefault();
-            }
-          }}
-        >
-          <input type="hidden" name="intent" value="promote" />
-          <button
-            type="submit"
-            className="px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
+      <div className="flex items-center gap-2 flex-wrap">
+        {canEdit && !application.resultingProjectId && (
+          <Form
+            method="post"
+            onSubmit={(e) => {
+              if (
+                !window.confirm(
+                  "Create a project from this application? It will carry over the partner, start term, and per-domain role requests, and the two will be linked.",
+                )
+              ) {
+                e.preventDefault();
+              }
+            }}
           >
-            Promote to project →
-          </button>
-        </Form>
-      )}
+            <input type="hidden" name="intent" value="promote" />
+            <button
+              type="submit"
+              className="px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
+            >
+              Promote to project →
+            </button>
+          </Form>
+        )}
+        {canEdit && (
+          <Form
+            method="post"
+            onSubmit={(e) => {
+              if (
+                !window.confirm(
+                  "Permanently delete this application? This cannot be undone.",
+                )
+              ) {
+                e.preventDefault();
+              }
+            }}
+          >
+            <input type="hidden" name="intent" value="delete" />
+            <button
+              type="submit"
+              className="px-3 py-1.5 text-sm font-medium rounded-md border border-destructive/40 text-destructive hover:bg-destructive/10 transition-colors"
+            >
+              Delete application
+            </button>
+          </Form>
+        )}
+      </div>
     </header>
   );
 }

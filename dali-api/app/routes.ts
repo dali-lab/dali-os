@@ -60,6 +60,8 @@ export default [
     route("partners", "partners/routes/partners.tsx"),
     route("partners/applications", "partners/routes/partners.applications.tsx"),
     route("partners/applications/:id", "partners/routes/partners.applications.$id.tsx"),
+    route("partners/meeting-notes", "partners/routes/partners.meeting-notes.tsx"),
+    route("partners/meeting-notes/:id", "partners/routes/partners.meeting-notes.$id.tsx"),
 
     // Education
     route("education", "education/routes/education.tsx"),

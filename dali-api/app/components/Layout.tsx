@@ -31,6 +31,7 @@ import {
   GraduationCap,
   ListTodo,
   Megaphone,
+  NotebookPen,
 } from 'lucide-react'
 import { userInitials } from '~/lib/display'
 import { TabWorkspace, type TabWorkspaceHandle, type OpenTabRequest } from '~/components/TabWorkspace'
@@ -352,6 +353,14 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
       icon: ClipboardList,
       show: canViewStaffing,
       active: path.startsWith('/partners/applications'),
+      sub: null,
+    },
+    {
+      label: 'Meeting Notes',
+      to: '/partners/meeting-notes',
+      icon: NotebookPen,
+      show: canViewStaffing,
+      active: path.startsWith('/partners/meeting-notes'),
       sub: null,
     },
   ].filter((s) => s.show)

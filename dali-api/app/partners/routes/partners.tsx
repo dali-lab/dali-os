@@ -3,7 +3,7 @@ import type { Route } from "./+types/partners";
 import { requireAuth } from "~/lib/auth";
 import { ComingSoon } from "~/components/ComingSoon";
 
-export const meta: Route.MetaFunction = () => [{ title: "Partners · DALI OS" }];
+export const meta: Route.MetaFunction = () => [{ title: "Organizations · DALI OS" }];
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);

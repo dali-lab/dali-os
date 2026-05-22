@@ -5,10 +5,15 @@
 
 export const PARTNER_APPLICATION_STATUSES = [
   "Submitted",
-  "UnderReview",
-  "OnHold",
+  "RejectedPreInterview",
+  "InterviewInviteSent",
+  "InterviewScheduled",
+  "RejectedPostInterview",
+  "InterviewCompleted",
   "Accepted",
-  "Rejected",
+  "ScopeCreated",
+  "ScopeApproved",
+  "ConfirmedStart",
 ] as const;
 
 export type PartnerApplicationStatus =
@@ -18,11 +23,16 @@ export const PARTNER_APPLICATION_STATUS_LABELS: Record<
   PartnerApplicationStatus,
   string
 > = {
-  Submitted: "Submitted",
-  UnderReview: "Under review",
-  OnHold: "On hold",
+  Submitted: "New Submission",
+  RejectedPreInterview: "Rejected Pre-Interview",
+  InterviewInviteSent: "Interview Invite Sent",
+  InterviewScheduled: "Interview Scheduled",
+  RejectedPostInterview: "Rejected Post-Interview",
+  InterviewCompleted: "Interview Completed",
   Accepted: "Accepted",
-  Rejected: "Rejected",
+  ScopeCreated: "Scope Created",
+  ScopeApproved: "Scope Approved",
+  ConfirmedStart: "Confirmed Start",
 };
 
 // Pill tint per status (Tailwind classes), shared by the list table and the
@@ -32,18 +42,31 @@ export const PARTNER_APPLICATION_STATUS_PILL: Record<
   string
 > = {
   Submitted: "bg-muted text-foreground",
-  UnderReview: "bg-accent-teal/15 text-accent-teal",
-  OnHold: "bg-muted/50 text-muted-foreground",
-  Accepted: "bg-accent-teal/25 text-accent-teal",
-  Rejected: "bg-destructive/10 text-destructive",
+  RejectedPreInterview: "bg-destructive/10 text-destructive",
+  InterviewInviteSent: "bg-accent-teal/15 text-accent-teal",
+  InterviewScheduled: "bg-accent-teal/25 text-accent-teal",
+  RejectedPostInterview: "bg-destructive/10 text-destructive",
+  InterviewCompleted: "bg-accent-teal/40 text-accent-teal",
+  Accepted: "bg-accent-teal/50 text-accent-teal",
+  ScopeCreated: "bg-accent-coral/15 text-accent-coral",
+  ScopeApproved: "bg-accent-coral/30 text-accent-coral",
+  ConfirmedStart: "bg-accent-coral/50 text-white",
 };
 
-// Statuses that count toward the projected lab-headcount chart. Submitted /
-// OnHold are too speculative; Rejected is dead. Accepted is committed;
-// UnderReview is the realistic near-term pipeline.
+// Statuses that count toward the projected lab-headcount chart. Early-stage
+// and rejected statuses are too speculative or dead. From Accepted onward the
+// engagement is real enough to include in the projection.
 export const PROJECTING_STATUSES: PartnerApplicationStatus[] = [
-  "UnderReview",
   "Accepted",
+  "ScopeCreated",
+  "ScopeApproved",
+  "ConfirmedStart",
+];
+
+// Statuses that represent a definitive rejection (card is visually muted).
+export const REJECTED_STATUSES: PartnerApplicationStatus[] = [
+  "RejectedPreInterview",
+  "RejectedPostInterview",
 ];
 
 export function isPartnerApplicationStatus(

@@ -25,9 +25,12 @@ export default defineConfig({
       "yjs",
       "y-prosemirror",
       "@hocuspocus/provider",
+      "@dnd-kit/core",
+      "@dnd-kit/utilities",
     ],
   },
   ssr: {
+    noExternal: ["@dnd-kit/core", "@dnd-kit/utilities"],
     external: [
       "@prisma/client",
       "@prisma/adapter-pg",

@@ -2939,7 +2939,7 @@ async function main() {
       // Multi-term engagement: exercises the new multiple-target-terms UI.
       // 26X may not exist in the minimal local seed; filtered out below.
       targetTermIds: [term26S?.id, term26X?.id],
-      status: "UnderReview" as const,
+      status: "InterviewInviteSent" as const,
       summary: "Touchscreen kiosks that let visitors explore the permanent collection by theme.",
       domains: [
         { domainId: "domain-design", expectedMembers: 2, expectedChallenges: "Kiosk UX, wayfinding, and an accessible browsing flow for all ages." },
@@ -2972,7 +2972,8 @@ async function main() {
     },
   ];
   for (const a of partnerApplicationSeeds) {
-    await prisma.partnerApplication.upsert({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (prisma.partnerApplication as any).upsert({
       where: { id: a.id },
       update: { title: a.title, partnerOrgId: a.partnerOrgId, status: a.status, summary: a.summary },
       create: { id: a.id, title: a.title, partnerOrgId: a.partnerOrgId, status: a.status, summary: a.summary },
@@ -2994,6 +2995,56 @@ async function main() {
     }
   }
   console.log(`  ${partnerApplicationSeeds.length} partner applications, ${partnerApplicationSeeds.reduce((n, a) => n + a.domains.length, 0)} domain-scope rows`);
+
+  // ── Partner meeting notes ───────────────────────────────────────────────────
+  const meetingNoteSeeds = [
+    {
+      id: "mnote-hood-intro",
+      title: "Hood Museum — initial intro call",
+      meetingDate: new Date("2026-04-10T14:00:00Z"),
+      category: "Partner" as const,
+      attendees: "Alejandro\nCarissa\nRachel (Hood)",
+      partnerOrgId: "partner-hood-museum",
+    },
+    {
+      id: "mnote-tuck-scope",
+      title: "Tuck — scope review",
+      meetingDate: new Date("2026-04-22T15:30:00Z"),
+      category: "Partner" as const,
+      attendees: "Alejandro\nTerris\nMark (Tuck)",
+      partnerOrgId: "partner-tuck-school",
+    },
+    {
+      id: "mnote-core-planning",
+      title: "Core team — 26S partner pipeline planning",
+      meetingDate: new Date("2026-05-01T10:00:00Z"),
+      category: "DALI" as const,
+      attendees: "Alejandro\nCarissa\nTerris",
+      partnerOrgId: null,
+    },
+  ];
+  for (const n of meetingNoteSeeds) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (prisma as any).partnerMeetingNote.upsert({
+      where: { id: n.id },
+      update: {
+        title: n.title,
+        meetingDate: n.meetingDate,
+        category: n.category,
+        attendees: n.attendees,
+        partnerOrgId: n.partnerOrgId,
+      },
+      create: {
+        id: n.id,
+        title: n.title,
+        meetingDate: n.meetingDate,
+        category: n.category,
+        attendees: n.attendees,
+        partnerOrgId: n.partnerOrgId,
+      },
+    });
+  }
+  console.log(`  ${meetingNoteSeeds.length} partner meeting notes`);
 
   // ── Staffing cycle + preferences ───────────────────────────────────────────
   // Demo data for the /projects/staffing board. Staffing is always open —

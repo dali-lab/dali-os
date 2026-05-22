@@ -14,11 +14,17 @@ const SNAPSHOT_MIN_INTERVAL_MS = 30_000;
  *   review:{reviewId}:rejectionRationale
  *   interview:{interviewId}:notes
  *   interview:{interviewId}:recommendation
+ *   partner-note:{noteId}:body   (PartnerMeetingNote — seeded from template)
  */
 function parseDocName(name: string) {
-  const parts = name.split(":");
-  if (parts.length !== 3) return null;
-  const [entity, id, field] = parts;
+  // partner-note uses a hyphen so the entity segment is "partner-note", not "partner".
+  // Split on the first two ":" only to avoid breaking the entity name.
+  const idx1 = name.indexOf(":");
+  const idx2 = name.indexOf(":", idx1 + 1);
+  if (idx1 === -1 || idx2 === -1) return null;
+  const entity = name.slice(0, idx1);
+  const id = name.slice(idx1 + 1, idx2);
+  const field = name.slice(idx2 + 1);
   return { entity, id, field };
 }
 
@@ -68,6 +74,45 @@ async function seedContent(name: string): Promise<string | null> {
       }
       return parts.join("\n\n") || "";
     }
+  }
+
+  // Partner meeting note — seed with the standard meeting note template.
+  if (entity === "partner-note" && field === "body") {
+    return [
+      "attendees",
+      "- Alejandro",
+      "- ",
+      "",
+      "agenda",
+      "- intros",
+      "- summary of project",
+      "- review and questions",
+      "",
+      "things to go over",
+      "- ",
+      "",
+      "notes",
+      "",
+      "questions",
+      "- ",
+      "",
+      "moving forward steps",
+      "- ",
+      "",
+      "evaluation",
+      "RATE 1-5",
+      "1- very poor | 2- poor | 3- acceptable | 4- good | 5- very good",
+      "",
+      "Partner Passion | ",
+      "Partner would work well w/ students | ",
+      "Unique niche | ",
+      "Solving problem well | ",
+      "Impact focused | ",
+      "Interesting design / technical problems | ",
+      "Aligns with members interest | ",
+      "Students will feel impact | ",
+      "Can pay | ",
+    ].join("\n");
   }
 
   return null;

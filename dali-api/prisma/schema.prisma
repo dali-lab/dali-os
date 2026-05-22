@@ -2569,6 +2569,7 @@ model PartnerOrg {
   users        PartnerUser[]
   projects     ProjectPartner[]
   applications PartnerApplication[]
+  meetingNotes PartnerMeetingNote[]
 
   createdAt DateTime @default(now())
 }
@@ -2843,12 +2844,53 @@ model PartnerApplicationDomain {
   @@index([domainId])
 }
 
-// Inbound-pitch pipeline. Submitted → UnderReview → (Accepted | Rejected),
-// with OnHold as a parking state.
+// Partner-lead pipeline. Submitted is the entry state (form submission or
+// manually created). The remaining 9 columns map to the partner lead's Notion
+// workflow and are moved manually via drag-and-drop on the kanban board.
 enum PartnerApplicationStatus {
   Submitted
-  UnderReview
-  OnHold
+  RejectedPreInterview
+  InterviewInviteSent
+  InterviewScheduled
+  RejectedPostInterview
+  InterviewCompleted
   Accepted
-  Rejected
+  ScopeCreated
+  ScopeApproved
+  ConfirmedStart
+}
+
+// ─── Partner meeting notes ────────────────────────────────────────────────────
+
+// A note from any meeting the partner lead attends. Category scopes the kind
+// of meeting. contentDocId references a CollabDocument (Hocuspocus/Yjs) — the
+// note body lives there so it gets version history and the existing rich editor.
+// Naming convention for the collab doc: `partner-note:{id}`.
+model PartnerMeetingNote {
+  id           String          @id @default(cuid())
+  title        String
+  meetingDate  DateTime
+  category     MeetingCategory
+  // Plain-text attendee list (one per line or comma-separated — display only).
+  attendees    String          @default("")
+  // Collab doc name, e.g. "partner-note:clxyz123". Null until first open.
+  contentDocId String?         @unique
+  // Optional link to a partner org (e.g. a partner meeting).
+  partnerOrgId String?
+  partnerOrg   PartnerOrg?     @relation(fields: [partnerOrgId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([partnerOrgId])
+  @@index([category])
+  @@index([meetingDate(sort: Desc)])
+}
+
+enum MeetingCategory {
+  Partner
+  Student
+  DALI
+  Faculty
+  Other
 }

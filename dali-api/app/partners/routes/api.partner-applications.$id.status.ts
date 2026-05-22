@@ -49,7 +49,8 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   try {
-    await prisma.partnerApplication.update({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (prisma.partnerApplication as any).update({
       where: { id: params.id },
       data: { status },
     });

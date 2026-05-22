@@ -9,12 +9,15 @@ import { Check, Pencil } from "lucide-react";
  * Defaults to view every visit (plain local state, no persistence) so a page
  * never lands in edit mode unprompted, even for users who can edit.
  */
-export function useEditMode(canEdit: boolean): {
+export function useEditMode(
+  canEdit: boolean,
+  defaultOpen = false,
+): {
   editing: boolean;
   editMode: boolean;
   setEditMode: (next: boolean) => void;
 } {
-  const [editMode, setEditMode] = useState(false);
+  const [editMode, setEditMode] = useState(defaultOpen);
   return { editing: canEdit && editMode, editMode, setEditMode };
 }
 
