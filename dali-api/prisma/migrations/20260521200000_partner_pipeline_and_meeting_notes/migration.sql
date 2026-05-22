@@ -33,6 +33,10 @@ CREATE TYPE "PartnerApplicationStatus" AS ENUM (
 );
 
 -- ─── Step 2: migrate column, remapping old values inline ─────────────────────
+-- Drop the default first: Postgres stores it as a typed literal against the
+-- old enum, so the ALTER COLUMN TYPE fails if a default is present.
+ALTER TABLE "PartnerApplication" ALTER COLUMN status DROP DEFAULT;
+
 -- The CASE converts removed enum values to their new equivalents so the cast
 -- never encounters an invalid label.
 ALTER TABLE "PartnerApplication"
@@ -44,6 +48,10 @@ ALTER TABLE "PartnerApplication"
       ELSE status::text
     END
   )::"PartnerApplicationStatus";
+
+-- Restore the default against the new type.
+ALTER TABLE "PartnerApplication"
+  ALTER COLUMN status SET DEFAULT 'Submitted'::"PartnerApplicationStatus";
 
 DROP TYPE "PartnerApplicationStatus_old";
 
