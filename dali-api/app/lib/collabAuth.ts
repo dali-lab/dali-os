@@ -71,6 +71,16 @@ export async function authorizeCollabDoc(
       },
       select: { id: true },
     });
+
+    // Per-interviewer private notes: `interview:{id}:rec-notes-{assignmentId}`.
+    // Only the owner of that assignment may open the room. Hiring leads are
+    // intentionally excluded — these are private reasoning notes.
+    const field = parts[2]!;
+    if (field.startsWith("rec-notes-")) {
+      const assignmentId = field.slice("rec-notes-".length);
+      return !!assignment && assignment.id === assignmentId;
+    }
+
     if (assignment) return true;
     if (await isHiringLead(userSub)) return true;
     return false;

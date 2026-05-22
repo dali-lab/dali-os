@@ -3,7 +3,6 @@ import { Link, useLoaderData } from 'react-router'
 import { redirect } from 'react-router'
 import {
   ArrowLeft,
-  Save,
   Clock,
   Check,
   Video,
@@ -21,6 +20,7 @@ import { presignAnswers } from '~/hiring/lib/presign'
 import { CollaborativeEditor } from '~/components/CollaborativeEditor'
 import { PresenceProvider } from '~/components/collab/PresenceProvider'
 import { PresenceBar } from '~/components/collab/PresenceBar'
+import { useSharedString } from '~/components/collab/useSharedString'
 import { RichTextViewer, isEmptyDoc } from '~/components/RichTextViewer'
 import { AnswerDisplay } from '~/hiring/components/ApplicationAnswers'
 import type { Route } from './+types/interviewer.interview.$interviewId'
@@ -189,11 +189,17 @@ export default function InterviewDetailPage() {
     if (c?.key) criteriaByKey[c.key] = { label: c.label ?? c.key }
   }
 
-  // Recommendation state (dropdown + mark-complete are still REST-based)
-  const [recommendation, setRecommendation] = useState<string>(
+  // Recommendation dropdown — synced live between interviewers via a Y.Map
+  // on a dedicated collab doc. Hocuspocus persists it, so the draft survives
+  // refresh; on Mark Complete the value is also written to interview.recommendation.
+  const {
+    value: recommendation,
+    setValue: setRecommendation,
+  } = useSharedString(
+    `interview:${interview.id}:rec-vote`,
+    collabToken,
     interview.recommendation ?? '',
   )
-  const [savingRecommendation, setSavingRecommendation] = useState(false)
 
   // Completed state
   const [isCompleted, setIsCompleted] = useState(
@@ -203,21 +209,6 @@ export default function InterviewDetailPage() {
 
   // Decline state
   const [declining, setDeclining] = useState(false)
-
-  // Save recommendation (dropdown value only — notes are handled by collab)
-  const handleSaveRecommendation = useCallback(async () => {
-    setSavingRecommendation(true)
-    try {
-      await fetch(`/api/hiring/interviews/${interview.id}/complete`, {
-        method: 'PATCH',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recommendation }),
-      })
-    } finally {
-      setSavingRecommendation(false)
-    }
-  }, [interview.id, recommendation])
 
   // Mark complete
   const handleMarkComplete = useCallback(async () => {
@@ -645,15 +636,18 @@ export default function InterviewDetailPage() {
 
             <div>
               <label className="block text-sm font-medium text-foreground/80 mb-1">
-                Recommendation Notes
+                Your Notes
               </label>
+              <p className="text-xs text-muted-foreground mb-2">
+                Private — only you can see these notes. Autosaved.
+              </p>
               {collabToken ? (
                 <CollaborativeEditor
                   editorId="recommendation"
-                  documentName={`interview:${interview.id}:recommendation`}
+                  documentName={`interview:${interview.id}:rec-notes-${myAssignment.id}`}
                   token={collabToken}
                   userName={userName}
-                  placeholder="Joint notes on the recommendation..."
+                  placeholder="Your notes on the recommendation..."
                 />
               ) : (
                 <div className="p-4 bg-yellow-50 rounded-lg border border-yellow-200 text-sm text-yellow-800">
@@ -663,14 +657,6 @@ export default function InterviewDetailPage() {
             </div>
 
             <div className="flex items-center gap-3">
-              <button
-                onClick={handleSaveRecommendation}
-                disabled={savingRecommendation || !recommendation}
-                className="inline-flex items-center px-4 py-2 text-sm font-medium text-foreground/80 bg-muted border border-gray-300 rounded-lg hover:bg-muted disabled:opacity-50"
-              >
-                <Save className="w-4 h-4 mr-1.5" />
-                {savingRecommendation ? 'Saving...' : 'Save Draft'}
-              </button>
               <button
                 onClick={handleMarkComplete}
                 disabled={!recommendation || completing}
