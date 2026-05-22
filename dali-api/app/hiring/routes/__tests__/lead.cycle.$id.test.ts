@@ -9,7 +9,7 @@ vi.mock("~/lib/roles");
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isHiringLead } from "~/lib/roles";
-import { action } from "~/hiring/routes/lead.cycle.$id";
+import { action, resolveCycleTab, CYCLE_TABS } from "~/hiring/routes/lead.cycle.$id";
 
 const HIRING_LEAD_ID = "hiring-lead-1";
 const CYCLE_ID = "cycle-1";
@@ -567,5 +567,31 @@ describe("admin.cycle.$id action — hiring lead overrides", () => {
       expect(mockPrisma.cycleNotificationEmail.upsert).not.toHaveBeenCalled();
       expect(mockPrisma.cycleNotificationEmail.deleteMany).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("resolveCycleTab — ?tab= URL sync", () => {
+  it("defaults to overview when no tab param is present", () => {
+    expect(resolveCycleTab(null)).toBe("overview");
+    expect(resolveCycleTab(undefined)).toBe("overview");
+    expect(resolveCycleTab("")).toBe("overview");
+  });
+
+  it("passes through each known tab key", () => {
+    for (const t of CYCLE_TABS) {
+      expect(resolveCycleTab(t)).toBe(t);
+    }
+  });
+
+  it("maps legacy keys onto the merged Interviews tab", () => {
+    // Pre-reorganization deep-links (incl. the ConfidentialityGate redirect)
+    // pointed at ?tab=config / ?tab=dashboard.
+    expect(resolveCycleTab("config")).toBe("interviews");
+    expect(resolveCycleTab("dashboard")).toBe("interviews");
+  });
+
+  it("falls back to overview for unknown values", () => {
+    expect(resolveCycleTab("garbage")).toBe("overview");
+    expect(resolveCycleTab("Setup")).toBe("overview");
   });
 });
