@@ -109,7 +109,7 @@ describe("sendEmail — ICS calendar attachment", () => {
     "END:VCALENDAR",
   ].join("\r\n");
 
-  it("wraps the body in multipart/mixed so Gmail preserves the calendar attachment", async () => {
+  it("places text/calendar inline in multipart/alternative AND as an application/ics attachment", async () => {
     process.env.DALI_APP_ENV = "prod";
     mockTokenAndSendOk();
 
@@ -124,27 +124,35 @@ describe("sendEmail — ICS calendar attachment", () => {
     const body = JSON.parse(fetchMock.mock.calls[1][1].body as string);
     const decoded = decodeRaw(body.raw);
 
-    // Top-level must be multipart/mixed — multipart/alternative gets rewritten
-    // by Gmail's send endpoint and the calendar part is dropped.
+    // Top-level multipart/mixed wrapping body alternatives + the attachment.
     expect(decoded).toMatch(/^Content-Type: multipart\/mixed; boundary="[^"]+"/m);
 
-    // Calendar part is present with method, attachment disposition, and filename.
-    expect(decoded).toContain("Content-Type: text/calendar; charset=utf-8; method=REQUEST");
-    expect(decoded).toContain('Content-Disposition: attachment; filename="invite.ics"');
-
-    // HTML body still lives inside a nested multipart/alternative.
+    // Body alternatives: text/plain → text/html → text/calendar (order matters
+    // for clients that pick the "best" alternative, per RFC 2046 §5.1.4).
     expect(decoded).toContain("Content-Type: multipart/alternative;");
+    expect(decoded).toContain("Content-Type: text/plain; charset=utf-8");
     expect(decoded).toContain("Content-Type: text/html; charset=utf-8");
     expect(decoded).toContain("<p>See you there.</p>");
 
-    // The ICS itself round-trips through base64.
-    const base64Block = decoded.match(/Content-Transfer-Encoding: base64\r\n\r\n([A-Za-z0-9+/=\r\n]+?)\r\n\r\n--/)?.[1];
-    expect(base64Block).toBeTruthy();
-    const reconstructed = Buffer.from(base64Block!.replace(/\r\n/g, ""), "base64").toString("utf8");
-    expect(reconstructed).toBe(sampleIcs);
+    // text/calendar appears INLINE (no Content-Disposition: attachment on this
+    // part) — that's what triggers Gmail's RSVP card.
+    expect(decoded).toContain("Content-Type: text/calendar; charset=utf-8; method=REQUEST");
+
+    // application/ics attachment for non-Gmail clients. Different MIME from
+    // text/calendar so Gmail doesn't dedupe/drop one.
+    expect(decoded).toContain('Content-Type: application/ics; name="invite.ics"');
+    expect(decoded).toContain('Content-Disposition: attachment; filename="invite.ics"');
+
+    // ICS round-trips through base64 (check both copies).
+    const blocks = [...decoded.matchAll(/Content-Transfer-Encoding: base64\r\n\r\n([A-Za-z0-9+/=\r\n]+?)\r\n\r\n--/g)];
+    expect(blocks.length).toBeGreaterThanOrEqual(2);
+    for (const m of blocks) {
+      const reconstructed = Buffer.from(m[1].replace(/\r\n/g, ""), "base64").toString("utf8");
+      expect(reconstructed).toBe(sampleIcs);
+    }
   });
 
-  it("preserves METHOD:CANCEL from the ICS in the Content-Type method parameter", async () => {
+  it("preserves METHOD:CANCEL from the ICS in the inline calendar Content-Type", async () => {
     process.env.DALI_APP_ENV = "prod";
     mockTokenAndSendOk();
 
@@ -176,9 +184,12 @@ describe("sendEmail — ICS calendar attachment", () => {
 
     const body = JSON.parse(fetchMock.mock.calls[1][1].body as string);
     const decoded = decodeRaw(body.raw);
-    const base64Block = decoded.match(/Content-Transfer-Encoding: base64\r\n\r\n([A-Za-z0-9+/=\r\n]+?)\r\n\r\n--/)?.[1] ?? "";
-    for (const line of base64Block.split("\r\n")) {
-      expect(line.length).toBeLessThanOrEqual(76);
+    const blocks = [...decoded.matchAll(/Content-Transfer-Encoding: base64\r\n\r\n([A-Za-z0-9+/=\r\n]+?)\r\n\r\n--/g)];
+    expect(blocks.length).toBeGreaterThan(0);
+    for (const m of blocks) {
+      for (const line of m[1].split("\r\n")) {
+        expect(line.length).toBeLessThanOrEqual(76);
+      }
     }
   });
 
