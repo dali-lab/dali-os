@@ -1157,6 +1157,8 @@ export default function HiringLeadCycleDetails() {
   const [pendingDecisions, setPendingDecisions] = useState<any[]>(loaderData?.finalDecisions ?? [])
   const [releasing, setReleasing] = useState<string | null>(null)
   const [previewDecisionId, setPreviewDecisionId] = useState<string | null>(null)
+  const [decisionDomainFilter, setDecisionDomainFilter] = useState<string>('all')
+  const [decisionTypeFilter, setDecisionTypeFilter] = useState<string>('all')
 
   // ── Loaders (extracted so handlers can refetch after mutations) ──
   const loadStatus = useCallback(async () => {
@@ -2562,7 +2564,25 @@ export default function HiringLeadCycleDetails() {
           reason={loaderData.confidentialityRequired}
           next={`/hiring/lead/cycle/${cycleId}?tab=decisions`}
         />
-      ) : tab === 'decisions' && (
+      ) : tab === 'decisions' && (() => {
+        const boundTypes = new Set(
+          (loaderData?.currentDecisionEmails ?? []).map((b: any) => b.decisionType)
+        )
+        const availableDomains = Array.from(
+          new Set(pendingDecisions.map((d: any) => d.domainApplication.challengeVersion.domain.name))
+        ).sort()
+        const availableTypes = Array.from(
+          new Set(pendingDecisions.map((d: any) => d.type as string))
+        ).sort()
+        const filtersActive = decisionDomainFilter !== 'all' || decisionTypeFilter !== 'all'
+        const filteredDecisions = pendingDecisions.filter((d: any) => {
+          if (decisionDomainFilter !== 'all' && d.domainApplication.challengeVersion.domain.name !== decisionDomainFilter) return false
+          if (decisionTypeFilter !== 'all' && d.type !== decisionTypeFilter) return false
+          return true
+        })
+        const releasable = filteredDecisions.filter((d: any) => boundTypes.has(d.type))
+        const skipped = filteredDecisions.length - releasable.length
+        return (
         <div className="space-y-4">
           <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-2.5 text-xs text-blue-900 inline-flex items-center gap-2">
             <Mail className="w-3.5 h-3.5 flex-shrink-0" aria-hidden />
@@ -2571,35 +2591,73 @@ export default function HiringLeadCycleDetails() {
           <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
             <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-border bg-muted/50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <h3 className="font-bold text-foreground">Final Decisions Ready for Release</h3>
-              {pendingDecisions.length > 0 && (() => {
-                const boundTypes = new Set(
-                  (loaderData?.currentDecisionEmails ?? []).map((b: any) => b.decisionType)
-                )
-                const releasable = pendingDecisions.filter((d: any) => boundTypes.has(d.type))
-                const skipped = pendingDecisions.length - releasable.length
-                return (
-                  <button
-                    onClick={async () => {
-                      for (const d of releasable) {
-                        await fetch(`/api/hiring/decisions/${d.id}/release`, { method: 'POST', credentials: 'include' })
-                      }
-                      setPendingDecisions(prev => prev.filter(p => !boundTypes.has(p.type)))
-                    }}
-                    disabled={releasable.length === 0}
-                    title={
-                      skipped > 0
-                        ? `${skipped} decision${skipped === 1 ? '' : 's'} skipped — no email template bound on the Setup tab`
-                        : undefined
+              {pendingDecisions.length > 0 && (
+                <button
+                  onClick={async () => {
+                    const ids = releasable.map((d: any) => d.id)
+                    for (const id of ids) {
+                      await fetch(`/api/hiring/decisions/${id}/release`, { method: 'POST', credentials: 'include' })
                     }
-                    className="px-3 py-1.5 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition self-start sm:self-auto disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1"
-                  >
-                    <Mail className="w-3.5 h-3.5" aria-hidden />
-                    Release All ({releasable.length})
-                    {skipped > 0 && ` — ${skipped} skipped, no template bound`}
-                  </button>
-                )
-              })()}
+                    const releasedIds = new Set(ids)
+                    setPendingDecisions(prev => prev.filter(p => !releasedIds.has(p.id)))
+                  }}
+                  disabled={releasable.length === 0}
+                  title={
+                    skipped > 0
+                      ? `${skipped} decision${skipped === 1 ? '' : 's'} skipped — no email template bound on the Setup tab`
+                      : undefined
+                  }
+                  className="px-3 py-1.5 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition self-start sm:self-auto disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1"
+                >
+                  <Mail className="w-3.5 h-3.5" aria-hidden />
+                  {filtersActive ? 'Release Filtered' : 'Release All'} ({releasable.length})
+                  {skipped > 0 && ` — ${skipped} skipped, no template bound`}
+                </button>
+              )}
             </div>
+            {pendingDecisions.length > 0 && (
+              <div className="px-4 sm:px-6 py-3 border-b border-border bg-card flex flex-wrap items-center gap-3">
+                <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+                  <span className="font-medium">Domain</span>
+                  <select
+                    value={decisionDomainFilter}
+                    onChange={(e) => setDecisionDomainFilter(e.target.value)}
+                    className="text-sm rounded-md border border-border bg-card px-2 py-1 text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/40"
+                  >
+                    <option value="all">All domains</option>
+                    {availableDomains.map((name) => (
+                      <option key={name} value={name}>{name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+                  <span className="font-medium">Decision</span>
+                  <select
+                    value={decisionTypeFilter}
+                    onChange={(e) => setDecisionTypeFilter(e.target.value)}
+                    className="text-sm rounded-md border border-border bg-card px-2 py-1 text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/40"
+                  >
+                    <option value="all">All decisions</option>
+                    {availableTypes.map((t) => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                </label>
+                {filtersActive && (
+                  <button
+                    type="button"
+                    onClick={() => { setDecisionDomainFilter('all'); setDecisionTypeFilter('all') }}
+                    className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground transition"
+                  >
+                    <X className="w-3 h-3" aria-hidden />
+                    Clear filters
+                  </button>
+                )}
+                <span className="ml-auto text-xs text-muted-foreground">
+                  Showing {filteredDecisions.length} of {pendingDecisions.length}
+                </span>
+              </div>
+            )}
             <div className="hidden sm:block overflow-x-auto">
             <table className="w-full text-sm min-w-[640px]">
               <thead className="bg-muted/50 border-b border-border">
@@ -2612,10 +2670,8 @@ export default function HiringLeadCycleDetails() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {pendingDecisions.map((d: any) => {
-                  const hasBinding = (loaderData?.currentDecisionEmails ?? []).some(
-                    (b: any) => b.decisionType === d.type
-                  )
+                {filteredDecisions.map((d: any) => {
+                  const hasBinding = boundTypes.has(d.type)
                   return (
                   <tr key={d.id} className="hover:bg-muted/50 transition">
                     <td className="px-4 py-3 font-medium text-foreground">
@@ -2667,17 +2723,15 @@ export default function HiringLeadCycleDetails() {
                   </tr>
                   )
                 })}
-                {pendingDecisions.length === 0 && (
-                  <tr><td colSpan={5} className="px-4 py-8 text-center text-muted-foreground/70"><span className="sr-only">Table empty: </span>No Final decisions awaiting release.</td></tr>
+                {filteredDecisions.length === 0 && (
+                  <tr><td colSpan={5} className="px-4 py-8 text-center text-muted-foreground/70"><span className="sr-only">Table empty: </span>{pendingDecisions.length === 0 ? 'No Final decisions awaiting release.' : 'No decisions match the current filter.'}</td></tr>
                 )}
               </tbody>
             </table>
             </div>
             <ul className="sm:hidden divide-y divide-border">
-              {pendingDecisions.map((d: any) => {
-                const hasBinding = (loaderData?.currentDecisionEmails ?? []).some(
-                  (b: any) => b.decisionType === d.type
-                )
+              {filteredDecisions.map((d: any) => {
+                const hasBinding = boundTypes.has(d.type)
                 return (
                   <li key={d.id} className="px-4 py-3 space-y-2">
                     <div className="flex items-start justify-between gap-2">
@@ -2733,8 +2787,8 @@ export default function HiringLeadCycleDetails() {
                   </li>
                 )
               })}
-              {pendingDecisions.length === 0 && (
-                <li className="px-4 py-8 text-center text-sm text-muted-foreground/70">No Final decisions awaiting release.</li>
+              {filteredDecisions.length === 0 && (
+                <li className="px-4 py-8 text-center text-sm text-muted-foreground/70">{pendingDecisions.length === 0 ? 'No Final decisions awaiting release.' : 'No decisions match the current filter.'}</li>
               )}
             </ul>
           </div>
@@ -2751,7 +2805,8 @@ export default function HiringLeadCycleDetails() {
             )
           })()}
         </div>
-      )}
+        )
+      })()}
     </div>
   )
 }
