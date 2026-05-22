@@ -17,6 +17,11 @@ export interface IcsEventParams {
   description?: string;
   organizer: IcsAttendee;
   attendees: IcsAttendee[];
+  // ICS SEQUENCE for this event. RFC 5545 requires UPDATEs to use a value
+  // strictly greater than the previous publish for receiving calendars to
+  // recognize the update. Tracked persistently on Interview.icsSequence and
+  // incremented before each location-change / reassignment / cancel send.
+  sequence: number;
 }
 
 function formatIcsDate(d: Date): string {
@@ -42,7 +47,7 @@ function attendeeLine(att: IcsAttendee): string {
 }
 
 export function buildInviteIcs(params: IcsEventParams): string {
-  const { interviewId, summary, startTime, endTime, location, meetingUrl, description, organizer, attendees } = params;
+  const { interviewId, summary, startTime, endTime, location, meetingUrl, description, organizer, attendees, sequence } = params;
 
   const locationLine = meetingUrl ? `${location} — ${meetingUrl}` : location;
   const descLines = [description, meetingUrl ? `Join: ${meetingUrl}` : null].filter(Boolean).join("\\n");
@@ -63,7 +68,7 @@ export function buildInviteIcs(params: IcsEventParams): string {
     ...(descLines ? [`DESCRIPTION:${escapeIcsText(descLines)}`] : []),
     organizerLine(organizer),
     ...attendees.map(attendeeLine),
-    "SEQUENCE:0",
+    `SEQUENCE:${sequence}`,
     "STATUS:CONFIRMED",
     "END:VEVENT",
     "END:VCALENDAR",
@@ -73,9 +78,9 @@ export function buildInviteIcs(params: IcsEventParams): string {
 }
 
 export function buildCancelIcs(
-  params: Pick<IcsEventParams, "interviewId" | "summary" | "startTime" | "endTime" | "organizer" | "attendees">,
+  params: Pick<IcsEventParams, "interviewId" | "summary" | "startTime" | "endTime" | "organizer" | "attendees" | "sequence">,
 ): string {
-  const { interviewId, summary, startTime, endTime, organizer, attendees } = params;
+  const { interviewId, summary, startTime, endTime, organizer, attendees, sequence } = params;
 
   const lines = [
     "BEGIN:VCALENDAR",
@@ -91,7 +96,7 @@ export function buildCancelIcs(
     `SUMMARY:${escapeIcsText(summary)}`,
     organizerLine(organizer),
     ...attendees.map(attendeeLine),
-    "SEQUENCE:1",
+    `SEQUENCE:${sequence}`,
     "STATUS:CANCELLED",
     "END:VEVENT",
     "END:VCALENDAR",
