@@ -5,7 +5,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
 import { presignAnswers } from "~/hiring/lib/presign";
-import { ChevronDown } from "lucide-react";
+import { ArrowLeft, ChevronDown } from "lucide-react";
 import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
 import { AnswerDisplay } from "~/hiring/components/ApplicationAnswers";
 import {
@@ -189,36 +189,35 @@ export default function DomainLeadApplicationView() {
   const allCriteria = [...(generalRubricCriteria ?? []), ...(domainRubricCriteria ?? [])];
 
   return (
-    <div className="space-y-4">
-      <Link
-        to="/hiring/domain-lead"
-        className="text-sm text-blue-600 hover:text-blue-800 font-medium"
-      >
-        ← Back to Dashboard
-      </Link>
-
+    <div className="space-y-6 pb-12">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">
+          <Link
+            to="/hiring/domain-lead"
+            className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground/80"
+          >
+            <ArrowLeft className="w-4 h-4 mr-1" /> Back to Dashboard
+          </Link>
+          <h1 className="text-2xl font-bold text-foreground mt-2">
             {application.user.firstName} {application.user.lastName}
           </h1>
-          <p className="text-muted-foreground text-sm mt-0.5">
+          <p className="mt-1 text-muted-foreground">
             {da.challengeVersion.domain?.name} · {application.applicationCycle.name}
           </p>
         </div>
-        <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${statusInfo.bg}`}>
+        <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold flex-shrink-0 ${statusInfo.bg}`}>
           {statusInfo.label}
         </span>
       </div>
 
       {/* Two-column layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left: Application content */}
         <div className="lg:col-span-2 space-y-6">
           {generalQuestions.length > 0 && (
             <section className="bg-card border border-border rounded-lg p-6 space-y-5">
-              <h2 className="text-lg font-semibold text-foreground">General Application</h2>
+              <h2 className="text-lg font-bold text-foreground">General Application</h2>
               {!isEmptyDoc(application.generalChallengeVersion?.description) && (
                 <div className="border border-border rounded-md bg-muted/30 px-4 py-3">
                   <RichTextViewer content={application.generalChallengeVersion.description} />
@@ -236,7 +235,7 @@ export default function DomainLeadApplicationView() {
           )}
 
           <section className="bg-card border border-border rounded-lg p-6 space-y-5">
-            <h2 className="text-lg font-semibold text-foreground">
+            <h2 className="text-lg font-bold text-foreground">
               {da.challengeVersion.challenge?.name ?? `${da.challengeVersion.domain?.name} Challenge`}
             </h2>
             {!isEmptyDoc(da.challengeVersion.description) && (
@@ -256,19 +255,18 @@ export default function DomainLeadApplicationView() {
         </div>
 
         {/* Right: Context sidebar */}
-        <div className="space-y-4 lg:sticky lg:top-20 lg:self-start">
+        <div className="space-y-4 lg:sticky lg:top-24 lg:self-start">
           {/* Reviews */}
-          <div className="bg-card border border-border rounded-lg overflow-hidden">
-            <div className="px-4 py-3 bg-muted/50 border-b border-border">
-              <h3 className="text-sm font-semibold text-foreground">
-                Reviews ({reviews.filter((r: any) => r.submittedAt).length}/{reviews.length})
-              </h3>
+          <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
+            <div className="px-6 py-4 bg-muted/50 border-b border-border">
+              <h2 className="text-lg font-bold text-foreground">Reviews</h2>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {reviews.length === 0
+                  ? "No reviewers assigned yet."
+                  : `${reviews.filter((r: any) => r.submittedAt).length}/${reviews.length} submitted`}
+              </p>
             </div>
-            {reviews.length === 0 ? (
-              <div className="px-4 py-6 text-center text-sm text-muted-foreground/70">
-                No reviewers assigned yet.
-              </div>
-            ) : (
+            {reviews.length > 0 && (
               <div className="divide-y divide-gray-100">
                 {reviews.map((review: any) => (
                   <ReviewCard key={review.id} review={review} criteria={allCriteria} />
@@ -279,9 +277,9 @@ export default function DomainLeadApplicationView() {
 
           {/* Interview */}
           {interview && (
-            <div className="bg-card border border-border rounded-lg overflow-hidden">
-              <div className="px-4 py-3 bg-muted/50 border-b border-border">
-                <h3 className="text-sm font-semibold text-foreground">Interview</h3>
+            <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
+              <div className="px-6 py-4 bg-muted/50 border-b border-border">
+                <h2 className="text-lg font-bold text-foreground">Interview</h2>
               </div>
               <div className="px-4 py-3 space-y-2">
                 <div className="flex items-center justify-between">
@@ -318,9 +316,9 @@ export default function DomainLeadApplicationView() {
 
           {/* Decision history */}
           {decisions.length > 0 && (
-            <div className="bg-card border border-border rounded-lg overflow-hidden">
-              <div className="px-4 py-3 bg-muted/50 border-b border-border">
-                <h3 className="text-sm font-semibold text-foreground">Decision History</h3>
+            <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
+              <div className="px-6 py-4 bg-muted/50 border-b border-border">
+                <h2 className="text-lg font-bold text-foreground">Decision History</h2>
               </div>
               <div className="px-4 py-3 space-y-2">
                 {decisions.map((d: any) => (
@@ -389,7 +387,7 @@ function ReviewCard({ review, criteria }: { review: any; criteria: any[] }) {
       {(review.feedback || review.rejectionRationale) && (
         <button
           onClick={() => setExpanded(!expanded)}
-          className="mt-2 text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
+          className="mt-2 text-xs text-accent-coral hover:text-accent-coral/80 flex items-center gap-1"
         >
           {expanded ? "Hide" : "Show"} feedback
           <ChevronDown className={`w-3 h-3 transition-transform ${expanded ? "rotate-180" : ""}`} />

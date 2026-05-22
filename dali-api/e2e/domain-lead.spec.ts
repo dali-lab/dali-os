@@ -48,9 +48,12 @@ test.describe('domain lead workflow', () => {
 
   test('domain lead can reach Rubrics from the sidebar', async ({ page }) => {
     await page.goto('/hiring/domain-lead');
-    // Sidebar Rubrics button opens a new "Rubrics" tab in the workspace.
-    await page.getByRole('button', { name: 'Rubrics' }).click();
-    const rubricsFrame = page.frameLocator('iframe[title="Rubrics"]');
-    await expect(rubricsFrame.getByRole('heading', { name: 'Evaluation Rubrics' })).toBeVisible();
+    // Challenges / Rubrics / Agreements were consolidated into one "Library"
+    // page with tabs. The sidebar Library button opens a "Library" workspace
+    // tab; Rubrics live behind the in-page Rubrics tab.
+    await page.getByRole('button', { name: 'Library' }).click();
+    const libraryFrame = page.frameLocator('iframe[title="Library"]');
+    await libraryFrame.getByRole('tab', { name: 'Rubrics' }).click();
+    await expect(libraryFrame.getByRole('heading', { name: 'Evaluation Rubrics' })).toBeVisible();
   });
 });

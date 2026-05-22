@@ -442,8 +442,8 @@ export function FormBuilderTab({
                     }
                     className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
                       acceptPresets.has(value)
-                        ? 'bg-blue-600 text-white border-blue-600'
-                        : 'bg-white text-gray-700 border-gray-300 hover:border-blue-400'
+                        ? 'bg-accent-coral/15 text-accent-coral border-accent-coral/30'
+                        : 'bg-white text-gray-700 border-gray-300 hover:border-accent-coral/50'
                     }`}
                   >
                     {label}
@@ -473,7 +473,7 @@ export function FormBuilderTab({
           </button>
           <button
             onClick={handleSaveEdit}
-            className="px-3 py-1.5 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 shadow-sm"
+            className="px-3 py-1.5 border border-transparent text-sm font-medium rounded-md text-white bg-accent-coral hover:bg-accent-coral/90 shadow-sm"
           >
             Save Question
           </button>

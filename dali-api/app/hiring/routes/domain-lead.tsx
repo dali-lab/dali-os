@@ -538,15 +538,15 @@ function Section({ title, subtitle, badge, defaultOpen = true, children }: {
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="border border-border rounded-lg overflow-hidden">
+    <div className="py-4 first:pt-0">
       <button
         onClick={() => setOpen(!open)}
-        className="w-full px-5 py-3 flex items-center justify-between bg-muted/50 hover:bg-muted transition text-left"
+        className="group w-full flex items-center justify-between gap-3 text-left"
       >
         <div className="min-w-0 flex-1">
-          <span className="font-semibold text-foreground text-sm">{title}</span>
+          <span className="text-base font-semibold text-foreground group-hover:text-foreground transition">{title}</span>
           {subtitle && (
-            <p className="text-xs text-muted-foreground mt-0.5 truncate">{subtitle}</p>
+            <p className="text-xs text-muted-foreground/80 mt-0.5 truncate">{subtitle}</p>
           )}
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
@@ -554,7 +554,7 @@ function Section({ title, subtitle, badge, defaultOpen = true, children }: {
           <ChevronDown className={`w-4 h-4 text-muted-foreground/70 transition-transform ${open ? "rotate-180" : ""}`} />
         </div>
       </button>
-      {open && <div className="p-5 border-t border-border">{children}</div>}
+      {open && <div className="mt-4">{children}</div>}
     </div>
   );
 }
@@ -593,7 +593,7 @@ function ConfirmDialog({
           <button
             type="button"
             onClick={onConfirm}
-            className={`px-3 py-1.5 text-sm font-medium rounded-md text-white transition ${destructive ? "bg-red-600 hover:bg-red-700" : "bg-blue-600 hover:bg-blue-700"}`}
+            className={`px-3 py-1.5 text-sm font-medium rounded-md text-white transition ${destructive ? "bg-red-600 hover:bg-red-700" : "bg-accent-coral hover:bg-accent-coral/90"}`}
           >
             {confirmLabel}
           </button>
@@ -619,7 +619,7 @@ export default function DomainLeadDashboard() {
   if (domainData.length === 0) {
     return (
       <div className="text-center py-16">
-        <h1 className="text-2xl font-bold text-foreground mb-2">Domain Lead Dashboard</h1>
+        <h1 className="font-heading text-2xl font-bold text-foreground mb-2">Domain Lead Dashboard</h1>
         <p className="text-muted-foreground">You are not assigned as a domain lead for any domain.</p>
       </div>
     );
@@ -627,7 +627,7 @@ export default function DomainLeadDashboard() {
 
   return (
     <div className="space-y-8">
-      <h1 className="text-2xl font-bold text-foreground">Domain Lead Dashboard</h1>
+      <h1 className="font-heading text-2xl font-bold text-foreground">Domain Lead Dashboard</h1>
 
       {domainData.map(({ assignment, cycle, availableCycles, apps, challengeVersionOptions, linkedChallengeVersions, isChallengeReady, interviews, reviewers: cycleReviewers, delibsSessions, draftDecisions, cycleReviewersForDomain, initialDelibsCount, finalDelibsCount, rubricVersionOptions, currentRubricVersionId, rubricCriteria, interviewers, hasApplicationReviews, confidentialityRequired }: any, idx: number) => {
         const isInternToFull = cycle?.cycleType === "InternToFull";
@@ -655,7 +655,7 @@ export default function DomainLeadDashboard() {
             {!cycle ? (
               <div className="p-6">
                 <div className="flex items-center gap-3">
-                  <h2 className="text-xl font-semibold text-foreground">{assignment.domain.name}</h2>
+                  <h2 className="font-heading text-2xl font-bold text-foreground">{assignment.domain.name}</h2>
                 </div>
                 <div className="mt-3 bg-muted/50 rounded-lg p-6 text-muted-foreground text-sm">
                   No active cycle for this domain.
@@ -667,7 +667,7 @@ export default function DomainLeadDashboard() {
                 <div className="px-4 sm:px-6 py-4 border-b border-border bg-card">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                      <h2 className="text-xl font-semibold text-foreground">{assignment.domain.name}</h2>
+                      <h2 className="font-heading text-2xl font-bold text-foreground">{assignment.domain.name}</h2>
                       <span className="text-muted-foreground/70 hidden sm:inline">·</span>
                       <span className="text-lg text-muted-foreground">{cycle.name}</span>
                       {currentStatus && (
@@ -688,7 +688,7 @@ export default function DomainLeadDashboard() {
                   <p className="text-sm text-muted-foreground mt-1">{STATUS_MESSAGES[currentStatus]}</p>
                 </div>
 
-                <div className="p-4 sm:p-6 space-y-4">
+                <div className="px-4 sm:px-6 py-2 divide-y divide-border">
                   {/* Setup — Draft only. Hidden on InternToFull (no challenges). */}
                   {currentStatus === "Draft" && !isInternToFull && (
                     <Section
@@ -710,7 +710,7 @@ export default function DomainLeadDashboard() {
                           isChallengeReady={isChallengeReady}
                         />
                         <div className="flex items-center gap-3 pt-2 border-t border-border">
-                          <Link to="/hiring/challenges" className="text-xs text-blue-600 hover:text-blue-800 font-medium">
+                          <Link to="/hiring/library?tab=challenges" className="text-xs text-blue-600 hover:text-blue-800 font-medium">
                             {hasLinkedChallenge ? "Manage Challenges →" : "Create Challenge →"}
                           </Link>
                         </div>
@@ -721,6 +721,7 @@ export default function DomainLeadDashboard() {
                   {/* Setup — just the domain challenges (read-only after Draft).
                       Hidden on InternToFull (no challenges). */}
                   {currentStatus !== "Draft" && (currentStatus === "Open" || currentStatus === "UnderReview") && !isInternToFull && (
+                    <div className="pt-4">
                     <Section
                       title="Challenges (locked)"
                       subtitle={
@@ -764,7 +765,7 @@ export default function DomainLeadDashboard() {
                           ) : (
                             <div className="flex items-center justify-between">
                               <span className="text-sm text-muted-foreground/70">No challenge linked</span>
-                              <Link to="/hiring/challenges" className="text-xs text-blue-600 hover:text-blue-800 font-medium">
+                              <Link to="/hiring/library?tab=challenges" className="text-xs text-blue-600 hover:text-blue-800 font-medium">
                                 Create Challenge →
                               </Link>
                             </div>
@@ -772,12 +773,13 @@ export default function DomainLeadDashboard() {
                         </div>
 
                         <div className="flex items-center gap-3 pt-2 border-t border-gray-100">
-                          <Link to="/hiring/challenges" className="text-xs text-blue-600 hover:text-blue-800 font-medium">
+                          <Link to="/hiring/library?tab=challenges" className="text-xs text-blue-600 hover:text-blue-800 font-medium">
                             All Challenges →
                           </Link>
                         </div>
                       </div>
                     </Section>
+                    </div>
                   )}
 
                   {/* Rubric — scoring criteria for this domain */}
@@ -806,7 +808,7 @@ export default function DomainLeadDashboard() {
                         </div>
                       )}
                       <div className="mt-2">
-                        <Link to="/hiring/rubrics" className="text-xs text-blue-600 hover:text-blue-800 font-medium">
+                        <Link to="/hiring/library?tab=rubrics" className="text-xs text-blue-600 hover:text-blue-800 font-medium">
                           All Rubrics →
                         </Link>
                       </div>
@@ -834,12 +836,7 @@ export default function DomainLeadDashboard() {
                     <div className={`grid grid-cols-1 ${isInternToFull ? "" : "md:grid-cols-2"} gap-4`}>
                       <ReviewerSection cycleId={cycle.id} domainId={assignment.domainId} initialReviewers={cycleReviewers} />
                       {!isInternToFull && (
-                        <InterviewerSection
-                          cycleId={cycle.id}
-                          domainId={assignment.domainId}
-                          initialInterviewers={interviewers ?? []}
-                          reviewers={cycleReviewers}
-                        />
+                        <InterviewerSection cycleId={cycle.id} domainId={assignment.domainId} initialInterviewers={interviewers ?? []} />
                       )}
                     </div>
                   </Section>
@@ -1203,7 +1200,7 @@ function DraftSection({ cycle, domainId, challengeVersionOptions, linkedChalleng
             <input type="hidden" name="domainId" value={domainId} />
             <button
               type="submit"
-              className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700"
+              className="flex items-center gap-2 px-5 py-2.5 bg-accent-coral text-white text-sm font-semibold rounded-lg hover:bg-accent-coral/90"
             >
               <CheckCircle className="w-4 h-4" />
               Mark Configuration as Ready
@@ -1344,7 +1341,7 @@ function ChallengeSelector({ cycleId, domainId, options, linkedChallengeVersions
           <button
             type="submit"
             disabled={!pickerId}
-            className="px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="px-3 py-2 text-sm font-medium text-white bg-accent-coral rounded-md hover:bg-accent-coral/90 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Add
           </button>
@@ -1461,12 +1458,9 @@ function ReviewerSection({ cycleId, domainId, initialReviewers }: {
   const availableMembers = members.filter(m => !existingMemberIds.has(m.id));
 
   return (
-    <div className="bg-card border border-border rounded-lg overflow-hidden">
-      <div className="px-6 py-4 border-b border-border bg-muted/50">
-        <h3 className="font-semibold text-foreground">Reviewers for this Domain ({reviewers.length})</h3>
-      </div>
-      <div className="p-4 space-y-3">
-        <div className="flex flex-col sm:flex-row sm:items-end gap-2">
+    <div className="space-y-3">
+      <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Reviewers ({reviewers.length})</h4>
+      <div className="flex flex-col sm:flex-row sm:items-end gap-2">
           <div className="flex-1">
             <label className="block text-xs font-medium text-muted-foreground mb-1">Add Reviewer</label>
             <select
@@ -1485,7 +1479,7 @@ function ReviewerSection({ cycleId, domainId, initialReviewers }: {
           <button
             onClick={addReviewer}
             disabled={!selectedMemberId}
-            className="flex items-center gap-1 px-3 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition disabled:opacity-50"
+            className="flex items-center gap-1 px-3 py-2 text-sm font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition disabled:opacity-50"
           >
             <Plus className="w-4 h-4" /> Add
           </button>
@@ -1526,7 +1520,6 @@ function ReviewerSection({ cycleId, domainId, initialReviewers }: {
             setPendingRemove(null);
           }}
         />
-      </div>
     </div>
   );
 }
@@ -1548,19 +1541,15 @@ function RubricPicker({ cycleId, domainId, options, selectedId, locked }: {
       })
     : 'Set';
   return (
-    <div className="bg-card border border-border rounded-lg overflow-hidden">
-      <div className="px-6 py-4 border-b border-border bg-muted/50">
-        <h3 className="font-semibold text-foreground">Domain Rubric</h3>
-      </div>
-      <div className="p-4">
-        {locked ? (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <CheckCircle className="w-4 h-4 text-green-600" />
-            <span>{selectedLabel}</span>
-            <span className="text-xs text-muted-foreground/70 ml-2">(locked — reviewers have been assigned)</span>
-          </div>
-        ) : (
-          <Form method="post" preventScrollReset key={`rubric-${selectedId}`} className="flex flex-col sm:flex-row sm:items-end gap-3">
+    <>
+      {locked ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <CheckCircle className="w-4 h-4 text-green-600" />
+          <span>{selectedLabel}</span>
+          <span className="text-xs text-muted-foreground/70 ml-2">(locked — reviewers have been assigned)</span>
+        </div>
+      ) : (
+        <Form method="post" preventScrollReset key={`rubric-${selectedId}`} className="flex flex-col sm:flex-row sm:items-end gap-3">
             <input type="hidden" name="intent" value="set-rubric" />
             <input type="hidden" name="cycleId" value={cycleId} />
             <input type="hidden" name="domainId" value={domainId} />
@@ -1586,29 +1575,25 @@ function RubricPicker({ cycleId, domainId, options, selectedId, locked }: {
             </div>
             <button
               type="submit"
-              className="px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition"
+              className="px-4 py-2 text-sm font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition"
             >
               Save
             </button>
-          </Form>
-        )}
-      </div>
-    </div>
+        </Form>
+      )}
+    </>
   );
 }
 
-function InterviewerSection({ cycleId, domainId, initialInterviewers, reviewers }: {
+function InterviewerSection({ cycleId, domainId, initialInterviewers }: {
   cycleId: string;
   domainId: string;
   initialInterviewers: any[];
-  reviewers: any[];
 }) {
   const [interviewers, setInterviewers] = useState(initialInterviewers);
   const [members, setMembers] = useState<any[]>([]);
   const [selectedMemberId, setSelectedMemberId] = useState("");
   const [pendingRemove, setPendingRemove] = useState<any | null>(null);
-  const [pendingApplyReviewers, setPendingApplyReviewers] = useState(false);
-  const [applyingReviewers, setApplyingReviewers] = useState(false);
 
   // Resync from props after the loader revalidates.
   useEffect(() => { setInterviewers(initialInterviewers); }, [initialInterviewers]);
@@ -1635,34 +1620,6 @@ function InterviewerSection({ cycleId, domainId, initialInterviewers, reviewers 
     }
   }
 
-  async function applyAllReviewers() {
-    setApplyingReviewers(true);
-    try {
-      const res = await fetch(`/api/hiring/cycles/${cycleId}/interviewers`, {
-        method: "POST", credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "applyAllReviewers", domainId }),
-      });
-      if (res.ok) {
-        const result = await res.json();
-        const added = (result.interviewers ?? []).map((i: any) => ({
-          ...i,
-          availabilityHours: 0,
-          availabilityBlockCount: 0,
-          availabilityBlocks: [],
-        }));
-        setInterviewers(prev => [...prev, ...added]);
-      } else {
-        const err = await res.json().catch(() => ({}));
-        alert(`Failed to apply reviewers: ${err.error ?? res.statusText}`);
-      }
-    } catch (e) {
-      alert(`Failed to apply reviewers: ${e instanceof Error ? e.message : String(e)}`);
-    } finally {
-      setApplyingReviewers(false);
-    }
-  }
-
   async function removeInterviewer(interviewerId: string) {
     try {
       const res = await fetch(`/api/hiring/cycles/${cycleId}/interviewers`, {
@@ -1685,7 +1642,6 @@ function InterviewerSection({ cycleId, domainId, initialInterviewers, reviewers 
 
   const existingMemberIds = new Set(interviewers.map((i: any) => i.userId));
   const availableMembers = members.filter(m => !existingMemberIds.has(m.id));
-  const reviewersToApply = reviewers.filter((r: any) => !existingMemberIds.has(r.userId));
   const pendingName = pendingRemove
     ? (pendingRemove.user?.firstName && pendingRemove.user?.lastName
         ? `${pendingRemove.user.firstName} ${pendingRemove.user.lastName}`
@@ -1693,14 +1649,11 @@ function InterviewerSection({ cycleId, domainId, initialInterviewers, reviewers 
     : "";
 
   return (
-    <div className="bg-card border border-border rounded-lg overflow-hidden">
-      <div className="px-6 py-4 border-b border-border bg-muted/50">
-        <h3 className="font-semibold text-foreground">Interviewers for this Domain ({interviewers.length})</h3>
-      </div>
-      <div className="p-4 space-y-3">
-        <div className="flex flex-col sm:flex-row sm:items-end gap-2">
-          <div className="flex-1">
-            <label className="block text-xs font-medium text-muted-foreground mb-1">Add Interviewer</label>
+    <div className="space-y-3">
+      <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Interviewers ({interviewers.length})</h4>
+      <div className="flex flex-col sm:flex-row sm:items-end gap-2">
+        <div className="flex-1">
+          <label className="block text-xs font-medium text-muted-foreground mb-1">Add Interviewer</label>
             <select
               value={selectedMemberId}
               onChange={e => setSelectedMemberId(e.target.value)}
@@ -1717,25 +1670,9 @@ function InterviewerSection({ cycleId, domainId, initialInterviewers, reviewers 
           <button
             onClick={addInterviewer}
             disabled={!selectedMemberId}
-            className="flex items-center gap-1 px-3 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition disabled:opacity-50"
+            className="flex items-center gap-1 px-3 py-2 text-sm font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition disabled:opacity-50"
           >
             <Plus className="w-4 h-4" /> Add
-          </button>
-        </div>
-        <div className="flex items-center justify-between gap-2 pt-1">
-          <span className="text-xs text-muted-foreground">
-            {reviewersToApply.length > 0
-              ? `${reviewersToApply.length} reviewer${reviewersToApply.length === 1 ? "" : "s"} not yet assigned as interviewer${reviewersToApply.length === 1 ? "" : "s"}.`
-              : reviewers.length > 0
-                ? "All reviewers are already interviewers."
-                : "No reviewers assigned to this domain yet."}
-          </span>
-          <button
-            onClick={() => setPendingApplyReviewers(true)}
-            disabled={reviewersToApply.length === 0 || applyingReviewers}
-            className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg border border-border bg-card hover:bg-muted/50 text-foreground transition disabled:opacity-50"
-          >
-            Apply all reviewers
           </button>
         </div>
         {interviewers.length > 0 ? (
@@ -1795,22 +1732,6 @@ function InterviewerSection({ cycleId, domainId, initialInterviewers, reviewers 
             setPendingRemove(null);
           }}
         />
-        <ConfirmDialog
-          open={pendingApplyReviewers}
-          title={`Apply ${reviewersToApply.length} reviewer${reviewersToApply.length === 1 ? "" : "s"} as interviewer${reviewersToApply.length === 1 ? "" : "s"}?`}
-          body={
-            <p>
-              Every reviewer for this domain who isn't already an interviewer will be added. They'll still need to submit availability before they can be scheduled.
-            </p>
-          }
-          confirmLabel="Apply reviewers"
-          onCancel={() => setPendingApplyReviewers(false)}
-          onConfirm={() => {
-            setPendingApplyReviewers(false);
-            applyAllReviewers();
-          }}
-        />
-      </div>
     </div>
   );
 }
@@ -1850,7 +1771,7 @@ function DelibsSection({ cycleId, domainId, sessions, initialCount, finalCount }
       return (
         <a
           href={`/hiring/domain-lead/delibs/${session.id}`}
-          className="px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition"
+          className="px-4 py-2 text-sm font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition"
         >
           Continue {type} Delibs{countBadge}
         </a>
@@ -1879,25 +1800,20 @@ function DelibsSection({ cycleId, domainId, sessions, initialCount, finalCount }
   }
 
   return (
-    <div className="bg-card border border-border rounded-lg overflow-hidden">
-      <div className="px-6 py-4 border-b border-border bg-muted/50">
-        <h3 className="font-semibold text-foreground">Deliberations</h3>
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm font-medium text-foreground">Initial Delibs</p>
+          <p className="text-xs text-muted-foreground">Review applications and decide who advances to interviews</p>
+        </div>
+        {renderButton("Initial", initialSession)}
       </div>
-      <div className="p-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-foreground">Initial Delibs</p>
-            <p className="text-xs text-muted-foreground">Review applications and decide who advances to interviews</p>
-          </div>
-          {renderButton("Initial", initialSession)}
+      <div className="border-t border-border pt-3 flex items-center justify-between">
+        <div>
+          <p className="text-sm font-medium text-foreground">Final Delibs</p>
+          <p className="text-xs text-muted-foreground">Post-interview decisions: accept, waitlist, or reject</p>
         </div>
-        <div className="border-t border-border pt-3 flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-foreground">Final Delibs</p>
-            <p className="text-xs text-muted-foreground">Post-interview decisions: accept, waitlist, or reject</p>
-          </div>
-          {renderButton("Final", finalSession)}
-        </div>
+        {renderButton("Final", finalSession)}
       </div>
     </div>
   );
@@ -2179,33 +2095,60 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
   }
 
   return (
-    <div className="bg-card border border-border rounded-lg overflow-hidden">
-      <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-border bg-muted/50 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-1">
-          {isUnderReview ? (
-            <div className="flex items-center gap-1 bg-muted rounded-lg p-0.5">
-              <button
-                onClick={() => setFilter("all")}
-                className={`px-3 py-1 text-xs font-medium rounded-md transition ${
-                  filter === "all" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground/80"
-                }`}
-              >
-                All Applicants ({apps.length})
-              </button>
-              <button
-                onClick={() => setFilter("finalize")}
-                className={`px-3 py-1 text-xs font-medium rounded-md transition ${
-                  filter === "finalize" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground/80"
-                }`}
-              >
-                Needs Finalization ({finalizableApps.length})
-              </button>
-            </div>
-          ) : (
-            <h3 className="font-semibold text-foreground">Applications ({apps.length})</h3>
-          )}
+    <div className="border border-border rounded-lg overflow-hidden">
+      <div className="px-4 sm:px-6 py-3 border-b border-border bg-muted/30 flex flex-wrap items-center gap-x-3 gap-y-2">
+        {isUnderReview && (
+          <div className="flex items-center gap-1 bg-muted rounded-lg p-0.5">
+            <button
+              onClick={() => setFilter("all")}
+              className={`px-3 py-1 text-xs font-medium rounded-md transition ${
+                filter === "all" ? "bg-accent-coral text-white shadow-sm" : "text-muted-foreground hover:text-foreground/80"
+              }`}
+            >
+              All Applicants ({apps.length})
+            </button>
+            <button
+              onClick={() => setFilter("finalize")}
+              className={`px-3 py-1 text-xs font-medium rounded-md transition ${
+                filter === "finalize" ? "bg-accent-coral text-white shadow-sm" : "text-muted-foreground hover:text-foreground/80"
+              }`}
+            >
+              Needs Finalization ({finalizableApps.length})
+            </button>
+          </div>
+        )}
+        <div className="relative flex-1 min-w-[12rem] max-w-xs">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/70 pointer-events-none" />
+          <input
+            type="search"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder="Search applicants..."
+            aria-label="Search applicants by name"
+            className="w-full pl-8 pr-3 py-1.5 text-sm rounded-md border border-border bg-card focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
         </div>
-        <div className="flex items-center gap-2">
+        {(query || sortKey !== "none") && (
+          <button
+            type="button"
+            onClick={() => {
+              setSearchParams(prev => {
+                const sp = new URLSearchParams(prev);
+                sp.delete("q");
+                sp.delete("sort");
+                sp.delete("dir");
+                return sp;
+              }, { preventScrollReset: true });
+            }}
+            className="text-xs text-muted-foreground hover:text-foreground/80"
+          >
+            Reset
+          </button>
+        )}
+        <span className="text-xs text-muted-foreground">
+          {displayedApps.length} of {baseApps.length}
+        </span>
+        <div className="ml-auto flex items-center gap-2">
           {isUnderReview && filter === "finalize" && finalizableApps.length > 0 && (
             <button
               onClick={async () => {
@@ -2250,45 +2193,12 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                     ? "Add reviewers to this domain first"
                     : undefined
               }
-              className="px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition disabled:opacity-50"
+              className="px-3 py-1.5 text-xs font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition disabled:opacity-50"
             >
               Auto-Assign Reviewers
             </button>
           )}
         </div>
-      </div>
-      <div className="px-4 sm:px-6 py-3 border-b border-border bg-card flex items-center gap-2">
-        <div className="relative flex-1 max-w-xs">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/70 pointer-events-none" />
-          <input
-            type="search"
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            placeholder="Search applicants..."
-            aria-label="Search applicants by name"
-            className="w-full pl-8 pr-3 py-1.5 text-sm rounded-md border border-border bg-card focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-        {(query || sortKey !== "none") && (
-          <button
-            type="button"
-            onClick={() => {
-              setSearchParams(prev => {
-                const sp = new URLSearchParams(prev);
-                sp.delete("q");
-                sp.delete("sort");
-                sp.delete("dir");
-                return sp;
-              }, { preventScrollReset: true });
-            }}
-            className="text-xs text-muted-foreground hover:text-foreground/80"
-          >
-            Reset
-          </button>
-        )}
-        <span className="text-xs text-muted-foreground ml-auto">
-          {displayedApps.length} of {baseApps.length}
-        </span>
       </div>
       {isUnderReview && selectedDaIds.size > 0 && canAssignReviewers && (
         <div className="sticky top-0 z-10 px-4 sm:px-6 py-2 border-b border-border bg-blue-50 dark:bg-blue-900/20 flex flex-wrap items-center gap-2">
@@ -2323,7 +2233,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
               type="button"
               onClick={bulkAssignReviewer}
               disabled={!bulkReviewerId || bulkBusy !== null}
-              className="px-3 py-1 text-xs font-medium rounded-md bg-blue-600 hover:bg-blue-700 text-white transition disabled:opacity-50"
+              className="px-3 py-1 text-xs font-medium rounded-md bg-accent-coral hover:bg-accent-coral/90 text-white transition disabled:opacity-50"
             >
               {bulkBusy === "assign" ? "Assigning..." : "Assign"}
             </button>
@@ -2332,7 +2242,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
               onClick={bulkAutoAssign}
               disabled={bulkBusy !== null || cycleReviewersForDomain.length === 0}
               title={cycleReviewersForDomain.length === 0 ? "Add reviewers to this domain first" : "Auto-fill reviewer slots on selected applicants"}
-              className="px-3 py-1 text-xs font-medium rounded-md bg-blue-600 hover:bg-blue-700 text-white transition disabled:opacity-50"
+              className="px-3 py-1 text-xs font-medium rounded-md bg-accent-coral hover:bg-accent-coral/90 text-white transition disabled:opacity-50"
             >
               {bulkBusy === "auto" ? "Assigning..." : "Auto-assign to selected"}
             </button>
@@ -2746,7 +2656,7 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
           <button
             onClick={addReviewer}
             disabled={!selectedReviewerId}
-            className="px-1.5 py-0.5 text-xs font-medium rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+            className="px-1.5 py-0.5 text-xs font-medium rounded bg-accent-coral text-white hover:bg-accent-coral/90 disabled:opacity-50"
           >
             Add
           </button>
@@ -2813,9 +2723,9 @@ function ReviewModal({ review, rubricCriteria, onClose }: {
     : m?.daliEmail ?? "Reviewer";
   const isSubmitted = !!review.submittedAt;
   const scoreEntries = Object.entries((review.scores as Record<string, number>) ?? {});
-  const criteriaByKey: Record<string, { label: string }> = {};
+  const criteriaByKey: Record<string, { label: string; description?: string; maxScore?: number }> = {};
   for (const c of rubricCriteria ?? []) {
-    if (c?.key) criteriaByKey[c.key] = { label: c.label ?? c.key };
+    if (c?.key) criteriaByKey[c.key] = { label: c.label ?? c.key, description: c.description, maxScore: c.maxScore };
   }
 
   // Close on Escape
@@ -2885,23 +2795,43 @@ function ReviewModal({ review, rubricCriteria, onClose }: {
             </p>
           ) : (
             <>
+              {review.overallRecommendation && (
+                <div>
+                  <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
+                    Recommendation
+                  </h3>
+                  <span className="inline-flex px-2.5 py-1 rounded-full text-sm font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                    {review.overallRecommendation}
+                  </span>
+                </div>
+              )}
               {scoreEntries.length > 0 && (
                 <div>
                   <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
                     Scores
                   </h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {scoreEntries.map(([key, score]) => (
-                      <div
-                        key={key}
-                        className="flex items-center justify-between text-sm bg-muted/50 rounded px-3 py-2"
-                      >
-                        <span className="text-foreground/80">
-                          {criteriaByKey[key]?.label ?? key}
-                        </span>
-                        <span className="font-semibold text-foreground">{score}</span>
-                      </div>
-                    ))}
+                  <div className="space-y-2">
+                    {scoreEntries.map(([key, score]) => {
+                      const criterion = criteriaByKey[key];
+                      return (
+                        <div key={key} className="bg-muted/50 rounded px-3 py-2">
+                          <div className="flex items-center justify-between gap-3 text-sm">
+                            <span className="text-foreground/80">
+                              {criterion?.label ?? key}
+                            </span>
+                            <span className="font-semibold text-foreground whitespace-nowrap">
+                              {score}
+                              {criterion?.maxScore != null && (
+                                <span className="font-normal text-muted-foreground"> / {criterion.maxScore}</span>
+                              )}
+                            </span>
+                          </div>
+                          {criterion?.description && (
+                            <p className="mt-1 text-xs text-muted-foreground">{criterion.description}</p>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}

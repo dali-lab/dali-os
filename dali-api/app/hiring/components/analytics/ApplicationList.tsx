@@ -1,3 +1,5 @@
+import { useNavigate } from "react-router";
+
 export interface ApplicationRow {
   id: string;
   applicantName: string;
@@ -14,15 +16,12 @@ interface Props {
   selectedDomainName: string | null;
 }
 
-export function ApplicationList({ rows, selectedStatusLabel, selectedDomainName }: Props) {
-  const heading = selectedStatusLabel
-    ? `${selectedStatusLabel} · ${selectedDomainName ?? "All Domains"}`
-    : `All Applications · ${selectedDomainName ?? "All Domains"}`;
+export function ApplicationList({ rows, selectedStatusLabel }: Props) {
+  const navigate = useNavigate();
 
   return (
     <div className="bg-card border border-border rounded-lg">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-        <h3 className="text-sm font-medium text-foreground">{heading}</h3>
+      <div className="flex items-center justify-end px-4 py-3 border-b border-border">
         <span className="text-xs text-muted-foreground">
           {rows.length} {rows.length === 1 ? "application" : "applications"}
         </span>
@@ -48,8 +47,12 @@ export function ApplicationList({ rows, selectedStatusLabel, selectedDomainName 
             </thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={r.id} className="border-t border-border hover:bg-muted/20">
-                  <td className="px-4 py-2 text-foreground">{r.applicantName}</td>
+                <tr
+                  key={r.id}
+                  onClick={() => navigate(`/hiring/applications/${r.id}`)}
+                  className="border-t border-border hover:bg-muted/20 cursor-pointer"
+                >
+                  <td className="px-4 py-2 text-accent-coral">{r.applicantName}</td>
                   <td className="px-4 py-2 text-foreground">{r.statusLabel}</td>
                   <td className="px-4 py-2 text-foreground">{r.domain}</td>
                   <td className="px-4 py-2 text-muted-foreground">

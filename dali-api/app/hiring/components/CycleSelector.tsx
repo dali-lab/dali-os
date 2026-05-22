@@ -29,7 +29,7 @@ export function CycleSelector({
             }}
             className={`px-3 py-1.5 rounded font-medium transition ${
               isActive
-                ? "bg-blue-600 text-white"
+                ? "bg-accent-coral/15 text-accent-coral"
                 : "text-muted-foreground hover:text-foreground"
             }`}
             title={c.name}

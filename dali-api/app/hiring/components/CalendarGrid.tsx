@@ -416,7 +416,7 @@ export default function CalendarGrid({
           <button
             onClick={handleSave}
             disabled={!dirty || saving}
-            className="px-5 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-5 py-2 text-sm font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {saving ? 'Saving...' : 'Save Availability'}
           </button>

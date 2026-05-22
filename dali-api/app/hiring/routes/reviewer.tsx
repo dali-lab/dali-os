@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Link, useLoaderData, useRevalidator } from 'react-router'
+import { Link, useLoaderData, useRevalidator, useSearchParams } from 'react-router'
 import {
   ChevronRight,
   ChevronDown,
@@ -305,6 +305,36 @@ export default function ReviewerDashboard() {
     return () => clearInterval(t)
   }, [hasActiveDelibs, revalidator])
 
+  // ── Top-level view pills ──
+  // Review always shows. Interview only when you're a cycle interviewer
+  // (its sections are otherwise empty). Delibs only when a session is live.
+  // The active pill is in ?view=; an unavailable/garbage value falls back to
+  // the first available pill (always Review).
+  const [searchParams, setSearchParams] = useSearchParams()
+  const availableViews = [
+    'review' as const,
+    ...(isCycleInterviewer ? ['interview' as const] : []),
+    ...(hasActiveDelibs ? ['delibs' as const] : []),
+  ]
+  const requestedView = searchParams.get('view')
+  const view = availableViews.includes(requestedView as any)
+    ? (requestedView as (typeof availableViews)[number])
+    : 'review'
+  const setView = (next: (typeof availableViews)[number]) => {
+    setSearchParams(
+      (prev) => {
+        prev.set('view', next)
+        return prev
+      },
+      { replace: true },
+    )
+  }
+  const VIEW_LABELS: Record<'review' | 'interview' | 'delibs', string> = {
+    review: 'Review',
+    interview: 'Interview',
+    delibs: 'Delibs',
+  }
+
   // Selected delibs card → opens the same applicant-context modal the domain
   // lead uses. /full-context permits any reviewer with cycle access, so this
   // gives non-leads visibility into all reviews on apps in their domain.
@@ -458,6 +488,30 @@ export default function ReviewerDashboard() {
         <CycleSelector cycles={availableCycles} activeId={activeCycle.id} />
       </div>
 
+      {/* View pills — segment the dashboard into Review / Interview / Delibs
+          instead of one long vertical scroll. Only the available views get a
+          pill (Interview when you're an interviewer, Delibs when a session is
+          live). When there's only one, the bar collapses to nothing. */}
+      {availableViews.length > 1 && (
+        <div className="flex gap-1 bg-muted rounded-lg p-1 w-fit">
+          {availableViews.map((v) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => setView(v)}
+              className={`px-4 py-1.5 rounded-md text-sm font-medium transition ${
+                view === v
+                  ? 'bg-accent-coral text-white shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {VIEW_LABELS[v]}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {view === 'review' && (
       <Section
         title="Assigned Written Applications"
         icon={<FileText className="w-4 h-4 text-blue-600" />}
@@ -535,7 +589,10 @@ export default function ReviewerDashboard() {
           </div>
         )}
       </Section>
+      )}
 
+      {view === 'interview' && (
+      <>
       {isCycleInterviewer && (
         <Section
           title="Interview Availability"
@@ -659,7 +716,7 @@ export default function ReviewerDashboard() {
                   <div className="p-6 flex-1 flex flex-col justify-end">
                     <Link
                       to={`/hiring/interviewer/interview/${interview.id}`}
-                      className="inline-flex items-center justify-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                      className="inline-flex items-center justify-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-lg text-white bg-accent-coral hover:bg-accent-coral/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                     >
                       <Video className="w-4 h-4 mr-2" />
                       Open Interview
@@ -672,7 +729,10 @@ export default function ReviewerDashboard() {
           )}
         </Section>
       )}
+      </>
+      )}
 
+      {view === 'delibs' && (
       <Section
         title="Delibs View"
         icon={<ListOrdered className="w-4 h-4 text-blue-600" />}
@@ -709,6 +769,7 @@ export default function ReviewerDashboard() {
           </div>
         )}
       </Section>
+      )}
 
       {selectedDelibsDaId && (
         <ApplicantContextModal
@@ -893,7 +954,7 @@ function ReviewCard({ review, variant }: { review: any; variant: 'pending' | 'in
             variant === 'pending'
               ? 'bg-blue-50 text-blue-700 hover:bg-blue-100'
               : variant === 'inProgress'
-              ? 'bg-blue-600 text-white hover:bg-blue-700'
+              ? 'bg-accent-coral text-white hover:bg-accent-coral/90'
               : 'bg-card border border-gray-300 text-foreground/80 hover:bg-muted/50'
           }`}
         >

@@ -8,7 +8,6 @@ import type { Question } from "~/types";
 import type { Prisma } from "~/generated/prisma/client";
 import { CycleSetupSection as Section } from "~/hiring/components/CycleSetupSection";
 import { ChallengePreviewModal } from "~/hiring/components/ChallengePreviewModal";
-import { ConfidentialityAgreementPicker } from "~/hiring/components/ConfidentialityAgreementPicker";
 
 export const meta: Route.MetaFunction = () => [
   { title: "Fellowship cycle · DALI OS" },
@@ -45,15 +44,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     return redirect(`/hiring/lead/cycle/${cycle.id}`);
   }
 
-  const [
-    allDomains,
-    allFormVersions,
-    allRubricVersions,
-    members,
-    confidentialityAgreementOptions,
-    currentConfidentialityBinding,
-    confidentialitySignatures,
-  ] = await Promise.all([
+  const [allDomains, allFormVersions, allRubricVersions, members] = await Promise.all([
     prisma.domain.findMany({
       where: { active: true, isInternProgram: false },
       orderBy: { displayName: "asc" },
@@ -71,23 +62,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         user: { select: { id: true, firstName: true, lastName: true, daliEmail: true } },
       },
       orderBy: { createdAt: "asc" },
-    }),
-    prisma.confidentialityAgreement.findMany({
-      include: { versions: { orderBy: { versionNumber: "desc" } } },
-      orderBy: { name: "asc" },
-    }),
-    prisma.cycleConfidentialityAgreement.findUnique({
-      where: { applicationCycleId: params.id },
-      include: {
-        confidentialityAgreementVersion: {
-          include: { agreement: { select: { name: true } } },
-        },
-      },
-    }),
-    prisma.confidentialityAgreementSignature.findMany({
-      where: { applicationCycleId: params.id },
-      include: { user: { select: { firstName: true, lastName: true } } },
-      orderBy: { signedAt: "asc" },
     }),
   ]);
 
@@ -147,9 +121,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       userId: m.userId,
       displayName: [m.user.firstName, m.user.lastName].filter(Boolean).join(" ") || m.user.daliEmail || m.userId,
     })),
-    confidentialityAgreementOptions,
-    currentConfidentialityBinding,
-    confidentialitySignatures,
   };
 }
 
@@ -333,26 +304,6 @@ export async function action({ request, params }: Route.ActionArgs) {
     return { ok: true };
   }
 
-  if (intent === "set-confidentiality-agreement") {
-    const versionId =
-      (formData.get("confidentialityAgreementVersionId") as string) || null;
-    if (versionId) {
-      await prisma.cycleConfidentialityAgreement.upsert({
-        where: { applicationCycleId: cycleId },
-        update: { confidentialityAgreementVersionId: versionId },
-        create: {
-          applicationCycleId: cycleId,
-          confidentialityAgreementVersionId: versionId,
-        },
-      });
-    } else {
-      await prisma.cycleConfidentialityAgreement.deleteMany({
-        where: { applicationCycleId: cycleId },
-      });
-    }
-    return { ok: true };
-  }
-
   return Response.json({ error: "Unknown intent" }, { status: 400 });
 }
 
@@ -360,16 +311,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
 export default function InternToFullCycleSetup() {
   const data = useLoaderData<typeof loader>();
-  const {
-    cycle,
-    allDomains,
-    allFormVersions,
-    allRubricVersions,
-    members,
-    confidentialityAgreementOptions,
-    currentConfidentialityBinding,
-    confidentialitySignatures,
-  } = data;
+  const { cycle, allDomains, allFormVersions, allRubricVersions, members } = data;
   const isOpen = cycle.status === "Open" || cycle.status === "UnderReview";
 
   return (
@@ -410,12 +352,6 @@ export default function InternToFullCycleSetup() {
         targetDomains={cycle.targetDomains}
         members={members}
       />
-
-      <ConfidentialityAgreementPicker
-        currentBinding={currentConfidentialityBinding ?? null}
-        agreementOptions={confidentialityAgreementOptions ?? []}
-        signatures={confidentialitySignatures ?? []}
-      />
     </div>
   );
 }
@@ -446,7 +382,7 @@ function CloseDateSection({
             fetcher.submit({ intent: "set-close-date", closeDate: value }, { method: "post" })
           }
           disabled={disabled || fetcher.state !== "idle"}
-          className="px-4 py-2 rounded-md bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+          className="px-4 py-2 rounded-md bg-accent-coral text-white text-sm font-medium hover:bg-accent-coral/90 disabled:opacity-50"
         >
           Save
         </button>
@@ -711,7 +647,7 @@ function CreateFormVersionModal({
               if (cleaned.length === 0) return;
               onSubmit(cleaned);
             }}
-            className="px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
+            className="px-3 py-2 text-sm font-medium text-white bg-accent-coral rounded-md hover:bg-accent-coral/90"
           >
             Create
           </button>
@@ -1007,7 +943,7 @@ function StatusButton({ cycleId, currentStatus }: { cycleId: string; currentStat
         <button
           onClick={() => transition(next as any)}
           disabled={busy}
-          className="px-4 py-2 rounded-md bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+          className="px-4 py-2 rounded-md bg-accent-coral text-white text-sm font-medium hover:bg-accent-coral/90 disabled:opacity-50"
         >
           {busy ? "Working…" : `Move to ${next}`}
         </button>

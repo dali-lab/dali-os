@@ -50,7 +50,7 @@ export function ConfidentialityGate({
       </p>
       <Link
         to={href}
-        className="mt-3 inline-block px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
+        className="mt-3 inline-block px-3 py-2 text-sm font-medium text-white bg-accent-coral rounded-md hover:bg-accent-coral/90"
       >
         Sign agreement
       </Link>
