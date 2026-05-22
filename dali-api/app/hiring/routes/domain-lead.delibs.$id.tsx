@@ -6,7 +6,7 @@ import { requireAuth } from "~/lib/auth";
 import { isDomainLead } from "~/lib/roles";
 import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
 import { ArrowLeft, GripVertical, X, Check } from "lucide-react";
-import { INITIAL_COLUMNS, FINAL_COLUMNS } from "~/hiring/lib/delibs";
+import { INITIAL_COLUMNS, FINAL_COLUMNS, buildColumnOrder } from "~/hiring/lib/delibs";
 import { inReviewPipelineFilter } from "~/hiring/lib/application-pipeline-filter";
 import { ApplicantContextModal } from "~/hiring/components/delibs/ApplicantContextModal";
 
@@ -126,26 +126,15 @@ export default function DelibsKanban() {
     appMap.set(da.id, da);
   }
 
-  // Initialize column order from session or place all in default column
+  // Initialize column order from session, sweeping never-moved apps into the
+  // default column (the server only persists cards that have been moved).
   const savedOrder = (session.columnOrder ?? {}) as Record<string, string[]>;
-  const initialOrder: Record<string, string[]> = {};
-  const placed = new Set<string>();
-
-  for (const col of columns) {
-    initialOrder[col] = [];
-    for (const id of savedOrder[col] ?? []) {
-      if (appMap.has(id) && !placed.has(id)) {
-        initialOrder[col].push(id);
-        placed.add(id);
-      }
-    }
-  }
-  // Place any unplaced apps in the default column
-  for (const da of domainApplications) {
-    if (!placed.has(da.id)) {
-      initialOrder[defaultColumn].push(da.id);
-    }
-  }
+  const initialOrder = buildColumnOrder(
+    savedOrder,
+    appMap.keys(),
+    columns,
+    defaultColumn,
+  );
 
   const [columnOrder, setColumnOrder] =
     useState<Record<string, string[]>>(initialOrder);
@@ -166,8 +155,10 @@ export default function DelibsKanban() {
   // optimistic local state is authoritative until the server response lands.
   const dragItemRef = useRef(dragItem);
   const savingRef = useRef(saving);
+  const appMapRef = useRef(appMap);
   dragItemRef.current = dragItem;
   savingRef.current = saving;
+  appMapRef.current = appMap;
   useEffect(() => {
     if (dragItemRef.current || savingRef.current) return;
     setColumnOrder(initialOrder);
@@ -200,15 +191,16 @@ export default function DelibsKanban() {
       if (res.ok) {
         const updated = await res.json();
         const serverOrder = (updated.columnOrder ?? {}) as Record<string, string[]>;
-        // Reconcile from server's authoritative order so concurrent moves by
-        // other reviewers surface without a page reload.
-        const reconciled: Record<string, string[]> = {};
-        for (const col of columns) reconciled[col] = serverOrder[col] ?? [];
-        setColumnOrder(reconciled);
+        // Reconcile from the server's authoritative order, but re-add never-moved
+        // cards (which the server omits from columnOrder) to the default column so
+        // they don't disappear after a drag.
+        setColumnOrder(
+          buildColumnOrder(serverOrder, appMapRef.current.keys(), columns, defaultColumn),
+        );
       }
       setSaving(false);
     },
-    [session.id, columns]
+    [session.id, columns, defaultColumn]
   );
 
   function handleDragStart(id: string) {
