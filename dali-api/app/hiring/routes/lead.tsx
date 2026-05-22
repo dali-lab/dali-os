@@ -77,7 +77,7 @@ export default function HiringLeadDashboard() {
         <h1 className="text-2xl font-bold text-foreground">Hiring Cycles</h1>
         <button
           onClick={() => setShowModal(true)}
-          className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="flex items-center gap-1.5 px-3 py-2 bg-accent-coral text-white text-sm font-medium rounded-md hover:bg-accent-coral/90 focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           <Plus className="w-4 h-4" />
           New Cycle
@@ -136,7 +136,7 @@ export default function HiringLeadDashboard() {
                   </button>
                   <button
                     type="submit"
-                    className="px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
+                    className="px-3 py-2 text-sm font-medium text-white bg-accent-coral rounded-md hover:bg-accent-coral/90"
                   >
                     Create
                   </button>

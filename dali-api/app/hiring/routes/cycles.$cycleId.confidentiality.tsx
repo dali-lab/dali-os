@@ -151,7 +151,7 @@ export default function CycleConfidentialityPage() {
         {next && (
           <Link
             to={next}
-            className="inline-block px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
+            className="inline-block px-4 py-2 text-sm font-medium text-white bg-accent-coral rounded-md hover:bg-accent-coral/90"
           >
             Continue
           </Link>
@@ -195,7 +195,7 @@ export default function CycleConfidentialityPage() {
         <button
           type="submit"
           disabled={empty}
-          className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50"
+          className="px-4 py-2 text-sm font-medium text-white bg-accent-coral rounded-md hover:bg-accent-coral/90 disabled:opacity-50"
         >
           I agree and sign
         </button>

@@ -208,6 +208,18 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
       sub: null,
     },
     {
+      // Database view of all submissions for a cycle. Core sees every
+      // domain; reviewers see only their assigned domains. The route
+      // itself handles users with no access (empty state), so the tab is
+      // shown to everyone like Reviews.
+      label: 'Applications',
+      to: '/hiring/applications',
+      icon: FileText,
+      show: true,
+      active: path.startsWith('/hiring/applications'),
+      sub: null,
+    },
+    {
       label: 'Cycles',
       to: '/hiring/lead',
       icon: Calendar,
@@ -224,27 +236,17 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
       sub: null,
     },
     {
-      label: 'Challenges',
-      to: '/hiring/challenges',
+      label: 'Library',
+      to: '/hiring/library',
       icon: FileText,
       show: isHiringLead || isDomainLead || isAdmin,
-      active: path.startsWith('/hiring/challenges'),
-      sub: null,
-    },
-    {
-      label: 'Rubrics',
-      to: '/hiring/rubrics',
-      icon: FileText,
-      show: isHiringLead || isDomainLead || isAdmin,
-      active: path.startsWith('/hiring/rubrics'),
-      sub: null,
-    },
-    {
-      label: 'Agreements',
-      to: '/hiring/confidentiality-agreements',
-      icon: FileText,
-      show: isHiringLead || isDomainLead || isAdmin,
-      active: path.startsWith('/hiring/confidentiality-agreements'),
+      // Highlight Library on its list page and on the challenge / rubric /
+      // agreement detail pages it links into.
+      active:
+        path.startsWith('/hiring/library') ||
+        path.startsWith('/hiring/challenges') ||
+        path.startsWith('/hiring/rubrics') ||
+        path.startsWith('/hiring/confidentiality-agreements'),
       sub: null,
     },
     {

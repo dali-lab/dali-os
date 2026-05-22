@@ -21,7 +21,7 @@ import { prisma } from "~/lib/db";
 import { computeFreeIntervals, type Interval } from "~/lib/availability";
 import { CalendarActionSchema } from "~/lib/calendar-schemas";
 import { fetchBusyEvents, listCalendarsForLink } from "~/lib/google-calendar";
-import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
+import { getZonedHourFraction, getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
 import type { Route } from "./+types/calendar";
 
 const DEFAULT_TIMEZONE = "America/New_York";
@@ -1349,6 +1349,19 @@ function useRefreshOnFocus(refresh: () => void) {
   }, [refresh]);
 }
 
+// Ticking "current time" used to draw the now-line. Returns null on the first
+// render so SSR and the initial client paint agree (no hydration mismatch),
+// then fills in after mount and re-ticks every `intervalMs`.
+function useNow(intervalMs = 60_000): Date | null {
+  const [now, setNow] = useState<Date | null>(null);
+  useEffect(() => {
+    setNow(new Date());
+    const id = setInterval(() => setNow(new Date()), intervalMs);
+    return () => clearInterval(id);
+  }, [intervalMs]);
+  return now;
+}
+
 function AvailabilityWeekGrid({ data }: { data: LoaderData }) {
   const revalidator = useRevalidator();
   const refresh = () => revalidator.revalidate();
@@ -1404,6 +1417,7 @@ function AvailabilityWeekGrid({ data }: { data: LoaderData }) {
       <WeekGrid
         days={days}
         showProviderRow
+        timezone={data.timezone}
         backgroundLayer={(dayIdx) =>
           workingHoursStripeLayer(data.workingHours, days[dayIdx].dayOfWeek, { wash: true })
         }
@@ -2263,6 +2277,7 @@ function ScheduleWeekGrid({
             days={days}
             eventsByDay={eventsByDay}
             showQuarterHourGrid
+            timezone={timezone}
             backgroundLayer={(dayIdx) => (
               <>
                 {/* Gradient first so the working-hours stripes draw on top. */}
@@ -2431,6 +2446,7 @@ function WeekGrid({
   showProviderRow = false,
   onDayPointerSelect,
   showQuarterHourGrid = false,
+  timezone,
 }: {
   days: { dayOfWeek: number; num: number; dateUtc: Date }[];
   eventsByDay: Record<number, EventBlock[]>;
@@ -2439,7 +2455,33 @@ function WeekGrid({
   showProviderRow?: boolean;
   onDayPointerSelect?: (dayIdx: number, startHour: number, endHour: number) => void;
   showQuarterHourGrid?: boolean;
+  // When set, the column matching "today" in this timezone is highlighted and a
+  // horizontal current-time line is drawn in it.
+  timezone?: string;
 }) {
+  // Current time, in this timezone, for the today-highlight + now-line. Both are
+  // skipped until `now` is set (post-mount) and when no timezone is provided.
+  const now = useNow();
+  const todayIdx =
+    timezone && now
+      ? (() => {
+          const ymd = getZonedYMD(now, timezone);
+          return days.findIndex(
+            (d) =>
+              d.dateUtc.getUTCFullYear() === ymd.year &&
+              d.dateUtc.getUTCMonth() + 1 === ymd.month &&
+              d.dateUtc.getUTCDate() === ymd.day,
+          );
+        })()
+      : -1;
+  // Pixel offset of the now-line within a column body, or null when "now" falls
+  // outside the visible hour window (line is hidden rather than pinned to an edge).
+  const nowLineTop = (() => {
+    if (!timezone || !now) return null;
+    const frac = getZonedHourFraction(now, timezone);
+    if (frac < HOURS[0] || frac >= HOURS[HOURS.length - 1] + 1) return null;
+    return (frac - HOURS[0]) * HOUR_PX;
+  })();
   // Drag-to-select state. We snap to 15-minute steps and clamp to the visible
   // hour range. dragAnchor is where mousedown happened; dragHover is where the
   // pointer currently is — both are stored as fractional hours.
@@ -2510,11 +2552,13 @@ function WeekGrid({
         ))}
       </div>
       {/* Day columns */}
-      {days.map((d, idx) => (
+      {days.map((d, idx) => {
+        const isToday = idx === todayIdx;
+        return (
         <div key={idx} className="flex-1 min-w-0 border-r last:border-r-0 border-border flex flex-col">
-          <div className={`flex flex-col items-center justify-center border-b border-border ${showProviderRow ? "h-16" : "h-9"}`}>
-            <div className="text-[10px] font-semibold text-muted-foreground tracking-wide">{DAY_KEYS[d.dayOfWeek]}</div>
-            <div className="text-sm font-bold text-foreground">{d.num}</div>
+          <div className={`flex flex-col items-center justify-center border-b border-border ${showProviderRow ? "h-16" : "h-9"} ${isToday ? "bg-accent-coral/10" : ""}`}>
+            <div className={`text-[10px] font-semibold tracking-wide ${isToday ? "text-accent-coral" : "text-muted-foreground"}`}>{DAY_KEYS[d.dayOfWeek]}</div>
+            <div className={isToday ? "flex items-center justify-center w-6 h-6 rounded-full bg-accent-coral text-sm font-bold text-white" : "text-sm font-bold text-foreground"}>{d.num}</div>
             {showProviderRow && (
               <div className="flex items-center gap-0.5 mt-0.5 text-muted-foreground/50">
                 <Building2 className="w-2.5 h-2.5" />
@@ -2555,6 +2599,15 @@ function WeekGrid({
               </Fragment>
             ))}
             {backgroundLayer?.(idx)}
+            {isToday && nowLineTop != null && (
+              <div
+                className="absolute left-0 right-0 h-0 border-t-2 border-accent-coral pointer-events-none z-30"
+                style={{ top: nowLineTop }}
+                aria-label="Current time"
+              >
+                <div className="absolute left-0 -top-1 w-2 h-2 rounded-full bg-accent-coral" />
+              </div>
+            )}
             {drag && drag.dayIdx === idx && (() => {
               const lo = Math.min(drag.anchor, drag.hover);
               const hi = Math.max(drag.anchor, drag.hover);
@@ -2634,7 +2687,8 @@ function WeekGrid({
               ))}
           </div>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

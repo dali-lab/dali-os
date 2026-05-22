@@ -109,7 +109,7 @@ export function EmailTemplateDetail() {
               />
               <button
                 type="submit"
-                className="px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
+                className="px-3 py-2 text-sm font-medium text-white bg-accent-coral rounded-md hover:bg-accent-coral/90"
               >
                 Save
               </button>
@@ -146,7 +146,7 @@ export function EmailTemplateDetail() {
           <button
             type="button"
             onClick={handleStartCreate}
-            className="inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 shadow-sm"
+            className="inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg text-white bg-accent-coral hover:bg-accent-coral/90 shadow-sm"
           >
             <Plus className="w-4 h-4 mr-2" />
             New Version
@@ -239,7 +239,7 @@ export function EmailTemplateDetail() {
                 <button
                   type="submit"
                   disabled={!draftSubject.trim() || !draftBody.trim()}
-                  className="px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50"
+                  className="px-3 py-2 text-sm font-medium text-white bg-accent-coral rounded-md hover:bg-accent-coral/90 disabled:opacity-50"
                 >
                   Save Version
                 </button>

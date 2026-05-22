@@ -21,7 +21,6 @@ import { formatVersionLabel, buildVersionNumberMap } from "~/lib/formatVersion";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { sendExtensionNoticeIfDue, resendExtensionNotice } from "~/hiring/lib/extension-notice";
 import { ConfidentialityGate } from "~/hiring/components/ConfidentialityGate";
-import { ConfidentialityAgreementPicker } from "~/hiring/components/ConfidentialityAgreementPicker";
 import { zonedDayStartUtc, zonedDayEndUtc, getZonedYMD } from "~/lib/timezone";
 
 const APPLICATION_TZ = "America/New_York";
@@ -1369,7 +1368,7 @@ export default function HiringLeadCycleDetails() {
                     : () => advanceStatus()
               }
               disabled={statusUpdating || !draftChecklistMet}
-              className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition disabled:opacity-50"
+              className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition disabled:opacity-50"
             >
               {statusUpdating ? 'Updating...' : cycleStatus === 'Draft' ? 'Open Applications' : cycleStatus === 'Open' ? 'Close Applications' : 'Mark as Completed'}
               <ArrowRight className="w-4 h-4" />
@@ -1497,7 +1496,7 @@ export default function HiringLeadCycleDetails() {
             key={t.key}
             onClick={() => setTab(t.key)}
             className={`flex-shrink-0 md:flex-1 flex items-center justify-center gap-2 px-3 sm:px-4 py-2 rounded-md text-sm font-medium transition whitespace-nowrap ${
-              tab === t.key ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+              tab === t.key ? 'bg-accent-coral text-white shadow-sm' : 'text-muted-foreground hover:text-foreground'
             }`}
           >
             <t.icon className="w-4 h-4" />
@@ -1571,7 +1570,7 @@ export default function HiringLeadCycleDetails() {
                 </div>
                 <button
                   type="submit"
-                  className="flex items-center gap-1 px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition"
+                  className="flex items-center gap-1 px-4 py-2 text-sm font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition"
                 >
                   <Plus className="w-4 h-4" /> Add
                 </button>
@@ -1735,7 +1734,7 @@ export default function HiringLeadCycleDetails() {
             <button
               onClick={saveConfig}
               disabled={configSaving || !config.interviewStartDate || !config.interviewEndDate}
-              className="px-5 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition disabled:opacity-50"
+              className="px-5 py-2 text-sm font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition disabled:opacity-50"
             >
               {configSaving ? 'Saving...' : configSaved ? 'Saved!' : 'Save Configuration'}
             </button>
@@ -1787,7 +1786,7 @@ export default function HiringLeadCycleDetails() {
               <button
                 onClick={addReviewer}
                 disabled={!newMemberId || !newDomainId}
-                className="px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition disabled:opacity-50"
+                className="px-4 py-2 text-sm font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition disabled:opacity-50"
               >
                 Add
               </button>
@@ -1900,7 +1899,7 @@ export default function HiringLeadCycleDetails() {
               <button
                 onClick={addInterviewer}
                 disabled={!newInterviewerMemberId || !newInterviewerDomainId}
-                className="px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition disabled:opacity-50"
+                className="px-4 py-2 text-sm font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition disabled:opacity-50"
               >
                 Add
               </button>
@@ -2976,7 +2975,7 @@ export function OpenApplicationsConfirmModal({
             type="button"
             onClick={confirmOpen}
             disabled={submitting}
-            className="px-3 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md disabled:opacity-50"
+            className="px-3 py-2 text-sm font-medium text-white bg-accent-coral hover:bg-accent-coral/90 rounded-md disabled:opacity-50"
           >
             {submitting ? 'Opening...' : 'Open applications'}
           </button>
@@ -3094,7 +3093,7 @@ function CloseDateCard({ cycle, cycleStatus }: { cycle: any; cycleStatus: string
           </div>
           <button
             type="submit"
-            className="px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition"
+            className="px-4 py-2 text-sm font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition"
           >
             Save
           </button>
@@ -3215,7 +3214,7 @@ function ExtensionSection({
           <button
             type="submit"
             disabled={!Number.isFinite(amount) || amount <= 0}
-            className="px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white transition"
+            className="px-4 py-2 text-sm font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 disabled:opacity-50 text-white transition"
           >
             {extensionActive ? "Update extension" : "Set extension"}
           </button>
@@ -3310,7 +3309,7 @@ function ExtensionSection({
                   setShowConfirm(false);
                   formRef.current?.submit();
                 }}
-                className="px-3 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md"
+                className="px-3 py-2 text-sm font-medium text-white bg-accent-coral hover:bg-accent-coral/90 rounded-md"
               >
                 Confirm
               </button>
@@ -3386,7 +3385,7 @@ function GeneralRubricPicker({ currentRubricVersionId, rubricVersionOptions, loc
           </div>
           <button
             type="submit"
-            className="px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition"
+            className="px-4 py-2 text-sm font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition"
           >
             Save
           </button>
@@ -3598,7 +3597,7 @@ function DomainOverridePanel({
               <button
                 type="submit"
                 disabled={!pickerCvId}
-                className="px-3 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition disabled:opacity-50"
+                className="px-3 py-2 text-sm font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition disabled:opacity-50"
               >
                 Add
               </button>
@@ -3665,7 +3664,7 @@ function DomainOverridePanel({
               )}
               <button
                 type="submit"
-                className="px-3 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition"
+                className="px-3 py-2 text-sm font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition"
               >
                 Save
               </button>
@@ -3919,7 +3918,7 @@ function GeneralFormPicker({ currentCvId, currentCvLabel, options, locked }: {
           </div>
           <button
             type="submit"
-            className="px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition"
+            className="px-4 py-2 text-sm font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition"
           >
             Save
           </button>
@@ -4068,7 +4067,7 @@ function DecisionEmailPicker({ slot, binding, emailTemplates, locked }: {
           </div>
           <button
             type="submit"
-            className="px-3 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition"
+            className="px-3 py-2 text-sm font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition"
           >
             Save
           </button>
@@ -4189,7 +4188,7 @@ function NotificationEmailPicker({ slot, binding, emailTemplates }: {
           </div>
           <button
             type="submit"
-            className="px-3 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition"
+            className="px-3 py-2 text-sm font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition"
           >
             Save
           </button>
@@ -4206,3 +4205,132 @@ function NotificationEmailPicker({ slot, binding, emailTemplates }: {
   );
 }
 
+function ConfidentialityAgreementPicker({
+  currentBinding,
+  agreementOptions,
+  signatures,
+}: {
+  currentBinding: any | null;
+  agreementOptions: any[];
+  signatures: { user: { firstName: string | null; lastName: string | null } }[];
+}) {
+  const [editing, setEditing] = useState(!currentBinding);
+  const [signersOpen, setSignersOpen] = useState(false);
+  const currentName =
+    currentBinding?.confidentialityAgreementVersion?.agreement?.name ?? null;
+  const currentVersion =
+    currentBinding?.confidentialityAgreementVersion?.versionNumber ?? null;
+  const signatureCount = signatures.length;
+
+  return (
+    <div className="bg-card rounded-xl border border-border shadow-sm p-6 space-y-3">
+      <h3 className="text-sm font-bold text-foreground/80">
+        Confidentiality Agreement
+      </h3>
+      <p className="text-xs text-muted-foreground">
+        Reviewers, interviewers, domain leads, and admins must sign this
+        agreement before viewing sensitive data for the cycle. If unset, nobody
+        — including you — can see submitted applications, reviews, interviews,
+        notes, or decisions.
+      </p>
+      {!currentBinding && !editing && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          No agreement bound — sensitive cycle data is hidden from everyone.
+        </div>
+      )}
+      {currentBinding && !editing ? (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <CheckCircle className="w-4 h-4 text-green-600" />
+              <span>
+                {currentName ?? "Set"} — v{currentVersion}
+              </span>
+            </div>
+            <button
+              onClick={() => setEditing(true)}
+              className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+            >
+              Change
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSignersOpen((o) => !o)}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+          >
+            <ChevronRight
+              className={`w-3 h-3 transition-transform ${signersOpen ? "rotate-90" : ""}`}
+            />
+            {signatureCount} signature{signatureCount === 1 ? "" : "s"}
+          </button>
+          {signersOpen && (
+            <ul className="ml-4 space-y-1">
+              {signatures.length === 0 ? (
+                <li className="text-xs text-muted-foreground italic">
+                  No one has signed yet.
+                </li>
+              ) : (
+                signatures.map((sig, i) => {
+                  const name =
+                    `${sig.user.firstName ?? ""} ${sig.user.lastName ?? ""}`.trim() ||
+                    "Unknown";
+                  return (
+                    <li key={i} className="text-xs text-foreground/80">
+                      {name}
+                    </li>
+                  );
+                })
+              )}
+            </ul>
+          )}
+        </div>
+      ) : (
+        <Form
+          method="post"
+          className="flex items-end gap-3"
+          onSubmit={() => setEditing(false)}
+        >
+          <input
+            type="hidden"
+            name="intent"
+            value="set-confidentiality-agreement"
+          />
+          <div className="flex-1">
+            <select
+              name="confidentialityAgreementVersionId"
+              defaultValue={
+                currentBinding?.confidentialityAgreementVersionId ?? ""
+              }
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            >
+              <option value="">No agreement bound</option>
+              {agreementOptions.map((a: any) =>
+                (a.versions ?? []).map((v: any) => (
+                  <option key={v.id} value={v.id}>
+                    {a.name} — v{v.versionNumber}
+                  </option>
+                )),
+              )}
+            </select>
+          </div>
+          <button
+            type="submit"
+            className="px-4 py-2 text-sm font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition"
+          >
+            Save
+          </button>
+          {currentBinding && (
+            <button
+              type="button"
+              onClick={() => setEditing(false)}
+              className="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground"
+            >
+              Cancel
+            </button>
+          )}
+        </Form>
+      )}
+    </div>
+  );
+}

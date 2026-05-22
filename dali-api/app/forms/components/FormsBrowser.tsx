@@ -301,7 +301,7 @@ function FolderCardView({
   return (
     <Link
       to={`/forms/${folder.id}`}
-      className="group flex items-start gap-3 bg-accent-coral/5 border-2 border-accent-coral/30 rounded-lg p-4 hover:border-accent-coral/70 hover:bg-accent-coral/10 hover:shadow-sm transition-all"
+      className="group flex items-start gap-3 bg-card border border-border rounded-lg p-4 hover:border-accent-coral/60 hover:shadow-sm transition-all"
     >
       <div className="mt-0.5 text-accent-coral">
         <Folder className="w-6 h-6 fill-accent-coral/20" />

@@ -10,19 +10,24 @@ export default [
     // Hiring section
     route("hiring/reviewer", "hiring/routes/reviewer.tsx"),
     route("hiring/reviewer/application/:id", "hiring/routes/reviewer.application.$id.tsx"),
+    // Applications database: list of all submissions for a cycle, scoped by
+    // role (Core = all domains, reviewer = own domains). Read-only detail.
+    route("hiring/applications", "hiring/routes/applications.tsx"),
+    route("hiring/applications/:domainApplicationId", "hiring/routes/applications.$domainApplicationId.tsx"),
     route("hiring/domain-lead", "hiring/routes/domain-lead.tsx"),
     route("hiring/domain-lead/application/:id", "hiring/routes/domain-lead.application.$id.tsx"),
     route("hiring/domain-lead/delibs/:id", "hiring/routes/domain-lead.delibs.$id.tsx"),
     route("hiring/lead", "hiring/routes/lead.tsx"),
     route("hiring/lead/cycle/:id", "hiring/routes/lead.cycle.$id.tsx"),
     route("hiring/lead/intern-to-full-cycle/:id", "hiring/routes/lead.intern-to-full-cycle.$id.tsx"),
-    route("hiring/challenges", "hiring/routes/challenges.tsx"),
+    // Library — challenges, rubrics, and confidentiality agreements behind one
+    // page with pills. The list views are consolidated here; the detail pages
+    // keep their original paths.
+    route("hiring/library", "hiring/routes/library.tsx"),
     route("hiring/challenges/:id", "hiring/routes/challenges.$id.tsx"),
-    route("hiring/rubrics", "hiring/routes/rubrics.tsx"),
     route("hiring/rubrics/:id", "hiring/routes/rubrics.$id.tsx"),
     route("hiring/emails", "hiring/routes/email-templates.tsx"),
     route("hiring/emails/:id", "hiring/routes/email-templates.$id.tsx"),
-    route("hiring/confidentiality-agreements", "hiring/routes/confidentiality-agreements.tsx"),
     route("hiring/confidentiality-agreements/:id", "hiring/routes/confidentiality-agreements.$id.tsx"),
     route("hiring/cycles/:cycleId/confidentiality", "hiring/routes/cycles.$cycleId.confidentiality.tsx"),
     route("hiring/interviewer/interview/:interviewId", "hiring/routes/interviewer.interview.$interviewId.tsx"),

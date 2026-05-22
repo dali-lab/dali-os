@@ -70,10 +70,10 @@ export function RubricDetail() {
     <div className="space-y-6">
       <div>
         <Link
-          to="/hiring/rubrics"
+          to="/hiring/library?tab=rubrics"
           className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground/80 mb-4"
         >
-          <ArrowLeft className="w-4 h-4 mr-1" /> Back to Rubrics
+          <ArrowLeft className="w-4 h-4 mr-1" /> Back to Library
         </Link>
         <div className="flex justify-between items-start">
           <div>
@@ -82,7 +82,7 @@ export function RubricDetail() {
           {!isCreatingVersion && (
             <button
               onClick={handleStartCreate}
-              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 shadow-sm"
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-accent-coral hover:bg-accent-coral/90 shadow-sm"
             >
               <Plus className="w-4 h-4 mr-2" />
               New Version
@@ -175,7 +175,7 @@ export function RubricDetail() {
                     <input type="hidden" name="criteria" value={JSON.stringify(criteria)} />
                     <button
                       type="submit"
-                      className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md"
+                      className="px-3 py-1.5 text-sm font-medium text-white bg-accent-coral hover:bg-accent-coral/90 rounded-md"
                     >
                       Save Version
                     </button>

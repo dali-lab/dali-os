@@ -27,6 +27,22 @@ export function getZonedYMD(
 }
 
 /**
+ * Hour-of-day of `date` interpreted in `timezone`, as a fraction in [0, 24)
+ * (e.g. 2:30 PM → 14.5). Used to position the calendar's "current time" line.
+ */
+export function getZonedHourFraction(date: Date, timezone: string): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+  const hour = Number(parts.find((p) => p.type === "hour")?.value ?? "0") % 24;
+  const minute = Number(parts.find((p) => p.type === "minute")?.value ?? "0");
+  return hour + minute / 60;
+}
+
+/**
  * UTC instant corresponding to the last second of `year-month-day` in
  * `timezone` (i.e. 23:59:59 local). Computed as next-day midnight minus 1s so
  * DST transition days resolve correctly.
