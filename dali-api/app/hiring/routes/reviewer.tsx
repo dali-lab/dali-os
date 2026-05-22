@@ -595,57 +595,6 @@ export default function ReviewerDashboard() {
       <>
       {isCycleInterviewer && (
         <Section
-          title="Interview Availability"
-          icon={<CalendarDays className="w-4 h-4 text-blue-600" />}
-          badge={
-            needsAvailabilityPrompt ? (
-              <span className="text-xs font-medium text-accent-coral">
-                Action needed
-              </span>
-            ) : savedAvailability.length > 0 ? (
-              <span className="text-xs font-medium text-green-700">
-                {savedAvailability.length} blocks saved
-              </span>
-            ) : null
-          }
-        >
-          {interviewConfig ? (
-            <div className="space-y-3">
-              {importError && (
-                <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
-                  {importError}
-                </div>
-              )}
-              <p className="text-sm text-gray-500">
-                Click or drag to select the times you are available to conduct
-                interviews. 15-minute blocks.
-              </p>
-              <CalendarGrid
-                rangeStart={isoToLocalMidnightInTz(interviewConfig.interviewStartDate, interviewConfig.timezone)}
-                rangeEnd={isoToLocalMidnightInTz(interviewConfig.interviewEndDate, interviewConfig.timezone)}
-                dayStartHour={interviewConfig.dayStartHour}
-                dayEndHour={interviewConfig.dayEndHour}
-                savedBlocks={savedAvailability}
-                interviewBlocks={interviewBlocks}
-                onSave={handleSaveAvailability}
-                saving={availabilitySaving}
-                onImportFromGoogle={handleImportFromGoogle}
-                importing={importing}
-                pendingPrefill={pendingPrefill}
-              />
-            </div>
-          ) : (
-            <p className="text-sm text-gray-500">
-              Interview dates have not been configured yet. You'll be able to
-              set your availability once your Hiring Lead configures the
-              interview window.
-            </p>
-          )}
-        </Section>
-      )}
-
-      {isCycleInterviewer && (
-        <Section
           title="Assigned Interviews"
           icon={<Video className="w-4 h-4 text-blue-600" />}
           badge={
@@ -726,6 +675,57 @@ export default function ReviewerDashboard() {
               )
             })}
           </div>
+          )}
+        </Section>
+      )}
+
+      {isCycleInterviewer && (
+        <Section
+          title="Interview Availability"
+          icon={<CalendarDays className="w-4 h-4 text-blue-600" />}
+          badge={
+            needsAvailabilityPrompt ? (
+              <span className="text-xs font-medium text-accent-coral">
+                Action needed
+              </span>
+            ) : savedAvailability.length > 0 ? (
+              <span className="text-xs font-medium text-green-700">
+                {savedAvailability.length} blocks saved
+              </span>
+            ) : null
+          }
+        >
+          {interviewConfig ? (
+            <div className="space-y-3">
+              {importError && (
+                <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
+                  {importError}
+                </div>
+              )}
+              <p className="text-sm text-gray-500">
+                Click or drag to select the times you are available to conduct
+                interviews. 15-minute blocks.
+              </p>
+              <CalendarGrid
+                rangeStart={isoToLocalMidnightInTz(interviewConfig.interviewStartDate, interviewConfig.timezone)}
+                rangeEnd={isoToLocalMidnightInTz(interviewConfig.interviewEndDate, interviewConfig.timezone)}
+                dayStartHour={interviewConfig.dayStartHour}
+                dayEndHour={interviewConfig.dayEndHour}
+                savedBlocks={savedAvailability}
+                interviewBlocks={interviewBlocks}
+                onSave={handleSaveAvailability}
+                saving={availabilitySaving}
+                onImportFromGoogle={handleImportFromGoogle}
+                importing={importing}
+                pendingPrefill={pendingPrefill}
+              />
+            </div>
+          ) : (
+            <p className="text-sm text-gray-500">
+              Interview dates have not been configured yet. You'll be able to
+              set your availability once your Hiring Lead configures the
+              interview window.
+            </p>
           )}
         </Section>
       )}
