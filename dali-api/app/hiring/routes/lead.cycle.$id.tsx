@@ -1143,7 +1143,13 @@ export default function HiringLeadCycleDetails() {
   } | null>(null)
 
   // ── Cycle status ──
-  const [cycleStatus, setCycleStatus] = useState<string>('Draft')
+  // Hydrate from the loader's statusUpdates so reload renders the correct
+  // status on the first paint. loadStatus() re-fetches via /api shortly after
+  // mount to pick up any server-side transition (e.g. auto-close) since the
+  // loader ran.
+  const [cycleStatus, setCycleStatus] = useState<string>(
+    cycle?.statusUpdates?.[0]?.newStatus ?? 'Draft'
+  )
   const [statusUpdating, setStatusUpdating] = useState(false)
   const [statusError, setStatusError] = useState<string | null>(null)
   const [showCompleteConfirm, setShowCompleteConfirm] = useState(false)
