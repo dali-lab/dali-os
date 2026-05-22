@@ -28,13 +28,21 @@ function sanitizeHeader(value: string): string {
   return value.replace(/[\r\n]/g, '')
 }
 
+function wrapBase64(s: string, width = 76): string {
+  return s.match(new RegExp(`.{1,${width}}`, 'g'))?.join('\r\n') ?? s
+}
+
 function makeRawEmail(to: string, subject: string, htmlBody: string, ics?: string): string {
+  const headers = [
+    `From: DALI Lab <${GMAIL_USER}>`,
+    `To: ${sanitizeHeader(to)}`,
+    `Subject: ${sanitizeHeader(subject)}`,
+    'MIME-Version: 1.0',
+  ]
+
   if (!ics) {
     const msg = [
-      `From: DALI Lab <${GMAIL_USER}>`,
-      `To: ${sanitizeHeader(to)}`,
-      `Subject: ${sanitizeHeader(subject)}`,
-      'MIME-Version: 1.0',
+      ...headers,
       'Content-Type: text/html; charset=utf-8',
       '',
       htmlBody,
@@ -45,27 +53,43 @@ function makeRawEmail(to: string, subject: string, htmlBody: string, ics?: strin
   // Extract METHOD from the ICS content (e.g. REQUEST or CANCEL)
   const methodMatch = ics.match(/METHOD:(\w+)/)
   const method = methodMatch?.[1] ?? 'REQUEST'
-  const boundary = `----=_Part_${Date.now()}`
+
+  // multipart/mixed
+  //   ├─ multipart/alternative
+  //   │    └─ text/html
+  //   └─ text/calendar; method=…  (Content-Disposition: attachment)
+  //
+  // A flat multipart/alternative with text/html + text/calendar gets
+  // rewritten by Gmail's users.messages.send endpoint, which discards the
+  // calendar alternative. Nesting under multipart/mixed forces Gmail to
+  // treat the calendar as a real attachment and preserve it through send,
+  // which is also what makes the inline RSVP card appear in the inbox.
+  const ts = Date.now()
+  const outer = `----=_Outer_${ts}`
+  const inner = `----=_Inner_${ts}`
 
   const msg = [
-    `From: DALI Lab <${GMAIL_USER}>`,
-    `To: ${sanitizeHeader(to)}`,
-    `Subject: ${sanitizeHeader(subject)}`,
-    'MIME-Version: 1.0',
-    `Content-Type: multipart/alternative; boundary="${boundary}"`,
+    ...headers,
+    `Content-Type: multipart/mixed; boundary="${outer}"`,
     '',
-    `--${boundary}`,
+    `--${outer}`,
+    `Content-Type: multipart/alternative; boundary="${inner}"`,
+    '',
+    `--${inner}`,
     'Content-Type: text/html; charset=utf-8',
     '',
     htmlBody,
     '',
-    `--${boundary}`,
-    `Content-Type: text/calendar; charset=utf-8; method=${method}`,
+    `--${inner}--`,
+    '',
+    `--${outer}`,
+    `Content-Type: text/calendar; charset=utf-8; method=${method}; name="invite.ics"`,
+    'Content-Disposition: attachment; filename="invite.ics"',
     'Content-Transfer-Encoding: base64',
     '',
-    Buffer.from(ics).toString('base64'),
+    wrapBase64(Buffer.from(ics).toString('base64')),
     '',
-    `--${boundary}--`,
+    `--${outer}--`,
   ].join('\r\n')
   return Buffer.from(msg).toString('base64url')
 }
