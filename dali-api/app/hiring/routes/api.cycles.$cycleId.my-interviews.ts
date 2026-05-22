@@ -14,16 +14,23 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const member = await prisma.dALIMember.findUnique({ where: { userId: auth.user.sub } });
   if (!member) return withCors(request, Response.json([]));
 
-  const interviewer = await prisma.cycleInterviewer.findFirst({
+  // A member can have multiple CycleInterviewer rows in the same cycle (one
+  // per domain), and a manual reassignment can write an assignment under any
+  // of them — so fetch assignments across ALL of the member's rows.
+  const interviewerRows = await prisma.cycleInterviewer.findMany({
     where: { userId: auth.user.sub, applicationCycleId: params.cycleId },
+    select: { id: true },
   });
-  if (!interviewer) return withCors(request, Response.json([]));
+  if (interviewerRows.length === 0) return withCors(request, Response.json([]));
 
   const gate = await requireApiSignedOrForbidden(auth.user.sub, params.cycleId!);
   if (gate) return withCors(request, gate);
 
   const assignments = await prisma.interviewAssignment.findMany({
-    where: { cycleInterviewerId: interviewer.id, status: "Active" },
+    where: {
+      cycleInterviewerId: { in: interviewerRows.map((r) => r.id) },
+      status: "Active",
+    },
     include: {
       interview: {
         include: {
