@@ -214,9 +214,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
 
     // Earliest target term (targetTerms is sorted by sortKey asc) seeds the
-    // project's start term and scopes the per-domain role requests. Without a
-    // target term we still create the project, just with no role requests
-    // (ProjectRoleRequest requires a termId).
+    // project's term set and scopes the per-domain role requests. Without a
+    // target term we still create the project, just with no terms and no role
+    // requests (ProjectRoleRequest requires a termId).
     const firstTermId = app.targetTerms[0]?.termId ?? null;
     // PartnerApplicationDomain carries headcount but no level; new role
     // requests default to P1 (Learner) — the staffing board can refine.
@@ -236,7 +236,9 @@ export async function action({ request, params }: Route.ActionArgs) {
         data: {
           name: app.title,
           description: app.summary,
-          firstTermId,
+          ...(firstTermId
+            ? { projectTerms: { create: { termId: firstTermId } } }
+            : {}),
           partners: { create: { partnerOrgId: app.partnerOrgId } },
           ...(roleRequestRows.length > 0
             ? { roleRequests: { create: roleRequestRows } }

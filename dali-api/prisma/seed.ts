@@ -2907,9 +2907,19 @@ async function main() {
   for (const p of projectSeeds) {
     await prisma.project.upsert({
       where: { id: p.id },
-      update: { name: p.name, status: p.status, firstTermId: term26S?.id ?? null, termCount: p.termCount, imageUrl: p.imageUrl },
-      create: { id: p.id, name: p.name, status: p.status, firstTermId: term26S?.id ?? null, termCount: p.termCount, imageUrl: p.imageUrl },
+      update: { name: p.name, status: p.status, termCount: p.termCount, imageUrl: p.imageUrl },
+      create: { id: p.id, name: p.name, status: p.status, termCount: p.termCount, imageUrl: p.imageUrl },
     });
+    // Seed the project's term set. Only 26S exists in the seed DB, so each
+    // project gets that single term while termCount stays the (larger)
+    // expected target — exercising the "actual < expected" display.
+    if (term26S) {
+      await prisma.projectTerm.upsert({
+        where: { projectId_termId: { projectId: p.id, termId: term26S.id } },
+        update: {},
+        create: { projectId: p.id, termId: term26S.id },
+      });
+    }
     for (const partnerOrgId of p.partnerIds) {
       await prisma.projectPartner.upsert({
         where: { projectId_partnerOrgId: { projectId: p.id, partnerOrgId } },

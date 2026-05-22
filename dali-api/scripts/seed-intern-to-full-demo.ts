@@ -99,15 +99,19 @@ async function main() {
     await prisma.dALIMember.create({ data: { userId: intern.id } });
   }
 
-  // Project in the intern domain — needs a name and a firstTerm.
+  // Project in the intern domain — needs a name and a term in its set.
   const project = await prisma.project.upsert({
     where: { id: "demo-intern-project" },
-    update: { name: "ERAS Demo Project", firstTermId: term.id },
+    update: { name: "ERAS Demo Project" },
     create: {
       id: "demo-intern-project",
       name: "ERAS Demo Project",
-      firstTermId: term.id,
     },
+  });
+  await prisma.projectTerm.upsert({
+    where: { projectId_termId: { projectId: project.id, termId: term.id } },
+    update: {},
+    create: { projectId: project.id, termId: term.id },
   });
 
   await prisma.projectAssignment.upsert({
