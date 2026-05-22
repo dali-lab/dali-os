@@ -41,37 +41,47 @@ export async function loader({ request }: Route.LoaderArgs) {
   const { terms, selected, termId, isAll } = await resolveTermFilter(request);
 
   const projects = await prisma.project.findMany({
-    // A term filter scopes to Active projects whose start (first) term is the
-    // selected one — Paused/Archived projects are noise for a term view.
-    // "All terms" drops the filter entirely and stays the full archive view.
+    // A term filter scopes to Active projects that run in the selected term —
+    // i.e. the term is in the project's ProjectTerm set — since a project may
+    // span several terms. Paused/Archived are noise for a term view. "All
+    // terms" drops the filter entirely and stays the full archive view.
     where:
       isAll || !termId
         ? undefined
-        : { firstTermId: termId, status: "Active" },
+        : { projectTerms: { some: { termId } }, status: "Active" },
     orderBy: [{ status: "asc" }, { name: "asc" }],
     select: {
       id: true,
       name: true,
       status: true,
       imageUrl: true,
-      firstTerm: { select: { code: true } },
+      // Start term is derived as the earliest term in the set. Fetch ascending
+      // by sortKey and take the first.
+      projectTerms: {
+        select: { term: { select: { code: true, sortKey: true } } },
+      },
       partners: {
         select: { partnerOrg: { select: { name: true, logoUrl: true } } },
       },
     },
   });
 
-  const rows: ProjectRow[] = projects.map((p) => ({
-    id: p.id,
-    name: p.name,
-    status: p.status,
-    firstTermCode: p.firstTerm?.code ?? null,
-    imageUrl: p.imageUrl,
-    partners: p.partners.map((pp) => ({
-      name: pp.partnerOrg.name,
-      logoUrl: pp.partnerOrg.logoUrl,
-    })),
-  }));
+  const rows: ProjectRow[] = projects.map((p) => {
+    const startTerm = p.projectTerms
+      .map((pt) => pt.term)
+      .sort((a, b) => a.sortKey - b.sortKey)[0];
+    return {
+      id: p.id,
+      name: p.name,
+      status: p.status,
+      firstTermCode: startTerm?.code ?? null,
+      imageUrl: p.imageUrl,
+      partners: p.partners.map((pp) => ({
+        name: pp.partnerOrg.name,
+        logoUrl: pp.partnerOrg.logoUrl,
+      })),
+    };
+  });
 
   const [partnerOrgs, canEdit] = await Promise.all([
     prisma.partnerOrg.findMany({
@@ -96,7 +106,10 @@ export async function action({ request }: Route.ActionArgs) {
   const name = (form.get("name") as string | null)?.trim() ?? "";
   const description = (form.get("description") as string | null)?.trim() ?? "";
   const status = (form.get("status") as string | null) ?? "Active";
-  const firstTermId = (form.get("firstTermId") as string | null)?.trim() ?? "";
+  // The create form's term picker seeds the project's first term. The term set
+  // is then editable on the detail page; the start term is derived as the
+  // earliest member.
+  const initialTermId = (form.get("firstTermId") as string | null)?.trim() ?? "";
   const partnerOrgId = (form.get("partnerOrgId") as string | null)?.trim() ?? "";
 
   if (!name) return { error: "A project name is required." };
@@ -104,12 +117,12 @@ export async function action({ request }: Route.ActionArgs) {
   if (!STATUSES.includes(status as ProjectStatus)) {
     return { error: "Invalid status." };
   }
-  if (firstTermId) {
+  if (initialTermId) {
     const term = await prisma.term.findUnique({
-      where: { id: firstTermId },
+      where: { id: initialTermId },
       select: { id: true },
     });
-    if (!term) return { error: "That start term no longer exists." };
+    if (!term) return { error: "That term no longer exists." };
   }
   if (partnerOrgId) {
     const org = await prisma.partnerOrg.findUnique({
@@ -124,7 +137,10 @@ export async function action({ request }: Route.ActionArgs) {
       name,
       description: description === "" ? null : description,
       status: status as ProjectStatus,
-      firstTermId: firstTermId || null,
+      // Seed the initial term into the project's term set (if chosen).
+      ...(initialTermId
+        ? { projectTerms: { create: { termId: initialTermId } } }
+        : {}),
       // Optionally link a partner up front; further partners are managed on
       // the project detail page.
       ...(partnerOrgId

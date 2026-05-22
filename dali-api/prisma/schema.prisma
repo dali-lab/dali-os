@@ -595,6 +595,12 @@ model Interview {
   recommendation      String?
   recommendationNotes String?
 
+  // RFC 5545 SEQUENCE for the ICS calendar event tied to this interview.
+  // Bumped before each location-change / reassignment / cancel ICS send so
+  // receiving calendars actually apply the update instead of treating the
+  // new ICS as a duplicate of the previous publish.
+  icsSequence Int @default(0)
+
   assignments InterviewAssignment[]
 
   @@index([applicationCycleId, startTime])
@@ -1400,9 +1406,9 @@ model Term {
   instructorAssignments InstructorAssignment[]
   staffingCycles        StaffingCycle[]
   projectTermStatuses   ProjectTermStatus[]
+  projectTerms          ProjectTerm[]
   projectRoleRequests   ProjectRoleRequest[]
   staffingAssignments   StaffingAssignment[]
-  projectsAsFirstTerm   Project[]              @relation("ProjectFirstTerm")
   partnerApplications   PartnerApplicationTargetTerm[]
   intentToWork          IntentToWork[]
   projectDomainScopes   ProjectDomainScope[]
@@ -1580,14 +1586,11 @@ model Project {
   // "projectalpha@dali.dartmouth.edu"). Calendar events for this project
   // are owned by this identity, not the organizer's personal calendar.
   calendarEmail String?
-  // Term the project was first activated. Phase 1: nullable to allow
-  // creation in a transaction before the Term row may exist; in steady
-  // state all new Projects set this. Phase 2 enforces NOT NULL after
-  // backfilling any legacy rows.
-  firstTermId   String?
-  // Planned span: the project runs `termCount` consecutive terms starting at
-  // firstTerm (UI calls firstTerm the "start term"). Drives the required-
-  // headcount-per-term projection. 1 = single-term project.
+  // Expected span length: how many terms the project is *planned* to run, as
+  // a target. Independent of the actual ProjectTerm set — a project may have
+  // fewer terms added than expected (still being scheduled) or more. Drives
+  // the "N of M terms added" projection. The start term is derived as the
+  // earliest term in `projectTerms` (by Term.sortKey), not stored.
   termCount     Int           @default(1)
   status        ProjectStatus @default(Active)
 
@@ -1608,11 +1611,13 @@ model Project {
   // Git repositories for this project (URLs). Empty by default.
   repoUrls String[] @default([])
 
-  firstTerm    Term? @relation("ProjectFirstTerm", fields: [firstTermId], references: [id])
   overviewPage Page? @relation("ProjectOverview", fields: [overviewPageId], references: [id])
   prdPage      Page? @relation("ProjectPRD", fields: [prdPageId], references: [id])
 
   partners        ProjectPartner[]
+  // The project's planned term set — the source of truth for which terms the
+  // project runs. The start term is the earliest of these (by Term.sortKey).
+  projectTerms    ProjectTerm[]
   termStatuses    ProjectTermStatus[]
   assignments     ProjectAssignment[]
   roleRequests    ProjectRoleRequest[]
@@ -1643,6 +1648,25 @@ model ProjectDomain {
 
   @@id([projectId, domainId])
   @@index([domainId])
+}
+
+// Many-to-many join: which terms a project runs. Source of truth for the
+// project's planned term set — editable on the project detail page (add /
+// remove individual terms; the set need not be consecutive). The "start
+// term" is derived as the earliest of these by Term.sortKey, and a project
+// counts as active in a given term iff a row exists for that (project, term).
+// Project.termCount is the *expected* length of this set, not derived from it.
+model ProjectTerm {
+  projectId String
+  termId    String
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  term    Term    @relation(fields: [termId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@id([projectId, termId])
+  @@index([termId])
 }
 
 // Per-term, per-domain free-text scope for a project. One cell per

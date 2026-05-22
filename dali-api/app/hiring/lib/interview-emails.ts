@@ -80,6 +80,20 @@ async function getInterviewerRecipients(interviewId: string): Promise<Recipient[
     .filter((r): r is Recipient => r !== null);
 }
 
+// Atomically bumps the persistent ICS SEQUENCE counter and returns the new
+// value. Call before generating an update / cancel ICS so the publish
+// receives a sequence strictly greater than the previous one — required by
+// RFC 5545 for receiving calendars to apply the update instead of treating
+// the new ICS as a duplicate.
+async function bumpIcsSequence(interviewId: string): Promise<number> {
+  const updated = await prisma.interview.update({
+    where: { id: interviewId },
+    data: { icsSequence: { increment: 1 } },
+    select: { icsSequence: true },
+  });
+  return updated.icsSequence;
+}
+
 async function renderFromBinding(
   applicationCycleId: string,
   notificationType: NotificationType,
@@ -127,12 +141,18 @@ export async function sendInterviewInviteEmails(
     const applicant = await getApplicantRecipient(domainApplicationId);
     const interviewers = await getInterviewerRecipients(interviewId);
 
-    const attendees: IcsAttendee[] = [
-      ...(applicant ? [{ email: applicant.email, name: applicant.firstName }] : []),
-      ...interviewers.map((i) => ({ email: i.email, name: i.firstName })),
-    ];
-
-    const ics = buildInviteIcs({
+    // Two distinct ICS objects so the applicant's calendar guest list shows
+    // ONLY themselves while the interviewers get the joint view. Same UID
+    // (derived from interviewId), so per-account RSVP replies still reconcile
+    // to the same logical event on the organizer side.
+    const applicantAttendee: IcsAttendee[] = applicant
+      ? [{ email: applicant.email, name: applicant.firstName }]
+      : [];
+    const interviewerAttendees: IcsAttendee[] = interviewers.map((i) => ({
+      email: i.email,
+      name: i.firstName,
+    }));
+    const icsCommon = {
       interviewId: interview.id,
       summary: `DALI Interview — ${domainName}`,
       startTime: interview.startTime,
@@ -140,7 +160,14 @@ export async function sendInterviewInviteEmails(
       location: formatLocation(interview.location, interview.zoomJoinUrl),
       meetingUrl: interview.zoomJoinUrl,
       organizer: ORGANIZER,
-      attendees,
+      // Initial REQUEST uses the row's current sequence (0 for a fresh
+      // interview). No bump here — bumps happen on updates / cancels.
+      sequence: interview.icsSequence,
+    } as const;
+    const applicantIcs = buildInviteIcs({ ...icsCommon, attendees: applicantAttendee });
+    const interviewerIcs = buildInviteIcs({
+      ...icsCommon,
+      attendees: [...applicantAttendee, ...interviewerAttendees],
     });
 
     const sends: Promise<any>[] = [];
@@ -157,7 +184,7 @@ export async function sendInterviewInviteEmails(
           to: applicant.email,
           subject: rendered.subject,
           html: rendered.html,
-          ics,
+          ics: applicantIcs,
         }));
       }
     }
@@ -174,7 +201,7 @@ export async function sendInterviewInviteEmails(
           to: interviewer.email,
           subject: rendered.subject,
           html: rendered.html,
-          ics,
+          ics: interviewerIcs,
         }));
       }
     }
@@ -211,18 +238,32 @@ export async function sendInterviewCancelEmails(
     const applicant = await getApplicantRecipient(domainApplicationId);
     const interviewers = await getInterviewerRecipients(interviewId);
 
-    const attendees: IcsAttendee[] = [
-      ...(applicant ? [{ email: applicant.email, name: applicant.firstName }] : []),
-      ...interviewers.map((i) => ({ email: i.email, name: i.firstName })),
-    ];
+    // Per-recipient ICS so the applicant's cancellation only lists themselves.
+    // See sendInterviewInviteEmails for the rationale.
+    const applicantAttendee: IcsAttendee[] = applicant
+      ? [{ email: applicant.email, name: applicant.firstName }]
+      : [];
+    const interviewerAttendees: IcsAttendee[] = interviewers.map((i) => ({
+      email: i.email,
+      name: i.firstName,
+    }));
+    // Bump first so the CANCEL's SEQUENCE is strictly greater than the
+    // previous REQUEST's — required for receiving calendars to actually drop
+    // the event instead of treating the CANCEL as stale.
+    const sequence = await bumpIcsSequence(interview.id);
 
-    const ics = buildCancelIcs({
+    const icsCommon = {
       interviewId: interview.id,
       summary: `DALI Interview — ${domainName}`,
       startTime: interview.startTime,
       endTime: interview.endTime,
       organizer: ORGANIZER,
-      attendees,
+      sequence,
+    } as const;
+    const applicantIcs = buildCancelIcs({ ...icsCommon, attendees: applicantAttendee });
+    const interviewerIcs = buildCancelIcs({
+      ...icsCommon,
+      attendees: [...applicantAttendee, ...interviewerAttendees],
     });
 
     const sends: Promise<any>[] = [];
@@ -239,7 +280,7 @@ export async function sendInterviewCancelEmails(
           to: applicant.email,
           subject: rendered.subject,
           html: rendered.html,
-          ics,
+          ics: applicantIcs,
         }));
       }
     }
@@ -256,7 +297,7 @@ export async function sendInterviewCancelEmails(
           to: interviewer.email,
           subject: rendered.subject,
           html: rendered.html,
-          ics,
+          ics: interviewerIcs,
         }));
       }
     }
@@ -293,6 +334,11 @@ export async function sendReassignmentEmails(
       meetingUrl: interview.zoomJoinUrl ?? undefined,
     };
 
+    // Bump once for the whole reassignment so the CANCEL to the removed
+    // interviewer and the REQUEST(update) to everyone else share the same
+    // SEQUENCE (both strictly greater than the previous publish).
+    const sequence = await bumpIcsSequence(interview.id);
+
     const sends: Promise<any>[] = [];
 
     // Cancel ICS to removed interviewer
@@ -309,6 +355,7 @@ export async function sendReassignmentEmails(
         endTime: interview.endTime,
         organizer: ORGANIZER,
         attendees: [{ email: removedCI.user.daliEmail, name: removedName }],
+        sequence,
       });
       const firstName = removedName;
       const rendered = await renderFromBinding(
@@ -327,40 +374,70 @@ export async function sendReassignmentEmails(
       }
     }
 
-    // Invite ICS to new interviewer
-    const newCI = await prisma.cycleInterviewer.findUnique({
-      where: { id: newCycleInterviewerId },
-      include: { user: { select: { firstName: true, daliEmail: true } } },
+    // REQUEST(update) to everyone STILL on the interview: applicant +
+    // unchanged interviewers + the newly-added interviewer. Same SEQUENCE
+    // for all so unchanged participants' calendars accept the update and
+    // re-render the guest list (departed interviewer removed). The new
+    // interviewer's calendar treats this UID as a fresh event and adds it.
+    //
+    // getInterviewerRecipients reads InterviewAssignment.status="Active",
+    // which the reassign endpoint has already updated by the time we run:
+    // the removed assignment is "Replaced" and the new one is "Active".
+    const applicant = await getApplicantRecipient(domainApplicationId);
+    const currentInterviewers = await getInterviewerRecipients(interviewId);
+    const applicantAttendee: IcsAttendee[] = applicant
+      ? [{ email: applicant.email, name: applicant.firstName }]
+      : [];
+    const interviewerAttendees: IcsAttendee[] = currentInterviewers.map((i) => ({
+      email: i.email,
+      name: i.firstName,
+    }));
+    const updateCommon = {
+      interviewId: interview.id,
+      summary: `DALI Interview — ${domainName}`,
+      startTime: interview.startTime,
+      endTime: interview.endTime,
+      location: formatLocation(interview.location, interview.zoomJoinUrl),
+      meetingUrl: interview.zoomJoinUrl,
+      organizer: ORGANIZER,
+      sequence,
+    } as const;
+    const applicantIcs = buildInviteIcs({ ...updateCommon, attendees: applicantAttendee });
+    const interviewerIcs = buildInviteIcs({
+      ...updateCommon,
+      attendees: [...applicantAttendee, ...interviewerAttendees],
     });
-    if (newCI?.user.daliEmail) {
-      const applicant = await getApplicantRecipient(domainApplicationId);
-      const interviewers = await getInterviewerRecipients(interviewId);
-      const inviteIcs = buildInviteIcs({
-        interviewId: interview.id,
-        summary: `DALI Interview — ${domainName}`,
-        startTime: interview.startTime,
-        endTime: interview.endTime,
-        location: formatLocation(interview.location, interview.zoomJoinUrl),
-        meetingUrl: interview.zoomJoinUrl,
-        organizer: ORGANIZER,
-        attendees: [
-          ...(applicant ? [{ email: applicant.email, name: applicant.firstName }] : []),
-          ...interviewers.map((i) => ({ email: i.email, name: i.firstName })),
-        ],
-      });
-      const firstName = newCI.user.firstName ?? "Interviewer";
+
+    if (applicant) {
       const rendered = await renderFromBinding(
         interview.applicationCycleId,
-        "InterviewInviteMentor",
-        { firstName, ...baseVars },
+        "InterviewConfirmedApplicant",
+        { firstName: applicant.firstName, ...baseVars },
       );
       if (rendered) {
         sends.push(sendEmail({
           refreshToken,
-          to: newCI.user.daliEmail,
+          to: applicant.email,
           subject: rendered.subject,
           html: rendered.html,
-          ics: inviteIcs,
+          ics: applicantIcs,
+        }));
+      }
+    }
+
+    for (const interviewer of currentInterviewers) {
+      const rendered = await renderFromBinding(
+        interview.applicationCycleId,
+        "InterviewInviteMentor",
+        { firstName: interviewer.firstName, ...baseVars },
+      );
+      if (rendered) {
+        sends.push(sendEmail({
+          refreshToken,
+          to: interviewer.email,
+          subject: rendered.subject,
+          html: rendered.html,
+          ics: interviewerIcs,
         }));
       }
     }
@@ -398,12 +475,21 @@ export async function sendLocationChangeEmails(
     const applicant = await getApplicantRecipient(domainApplicationId);
     const interviewers = await getInterviewerRecipients(interviewId);
 
-    const attendees: IcsAttendee[] = [
-      ...(applicant ? [{ email: applicant.email, name: applicant.firstName }] : []),
-      ...interviewers.map((i) => ({ email: i.email, name: i.firstName })),
-    ];
+    // Per-recipient ICS so the applicant only sees themselves in the updated
+    // event. See sendInterviewInviteEmails for rationale.
+    const applicantAttendee: IcsAttendee[] = applicant
+      ? [{ email: applicant.email, name: applicant.firstName }]
+      : [];
+    const interviewerAttendees: IcsAttendee[] = interviewers.map((i) => ({
+      email: i.email,
+      name: i.firstName,
+    }));
+    // Bump first so the update's SEQUENCE is strictly greater than the
+    // previous publish — without this Google Calendar treats the new ICS as
+    // a duplicate and the location change silently doesn't propagate.
+    const sequence = await bumpIcsSequence(interview.id);
 
-    const ics = buildInviteIcs({
+    const icsCommon = {
       interviewId: interview.id,
       summary: `DALI Interview — ${domainName}`,
       startTime: interview.startTime,
@@ -412,7 +498,12 @@ export async function sendLocationChangeEmails(
       meetingUrl: interview.zoomJoinUrl,
       description: "Updated location",
       organizer: ORGANIZER,
-      attendees,
+      sequence,
+    } as const;
+    const applicantIcs = buildInviteIcs({ ...icsCommon, attendees: applicantAttendee });
+    const interviewerIcs = buildInviteIcs({
+      ...icsCommon,
+      attendees: [...applicantAttendee, ...interviewerAttendees],
     });
 
     const sends: Promise<any>[] = [];
@@ -429,7 +520,7 @@ export async function sendLocationChangeEmails(
           to: applicant.email,
           subject: rendered.subject,
           html: rendered.html,
-          ics,
+          ics: applicantIcs,
         }));
       }
     }
@@ -446,7 +537,7 @@ export async function sendLocationChangeEmails(
           to: interviewer.email,
           subject: rendered.subject,
           html: rendered.html,
-          ics,
+          ics: interviewerIcs,
         }));
       }
     }
