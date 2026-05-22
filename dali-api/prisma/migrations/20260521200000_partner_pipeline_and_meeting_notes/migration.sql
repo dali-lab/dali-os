@@ -11,25 +11,14 @@
 -- 5. Add PartnerOrg.meetingNotes back-relation (FK on PartnerMeetingNote, no
 --    column on PartnerOrg).
 
--- ─── Step 1: map existing rows to valid new statuses before touching the enum ─
+-- ─── Step 1: rename old enum, create a bridge enum with all values ───────────
+-- Postgres can't drop enum values, so we recreate the type. But the USING cast
+-- during ALTER COLUMN fails if existing rows hold values not in the new enum
+-- (UnderReview, OnHold). Solution: use a CASE in the USING expression to remap
+-- old values inline, avoiding the need for an intermediate bridge enum.
 
--- UnderReview → InterviewInviteSent (closest pipeline equivalent)
--- OnHold      → Submitted           (park back at start)
-UPDATE "PartnerApplication"
-SET status = 'InterviewInviteSent'
-WHERE status = 'UnderReview';
-
-UPDATE "PartnerApplication"
-SET status = 'Submitted'
-WHERE status = 'OnHold';
-
--- ─── Step 2: rename / add enum values via a type-swap ────────────────────────
--- Postgres doesn't support DROP VALUE, so we recreate the enum.
-
--- Rename the type temporarily to free the name.
 ALTER TYPE "PartnerApplicationStatus" RENAME TO "PartnerApplicationStatus_old";
 
--- Create the new enum with all 10 values.
 CREATE TYPE "PartnerApplicationStatus" AS ENUM (
   'Submitted',
   'RejectedPreInterview',
@@ -43,12 +32,19 @@ CREATE TYPE "PartnerApplicationStatus" AS ENUM (
   'ConfirmedStart'
 );
 
--- Migrate the column to the new type (USING cast handles the identical names).
+-- ─── Step 2: migrate column, remapping old values inline ─────────────────────
+-- The CASE converts removed enum values to their new equivalents so the cast
+-- never encounters an invalid label.
 ALTER TABLE "PartnerApplication"
   ALTER COLUMN status TYPE "PartnerApplicationStatus"
-  USING status::text::"PartnerApplicationStatus";
+  USING (
+    CASE status::text
+      WHEN 'UnderReview' THEN 'InterviewInviteSent'
+      WHEN 'OnHold'      THEN 'Submitted'
+      ELSE status::text
+    END
+  )::"PartnerApplicationStatus";
 
--- Drop the old enum.
 DROP TYPE "PartnerApplicationStatus_old";
 
 -- ─── Step 3: MeetingCategory enum ────────────────────────────────────────────
