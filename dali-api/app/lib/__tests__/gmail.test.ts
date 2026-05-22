@@ -193,6 +193,51 @@ describe("sendEmail — ICS calendar attachment", () => {
     }
   });
 
+  it("injects systems@ as an extra ATTENDEE in staging so Gmail renders the RSVP card", async () => {
+    process.env.DALI_APP_ENV = "staging";
+    mockTokenAndSendOk();
+
+    await sendEmail({
+      refreshToken: "rt",
+      to: "applicant@example.com",
+      subject: "Invite",
+      html: "<p>hi</p>",
+      ics: sampleIcs,
+    });
+
+    const body = JSON.parse(fetchMock.mock.calls[1][1].body as string);
+    const decoded = decodeRaw(body.raw);
+    // Find any base64 block, decode, and check the staging attendee is present
+    // alongside the original attendees.
+    const blocks = [...decoded.matchAll(/Content-Transfer-Encoding: base64\r\n\r\n([A-Za-z0-9+/=\r\n]+?)\r\n\r\n--/g)];
+    expect(blocks.length).toBeGreaterThan(0);
+    const reconstructed = Buffer.from(blocks[0]![1].replace(/\r\n/g, ""), "base64").toString("utf8");
+    expect(reconstructed).toContain("mailto:kiran@example.com");
+    expect(reconstructed).toContain("mailto:systems@dali.dartmouth.edu");
+    // Inserted before END:VEVENT, not after — the redirect attendee must be
+    // inside the VEVENT block to be recognized.
+    expect(reconstructed).toMatch(/ATTENDEE[^\r\n]*systems@dali\.dartmouth\.edu\r\nEND:VEVENT/);
+  });
+
+  it("does NOT inject the staging attendee in prod", async () => {
+    process.env.DALI_APP_ENV = "prod";
+    mockTokenAndSendOk();
+
+    await sendEmail({
+      refreshToken: "rt",
+      to: "applicant@example.com",
+      subject: "Invite",
+      html: "<p>hi</p>",
+      ics: sampleIcs,
+    });
+
+    const body = JSON.parse(fetchMock.mock.calls[1][1].body as string);
+    const decoded = decodeRaw(body.raw);
+    const blocks = [...decoded.matchAll(/Content-Transfer-Encoding: base64\r\n\r\n([A-Za-z0-9+/=\r\n]+?)\r\n\r\n--/g)];
+    const reconstructed = Buffer.from(blocks[0]![1].replace(/\r\n/g, ""), "base64").toString("utf8");
+    expect(reconstructed).not.toContain("systems@dali.dartmouth.edu");
+  });
+
   it("falls back to the simple text/html structure when no ICS is provided", async () => {
     process.env.DALI_APP_ENV = "prod";
     mockTokenAndSendOk();

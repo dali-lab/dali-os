@@ -158,6 +158,18 @@ function stagingBanner(originalTo: string): string {
   return `<div style="background:#fff3cd;border:1px solid #ffeeba;padding:12px;margin-bottom:12px;font-family:sans-serif;color:#856404;">[STAGING] This email would have been sent to <code>${originalTo}</code></div><hr/>`
 }
 
+// Gmail only renders the inline RSVP card when the recipient's email matches
+// an ATTENDEE in the ICS. In staging we rewrite the To: header to
+// STAGING_REDIRECT, but the ICS still carries the real attendees — so Gmail
+// sees no match and falls back to "just an attachment." Inject an extra
+// ATTENDEE line for the redirect inbox so the staging recipient is also a
+// recognized attendee. ICS in prod is never touched.
+function injectStagingAttendee(ics: string, email: string): string {
+  const line = `ATTENDEE;CN=Staging Redirect;RSVP=TRUE;PARTSTAT=NEEDS-ACTION;ROLE=REQ-PARTICIPANT:mailto:${email}`
+  // ICS uses CRLF per RFC 5545. Preserve it by matching with \r\n.
+  return ics.replace(/END:VEVENT/i, `${line}\r\nEND:VEVENT`)
+}
+
 export async function sendEmail({
   refreshToken,
   to,
@@ -180,13 +192,15 @@ export async function sendEmail({
 
   let actualTo = to
   let actualHtml = html
+  let actualIcs = ics
   if (env === 'staging') {
     actualTo = STAGING_REDIRECT
     actualHtml = stagingBanner(to) + html
+    if (actualIcs) actualIcs = injectStagingAttendee(actualIcs, STAGING_REDIRECT)
   }
 
   const accessToken = await getAccessToken(refreshToken)
-  const raw = makeRawEmail(actualTo, subject, actualHtml, ics)
+  const raw = makeRawEmail(actualTo, subject, actualHtml, actualIcs)
 
   const res = await fetch(
     `https://gmail.googleapis.com/gmail/v1/users/${GMAIL_USER}/messages/send`,
