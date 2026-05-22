@@ -1514,8 +1514,8 @@ export default function HiringLeadCycleDetails() {
         {([
           { key: 'overview', label: 'Overview', icon: LayoutDashboard },
           { key: 'setup', label: 'Setup', icon: Settings },
-          { key: 'reviewers', label: 'Reviewers', icon: Users, badge: reviewers.length || undefined },
-          { key: 'interviews', label: 'Interviews', icon: Calendar, badge: (interviews.length + pendingInvites.length) || undefined },
+          { key: 'reviewers', label: 'Reviewers', icon: Users },
+          { key: 'interviews', label: 'Interviews', icon: Calendar },
           { key: 'decisions', label: 'Decisions', icon: CheckCircle, badge: pendingDecisions.length || undefined },
         ] as { key: CycleTab; label: string; icon: typeof LayoutDashboard; badge?: number }[]).map(t => (
           <button
