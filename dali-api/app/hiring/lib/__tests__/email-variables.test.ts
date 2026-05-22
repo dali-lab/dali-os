@@ -93,6 +93,7 @@ describe("TEMPLATE_VARIABLES registry shape", () => {
         "notification:InterviewCancelledInterviewer",
         "notification:InterviewConfirmedApplicant",
         "notification:InterviewInviteMentor",
+        "notification:InterviewInviteReminder",
         "notification:InterviewLocationChanged",
       ].sort(),
     );
@@ -136,6 +137,8 @@ describe("registry/call-site drift guard", () => {
     "notification:ApplicationExtensionNotice": ["firstName", "originalCloseDate", "newCloseDate"],
     // interview-emails.ts — intersection across cancel, invite, reassignment, location-change
     "notification:InterviewInviteMentor": ["firstName", "domain", "time", "location", "meetingUrl"],
+    // api.domain-applications.$id.resend-invite.ts
+    "notification:InterviewInviteReminder": ["firstName", "domain"],
     "notification:InterviewConfirmedApplicant": ["firstName", "domain", "time", "location", "meetingUrl"],
     "notification:InterviewCancelledApplicant": ["firstName", "domain", "time", "location"],
     "notification:InterviewCancelledInterviewer": ["firstName", "domain", "time", "location"],

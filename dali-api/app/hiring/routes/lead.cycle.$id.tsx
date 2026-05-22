@@ -667,7 +667,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (intent === "set-notification-email") {
     const notificationType = formData.get("notificationType") as string;
     const emailTemplateVersionId = (formData.get("emailTemplateVersionId") as string) || null;
-    const validTypes = ["ApplicationReceived", "ApplicationExtensionNotice", "InterviewInviteMentor", "InterviewConfirmedApplicant", "InterviewCancelledApplicant", "InterviewCancelledInterviewer", "InterviewLocationChanged"] as const;
+    const validTypes = ["ApplicationReceived", "ApplicationExtensionNotice", "InterviewInviteMentor", "InterviewInviteReminder", "InterviewConfirmedApplicant", "InterviewCancelledApplicant", "InterviewCancelledInterviewer", "InterviewLocationChanged"] as const;
     if (!validTypes.includes(notificationType as (typeof validTypes)[number])) {
       return new Response(JSON.stringify({ error: "Invalid notification type" }), { status: 400, headers: { "Content-Type": "application/json" } });
     }
@@ -1182,6 +1182,8 @@ export default function HiringLeadCycleDetails() {
   // ── Interviews state ──
   const [interviews, setInterviews] = useState<InterviewRow[]>([])
   const [pendingInvites, setPendingInvites] = useState<PendingInviteRow[]>([])
+  // Per-row id while a Resend invite is in-flight; null when idle.
+  const [resendingInviteId, setResendingInviteId] = useState<string | null>(null)
   // Filters for the interviews table — domain + status. "all" disables.
   const [interviewDomainFilter, setInterviewDomainFilter] = useState<string>('all')
   const [interviewStatusFilter, setInterviewStatusFilter] = useState<string>('all')
@@ -2018,6 +2020,26 @@ export default function HiringLeadCycleDetails() {
         const totalRows = filteredInterviews.length + filteredPending.length
         const totalAll = interviews.length + pendingInvites.length
         const tableEmpty = totalRows === 0
+        // "Resend invite" needs a CycleNotificationEmail bound to
+        // InterviewInviteReminder. Without one the button has no template
+        // to render, so disable it with a tooltip pointing at Setup.
+        const reminderTemplateBound = (loaderData?.currentNotificationEmails ?? [])
+          .some((b: any) => b.notificationType === 'InterviewInviteReminder')
+        async function resendInvite(daId: string) {
+          setResendingInviteId(daId)
+          try {
+            const res = await fetch(`/api/hiring/domain-applications/${daId}/resend-invite`, {
+              method: 'POST',
+              credentials: 'include',
+            })
+            if (!res.ok) {
+              const body = await res.json().catch(() => ({}))
+              alert(body.error ?? 'Failed to resend invite')
+            }
+          } finally {
+            setResendingInviteId(null)
+          }
+        }
         return (
         <div className="space-y-4">
           <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-2.5 text-xs text-blue-900 inline-flex items-center gap-2">
@@ -2102,7 +2124,22 @@ export default function HiringLeadCycleDetails() {
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">—</td>
                       <td className="px-4 py-3 text-muted-foreground text-xs">—</td>
-                      <td className="px-4 py-3 text-right text-muted-foreground">—</td>
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => resendInvite(p.domainApplication.id)}
+                          disabled={!reminderTemplateBound || resendingInviteId === p.domainApplication.id}
+                          title={
+                            !reminderTemplateBound
+                              ? 'Bind a template to InterviewInviteReminder on the Setup tab → Notification Emails to enable.'
+                              : undefined
+                          }
+                          className="inline-flex items-center gap-1 px-3 py-1 text-sm font-medium rounded-lg bg-amber-600 hover:bg-amber-700 text-white transition disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <Mail className="w-3.5 h-3.5" aria-hidden />
+                          {resendingInviteId === p.domainApplication.id ? 'Sending...' : 'Resend invite'}
+                        </button>
+                      </td>
                     </tr>
                   )
                 })}
@@ -2283,6 +2320,20 @@ export default function HiringLeadCycleDetails() {
                     <div className="text-xs text-muted-foreground italic">
                       Invited {invited.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => resendInvite(p.domainApplication.id)}
+                      disabled={!reminderTemplateBound || resendingInviteId === p.domainApplication.id}
+                      title={
+                        !reminderTemplateBound
+                          ? 'Bind a template to InterviewInviteReminder on the Setup tab → Notification Emails to enable.'
+                          : undefined
+                      }
+                      className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium rounded-lg bg-amber-600 hover:bg-amber-700 text-white transition disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <Mail className="w-3.5 h-3.5" aria-hidden />
+                      {resendingInviteId === p.domainApplication.id ? 'Sending...' : 'Resend invite'}
+                    </button>
                   </li>
                 )
               })}
@@ -4542,6 +4593,7 @@ const NOTIFICATION_EMAIL_SLOTS: ReadonlyArray<{ type: NotificationSlotType; labe
   { type: "ApplicationReceived", label: "Application Received", description: "Sent to the applicant when they first submit their application." },
   { type: "ApplicationExtensionNotice", label: "Deadline Extension Notice", description: "Sent once to applicants with a draft (unsubmitted) application after the original close passes, when an extension is in effect." },
   { type: "InterviewInviteMentor", label: "Interview Invite (Interviewer)", description: "Sent to the assigned interviewer when an interview is booked or they are reassigned." },
+  { type: "InterviewInviteReminder", label: "Interview Invite Reminder (Applicant)", description: "Manual nudge fired from the Interviews tab's Resend invite action when an applicant has been invited but hasn't booked yet." },
   { type: "InterviewConfirmedApplicant", label: "Interview Confirmed (Applicant)", description: "Sent to the applicant when their interview is booked." },
   { type: "InterviewCancelledApplicant", label: "Interview Cancelled (Applicant)", description: "Sent to the applicant when their interview is cancelled." },
   { type: "InterviewCancelledInterviewer", label: "Interview Cancelled (Interviewer)", description: "Sent to the interviewer when an interview is cancelled or they are unassigned." },
