@@ -32,6 +32,25 @@ function wrapBase64(s: string, width = 76): string {
   return s.match(new RegExp(`.{1,${width}}`, 'g'))?.join('\r\n') ?? s
 }
 
+// Minimal HTML → plain text. Good enough for a text/plain alternative;
+// Gmail rarely shows it but standards-compliant clients fall back to it
+// and some heuristics in mail providers prefer messages that include it.
+function htmlToPlainText(html: string): string {
+  return html
+    .replace(/<\s*br\s*\/?\s*>/gi, '\n')
+    .replace(/<\/p\s*>/gi, '\n\n')
+    .replace(/<\/h[1-6]\s*>/gi, '\n\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
 function makeRawEmail(to: string, subject: string, htmlBody: string, ics?: string): string {
   const headers = [
     `From: DALI Lab <${GMAIL_USER}>`,
@@ -54,19 +73,34 @@ function makeRawEmail(to: string, subject: string, htmlBody: string, ics?: strin
   const methodMatch = ics.match(/METHOD:(\w+)/)
   const method = methodMatch?.[1] ?? 'REQUEST'
 
-  // multipart/mixed
-  //   ├─ multipart/alternative
-  //   │    └─ text/html
-  //   └─ text/calendar; method=…  (Content-Disposition: attachment)
+  // Calendar invite MIME — mirrors the structure Google Calendar itself
+  // emits, which is what triggers Gmail's inline RSVP card on the receiving
+  // side:
   //
-  // A flat multipart/alternative with text/html + text/calendar gets
-  // rewritten by Gmail's users.messages.send endpoint, which discards the
-  // calendar alternative. Nesting under multipart/mixed forces Gmail to
-  // treat the calendar as a real attachment and preserve it through send,
-  // which is also what makes the inline RSVP card appear in the inbox.
+  //   multipart/mixed
+  //     ├─ multipart/alternative
+  //     │    ├─ text/plain
+  //     │    ├─ text/html
+  //     │    └─ text/calendar; method=REQUEST   (INLINE — Gmail reads this
+  //     │                                         to render Yes / Maybe / No
+  //     │                                         and add-to-calendar)
+  //     └─ application/ics; name=invite.ics      (separate attachment for
+  //                                                Outlook / Apple Mail —
+  //                                                application/ics, not
+  //                                                text/calendar, so Gmail
+  //                                                doesn't dedupe and drop
+  //                                                the inline part)
+  //
+  // The prior approach (only text/calendar as an attachment under
+  // multipart/mixed) preserved the ICS through Gmail's send-API rewriting
+  // but did NOT trigger the inline RSVP card — Gmail only renders that
+  // when text/calendar sits inside multipart/alternative as a body
+  // alternative.
   const ts = Date.now()
   const outer = `----=_Outer_${ts}`
   const inner = `----=_Inner_${ts}`
+  const icsBase64 = wrapBase64(Buffer.from(ics).toString('base64'))
+  const plainText = htmlToPlainText(htmlBody)
 
   const msg = [
     ...headers,
@@ -76,18 +110,29 @@ function makeRawEmail(to: string, subject: string, htmlBody: string, ics?: strin
     `Content-Type: multipart/alternative; boundary="${inner}"`,
     '',
     `--${inner}`,
+    'Content-Type: text/plain; charset=utf-8',
+    '',
+    plainText,
+    '',
+    `--${inner}`,
     'Content-Type: text/html; charset=utf-8',
     '',
     htmlBody,
     '',
+    `--${inner}`,
+    `Content-Type: text/calendar; charset=utf-8; method=${method}`,
+    'Content-Transfer-Encoding: base64',
+    '',
+    icsBase64,
+    '',
     `--${inner}--`,
     '',
     `--${outer}`,
-    `Content-Type: text/calendar; charset=utf-8; method=${method}; name="invite.ics"`,
+    'Content-Type: application/ics; name="invite.ics"',
     'Content-Disposition: attachment; filename="invite.ics"',
     'Content-Transfer-Encoding: base64',
     '',
-    wrapBase64(Buffer.from(ics).toString('base64')),
+    icsBase64,
     '',
     `--${outer}--`,
   ].join('\r\n')
