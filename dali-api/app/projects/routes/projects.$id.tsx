@@ -15,7 +15,7 @@ import type { Route } from "./+types/projects.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { parseSessionCookie } from "~/lib/cookies";
-import { isHiringLead } from "~/lib/roles";
+import { isHiringLead, currentTerm } from "~/lib/roles";
 import { TaskBoard } from "../components/TaskBoard";
 import { type TimelineEpic, type EpicStatus } from "../components/EpicsTimeline";
 import {
@@ -63,7 +63,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       repoUrls: true,
       overviewPageId: true,
       prdPageId: true,
-      firstTerm: { select: { id: true, code: true, sortKey: true } },
+      projectTerms: {
+        select: { term: { select: { id: true, code: true, sortKey: true } } },
+      },
       termCount: true,
       partners: { select: { partnerOrg: { select: { name: true } } } },
       termStatuses: {
@@ -285,7 +287,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // displays declared domains directly; if none are declared, it falls back
   // to the union of domains seen on this project's bids + assignments so a
   // project that's actively being staffed still shows its domain footprint.
-  const [allDomains, bidDomains] = await Promise.all([
+  const [allDomains, bidDomains, allTerms] = await Promise.all([
     prisma.domain.findMany({
       where: { active: true },
       orderBy: { displayName: "asc" },
@@ -296,30 +298,34 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       select: { domainId: true },
       distinct: ["domainId"],
     }),
+    prisma.term.findMany({
+      orderBy: { sortKey: "desc" },
+      select: { id: true, code: true },
+    }),
   ]);
   const declaredDomains = project.domains.map((d) => ({
     id: d.domain.id,
     name: d.domain.displayName,
   }));
 
-  // Planned terms for the scope grid: starting at firstTerm (by sortKey), the
-  // next `termCount` terms chronologically. We fetch them ascending so the
-  // `take: termCount` slice cuts off the future, then reverse so the display
-  // surfaces the most recent term first. Falls back to an empty list when
-  // no firstTerm is set (legacy project rows) — the scopes section then
-  // just doesn't render, no crash.
-  const plannedTerms: { id: string; code: string; sortKey: number }[] = (
-    project.firstTerm
-      ? await prisma.term.findMany({
-          where: { sortKey: { gte: project.firstTerm.sortKey } },
-          orderBy: { sortKey: "asc" },
-          take: Math.max(1, project.termCount),
-          select: { id: true, code: true, sortKey: true },
-        })
-      : []
-  )
-    .slice()
+  // The project's term set is now explicit (ProjectTerm rows), editable on
+  // this page, and need not be consecutive. Sorted descending so the display
+  // surfaces the most recent term first; the scope grid uses this same set.
+  const plannedTerms = project.projectTerms
+    .map((pt) => pt.term)
     .sort((a, b) => b.sortKey - a.sortKey);
+
+  // Start term is derived as the earliest term in the set (lowest sortKey),
+  // not a stored field. Null when the project has no terms yet.
+  const startTerm =
+    plannedTerms.length > 0 ? plannedTerms[plannedTerms.length - 1] : null;
+
+  // Active-this-term is derived from membership: the project is active iff the
+  // current term is in its set. Distinct from the manual status enum
+  // (Paused/Archived), which the lead still controls explicitly.
+  const current = await currentTerm();
+  const isActiveThisTerm =
+    current !== null && plannedTerms.some((t) => t.id === current.id);
 
   // Fetch all scope rows for this project (small N — at most |declared| ×
   // termCount, both single-digit in practice). Keyed by domainId+termId so
@@ -367,7 +373,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       repoUrls: project.repoUrls,
       overviewPageId: project.overviewPageId,
       prdPageId: project.prdPageId,
-      firstTerm: project.firstTerm,
+      startTerm,
+      isActiveThisTerm,
+      actualTermCount: plannedTerms.length,
       termCount: project.termCount,
       partners: project.partners,
       domains: declaredDomains,
@@ -375,6 +383,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
     allDomainOptions: allDomains.map((d) => ({ id: d.id, name: d.displayName })),
     plannedTerms: plannedTerms.map((t) => ({ id: t.id, code: t.code })),
+    allTermOptions: allTerms,
     domainScopeGrid,
     teams,
     termStatuses,
@@ -499,6 +508,34 @@ export async function action({ request, params }: Route.ActionArgs) {
     return redirect(`/projects/${params.id}`);
   }
 
+  // Project term set. Full-replacement: the incoming set of termIds wins, so
+  // the same handler covers both adding and removing terms. Filtered to real
+  // Term ids so a stale value can't create an orphan row. The start term and
+  // active-this-term are derived from this set, not stored. Mirrors the
+  // `domains` handler above.
+  if (intent === "terms") {
+    const incoming = form.getAll("termId").map((v) => String(v));
+    const valid = incoming.length
+      ? await prisma.term.findMany({
+          where: { id: { in: incoming } },
+          select: { id: true },
+        })
+      : [];
+    const ids = valid.map((t) => t.id);
+    await prisma.$transaction([
+      prisma.projectTerm.deleteMany({ where: { projectId: params.id } }),
+      ...(ids.length
+        ? [
+            prisma.projectTerm.createMany({
+              data: ids.map((termId) => ({ projectId: params.id, termId })),
+              skipDuplicates: true,
+            }),
+          ]
+        : []),
+    ]);
+    return redirect(`/projects/${params.id}`);
+  }
+
   // Details form: calendar email, image, repos. (Description + name/status
   // are saved by their own segments above.)
   const calendarEmailRaw = (form.get("calendarEmail") as string | null)?.trim() ?? "";
@@ -512,8 +549,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     .map((s) => s.trim())
     .filter(Boolean);
 
-  // termCount is the planned span (≥1 consecutive terms from the start term).
-  // Blank/invalid falls back to 1 rather than erroring the whole form.
+  // termCount is the *expected* span length (≥1), an independent target; the
+  // actual terms live in the ProjectTerm set (intent=terms). Blank/invalid
+  // falls back to 1 rather than erroring the whole form.
   const termCount = Math.max(1, Math.floor(Number(termCountRaw)) || 1);
 
   await prisma.project.update({
@@ -540,6 +578,7 @@ export default function ProjectDetail() {
     boardOptions,
     allDomainOptions,
     plannedTerms,
+    allTermOptions,
     domainScopeGrid,
     canEdit,
     collabToken,
@@ -603,6 +642,7 @@ export default function ProjectDetail() {
           documents={documents}
           allDomainOptions={allDomainOptions}
           plannedTerms={plannedTerms}
+          allTermOptions={allTermOptions}
           domainScopeGrid={domainScopeGrid}
           canEdit={canEdit}
           actionError={actionData?.error}
@@ -647,13 +687,25 @@ function ProjectHeader({
   const [editing, setEditing] = useState(false);
   const [resetKey, setResetKey] = useState(0);
 
+  // Actual terms vs the expected span: when they differ, show "N of M" so a
+  // partially-scheduled project reads as such. termCount is the expected target.
+  const actualTermCount = project.actualTermCount;
+  const termCountLabel =
+    actualTermCount === project.termCount
+      ? `${project.termCount} ${project.termCount === 1 ? "term" : "terms"}`
+      : `${actualTermCount} of ${project.termCount} terms`;
+
   const subtitle = (
     <p className="text-sm text-muted-foreground mt-1">
-      {project.firstTerm
-        ? `Start term ${project.firstTerm.code}`
-        : "No start term"}
+      {project.startTerm
+        ? `Start term ${project.startTerm.code}`
+        : "No terms yet"}
       {" · "}
-      {project.termCount} {project.termCount === 1 ? "term" : "terms"}
+      {termCountLabel}
+      {" · "}
+      <span className={project.isActiveThisTerm ? "text-accent-green" : undefined}>
+        {project.isActiveThisTerm ? "Active this term" : "Not this term"}
+      </span>
       {" · "}
       {partnerNames.length > 0 ? partnerNames.join(", ") : "No partners"}
     </p>
@@ -934,6 +986,124 @@ function DomainsChipsEditor({
           .
         </p>
       )}
+    </Form>
+  );
+}
+
+// Project terms — the editable term set (source of truth for which terms the
+// project runs). Same click-to-toggle, save-the-full-set pattern as Domains;
+// the action's intent=terms handler full-replaces ProjectTerm rows. The start
+// term and "active this term" are derived from this set, so no separate
+// start-term field is edited here. `expected` (termCount) is edited in the
+// Details section and shown here only as a target for context.
+function TermsSegment({
+  selected,
+  allTerms,
+  expected,
+  canEdit,
+}: {
+  selected: { id: string; code: string }[];
+  allTerms: { id: string; code: string }[];
+  expected: number;
+  canEdit: boolean;
+}) {
+  const submit = useSubmit();
+  const formRef = useRef<HTMLFormElement | null>(null);
+
+  return (
+    <EditableSection
+      title="Terms"
+      canEdit={canEdit}
+      onSave={() => { if (formRef.current) submit(formRef.current); }}
+    >
+      {({ editing, resetKey }) =>
+        editing ? (
+          <TermsChipsEditor
+            key={resetKey}
+            formRef={formRef}
+            initialSelectedIds={selected.map((t) => t.id)}
+            allTerms={allTerms}
+            expected={expected}
+          />
+        ) : selected.length > 0 ? (
+          <div className="flex flex-wrap gap-1.5">
+            {selected.map((t) => (
+              <span
+                key={t.id}
+                className="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded bg-blue-50 text-blue-700 border border-blue-100"
+              >
+                {t.code}
+              </span>
+            ))}
+            {selected.length !== expected && (
+              <span className="text-xs text-muted-foreground self-center">
+                {selected.length} of {expected} expected
+              </span>
+            )}
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground italic">
+            No terms yet{expected > 0 ? ` — ${expected} expected` : ""}.
+          </p>
+        )
+      }
+    </EditableSection>
+  );
+}
+
+function TermsChipsEditor({
+  formRef,
+  initialSelectedIds,
+  allTerms,
+  expected,
+}: {
+  formRef: React.MutableRefObject<HTMLFormElement | null>;
+  initialSelectedIds: string[];
+  allTerms: { id: string; code: string }[];
+  expected: number;
+}) {
+  const [selected, setSelected] = useState<Set<string>>(
+    () => new Set(initialSelectedIds),
+  );
+  function toggle(id: string) {
+    setSelected((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  return (
+    <Form method="post" ref={formRef} className="flex flex-col gap-2">
+      <input type="hidden" name="intent" value="terms" />
+      {[...selected].map((id) => (
+        <input key={id} type="hidden" name="termId" value={id} />
+      ))}
+      <div className="flex flex-wrap gap-2">
+        {allTerms.map((t) => {
+          const isOn = selected.has(t.id);
+          return (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => toggle(t.id)}
+              aria-pressed={isOn}
+              className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md border text-sm cursor-pointer transition-colors ${
+                isOn
+                  ? "bg-accent-coral/15 border-accent-coral/40 text-foreground"
+                  : "bg-background border-border text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {t.code}
+            </button>
+          );
+        })}
+      </div>
+      <p className="text-xs text-muted-foreground">
+        {selected.size} selected · {expected} expected. The start term is the
+        earliest selected; the project shows as active when the current term is
+        selected.
+      </p>
     </Form>
   );
 }
@@ -1220,6 +1390,7 @@ function OverviewTab({
   documents,
   allDomainOptions,
   plannedTerms,
+  allTermOptions,
   domainScopeGrid,
   canEdit,
   actionError,
@@ -1231,6 +1402,7 @@ function OverviewTab({
   documents: LoaderData["documents"];
   allDomainOptions: LoaderData["allDomainOptions"];
   plannedTerms: LoaderData["plannedTerms"];
+  allTermOptions: LoaderData["allTermOptions"];
   domainScopeGrid: LoaderData["domainScopeGrid"];
   canEdit: boolean;
   actionError?: string;
@@ -1257,6 +1429,15 @@ function OverviewTab({
         declared={project.domains}
         derived={project.derivedDomains}
         allDomains={allDomainOptions}
+        canEdit={canEdit}
+      />
+
+      {/* Project terms — the editable term set. Start term and active-this-term
+          are derived from this set; termCount (Details) is the expected target. */}
+      <TermsSegment
+        selected={plannedTerms}
+        allTerms={allTermOptions}
+        expected={project.termCount}
         canEdit={canEdit}
       />
 
