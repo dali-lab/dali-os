@@ -170,6 +170,14 @@ function injectStagingAttendee(ics: string, email: string): string {
   return ics.replace(/END:VEVENT/i, `${line}\r\nEND:VEVENT`)
 }
 
+// Mark the event title (SUMMARY) with a [STAGING] tag so the Google Calendar
+// view of a staging-redirected invite is visually distinct from a real one.
+function prefixIcsSummary(ics: string, prefix: string): string {
+  // ^ with /m matches start-of-line after \n (CRLF-safe). Prefixes the first
+  // SUMMARY line in the VEVENT.
+  return ics.replace(/^SUMMARY:/m, `SUMMARY:${prefix}`)
+}
+
 export async function sendEmail({
   refreshToken,
   to,
@@ -191,16 +199,21 @@ export async function sendEmail({
   }
 
   let actualTo = to
+  let actualSubject = subject
   let actualHtml = html
   let actualIcs = ics
   if (env === 'staging') {
     actualTo = STAGING_REDIRECT
+    actualSubject = `[STAGING] ${subject}`
     actualHtml = stagingBanner(to) + html
-    if (actualIcs) actualIcs = injectStagingAttendee(actualIcs, STAGING_REDIRECT)
+    if (actualIcs) {
+      actualIcs = injectStagingAttendee(actualIcs, STAGING_REDIRECT)
+      actualIcs = prefixIcsSummary(actualIcs, '[STAGING] ')
+    }
   }
 
   const accessToken = await getAccessToken(refreshToken)
-  const raw = makeRawEmail(actualTo, subject, actualHtml, actualIcs)
+  const raw = makeRawEmail(actualTo, actualSubject, actualHtml, actualIcs)
 
   const res = await fetch(
     `https://gmail.googleapis.com/gmail/v1/users/${GMAIL_USER}/messages/send`,

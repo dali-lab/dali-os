@@ -67,7 +67,8 @@ describe("sendEmail — staging environment", () => {
     expect(decoded).not.toContain("To: applicant@example.com");
     expect(decoded).toContain("[STAGING]");
     expect(decoded).toContain("applicant@example.com");
-    expect(decoded).toContain("Subject: Hello");
+    // Subject also gets the [STAGING] tag so the inbox row is visually distinct.
+    expect(decoded).toContain("Subject: [STAGING] Hello");
   });
 });
 
@@ -217,6 +218,46 @@ describe("sendEmail — ICS calendar attachment", () => {
     // Inserted before END:VEVENT, not after — the redirect attendee must be
     // inside the VEVENT block to be recognized.
     expect(reconstructed).toMatch(/ATTENDEE[^\r\n]*systems@dali\.dartmouth\.edu\r\nEND:VEVENT/);
+  });
+
+  it("prefixes the ICS SUMMARY with [STAGING] so the calendar event title is tagged", async () => {
+    process.env.DALI_APP_ENV = "staging";
+    mockTokenAndSendOk();
+
+    await sendEmail({
+      refreshToken: "rt",
+      to: "applicant@example.com",
+      subject: "Invite",
+      html: "<p>hi</p>",
+      ics: sampleIcs,
+    });
+
+    const body = JSON.parse(fetchMock.mock.calls[1][1].body as string);
+    const decoded = decodeRaw(body.raw);
+    const blocks = [...decoded.matchAll(/Content-Transfer-Encoding: base64\r\n\r\n([A-Za-z0-9+/=\r\n]+?)\r\n\r\n--/g)];
+    const reconstructed = Buffer.from(blocks[0]![1].replace(/\r\n/g, ""), "base64").toString("utf8");
+    expect(reconstructed).toContain("SUMMARY:[STAGING] DALI Interview");
+    expect(reconstructed).not.toMatch(/^SUMMARY:DALI Interview/m);
+  });
+
+  it("does NOT prefix the ICS SUMMARY in prod", async () => {
+    process.env.DALI_APP_ENV = "prod";
+    mockTokenAndSendOk();
+
+    await sendEmail({
+      refreshToken: "rt",
+      to: "applicant@example.com",
+      subject: "Invite",
+      html: "<p>hi</p>",
+      ics: sampleIcs,
+    });
+
+    const body = JSON.parse(fetchMock.mock.calls[1][1].body as string);
+    const decoded = decodeRaw(body.raw);
+    const blocks = [...decoded.matchAll(/Content-Transfer-Encoding: base64\r\n\r\n([A-Za-z0-9+/=\r\n]+?)\r\n\r\n--/g)];
+    const reconstructed = Buffer.from(blocks[0]![1].replace(/\r\n/g, ""), "base64").toString("utf8");
+    expect(reconstructed).not.toContain("[STAGING]");
+    expect(reconstructed).toContain("SUMMARY:DALI Interview");
   });
 
   it("does NOT inject the staging attendee in prod", async () => {
