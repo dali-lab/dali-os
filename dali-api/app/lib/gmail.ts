@@ -36,19 +36,34 @@ function wrapBase64(s: string, width = 76): string {
 // Gmail rarely shows it but standards-compliant clients fall back to it
 // and some heuristics in mail providers prefer messages that include it.
 function htmlToPlainText(html: string): string {
-  return html
+  // Replace block-level closers/breaks with newlines BEFORE stripping tags
+  // so paragraph structure survives.
+  let text = html
     .replace(/<\s*br\s*\/?\s*>/gi, '\n')
     .replace(/<\/p\s*>/gi, '\n\n')
     .replace(/<\/h[1-6]\s*>/gi, '\n\n')
-    .replace(/<[^>]+>/g, '')
+
+  // Strip tags in a loop until stable. A single `<[^>]+>` pass on
+  // `<scr<script>ipt>` would leave `<script>` behind; iterating prevents
+  // that smuggling pattern.
+  let prev: string
+  do {
+    prev = text
+    text = prev.replace(/<[^>]+>/g, '')
+  } while (text !== prev)
+
+  // Decode only entities that can't reintroduce angle brackets into the
+  // output (`&lt;` / `&gt;` deliberately left encoded so a tag-strip-then-
+  // decode sequence can't smuggle script-like content back into the body).
+  // `&amp;` is decoded LAST so `&amp;nbsp;` lands as `&nbsp;` rather than
+  // double-unescaping into a space.
+  text = text
     .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
-    .replace(/\n{3,}/g, '\n\n')
-    .trim()
+    .replace(/&amp;/g, '&')
+
+  return text.replace(/\n{3,}/g, '\n\n').trim()
 }
 
 function makeRawEmail(to: string, subject: string, htmlBody: string, ics?: string): string {
