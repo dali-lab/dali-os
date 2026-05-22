@@ -947,7 +947,13 @@ function EmailMarker({ recipients, label = 'Sends email' }: { recipients: string
 
 type CoverageData = {
   configured: boolean
-  slots: { startTime: string; endTime: string; freeInterviewerCount: number; bookedInterviewCount: number }[]
+  slots: {
+    startTime: string
+    endTime: string
+    freeInterviewerCount: number
+    freeInterviewers?: { id: string; firstName: string | null; lastName: string | null; domains: string[] }[]
+    bookedInterviewCount: number
+  }[]
   slotDurationMinutes: number
   timezone: string
   totalInterviewers?: number
@@ -1045,7 +1051,6 @@ function CoverageHeatmap({ coverage }: { coverage: CoverageData | null }) {
         <div className="text-xs text-muted-foreground flex-1">
           <span className="font-semibold text-foreground">{totalFreeHours.toFixed(0)}</span> interviewer-hours offered ·{' '}
           <span className="font-semibold text-foreground">{totalBooked}</span> interview{totalBooked === 1 ? '' : 's'} booked ·{' '}
-          <span className="font-semibold text-foreground">{coverage.totalInterviewers ?? 0}</span> interviewer{coverage.totalInterviewers === 1 ? '' : 's'} ·{' '}
           {slotHours < 1 ? `${coverage.slotDurationMinutes} min` : `${slotHours} h`} slots
         </div>
         {hiddenCount > 0 && (
@@ -1083,10 +1088,18 @@ function CoverageHeatmap({ coverage }: { coverage: CoverageData | null }) {
                   }
                   const free = slot.freeInterviewerCount
                   const booked = slot.bookedInterviewCount
+                  const namesList = (slot.freeInterviewers ?? [])
+                    .map((p) => {
+                      const n = `${p.firstName ?? ''} ${p.lastName ?? ''}`.trim() || '?'
+                      return p.domains.length > 0 ? `${n} (${p.domains.join(', ')})` : n
+                    })
+                  const tooltip = `${free} interviewer${free === 1 ? '' : 's'} free${booked > 0 ? ` · ${booked} booked` : ''}${
+                    namesList.length > 0 ? `\n${namesList.join('\n')}` : ''
+                  }`
                   return (
                     <td
                       key={`${day}-${time}`}
-                      title={`${free} interviewer${free === 1 ? '' : 's'} free${booked > 0 ? ` · ${booked} booked` : ''}`}
+                      title={tooltip}
                       className={`px-1.5 py-0.5 text-center font-semibold rounded ${cellColor(free)} relative min-w-[36px]`}
                     >
                       {free}
@@ -1863,125 +1876,6 @@ export default function HiringLeadCycleDetails() {
         </div>
       )}
 
-      {/* ── Interviews Tab — config + interviewers + live schedule ── */}
-      {tab === 'interviews' && (
-        <div className="space-y-6">
-          <h3 className="text-base font-bold text-foreground/90 flex items-center gap-2">
-            <Settings className="w-4 h-4" /> Interview Configuration
-          </h3>
-          {/* Interview Config */}
-          <div className="bg-card rounded-xl border border-border shadow-sm p-6 space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label htmlFor="slot-duration" className="block text-sm font-bold text-foreground/80 mb-1">Slot Duration</label>
-              <select
-                id="slot-duration"
-                value={config.slotDurationMinutes}
-                onChange={e => setConfig(c => ({ ...c, slotDurationMinutes: Number(e.target.value) }))}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-              >
-                {DURATION_OPTIONS.map(d => <option key={d} value={d}>{d} minutes</option>)}
-              </select>
-            </div>
-            <div>
-              <label htmlFor="buffer-minutes" className="block text-sm font-bold text-foreground/80 mb-1">Buffer Between Interviews</label>
-              <select
-                id="buffer-minutes"
-                value={config.bufferMinutes}
-                onChange={e => setConfig(c => ({ ...c, bufferMinutes: Number(e.target.value) }))}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-              >
-                {BUFFER_OPTIONS.map(b => <option key={b} value={b}>{b} minutes</option>)}
-              </select>
-            </div>
-            <div>
-              <label htmlFor="day-start-hour" className="block text-sm font-bold text-foreground/80 mb-1">Day Start</label>
-              <select
-                id="day-start-hour"
-                value={config.dayStartHour}
-                onChange={e => setConfig(c => ({ ...c, dayStartHour: Number(e.target.value) }))}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-              >
-                {HOUR_OPTIONS.map(h => <option key={h} value={h}>{formatHour(h)}</option>)}
-              </select>
-            </div>
-            <div>
-              <label htmlFor="day-end-hour" className="block text-sm font-bold text-foreground/80 mb-1">Day End</label>
-              <select
-                id="day-end-hour"
-                value={config.dayEndHour}
-                onChange={e => setConfig(c => ({ ...c, dayEndHour: Number(e.target.value) }))}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-              >
-                {HOUR_OPTIONS.map(h => <option key={h} value={h}>{formatHour(h)}</option>)}
-              </select>
-            </div>
-            <div>
-              <label htmlFor="interview-start-date" className="block text-sm font-bold text-foreground/80 mb-1">Interview Start Date</label>
-              <input
-                id="interview-start-date"
-                type="date"
-                value={config.interviewStartDate}
-                onChange={e => setConfig(c => ({ ...c, interviewStartDate: e.target.value }))}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-              />
-            </div>
-            <div>
-              <label htmlFor="interview-end-date" className="block text-sm font-bold text-foreground/80 mb-1">Interview End Date</label>
-              <input
-                id="interview-end-date"
-                type="date"
-                value={config.interviewEndDate}
-                onChange={e => setConfig(c => ({ ...c, interviewEndDate: e.target.value }))}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-bold text-foreground/80 mb-1">Booking Notice</label>
-              <select
-                value={config.bookingNoticeHours}
-                onChange={e => setConfig(c => ({ ...c, bookingNoticeHours: Number(e.target.value) }))}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-              >
-                {[0, 1, 2, 4, 6, 8, 12, 24, 48].map(h => <option key={h} value={h}>{h === 0 ? 'No minimum' : `${h} hours ahead`}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-bold text-foreground/80 mb-1">Reschedule Notice</label>
-              <select
-                value={config.rescheduleNoticeHours}
-                onChange={e => setConfig(c => ({ ...c, rescheduleNoticeHours: Number(e.target.value) }))}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-              >
-                {[0, 2, 4, 6, 8, 12, 24, 48].map(h => <option key={h} value={h}>{h === 0 ? 'No minimum' : `${h} hours before`}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-bold text-foreground/80 mb-1">Cancel Notice</label>
-              <select
-                value={config.cancelNoticeHours}
-                onChange={e => setConfig(c => ({ ...c, cancelNoticeHours: Number(e.target.value) }))}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-              >
-                {[0, 2, 4, 6, 8, 12, 24, 48].map(h => <option key={h} value={h}>{h === 0 ? 'Up until start' : `${h} hours before`}</option>)}
-              </select>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3 pt-2">
-            <button
-              onClick={saveConfig}
-              disabled={configSaving || !config.interviewStartDate || !config.interviewEndDate}
-              className="px-5 py-2 text-sm font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition disabled:opacity-50"
-            >
-              {configSaving ? 'Saving...' : configSaved ? 'Saved!' : 'Save Configuration'}
-            </button>
-            {configSaved && <CheckCircle className="w-4 h-4 text-green-500" />}
-          </div>
-        </div>
-        </div>
-      )}
-
       {/* ── Reviewer Roster Tab ── */}
       {tab === 'reviewers' && (
         <div className="space-y-4">
@@ -2092,258 +1986,7 @@ export default function HiringLeadCycleDetails() {
         </div>
       )}
 
-      {/* ── Interviewers Roster (shown under Interviews) ── */}
-      {tab === 'interviews' && (
-        <div className="space-y-4 mt-4">
-          <h3 className="text-base font-bold text-foreground/90 flex items-center gap-2">
-            <Users className="w-4 h-4" /> Interviewers
-          </h3>
-          {/* Add interviewer form */}
-          <div className="bg-card rounded-xl border border-border shadow-sm p-4 sm:p-6">
-            <h3 className="text-sm font-bold text-foreground/80 mb-4 flex items-center gap-2">
-              <Plus className="w-4 h-4" /> Add Interviewer
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
-              <div>
-                <label htmlFor="interviewer-member-select" className="block text-xs font-medium text-muted-foreground mb-1">DALI Member</label>
-                <select
-                  id="interviewer-member-select"
-                  value={newInterviewerMemberId}
-                  onChange={e => setNewInterviewerMemberId(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                >
-                  <option value="">Select member...</option>
-                  {allMembers.map(m => (
-                    <option key={m.id} value={m.id}>
-                      {m.firstName && m.lastName ? `${m.firstName} ${m.lastName}` : m.daliEmail}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label htmlFor="interviewer-domain-select" className="block text-xs font-medium text-muted-foreground mb-1">Domain</label>
-                <select
-                  id="interviewer-domain-select"
-                  value={newInterviewerDomainId}
-                  onChange={e => setNewInterviewerDomainId(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                >
-                  <option value="">Select domain...</option>
-                  {allDomains.map(d => (
-                    <option key={d.id} value={d.id}>{d.name}</option>
-                  ))}
-                </select>
-              </div>
-              <button
-                onClick={addInterviewer}
-                disabled={!newInterviewerMemberId || !newInterviewerDomainId}
-                className="px-4 py-2 text-sm font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition disabled:opacity-50"
-              >
-                Add
-              </button>
-            </div>
-          </div>
-
-          {/* Interviewer roster table */}
-          {interviewers.length > 0 && (() => {
-            const submitted = interviewers.filter((i: any) => (i.availabilityBlockCount ?? 0) > 0).length
-            const total = interviewers.length
-            const allSubmitted = submitted === total
-            return (
-              <div className={`rounded-lg px-4 py-3 text-sm border ${
-                allSubmitted
-                  ? 'bg-green-50 border-green-200 text-green-900'
-                  : 'bg-amber-50 border-amber-200 text-amber-900'
-              }`}>
-                <span className="font-semibold">{submitted} of {total}</span> interviewer{total === 1 ? '' : 's'} ha{submitted === 1 ? 's' : 've'} submitted availability
-                {!allSubmitted && total - submitted > 0 && (
-                  <span className="text-amber-800/80"> · {total - submitted} pending</span>
-                )}
-              </div>
-            )
-          })()}
-          <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-            <div className="hidden sm:block overflow-x-auto">
-            <table className="w-full text-sm min-w-[640px]">
-              <thead className="bg-muted/50 border-b border-border">
-                <tr>
-                  <th className="text-left px-4 py-3 font-bold text-foreground/80">Interviewer</th>
-                  <th className="text-left px-4 py-3 font-bold text-foreground/80">Domain</th>
-                  <th className="text-left px-4 py-3 font-bold text-foreground/80">Availability</th>
-                  <th className="text-right px-4 py-3 font-bold text-foreground/80">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {interviewers.map((i: any) => {
-                  const m = i.user
-                  const name = m?.firstName && m?.lastName ? `${m.firstName} ${m.lastName}` : m?.daliEmail ?? i.userId
-                  const hours = i.availabilityHours ?? 0
-                  const blocks = i.availabilityBlockCount ?? 0
-                  const hasAvail = blocks > 0
-                  const isExpanded = expandedInterviewers.has(i.id)
-                  const toggle = () => setExpandedInterviewers(prev => {
-                    const next = new Set(prev)
-                    if (next.has(i.id)) next.delete(i.id); else next.add(i.id)
-                    return next
-                  })
-                  return (
-                    <Fragment key={i.id}>
-                      <tr className="hover:bg-muted/50 transition">
-                        <td className="px-4 py-3 font-medium text-foreground">
-                          {hasAvail ? (
-                            <button onClick={toggle} className="inline-flex items-center gap-1.5 text-left hover:underline">
-                              <span className={`text-muted-foreground transition-transform inline-block ${isExpanded ? 'rotate-90' : ''}`}>▸</span>
-                              {name}
-                            </button>
-                          ) : (
-                            <span className="inline-flex items-center gap-1.5">
-                              <span className="w-2" />
-                              {name}
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-muted-foreground">{i.domain?.name ?? ''}</td>
-                        <td className="px-4 py-3">
-                          {hasAvail ? (
-                            <span className="inline-flex items-center gap-1.5 text-green-700">
-                              <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                              {hours.toFixed(1)}h <span className="text-muted-foreground">({blocks} block{blocks === 1 ? '' : 's'})</span>
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1.5 text-amber-700">
-                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                              Not submitted
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <button onClick={() => removeInterviewer(i.id)} className="text-red-500 hover:text-red-700 transition">
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-                      {isExpanded && hasAvail && (
-                        <tr className="bg-muted/20">
-                          <td colSpan={4} className="px-4 py-3">
-                            <div className="ml-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-1.5 text-xs">
-                              {(i.availabilityBlocks ?? []).map((b: any, idx: number) => {
-                                const start = new Date(b.startTime)
-                                const end = new Date(b.endTime)
-                                const sameDay = start.toDateString() === end.toDateString()
-                                const dur = (end.getTime() - start.getTime()) / (1000 * 60 * 60)
-                                return (
-                                  <div key={idx} className="flex items-baseline gap-2">
-                                    <span className="font-medium text-foreground whitespace-nowrap">
-                                      {start.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
-                                    </span>
-                                    <span className="text-muted-foreground">
-                                      {start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
-                                      {' – '}
-                                      {sameDay
-                                        ? end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
-                                        : `${end.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`}
-                                    </span>
-                                    <span className="text-muted-foreground/60">({dur.toFixed(1)}h)</span>
-                                  </div>
-                                )
-                              })}
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
-                  )
-                })}
-                {interviewers.length === 0 && (
-                  <tr><td colSpan={4} className="px-4 py-8 text-center text-muted-foreground/70"><span className="sr-only">Table empty: </span>No interviewers assigned yet.</td></tr>
-                )}
-              </tbody>
-            </table>
-            </div>
-            <ul className="sm:hidden divide-y divide-border">
-              {interviewers.map((i: any) => {
-                const m = i.user
-                const name = m?.firstName && m?.lastName ? `${m.firstName} ${m.lastName}` : m?.daliEmail ?? i.userId
-                const hours = i.availabilityHours ?? 0
-                const blocks = i.availabilityBlockCount ?? 0
-                const hasAvail = blocks > 0
-                const isExpanded = expandedInterviewers.has(i.id)
-                const toggle = () => setExpandedInterviewers(prev => {
-                  const next = new Set(prev)
-                  if (next.has(i.id)) next.delete(i.id); else next.add(i.id)
-                  return next
-                })
-                return (
-                  <li key={i.id} className="px-4 py-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <button
-                        onClick={hasAvail ? toggle : undefined}
-                        className="min-w-0 text-left flex-1"
-                        disabled={!hasAvail}
-                      >
-                        <div className="font-medium text-foreground truncate flex items-center gap-1.5">
-                          {hasAvail && <span className={`text-muted-foreground transition-transform inline-block ${isExpanded ? 'rotate-90' : ''}`}>▸</span>}
-                          {name}
-                        </div>
-                        <div className="text-xs text-muted-foreground mt-0.5">{i.domain?.name ?? ''}</div>
-                        <div className="text-xs mt-1">
-                          {hasAvail ? (
-                            <span className="inline-flex items-center gap-1.5 text-green-700">
-                              <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                              {hours.toFixed(1)}h · {blocks} block{blocks === 1 ? '' : 's'}
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1.5 text-amber-700">
-                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                              No availability yet
-                            </span>
-                          )}
-                        </div>
-                      </button>
-                      <button
-                        onClick={() => removeInterviewer(i.id)}
-                        aria-label="Remove interviewer"
-                        className="p-2 -m-2 text-red-500 hover:text-red-700 transition flex-shrink-0"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                    {isExpanded && hasAvail && (
-                      <div className="mt-2 pl-4 space-y-1 text-xs">
-                        {(i.availabilityBlocks ?? []).map((b: any, idx: number) => {
-                          const start = new Date(b.startTime)
-                          const end = new Date(b.endTime)
-                          const sameDay = start.toDateString() === end.toDateString()
-                          return (
-                            <div key={idx} className="text-muted-foreground">
-                              <span className="font-medium text-foreground">
-                                {start.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
-                              </span>{' '}
-                              {start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} – {sameDay
-                                ? end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
-                                : `${end.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`}
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
-                  </li>
-                )
-              })}
-              {interviewers.length === 0 && (
-                <li className="px-4 py-8 text-center text-sm text-muted-foreground/70">No interviewers assigned yet.</li>
-              )}
-            </ul>
-          </div>
-        </div>
-      )}
-
-      {/* ── Interviews Tab — live schedule + coverage ── */}
-      {tab === 'interviews' && (
-        <h3 className="text-base font-bold text-foreground/90 flex items-center gap-2 mt-4 pt-4 border-t border-border">
-          <Calendar className="w-4 h-4" /> Schedule &amp; Coverage
-        </h3>
-      )}
+      {/* ── Interviews Tab — schedule, then coverage, then roster, then config ── */}
       {tab === 'interviews' && loaderData?.confidentialityRequired ? (
         <ConfidentialityGate
           cycleId={cycleId ?? ''}
@@ -2381,7 +2024,6 @@ export default function HiringLeadCycleDetails() {
             <Mail className="w-3.5 h-3.5 flex-shrink-0" aria-hidden />
             <span>Controls marked with <Mail className="w-3 h-3 inline-block align-middle text-blue-600" /> send an email when committed. Hover the icon to see who receives it.</span>
           </div>
-          <CoverageHeatmap coverage={coverage} />
           <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
             {totalAll > 0 && (
               <div className="px-4 sm:px-6 py-3 border-b border-border bg-card flex flex-wrap items-center gap-3">
@@ -2796,9 +2438,409 @@ export default function HiringLeadCycleDetails() {
               )}
             </ul>
           </div>
+          {/* Per-domain availability summary: who has interviewers and how
+              many hours each domain has offered. Computed client-side from
+              the already-loaded interviewers list. */}
+          {interviewers.length > 0 && (() => {
+            const byDomain = new Map<string, { count: number; hours: number; submitted: number }>()
+            for (const i of interviewers as any[]) {
+              const name: string = i.domain?.name ?? '—'
+              const entry = byDomain.get(name) ?? { count: 0, hours: 0, submitted: 0 }
+              entry.count += 1
+              entry.hours += (i.availabilityHours ?? 0)
+              if ((i.availabilityBlockCount ?? 0) > 0) entry.submitted += 1
+              byDomain.set(name, entry)
+            }
+            const rows = Array.from(byDomain.entries()).sort(([a], [b]) => a.localeCompare(b))
+            return (
+              <div className="bg-card rounded-xl border border-border shadow-sm p-4 sm:p-6">
+                <h3 className="text-sm font-bold text-foreground/80 mb-3">Coverage by domain</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {rows.map(([name, e]) => (
+                    <div key={name} className="rounded-lg border border-border bg-muted/20 px-3 py-2">
+                      <div className="text-sm font-semibold text-foreground">{name}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5">
+                        <span className="font-medium text-foreground">{e.count}</span> interviewer{e.count === 1 ? '' : 's'}
+                        {' · '}
+                        <span className="font-medium text-foreground">{e.hours.toFixed(0)}h</span> offered
+                        {e.submitted < e.count && (
+                          <span className="text-amber-700"> · {e.count - e.submitted} not submitted</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          })()}
+          <CoverageHeatmap coverage={coverage} />
         </div>
         )
       })()}
+
+      {/* ── Interviewers Roster (shown under Interviews) ── */}
+      {tab === 'interviews' && (
+        <div className="space-y-4 mt-4">
+          <h3 className="text-base font-bold text-foreground/90 flex items-center gap-2">
+            <Users className="w-4 h-4" /> Interviewers
+          </h3>
+          {/* Add interviewer form */}
+          <div className="bg-card rounded-xl border border-border shadow-sm p-4 sm:p-6">
+            <h3 className="text-sm font-bold text-foreground/80 mb-4 flex items-center gap-2">
+              <Plus className="w-4 h-4" /> Add Interviewer
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+              <div>
+                <label htmlFor="interviewer-member-select" className="block text-xs font-medium text-muted-foreground mb-1">DALI Member</label>
+                <select
+                  id="interviewer-member-select"
+                  value={newInterviewerMemberId}
+                  onChange={e => setNewInterviewerMemberId(e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                >
+                  <option value="">Select member...</option>
+                  {allMembers.map(m => (
+                    <option key={m.id} value={m.id}>
+                      {m.firstName && m.lastName ? `${m.firstName} ${m.lastName}` : m.daliEmail}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="interviewer-domain-select" className="block text-xs font-medium text-muted-foreground mb-1">Domain</label>
+                <select
+                  id="interviewer-domain-select"
+                  value={newInterviewerDomainId}
+                  onChange={e => setNewInterviewerDomainId(e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                >
+                  <option value="">Select domain...</option>
+                  {allDomains.map(d => (
+                    <option key={d.id} value={d.id}>{d.name}</option>
+                  ))}
+                </select>
+              </div>
+              <button
+                onClick={addInterviewer}
+                disabled={!newInterviewerMemberId || !newInterviewerDomainId}
+                className="px-4 py-2 text-sm font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition disabled:opacity-50"
+              >
+                Add
+              </button>
+            </div>
+          </div>
+
+          {/* Interviewer roster table */}
+          {interviewers.length > 0 && (() => {
+            const submitted = interviewers.filter((i: any) => (i.availabilityBlockCount ?? 0) > 0).length
+            const total = interviewers.length
+            const allSubmitted = submitted === total
+            return (
+              <div className={`rounded-lg px-4 py-3 text-sm border ${
+                allSubmitted
+                  ? 'bg-green-50 border-green-200 text-green-900'
+                  : 'bg-amber-50 border-amber-200 text-amber-900'
+              }`}>
+                <span className="font-semibold">{submitted} of {total}</span> interviewer{total === 1 ? '' : 's'} ha{submitted === 1 ? 's' : 've'} submitted availability
+                {!allSubmitted && total - submitted > 0 && (
+                  <span className="text-amber-800/80"> · {total - submitted} pending</span>
+                )}
+              </div>
+            )
+          })()}
+          <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
+            <div className="hidden sm:block overflow-x-auto">
+            <table className="w-full text-sm min-w-[640px]">
+              <thead className="bg-muted/50 border-b border-border">
+                <tr>
+                  <th className="text-left px-4 py-3 font-bold text-foreground/80">Interviewer</th>
+                  <th className="text-left px-4 py-3 font-bold text-foreground/80">Domain</th>
+                  <th className="text-left px-4 py-3 font-bold text-foreground/80">Availability</th>
+                  <th className="text-right px-4 py-3 font-bold text-foreground/80">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {interviewers.map((i: any) => {
+                  const m = i.user
+                  const name = m?.firstName && m?.lastName ? `${m.firstName} ${m.lastName}` : m?.daliEmail ?? i.userId
+                  const hours = i.availabilityHours ?? 0
+                  const blocks = i.availabilityBlockCount ?? 0
+                  const hasAvail = blocks > 0
+                  const isExpanded = expandedInterviewers.has(i.id)
+                  const toggle = () => setExpandedInterviewers(prev => {
+                    const next = new Set(prev)
+                    if (next.has(i.id)) next.delete(i.id); else next.add(i.id)
+                    return next
+                  })
+                  return (
+                    <Fragment key={i.id}>
+                      <tr className="hover:bg-muted/50 transition">
+                        <td className="px-4 py-3 font-medium text-foreground">
+                          {hasAvail ? (
+                            <button onClick={toggle} className="inline-flex items-center gap-1.5 text-left hover:underline">
+                              <span className={`text-muted-foreground transition-transform inline-block ${isExpanded ? 'rotate-90' : ''}`}>▸</span>
+                              {name}
+                            </button>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="w-2" />
+                              {name}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-muted-foreground">{i.domain?.name ?? ''}</td>
+                        <td className="px-4 py-3">
+                          {hasAvail ? (
+                            <span className="inline-flex items-center gap-1.5 text-green-700">
+                              <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                              {hours.toFixed(1)}h <span className="text-muted-foreground">({blocks} block{blocks === 1 ? '' : 's'})</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 text-amber-700">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                              Not submitted
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <button onClick={() => removeInterviewer(i.id)} className="text-red-500 hover:text-red-700 transition">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                      {isExpanded && hasAvail && (
+                        <tr className="bg-muted/20">
+                          <td colSpan={4} className="px-4 py-3">
+                            <div className="ml-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-1.5 text-xs">
+                              {(i.availabilityBlocks ?? []).map((b: any, idx: number) => {
+                                const start = new Date(b.startTime)
+                                const end = new Date(b.endTime)
+                                const sameDay = start.toDateString() === end.toDateString()
+                                const dur = (end.getTime() - start.getTime()) / (1000 * 60 * 60)
+                                return (
+                                  <div key={idx} className="flex items-baseline gap-2">
+                                    <span className="font-medium text-foreground whitespace-nowrap">
+                                      {start.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+                                    </span>
+                                    <span className="text-muted-foreground">
+                                      {start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+                                      {' – '}
+                                      {sameDay
+                                        ? end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+                                        : `${end.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`}
+                                    </span>
+                                    <span className="text-muted-foreground/60">({dur.toFixed(1)}h)</span>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  )
+                })}
+                {interviewers.length === 0 && (
+                  <tr><td colSpan={4} className="px-4 py-8 text-center text-muted-foreground/70"><span className="sr-only">Table empty: </span>No interviewers assigned yet.</td></tr>
+                )}
+              </tbody>
+            </table>
+            </div>
+            <ul className="sm:hidden divide-y divide-border">
+              {interviewers.map((i: any) => {
+                const m = i.user
+                const name = m?.firstName && m?.lastName ? `${m.firstName} ${m.lastName}` : m?.daliEmail ?? i.userId
+                const hours = i.availabilityHours ?? 0
+                const blocks = i.availabilityBlockCount ?? 0
+                const hasAvail = blocks > 0
+                const isExpanded = expandedInterviewers.has(i.id)
+                const toggle = () => setExpandedInterviewers(prev => {
+                  const next = new Set(prev)
+                  if (next.has(i.id)) next.delete(i.id); else next.add(i.id)
+                  return next
+                })
+                return (
+                  <li key={i.id} className="px-4 py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <button
+                        onClick={hasAvail ? toggle : undefined}
+                        className="min-w-0 text-left flex-1"
+                        disabled={!hasAvail}
+                      >
+                        <div className="font-medium text-foreground truncate flex items-center gap-1.5">
+                          {hasAvail && <span className={`text-muted-foreground transition-transform inline-block ${isExpanded ? 'rotate-90' : ''}`}>▸</span>}
+                          {name}
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-0.5">{i.domain?.name ?? ''}</div>
+                        <div className="text-xs mt-1">
+                          {hasAvail ? (
+                            <span className="inline-flex items-center gap-1.5 text-green-700">
+                              <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                              {hours.toFixed(1)}h · {blocks} block{blocks === 1 ? '' : 's'}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 text-amber-700">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                              No availability yet
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                      <button
+                        onClick={() => removeInterviewer(i.id)}
+                        aria-label="Remove interviewer"
+                        className="p-2 -m-2 text-red-500 hover:text-red-700 transition flex-shrink-0"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                    {isExpanded && hasAvail && (
+                      <div className="mt-2 pl-4 space-y-1 text-xs">
+                        {(i.availabilityBlocks ?? []).map((b: any, idx: number) => {
+                          const start = new Date(b.startTime)
+                          const end = new Date(b.endTime)
+                          const sameDay = start.toDateString() === end.toDateString()
+                          return (
+                            <div key={idx} className="text-muted-foreground">
+                              <span className="font-medium text-foreground">
+                                {start.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+                              </span>{' '}
+                              {start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} – {sameDay
+                                ? end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+                                : `${end.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </li>
+                )
+              })}
+              {interviewers.length === 0 && (
+                <li className="px-4 py-8 text-center text-sm text-muted-foreground/70">No interviewers assigned yet.</li>
+              )}
+            </ul>
+          </div>
+        </div>
+      )}
+
+      {/* ── Interview Configuration (set-once knobs, kept at the bottom) ── */}
+      {tab === 'interviews' && (
+        <div className="space-y-6">
+          <h3 className="text-base font-bold text-foreground/90 flex items-center gap-2">
+            <Settings className="w-4 h-4" /> Interview Configuration
+          </h3>
+          <div className="bg-card rounded-xl border border-border shadow-sm p-6 space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label htmlFor="slot-duration" className="block text-sm font-bold text-foreground/80 mb-1">Slot Duration</label>
+              <select
+                id="slot-duration"
+                value={config.slotDurationMinutes}
+                onChange={e => setConfig(c => ({ ...c, slotDurationMinutes: Number(e.target.value) }))}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              >
+                {DURATION_OPTIONS.map(d => <option key={d} value={d}>{d} minutes</option>)}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="buffer-minutes" className="block text-sm font-bold text-foreground/80 mb-1">Buffer Between Interviews</label>
+              <select
+                id="buffer-minutes"
+                value={config.bufferMinutes}
+                onChange={e => setConfig(c => ({ ...c, bufferMinutes: Number(e.target.value) }))}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              >
+                {BUFFER_OPTIONS.map(b => <option key={b} value={b}>{b} minutes</option>)}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="day-start-hour" className="block text-sm font-bold text-foreground/80 mb-1">Day Start</label>
+              <select
+                id="day-start-hour"
+                value={config.dayStartHour}
+                onChange={e => setConfig(c => ({ ...c, dayStartHour: Number(e.target.value) }))}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              >
+                {HOUR_OPTIONS.map(h => <option key={h} value={h}>{formatHour(h)}</option>)}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="day-end-hour" className="block text-sm font-bold text-foreground/80 mb-1">Day End</label>
+              <select
+                id="day-end-hour"
+                value={config.dayEndHour}
+                onChange={e => setConfig(c => ({ ...c, dayEndHour: Number(e.target.value) }))}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              >
+                {HOUR_OPTIONS.map(h => <option key={h} value={h}>{formatHour(h)}</option>)}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="interview-start-date" className="block text-sm font-bold text-foreground/80 mb-1">Interview Start Date</label>
+              <input
+                id="interview-start-date"
+                type="date"
+                value={config.interviewStartDate}
+                onChange={e => setConfig(c => ({ ...c, interviewStartDate: e.target.value }))}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label htmlFor="interview-end-date" className="block text-sm font-bold text-foreground/80 mb-1">Interview End Date</label>
+              <input
+                id="interview-end-date"
+                type="date"
+                value={config.interviewEndDate}
+                onChange={e => setConfig(c => ({ ...c, interviewEndDate: e.target.value }))}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-bold text-foreground/80 mb-1">Booking Notice</label>
+              <select
+                value={config.bookingNoticeHours}
+                onChange={e => setConfig(c => ({ ...c, bookingNoticeHours: Number(e.target.value) }))}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              >
+                {[0, 1, 2, 4, 6, 8, 12, 24, 48].map(h => <option key={h} value={h}>{h === 0 ? 'No minimum' : `${h} hours ahead`}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-bold text-foreground/80 mb-1">Reschedule Notice</label>
+              <select
+                value={config.rescheduleNoticeHours}
+                onChange={e => setConfig(c => ({ ...c, rescheduleNoticeHours: Number(e.target.value) }))}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              >
+                {[0, 2, 4, 6, 8, 12, 24, 48].map(h => <option key={h} value={h}>{h === 0 ? 'No minimum' : `${h} hours before`}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-bold text-foreground/80 mb-1">Cancel Notice</label>
+              <select
+                value={config.cancelNoticeHours}
+                onChange={e => setConfig(c => ({ ...c, cancelNoticeHours: Number(e.target.value) }))}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              >
+                {[0, 2, 4, 6, 8, 12, 24, 48].map(h => <option key={h} value={h}>{h === 0 ? 'Up until start' : `${h} hours before`}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 pt-2">
+            <button
+              onClick={saveConfig}
+              disabled={configSaving || !config.interviewStartDate || !config.interviewEndDate}
+              className="px-5 py-2 text-sm font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition disabled:opacity-50"
+            >
+              {configSaving ? 'Saving...' : configSaved ? 'Saved!' : 'Save Configuration'}
+            </button>
+            {configSaved && <CheckCircle className="w-4 h-4 text-green-500" />}
+          </div>
+        </div>
+        </div>
+      )}
 
       {/* ── Decisions Tab ── */}
       {tab === 'decisions' && loaderData?.confidentialityRequired ? (
