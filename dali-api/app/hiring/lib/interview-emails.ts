@@ -127,12 +127,18 @@ export async function sendInterviewInviteEmails(
     const applicant = await getApplicantRecipient(domainApplicationId);
     const interviewers = await getInterviewerRecipients(interviewId);
 
-    const attendees: IcsAttendee[] = [
-      ...(applicant ? [{ email: applicant.email, name: applicant.firstName }] : []),
-      ...interviewers.map((i) => ({ email: i.email, name: i.firstName })),
-    ];
-
-    const ics = buildInviteIcs({
+    // Two distinct ICS objects so the applicant's calendar guest list shows
+    // ONLY themselves while the interviewers get the joint view. Same UID
+    // (derived from interviewId), so per-account RSVP replies still reconcile
+    // to the same logical event on the organizer side.
+    const applicantAttendee: IcsAttendee[] = applicant
+      ? [{ email: applicant.email, name: applicant.firstName }]
+      : [];
+    const interviewerAttendees: IcsAttendee[] = interviewers.map((i) => ({
+      email: i.email,
+      name: i.firstName,
+    }));
+    const icsCommon = {
       interviewId: interview.id,
       summary: `DALI Interview — ${domainName}`,
       startTime: interview.startTime,
@@ -140,7 +146,11 @@ export async function sendInterviewInviteEmails(
       location: formatLocation(interview.location, interview.zoomJoinUrl),
       meetingUrl: interview.zoomJoinUrl,
       organizer: ORGANIZER,
-      attendees,
+    } as const;
+    const applicantIcs = buildInviteIcs({ ...icsCommon, attendees: applicantAttendee });
+    const interviewerIcs = buildInviteIcs({
+      ...icsCommon,
+      attendees: [...applicantAttendee, ...interviewerAttendees],
     });
 
     const sends: Promise<any>[] = [];
@@ -157,7 +167,7 @@ export async function sendInterviewInviteEmails(
           to: applicant.email,
           subject: rendered.subject,
           html: rendered.html,
-          ics,
+          ics: applicantIcs,
         }));
       }
     }
@@ -174,7 +184,7 @@ export async function sendInterviewInviteEmails(
           to: interviewer.email,
           subject: rendered.subject,
           html: rendered.html,
-          ics,
+          ics: interviewerIcs,
         }));
       }
     }
@@ -211,18 +221,26 @@ export async function sendInterviewCancelEmails(
     const applicant = await getApplicantRecipient(domainApplicationId);
     const interviewers = await getInterviewerRecipients(interviewId);
 
-    const attendees: IcsAttendee[] = [
-      ...(applicant ? [{ email: applicant.email, name: applicant.firstName }] : []),
-      ...interviewers.map((i) => ({ email: i.email, name: i.firstName })),
-    ];
-
-    const ics = buildCancelIcs({
+    // Per-recipient ICS so the applicant's cancellation only lists themselves.
+    // See sendInterviewInviteEmails for the rationale.
+    const applicantAttendee: IcsAttendee[] = applicant
+      ? [{ email: applicant.email, name: applicant.firstName }]
+      : [];
+    const interviewerAttendees: IcsAttendee[] = interviewers.map((i) => ({
+      email: i.email,
+      name: i.firstName,
+    }));
+    const icsCommon = {
       interviewId: interview.id,
       summary: `DALI Interview — ${domainName}`,
       startTime: interview.startTime,
       endTime: interview.endTime,
       organizer: ORGANIZER,
-      attendees,
+    } as const;
+    const applicantIcs = buildCancelIcs({ ...icsCommon, attendees: applicantAttendee });
+    const interviewerIcs = buildCancelIcs({
+      ...icsCommon,
+      attendees: [...applicantAttendee, ...interviewerAttendees],
     });
 
     const sends: Promise<any>[] = [];
@@ -239,7 +257,7 @@ export async function sendInterviewCancelEmails(
           to: applicant.email,
           subject: rendered.subject,
           html: rendered.html,
-          ics,
+          ics: applicantIcs,
         }));
       }
     }
@@ -256,7 +274,7 @@ export async function sendInterviewCancelEmails(
           to: interviewer.email,
           subject: rendered.subject,
           html: rendered.html,
-          ics,
+          ics: interviewerIcs,
         }));
       }
     }
@@ -398,12 +416,16 @@ export async function sendLocationChangeEmails(
     const applicant = await getApplicantRecipient(domainApplicationId);
     const interviewers = await getInterviewerRecipients(interviewId);
 
-    const attendees: IcsAttendee[] = [
-      ...(applicant ? [{ email: applicant.email, name: applicant.firstName }] : []),
-      ...interviewers.map((i) => ({ email: i.email, name: i.firstName })),
-    ];
-
-    const ics = buildInviteIcs({
+    // Per-recipient ICS so the applicant only sees themselves in the updated
+    // event. See sendInterviewInviteEmails for rationale.
+    const applicantAttendee: IcsAttendee[] = applicant
+      ? [{ email: applicant.email, name: applicant.firstName }]
+      : [];
+    const interviewerAttendees: IcsAttendee[] = interviewers.map((i) => ({
+      email: i.email,
+      name: i.firstName,
+    }));
+    const icsCommon = {
       interviewId: interview.id,
       summary: `DALI Interview — ${domainName}`,
       startTime: interview.startTime,
@@ -412,7 +434,11 @@ export async function sendLocationChangeEmails(
       meetingUrl: interview.zoomJoinUrl,
       description: "Updated location",
       organizer: ORGANIZER,
-      attendees,
+    } as const;
+    const applicantIcs = buildInviteIcs({ ...icsCommon, attendees: applicantAttendee });
+    const interviewerIcs = buildInviteIcs({
+      ...icsCommon,
+      attendees: [...applicantAttendee, ...interviewerAttendees],
     });
 
     const sends: Promise<any>[] = [];
@@ -429,7 +455,7 @@ export async function sendLocationChangeEmails(
           to: applicant.email,
           subject: rendered.subject,
           html: rendered.html,
-          ics,
+          ics: applicantIcs,
         }));
       }
     }
@@ -446,7 +472,7 @@ export async function sendLocationChangeEmails(
           to: interviewer.email,
           subject: rendered.subject,
           html: rendered.html,
-          ics,
+          ics: interviewerIcs,
         }));
       }
     }
