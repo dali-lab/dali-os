@@ -26,6 +26,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const interviewers = await prisma.cycleInterviewer.findMany({
     where: { applicationCycleId: params.cycleId },
     include: {
+      user: { select: { id: true, firstName: true, lastName: true } },
+      domain: { select: { name: true } },
       availabilityBlocks: { select: { startTime: true, endTime: true } },
       interviewAssignments: {
         where: { status: "Active", interview: { status: "Scheduled" } },
@@ -53,6 +55,22 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     bookedIntervals: memberIntervals.get(r.userId) ?? [],
   }));
 
+  // Display info per user — dedupe so a cross-listed member appears once
+  // per slot. domainNames is a Set since one user can be on multiple domains.
+  const userInfo = new Map<string, { firstName: string | null; lastName: string | null; domainNames: Set<string> }>();
+  for (const r of interviewers) {
+    const existing = userInfo.get(r.userId);
+    if (existing) {
+      existing.domainNames.add(r.domain.name);
+    } else {
+      userInfo.set(r.userId, {
+        firstName: r.user.firstName,
+        lastName: r.user.lastName,
+        domainNames: new Set([r.domain.name]),
+      });
+    }
+  }
+
   const candidates = generateCandidateSlots(
     config.interviewStartDate,
     config.interviewEndDate,
@@ -77,10 +95,26 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     const bookedCount = interviews.filter(
       (i) => i.startTime < slotEnd && i.endTime > slotStart,
     ).length;
+    const freeInterviewers = Array.from(freeMembers)
+      .map((uid) => {
+        const info = userInfo.get(uid)!;
+        return {
+          id: uid,
+          firstName: info.firstName,
+          lastName: info.lastName,
+          domains: Array.from(info.domainNames).sort(),
+        };
+      })
+      .sort((a, b) => {
+        const an = `${a.firstName ?? ""} ${a.lastName ?? ""}`.trim();
+        const bn = `${b.firstName ?? ""} ${b.lastName ?? ""}`.trim();
+        return an.localeCompare(bn);
+      });
     return {
       startTime: slotStart.toISOString(),
       endTime: slotEnd.toISOString(),
       freeInterviewerCount: freeMembers.size,
+      freeInterviewers,
       bookedInterviewCount: bookedCount,
     };
   });
