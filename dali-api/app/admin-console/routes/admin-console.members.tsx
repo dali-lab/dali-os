@@ -3,12 +3,12 @@ import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/admin-console.members";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isAdmin, currentTerm } from "~/lib/roles";
+import { isAdmin, isHiringLead, currentTerm } from "~/lib/roles";
 import { Users, Check } from "lucide-react";
 import {
   AdminToggle,
+  CorePicker,
   DomainLeadPicker,
-  HiringLeadToggle,
   type Member,
 } from "~/admin-console/components/admin-console-shared";
 
@@ -19,12 +19,15 @@ export const meta: Route.MetaFunction = () => [{ title: "Members · Admin consol
 // lists Users (filtered to those with a DALIMember row, i.e. lab members)
 // and presents per-user toggles backed by row insert/delete on the three
 // assignment tables.
+//
+// Access: any Core member or Admin may view and assign Core titles / Domain
+// Leads. Granting Admin itself is admin-only (enforced inside the action).
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
-  const admin = await isAdmin(auth.user.sub);
-  if (!admin) return redirect("/");
+  if (!(await isHiringLead(auth.user.sub))) return redirect("/");
+  const viewerIsAdmin = await isAdmin(auth.user.sub);
 
   const [users, domains, term] = await Promise.all([
     prisma.user.findMany({
@@ -45,39 +48,46 @@ export async function loader({ request }: Route.LoaderArgs) {
     currentTerm(),
   ]);
 
-  const members: Member[] = users.map((u) => ({
-    id: u.id,
-    firstName: u.firstName,
-    lastName: u.lastName,
-    daliEmail: u.daliEmail,
-    isLabMember: u.daliMember !== null,
-    isAdmin: u.adminMembership !== null,
-    isCore:
-      term !== null &&
-      u.coreAssignments.some((a) => a.termId === term.id),
-    domainLeadAssignments: u.domainLeadAssignmentsAsUser.map((a) => ({
-      id: a.id,
-      domain: { id: a.domain.id, name: a.domain.displayName },
-    })),
-  }));
+  const members: Member[] = users.map((u) => {
+    const currentCore = term !== null
+      ? u.coreAssignments.filter((a) => a.termId === term.id)
+      : [];
+    return {
+      id: u.id,
+      firstName: u.firstName,
+      lastName: u.lastName,
+      daliEmail: u.daliEmail,
+      isLabMember: u.daliMember !== null,
+      isAdmin: u.adminMembership !== null,
+      isCore: currentCore.length > 0,
+      coreAssignments: currentCore.map((a) => ({ id: a.id, leadTitle: a.leadTitle })),
+      domainLeadAssignments: u.domainLeadAssignmentsAsUser.map((a) => ({
+        id: a.id,
+        domain: { id: a.domain.id, name: a.domain.displayName },
+      })),
+    };
+  });
 
   return {
     members,
     domains: domains.map((d) => ({ id: d.id, name: d.displayName })),
+    viewerIsAdmin,
   };
 }
 
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
-  const admin = await isAdmin(auth.user.sub);
-  if (!admin)
+  if (!(await isHiringLead(auth.user.sub)))
     return Response.json({ error: "Forbidden" }, { status: 403 });
 
   const formData = await request.formData();
   const intent = formData.get("intent") as string;
 
+  // Admin-promotion is the only Admin-gated mutation on this page.
   if (intent === "set-admin") {
+    if (!(await isAdmin(auth.user.sub)))
+      return Response.json({ error: "Forbidden" }, { status: 403 });
     const userId = formData.get("userId") as string;
     const value = formData.get("value") === "true";
     if (value) {
@@ -92,9 +102,13 @@ export async function action({ request }: Route.ActionArgs) {
     return null;
   }
 
-  if (intent === "set-hiring-lead") {
+  // Free-text Core title for the current term. A member can hold multiple
+  // titles in the same term (schema-side: no unique on (userId, termId)).
+  // App-level guard: ignore exact-title duplicates rather than 409.
+  if (intent === "add-core-title") {
     const userId = formData.get("userId") as string;
-    const value = formData.get("value") === "true";
+    const rawTitle = String(formData.get("leadTitle") ?? "").trim();
+    const leadTitle = rawTitle === "" ? null : rawTitle.slice(0, 80);
     const term = await currentTerm();
     if (!term) {
       return Response.json(
@@ -102,22 +116,21 @@ export async function action({ request }: Route.ActionArgs) {
         { status: 500 },
       );
     }
-    if (value) {
-      // App-level "no duplicate (user, term, leadTitle)" check.
-      const existing = await prisma.coreAssignment.findFirst({
-        where: { userId, termId: term.id, leadTitle: "Hiring Lead" },
-        select: { id: true },
-      });
-      if (!existing) {
-        await prisma.coreAssignment.create({
-          data: { userId, termId: term.id, leadTitle: "Hiring Lead" },
-        });
-      }
-    } else {
-      await prisma.coreAssignment.deleteMany({
-        where: { userId, termId: term.id, leadTitle: "Hiring Lead" },
+    const existing = await prisma.coreAssignment.findFirst({
+      where: { userId, termId: term.id, leadTitle },
+      select: { id: true },
+    });
+    if (!existing) {
+      await prisma.coreAssignment.create({
+        data: { userId, termId: term.id, leadTitle },
       });
     }
+    return null;
+  }
+
+  if (intent === "remove-core-title") {
+    const assignmentId = formData.get("assignmentId") as string;
+    await prisma.coreAssignment.deleteMany({ where: { id: assignmentId } });
     return null;
   }
 
@@ -150,10 +163,10 @@ export async function action({ request }: Route.ActionArgs) {
   return null;
 }
 
-type RoleFilter = "all" | "admin" | "hiringLead";
+type RoleFilter = "all" | "admin" | "core";
 
 export default function AdminConsoleMembers() {
-  const { members, domains } = useLoaderData<typeof loader>();
+  const { members, domains, viewerIsAdmin } = useLoaderData<typeof loader>();
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("all");
 
@@ -163,7 +176,7 @@ export default function AdminConsoleMembers() {
     const q = search.toLowerCase();
     if (q && !name.includes(q) && !email.includes(q)) return false;
     if (roleFilter === "admin" && !m.isAdmin) return false;
-    if (roleFilter === "hiringLead" && !m.isCore) return false;
+    if (roleFilter === "core" && !m.isCore) return false;
     return true;
   });
 
@@ -179,7 +192,7 @@ export default function AdminConsoleMembers() {
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
           <div role="group" aria-label="Filter members by role" className="flex rounded-md border border-border overflow-hidden text-sm">
-            {(["all", "admin", "hiringLead"] as RoleFilter[]).map((f) => (
+            {(["all", "admin", "core"] as RoleFilter[]).map((f) => (
               <button
                 key={f}
                 onClick={() => setRoleFilter(f)}
@@ -190,7 +203,7 @@ export default function AdminConsoleMembers() {
                     : "bg-card text-muted-foreground hover:bg-muted/50"
                 }`}
               >
-                {f === "all" ? "All" : f === "admin" ? "Admins" : "Hiring Leads"}
+                {f === "all" ? "All" : f === "admin" ? "Admins" : "Core"}
               </button>
             ))}
           </div>
@@ -214,7 +227,7 @@ export default function AdminConsoleMembers() {
               <th className="text-left px-4 py-3 font-medium text-muted-foreground">DALI Email</th>
               <th className="text-left px-4 py-3 font-medium text-muted-foreground">Lab Member</th>
               <th className="text-left px-4 py-3 font-medium text-muted-foreground">Admin</th>
-              <th className="text-left px-4 py-3 font-medium text-muted-foreground">Hiring Lead</th>
+              <th className="text-left px-4 py-3 font-medium text-muted-foreground">Core</th>
               <th className="text-left px-4 py-3 font-medium text-muted-foreground">Domain Lead</th>
             </tr>
           </thead>
@@ -242,10 +255,10 @@ export default function AdminConsoleMembers() {
                   )}
                 </td>
                 <td className="px-4 py-3">
-                  <AdminToggle member={member} />
+                  <AdminToggle member={member} disabled={!viewerIsAdmin} />
                 </td>
                 <td className="px-4 py-3">
-                  <HiringLeadToggle member={member} />
+                  <CorePicker member={member} />
                 </td>
                 <td className="px-4 py-3">
                   <DomainLeadPicker

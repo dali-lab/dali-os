@@ -29,6 +29,14 @@ const ZERO_COUNTS = {
   cycleReviewers: 0,
   cycleInterviewers: 0,
   delibsSessions: 0,
+  eligibilities: 0,
+  projectAssignments: 0,
+  projects: 0,
+  projectScopes: 0,
+  projectRoleRequests: 0,
+  partnerApplicationDomains: 0,
+  tasks: 0,
+  mentorshipPairs: 0,
 };
 
 beforeEach(() => {
@@ -59,6 +67,20 @@ describe("describeDomainUsage", () => {
       cycleReviewers: 3,
     });
     expect(out).toEqual(["2 application cycles", "3 cycle reviewers"]);
+  });
+
+  it("flags post-Phase-2 relations (eligibilities, projects, etc.)", () => {
+    const out = describeDomainUsage({
+      ...ZERO_COUNTS,
+      eligibilities: 4,
+      projectAssignments: 2,
+      partnerApplicationDomains: 1,
+    });
+    expect(out).toEqual([
+      "4 member eligibilities",
+      "2 project assignments",
+      "1 partner applications",
+    ]);
   });
 });
 

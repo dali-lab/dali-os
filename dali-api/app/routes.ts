@@ -38,6 +38,14 @@ export default [
     route("admin-console/members", "admin-console/routes/admin-console.members.tsx"),
     route("admin-console/domains", "admin-console/routes/admin-console.domains.tsx"),
     route("admin-console/announcements", "admin-console/routes/admin-console.announcements.tsx"),
+    // Groups is owned by the Members area but also surfaced under the admin
+    // console (it's an admin-y operation). Same component, aliased route so
+    // the sidebar's area highlight stays on "admin-console" when navigated
+    // here from that side.
+    route("admin-console/groups", "members/routes/members.groups.tsx", {
+      id: "admin-console-groups",
+    }),
+    route("admin-console/activity", "admin-console/routes/admin-console.activity.tsx"),
 
     // Projects
     route("projects/list", "projects/routes/projects.list.tsx"),

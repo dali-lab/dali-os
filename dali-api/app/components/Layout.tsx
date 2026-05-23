@@ -271,8 +271,18 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
       label: 'Domains',
       to: '/admin-console/domains',
       icon: Shield,
-      show: isAdmin,
+      // Core or Admin can manage domain leads + eligibilities; only Admin
+      // sees the Create/Delete controls (gated inside the page).
+      show: isHiringLead,
       active: path.startsWith('/admin-console/domains'),
+      sub: null,
+    },
+    {
+      label: 'Groups',
+      to: '/admin-console/groups',
+      icon: UsersRound,
+      show: canViewForms,
+      active: path.startsWith('/admin-console/groups'),
       sub: null,
     },
     {
@@ -281,6 +291,14 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
       icon: Megaphone,
       show: isAdmin,
       active: path.startsWith('/admin-console/announcements'),
+      sub: null,
+    },
+    {
+      label: 'Activity',
+      to: '/admin-console/activity',
+      icon: ListTodo,
+      show: isAdmin,
+      active: path.startsWith('/admin-console/activity'),
       sub: null,
     },
   ].filter((s) => s.show)
