@@ -110,6 +110,7 @@ export async function inferUnderReviewStage(
     where: {
       stage: "Released",
       type: "InvitedToInterview",
+      supersededAt: null,
       domainApplication: { application: { applicationCycleId: cycleId } },
     },
   });
@@ -135,6 +136,7 @@ export async function inferUnderReviewStage(
     where: {
       stage: "Released",
       type: { in: ["Accepted", "Rejected", "Waitlisted"] },
+      supersededAt: null,
       domainApplication: { application: { applicationCycleId: cycleId } },
     },
   });

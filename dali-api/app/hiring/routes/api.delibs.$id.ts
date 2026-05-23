@@ -105,7 +105,28 @@ export async function action({ request, params }: Route.ActionArgs) {
 
       await prisma.$transaction(async (tx) => {
         for (const d of decisions) {
-          await tx.decision.create({
+          // The partial unique index on (domainApplicationId, stage) WHERE
+          // supersededAt IS NULL means we must vacate the slot before
+          // inserting the new row. Reopen + reclose with a different column
+          // produces this case. Three steps: find prior → mark superseded
+          // (frees the slot) → insert new → link supersededById.
+          const prior = await tx.decision.findFirst({
+            where: {
+              domainApplicationId: d.domainApplicationId,
+              stage: "Draft",
+              supersededAt: null,
+            },
+            select: { id: true },
+          });
+
+          if (prior) {
+            await tx.decision.update({
+              where: { id: prior.id },
+              data: { supersededAt: new Date() },
+            });
+          }
+
+          const created = await tx.decision.create({
             data: {
               domainApplicationId: d.domainApplicationId,
               type: d.type as any,
@@ -114,6 +135,13 @@ export async function action({ request, params }: Route.ActionArgs) {
               waitlistRank: d.waitlistRank,
             },
           });
+
+          if (prior) {
+            await tx.decision.update({
+              where: { id: prior.id },
+              data: { supersededById: created.id },
+            });
+          }
         }
 
         await tx.delibsSession.update({

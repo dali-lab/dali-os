@@ -245,6 +245,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     : await prisma.decision.findMany({
         where: {
           stage: "Final",
+          supersededAt: null,
           children: { none: { stage: "Released" } },
           domainApplication: {
             application: { applicationCycleId: params.id },
@@ -294,6 +295,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     : await prisma.decision.findMany({
         where: {
           stage: "Released",
+          supersededAt: null,
           domainApplication: {
             application: { applicationCycleId: params.id },
           },
@@ -547,11 +549,12 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (!validTypes.includes(decisionType as (typeof validTypes)[number])) {
       return new Response(JSON.stringify({ error: "Invalid decision type" }), { status: 400, headers: { "Content-Type": "application/json" } });
     }
-    // Lock once a Released decision of this type exists for this cycle.
+    // Lock once an active Released decision of this type exists for this cycle.
     const alreadyReleased = await prisma.decision.count({
       where: {
         stage: "Released",
         type: decisionType as (typeof validTypes)[number],
+        supersededAt: null,
         domainApplication: { application: { applicationCycleId: params.id } },
       },
     });

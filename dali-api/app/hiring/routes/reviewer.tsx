@@ -196,7 +196,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     const qualifyingFilter = isInitial
       ? {
           reviews: { every: { submittedAt: { not: null } }, some: {} },
-          decisions: { none: { stage: { in: ["Final" as const, "Released" as const] } } },
+          decisions: { none: { stage: { in: ["Final" as const, "Released" as const] }, supersededAt: null } },
         }
       : {
           interviews: { some: { status: "Completed" as const } },

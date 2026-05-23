@@ -16,7 +16,7 @@ const MEMBER_ID = "member-hl";
 const SESSION_ID = "session-1";
 
 const mockTx: any = {
-  decision: { create: vi.fn() },
+  decision: { create: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
   delibsSession: { update: vi.fn() },
 };
 
@@ -32,7 +32,9 @@ const mockPrisma = prisma as unknown as {
 beforeEach(() => {
   vi.clearAllMocks();
 
-  mockTx.decision.create = vi.fn().mockResolvedValue({});
+  mockTx.decision.create = vi.fn().mockResolvedValue({ id: "new-draft" });
+  mockTx.decision.findFirst = vi.fn().mockResolvedValue(null);
+  mockTx.decision.update = vi.fn().mockResolvedValue({});
   mockTx.delibsSession.update = vi.fn().mockResolvedValue({});
 
   (mockPrisma as any).dALIMember = { findUnique: vi.fn() };
@@ -114,6 +116,61 @@ describe("POST /api/hiring/delibs/:id (intent=close)", () => {
         expect(data.waitlistRank).toBeNull();
       }
     }
+  });
+
+  it("supersedes a prior non-superseded Draft when re-closing delibs with a different column", async () => {
+    // Simulates the prod bug: applicant was first put in Reject and a Draft
+    // exists; delibs reopened and they were moved to Interview; closing
+    // again should supersede the old Reject Draft instead of leaving both
+    // active.
+    mockPrisma.delibsSession.findUnique.mockResolvedValue({
+      id: SESSION_ID,
+      type: "Initial",
+      columnOrder: { Interview: ["da-1"], Reject: [] },
+    });
+
+    const PRIOR_DRAFT_ID = "prior-draft-da-1";
+    mockTx.decision.findFirst = vi
+      .fn()
+      .mockResolvedValueOnce({ id: PRIOR_DRAFT_ID });
+    mockTx.decision.create = vi.fn().mockResolvedValue({ id: "new-draft-da-1" });
+
+    const res = await action({
+      request: makeCloseRequest(),
+      params: { id: SESSION_ID },
+      context: {},
+    } as any);
+
+    expect(res.status).toBe(200);
+
+    expect(mockTx.decision.findFirst).toHaveBeenCalledWith({
+      where: {
+        domainApplicationId: "da-1",
+        stage: "Draft",
+        supersededAt: null,
+      },
+      select: { id: true },
+    });
+
+    // First update marks prior as superseded (frees the unique slot).
+    expect(mockTx.decision.update).toHaveBeenNthCalledWith(1, {
+      where: { id: PRIOR_DRAFT_ID },
+      data: { supersededAt: expect.any(Date) },
+    });
+
+    expect(mockTx.decision.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        domainApplicationId: "da-1",
+        type: "InvitedToInterview",
+        stage: "Draft",
+      }),
+    });
+
+    // Second update links supersededById to the new row.
+    expect(mockTx.decision.update).toHaveBeenNthCalledWith(2, {
+      where: { id: PRIOR_DRAFT_ID },
+      data: { supersededById: "new-draft-da-1" },
+    });
   });
 
   it("creates Draft decisions for Initial sessions with no waitlistRank", async () => {

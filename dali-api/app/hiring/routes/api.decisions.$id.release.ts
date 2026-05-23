@@ -42,6 +42,32 @@ export async function action({ request, params }: Route.ActionArgs) {
           { status: 409 }
         );
   }
+  if (decision.supersededAt !== null) {
+    return Response.json(
+      { error: "This Final has been superseded — release the current Final instead." },
+      { status: 409 },
+    );
+  }
+
+  // A Released decision triggers an applicant email. Don't auto-supersede an
+  // existing Released row — that would silently revoke a notice we already
+  // sent. Reversal needs to be an explicit, audited action; block here.
+  const existingReleased = await prisma.decision.findFirst({
+    where: {
+      domainApplicationId: decision.domainApplicationId,
+      stage: "Released",
+      supersededAt: null,
+    },
+    select: { id: true, type: true },
+  });
+  if (existingReleased) {
+    return Response.json(
+      {
+        error: `This applicant already has a released ${existingReleased.type} decision. Releasing again would send a conflicting notice.`,
+      },
+      { status: 409 },
+    );
+  }
 
   const domainApp = await prisma.domainApplication.findUnique({
     where: { id: decision.domainApplicationId },

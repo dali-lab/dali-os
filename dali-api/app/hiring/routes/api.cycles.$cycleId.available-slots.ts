@@ -19,7 +19,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       where: {
         selected: true,
         application: { userId: auth.user.sub, applicationCycleId: params.cycleId },
-        decisions: { some: { type: "InvitedToInterview" } },
+        decisions: { some: { type: "InvitedToInterview", supersededAt: null } },
       },
       select: { id: true },
     });

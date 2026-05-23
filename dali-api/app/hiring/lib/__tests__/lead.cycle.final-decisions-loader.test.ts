@@ -88,8 +88,23 @@ describe("admin.cycle.$id loader — finalDecisions filter", () => {
     expect(finalCall).toBeDefined();
     expect(finalCall![0].where).toMatchObject({
       stage: "Final",
+      supersededAt: null,
       children: { none: { stage: "Released" } },
       domainApplication: { application: { applicationCycleId: CYCLE_ID } },
+    });
+  });
+
+  it("excludes superseded Released rows when computing released decision types", async () => {
+    const req = new Request(`http://localhost/hiring-lead-admin/cycle/${CYCLE_ID}`);
+    await loader({ request: req, params: { id: CYCLE_ID }, context: {} } as any);
+
+    const releasedCall = mockPrisma.decision.findMany.mock.calls.find(
+      (c: any[]) => c[0]?.where?.stage === "Released",
+    );
+    expect(releasedCall).toBeDefined();
+    expect(releasedCall![0].where).toMatchObject({
+      stage: "Released",
+      supersededAt: null,
     });
   });
 });

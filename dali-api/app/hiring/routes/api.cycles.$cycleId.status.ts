@@ -135,7 +135,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         selected: true,
         application: { applicationCycleId: params.cycleId!, ...inReviewPipelineFilter },
         decisions: {
-          none: { stage: "Released", type: { in: ["Accepted", "Waitlisted", "Rejected"] } },
+          none: { stage: "Released", type: { in: ["Accepted", "Waitlisted", "Rejected"] }, supersededAt: null },
         },
       },
     });

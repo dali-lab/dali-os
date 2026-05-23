@@ -21,7 +21,9 @@ const mockPrisma = prisma as unknown as {
   gmailIntegration: { findFirst: ReturnType<typeof vi.fn> };
   decision: {
     findUnique: ReturnType<typeof vi.fn>;
+    findFirst: ReturnType<typeof vi.fn>;
     create: ReturnType<typeof vi.fn>;
+    update: ReturnType<typeof vi.fn>;
     findMany: ReturnType<typeof vi.fn>;
   };
   domainApplication: { findUnique: ReturnType<typeof vi.fn> };
@@ -43,7 +45,13 @@ beforeEach(() => {
   vi.clearAllMocks();
   (mockPrisma as any).dALIMember = { findUnique: vi.fn() };
   (mockPrisma as any).gmailIntegration = { findFirst: vi.fn() };
-  (mockPrisma as any).decision = { findUnique: vi.fn(), create: vi.fn(), findMany: vi.fn() };
+  (mockPrisma as any).decision = {
+    findUnique: vi.fn(),
+    findFirst: vi.fn().mockResolvedValue(null),
+    create: vi.fn(),
+    update: vi.fn().mockResolvedValue({}),
+    findMany: vi.fn(),
+  };
   (mockPrisma as any).domainApplication = { findUnique: vi.fn() };
   (mockPrisma as any).cycleDecisionEmail = { findUnique: vi.fn() };
   (mockPrisma as any).user = { findUnique: vi.fn() };
@@ -61,6 +69,7 @@ describe("Decision lineage (parentDecisionId)", () => {
     mockPrisma.decision.findUnique.mockResolvedValue({
       id: DRAFT_ID,
       stage: "Draft",
+      supersededAt: null,
       type: "Accepted",
       domainApplicationId: "da-1",
       notes: "drafted",
@@ -68,6 +77,7 @@ describe("Decision lineage (parentDecisionId)", () => {
       domainApplication: { application: { applicationCycleId: "cycle-1" } },
     });
     mockPrisma.decision.create.mockResolvedValue({ id: FINAL_ID });
+    mockPrisma.decision.findFirst.mockResolvedValue(null);
 
     const req = new Request("http://localhost/api/decisions/dec-draft/finalize", { method: "POST" });
     const res = await finalizeAction({ request: req, params: { id: DRAFT_ID }, context: {} } as any);
@@ -87,12 +97,14 @@ describe("Decision lineage (parentDecisionId)", () => {
     mockPrisma.decision.findUnique.mockResolvedValue({
       id: FINAL_ID,
       stage: "Final",
+      supersededAt: null,
       type: "Rejected",
       domainApplicationId: "da-1",
       notes: null,
       waitlistRank: null,
     });
     mockPrisma.decision.create.mockResolvedValue({ id: "dec-released" });
+    mockPrisma.decision.findFirst.mockResolvedValue(null);
     mockPrisma.domainApplication.findUnique.mockResolvedValue({
       challengeVersion: { domain: { id: "dom-1", name: "Engineering", displayName: "Engineering" } },
       domain: null,
@@ -141,6 +153,83 @@ describe("Decision lineage (parentDecisionId)", () => {
       expect(call[0].data.parentDecisionId).toBeUndefined();
       expect(call[0].data.stage).toBe("Draft");
     }
+  });
+
+  it("finalize: supersedes a prior non-superseded Final for the same applicant", async () => {
+    vi.mocked(isHiringLead).mockResolvedValue(true);
+    vi.mocked(isDomainLead).mockResolvedValue(false);
+    mockPrisma.decision.findUnique.mockResolvedValue({
+      id: DRAFT_ID,
+      stage: "Draft",
+      supersededAt: null,
+      type: "InvitedToInterview",
+      domainApplicationId: "da-1",
+      notes: null,
+      waitlistRank: null,
+      domainApplication: { application: { applicationCycleId: "cycle-1" } },
+    });
+    const PRIOR_FINAL_ID = "prior-final";
+    mockPrisma.decision.findFirst.mockResolvedValue({ id: PRIOR_FINAL_ID });
+    mockPrisma.decision.create.mockResolvedValue({ id: FINAL_ID });
+
+    const req = new Request("http://localhost/api/decisions/dec-draft/finalize", { method: "POST" });
+    const res = await finalizeAction({ request: req, params: { id: DRAFT_ID }, context: {} } as any);
+    expect(res.status).toBe(201);
+
+    expect(mockPrisma.decision.findFirst).toHaveBeenCalledWith({
+      where: { domainApplicationId: "da-1", stage: "Final", supersededAt: null },
+      select: { id: true },
+    });
+    expect(mockPrisma.decision.update).toHaveBeenNthCalledWith(1, {
+      where: { id: PRIOR_FINAL_ID },
+      data: { supersededAt: expect.any(Date) },
+    });
+    expect(mockPrisma.decision.update).toHaveBeenNthCalledWith(2, {
+      where: { id: PRIOR_FINAL_ID },
+      data: { supersededById: FINAL_ID },
+    });
+  });
+
+  it("finalize: rejects a superseded Draft", async () => {
+    vi.mocked(isHiringLead).mockResolvedValue(true);
+    vi.mocked(isDomainLead).mockResolvedValue(false);
+    mockPrisma.decision.findUnique.mockResolvedValue({
+      id: DRAFT_ID,
+      stage: "Draft",
+      supersededAt: new Date(),
+      type: "Rejected",
+      domainApplicationId: "da-1",
+      notes: null,
+      waitlistRank: null,
+      domainApplication: { application: { applicationCycleId: "cycle-1" } },
+    });
+
+    const req = new Request("http://localhost/api/decisions/dec-draft/finalize", { method: "POST" });
+    const res = await finalizeAction({ request: req, params: { id: DRAFT_ID }, context: {} } as any);
+    expect(res.status).toBe(409);
+    expect(mockPrisma.decision.create).not.toHaveBeenCalled();
+  });
+
+  it("release: rejects when an active Released already exists for the applicant", async () => {
+    vi.mocked(isHiringLead).mockResolvedValue(true);
+    mockPrisma.decision.findUnique.mockResolvedValue({
+      id: FINAL_ID,
+      stage: "Final",
+      supersededAt: null,
+      type: "Rejected",
+      domainApplicationId: "da-1",
+      notes: null,
+      waitlistRank: null,
+    });
+    mockPrisma.decision.findFirst.mockResolvedValue({
+      id: "existing-released",
+      type: "InvitedToInterview",
+    });
+
+    const req = new Request("http://localhost/api/decisions/dec-final/release", { method: "POST" });
+    const res = await releaseAction({ request: req, params: { id: FINAL_ID }, context: {} } as any);
+    expect(res.status).toBe(409);
+    expect(mockPrisma.decision.create).not.toHaveBeenCalled();
   });
 
   it("decisions loader: includes parent so callers can render drafter alongside finalizer", async () => {

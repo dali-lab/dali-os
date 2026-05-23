@@ -17,6 +17,7 @@ const mockPrisma = prisma as unknown as {
   dALIMember: { findUnique: ReturnType<typeof vi.fn> };
   decision: {
     findUnique: ReturnType<typeof vi.fn>;
+    findFirst: ReturnType<typeof vi.fn>;
     create: ReturnType<typeof vi.fn>;
   };
   domainApplication: { findUnique: ReturnType<typeof vi.fn> };
@@ -40,6 +41,7 @@ function setupFinalDecision(type: "Rejected" | "InvitedToInterview" | "Accepted"
   mockPrisma.decision.findUnique.mockResolvedValue({
     id: DECISION_ID,
     stage: "Final",
+    supersededAt: null,
     type,
     domainApplicationId: "da-1",
     notes: null,
@@ -78,7 +80,11 @@ function setupApplicantContext(opts: { domainName?: string | null } = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   (mockPrisma as any).dALIMember = { findUnique: vi.fn() };
-  (mockPrisma as any).decision = { findUnique: vi.fn(), create: vi.fn() };
+  (mockPrisma as any).decision = {
+    findUnique: vi.fn(),
+    findFirst: vi.fn().mockResolvedValue(null),
+    create: vi.fn(),
+  };
   (mockPrisma as any).domainApplication = { findUnique: vi.fn() };
   (mockPrisma as any).cycleDecisionEmail = { findUnique: vi.fn() };
   (mockPrisma as any).user = { findUnique: vi.fn() };
