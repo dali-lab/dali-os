@@ -26,7 +26,7 @@ test.describe('hiring lead workflow', () => {
     await frame.getByRole('link', { name: /Fall 2026/ }).click();
     // The iframe navigates to the cycle detail; verify by content rather
     // than by the outer page URL (which stays at /hiring/lead).
-    await expect(frame.getByRole('button', { name: 'Cycle Setup' })).toBeVisible();
+    await expect(frame.getByRole('button', { name: 'Setup' })).toBeVisible();
   });
 
   test('cycle detail shows management tabs', async ({ page }) => {
@@ -34,11 +34,15 @@ test.describe('hiring lead workflow', () => {
     const frame = cyclesFrame(page);
     await frame.getByRole('link', { name: /Fall 2026/ }).click();
 
-    await expect(frame.getByRole('button', { name: 'Cycle Setup' })).toBeVisible();
-    await expect(frame.getByRole('button', { name: 'Interview Setup' })).toBeVisible();
-    await expect(frame.getByRole('button', { name: 'Reviewer Roster' })).toBeVisible();
-    await expect(frame.getByRole('button', { name: 'Interview Dashboard' })).toBeVisible();
-    await expect(frame.getByRole('button', { name: 'Decisions' })).toBeVisible();
+    await expect(frame.getByRole('button', { name: 'Overview' })).toBeVisible();
+    await expect(frame.getByRole('button', { name: 'Setup' })).toBeVisible();
+    // Use .first() for Interviews/Reviewers/Decisions: the overview panel renders count-card
+    // buttons whose accessible names contain these substrings ("Scheduled interviews",
+    // "Reviewers", "Decisions to release"). Tab nav renders before the content, so .first()
+    // reliably selects the tab button.
+    await expect(frame.getByRole('button', { name: 'Interviews' }).first()).toBeVisible();
+    await expect(frame.getByRole('button', { name: 'Reviewers' }).first()).toBeVisible();
+    await expect(frame.getByRole('button', { name: 'Decisions' }).first()).toBeVisible();
   });
 
   test('cycle setup tab shows domains', async ({ page }) => {
@@ -55,7 +59,8 @@ test.describe('hiring lead workflow', () => {
     await page.goto('/hiring/lead');
     const frame = cyclesFrame(page);
     await frame.getByRole('link', { name: /Fall 2026/ }).click();
-    await frame.getByRole('button', { name: 'Interview Setup' }).click();
+    // Use .first(): overview count cards include "Scheduled interviews" which also matches.
+    await frame.getByRole('button', { name: 'Interviews' }).first().click();
 
     await expect(frame.getByText('Slot Duration')).toBeVisible();
     await expect(frame.getByText('Buffer Between Interviews')).toBeVisible();
@@ -65,7 +70,8 @@ test.describe('hiring lead workflow', () => {
     await page.goto('/hiring/lead');
     const frame = cyclesFrame(page);
     await frame.getByRole('link', { name: /Fall 2026/ }).click();
-    await frame.getByRole('button', { name: 'Decisions' }).click();
+    // Use .first() because the overview panel also renders a "Decisions to release" count card button.
+    await frame.getByRole('button', { name: 'Decisions' }).first().click();
 
     await expect(frame.getByText('Alice Johnson').first()).toBeVisible();
   });

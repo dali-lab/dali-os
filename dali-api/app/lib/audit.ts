@@ -9,6 +9,7 @@ export type AuditAction =
   | "role.change"
   | "decision.finalize"
   | "decision.release"
+  | "interview.invite-reminder.sent"
   | "email.send"
   | "email.extension_notice"
   | "confidentiality.sign"

@@ -227,6 +227,7 @@ export default [
   route("api/hiring/domain-applications/:id/reviews", "hiring/routes/api.domain-applications.$id.reviews.ts"),
   route("api/hiring/domain-applications/:id/full-context", "hiring/routes/api.domain-applications.$id.full-context.ts"),
   route("api/hiring/domain-applications/:id/schedule-interview", "hiring/routes/api.domain-applications.$id.schedule-interview.ts"),
+  route("api/hiring/domain-applications/:id/resend-invite", "hiring/routes/api.domain-applications.$id.resend-invite.ts"),
 
   route("api/hiring/reviews/:id", "hiring/routes/api.reviews.$id.ts"),
   route("api/hiring/reviews/:id/submit", "hiring/routes/api.reviews.$id.submit.ts"),

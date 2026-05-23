@@ -121,6 +121,11 @@ export interface Question {
     maxWords?: number
     // Set only for `type: 'reference'`. A key into REFERENCE_SOURCES.
     referenceSource?: string
+    // Set only for term-scoped reference sources (e.g.
+    // 'projects:active-in-term'): the Term the form author chose to scope the
+    // options to. Resolved at fill time by the loader; ignored by sources that
+    // aren't term-scoped.
+    referenceTermId?: string
     // Transient: populated by the server at fill time from the resolved
     // source (label shown, value = stored answer / DB id). Never persisted —
     // save-version rebuilds `data` and drops it.
