@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { redirect, useLoaderData, useFetcher } from "react-router";
 import type { Route } from "./+types/admin-console.domains";
 import { prisma } from "~/lib/db";
+import { ensureDomainGroup } from "~/lib/groups";
 import { requireAuth } from "~/lib/auth";
 import { isAdmin, isHiringLead, currentTerm } from "~/lib/roles";
 import { describeDomainUsage, DOMAIN_USAGE_COUNT_SELECT } from "./api.domains.$domainId";
@@ -135,9 +136,10 @@ export async function action({ request }: Route.ActionArgs) {
     // stripping non-alnum (admin can rename later). displayName mirrors
     // name on create; both editable post-create.
     const code = name.replace(/[^A-Za-z0-9]/g, "") || "Domain";
-    await prisma.domain.create({
+    const domain = await prisma.domain.create({
       data: { name, code, displayName: name },
     });
+    await ensureDomainGroup(domain.id, domain.displayName);
     return null;
   }
 

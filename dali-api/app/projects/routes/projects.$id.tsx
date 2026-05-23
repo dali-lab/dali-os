@@ -13,6 +13,7 @@ import { Check, Pencil, X } from "lucide-react";
 import { EditableSection } from "~/components/EditableSection";
 import type { Route } from "./+types/projects.$id";
 import { prisma } from "~/lib/db";
+import { ensureProjectGroup } from "~/lib/groups";
 import { requireAuth } from "~/lib/auth";
 import { parseSessionCookie } from "~/lib/cookies";
 import { isHiringLead, currentTerm } from "~/lib/roles";
@@ -423,6 +424,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       where: { id: params.id },
       data: { name, status: status as ProjectStatus },
     });
+    await ensureProjectGroup(params.id, name);
     return redirect(`/projects/${params.id}`);
   }
 

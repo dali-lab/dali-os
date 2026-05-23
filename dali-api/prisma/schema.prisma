@@ -634,7 +634,8 @@ model InterviewAssignment {
   role               AssignmentRole
   status             AssignmentStatus @default(Active)
 
-  noteVersions InterviewNoteVersion[]
+  noteVersions  InterviewNoteVersion[]
+  notifications Notification[]
 
   @@index([cycleInterviewerId, status])
 }
@@ -1271,8 +1272,17 @@ model Notification {
   rsvp               MeetingRsvp?
   rsvpAt             DateTime?
 
+  // Set on notifications fired for an InterviewAssignment. The tasks loader
+  // hides the notification once the assignment is no longer Active or the
+  // interview is no longer Scheduled, so reassignments / cancellations clear
+  // the old interviewer's tile automatically. SetNull preserves the user's
+  // notification history if the assignment is ever hard-deleted.
+  interviewAssignmentId String?
+  interviewAssignment   InterviewAssignment? @relation(fields: [interviewAssignmentId], references: [id], onDelete: SetNull)
+
   @@index([recipientUserId, readAt])
   @@index([recipientUserId, createdAt])
+  @@index([interviewAssignmentId])
 }
 
 enum NotificationKind {
@@ -1292,10 +1302,20 @@ model GroupDefinition {
   id              String    @id @default(cuid())
   name            String
   type            GroupType
-  // For dynamic groups: structured query identifier (e.g. "core:current-term").
+  // For dynamic groups: structured query identifier dispatched in app code.
+  // Recognized forms:
+  //   - "term:<termId>"     – members with any assignment/mentorship in that term
+  //   - "project:<projectId>" – members assigned to that project (any term)
+  //   - "domain:<domainId>" – members holding eligibility in that domain
+  //   - "core"              – Core members for the current term
   dynamicQuery    String?
   // For static groups: explicit member list.
   staticMemberIds String[]
+  // Marks a group as system-managed (auto-created and kept in sync with an
+  // underlying entity). Matches the canonical dynamicQuery form for default
+  // groups, or null for user-created groups. Used to prevent duplicate
+  // backfill and block manual edits/deletes from the UI.
+  systemKey       String?   @unique
 
   createdAt DateTime @default(now())
 }
