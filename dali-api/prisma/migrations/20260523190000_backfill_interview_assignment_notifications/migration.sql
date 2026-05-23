@@ -12,6 +12,17 @@
 -- Guarded by NOT EXISTS on the same assignment id so re-running is
 -- a no-op and any notifications already created by the new code
 -- (between the deploy of #639 and this backfill) aren't duplicated.
+--
+-- Also repairs the link on any rows the #639 helper already wrote with
+-- the wrong path (`/interviewer/interview/<id>`). The actual route is
+-- `/hiring/interviewer/interview/<id>` — without the `/hiring/` prefix
+-- the recipient hits a 404. Scoped to interview-assignment notifications
+-- to avoid touching unrelated links.
+
+UPDATE "Notification"
+SET "link" = '/hiring' || "link"
+WHERE "interviewAssignmentId" IS NOT NULL
+  AND "link" LIKE '/interviewer/interview/%';
 
 INSERT INTO "Notification" (
   "id",
@@ -42,7 +53,7 @@ SELECT
          WHEN 'Online'  THEN 'Online'
          ELSE i."location"::text
        END,
-  '/interviewer/interview/' || i."id",
+  '/hiring/interviewer/interview/' || i."id",
   i."startTime",
   ia."id",
   NOW(),
