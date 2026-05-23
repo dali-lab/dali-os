@@ -11,6 +11,7 @@ import type { Route } from "./+types/projects.list";
 import { requireAuth } from "~/lib/auth";
 import { isHiringLead } from "~/lib/roles";
 import { prisma } from "~/lib/db";
+import { ensureProjectGroup } from "~/lib/groups";
 import { ViewToggle, useViewPreference } from "~/components/ViewToggle";
 import { TermFilter } from "~/components/TermFilter";
 import { resolveTermFilter } from "~/lib/terms";
@@ -147,8 +148,9 @@ export async function action({ request }: Route.ActionArgs) {
         ? { partners: { create: { partnerOrgId } } }
         : {}),
     },
-    select: { id: true },
+    select: { id: true, name: true },
   });
+  await ensureProjectGroup(created.id, created.name);
   return redirect(`/projects/${created.id}`);
 }
 

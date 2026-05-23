@@ -19,12 +19,22 @@ const ADMIN_ID = "admin-1";
 
 const mockPrisma = prisma as unknown as {
   domain: { create: ReturnType<typeof vi.fn> };
+  groupDefinition: { upsert: ReturnType<typeof vi.fn> };
 };
 
 beforeEach(() => {
   vi.clearAllMocks();
   (mockPrisma as any).domain = {
-    create: vi.fn(async ({ data }: any) => ({ id: "new", name: data.name })),
+    create: vi.fn(async ({ data }: any) => ({
+      id: "new",
+      name: data.name,
+      displayName: data.displayName,
+    })),
+  };
+  // ensureDomainGroup runs after a successful create — stub the upsert so
+  // the post-create hook resolves without touching a real DB.
+  (mockPrisma as any).groupDefinition = {
+    upsert: vi.fn(async () => ({})),
   };
   vi.mocked(requireAuth).mockResolvedValue({
     ok: true,
