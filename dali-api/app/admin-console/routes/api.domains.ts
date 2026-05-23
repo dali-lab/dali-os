@@ -1,6 +1,7 @@
 import type { Route } from "./+types/api.domains";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
+import { ensureDomainGroup } from "~/lib/groups";
 import { requireAuth } from "~/lib/auth";
 import { isHiringLead, isDomainLead, isAdmin } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
@@ -69,5 +70,6 @@ export async function action({ request }: Route.ActionArgs) {
   const domain = await prisma.domain.create({
     data: { name, code, displayName: name },
   });
+  await ensureDomainGroup(domain.id, domain.displayName);
   return withCors(request, Response.json(domain, { status: 201 }));
 }

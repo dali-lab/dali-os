@@ -7,6 +7,7 @@ import {
 } from "../app/projects/lib/bid-validation.js";
 import { interpretIntentForm } from "../app/projects/lib/intent-form-interpreter.js";
 import { replaceIntentSet } from "../app/projects/lib/intent-validation.js";
+import { syncDefaultGroups } from "../app/lib/groups.js";
 import type { Question } from "../app/types.js";
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
@@ -3694,6 +3695,10 @@ async function main() {
 
   // MCP OAuth clients are no longer seeded — clients register themselves
   // via RFC 7591 Dynamic Client Registration at /oauth/register.
+
+  // Default system-managed user groups: one per Term/Project/Domain + Core.
+  // Idempotent; safe to re-run.
+  await syncDefaultGroups();
 }
 
 main()

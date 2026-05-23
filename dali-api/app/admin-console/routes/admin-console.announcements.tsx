@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/admin-console.announcements";
 import { prisma } from "~/lib/db";
+import { listVisibleGroupsForUser } from "~/lib/groups";
 import { requireAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
 import {
@@ -28,16 +29,13 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!auth.ok) return redirect("/login");
   if (!(await isAdmin(auth.user.sub))) return redirect("/");
 
-  const [users, groups, forms] = await Promise.all([
+  const [users, visibleGroups, forms] = await Promise.all([
     prisma.user.findMany({
       where: { daliMember: { isNot: null } },
       orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
       select: { id: true, firstName: true, lastName: true, daliEmail: true },
     }),
-    prisma.groupDefinition.findMany({
-      orderBy: { name: "asc" },
-      select: { id: true, name: true },
-    }),
+    listVisibleGroupsForUser(auth.user.sub),
     prisma.form.findMany({
       where: { published: true },
       orderBy: { name: "asc" },
@@ -51,7 +49,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       name: `${u.firstName} ${u.lastName}`.trim(),
       email: u.daliEmail,
     })),
-    groups,
+    groups: visibleGroups.map((g) => ({ id: g.id, name: g.name })),
     publishedForms: forms,
   };
 }
