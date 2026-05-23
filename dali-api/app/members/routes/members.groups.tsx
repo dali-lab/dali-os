@@ -2,6 +2,7 @@ import { useState } from "react";
 import { redirect, useLoaderData, useFetcher } from "react-router";
 import type { Route } from "./+types/members.groups";
 import { prisma } from "~/lib/db";
+import { listVisibleGroupsForUser } from "~/lib/groups";
 import { requireAuth } from "~/lib/auth";
 import { canViewForms } from "~/lib/roles";
 import { Users, Plus, Trash2, X } from "lucide-react";
@@ -11,7 +12,9 @@ export const meta: Route.MetaFunction = () => [{ title: "Groups · Members · DA
 type GroupRow = {
   id: string;
   name: string;
-  staticMemberIds: string[];
+  type: "Static" | "Dynamic";
+  systemKey: string | null;
+  memberIds: string[];
 };
 
 type UserOption = {
@@ -27,7 +30,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!(await canViewForms(auth.user.sub))) return redirect("/members");
 
   const [groups, users] = await Promise.all([
-    prisma.groupDefinition.findMany({ orderBy: { name: "asc" } }),
+    listVisibleGroupsForUser(auth.user.sub),
     prisma.user.findMany({
       select: { id: true, firstName: true, lastName: true, daliEmail: true },
       orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
@@ -62,6 +65,13 @@ export async function action({ request }: Route.ActionArgs) {
   if (intent === "delete-group") {
     const groupId = String(formData.get("groupId") ?? "");
     if (!groupId) return Response.json({ error: "groupId is required" }, { status: 400 });
+    const group = await prisma.groupDefinition.findUnique({
+      where: { id: groupId },
+      select: { systemKey: true },
+    });
+    if (!group) return Response.json({ error: "Group not found" }, { status: 404 });
+    if (group.systemKey)
+      return Response.json({ error: "System-managed groups cannot be deleted" }, { status: 400 });
     await prisma.groupDefinition.delete({ where: { id: groupId } });
     return null;
   }
@@ -71,6 +81,8 @@ export async function action({ request }: Route.ActionArgs) {
     const userId = String(formData.get("userId") ?? "");
     const group = await prisma.groupDefinition.findUnique({ where: { id: groupId } });
     if (!group) return Response.json({ error: "Group not found" }, { status: 404 });
+    if (group.type !== "Static")
+      return Response.json({ error: "Dynamic groups update automatically from assignments" }, { status: 400 });
     const next = group.staticMemberIds.filter((id) => id !== userId);
     if (next.length === 0)
       return Response.json({ error: "Cannot remove last member; delete the group instead" }, { status: 400 });
@@ -83,6 +95,8 @@ export async function action({ request }: Route.ActionArgs) {
     const userId = String(formData.get("userId") ?? "");
     const group = await prisma.groupDefinition.findUnique({ where: { id: groupId } });
     if (!group) return Response.json({ error: "Group not found" }, { status: 404 });
+    if (group.type !== "Static")
+      return Response.json({ error: "Dynamic groups update automatically from assignments" }, { status: 400 });
     if (group.staticMemberIds.includes(userId)) return null;
     await prisma.groupDefinition.update({
       where: { id: groupId },
@@ -304,7 +318,8 @@ function GroupCard({
   const [addingMember, setAddingMember] = useState(false);
   const [query, setQuery] = useState("");
 
-  const available = users.filter((u) => !group.staticMemberIds.includes(u.id));
+  const isSystem = group.systemKey !== null;
+  const available = users.filter((u) => !group.memberIds.includes(u.id));
   const filtered = available.filter((u) => {
     if (!query) return true;
     const q = query.toLowerCase();
@@ -319,26 +334,33 @@ function GroupCard({
       <div className="flex items-center justify-between">
         <h3 className="font-medium text-foreground">
           {group.name}
+          {isSystem && (
+            <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200 uppercase tracking-wide">
+              Auto
+            </span>
+          )}
           <span className="ml-2 text-xs font-normal text-muted-foreground">
-            {group.staticMemberIds.length} member{group.staticMemberIds.length === 1 ? "" : "s"}
+            {group.memberIds.length} member{group.memberIds.length === 1 ? "" : "s"}
           </span>
         </h3>
-        <fetcher.Form method="post" onSubmit={(e) => {
-          if (!confirm(`Delete group "${group.name}"?`)) e.preventDefault();
-        }}>
-          <input type="hidden" name="intent" value="delete-group" />
-          <input type="hidden" name="groupId" value={group.id} />
-          <button
-            type="submit"
-            aria-label="Delete group"
-            className="text-muted-foreground hover:text-red-600 p-1"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
-        </fetcher.Form>
+        {!isSystem && (
+          <fetcher.Form method="post" onSubmit={(e) => {
+            if (!confirm(`Delete group "${group.name}"?`)) e.preventDefault();
+          }}>
+            <input type="hidden" name="intent" value="delete-group" />
+            <input type="hidden" name="groupId" value={group.id} />
+            <button
+              type="submit"
+              aria-label="Delete group"
+              className="text-muted-foreground hover:text-red-600 p-1"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </fetcher.Form>
+        )}
       </div>
       <div className="flex flex-wrap gap-1.5">
-        {group.staticMemberIds.map((uid) => {
+        {group.memberIds.map((uid) => {
           const u = usersById.get(uid);
           return (
             <span
@@ -346,22 +368,24 @@ function GroupCard({
               className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800"
             >
               {u ? userLabel(u) : uid}
-              <fetcher.Form method="post" className="inline">
-                <input type="hidden" name="intent" value="remove-member" />
-                <input type="hidden" name="groupId" value={group.id} />
-                <input type="hidden" name="userId" value={uid} />
-                <button
-                  type="submit"
-                  aria-label="Remove from group"
-                  className="hover:text-purple-600"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </fetcher.Form>
+              {!isSystem && (
+                <fetcher.Form method="post" className="inline">
+                  <input type="hidden" name="intent" value="remove-member" />
+                  <input type="hidden" name="groupId" value={group.id} />
+                  <input type="hidden" name="userId" value={uid} />
+                  <button
+                    type="submit"
+                    aria-label="Remove from group"
+                    className="hover:text-purple-600"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </fetcher.Form>
+              )}
             </span>
           );
         })}
-        {!addingMember && available.length > 0 && (
+        {!isSystem && !addingMember && available.length > 0 && (
           <button
             type="button"
             onClick={() => setAddingMember(true)}
@@ -371,7 +395,7 @@ function GroupCard({
           </button>
         )}
       </div>
-      {addingMember && (
+      {!isSystem && addingMember && (
         <div className="border border-border rounded-md bg-background p-2 space-y-2">
           <input
             type="text"

@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
+import { listVisibleGroupsForUser } from "~/lib/groups";
 import { computeFreeIntervals, type Interval } from "~/lib/availability";
 import { CalendarActionSchema } from "~/lib/calendar-schemas";
 import { fetchBusyEvents, listCalendarsForLink } from "~/lib/google-calendar";
@@ -72,7 +73,9 @@ type CalendarLinkDTO = {
 type GroupOption = {
   id: string;
   name: string;
-  staticMemberIds: string[];
+  // Resolved members for this group at load time (either explicit static list
+  // or the resolved Dynamic membership). The picker treats both uniformly.
+  memberIds: string[];
 };
 
 type UserOption = {
@@ -160,10 +163,9 @@ export async function loader({ request }: Route.LoaderArgs) {
       where: { userId },
       orderBy: { linkedAt: "asc" },
     }),
-    prisma.groupDefinition.findMany({
-      select: { id: true, name: true, staticMemberIds: true },
-      orderBy: { name: "asc" },
-    }),
+    listVisibleGroupsForUser(userId).then((rows) =>
+      rows.map((r) => ({ id: r.id, name: r.name, memberIds: r.memberIds })),
+    ),
     prisma.user.findMany({
       select: { id: true, firstName: true, lastName: true, daliEmail: true },
       orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
@@ -1488,7 +1490,7 @@ function ScheduleView({ data }: { data: LoaderData }) {
     const set = new Set<string>(selectedUserIds);
     for (const gid of selectedGroupIds) {
       const g = groupsById.get(gid);
-      if (g) for (const uid of g.staticMemberIds) set.add(uid);
+      if (g) for (const uid of g.memberIds) set.add(uid);
     }
     return Array.from(set);
   })();
@@ -1878,7 +1880,7 @@ function ParticipantPicker({
             <span
               key={`g:${gid}`}
               className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
-              title={`${g.staticMemberIds.length} member${g.staticMemberIds.length === 1 ? "" : "s"}`}
+              title={`${g.memberIds.length} member${g.memberIds.length === 1 ? "" : "s"}`}
             >
               <UsersRound className="w-3 h-3" />
               {g.name}
@@ -1996,7 +1998,7 @@ function ParticipantPicker({
                 >
                   <span>{g.name}</span>
                   <span className="text-xs text-muted-foreground">
-                    {g.staticMemberIds.length} member{g.staticMemberIds.length === 1 ? "" : "s"}
+                    {g.memberIds.length} member{g.memberIds.length === 1 ? "" : "s"}
                   </span>
                 </button>
               ))
