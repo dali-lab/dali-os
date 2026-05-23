@@ -13,12 +13,9 @@
 import type { Question } from "~/types";
 import type { Slot } from "./form-slots";
 
-// A reference question's source family decides whether it can fill a
-// project/domain role (the answer must be a real DB id — see
-// reference-sources.ts). Kept here as a constraint, not a detector.
-const PROJECT_SOURCES = ["projects:open-this-term", "projects:active"];
-const DOMAIN_SOURCES = ["domains:active"];
-
+// `QuestionTypeConstraint` still declares each role's intended shape (and
+// drives the `person` identity boundary), but mapping a question to a role no
+// longer enforces the question's type — see questionFitsConstraint.
 export type QuestionTypeConstraint =
   | "reference-project" // reference question, project source
   | "reference-domain" // reference question, domain source
@@ -229,37 +226,21 @@ export function parseColumnMapping(json: unknown): ColumnMapping | null {
 }
 
 function questionFitsConstraint(
-  q: Question,
+  _q: Question,
   constraint: QuestionTypeConstraint,
 ): boolean {
-  switch (constraint) {
-    case "any":
-    case "display":
-      // A display column just shows whatever the question holds — it feeds no
-      // staffing write, so any question type fits.
-      return true;
-    case "text":
-      return q.type === "text" || q.type === "textarea";
-    case "person":
-      // A person role is never satisfiable by a question — only by the
-      // `submitter` builtin (checked separately in validateMapping).
-      return false;
-    case "choice":
-      // A fixed-option question (select) or free text we later coerce.
-      return q.type === "select" || q.type === "text";
-    case "reference-project":
-      return (
-        q.type === "reference" &&
-        !!q.data.referenceSource &&
-        PROJECT_SOURCES.includes(q.data.referenceSource)
-      );
-    case "reference-domain":
-      return (
-        q.type === "reference" &&
-        !!q.data.referenceSource &&
-        DOMAIN_SOURCES.includes(q.data.referenceSource)
-      );
-  }
+  // Question-type constraints are intentionally NOT enforced: a manager may
+  // map any question to any role. The interpreters degrade gracefully when an
+  // answer doesn't match the role's expected shape — e.g. the bid interpreter
+  // coerces the `project` answer to an id and simply skips it when it isn't a
+  // real project id (bid-form-interpreter.ts), rather than erroring. So a
+  // mismatched type produces no staffing write, never a save failure.
+  //
+  // `person` is the one exception, and it isn't a question-type rule: a person
+  // role can only be filled by the `submitter` builtin (server-derived
+  // identity), never by a client-supplied question answer. Keeping it
+  // unsatisfiable-by-question preserves that identity boundary.
+  return constraint !== "person";
 }
 
 export type MappingCheck = { ok: true } | { ok: false; reason: string };
