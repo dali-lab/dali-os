@@ -135,6 +135,11 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
   const hydrated = useRef(false)
   const dragSourceRef = useRef<DragSource | null>(null)
   const [dragOver, setDragOver] = useState<DragOver | null>(null)
+  // Tabs whose iframes are kept alive in the DOM. Switching tabs toggles
+  // visibility instead of unmounting, so scroll/form/JS state is preserved.
+  // Lazy-mount on first activation — avoids slamming the server on hydrate
+  // when many tabs were persisted across sessions.
+  const [mountedTabIds, setMountedTabIds] = useState<Set<string>>(() => new Set())
 
   // Hydrate from localStorage on first client render.
   useEffect(() => {
@@ -216,6 +221,22 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
     } catch {
       // ignore quota / disabled storage
     }
+  }, [state])
+
+  // Whenever a tab becomes the active tab in any pane, ensure its iframe is
+  // mounted. Tabs only mount when actually viewed; persisted-but-unvisited
+  // tabs stay dormant until clicked.
+  useEffect(() => {
+    setMountedTabIds((prev) => {
+      let next: Set<string> | null = null
+      for (const pane of state.panes) {
+        if (pane.activeTabId && !prev.has(pane.activeTabId)) {
+          if (!next) next = new Set(prev)
+          next.add(pane.activeTabId)
+        }
+      }
+      return next ?? prev
+    })
   }, [state])
 
   // Imperative API for the sidebar to open new tabs.
@@ -747,18 +768,26 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
               )}
             </div>
 
-            {/* iframe content */}
-            <div className="flex-1 min-h-0 bg-section-bg">
-              {activeTab ? (
-                <iframe
-                  key={activeTab.id}
-                  src={addEmbedParam(activeTab.url)}
-                  title={activeTab.label}
-                  className="w-full h-full border-0"
-                  onLoad={onIframeLoad}
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-muted-foreground/60 text-sm">
+            {/* One iframe per opened tab; non-active tabs hidden via
+                display:none so switching preserves scroll/form/JS state
+                instead of reloading. */}
+            <div className="flex-1 min-h-0 bg-section-bg relative">
+              {pane.tabs.map((tab) => {
+                if (!mountedTabIds.has(tab.id)) return null
+                const isActive = tab.id === pane.activeTabId
+                return (
+                  <iframe
+                    key={tab.id}
+                    src={addEmbedParam(tab.url)}
+                    title={tab.label}
+                    className="absolute inset-0 w-full h-full border-0"
+                    style={{ display: isActive ? 'block' : 'none' }}
+                    onLoad={onIframeLoad}
+                  />
+                )
+              })}
+              {!activeTab && (
+                <div className="absolute inset-0 flex items-center justify-center text-muted-foreground/60 text-sm">
                   No content
                 </div>
               )}
