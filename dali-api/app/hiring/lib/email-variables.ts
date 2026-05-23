@@ -67,6 +67,12 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlot, readonly TemplateVariableN
   "notification:InterviewInviteMentor": ["firstName", "domain", "time", "location", "meetingUrl"],
   "notification:InterviewConfirmedApplicant": ["firstName", "domain", "time", "location", "meetingUrl"],
 
+  // Manual "Resend invite" nudge fired from the unscheduled-invites row on
+  // the cycle Interviews tab. Same vars as decision:InvitedToInterview since
+  // the recipient is the same applicant and no booking has happened yet — the
+  // booking link lives in the template body just like the original invite.
+  "notification:InterviewInviteReminder": ["firstName", "domain"],
+
   // Interview cancellations — sendInterviewCancelEmails omits meetingUrl.
   // sendReassignmentEmails reaches InterviewCancelledInterviewer with
   // meetingUrl, but the registry returns the intersection so leads don't
