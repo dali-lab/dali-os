@@ -7,7 +7,7 @@ import { getUserRoles } from "~/lib/roles";
 import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
 import { presignAnswers } from "~/hiring/lib/presign";
 import { ApplicationViewer } from "~/hiring/components/ApplicationViewer";
-import type { Question } from "~/types";
+import type { Question, RubricCriterion } from "~/types";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const name = (data as { applicantName?: string } | undefined)?.applicantName;
@@ -50,7 +50,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           applicationCycleId: true,
           generalChallengeVersion: { select: { questions: true, description: true } },
           internToFullFormVersion: { select: { questions: true } },
-          applicationCycle: { select: { name: true, cycleType: true } },
+          applicationCycle: {
+            select: {
+              name: true,
+              cycleType: true,
+              generalRubricVersion: { select: { criteria: true } },
+              domains: { select: { domainId: true, rubricVersion: { select: { criteria: true } } } },
+            },
+          },
           user: { select: { firstName: true, lastName: true } },
         },
       },
@@ -101,6 +108,20 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   for (const q of generalQuestions) questionLabels[q.key] = q.data.label;
   for (const q of (da.challengeVersion?.questions as unknown as Question[]) ?? []) {
     questionLabels[q.key] = q.data.label;
+  }
+
+  // Criterion labels for the Scores list: the cycle's general rubric plus this
+  // domain's rubric. Scores are keyed by criterion key (e.g. "crit-1778..."),
+  // so without this map the page renders the raw keys.
+  const cycle = da.application.applicationCycle;
+  const criterionLabels: Record<string, string> = {};
+  const generalCriteria =
+    (cycle.generalRubricVersion?.criteria as unknown as RubricCriterion[]) ?? [];
+  const domainCriteria =
+    (cycle.domains.find((d) => d.domainId === effectiveDomainId)?.rubricVersion
+      ?.criteria as unknown as RubricCriterion[]) ?? [];
+  for (const c of [...generalCriteria, ...domainCriteria]) {
+    criterionLabels[c.key] = c.label;
   }
 
   // Submitted reviews for THIS domain application, with reviewer identity.
@@ -175,6 +196,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     domainName,
     application,
     questionLabels,
+    criterionLabels,
     reviews,
     selectedReviewId,
   };
@@ -264,7 +286,12 @@ export default function ApplicationReadOnlyDetail() {
                   </select>
                 </div>
 
-                {selected && <ReviewView review={selected} />}
+                {selected && (
+                  <ReviewView
+                    review={selected}
+                    criterionLabels={data.criterionLabels}
+                  />
+                )}
               </div>
             )}
           </div>
@@ -276,6 +303,7 @@ export default function ApplicationReadOnlyDetail() {
 
 function ReviewView({
   review,
+  criterionLabels,
 }: {
   review: {
     reviewerName: string;
@@ -285,6 +313,7 @@ function ReviewView({
     overallRecommendation: string | null;
     submittedAt: string | null;
   };
+  criterionLabels: Record<string, string>;
 }) {
   const scoreEntries = Object.entries(review.scores ?? {});
   return (
@@ -318,7 +347,9 @@ function ReviewView({
                 key={key}
                 className="flex items-center justify-between text-sm border-b border-border/60 py-1"
               >
-                <span className="text-muted-foreground">{key}</span>
+                <span className="text-muted-foreground">
+                  {criterionLabels[key] ?? key}
+                </span>
                 <span className="font-medium text-foreground">{value}</span>
               </li>
             ))}
