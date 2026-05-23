@@ -4,7 +4,7 @@
 
 @theme {
   /* ── DALI brand colors (exact hex, per official style guide §3.1) ── */
-  --color-accent-coral:       #FF8B81;  /* "Sunrise" — primary CTA */
+  --color-accent-coral:       #FF9580;  /* "Sunrise" — primary CTA (softened from #FF8B81, keeps white-text contrast) */
   --color-accent-coral-light: #FFA991;  /* hover / soft coral */
   --color-accent-teal:        #00ADAB;  /* primary accent */
   --color-accent-teal-light:  #80D5CD;  /* soft / hover teal */
@@ -126,7 +126,7 @@
     --color-input: hsl(215 28% 18%);
     --color-ring: #00ADAB;
     /* Brand primaries stay vivid in dark mode (guide §3.5) */
-    --color-accent-coral:        #FF8B81;
+    --color-accent-coral:        #FF9580;  /* softened from #FF8B81, keeps white-text contrast */
     --color-accent-coral-light:  #FFA991;
     --color-accent-teal:         #00ADAB;
     --color-accent-teal-light:   #80D5CD;
