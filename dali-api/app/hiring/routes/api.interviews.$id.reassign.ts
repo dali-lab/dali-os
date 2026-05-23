@@ -6,6 +6,7 @@ import { isHiringLead } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
 import { sendReassignmentEmails } from "~/hiring/lib/interview-emails";
+import { notifyInterviewAssigned } from "~/hiring/lib/interview-notifications";
 
 const ReassignSchema = z.object({
   assignmentId: z.string().min(1).max(100),
@@ -113,6 +114,11 @@ export async function action({ request, params }: Route.ActionArgs) {
     assignment.cycleInterviewerId,
     newCycleInterviewerId,
   ).catch(() => {});
+  notifyInterviewAssigned({
+    interviewId: interview.id,
+    cycleInterviewerIds: [newCycleInterviewerId],
+    createdByUserId: auth.user.sub,
+  }).catch(() => {});
 
   return Response.json({ success: true });
 }

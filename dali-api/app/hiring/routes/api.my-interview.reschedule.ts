@@ -7,6 +7,7 @@ import { parseJson } from "~/lib/validate";
 import { assignInterviewers } from "~/hiring/lib/scheduling";
 // import { provisionZoomMeeting, deprovisionZoomMeeting } from "~/lib/zoom"; // S2S Zoom not configured yet
 import { sendInterviewCancelEmails, sendInterviewInviteEmails } from "~/hiring/lib/interview-emails";
+import { notifyInterviewAssigned } from "~/hiring/lib/interview-notifications";
 
 const RescheduleSchema = z
   .object({
@@ -121,6 +122,10 @@ export async function action({ request }: Route.ActionArgs) {
     // Best-effort: cancel old calendar event + send new invite
     sendInterviewCancelEmails(oldInterviewId, domainApplicationId).catch(() => {});
     sendInterviewInviteEmails(newInterview.id, domainApplicationId).catch(() => {});
+    notifyInterviewAssigned({
+      interviewId: newInterview.id,
+      cycleInterviewerIds: (newInterview.assignments ?? []).map((a) => a.cycleInterviewerId),
+    }).catch(() => {});
 
     return withCors(request, Response.json(newInterview, { status: 201 }));
   } catch (err: any) {

@@ -6,6 +6,7 @@ import { assignInterviewers } from "~/hiring/lib/scheduling";
 // import { provisionZoomMeeting } from "~/lib/zoom"; // S2S Zoom not configured yet
 import { parseJson } from "~/lib/validate";
 import { sendInterviewInviteEmails } from "~/hiring/lib/interview-emails";
+import { notifyInterviewAssigned } from "~/hiring/lib/interview-notifications";
 
 const ScheduleInterviewSchema = z.object({
   startTime: z.string().datetime({ offset: true }),
@@ -103,6 +104,10 @@ export async function action({ request, params }: Route.ActionArgs) {
 
     // Best-effort: send calendar invites to applicant + interviewers
     sendInterviewInviteEmails(interview.id, da.id).catch(() => {});
+    notifyInterviewAssigned({
+      interviewId: interview.id,
+      cycleInterviewerIds: (interview.assignments ?? []).map((a) => a.cycleInterviewerId),
+    }).catch(() => {});
 
     return Response.json(interview, { status: 201 });
   } catch (err: any) {

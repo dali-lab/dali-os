@@ -1,5 +1,10 @@
 import type { Prisma } from "~/generated/prisma/client";
 import { prisma } from "~/lib/db";
+import { notifyInterviewAssigned } from "~/hiring/lib/interview-notifications";
+
+// New-assignee notifications fire outside transactions (best-effort), so
+// scheduling.ts hands callers the cycleInterviewerIds that need notifying
+// and they invoke notifyInterviewAssigned after their tx commits.
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -367,7 +372,7 @@ export async function reassignInterviewer(
   interviewId: string,
   decliningAssignmentId: string,
 ) {
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const assignment = await tx.interviewAssignment.findUnique({
       where: { id: decliningAssignmentId },
       include: {
@@ -475,6 +480,15 @@ export async function reassignInterviewer(
     });
     return { reassigned: true as const, newInterviewerId: created.cycleInterviewerId };
   });
+
+  if (result.reassigned) {
+    notifyInterviewAssigned({
+      interviewId,
+      cycleInterviewerIds: [result.newInterviewerId],
+    }).catch(() => {});
+  }
+
+  return result;
 }
 
 export function isNoReplacementError(error: unknown): boolean {
