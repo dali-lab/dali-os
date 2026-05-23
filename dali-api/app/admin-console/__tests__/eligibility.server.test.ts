@@ -3,9 +3,9 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db");
 
 import { prisma } from "~/lib/db";
+import { parseLevel } from "~/admin-console/lib/eligibility";
 import {
   addOrUpdateEligibility,
-  parseLevel,
   removeEligibility,
 } from "~/admin-console/lib/eligibility.server";
 

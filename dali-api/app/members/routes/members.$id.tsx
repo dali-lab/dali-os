@@ -8,10 +8,12 @@ import { initialsFromName } from "~/lib/display";
 import { EditableSection } from "~/components/EditableSection";
 import {
   ALLOWED_LEVELS,
-  addOrUpdateEligibility,
   parseLevel,
-  removeEligibility,
   type Level,
+} from "~/admin-console/lib/eligibility";
+import {
+  addOrUpdateEligibility,
+  removeEligibility,
 } from "~/admin-console/lib/eligibility.server";
 import { Plus, X } from "lucide-react";
 

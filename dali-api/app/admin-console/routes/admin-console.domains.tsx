@@ -5,10 +5,9 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isAdmin, isHiringLead, currentTerm } from "~/lib/roles";
 import { describeDomainUsage, DOMAIN_USAGE_COUNT_SELECT } from "./api.domains.$domainId";
+import { ALLOWED_LEVELS, parseLevel } from "~/admin-console/lib/eligibility";
 import {
-  ALLOWED_LEVELS,
   addOrUpdateEligibility,
-  parseLevel,
   removeEligibility,
 } from "~/admin-console/lib/eligibility.server";
 import { ChevronDown, Trash2, Plus, X } from "lucide-react";
