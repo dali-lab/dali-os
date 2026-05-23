@@ -31,17 +31,24 @@ export async function loader({ request }: Route.LoaderArgs) {
     }
   }
 
+  // Drives the sidebar footer avatar. The loader runs on every shell
+  // load/revalidation, so this stays in sync after a profile edit.
+  const me = await prisma.user.findUnique({
+    where: { id: auth.user.sub },
+    select: { photoUrl: true },
+  })
+
   // Detect iframe context from Sec-Fetch-Dest. Modern browsers (Chrome, Firefox,
   // Safari 16+) set this automatically and it survives server-side redirects,
   // so it works even when ?embed=1 gets stripped from a redirect Location.
   const fetchDest = request.headers.get('sec-fetch-dest')
   const isEmbedded = fetchDest === 'iframe' || fetchDest === 'frame'
 
-  return { user: auth.user, isHiringLead: hiringLead, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, isEmbedded }
+  return { user: auth.user, photoUrl: me?.photoUrl ?? null, isHiringLead: hiringLead, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, isEmbedded }
 }
 
 export default function AppLayoutRoute() {
-  const { user, isHiringLead, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, isEmbedded } = useLoaderData<typeof loader>()
+  const { user, photoUrl, isHiringLead, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, isEmbedded } = useLoaderData<typeof loader>()
   const [searchParams] = useSearchParams()
 
   // After a client-side navigation inside the workspace iframe, the loader
@@ -97,6 +104,6 @@ export default function AppLayoutRoute() {
   }
 
   return (
-    <Layout user={user} isHiringLead={isHiringLead} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} />
+    <Layout user={user} photoUrl={photoUrl} isHiringLead={isHiringLead} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} />
   )
 }

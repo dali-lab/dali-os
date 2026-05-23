@@ -1,5 +1,5 @@
-import { useRef } from "react";
-import { Form, Link, redirect, useActionData, useLoaderData, useSubmit } from "react-router";
+import { useEffect, useRef } from "react";
+import { Form, Link, redirect, useActionData, useLoaderData, useNavigation, useSubmit } from "react-router";
 import type { Route } from "./+types/members.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
@@ -122,7 +122,26 @@ export default function MemberDetail() {
   const { member, canEdit } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const submit = useSubmit();
+  const navigation = useNavigation();
   const formRef = useRef<HTMLFormElement | null>(null);
+  const wasSubmitting = useRef(false);
+
+  // This page renders inside a TabWorkspace iframe; a successful save only
+  // revalidates the iframe's loaders, not the parent shell. Tell the parent
+  // so it can refresh the sidebar avatar. A save that returns a validation
+  // error keeps `actionData.error` set; a success redirects and clears it.
+  useEffect(() => {
+    if (navigation.state === "submitting") {
+      wasSubmitting.current = true;
+      return;
+    }
+    if (navigation.state === "idle" && wasSubmitting.current) {
+      wasSubmitting.current = false;
+      if (!actionData?.error && typeof window !== "undefined" && window.parent !== window) {
+        window.parent.postMessage({ type: "dali:profileUpdated" }, window.location.origin);
+      }
+    }
+  }, [navigation.state, actionData]);
 
   return (
     <div className="flex flex-col gap-4">
