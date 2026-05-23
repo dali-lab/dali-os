@@ -598,7 +598,16 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
                           key={t.id}
                           type="button"
                           title={t.title}
-                          onClick={() => openInWorkspace({ url: t.link!, label: t.title })}
+                          onClick={() => {
+                            // Tasks are notification rows — POST /read clears
+                            // the tile + drops the count once the user acts.
+                            fetch(`/api/notifications/${t.id}/read`, {
+                              method: 'POST',
+                              credentials: 'include',
+                              keepalive: true,
+                            })
+                            openInWorkspace({ url: t.link!, label: t.title })
+                          }}
                           className={`${cls} text-white/55 hover:text-white hover:bg-white/5`}
                         >
                           <span className="truncate">{t.title}</span>
