@@ -105,8 +105,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     // Best-effort: send calendar invites to applicant + interviewers
     sendInterviewInviteEmails(interview.id, da.id).catch(() => {});
     notifyInterviewAssigned({
-      interviewId: interview.id,
-      cycleInterviewerIds: (interview.assignments ?? []).map((a) => a.cycleInterviewerId),
+      assignmentIds: (interview.assignments ?? []).map((a) => a.id),
     }).catch(() => {});
 
     return Response.json(interview, { status: 201 });

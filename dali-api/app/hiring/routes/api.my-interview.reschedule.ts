@@ -123,8 +123,7 @@ export async function action({ request }: Route.ActionArgs) {
     sendInterviewCancelEmails(oldInterviewId, domainApplicationId).catch(() => {});
     sendInterviewInviteEmails(newInterview.id, domainApplicationId).catch(() => {});
     notifyInterviewAssigned({
-      interviewId: newInterview.id,
-      cycleInterviewerIds: (newInterview.assignments ?? []).map((a) => a.cycleInterviewerId),
+      assignmentIds: (newInterview.assignments ?? []).map((a) => a.id),
     }).catch(() => {});
 
     return withCors(request, Response.json(newInterview, { status: 201 }));

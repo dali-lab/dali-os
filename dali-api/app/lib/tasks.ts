@@ -1,3 +1,4 @@
+import type { Prisma } from "~/generated/prisma/client";
 import { prisma } from "~/lib/db";
 
 // A "task" (todo) is any unread notification — every NotificationKind counts.
@@ -18,6 +19,11 @@ import { prisma } from "~/lib/db";
 //
 // `link` is where acting on the task takes you, preferring an attached form's
 // fill page (announcement-todos) over the notification's own link.
+//
+// Interview-assignment notifications carry an `interviewAssignmentId`. They
+// drop out of tasks the moment the assignment is no longer Active (decline /
+// replace) or the interview is no longer Scheduled (cancel / complete) — see
+// TASK_WHERE below. Notifications NOT linked to an assignment are unaffected.
 
 export type Task = {
   id: string;
@@ -29,11 +35,25 @@ export type Task = {
   dueAt: string | null;
 };
 
-const TASK_WHERE = (userId: string) =>
-  ({
-    recipientUserId: userId,
-    readAt: null,
-  });
+const TASK_WHERE = (userId: string): Prisma.NotificationWhereInput => ({
+  recipientUserId: userId,
+  readAt: null,
+  // A notification linked to an InterviewAssignment is only a task while
+  // that assignment is still Active on a still-Scheduled interview. As
+  // soon as the assignment moves to Declined/Replaced or the interview
+  // is Cancelled/Completed, the row drops off both Tasks views without
+  // needing any extra fan-out writes. Unlinked notifications (the common
+  // case) pass via the `null` branch.
+  OR: [
+    { interviewAssignmentId: null },
+    {
+      interviewAssignment: {
+        status: "Active",
+        interview: { status: "Scheduled" },
+      },
+    },
+  ],
+});
 
 /** Count of open tasks for a user. Cheap — used by the sidebar poller. */
 export async function countOpenTasks(userId: string): Promise<number> {

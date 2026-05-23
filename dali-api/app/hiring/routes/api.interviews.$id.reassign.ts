@@ -58,6 +58,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   // Conflict check + reassign in one serializable transaction to prevent
   // two concurrent reassigns from both passing the overlap check.
+  let newAssignmentId: string | null = null;
   try {
     await prisma.$transaction(async (tx) => {
       const config = await tx.interviewConfig.findUnique({
@@ -88,14 +89,16 @@ export async function action({ request, params }: Route.ActionArgs) {
         data: { status: "Replaced" },
       });
 
-      await tx.interviewAssignment.create({
+      const created = await tx.interviewAssignment.create({
         data: {
           interviewId: assignment.interviewId,
           cycleInterviewerId: newCycleInterviewerId,
           role: assignment.role,
           status: "Active",
         },
+        select: { id: true },
       });
+      newAssignmentId = created.id;
     }, { isolationLevel: "Serializable" });
   } catch (err: any) {
     if (err?.message === "__CONFLICT__") {
@@ -114,11 +117,12 @@ export async function action({ request, params }: Route.ActionArgs) {
     assignment.cycleInterviewerId,
     newCycleInterviewerId,
   ).catch(() => {});
-  notifyInterviewAssigned({
-    interviewId: interview.id,
-    cycleInterviewerIds: [newCycleInterviewerId],
-    createdByUserId: auth.user.sub,
-  }).catch(() => {});
+  if (newAssignmentId) {
+    notifyInterviewAssigned({
+      assignmentIds: [newAssignmentId],
+      createdByUserId: auth.user.sub,
+    }).catch(() => {});
+  }
 
   return Response.json({ success: true });
 }

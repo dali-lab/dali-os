@@ -478,13 +478,16 @@ export async function reassignInterviewer(
         status: "Active",
       },
     });
-    return { reassigned: true as const, newInterviewerId: created.cycleInterviewerId };
+    return {
+      reassigned: true as const,
+      newInterviewerId: created.cycleInterviewerId,
+      newAssignmentId: created.id,
+    };
   });
 
   if (result.reassigned) {
     notifyInterviewAssigned({
-      interviewId,
-      cycleInterviewerIds: [result.newInterviewerId],
+      assignmentIds: [result.newAssignmentId],
     }).catch(() => {});
   }
 
