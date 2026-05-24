@@ -1,37 +1,35 @@
 import type { Prisma, PrismaClient } from "~/generated/prisma/client";
 import { AUDIT_ACTIONS, type AuditAction } from "~/lib/audit";
 
-// Minimal prisma surface used by resolveAuditTextFilters — typed as a
-// structural subset so tests can supply a vi.fn() without faking the whole
-// client.
-type AuditQueryPrisma = Pick<PrismaClient, "user">;
-
 // Validated filters for the AuditLog viewer + JSON API.
 //
-// Two dimensions are id-only (`userId`, `targetId`) — the indexed primitives,
-// useful for programmatic callers that already know the id. Two are
-// text-search (`actor`, `target`) — the UI surface, auto-detecting whether
-// the input is a cuid (exact match) or a name/email (resolved via the User
-// table inside the loader, then merged in as a `userId IN (...)` clause that
-// still hits the index).
+// `person` is the UI's single search box: it answers both "what did X do?"
+// and "what was done to X?" by OR-ing a User lookup across the actor
+// (userId) and target (targetId) columns. Most audit rows have a null
+// targetId, which is why we don't expose a dedicated target box — one
+// person field handles both useful questions in a single query.
+//
+// `userId` / `targetId` stay as direct exact-id filters for programmatic
+// callers that already know the id and want a precise lookup.
 //
 // `parseAuditFilters` + `buildAuditWhere` are pure: no DB, easy to unit-test.
-// `resolveAuditTextFilters` is the async layer that handles actor/target.
+// `resolveAuditTextFilters` is the async layer that handles `person`.
 
 export type AuditFilters = {
   action: AuditAction | null;
   userId: string | null;
   targetId: string | null;
-  actor: string | null;
-  target: string | null;
+  person: string | null;
   from: string | null;
   to: string | null;
 };
 
+type AuditQueryPrisma = Pick<PrismaClient, "user">;
+
 const ACTION_SET: ReadonlySet<string> = new Set(AUDIT_ACTIONS);
 
-// Cuids start with `c` and run 20+ chars of lowercase alphanumerics. The
-// test is intentionally loose so it catches both legacy cuid and cuid2.
+// Cuids start with `c` and run 20+ chars of lowercase alphanumerics. Loose
+// enough to catch both legacy cuid and cuid2.
 const CUID_RE = /^c[a-z0-9]{20,}$/i;
 
 export function looksLikeCuid(value: string): boolean {
@@ -57,8 +55,7 @@ export function parseAuditFilters(params: URLSearchParams): AuditFilters {
     action: action && ACTION_SET.has(action) ? (action as AuditAction) : null,
     userId: clean(params.get("userId")),
     targetId: clean(params.get("targetId")),
-    actor: clean(params.get("actor")),
-    target: clean(params.get("target")),
+    person: clean(params.get("person")),
     from: validDate(params.get("from")),
     to: validDate(params.get("to")),
   };
@@ -86,8 +83,7 @@ export function activeFilterParams(filters: AuditFilters): URLSearchParams {
   if (filters.action) params.set("action", filters.action);
   if (filters.userId) params.set("userId", filters.userId);
   if (filters.targetId) params.set("targetId", filters.targetId);
-  if (filters.actor) params.set("actor", filters.actor);
-  if (filters.target) params.set("target", filters.target);
+  if (filters.person) params.set("person", filters.person);
   if (filters.from) params.set("from", filters.from);
   if (filters.to) params.set("to", filters.to);
   return params;
@@ -98,17 +94,11 @@ export function hasAnyFilter(filters: AuditFilters): boolean {
     filters.action ||
       filters.userId ||
       filters.targetId ||
-      filters.actor ||
-      filters.target ||
+      filters.person ||
       filters.from ||
       filters.to,
   );
 }
-
-// Empty-match sentinel: a text search with zero hits should return zero
-// audit rows, not the unfiltered table. Using a deliberately unmatchable
-// id keeps the where clause valid + indexed without a special case.
-const NO_MATCH_ID = "__no_match__";
 
 // Resolve a name/email text query → list of User ids that match. Cheap at
 // our scale (~100 users); a heavier deployment would want a Postgres
@@ -132,34 +122,28 @@ async function resolveUserIdsByText(
   return rows.map((r) => r.id);
 }
 
-// Convert the textual `actor` / `target` filters into where-clause patches.
-// A cuid-shaped value short-circuits to an exact-id filter; anything else
-// goes through a User table lookup. Returns the patches separately so the
-// loader can merge them on top of buildAuditWhere's pure output without
-// reordering precedence (an explicit `userId=` query param still wins).
+// Convert the textual `person` filter into a where-clause patch that ORs
+// userId / targetId match. Cuid-shaped input short-circuits to an exact id
+// match on both columns; anything else goes through a User table lookup.
+// An empty match produces a deliberately impossible OR so the query returns
+// zero rows rather than the unfiltered table.
 export async function resolveAuditTextFilters(
   prisma: AuditQueryPrisma,
   filters: AuditFilters,
 ): Promise<Prisma.AuditLogWhereInput> {
-  const patch: Prisma.AuditLogWhereInput = {};
+  if (!filters.person) return {};
 
-  if (filters.actor && !filters.userId) {
-    if (looksLikeCuid(filters.actor)) {
-      patch.userId = filters.actor;
-    } else {
-      const ids = await resolveUserIdsByText(prisma, filters.actor);
-      patch.userId = ids.length > 0 ? { in: ids } : NO_MATCH_ID;
-    }
+  if (looksLikeCuid(filters.person)) {
+    return {
+      OR: [{ userId: filters.person }, { targetId: filters.person }],
+    };
   }
 
-  if (filters.target && !filters.targetId) {
-    if (looksLikeCuid(filters.target)) {
-      patch.targetId = filters.target;
-    } else {
-      const ids = await resolveUserIdsByText(prisma, filters.target);
-      patch.targetId = ids.length > 0 ? { in: ids } : NO_MATCH_ID;
-    }
+  const ids = await resolveUserIdsByText(prisma, filters.person);
+  if (ids.length === 0) {
+    return { OR: [{ userId: "__no_match__" }, { targetId: "__no_match__" }] };
   }
-
-  return patch;
+  return {
+    OR: [{ userId: { in: ids } }, { targetId: { in: ids } }],
+  };
 }

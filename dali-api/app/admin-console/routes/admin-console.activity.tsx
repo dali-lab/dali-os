@@ -86,18 +86,40 @@ export async function loader({ request }: Route.LoaderArgs) {
   };
 }
 
-function displayActor(
-  u: { firstName: string; lastName: string; daliEmail: string | null } | null,
-  fallbackId: string | null,
-) {
-  if (!u)
-    return fallbackId ? (
+type PersonRow = { firstName: string; lastName: string; daliEmail: string | null };
+
+function displayPerson(u: PersonRow | null, fallbackId: string | null) {
+  if (u) {
+    const name = `${u.firstName} ${u.lastName}`.trim();
+    return <span>{name || u.daliEmail || "—"}</span>;
+  }
+  // Has an id but couldn't resolve it (User row missing, or targetId points
+  // at a non-User resource like a domain/group/document).
+  if (fallbackId) {
+    return (
       <span className="font-mono text-xs text-muted-foreground/70">{fallbackId.slice(0, 8)}…</span>
-    ) : (
-      <span className="text-muted-foreground/60 italic">system</span>
     );
-  const name = `${u.firstName} ${u.lastName}`.trim();
-  return <span>{name || u.daliEmail || "—"}</span>;
+  }
+  return null;
+}
+
+// Actor column: a missing userId means an unauthenticated request (token
+// validation failure, etc.), and "system" is the meaningful label.
+function displayActor(u: PersonRow | null, fallbackId: string | null) {
+  return (
+    displayPerson(u, fallbackId) ?? (
+      <span className="text-muted-foreground/60 italic">system</span>
+    )
+  );
+}
+
+// Target column: a missing targetId means the action simply has no target
+// (login.success, email.send, confidentiality.sign, …). Don't fabricate a
+// "system" label — render an em-dash like the empty-metadata cell.
+function displayTarget(u: PersonRow | null, fallbackId: string | null) {
+  return (
+    displayPerson(u, fallbackId) ?? <span className="text-muted-foreground/50">—</span>
+  );
 }
 
 const inputClass =
@@ -126,7 +148,7 @@ export default function AdminConsoleActivity() {
 
       <Form
         method="get"
-        className="bg-card border border-border rounded-lg p-3 grid grid-cols-1 sm:grid-cols-5 gap-2 items-end"
+        className="bg-card border border-border rounded-lg p-3 grid grid-cols-1 sm:grid-cols-4 gap-2 items-end"
       >
         <label className="text-xs text-muted-foreground flex flex-col gap-1">
           Action
@@ -144,22 +166,13 @@ export default function AdminConsoleActivity() {
           </select>
         </label>
         <label className="text-xs text-muted-foreground flex flex-col gap-1">
-          Actor
+          Person
           <input
             type="text"
-            name="actor"
-            defaultValue={filters.actor ?? ""}
+            name="person"
+            defaultValue={filters.person ?? ""}
             placeholder="name, email, or id"
-            className={inputClass}
-          />
-        </label>
-        <label className="text-xs text-muted-foreground flex flex-col gap-1">
-          Target
-          <input
-            type="text"
-            name="target"
-            defaultValue={filters.target ?? ""}
-            placeholder="name, email, or id"
+            title="Matches as actor or target — what did this person do, and what was done to them"
             className={inputClass}
           />
         </label>
@@ -181,7 +194,7 @@ export default function AdminConsoleActivity() {
             className={inputClass}
           />
         </label>
-        <div className="sm:col-span-5 flex items-center gap-2">
+        <div className="sm:col-span-4 flex items-center gap-2">
           <button
             type="submit"
             className="px-3 py-1.5 rounded-md text-sm bg-primary text-primary-foreground hover:opacity-90"
@@ -228,7 +241,7 @@ export default function AdminConsoleActivity() {
                 </td>
                 <td className="px-4 py-3">{displayActor(e.actor, e.actorId)}</td>
                 <td className="px-4 py-3 font-mono text-xs text-foreground">{e.action}</td>
-                <td className="px-4 py-3">{displayActor(e.target, e.targetId)}</td>
+                <td className="px-4 py-3">{displayTarget(e.target, e.targetId)}</td>
                 <td className="px-4 py-3">
                   {e.metadata ? (
                     <code
