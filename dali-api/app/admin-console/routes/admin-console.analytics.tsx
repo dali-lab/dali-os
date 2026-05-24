@@ -275,9 +275,6 @@ export default function AdminConsoleAnalytics() {
         <section className="bg-card border border-border rounded-lg overflow-hidden">
           <h2 className="text-sm font-medium text-foreground px-4 py-3 border-b border-border">
             Rarely-used routes
-            <span className="text-xs text-muted-foreground font-normal ml-2">
-              (&lt;5 views in {rangeDays}d — candidates for removal)
-            </span>
           </h2>
           <RouteList
             rows={bottomRoutes}
