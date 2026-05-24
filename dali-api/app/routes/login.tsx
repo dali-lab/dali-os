@@ -108,7 +108,12 @@ export default function Login() {
         src="/spread-out-blocks.png"
         alt=""
         className="absolute opacity-20 dark:opacity-10 pointer-events-none z-0"
-        style={{ top: "50%", right: "-30vh", width: "100vh", transform: "translateY(-50%) rotate(-90deg)" }}
+        style={{
+          top: "50%",
+          right: "-30vh",
+          width: "100vh",
+          transform: "translateY(-50%) rotate(-90deg)",
+        }}
       />
       {/* Left decorative panel */}
       <div className="hidden md:flex w-1/2 min-h-screen bg-brand-tint flex-col justify-center px-12 lg:px-16 relative overflow-hidden">
@@ -121,7 +126,7 @@ export default function Login() {
           <h2 className="font-heading text-4xl lg:text-5xl font-bold text-dark-blue leading-tight mb-6">
             Welcome to
             <br />
-            <span className="text-accent-coral">DALI Lab</span>
+            <span className="text-accent-coral">DALI OS</span>
           </h2>
           <p className="text-dark-blue/70 text-lg leading-relaxed max-w-sm">
             Dartmouth's experiential learning lab — where students build real
@@ -134,7 +139,6 @@ export default function Login() {
           alt=""
           className="relative z-10 mt-10 w-64 lg:w-72 dark:opacity-90"
         />
-
       </div>
 
       {/* Right form panel */}
@@ -275,4 +279,3 @@ export default function Login() {
     </div>
   );
 }
-
