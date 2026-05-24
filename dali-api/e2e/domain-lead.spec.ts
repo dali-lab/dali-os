@@ -53,7 +53,12 @@ test.describe('domain lead workflow', () => {
     // tab; Rubrics live behind the in-page Rubrics tab.
     await page.getByRole('button', { name: 'Library' }).click();
     const libraryFrame = page.frameLocator('iframe[title="Library"]');
-    await libraryFrame.getByRole('tab', { name: 'Rubrics' }).click();
+    // Wait for the Library route to finish loading inside the iframe before
+    // interacting — otherwise the Rubrics tab click can race the iframe's
+    // navigation and land on a not-yet-ready frame.
+    const rubricsTab = libraryFrame.getByRole('tab', { name: 'Rubrics' });
+    await expect(rubricsTab).toBeVisible();
+    await rubricsTab.click();
     await expect(libraryFrame.getByRole('heading', { name: 'Evaluation Rubrics' })).toBeVisible();
   });
 });
