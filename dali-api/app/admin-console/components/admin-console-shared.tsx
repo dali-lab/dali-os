@@ -233,18 +233,44 @@ export function AdminToggle({ member, disabled }: { member: Member; disabled?: b
   );
 }
 
+// Two-click confirm: the first click "arms" the button (shows "Remove?"),
+// the second click actually submits. Removing a Core title is destructive
+// and Core is self-perpetuating, so we want a guard against stray clicks
+// without the disruption of a window.confirm() modal. Auto-disarms after
+// 3s so a stray hover doesn't leave the button armed indefinitely.
 function RemoveCoreTitleButton({ assignmentId }: { assignmentId: string }) {
   const fetcher = useFetcher();
+  const [armed, setArmed] = useState(false);
+
+  useEffect(() => {
+    if (!armed) return;
+    const t = setTimeout(() => setArmed(false), 3000);
+    return () => clearTimeout(t);
+  }, [armed]);
+
+  if (!armed) {
+    return (
+      <button
+        type="button"
+        onClick={() => setArmed(true)}
+        aria-label="Remove Core title"
+        className="hover:text-green-900 ml-0.5 p-2 -m-1.5 inline-flex items-center justify-center"
+      >
+        <X className="w-3 h-3" />
+      </button>
+    );
+  }
+
   return (
     <fetcher.Form method="post" className="inline">
       <input type="hidden" name="intent" value="remove-core-title" />
       <input type="hidden" name="assignmentId" value={assignmentId} />
       <button
         type="submit"
-        aria-label="Remove Core title"
-        className="hover:text-green-900 ml-0.5 p-2 -m-1.5 inline-flex items-center justify-center"
+        aria-label="Confirm remove Core title"
+        className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-red-600 text-white hover:bg-red-700"
       >
-        <X className="w-3 h-3" />
+        Remove?
       </button>
     </fetcher.Form>
   );

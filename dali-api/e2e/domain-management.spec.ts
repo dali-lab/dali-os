@@ -41,26 +41,20 @@ test.describe('admin domain management', () => {
 });
 
 test.describe('Operations access tiers', () => {
-  // Core has access to Operations (Domains + Announcements) but Roles
-  // (admin-console/members) is Admin-only — editing the role roster is
-  // privileged enough that Core shouldn't mint new Core or remove peers
-  // without Admin sign-off.
-  test('Core can access Operations → Domains', async ({ loginAs, page }) => {
-    await loginAs({ daliEmail: 'jordan.taylor@dali.dartmouth.edu' });
-    await page.goto('/admin-console/domains');
-    await expect(page).toHaveURL(/\/admin-console\/domains/);
-  });
-
-  test('Core cannot access Operations → Roles (Admin-only)', async ({ loginAs, page }) => {
+  // Core has full access to Operations → Roles and Domains so they can
+  // manage Core titles, Domain Leads, and member eligibilities without
+  // needing Admin. Admin-only mutations (set-admin, create-domain,
+  // delete-domain) still 403 inside the action handler.
+  test('Core can access Operations → Roles', async ({ loginAs, page }) => {
     await loginAs({ daliEmail: 'jordan.taylor@dali.dartmouth.edu' });
     await page.goto('/admin-console/members');
-    await expect(page).not.toHaveURL(/admin-console\/members/);
+    await expect(page).toHaveURL(/\/admin-console\/members/);
   });
 
   // A lab member with neither Core nor Admin is still redirected away.
   test('non-Core, non-Admin lab member cannot access Operations', async ({ loginAs, page }) => {
     await loginAs({ daliEmail: 'reviewer1@dali.dartmouth.edu' });
-    await page.goto('/admin-console/domains');
+    await page.goto('/admin-console/members');
     await expect(page).not.toHaveURL(/admin-console/);
   });
 });

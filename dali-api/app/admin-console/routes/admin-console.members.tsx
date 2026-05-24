@@ -3,7 +3,7 @@ import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/admin-console.members";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isAdmin, currentTerm } from "~/lib/roles";
+import { isAdmin, isCore, currentTerm } from "~/lib/roles";
 import { Users, Check } from "lucide-react";
 import {
   AdminToggle,
@@ -20,15 +20,16 @@ export const meta: Route.MetaFunction = () => [{ title: "Roles · Operations · 
 // and presents per-user toggles backed by row insert/delete on the three
 // assignment tables.
 //
-// Access: Admin only. Editing the role roster (Core seats, Domain Leads,
-// Admin grants) is privileged enough that Core shouldn't be able to mint
-// new Core or remove peers without Admin sign-off.
+// Access: Core or Admin may view and edit Core/Domain Lead assignments.
+// Removing a Core title needs a second click in the UI to prevent accidents
+// (Core is self-perpetuating, so an accidental demote could be hard to
+// recover from). Granting Admin stays Admin-only inside the action.
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
-  if (!(await isAdmin(auth.user.sub))) return redirect("/");
-  const viewerIsAdmin = true;
+  if (!(await isCore(auth.user.sub))) return redirect("/");
+  const viewerIsAdmin = await isAdmin(auth.user.sub);
 
   const [users, domains, term] = await Promise.all([
     prisma.user.findMany({
@@ -79,13 +80,16 @@ export async function loader({ request }: Route.LoaderArgs) {
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
-  if (!(await isAdmin(auth.user.sub)))
+  if (!(await isCore(auth.user.sub)))
     return Response.json({ error: "Forbidden" }, { status: 403 });
 
   const formData = await request.formData();
   const intent = formData.get("intent") as string;
 
+  // Granting/revoking Admin is the only Admin-gated mutation on this page.
   if (intent === "set-admin") {
+    if (!(await isAdmin(auth.user.sub)))
+      return Response.json({ error: "Forbidden" }, { status: 403 });
     const userId = formData.get("userId") as string;
     const value = formData.get("value") === "true";
     if (value) {

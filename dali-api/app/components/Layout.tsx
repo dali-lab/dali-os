@@ -273,7 +273,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
       label: 'Roles',
       to: '/admin-console/members',
       icon: Users,
-      show: isAdmin,
+      show: true,
       active: path.startsWith('/admin-console/members'),
       sub: null as { label: string; to: string; active: boolean }[] | null,
     },
