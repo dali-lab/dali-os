@@ -1,0 +1,23 @@
+{
+  "name": "DALI OS",
+  "short_name": "DALI OS",
+  "description": "DALI Lab's internal tool for hiring, staffing, scheduling, and collaboration.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1E5779",
+  "icons": [
+    {
+      "src": "/icon-blue.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-blue.png",
+      "type": "image/png",
+      "sizes": "360x360",
+      "purpose": "any"
+    }
+  ]
+}
