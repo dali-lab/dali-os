@@ -44,7 +44,7 @@ export default function Library() {
         </p>
       </header>
 
-      <div className="flex gap-1 bg-muted rounded-lg p-1 w-fit" role="tablist" aria-label="Library section">
+      <div className="flex items-center gap-2" role="tablist" aria-label="Library section">
         {TABS.map((t) => {
           const active = t.id === tab;
           return (
@@ -54,10 +54,10 @@ export default function Library() {
               role="tab"
               aria-selected={active}
               onClick={() => selectTab(t.id)}
-              className={`px-4 py-1.5 rounded-md text-sm font-medium transition ${
+              className={`px-4 py-1.5 text-sm font-semibold rounded-md transition-colors ${
                 active
-                  ? "bg-accent-coral text-white shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
+                  ? "bg-accent-coral text-white"
+                  : "text-foreground hover:bg-muted"
               }`}
             >
               {t.label}

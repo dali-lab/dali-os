@@ -1,11 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { getZonedHourFraction } from "~/lib/timezone";
 
-// The calendar grid renders 8 AM–9 PM (HOURS = [8..20]); the now-line is shown
-// only when the current fractional hour falls inside [8, 21) and hidden
-// otherwise. This mirrors the predicate in WeekGrid.
+// The calendar grid renders 8 AM–9 PM rows (HOURS = [8..21]) with the body
+// extending to 10 PM; the now-line is shown only when the current fractional
+// hour falls inside [8, 22) and hidden otherwise. This mirrors the predicate in
+// WeekGrid.
 const GRID_MIN_HOUR = 8;
-const GRID_MAX_HOUR = 21;
+const GRID_MAX_HOUR = 22;
 const isNowLineVisible = (frac: number) =>
   frac >= GRID_MIN_HOUR && frac < GRID_MAX_HOUR;
 
@@ -30,10 +31,17 @@ describe("getZonedHourFraction", () => {
     expect(isNowLineVisible(frac)).toBe(false);
   });
 
-  it("hides the line after 9 PM", () => {
+  it("shows the line at 9:30 PM (inside the extended range)", () => {
     // 2026-01-15 02:30:00Z is 21:30 EST on 2026-01-14.
     const frac = getZonedHourFraction(new Date("2026-01-15T02:30:00Z"), "America/New_York");
     expect(frac).toBe(21.5);
+    expect(isNowLineVisible(frac)).toBe(true);
+  });
+
+  it("hides the line after 10 PM", () => {
+    // 2026-01-15 03:30:00Z is 22:30 EST on 2026-01-14.
+    const frac = getZonedHourFraction(new Date("2026-01-15T03:30:00Z"), "America/New_York");
+    expect(frac).toBe(22.5);
     expect(isNowLineVisible(frac)).toBe(false);
   });
 });

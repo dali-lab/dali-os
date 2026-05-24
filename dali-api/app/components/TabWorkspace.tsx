@@ -9,6 +9,10 @@ export interface OpenTabRequest {
 export interface TabWorkspaceHandle {
   /** Open a tab in the focused pane, or focus it if already open anywhere. */
   openTab: (req: OpenTabRequest) => void
+  /** Open a tab in a second pane to the side (splitting if there's only one
+   *  pane), or focus it if already open there. Used by the sidebar's
+   *  right-click "Open to the side". */
+  openTabToSide: (req: OpenTabRequest) => void
   /** Rename any tab matching `url` (across all panes). Used by embedded
    *  iframes to announce their preferred label after route meta resolves. */
   setTabLabel: (url: string, label: string) => void
@@ -295,6 +299,60 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
                   }
                 : p,
             ),
+          }
+        })
+      },
+      openTabToSide: (req) => {
+        setState((prev) => {
+          // Already open somewhere — just focus it (don't duplicate).
+          const existing = findTabPane(prev, req.url)
+          if (existing) {
+            return {
+              ...prev,
+              focusedPaneId: existing.paneId,
+              panes: prev.panes.map((p) =>
+                p.id === existing.paneId
+                  ? {
+                      ...p,
+                      activeTabId: existing.tabId,
+                      tabs: p.tabs.map((t) =>
+                        t.id === existing.tabId ? { ...t, lastActivatedAt: now() } : t,
+                      ),
+                    }
+                  : p,
+              ),
+            }
+          }
+          const newTab: Tab = {
+            id: newId(),
+            label: req.label,
+            url: req.url,
+            lastActivatedAt: now(),
+          }
+          // Already split — open in the pane that isn't focused.
+          if (prev.panes.length >= 2) {
+            const sidePane =
+              prev.panes.find((p) => p.id !== prev.focusedPaneId) ?? prev.panes[1]
+            return {
+              ...prev,
+              focusedPaneId: sidePane.id,
+              panes: prev.panes.map((p) =>
+                p.id === sidePane.id
+                  ? {
+                      ...p,
+                      tabs: appendWithLruCap([...p.tabs, newTab], newTab.id),
+                      activeTabId: newTab.id,
+                    }
+                  : p,
+              ),
+            }
+          }
+          // Single pane — create a second one to the right.
+          const newPaneId = newId()
+          return {
+            ...prev,
+            focusedPaneId: newPaneId,
+            panes: [...prev.panes, { id: newPaneId, tabs: [newTab], activeTabId: newTab.id }],
           }
         })
       },

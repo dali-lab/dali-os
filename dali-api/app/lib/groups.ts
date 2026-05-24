@@ -118,27 +118,59 @@ export type VisibleGroup = {
   dynamicQuery: string | null;
   systemKey: string | null;
   memberIds: string[];
+  // Effective archived state, combining a manual archive (archivedAt set) with
+  // term-bound auto-archive (every bound term has ended). See isGroupArchived.
+  archived: boolean;
+  // Set only when manually archived; null otherwise. Lets the UI tell apart
+  // "archived because its term ended" from "someone archived it".
+  archivedAt: string | null;
+  boundTermIds: string[];
 };
 
-// Returns the groups the given user belongs to. Static membership is read
-// directly off the row; Dynamic groups are resolved via dynamicQuery. Use this
-// at every list site so groups stay hidden from non-members.
-export async function listVisibleGroupsForUser(
-  userId: string,
-): Promise<VisibleGroup[]> {
-  const groups = await prisma.groupDefinition.findMany({
-    orderBy: { name: "asc" },
-    select: {
-      id: true,
-      name: true,
-      type: true,
-      dynamicQuery: true,
-      staticMemberIds: true,
-      systemKey: true,
-    },
-  });
+// A static group is archived if it was manually archived (archivedAt set) OR
+// it is term-bound and every bound term has already ended. `now` is passed in
+// so callers can resolve a whole list against one consistent clock.
+export function isGroupArchived(
+  group: { archivedAt: Date | string | null; boundTermIds: string[] },
+  termEndById: Map<string, Date>,
+  now: Date,
+): boolean {
+  if (group.archivedAt) return true;
+  if (group.boundTermIds.length === 0) return false;
+  // Resolve each bound term's end; unknown ids (deleted terms) are ignored.
+  const ends = group.boundTermIds
+    .map((id) => termEndById.get(id))
+    .filter((d): d is Date => d instanceof Date);
+  if (ends.length === 0) return false;
+  const latestEnd = ends.reduce((a, b) => (a > b ? a : b));
+  return latestEnd.getTime() < now.getTime();
+}
 
-  const resolved = await Promise.all(
+// Resolves every group to a VisibleGroup (members + derived archive state),
+// without any per-viewer filtering. Shared by the membership-scoped and
+// management list functions below.
+async function resolveAllGroups(): Promise<VisibleGroup[]> {
+  const [groups, terms] = await Promise.all([
+    prisma.groupDefinition.findMany({
+      orderBy: { name: "asc" },
+      select: {
+        id: true,
+        name: true,
+        type: true,
+        dynamicQuery: true,
+        staticMemberIds: true,
+        systemKey: true,
+        archivedAt: true,
+        boundTermIds: true,
+      },
+    }),
+    prisma.term.findMany({ select: { id: true, endDate: true } }),
+  ]);
+
+  const termEndById = new Map(terms.map((t) => [t.id, t.endDate]));
+  const now = new Date();
+
+  return Promise.all(
     groups.map(async (g) => {
       const memberIds =
         g.type === "Static"
@@ -153,11 +185,30 @@ export async function listVisibleGroupsForUser(
         dynamicQuery: g.dynamicQuery,
         systemKey: g.systemKey,
         memberIds,
+        archived: isGroupArchived(g, termEndById, now),
+        archivedAt: g.archivedAt ? g.archivedAt.toISOString() : null,
+        boundTermIds: g.boundTermIds,
       };
     }),
   );
+}
 
+// Returns the groups the given user belongs to. Static membership is read
+// directly off the row; Dynamic groups are resolved via dynamicQuery. Use this
+// at consumer sites (e.g. "groups I'm in") so groups stay hidden from
+// non-members. The management page uses listAllGroups instead.
+export async function listVisibleGroupsForUser(
+  userId: string,
+): Promise<VisibleGroup[]> {
+  const resolved = await resolveAllGroups();
   return resolved.filter((g) => g.memberIds.includes(userId));
+}
+
+// Returns every group, unfiltered. For the Groups management page, where a
+// Core/Admin user manages groups they may not belong to — so a group created
+// without adding yourself still shows up.
+export async function listAllGroups(): Promise<VisibleGroup[]> {
+  return resolveAllGroups();
 }
 
 // Idempotent helpers used at entity-creation sites. Each ensures the matching

@@ -164,6 +164,7 @@ export default [
 
   // Scheduled meetings
   route("api/scheduled-meetings", "calendar/routes/api.scheduled-meetings.ts"),
+  route("api/scheduled-meetings/:id/cancel", "calendar/routes/api.scheduled-meetings.$id.cancel.ts"),
   route("api/calendar/group-availability", "calendar/routes/api.calendar.group-availability.ts"),
 
   // Slack bot (webhook receivers; signature-verified, no auth middleware)

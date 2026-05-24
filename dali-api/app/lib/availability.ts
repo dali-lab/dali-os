@@ -241,18 +241,7 @@ function formatDtstart(d: Date): string {
 // per-day grid bucketing; this module owns the cross-user math.
 
 const DEFAULT_BUFFER_MIN = 15;
-const DEFAULT_WORK_START_MIN = 9 * 60;
-const DEFAULT_WORK_END_MIN = 17 * 60;
 const DEFAULT_TIMEZONE = "America/New_York";
-
-function defaultWorkingHoursForDow(): WorkingHoursDayInput[] {
-  return Array.from({ length: 7 }).map((_, dow) => ({
-    dayOfWeek: dow,
-    enabled: dow >= 1 && dow <= 5,
-    startMinute: DEFAULT_WORK_START_MIN,
-    endMinute: DEFAULT_WORK_END_MIN,
-  }));
-}
 
 /**
  * Load + compute free/busy for a single user across the given window.
@@ -276,16 +265,28 @@ export async function computeUserFreeBusy(
     ),
   ]);
 
-  const persistedDows = new Set(whRows.map((r) => r.dayOfWeek));
-  const workingHours: WorkingHoursDayInput[] = [
-    ...whRows.map((r) => ({
-      dayOfWeek: r.dayOfWeek,
-      enabled: r.enabled,
-      startMinute: r.startMinute,
-      endMinute: r.endMinute,
-    })),
-    ...defaultWorkingHoursForDow().filter((d) => !persistedDows.has(d.dayOfWeek)),
-  ];
+  // Working-hours policy:
+  //   • No persisted rows at all  → feature is OFF → the user is available
+  //     all day, every day (a single 00:00–24:00 "working" segment per dow).
+  //     Free time is then simply "anything not busy".
+  //   • Any persisted rows         → feature is ON → trust the saved segments
+  //     verbatim (including enabled weekend days). Days the user never saved a
+  //     row for stay unavailable, matching what they see in the editor.
+  const timezone = settings?.timezone ?? fallbackTimezone;
+  const hasPersisted = whRows.length > 0;
+  const workingHours: WorkingHoursDayInput[] = hasPersisted
+    ? whRows.map((r) => ({
+        dayOfWeek: r.dayOfWeek,
+        enabled: r.enabled,
+        startMinute: r.startMinute,
+        endMinute: r.endMinute,
+      }))
+    : Array.from({ length: 7 }).map((_, dow) => ({
+        dayOfWeek: dow,
+        enabled: true,
+        startMinute: 0,
+        endMinute: 24 * 60,
+      }));
 
   const externalBusy: Interval[] = busyRaw.map((b) => ({
     start: new Date(b.start),
@@ -303,7 +304,7 @@ export async function computeUserFreeBusy(
     })),
     externalBusy,
     bufferMin: settings?.defaultEventBufferMin ?? DEFAULT_BUFFER_MIN,
-    timezone: settings?.timezone ?? fallbackTimezone,
+    timezone,
   });
   return { userId, free, busy };
 }

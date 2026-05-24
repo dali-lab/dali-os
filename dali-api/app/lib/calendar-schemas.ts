@@ -30,6 +30,31 @@ export const SetWorkingSegmentsSchema = z.object({
     .max(24),
 });
 
+// Full-replace for the entire week in one transaction. Used when the user first
+// turns Working Hours on / edits a day while the state is still the in-memory
+// default, so all seven days get materialized together (otherwise the loader
+// would treat the un-persisted days as "explicitly empty"). Empty segments for a
+// day mean "unavailable", same as set-working-segments.
+export const SeedWorkingHoursSchema = z.object({
+  intent: z.literal("seed-working-hours"),
+  days: z
+    .array(
+      z.object({
+        dayOfWeek,
+        segments: z
+          .array(
+            z.object({
+              startMinute: minuteOfDay,
+              endMinute: minuteOfDay,
+              location: z.enum(["InPerson", "Remote"]),
+            }),
+          )
+          .max(24),
+      }),
+    )
+    .max(7),
+});
+
 // Copy Monday's hours to Tue–Fri. Sat/Sun untouched.
 export const CopyWeekdaysSchema = z.object({
   intent: z.literal("copy-weekdays"),
@@ -83,6 +108,7 @@ export const ToggleSubCalendarSchema = z.object({
 
 export const CalendarActionSchema = z.discriminatedUnion("intent", [
   SetWorkingSegmentsSchema,
+  SeedWorkingHoursSchema,
   CopyWeekdaysSchema,
   ResetWorkingHoursSchema,
   SetEventBufferSchema,

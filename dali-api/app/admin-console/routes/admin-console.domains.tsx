@@ -263,7 +263,7 @@ function DomainLeadsForDomain({ domain, members }: { domain: DomainWithCounts; m
           <button
             type="button"
             onClick={() => setOpen(!open)}
-            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground hover:bg-muted"
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground hover:bg-muted/70 transition-colors"
           >
             + Lead
             <ChevronDown className="w-3 h-3" />
@@ -279,7 +279,7 @@ function DomainLeadsForDomain({ domain, members }: { domain: DomainWithCounts; m
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     placeholder="Search members…"
-                    className="w-full px-2 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-2 py-1 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
                   />
                 </div>
                 <div className="py-1 max-h-64 overflow-y-auto">
@@ -305,6 +305,17 @@ function DomainLeadsForDomain({ domain, members }: { domain: DomainWithCounts; m
   );
 }
 
+// Domain-eligibility level (P1/P2/P3) shown as a colored badge that is itself
+// the level picker: the native <select> sits invisibly on top so a click opens
+// the level menu, while the styled badge underneath renders the current value.
+// Transparent background — distinguished by text color only (P1 muted, P2 teal,
+// P3 coral).
+const LEVEL_BADGE: Record<"P1" | "P2" | "P3", string> = {
+  P1: "text-muted-foreground",
+  P2: "text-accent-teal",
+  P3: "text-accent-coral",
+};
+
 function EligibilityLevelSelect({
   domainId,
   userId,
@@ -315,17 +326,27 @@ function EligibilityLevelSelect({
   level: "P1" | "P2" | "P3";
 }) {
   const fetcher = useFetcher();
+  // Optimistic: reflect the just-submitted level while the request is in flight.
+  const pending = fetcher.formData?.get("level");
+  const shown = (typeof pending === "string" ? pending : level) as "P1" | "P2" | "P3";
   return (
-    <fetcher.Form method="post" className="inline">
+    <fetcher.Form method="post" className="relative inline-flex">
       <input type="hidden" name="intent" value="set-eligibility-level" />
       <input type="hidden" name="userId" value={userId} />
       <input type="hidden" name="domainId" value={domainId} />
+      <span
+        className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold leading-none ${LEVEL_BADGE[shown]}`}
+        aria-hidden="true"
+      >
+        {shown}
+      </span>
       <select
         name="level"
-        defaultValue={level}
+        value={shown}
         onChange={(e) => fetcher.submit(e.currentTarget.form)}
-        className="bg-transparent text-xs font-medium pl-1 pr-0.5 py-0 focus:outline-none cursor-pointer"
+        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
         aria-label="Eligibility level"
+        title="Change level"
       >
         {ALLOWED_LEVELS.map((l) => (
           <option key={l} value={l}>{l}</option>
@@ -344,7 +365,7 @@ function RemoveEligibilityButton({ eligibilityId }: { eligibilityId: string }) {
       <button
         type="submit"
         aria-label="Remove eligibility"
-        className="hover:text-amber-900 ml-0.5 p-2 -m-1.5 inline-flex items-center justify-center"
+        className="inline-flex items-center justify-center rounded-full p-0.5 text-amber-700/70 hover:text-amber-900 hover:bg-amber-100"
       >
         <X className="w-3 h-3" />
       </button>
@@ -377,7 +398,8 @@ function AddEligibilityForm({
             type="submit"
             name="level"
             value={l}
-            className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-muted text-muted-foreground hover:bg-amber-100 hover:text-amber-800"
+            title={`Assign ${l}`}
+            className={`px-1.5 py-0.5 text-[10px] font-bold leading-none rounded border border-border hover:bg-muted/50 ${LEVEL_BADGE[l]}`}
           >
             {l}
           </button>
@@ -406,10 +428,9 @@ function DomainMembersForDomain({ domain, members }: { domain: DomainWithCounts;
       {domain.eligibilities.map((e) => (
         <span
           key={e.id}
-          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800"
+          className="inline-flex items-center gap-1.5 pl-2 pr-1 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-900 border border-amber-200"
         >
           {memberLabel(e.user)}
-          <span className="text-[10px] opacity-70">·</span>
           <EligibilityLevelSelect domainId={domain.id} userId={e.user.id} level={e.level} />
           <RemoveEligibilityButton eligibilityId={e.id} />
         </span>
@@ -420,7 +441,7 @@ function DomainMembersForDomain({ domain, members }: { domain: DomainWithCounts;
           <button
             type="button"
             onClick={() => setOpen(!open)}
-            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground hover:bg-muted"
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground hover:bg-muted/70 transition-colors"
           >
             + Member
             <ChevronDown className="w-3 h-3" />
@@ -436,7 +457,7 @@ function DomainMembersForDomain({ domain, members }: { domain: DomainWithCounts;
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     placeholder="Search members…"
-                    className="w-full px-2 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    className="w-full px-2 py-1 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
                   />
                   <p className="mt-1.5 text-[10px] text-muted-foreground/70">
                     Click a level (P1/P2/P3) to assign. Defaults to P1 if you click the name.
@@ -544,13 +565,13 @@ export default function AdminConsoleDomains() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="New domain name"
-                className="px-2 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="px-2 py-1 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
                 disabled={isCreating}
               />
               <button
                 type="submit"
                 disabled={isCreating || !name.trim()}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-50"
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors disabled:opacity-50"
               >
                 <Plus className="w-3 h-3" />
                 Create

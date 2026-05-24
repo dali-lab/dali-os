@@ -4,6 +4,12 @@ import { decrypt, encrypt } from "~/lib/calendar-crypto";
 interface BusyEvent {
   start: string; // ISO
   end: string; // ISO
+  // Enriched from events.list so the calendar can show the real event name and
+  // colour it by source calendar. All optional: availability math only reads
+  // start/end, and a busy block with no title still renders as "Busy".
+  title?: string;
+  calendarId?: string; // the Google sub-calendar this event came from
+  color?: string; // that calendar's backgroundColor (hex), for per-calendar tint
 }
 
 interface StoredTokens {
@@ -123,6 +129,66 @@ async function extractGoogleErrorDetail(res: Response): Promise<string> {
   }
 }
 
+interface GoogleEvent {
+  id?: string;
+  summary?: string;
+  status?: string; // "confirmed" | "tentative" | "cancelled"
+  transparency?: string; // "opaque" (busy) | "transparent" (free)
+  start?: { dateTime?: string; date?: string };
+  end?: { dateTime?: string; date?: string };
+  attendees?: { self?: boolean; responseStatus?: string }[];
+}
+
+// One sub-calendar's confirmed, time-bounded, not-declined, busy events in the
+// window. Uses events.list (not freeBusy) so we get the real title; freeBusy
+// returns only opaque time ranges. `color` is the calendar's backgroundColor,
+// threaded onto every event so the grid can tint by source calendar.
+async function fetchEventsForCalendar(
+  token: string,
+  calendarId: string,
+  color: string | undefined,
+  start: Date,
+  end: Date,
+): Promise<BusyEvent[]> {
+  const params = new URLSearchParams({
+    timeMin: start.toISOString(),
+    timeMax: end.toISOString(),
+    singleEvents: "true", // expand recurring events into instances
+    orderBy: "startTime",
+    maxResults: "250",
+    fields: "items(id,summary,status,transparency,start,end,attendees(self,responseStatus))",
+  });
+  const res = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?${params}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (!res.ok) {
+    const detail = await extractGoogleErrorDetail(res);
+    throw new Error(`Google events.list failed (${res.status}): ${detail}`);
+  }
+  const data = (await res.json()) as { items?: GoogleEvent[] };
+  const out: BusyEvent[] = [];
+  for (const ev of data.items ?? []) {
+    // Skip cancelled, all-day (date-only, no dateTime), free/transparent, and
+    // events this user has declined — matching the old "busy" semantics.
+    if (ev.status === "cancelled") continue;
+    if (ev.transparency === "transparent") continue;
+    const startIso = ev.start?.dateTime;
+    const endIso = ev.end?.dateTime;
+    if (!startIso || !endIso) continue;
+    const self = ev.attendees?.find((a) => a.self);
+    if (self?.responseStatus === "declined") continue;
+    out.push({
+      start: startIso,
+      end: endIso,
+      title: ev.summary?.trim() || "Busy",
+      calendarId,
+      color,
+    });
+  }
+  return out;
+}
+
 async function fetchBusyForLink(
   linkId: string,
   subCalendarIds: string[],
@@ -130,33 +196,21 @@ async function fetchBusyForLink(
   end: Date,
 ): Promise<BusyEvent[]> {
   const token = await getValidAccessTokenForLink(linkId);
-  const items = subCalendarIds.length > 0
-    ? subCalendarIds.map((id) => ({ id }))
-    : [{ id: "primary" }];
-  const res = await fetch("https://www.googleapis.com/calendar/v3/freeBusy", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      timeMin: start.toISOString(),
-      timeMax: end.toISOString(),
-      items,
-    }),
-  });
-  if (!res.ok) {
-    const detail = await extractGoogleErrorDetail(res);
-    throw new Error(`Google freebusy failed (${res.status}): ${detail}`);
+  // Map calendarId → backgroundColor so each event can be tinted by its source.
+  let colorById = new Map<string, string | undefined>();
+  try {
+    const list = await listCalendarsForLink(linkId);
+    colorById = new Map(list.map((c) => [c.id, c.backgroundColor]));
+  } catch {
+    // Colour is best-effort; events still render (untinted) without it.
   }
-  const data = (await res.json()) as {
-    calendars?: Record<string, { busy?: { start: string; end: string }[] }>;
-  };
-  const out: BusyEvent[] = [];
-  for (const cal of Object.values(data.calendars ?? {})) {
-    for (const b of cal.busy ?? []) out.push({ start: b.start, end: b.end });
-  }
-  return out;
+  const calendarIds = subCalendarIds.length > 0 ? subCalendarIds : ["primary"];
+  const perCalendar = await Promise.all(
+    calendarIds.map((id) =>
+      fetchEventsForCalendar(token, id, colorById.get(id), start, end),
+    ),
+  );
+  return perCalendar.flat();
 }
 
 /**

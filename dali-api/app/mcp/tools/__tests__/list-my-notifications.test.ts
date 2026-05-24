@@ -56,7 +56,15 @@ describe("list_my_notifications", () => {
 
     await runListMyNotifications("user-1", { onlyUnread: true });
     expect(mockPrisma.notification.findMany).toHaveBeenCalledWith({
-      where: { recipientUserId: "user-1", readAt: null },
+      where: {
+        recipientUserId: "user-1",
+        readAt: null,
+        // Cancelled-meeting invites are hidden everywhere, including the MCP feed.
+        OR: [
+          { scheduledMeetingId: null },
+          { scheduledMeeting: { status: { not: "Cancelled" } } },
+        ],
+      },
       orderBy: { createdAt: "desc" },
       take: 20,
     });

@@ -31,6 +31,8 @@ import {
   GraduationCap,
   ListTodo,
   Megaphone,
+  SplitSquareHorizontal,
+  ExternalLink,
 } from 'lucide-react'
 import { userInitials } from '~/lib/display'
 import { TabWorkspace, type TabWorkspaceHandle, type OpenTabRequest } from '~/components/TabWorkspace'
@@ -89,8 +91,17 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
   })
   const workspaceRef = useRef<TabWorkspaceHandle | null>(null)
 
+  // Right-click context menu for a sidebar subtab. `x`/`y` are viewport
+  // coordinates; `req` is the tab to act on.
+  const [subtabMenu, setSubtabMenu] = useState<
+    null | { x: number; y: number; req: OpenTabRequest }
+  >(null)
+
   const openInWorkspace = (req: OpenTabRequest) => {
     workspaceRef.current?.openTab(req)
+  }
+  const openToSide = (req: OpenTabRequest) => {
+    workspaceRef.current?.openTabToSide(req)
   }
 
   useEffect(() => {
@@ -547,7 +558,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
       )}
 
       {/* Areas + nested sections */}
-      <nav className="flex-1 overflow-y-auto py-3 px-2 flex flex-col gap-0.5">
+      <nav className="sidebar-scroll flex-1 overflow-y-auto py-3 px-2 flex flex-col gap-0.5">
         {(() => {
           const hasTasks = taskCount > 0
           const homeActive = path === '/'
@@ -760,6 +771,14 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
                       key={section.to}
                       type="button"
                       onClick={() => openInWorkspace({ url: section.to, label: section.label })}
+                      onContextMenu={(e) => {
+                        e.preventDefault()
+                        setSubtabMenu({
+                          x: e.clientX,
+                          y: e.clientY,
+                          req: { url: section.to, label: section.label },
+                        })
+                      }}
                       className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] font-medium text-left transition-colors ${
                         section.active
                           ? 'bg-accent-coral/20 text-white'
@@ -946,6 +965,49 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
           onActiveUrlChange={setFocusedTabUrl}
         />
       </main>
+
+      {/* Right-click context menu for a sidebar subtab. Rendered at the layout
+          root so it isn't clipped by the sidebar. */}
+      {subtabMenu && (
+        <>
+          <div
+            className="fixed inset-0 z-50"
+            onClick={() => setSubtabMenu(null)}
+            onContextMenu={(e) => {
+              e.preventDefault()
+              setSubtabMenu(null)
+            }}
+            aria-hidden="true"
+          />
+          <div
+            className="fixed z-50 bg-card border border-border rounded-md shadow-lg py-1 min-w-[180px] text-sm"
+            style={{ left: subtabMenu.x, top: subtabMenu.y }}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                openInWorkspace(subtabMenu.req)
+                setSubtabMenu(null)
+              }}
+              className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-muted text-left text-foreground"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              Open
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                openToSide(subtabMenu.req)
+                setSubtabMenu(null)
+              }}
+              className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-muted text-left text-foreground"
+            >
+              <SplitSquareHorizontal className="w-3.5 h-3.5" />
+              Open to the side
+            </button>
+          </div>
+        </>
+      )}
     </div>
   )
 }
