@@ -2,7 +2,7 @@ import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { parseJson } from "~/lib/validate";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead, hasCycleAccess } from "~/lib/roles";
+import { isCore, hasCycleAccess } from "~/lib/roles";
 import { autoCloseIfExpired, findOtherActiveCycleId } from "~/hiring/lib/cycles";
 import { eligibleInternUserIds } from "~/hiring/lib/intern-eligibility";
 import { inReviewPipelineFilter } from "~/hiring/lib/application-pipeline-filter";
@@ -39,7 +39,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
-  if (!(await isHiringLead(auth.user.sub))) return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
+  if (!(await isCore(auth.user.sub))) return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
 
   const body = await parseJson(request, StatusUpdateSchema);
   if (body instanceof Response) return body;

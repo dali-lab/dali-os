@@ -11,6 +11,7 @@ import {
   FileText,
   MapPin,
   MessageSquare,
+  Users,
 } from 'lucide-react'
 import { prisma } from '~/lib/db'
 import { requireAuth } from "~/lib/auth";
@@ -39,6 +40,11 @@ const STATUS_COLORS: Record<string, string> = {
   Completed: 'bg-green-100 text-green-700',
   CancelledByApplicant: 'bg-red-100 text-red-700',
   CancelledByAdmin: 'bg-muted text-foreground/80',
+}
+
+const ROLE_LABELS: Record<string, string> = {
+  InDomain: 'In-domain',
+  CrossDomain: 'Cross-domain',
 }
 
 export const meta: Route.MetaFunction = ({ data }) => {
@@ -173,6 +179,19 @@ export default function InterviewDetailPage() {
   const domain = interview.domainApplication?.challengeVersion?.domain?.name
   const startDate = new Date(interview.startTime)
   const endDate = new Date(interview.endTime)
+
+  // Co-interviewers: active assignments other than the viewer's own. Declined
+  // and Replaced assignments are hidden so a withdrawn interviewer doesn't show.
+  const coInterviewers = (interview.assignments ?? [])
+    .filter((a: any) => a.status === 'Active' && a.id !== myAssignment?.id)
+    .map((a: any) => {
+      const u = a.cycleInterviewer?.user
+      const name =
+        u?.firstName && u?.lastName
+          ? `${u.firstName} ${u.lastName}`
+          : u?.daliEmail ?? 'Interviewer'
+      return { id: a.id, name, roleLabel: ROLE_LABELS[a.role] ?? a.role }
+    })
 
   // Collapsible panel state
   const [showApplication, setShowApplication] = useState(false)
@@ -395,6 +414,22 @@ export default function InterviewDetailPage() {
                 }`}
               >
                 {isCompleted ? 'Completed' : interview.status}
+              </span>
+              <span className="flex items-center">
+                <Users className="w-4 h-4 mr-1 text-muted-foreground/70" />
+                {coInterviewers.length > 0 ? (
+                  <>
+                    with{' '}
+                    {coInterviewers
+                      .map(
+                        (c: { name: string; roleLabel: string }) =>
+                          `${c.name} (${c.roleLabel})`,
+                      )
+                      .join(', ')}
+                  </>
+                ) : (
+                  'No co-interviewer assigned'
+                )}
               </span>
             </div>
           </div>

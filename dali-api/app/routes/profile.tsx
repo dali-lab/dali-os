@@ -64,7 +64,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const roleLabels = [
     roles.isAdmin && "Admin",
-    roles.isHiringLead && "Hiring Lead",
+    roles.isCore && "Hiring Lead",
     roles.isDomainLead && "Domain Lead",
     roles.isLabMember && "Lab Member",
   ].filter(Boolean) as string[];

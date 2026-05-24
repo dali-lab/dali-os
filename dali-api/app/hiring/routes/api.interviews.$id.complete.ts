@@ -4,7 +4,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { parseJson } from "~/lib/validate";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
-import { isHiringLead } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
 
 const VALID_RECOMMENDATIONS = ["Strong Hire", "Hire", "Lean Hire", "Lean No Hire", "No Hire"] as const;
 
@@ -53,7 +53,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   // Preserves recommendation + recommendationNotes so the interviewer can
   // re-submit the same values or edit them before marking complete again.
   if (request.method === "DELETE") {
-    if (!(await isHiringLead(auth.user.sub))) {
+    if (!(await isCore(auth.user.sub))) {
       return Response.json({ error: "Only hiring leads can reopen interviews" }, { status: 403 });
     }
     if (interview.status !== "Completed") {

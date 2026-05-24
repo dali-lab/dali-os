@@ -1,5 +1,5 @@
 import { prisma } from "~/lib/db";
-import { isHiringLead, isDomainLead } from "~/lib/roles";
+import { isCore, isDomainLead } from "~/lib/roles";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 
 /** Hydrate author IDs into `{ id, name }` objects in a single IN query. */
@@ -49,7 +49,7 @@ export async function authorizeCollabDoc(
     if (confState.status !== "signed") return false;
     if (review.cycleReviewer.userId === userSub) return true;
     if (await isDomainLead(userSub)) return true;
-    if (await isHiringLead(userSub)) return true;
+    if (await isCore(userSub)) return true;
     return false;
   }
 
@@ -68,7 +68,7 @@ export async function authorizeCollabDoc(
     const confState = await getCycleConfidentialityState(userSub, cycleId);
     if (confState.status !== "signed") return false;
     if (await isDomainLead(userSub)) return true;
-    if (await isHiringLead(userSub)) return true;
+    if (await isCore(userSub)) return true;
     return false;
   }
 
@@ -101,12 +101,12 @@ export async function authorizeCollabDoc(
     }
 
     if (assignment) return true;
-    if (await isHiringLead(userSub)) return true;
+    if (await isCore(userSub)) return true;
     return false;
   }
 
   // doc:{pageId}:body — project document pages. Access mirrors the project
-  // edit gate used by the project document API routes (isHiringLead ===
+  // edit gate used by the project document API routes (isCore ===
   // Admin || Core). The page must be a live (non-archived) Project page.
   if (entity === "doc") {
     const page = await prisma.page.findUnique({
@@ -116,26 +116,26 @@ export async function authorizeCollabDoc(
     if (!page || page.workspaceType !== "Project" || page.archivedAt !== null) {
       return false;
     }
-    return isHiringLead(userSub);
+    return isCore(userSub);
   }
 
   // partnersow:{applicationId}:body — the versionable Statement of Work for a
   // partner application. Same edit gate as the partner-application routes
-  // (isHiringLead === Admin || Core). The application must exist.
+  // (isCore === Admin || Core). The application must exist.
   if (entity === "partnersow") {
     const application = await prisma.partnerApplication.findUnique({
       where: { id },
       select: { id: true },
     });
     if (!application) return false;
-    return isHiringLead(userSub);
+    return isCore(userSub);
   }
 
   // epic:{descriptionDocId}:description — the rich description on an Epic.
   // `id` is the opaque cuid stored on Epic.descriptionDocId (a room name,
   // NOT a Page row). The lookup goes by that column rather than by Epic.id
   // because the editor only knows the room name. Same edit gate as the
-  // epic write API (isHiringLead === Admin || Core); no separate read gate
+  // epic write API (isCore === Admin || Core); no separate read gate
   // since reading an epic is already gated by the page that renders it.
   if (entity === "epic") {
     const epic = await prisma.epic.findFirst({
@@ -143,7 +143,7 @@ export async function authorizeCollabDoc(
       select: { id: true },
     });
     if (!epic) return false;
-    return isHiringLead(userSub);
+    return isCore(userSub);
   }
 
   return false;

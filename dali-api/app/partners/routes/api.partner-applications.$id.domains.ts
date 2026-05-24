@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.partner-applications.$id.domains";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 
 // POST /api/partner-applications/:id/domains
@@ -10,7 +10,7 @@ import { withCors, handlePreflight } from "~/lib/cors";
 // { domainId }. expectedMembers defaults to 0 and expectedChallenges to null;
 // they're filled in via PUT on the resulting PartnerApplicationDomain.
 //
-// Same permission model as partner-application edit (isHiringLead === Admin ||
+// Same permission model as partner-application edit (isCore === Admin ||
 // Core). One row per (application, domain) — enforced by the schema unique.
 
 type Body = { domainId: string };
@@ -36,7 +36,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       Response.json({ error: "Method not allowed" }, { status: 405 }),
     );
   }
-  if (!(await isHiringLead(auth.user.sub))) {
+  if (!(await isCore(auth.user.sub))) {
     return withCors(
       request,
       Response.json({ error: "Forbidden" }, { status: 403 }),

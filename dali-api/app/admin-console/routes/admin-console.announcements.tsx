@@ -4,7 +4,7 @@ import type { Route } from "./+types/admin-console.announcements";
 import { prisma } from "~/lib/db";
 import { listVisibleGroupsForUser } from "~/lib/groups";
 import { requireAuth } from "~/lib/auth";
-import { isAdmin } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
 import {
   Megaphone,
   Search,
@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 
 export const meta: Route.MetaFunction = () => [
-  { title: "Announcements · Admin console · DALI OS" },
+  { title: "Announcements · Operations · DALI OS" },
 ];
 
 // Admin composer: write an announcement or a todo and send it to the whole
@@ -27,7 +27,7 @@ export const meta: Route.MetaFunction = () => [
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
-  if (!(await isAdmin(auth.user.sub))) return redirect("/");
+  if (!(await isCore(auth.user.sub))) return redirect("/");
 
   const [users, visibleGroups, forms] = await Promise.all([
     prisma.user.findMany({

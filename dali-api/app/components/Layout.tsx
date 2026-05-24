@@ -34,12 +34,12 @@ import {
 } from 'lucide-react'
 import { userInitials } from '~/lib/display'
 import { TabWorkspace, type TabWorkspaceHandle, type OpenTabRequest } from '~/components/TabWorkspace'
-import { useUnreadNotificationCount, useOpenTasks, UnreadBadge } from '~/components/NotificationBell'
+import { useOpenTasks } from '~/components/NotificationBell'
 
 interface LayoutProps {
   user: { email: string; firstName?: string; lastName?: string }
   photoUrl?: string | null
-  isHiringLead?: boolean
+  isCore?: boolean
   isAdmin?: boolean
   isDomainLead?: boolean
   canViewForms?: boolean
@@ -52,7 +52,7 @@ const EXPANDED_AREAS_KEY = 'dali:sidebar:expanded-areas'
 
 type AreaKey = 'hiring' | 'projects' | 'members' | 'partners' | 'education' | 'internal-processes' | 'admin-console'
 
-export function Layout({ user, photoUrl, isHiringLead = false, isAdmin = false, isDomainLead = false, canViewForms = false, canViewStaffing = false, isInterviewer = false }: LayoutProps) {
+export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDomainLead = false, canViewForms = false, canViewStaffing = false, isInterviewer = false }: LayoutProps) {
   const location = useLocation()
   const { revalidate } = useRevalidator()
   // Held in a ref so the message listener (mounted once) always calls the
@@ -232,7 +232,7 @@ export function Layout({ user, photoUrl, isHiringLead = false, isAdmin = false, 
       label: 'Cycles',
       to: '/hiring/lead',
       icon: Calendar,
-      show: isHiringLead,
+      show: isCore,
       active: path.startsWith('/hiring/lead'),
       sub: null,
     },
@@ -240,7 +240,7 @@ export function Layout({ user, photoUrl, isHiringLead = false, isAdmin = false, 
       label: 'Analytics',
       to: '/hiring/analytics',
       icon: BarChart3,
-      show: isHiringLead || isDomainLead,
+      show: isCore || isDomainLead,
       active: path.startsWith('/hiring/analytics'),
       sub: null,
     },
@@ -248,7 +248,7 @@ export function Layout({ user, photoUrl, isHiringLead = false, isAdmin = false, 
       label: 'Library',
       to: '/hiring/library',
       icon: FileText,
-      show: isHiringLead || isDomainLead || isAdmin,
+      show: isCore || isDomainLead || isAdmin,
       // Highlight Library on its list page and on the challenge / rubric /
       // agreement detail pages it links into.
       active:
@@ -262,7 +262,7 @@ export function Layout({ user, photoUrl, isHiringLead = false, isAdmin = false, 
       label: 'Emails',
       to: '/hiring/emails',
       icon: Mail,
-      show: isHiringLead,
+      show: isCore,
       active: path.startsWith('/hiring/emails'),
       sub: null,
     },
@@ -270,7 +270,7 @@ export function Layout({ user, photoUrl, isHiringLead = false, isAdmin = false, 
 
   const adminSections = [
     {
-      label: 'Members',
+      label: 'Roles',
       to: '/admin-console/members',
       icon: Users,
       show: true,
@@ -281,7 +281,9 @@ export function Layout({ user, photoUrl, isHiringLead = false, isAdmin = false, 
       label: 'Domains',
       to: '/admin-console/domains',
       icon: Shield,
-      show: isAdmin,
+      // Core or Admin can manage domain leads + eligibilities; only Admin
+      // sees the Create/Delete controls (gated inside the page).
+      show: isCore,
       active: path.startsWith('/admin-console/domains'),
       sub: null,
     },
@@ -289,8 +291,16 @@ export function Layout({ user, photoUrl, isHiringLead = false, isAdmin = false, 
       label: 'Announcements',
       to: '/admin-console/announcements',
       icon: Megaphone,
-      show: isAdmin,
+      show: isCore,
       active: path.startsWith('/admin-console/announcements'),
+      sub: null,
+    },
+    {
+      label: 'Activity',
+      to: '/admin-console/activity',
+      icon: ListTodo,
+      show: isAdmin,
+      active: path.startsWith('/admin-console/activity'),
       sub: null,
     },
   ].filter((s) => s.show)
@@ -464,10 +474,10 @@ export function Layout({ user, photoUrl, isHiringLead = false, isAdmin = false, 
     },
     {
       key: 'admin-console' as AreaKey,
-      label: 'Admin Console',
+      label: 'Operations',
       to: '/admin-console',
       icon: Settings,
-      show: isAdmin,
+      show: isCore,
       active: activeAreaKey === 'admin-console',
       sections: adminSections,
     },
@@ -477,7 +487,6 @@ export function Layout({ user, photoUrl, isHiringLead = false, isAdmin = false, 
   const activeSection = activeArea?.sections.find((s) => s.active)
 
   const initials = userInitials(user)
-  const unreadCount = useUnreadNotificationCount()
   const openTasks = useOpenTasks()
   const taskCount = openTasks.length
   const sidebarWidth = collapsed ? 'w-16' : 'w-64'
@@ -766,7 +775,7 @@ export function Layout({ user, photoUrl, isHiringLead = false, isAdmin = false, 
           <button
             type="button"
             onClick={() => openInWorkspace({ url: '/profile', label: 'Profile' })}
-            title={collapsed ? `Open profile${unreadCount > 0 ? ` (${unreadCount} unread)` : ''}` : undefined}
+            title={collapsed ? 'Open profile' : undefined}
             aria-label="Open profile"
             className={`flex items-center gap-2 rounded-md hover:bg-white/5 transition-colors ${
               collapsed ? 'p-1.5' : 'flex-1 min-w-0 px-2 py-1.5 text-left'
@@ -784,7 +793,6 @@ export function Layout({ user, photoUrl, isHiringLead = false, isAdmin = false, 
                   {initials}
                 </div>
               )}
-              <UnreadBadge count={unreadCount} />
             </div>
             {!collapsed && (
               <span className="text-xs text-white/80 truncate min-w-0">{user.email}</span>
@@ -848,7 +856,7 @@ export function Layout({ user, photoUrl, isHiringLead = false, isAdmin = false, 
         <div className="flex items-center gap-3">
           <Link
             to="/profile"
-            aria-label={unreadCount > 0 ? `Profile (${unreadCount} unread)` : 'Profile'}
+            aria-label="Profile"
             className="relative w-8 h-8 rounded-full flex items-center justify-center"
           >
             {photoUrl ? (
@@ -862,7 +870,6 @@ export function Layout({ user, photoUrl, isHiringLead = false, isAdmin = false, 
                 {initials}
               </span>
             )}
-            <UnreadBadge count={unreadCount} />
           </Link>
           <a href="/logout" className="text-white/40 hover:text-white/70 transition" title="Log out">
             <LogOut className="w-4 h-4" />

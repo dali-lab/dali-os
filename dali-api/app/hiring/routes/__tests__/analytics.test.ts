@@ -27,7 +27,7 @@ beforeEach(() => {
   } as any);
   vi.mocked(getUserRoles).mockResolvedValue({
     isLabMember: false,
-    isHiringLead: true,
+    isCore: true,
     isAdmin: false,
     isDomainLead: false,
     isInstructor: false,

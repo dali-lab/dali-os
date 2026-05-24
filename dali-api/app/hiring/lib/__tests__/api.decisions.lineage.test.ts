@@ -9,7 +9,7 @@ vi.mock("~/lib/gmail");
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead, isDomainLead, hasCycleAccess } from "~/lib/roles";
+import { isCore, isDomainLead, hasCycleAccess } from "~/lib/roles";
 import { sendEmail } from "~/lib/gmail";
 import { action as finalizeAction } from "~/hiring/routes/api.decisions.$id.finalize";
 import { action as releaseAction } from "~/hiring/routes/api.decisions.$id.release";
@@ -56,7 +56,7 @@ beforeEach(() => {
 
 describe("Decision lineage (parentDecisionId)", () => {
   it("finalize: links the new Final record to its Draft predecessor", async () => {
-    vi.mocked(isHiringLead).mockResolvedValue(true);
+    vi.mocked(isCore).mockResolvedValue(true);
     vi.mocked(isDomainLead).mockResolvedValue(false);
     mockPrisma.decision.findUnique.mockResolvedValue({
       id: DRAFT_ID,
@@ -83,7 +83,7 @@ describe("Decision lineage (parentDecisionId)", () => {
   });
 
   it("release: links the new Released record to its Final predecessor", async () => {
-    vi.mocked(isHiringLead).mockResolvedValue(true);
+    vi.mocked(isCore).mockResolvedValue(true);
     mockPrisma.decision.findUnique.mockResolvedValue({
       id: FINAL_ID,
       stage: "Final",
@@ -118,7 +118,7 @@ describe("Decision lineage (parentDecisionId)", () => {
   });
 
   it("delibs close: leaves parentDecisionId unset (no Draft predecessor exists)", async () => {
-    vi.mocked(isHiringLead).mockResolvedValue(false);
+    vi.mocked(isCore).mockResolvedValue(false);
     vi.mocked(isDomainLead).mockResolvedValue(true);
     mockPrisma.delibsSession.findUnique.mockResolvedValue({
       id: "session-1",

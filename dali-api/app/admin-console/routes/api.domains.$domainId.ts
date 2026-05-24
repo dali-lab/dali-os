@@ -11,6 +11,14 @@ const RELATION_LABELS: Record<string, string> = {
   cycleReviewers: "cycle reviewers",
   cycleInterviewers: "cycle interviewers",
   delibsSessions: "delibs sessions",
+  eligibilities: "member eligibilities",
+  projectAssignments: "project assignments",
+  projects: "project domains",
+  projectScopes: "project scopes",
+  projectRoleRequests: "project role requests",
+  partnerApplicationDomains: "partner applications",
+  tasks: "tasks",
+  mentorshipPairs: "mentorship pairs",
 };
 
 export type DomainUsageCounts = {
@@ -20,7 +28,33 @@ export type DomainUsageCounts = {
   cycleReviewers: number;
   cycleInterviewers: number;
   delibsSessions: number;
+  eligibilities: number;
+  projectAssignments: number;
+  projects: number;
+  projectScopes: number;
+  projectRoleRequests: number;
+  partnerApplicationDomains: number;
+  tasks: number;
+  mentorshipPairs: number;
 };
+
+// Prisma _count select shape — kept here so callers don't repeat it.
+export const DOMAIN_USAGE_COUNT_SELECT = {
+  challengeVersions: true,
+  applicationCycles: true,
+  domainLeadAssignments: true,
+  cycleReviewers: true,
+  cycleInterviewers: true,
+  delibsSessions: true,
+  eligibilities: true,
+  projectAssignments: true,
+  projects: true,
+  projectScopes: true,
+  projectRoleRequests: true,
+  partnerApplicationDomains: true,
+  tasks: true,
+  mentorshipPairs: true,
+} as const;
 
 export function describeDomainUsage(counts: DomainUsageCounts): string[] {
   return Object.entries(counts)
@@ -46,18 +80,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   const result = await prisma.$transaction(async (tx) => {
     const domain = await tx.domain.findUnique({
       where: { id: domainId },
-      include: {
-        _count: {
-          select: {
-            challengeVersions: true,
-            applicationCycles: true,
-            domainLeadAssignments: true,
-            cycleReviewers: true,
-            cycleInterviewers: true,
-            delibsSessions: true,
-          },
-        },
-      },
+      include: { _count: { select: DOMAIN_USAGE_COUNT_SELECT } },
     });
 
     if (!domain) return { kind: "not-found" as const };

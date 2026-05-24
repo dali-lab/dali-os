@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.projects.$id.tasks";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { isTaskStatus } from "../lib/task-board";
 
@@ -10,7 +10,7 @@ import { isTaskStatus } from "../lib/task-board";
 // Create a task on a project. Body: { title, status?, sprintId?, epicId? }.
 // status defaults to "Todo"; position is appended after the current max in
 // the target column so the new card lands last. Mirrors the project-edit
-// permission model (isHiringLead === Admin || Core).
+// permission model (isCore === Admin || Core).
 
 type Body = {
   title: string;
@@ -49,7 +49,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (request.method !== "POST") {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
-  if (!(await isHiringLead(auth.user.sub))) {
+  if (!(await isCore(auth.user.sub))) {
     return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
   }
 

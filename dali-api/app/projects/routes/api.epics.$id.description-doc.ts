@@ -2,7 +2,7 @@ import type { Route } from "./+types/api.epics.$id.description-doc";
 import { randomUUID } from "node:crypto";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 
 // POST /api/epics/:id/description-doc
@@ -17,7 +17,7 @@ import { withCors, handlePreflight } from "~/lib/cors";
 // not a Page row, no migration to a richer model. authorizeCollabDoc has an
 // `epic` branch that looks the column up here.
 //
-// Same edit gate as the rest of the epic API (isHiringLead === Admin || Core).
+// Same edit gate as the rest of the epic API (isCore === Admin || Core).
 
 export async function action({ request, params }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
@@ -31,7 +31,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       Response.json({ error: "Method not allowed" }, { status: 405 }),
     );
   }
-  if (!(await isHiringLead(auth.user.sub))) {
+  if (!(await isCore(auth.user.sub))) {
     return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
   }
 

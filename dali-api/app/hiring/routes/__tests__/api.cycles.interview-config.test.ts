@@ -8,7 +8,7 @@ vi.mock("~/lib/roles");
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
 import { action } from "~/hiring/routes/api.cycles.$cycleId.interview-config";
 
 const mockPrisma = prisma as unknown as {
@@ -36,7 +36,7 @@ beforeEach(() => {
     ok: true,
     user: { sub: HIRING_LEAD_ID, email: "lead@x.com", type: "user" },
   } as any);
-  vi.mocked(isHiringLead).mockResolvedValue(true);
+  vi.mocked(isCore).mockResolvedValue(true);
 });
 
 function makeRequest(body: unknown) {

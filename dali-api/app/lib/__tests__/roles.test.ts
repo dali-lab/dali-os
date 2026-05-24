@@ -22,6 +22,7 @@ const mockPrisma = prisma as unknown as {
   instructorAssignment: { findFirst: ReturnType<typeof vi.fn> };
   cycleReviewer: { findFirst: ReturnType<typeof vi.fn> };
   cycleInterviewer: { findFirst: ReturnType<typeof vi.fn> };
+  term: { findFirst: ReturnType<typeof vi.fn> };
 };
 
 beforeEach(() => {
@@ -35,6 +36,11 @@ beforeEach(() => {
   (mockPrisma as any).instructorAssignment = { findFirst: vi.fn() };
   (mockPrisma as any).cycleReviewer = { findFirst: vi.fn() };
   (mockPrisma as any).cycleInterviewer = { findFirst: vi.fn() };
+  // Core access scopes to the current Term; default to one being present so
+  // a Core assignment in setRoleFlags is treated as current-term Core.
+  (mockPrisma as any).term = {
+    findFirst: vi.fn().mockResolvedValue({ id: "term-1" }),
+  };
 });
 
 const CYCLE_ID = "cycle-1";

@@ -2,7 +2,7 @@ import type { Route } from "./+types/api.interviews.$id.reassign";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
 import { sendReassignmentEmails } from "~/hiring/lib/interview-emails";
@@ -21,7 +21,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     return Response.json({ error: "Method not allowed" }, { status: 405 });
   }
 
-  if (!(await isHiringLead(auth.user.sub))) {
+  if (!(await isCore(auth.user.sub))) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 

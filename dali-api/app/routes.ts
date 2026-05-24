@@ -33,11 +33,12 @@ export default [
     route("hiring/interviewer/interview/:interviewId", "hiring/routes/interviewer.interview.$interviewId.tsx"),
     route("hiring/analytics", "hiring/routes/analytics.tsx"),
 
-    // Admin console (top-level, not hiring)
+    // Operations (top-level, not hiring)
     route("admin-console", "admin-console/routes/admin-console.tsx"),
     route("admin-console/members", "admin-console/routes/admin-console.members.tsx"),
     route("admin-console/domains", "admin-console/routes/admin-console.domains.tsx"),
     route("admin-console/announcements", "admin-console/routes/admin-console.announcements.tsx"),
+    route("admin-console/activity", "admin-console/routes/admin-console.activity.tsx"),
 
     // Projects
     route("projects/list", "projects/routes/projects.list.tsx"),

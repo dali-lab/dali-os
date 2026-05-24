@@ -9,7 +9,7 @@ vi.mock("~/hiring/lib/cycles");
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
 import { autoCloseIfExpired, findOtherActiveCycleId } from "~/hiring/lib/cycles";
 import { action } from "~/hiring/routes/api.cycles.$cycleId.status";
 
@@ -39,7 +39,7 @@ beforeEach(() => {
     ok: true,
     user: { sub: HIRING_LEAD_ID, email: "lead@x.com", type: "user" },
   } as any);
-  vi.mocked(isHiringLead).mockResolvedValue(true);
+  vi.mocked(isCore).mockResolvedValue(true);
   vi.mocked(autoCloseIfExpired).mockResolvedValue(undefined as any);
   vi.mocked(findOtherActiveCycleId).mockResolvedValue(null);
 });

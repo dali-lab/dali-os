@@ -12,7 +12,7 @@ vi.mock("~/lib/db", () => ({
 
 vi.mock("~/lib/roles", () => ({
   isDomainLead: vi.fn().mockResolvedValue(false),
-  isHiringLead: vi.fn().mockResolvedValue(false),
+  isCore: vi.fn().mockResolvedValue(false),
 }));
 
 vi.mock("~/hiring/lib/confidentiality", () => ({
@@ -20,7 +20,7 @@ vi.mock("~/hiring/lib/confidentiality", () => ({
 }));
 
 import { prisma } from "~/lib/db";
-import { isDomainLead, isHiringLead } from "~/lib/roles";
+import { isDomainLead, isCore } from "~/lib/roles";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { authorizeCollabDoc } from "../collabAuth";
 
@@ -29,7 +29,7 @@ const mockPrisma = prisma as any;
 beforeEach(() => {
   vi.resetAllMocks();
   (isDomainLead as any).mockResolvedValue(false);
-  (isHiringLead as any).mockResolvedValue(false);
+  (isCore as any).mockResolvedValue(false);
   (getCycleConfidentialityState as any).mockResolvedValue({ status: "signed", activeVersionId: "v1" });
   (prisma as any).interview.findUnique.mockResolvedValue({ applicationCycleId: "cycle1" });
 });
@@ -79,7 +79,7 @@ describe("authorizeCollabDoc", () => {
         id: "r1",
         cycleReviewer: { userId: "other-user" },
       });
-      (isHiringLead as any).mockResolvedValue(true);
+      (isCore as any).mockResolvedValue(true);
 
       expect(await authorizeCollabDoc("user1", "review:r1:feedback")).toBe(true);
     });
@@ -105,7 +105,7 @@ describe("authorizeCollabDoc", () => {
 
     it("allows hiring leads even when not assigned", async () => {
       mockPrisma.interviewAssignment.findFirst.mockResolvedValue(null);
-      (isHiringLead as any).mockResolvedValue(true);
+      (isCore as any).mockResolvedValue(true);
 
       expect(await authorizeCollabDoc("user1", "interview:int1:notes")).toBe(true);
     });
@@ -127,7 +127,7 @@ describe("authorizeCollabDoc", () => {
         status: "unsigned",
         activeVersionId: "v1",
       });
-      (isHiringLead as any).mockResolvedValue(true);
+      (isCore as any).mockResolvedValue(true);
       expect(
         await authorizeCollabDoc("user1", "domainApplication:da1:prepNote"),
       ).toBe(false);
@@ -150,7 +150,7 @@ describe("authorizeCollabDoc", () => {
 
     it("allows a signed hiring lead", async () => {
       mockPrisma.domainApplication.findUnique.mockResolvedValue(found);
-      (isHiringLead as any).mockResolvedValue(true);
+      (isCore as any).mockResolvedValue(true);
       expect(
         await authorizeCollabDoc("user1", "domainApplication:da1:prepNote"),
       ).toBe(true);
@@ -170,7 +170,7 @@ describe("authorizeCollabDoc", () => {
 
     it("allows hiring leads when the epic exists", async () => {
       mockPrisma.epic.findFirst.mockResolvedValue({ id: "e1" });
-      (isHiringLead as any).mockResolvedValue(true);
+      (isCore as any).mockResolvedValue(true);
       expect(await authorizeCollabDoc("user1", "epic:abc:description")).toBe(true);
     });
   });

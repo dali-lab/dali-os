@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.projects.$id.epics";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 
 // POST /api/projects/:id/epics
@@ -11,7 +11,7 @@ import { withCors, handlePreflight } from "~/lib/cors";
 // status defaults to "Open"; position is appended after the current max.
 // startsAt/endsAt are optional ISO strings (nullable on the model); if both
 // are given, endsAt must be after startsAt.
-// Same permission model as project edit (isHiringLead === Admin || Core).
+// Same permission model as project edit (isCore === Admin || Core).
 
 const EPIC_STATUSES = ["Open", "InProgress", "Done", "Cancelled"] as const;
 type EpicStatus = (typeof EPIC_STATUSES)[number];
@@ -56,7 +56,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (request.method !== "POST") {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
-  if (!(await isHiringLead(auth.user.sub))) {
+  if (!(await isCore(auth.user.sub))) {
     return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
   }
 
