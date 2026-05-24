@@ -13,6 +13,7 @@ import { requireAuth } from "~/lib/auth";
 import { isHiringLead } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { initialsFromName } from "~/lib/display";
+import { resolvePhotoUrl } from "~/lib/photo";
 import { ViewToggle, useViewPreference } from "~/components/ViewToggle";
 import { TermFilter } from "~/components/TermFilter";
 import { resolveTermFilter } from "~/lib/terms";
@@ -94,14 +95,14 @@ export async function loader({ request }: Route.LoaderArgs) {
     },
   });
 
-  const rows: MemberRow[] = users.map((u) => ({
+  const rows: MemberRow[] = await Promise.all(users.map(async (u) => ({
     id: u.id,
     firstName: u.firstName,
     lastName: u.lastName,
     email: u.daliEmail ?? u.dartmouthEmail,
     pronouns: u.pronouns,
     classYear: u.classYear,
-    photoUrl: u.photoUrl,
+    photoUrl: await resolvePhotoUrl(u.photoUrl),
     // Core pills: one per distinct lead title (deduped across terms — a
     // "Hiring Lead" who held the title for three terms shows one chip). A Core
     // member with assignments but no title set still gets a plain "Core" pill
@@ -111,7 +112,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       domainName: e.domain.displayName,
       level: e.level,
     })),
-  }));
+  })));
 
   const canEdit = await isHiringLead(auth.user.sub);
 
