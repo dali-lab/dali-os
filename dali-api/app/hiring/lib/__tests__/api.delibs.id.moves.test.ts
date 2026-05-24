@@ -8,7 +8,7 @@ vi.mock("~/lib/roles");
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead, isDomainLead, hasCycleAccess } from "~/lib/roles";
+import { isCore, isDomainLead, hasCycleAccess } from "~/lib/roles";
 import { action } from "~/hiring/routes/api.delibs.$id.moves";
 
 const USER_ID = "user-1";
@@ -50,7 +50,7 @@ beforeEach(() => {
     ok: true,
     user: { sub: USER_ID },
   } as any);
-  vi.mocked(isHiringLead).mockResolvedValue(false);
+  vi.mocked(isCore).mockResolvedValue(false);
   vi.mocked(isDomainLead).mockResolvedValue(true);
   vi.mocked(hasCycleAccess).mockResolvedValue(true);
 });
@@ -166,7 +166,7 @@ describe("POST /api/hiring/delibs/:id/moves", () => {
   });
 
   it("returns 403 when caller is neither hiring lead nor domain lead", async () => {
-    vi.mocked(isHiringLead).mockResolvedValue(false);
+    vi.mocked(isCore).mockResolvedValue(false);
     vi.mocked(isDomainLead).mockResolvedValue(false);
 
     const res = await action({
@@ -238,7 +238,7 @@ describe("POST /api/hiring/delibs/:id/moves", () => {
   });
 
   it("returns 403 when the caller has a lead role but no access to the session's cycle", async () => {
-    vi.mocked(isHiringLead).mockResolvedValue(true);
+    vi.mocked(isCore).mockResolvedValue(true);
     vi.mocked(hasCycleAccess).mockResolvedValue(false);
 
     const res = await action({

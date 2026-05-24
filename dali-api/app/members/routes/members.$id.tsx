@@ -3,7 +3,7 @@ import { Form, Link, redirect, useActionData, useFetcher, useLoaderData, useNavi
 import type { Route } from "./+types/members.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isAdmin, isHiringLead } from "~/lib/roles";
+import { isAdmin, isCore } from "~/lib/roles";
 import { initialsFromName } from "~/lib/display";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { EditableSection } from "~/components/EditableSection";
@@ -81,7 +81,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // themselves.
   const admin = await isAdmin(auth.user.sub);
   const canEdit = admin || auth.user.sub === member.id;
-  const canManageEligibility = await isHiringLead(auth.user.sub);
+  const canManageEligibility = await isCore(auth.user.sub);
 
   const allDomains = await prisma.domain.findMany({
     where: { active: true },
@@ -121,7 +121,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   if (intent === "add-eligibility" || intent === "set-eligibility-level") {
     // Domain eligibility edits: Admin or Core only. A member cannot self-promote.
-    if (!(await isHiringLead(auth.user.sub))) {
+    if (!(await isCore(auth.user.sub))) {
       return { error: "You don't have permission to assign domains." };
     }
     const domainId = String(form.get("domainId") ?? "");
@@ -139,7 +139,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   if (intent === "remove-eligibility") {
-    if (!(await isHiringLead(auth.user.sub))) {
+    if (!(await isCore(auth.user.sub))) {
       return { error: "You don't have permission to remove domains." };
     }
     const eligibilityId = String(form.get("eligibilityId") ?? "");

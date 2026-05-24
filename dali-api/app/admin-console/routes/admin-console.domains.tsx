@@ -4,7 +4,7 @@ import type { Route } from "./+types/admin-console.domains";
 import { prisma } from "~/lib/db";
 import { ensureDomainGroup } from "~/lib/groups";
 import { requireAuth } from "~/lib/auth";
-import { isAdmin, isHiringLead, currentTerm } from "~/lib/roles";
+import { isAdmin, isCore, currentTerm } from "~/lib/roles";
 import { describeDomainUsage, DOMAIN_USAGE_COUNT_SELECT } from "./api.domains.$domainId";
 import { ALLOWED_LEVELS, parseLevel } from "~/admin-console/lib/eligibility";
 import {
@@ -28,7 +28,7 @@ export const meta: Route.MetaFunction = () => [{ title: "Domains Â· Operations Â
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
-  if (!(await isHiringLead(auth.user.sub))) return redirect("/admin-console/members");
+  if (!(await isCore(auth.user.sub))) return redirect("/admin-console/members");
   const viewerIsAdmin = await isAdmin(auth.user.sub);
 
   const [users, domains, term] = await Promise.all([
@@ -117,7 +117,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
-  if (!(await isHiringLead(auth.user.sub)))
+  if (!(await isCore(auth.user.sub)))
     return Response.json({ error: "Forbidden" }, { status: 403 });
 
   const formData = await request.formData();

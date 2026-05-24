@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.sprints.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 
 // POST   /api/sprints/:id — edit. Body: { name?, startsAt?, endsAt?, status?, epicId? }
@@ -9,7 +9,7 @@ import { withCors, handlePreflight } from "~/lib/cors";
 //                           sprintId nulled (back to backlog) so nothing is
 //                           orphaned or cascade-deleted.
 //
-// Same permission model as project edit (isHiringLead === Admin || Core).
+// Same permission model as project edit (isCore === Admin || Core).
 
 const SPRINT_STATUSES = ["Planned", "Active", "Closed"] as const;
 type SprintStatus = (typeof SPRINT_STATUSES)[number];
@@ -46,7 +46,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (request.method !== "POST" && request.method !== "DELETE") {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
-  if (!(await isHiringLead(auth.user.sub))) {
+  if (!(await isCore(auth.user.sub))) {
     return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
   }
 

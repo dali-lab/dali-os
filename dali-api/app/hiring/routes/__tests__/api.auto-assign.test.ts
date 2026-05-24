@@ -11,7 +11,7 @@ vi.mock("~/hiring/lib/confidentiality", () => ({
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead, isDomainLead } from "~/lib/roles";
+import { isCore, isDomainLead } from "~/lib/roles";
 import { action } from "~/hiring/routes/api.cycles.$cycleId.domains.$domainId.auto-assign";
 
 const USER_ID = "user-hl";
@@ -27,7 +27,7 @@ beforeEach(() => {
     ok: true,
     user: { sub: USER_ID, email: "lead@x.com", type: "user" },
   } as any);
-  vi.mocked(isHiringLead).mockResolvedValue(true);
+  vi.mocked(isCore).mockResolvedValue(true);
   vi.mocked(isDomainLead).mockResolvedValue(false);
 
   mockPrisma.applicationCycle = {

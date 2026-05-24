@@ -3,7 +3,7 @@ import { Form, Link, redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/lead";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
 import { ChevronRight, ChevronDown, Plus, X } from "lucide-react";
 
 const STATUS_LABELS: Record<string, string> = {
@@ -25,7 +25,7 @@ export const meta: Route.MetaFunction = () => [{ title: "Hiring lead · DALI OS"
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
-  if (!(await isHiringLead(auth.user.sub))) return redirect("/");
+  if (!(await isCore(auth.user.sub))) return redirect("/");
 
   const cycles = await prisma.applicationCycle.findMany({
     include: {
@@ -48,7 +48,7 @@ export async function action({ request }: Route.ActionArgs) {
 
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
-  if (!(await isHiringLead(auth.user.sub))) return redirect("/");
+  if (!(await isCore(auth.user.sub))) return redirect("/");
   const adminUser = await prisma.user.findUniqueOrThrow({
     where: { id: auth.user.sub },
   });

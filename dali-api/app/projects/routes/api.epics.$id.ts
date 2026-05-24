@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.epics.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 
 // POST   /api/epics/:id  — edit. Body: { title?, status?, targetTermId? }
@@ -9,7 +9,7 @@ import { withCors, handlePreflight } from "~/lib/cors";
 //                          their epicId nulled (both are nullable links) so
 //                          nothing is orphaned or cascade-deleted.
 //
-// Same permission model as project edit (isHiringLead === Admin || Core).
+// Same permission model as project edit (isCore === Admin || Core).
 
 const EPIC_STATUSES = ["Open", "InProgress", "Done", "Cancelled"] as const;
 type EpicStatus = (typeof EPIC_STATUSES)[number];
@@ -52,7 +52,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (request.method !== "POST" && request.method !== "DELETE") {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
-  if (!(await isHiringLead(auth.user.sub))) {
+  if (!(await isCore(auth.user.sub))) {
     return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
   }
 

@@ -74,7 +74,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // cover for this cycle — hitting a URL outside their domain bounces back
   // to the list rather than leaking content.
   const roles = await getUserRoles(auth.user.sub);
-  if (!roles.isHiringLead && !roles.isDomainLead) {
+  if (!roles.isCore && !roles.isDomainLead) {
     const assigned = await prisma.cycleReviewer.findFirst({
       where: {
         userId: auth.user.sub,

@@ -10,7 +10,7 @@ import {
 } from "react-router";
 import type { Route } from "./+types/members";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { initialsFromName } from "~/lib/display";
 import { resolvePhotoUrl } from "~/lib/photo";
@@ -114,7 +114,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     })),
   })));
 
-  const canEdit = await isHiringLead(auth.user.sub);
+  const canEdit = await isCore(auth.user.sub);
 
   return {
     rows,
@@ -157,7 +157,7 @@ export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
   if (auth.user.type === "applicant") return redirect("/portal");
-  if (!(await isHiringLead(auth.user.sub))) {
+  if (!(await isCore(auth.user.sub))) {
     return { error: "You don't have permission to add members." };
   }
 

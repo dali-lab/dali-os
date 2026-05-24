@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.partner-application-domains.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 
 // POST   /api/partner-application-domains/:id — update expected scope.
@@ -10,7 +10,7 @@ import { withCors, handlePreflight } from "~/lib/cors";
 //          application (hard delete; the row is pure join+scope data, nothing
 //          references it).
 //
-// Same permission model as partner-application edit (isHiringLead === Admin ||
+// Same permission model as partner-application edit (isCore === Admin ||
 // Core).
 
 type Body = {
@@ -40,7 +40,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       Response.json({ error: "Method not allowed" }, { status: 405 }),
     );
   }
-  if (!(await isHiringLead(auth.user.sub))) {
+  if (!(await isCore(auth.user.sub))) {
     return withCors(
       request,
       Response.json({ error: "Forbidden" }, { status: 403 }),

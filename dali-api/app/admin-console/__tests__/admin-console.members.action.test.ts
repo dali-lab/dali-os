@@ -8,7 +8,7 @@ vi.mock("~/lib/roles");
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isAdmin, isHiringLead, currentTerm } from "~/lib/roles";
+import { isAdmin, isCore, currentTerm } from "~/lib/roles";
 import { action } from "~/admin-console/routes/admin-console.members";
 
 const CORE_ID = "core-1";
@@ -55,7 +55,7 @@ function asCore() {
     ok: true,
     user: { sub: CORE_ID, email: "c@x.com", type: "user" },
   } as any);
-  vi.mocked(isHiringLead).mockResolvedValue(true);
+  vi.mocked(isCore).mockResolvedValue(true);
   vi.mocked(isAdmin).mockResolvedValue(false);
 }
 
@@ -64,7 +64,7 @@ function asAdmin() {
     ok: true,
     user: { sub: ADMIN_ID, email: "a@x.com", type: "user" },
   } as any);
-  vi.mocked(isHiringLead).mockResolvedValue(true);
+  vi.mocked(isCore).mockResolvedValue(true);
   vi.mocked(isAdmin).mockResolvedValue(true);
 }
 
@@ -73,7 +73,7 @@ function asOutsider() {
     ok: true,
     user: { sub: "rando-1", email: "r@x.com", type: "user" },
   } as any);
-  vi.mocked(isHiringLead).mockResolvedValue(false);
+  vi.mocked(isCore).mockResolvedValue(false);
   vi.mocked(isAdmin).mockResolvedValue(false);
 }
 

@@ -2,7 +2,7 @@ import type { Route } from "./+types/api.domain-applications.$id.decisions";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead, isDomainLead, hasCycleAccess } from "~/lib/roles";
+import { isCore, isDomainLead, hasCycleAccess } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
 
@@ -79,11 +79,11 @@ export async function action({ request, params }: Route.ActionArgs) {
   // Draft/Final = domain lead or hiring lead
   // Released = hiring lead only
   if (stage === "Released") {
-    if (!(await isHiringLead(auth.user.sub))) {
+    if (!(await isCore(auth.user.sub))) {
       return Response.json({ error: "Only hiring leads can release decisions" }, { status: 403 });
     }
   } else {
-    const hiringLead = await isHiringLead(auth.user.sub);
+    const hiringLead = await isCore(auth.user.sub);
     const domainLead = await isDomainLead(auth.user.sub);
     if (!hiringLead && !domainLead) {
       return Response.json({ error: "Forbidden" }, { status: 403 });

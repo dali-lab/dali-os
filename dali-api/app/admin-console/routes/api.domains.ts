@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { ensureDomainGroup } from "~/lib/groups";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead, isDomainLead, isAdmin } from "~/lib/roles";
+import { isCore, isDomainLead, isAdmin } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 
@@ -19,7 +19,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!auth.ok) return withCors(request, auth.response);
 
   const [hl, dl, admin] = await Promise.all([
-    isHiringLead(auth.user.sub),
+    isCore(auth.user.sub),
     isDomainLead(auth.user.sub),
     isAdmin(auth.user.sub),
   ]);

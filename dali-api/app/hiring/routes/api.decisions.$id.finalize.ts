@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.decisions.$id.finalize";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead, isDomainLead } from "~/lib/roles";
+import { isCore, isDomainLead } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
 
@@ -13,7 +13,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     return Response.json({ error: "Method not allowed" }, { status: 405 });
   }
 
-  const hiringLead = await isHiringLead(auth.user.sub);
+  const hiringLead = await isCore(auth.user.sub);
   const domainLead = await isDomainLead(auth.user.sub);
   if (!hiringLead && !domainLead) {
     return Response.json({ error: "Forbidden" }, { status: 403 });

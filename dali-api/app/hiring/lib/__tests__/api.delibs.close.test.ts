@@ -8,7 +8,7 @@ vi.mock("~/lib/roles");
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead, isDomainLead } from "~/lib/roles";
+import { isCore, isDomainLead } from "~/lib/roles";
 import { action } from "~/hiring/routes/api.delibs.$id";
 
 const USER_ID = "user-hl";
@@ -40,7 +40,7 @@ beforeEach(() => {
   (mockPrisma as any).$transaction = vi.fn(async (cb: any) => cb(mockTx));
 
   vi.mocked(requireAuth).mockResolvedValue({ ok: true, user: { sub: USER_ID } } as any);
-  vi.mocked(isHiringLead).mockResolvedValue(true);
+  vi.mocked(isCore).mockResolvedValue(true);
   vi.mocked(isDomainLead).mockResolvedValue(false);
   mockPrisma.dALIMember.findUnique.mockResolvedValue({ id: MEMBER_ID, userId: USER_ID });
 });

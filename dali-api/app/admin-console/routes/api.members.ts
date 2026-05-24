@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.members";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isAdmin, isHiringLead, isDomainLead } from "~/lib/roles";
+import { isAdmin, isCore, isDomainLead } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 
 // Phase 2: returns lab members rooted at User. Role shape derives from
@@ -15,7 +15,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!auth.ok) return withCors(request, auth.response);
   const [admin, hiringLead, domainLead] = await Promise.all([
     isAdmin(auth.user.sub),
-    isHiringLead(auth.user.sub),
+    isCore(auth.user.sub),
     isDomainLead(auth.user.sub),
   ]);
   if (!admin && !hiringLead && !domainLead) return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));

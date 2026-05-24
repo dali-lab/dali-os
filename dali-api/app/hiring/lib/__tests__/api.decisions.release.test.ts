@@ -9,7 +9,7 @@ vi.mock("~/lib/gmail");
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
 import { sendEmail } from "~/lib/gmail";
 import { action } from "~/hiring/routes/api.decisions.$id.release";
 
@@ -32,7 +32,7 @@ const CYCLE_ID = "cycle-1";
 
 function setupAuth() {
   vi.mocked(requireAuth).mockResolvedValue({ ok: true, user: { sub: USER_ID } } as any);
-  vi.mocked(isHiringLead).mockResolvedValue(true);
+  vi.mocked(isCore).mockResolvedValue(true);
   mockPrisma.dALIMember.findUnique.mockResolvedValue({ id: MEMBER_ID, userId: USER_ID });
 }
 
@@ -207,7 +207,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
 
   it("returns 403 when the caller is not a hiring lead", async () => {
     vi.mocked(requireAuth).mockResolvedValue({ ok: true, user: { sub: USER_ID } } as any);
-    vi.mocked(isHiringLead).mockResolvedValue(false);
+    vi.mocked(isCore).mockResolvedValue(false);
 
     const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
     expect(res.status).toBe(403);

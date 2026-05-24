@@ -3,7 +3,7 @@ import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/admin-console.members";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isAdmin, isHiringLead, currentTerm } from "~/lib/roles";
+import { isAdmin, isCore, currentTerm } from "~/lib/roles";
 import { Users, Check } from "lucide-react";
 import {
   AdminToggle,
@@ -26,7 +26,7 @@ export const meta: Route.MetaFunction = () => [{ title: "Roles · Operations · 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
-  if (!(await isHiringLead(auth.user.sub))) return redirect("/");
+  if (!(await isCore(auth.user.sub))) return redirect("/");
   const viewerIsAdmin = await isAdmin(auth.user.sub);
 
   const [users, domains, term] = await Promise.all([
@@ -78,7 +78,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
-  if (!(await isHiringLead(auth.user.sub)))
+  if (!(await isCore(auth.user.sub)))
     return Response.json({ error: "Forbidden" }, { status: 403 });
 
   const formData = await request.formData();

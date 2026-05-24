@@ -15,7 +15,7 @@ import {
 import type { Route } from "./+types/partners.applications";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
-import { canViewStaffing, isHiringLead } from "~/lib/roles";
+import { canViewStaffing, isCore } from "~/lib/roles";
 import {
   PARTNER_APPLICATION_STATUSES as STATUSES,
   PARTNER_APPLICATION_STATUS_LABELS as STATUS_LABEL,
@@ -89,7 +89,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),
-    isHiringLead(auth.user.sub),
+    isCore(auth.user.sub),
     // Required headcount = the slots staffing must fill, per term/domain.
     // Archived projects no longer need staffing, so exclude them.
     prisma.projectRoleRequest.findMany({
@@ -150,7 +150,7 @@ export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
   if (auth.user.type === "applicant") return redirect("/portal");
-  if (!(await isHiringLead(auth.user.sub))) {
+  if (!(await isCore(auth.user.sub))) {
     return { error: "You don't have permission to create applications." };
   }
 

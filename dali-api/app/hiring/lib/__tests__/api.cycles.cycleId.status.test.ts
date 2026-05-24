@@ -9,7 +9,7 @@ vi.mock("~/hiring/lib/cycles");
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
 import { findOtherActiveCycleId } from "~/hiring/lib/cycles";
 import { action } from "~/hiring/routes/api.cycles.$cycleId.status";
 
@@ -30,7 +30,7 @@ beforeEach(() => {
   // Pass-through $transaction so inner calls hit the same mocks.
   (mockPrisma as any).$transaction = vi.fn(async (fn: any) => fn(mockPrisma));
   vi.mocked(requireAuth).mockResolvedValue({ ok: true, user: { sub: USER_ID } } as any);
-  vi.mocked(isHiringLead).mockResolvedValue(true);
+  vi.mocked(isCore).mockResolvedValue(true);
   vi.mocked(findOtherActiveCycleId).mockResolvedValue(null);
 });
 

@@ -2,7 +2,7 @@ import { redirect } from 'react-router'
 import type { Route } from './+types/email-templates.$id'
 import { prisma } from '~/lib/db'
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead } from '~/lib/roles'
+import { isCore } from '~/lib/roles'
 import { EmailTemplateDetail } from '~/hiring/components/EmailTemplateDetail'
 
 export const meta: Route.MetaFunction = ({ data }) => {
@@ -13,7 +13,7 @@ export const meta: Route.MetaFunction = ({ data }) => {
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request)
   if (!auth.ok) return redirect('/login')
-  if (!(await isHiringLead(auth.user.sub))) return redirect('/')
+  if (!(await isCore(auth.user.sub))) return redirect('/')
 
   const template = await prisma.emailTemplate.findUniqueOrThrow({
     where: { id: params.id },
@@ -31,7 +31,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request)
   if (!auth.ok) return redirect('/login')
-  if (!(await isHiringLead(auth.user.sub))) return redirect('/')
+  if (!(await isCore(auth.user.sub))) return redirect('/')
 
   const member = await prisma.dALIMember.findUnique({
     where: { userId: auth.user.sub },

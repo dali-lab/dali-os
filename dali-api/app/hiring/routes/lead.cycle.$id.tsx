@@ -3,7 +3,7 @@ import { Form, Link, useParams, useLoaderData, useSearchParams, redirect } from 
 import type { Route } from "./+types/lead.cycle.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
 import { renderEmail } from "~/lib/email";
 import {
   TEMPLATE_VARIABLES,
@@ -138,7 +138,7 @@ export const meta: Route.MetaFunction = ({ data }) => {
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
-  if (!(await isHiringLead(auth.user.sub))) return redirect("/");
+  if (!(await isCore(auth.user.sub))) return redirect("/");
 
   // InternToFull cycles use a separate, simpler setup page (no challenges,
   // no interview config). Forward there before any of the Standard-cycle
@@ -455,7 +455,7 @@ async function reopenIfNeeded(
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
-  if (!(await isHiringLead(auth.user.sub))) return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
+  if (!(await isCore(auth.user.sub))) return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
 
   const user = await prisma.user.findUnique({ where: { id: auth.user.sub } });
   if (!user) return new Response(JSON.stringify({ error: "User not found" }), { status: 401 });

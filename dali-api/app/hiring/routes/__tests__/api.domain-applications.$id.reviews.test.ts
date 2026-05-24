@@ -8,7 +8,7 @@ vi.mock("~/lib/roles");
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
 import { action } from "~/hiring/routes/api.domain-applications.$id.reviews";
 
 const mockPrisma = prisma as unknown as {
@@ -63,7 +63,7 @@ beforeEach(() => {
     ok: true,
     user: { sub: USER_ID, email: "u@x.com", type: "user" },
   } as any);
-  vi.mocked(isHiringLead).mockResolvedValue(false);
+  vi.mocked(isCore).mockResolvedValue(false);
 });
 
 describe("POST /api/hiring/domain-applications/:id/reviews", () => {
@@ -105,7 +105,7 @@ describe("POST /api/hiring/domain-applications/:id/reviews", () => {
   });
 
   it("allows a hiring lead to assign a reviewer (201)", async () => {
-    vi.mocked(isHiringLead).mockResolvedValue(true);
+    vi.mocked(isCore).mockResolvedValue(true);
 
     const res = await action({
       request: makeRequest(),
@@ -175,7 +175,7 @@ describe("POST /api/hiring/domain-applications/:id/reviews", () => {
   });
 
   it("returns 409 when the domain application is deselected", async () => {
-    vi.mocked(isHiringLead).mockResolvedValue(true);
+    vi.mocked(isCore).mockResolvedValue(true);
     mockPrisma.domainApplication.findUniqueOrThrow.mockResolvedValueOnce({
       id: DA_ID,
       selected: false,
@@ -194,7 +194,7 @@ describe("POST /api/hiring/domain-applications/:id/reviews", () => {
   });
 
   it("returns 400 when the cycle has no general rubric set", async () => {
-    vi.mocked(isHiringLead).mockResolvedValue(true);
+    vi.mocked(isCore).mockResolvedValue(true);
     mockPrisma.applicationCycle.findUniqueOrThrow.mockResolvedValueOnce({
       id: CYCLE_ID,
       generalRubricVersionId: null,
@@ -211,7 +211,7 @@ describe("POST /api/hiring/domain-applications/:id/reviews", () => {
   });
 
   it("returns 400 when the domain has no rubric set for this cycle", async () => {
-    vi.mocked(isHiringLead).mockResolvedValue(true);
+    vi.mocked(isCore).mockResolvedValue(true);
     mockPrisma.domainApplicationCycle.findUnique.mockResolvedValueOnce(null);
 
     const res = await action({
