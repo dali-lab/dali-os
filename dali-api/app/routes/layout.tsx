@@ -5,6 +5,7 @@ import { requireAuth } from "~/lib/auth";
 import { getUserRoles } from '~/lib/roles'
 import { getActiveCycle } from '~/hiring/lib/cycles'
 import { prisma } from '~/lib/db'
+import { resolvePhotoUrl } from '~/lib/photo'
 import type { Route } from './+types/layout'
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -37,6 +38,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     where: { id: auth.user.sub },
     select: { photoUrl: true },
   })
+  const photoUrl = await resolvePhotoUrl(me?.photoUrl)
 
   // Detect iframe context from Sec-Fetch-Dest. Modern browsers (Chrome, Firefox,
   // Safari 16+) set this automatically and it survives server-side redirects,
@@ -44,7 +46,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const fetchDest = request.headers.get('sec-fetch-dest')
   const isEmbedded = fetchDest === 'iframe' || fetchDest === 'frame'
 
-  return { user: auth.user, photoUrl: me?.photoUrl ?? null, isHiringLead: hiringLead, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, isEmbedded }
+  return { user: auth.user, photoUrl, isHiringLead: hiringLead, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, isEmbedded }
 }
 
 export default function AppLayoutRoute() {

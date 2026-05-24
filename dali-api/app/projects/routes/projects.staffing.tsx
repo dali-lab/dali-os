@@ -3,6 +3,7 @@ import type { Route } from "./+types/projects.staffing";
 import { requireAuth } from "~/lib/auth";
 import { canManageStaffing, canViewStaffing } from "~/lib/roles";
 import { prisma } from "~/lib/db";
+import { resolvePhotoUrl } from "~/lib/photo";
 import { ensureStaffingCycle } from "../lib/staffing-cycle";
 import { getSlotBinding } from "../lib/form-slots";
 import { StaffingBoard } from "../components/StaffingBoard";
@@ -138,12 +139,12 @@ export async function loader({ request }: Route.LoaderArgs) {
     prefsByUser.set(p.userId, list);
   }
 
-  const members: MemberInput[] = users.map((u) => ({
+  const members: MemberInput[] = await Promise.all(users.map(async (u) => ({
     userId: u.id,
     firstName: u.firstName,
     lastName: u.lastName,
     email: u.daliEmail ?? u.dartmouthEmail,
-    photoUrl: u.photoUrl,
+    photoUrl: await resolvePhotoUrl(u.photoUrl),
     isAdmin: u.adminMembership !== null,
     coreTitles: Array.from(
       new Set(u.coreAssignments.map((a) => a.leadTitle).filter((t): t is string => !!t)),
@@ -152,7 +153,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       .map((e) => ({ domainName: e.domain.displayName, level: e.level as Level }))
       .sort((a, b) => a.domainName.localeCompare(b.domainName)),
     preferences: prefsByUser.get(u.id) ?? [],
-  }));
+  })));
 
   const initialAssignments: Assignment[] = assignmentRows.map((a) => ({
     userId: a.userId,
