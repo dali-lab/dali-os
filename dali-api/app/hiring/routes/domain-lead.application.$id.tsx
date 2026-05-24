@@ -6,8 +6,8 @@ import { requireAuth } from "~/lib/auth";
 import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
 import { presignAnswers } from "~/hiring/lib/presign";
 import { ArrowLeft, ChevronDown } from "lucide-react";
-import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
-import { AnswerDisplay } from "~/hiring/components/ApplicationAnswers";
+import { ApplicationViewer } from "~/hiring/components/ApplicationViewer";
+import { ReviewSummary } from "~/hiring/components/ReviewSummary";
 import {
   inferDomainApplicationStatus,
   domainApplicationStatusInclude,
@@ -181,12 +181,41 @@ export default function DomainLeadApplicationView() {
     useLoaderData<typeof loader>() as any;
 
   const generalQuestions: any[] = application.generalChallengeVersion?.questions ?? [];
-  const challengeQuestions: any[] = da.challengeVersion.questions ?? [];
+  const challengeQuestions: any[] = da.challengeVersion?.questions ?? [];
   const reviews: any[] = da.reviews ?? [];
   const decisions: any[] = da.decisions ?? [];
   const interview = da.interviews?.[0] ?? null;
   const statusInfo = STATUS_BADGE[inferredStatus] ?? STATUS_BADGE.Pending;
   const allCriteria = [...(generalRubricCriteria ?? []), ...(domainRubricCriteria ?? [])];
+
+  const questionLabels: Record<string, string> = {};
+  for (const q of [...generalQuestions, ...challengeQuestions]) {
+    if (q?.key) questionLabels[q.key] = q.data?.label ?? q.key;
+  }
+  const viewerApplication = {
+    answers: application.answers ?? {},
+    generalChallengeVersion: application.generalChallengeVersion
+      ? {
+          questions: application.generalChallengeVersion.questions ?? [],
+          description: application.generalChallengeVersion.description,
+        }
+      : null,
+    domainApplications: [
+      {
+        id: da.id,
+        answers: da.answers ?? {},
+        challengeVersion: da.challengeVersion
+          ? {
+              questions: da.challengeVersion.questions ?? [],
+              description: da.challengeVersion.description,
+              domain: da.challengeVersion.domain ?? { name: "Domain" },
+              challenge: da.challengeVersion.challenge,
+            }
+          : null,
+        domain: da.domain,
+      },
+    ],
+  };
 
   return (
     <div className="space-y-6 pb-12">
@@ -214,44 +243,12 @@ export default function DomainLeadApplicationView() {
       {/* Two-column layout */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left: Application content */}
-        <div className="lg:col-span-2 space-y-6">
-          {generalQuestions.length > 0 && (
-            <section className="bg-card border border-border rounded-lg p-6 space-y-5">
-              <h2 className="text-lg font-bold text-foreground">General Application</h2>
-              {!isEmptyDoc(application.generalChallengeVersion?.description) && (
-                <div className="border border-border rounded-md bg-muted/30 px-4 py-3">
-                  <RichTextViewer content={application.generalChallengeVersion.description} />
-                </div>
-              )}
-              {generalQuestions.map((q: any) => (
-                <div key={q.key}>
-                  <div className="text-sm font-medium text-foreground/80 mb-1">{q.data.label}</div>
-                  <div className="text-sm text-foreground bg-muted/50 rounded p-3">
-                    <AnswerDisplay question={q} answer={application.answers?.[q.key] ?? ""} />
-                  </div>
-                </div>
-              ))}
-            </section>
-          )}
-
-          <section className="bg-card border border-border rounded-lg p-6 space-y-5">
-            <h2 className="text-lg font-bold text-foreground">
-              {da.challengeVersion.challenge?.name ?? `${da.challengeVersion.domain?.name} Challenge`}
-            </h2>
-            {!isEmptyDoc(da.challengeVersion.description) && (
-              <div className="border border-border rounded-md bg-muted/30 px-4 py-3">
-                <RichTextViewer content={da.challengeVersion.description} />
-              </div>
-            )}
-            {challengeQuestions.map((q: any) => (
-              <div key={q.key}>
-                <div className="text-sm font-medium text-foreground/80 mb-1">{q.data.label}</div>
-                <div className="text-sm text-foreground bg-muted/50 rounded p-3">
-                  <AnswerDisplay question={q} answer={da.answers?.[q.key] ?? ""} />
-                </div>
-              </div>
-            ))}
-          </section>
+        <div className="lg:col-span-2">
+          <ApplicationViewer
+            application={viewerApplication}
+            questionLabels={questionLabels}
+            readOnly
+          />
         </div>
 
         {/* Right: Context sidebar */}
@@ -394,15 +391,11 @@ function ReviewCard({ review, criteria }: { review: any; criteria: any[] }) {
         </button>
       )}
       {expanded && (
-        <div className="mt-2 space-y-2">
-          {review.feedback && (
-            <p className="text-xs text-muted-foreground bg-muted/50 rounded p-2">{review.feedback}</p>
-          )}
-          {review.rejectionRationale && (
-            <p className="text-xs text-red-600 bg-red-50 rounded p-2">
-              <span className="font-medium">Rejection rationale:</span> {review.rejectionRationale}
-            </p>
-          )}
+        <div className="mt-2">
+          <ReviewSummary
+            feedback={review.feedback}
+            rejectionRationale={review.rejectionRationale}
+          />
         </div>
       )}
     </div>

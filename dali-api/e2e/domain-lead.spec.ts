@@ -42,7 +42,7 @@ test.describe('domain lead workflow', () => {
     // Detail page also opens inside the Domain section iframe.
     const frame = domainFrame(page);
     await expect(frame.getByRole('heading', { name: 'Alice Johnson' })).toBeVisible();
-    await expect(frame.getByText('General Application')).toBeVisible();
+    await expect(frame.getByText('General Information')).toBeVisible();
     await expect(frame.getByText('Engineering Challenge')).toBeVisible();
   });
 

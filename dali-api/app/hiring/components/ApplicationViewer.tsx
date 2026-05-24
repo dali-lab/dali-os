@@ -358,7 +358,7 @@ export interface ApplicationViewerProps {
         questions: unknown
         description?: unknown
         domain: { name: string; displayName?: string }
-        challenge: { name: string }
+        challenge?: { name: string }
       } | null
       domain?: { name: string; displayName?: string } | null
     }>
