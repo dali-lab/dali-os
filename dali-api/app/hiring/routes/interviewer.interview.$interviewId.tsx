@@ -21,8 +21,8 @@ import { CollaborativeEditor } from '~/components/CollaborativeEditor'
 import { PresenceProvider } from '~/components/collab/PresenceProvider'
 import { PresenceBar } from '~/components/collab/PresenceBar'
 import { useSharedString } from '~/components/collab/useSharedString'
-import { RichTextViewer, isEmptyDoc } from '~/components/RichTextViewer'
-import { AnswerDisplay } from '~/hiring/components/ApplicationAnswers'
+import { ApplicationViewer } from '~/hiring/components/ApplicationViewer'
+import { ReviewSummary } from '~/hiring/components/ReviewSummary'
 import type { Route } from './+types/interviewer.interview.$interviewId'
 import type { Question } from '~/types'
 
@@ -187,6 +187,34 @@ export default function InterviewDetailPage() {
   const criteriaByKey: Record<string, { label: string }> = {}
   for (const c of rubricCriteria as any[]) {
     if (c?.key) criteriaByKey[c.key] = { label: c.label ?? c.key }
+  }
+
+  const questionLabels: Record<string, string> = {}
+  for (const q of [...generalQuestions, ...domainQuestions]) {
+    if (q?.key) questionLabels[q.key] = q.data?.label ?? q.key
+  }
+  const viewerApplication = {
+    answers: application?.answers ?? {},
+    generalChallengeVersion: application?.generalChallengeVersion
+      ? {
+          questions: application.generalChallengeVersion.questions ?? [],
+          description: application.generalChallengeVersion.description,
+        }
+      : null,
+    domainApplications: [
+      {
+        id: interview.domainApplication?.id,
+        answers: interview.domainApplication?.answers ?? {},
+        challengeVersion: interview.domainApplication?.challengeVersion
+          ? {
+              questions: interview.domainApplication.challengeVersion.questions ?? [],
+              description: interview.domainApplication.challengeVersion.description,
+              domain: interview.domainApplication.challengeVersion.domain ?? { name: 'Domain' },
+            }
+          : null,
+        domain: null,
+      },
+    ],
   }
 
   // Recommendation dropdown — synced live between interviewers via a Y.Map
@@ -400,51 +428,12 @@ export default function InterviewDetailPage() {
           />
         </button>
         {showApplication && (
-          <div className="px-6 pb-6 space-y-6 border-t border-border pt-6">
-            {generalQuestions.length > 0 && (
-              <div className="space-y-4">
-                <h3 className="text-sm font-semibold text-foreground/80 uppercase tracking-wide">
-                  General Application
-                </h3>
-                {!isEmptyDoc(application?.generalChallengeVersion?.description) && (
-                  <div className="border border-border rounded-md bg-muted/30 px-4 py-3">
-                    <RichTextViewer content={application.generalChallengeVersion.description} />
-                  </div>
-                )}
-                {generalQuestions.map((q: any) => (
-                  <div key={q.key}>
-                    <div className="text-sm font-medium text-foreground/80 mb-1">
-                      {q.data?.label ?? q.key}
-                    </div>
-                    <div className="text-sm text-foreground bg-muted/50 rounded p-3">
-                      <AnswerDisplay question={q} answer={application?.answers?.[q.key] ?? ''} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-            {domainQuestions.length > 0 && (
-              <div className="space-y-4">
-                <h3 className="text-sm font-semibold text-foreground/80 uppercase tracking-wide">
-                  {domain} Challenge
-                </h3>
-                {!isEmptyDoc(interview.domainApplication?.challengeVersion?.description) && (
-                  <div className="border border-border rounded-md bg-muted/30 px-4 py-3">
-                    <RichTextViewer content={interview.domainApplication.challengeVersion.description} />
-                  </div>
-                )}
-                {domainQuestions.map((q: any) => (
-                  <div key={q.key}>
-                    <div className="text-sm font-medium text-foreground/80 mb-1">
-                      {q.data?.label ?? q.key}
-                    </div>
-                    <div className="text-sm text-foreground bg-muted/50 rounded p-3">
-                      <AnswerDisplay question={q} answer={interview.domainApplication?.answers?.[q.key] ?? ''} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+          <div className="px-6 pb-6 border-t border-border pt-6">
+            <ApplicationViewer
+              application={viewerApplication}
+              questionLabels={questionLabels}
+              readOnly
+            />
           </div>
         )}
       </div>
@@ -479,75 +468,20 @@ export default function InterviewDetailPage() {
                     m?.firstName && m?.lastName
                       ? `${m.firstName} ${m.lastName}`
                       : m?.daliEmail ?? 'Reviewer'
-                  const scoreEntries = Object.entries(
-                    (review.scores as Record<string, number>) ?? {},
-                  )
                   return (
                     <div
                       key={review.id}
-                      className="border border-border rounded-lg p-4 space-y-3"
+                      className="border border-border rounded-lg p-4"
                     >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <div className="text-sm font-semibold text-foreground">
-                            {reviewerName}
-                          </div>
-                          {review.submittedAt && (
-                            <div className="text-xs text-muted-foreground">
-                              Submitted{' '}
-                              {new Date(
-                                review.submittedAt,
-                              ).toLocaleDateString(undefined, {
-                                month: 'short',
-                                day: 'numeric',
-                                year: 'numeric',
-                              })}
-                            </div>
-                          )}
-                        </div>
-                        {review.overallRecommendation && (
-                          <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                            {review.overallRecommendation}
-                          </span>
-                        )}
-                      </div>
-                      {scoreEntries.length > 0 && (
-                        <div className="grid grid-cols-2 gap-2">
-                          {scoreEntries.map(([key, score]) => (
-                            <div
-                              key={key}
-                              className="flex items-center justify-between text-xs bg-muted/50 rounded px-2 py-1"
-                            >
-                              <span className="text-muted-foreground">
-                                {criteriaByKey[key]?.label ?? key}
-                              </span>
-                              <span className="font-semibold text-foreground">
-                                {score}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      {review.feedback && (
-                        <div>
-                          <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
-                            Feedback
-                          </div>
-                          <p className="text-sm text-foreground/80 whitespace-pre-wrap bg-muted/50 rounded p-3">
-                            {review.feedback}
-                          </p>
-                        </div>
-                      )}
-                      {review.rejectionRationale && (
-                        <div>
-                          <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
-                            Rejection rationale
-                          </div>
-                          <p className="text-sm text-foreground/80 whitespace-pre-wrap bg-muted/50 rounded p-3">
-                            {review.rejectionRationale}
-                          </p>
-                        </div>
-                      )}
+                      <ReviewSummary
+                        reviewerName={reviewerName}
+                        submittedAt={review.submittedAt}
+                        overallRecommendation={review.overallRecommendation}
+                        scores={review.scores}
+                        criteria={criteriaByKey}
+                        feedback={review.feedback}
+                        rejectionRationale={review.rejectionRationale}
+                      />
                     </div>
                   )
                 })}
