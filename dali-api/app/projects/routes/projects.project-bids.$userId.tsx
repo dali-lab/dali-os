@@ -81,11 +81,7 @@ export default function ProjectBidSubmissionDetail() {
         <h1 className="font-heading text-2xl font-bold text-foreground mt-2">
           {data.record.name}
         </h1>
-        {data.record.email && (
-          <p className="text-sm text-muted-foreground">
-            {data.record.email} · {data.cycleName}
-          </p>
-        )}
+        <p className="text-sm text-muted-foreground">{data.cycleName}</p>
       </div>
 
       {data.fields.length === 0 ? (

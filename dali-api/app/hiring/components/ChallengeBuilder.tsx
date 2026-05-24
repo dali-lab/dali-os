@@ -1,5 +1,5 @@
-import React, { useState } from 'react'
-import { GripVertical, Plus, Pencil, Trash2, Save } from 'lucide-react'
+import React, { useState, useEffect } from 'react'
+import { GripVertical, Plus, Pencil, Trash2, Save, Check, Loader2 } from 'lucide-react'
 import type { Question } from '~/types'
 import { RichTextEditor } from '~/components/RichTextEditor'
 import { referenceSourceChoices, referenceSourceNeedsTerm } from '~/forms/lib/reference-sources.shared'
@@ -105,6 +105,17 @@ interface FormBuilderTabProps {
   initialQuestions?: Question[]
   initialDescription?: unknown
   onSave?: (payload: { questions: Question[]; description: unknown }) => void
+  // Optional secondary "Save" (draft) action. When provided, a secondary
+  // button is rendered alongside the primary one; the primary then becomes the
+  // freeze-to-version action. Forms use this; hiring doesn't pass it.
+  onSaveDraft?: (payload: { questions: Question[]; description: unknown }) => void
+  // Label for the primary save button. Defaults to "Save Version" (hiring's
+  // wording); Forms passes "Save as version".
+  saveLabel?: string
+  // Live save feedback for the two save buttons. The owner drives this from its
+  // request state so the buttons can show "Saving…"/"Saved ✓" and disable while
+  // a save is in flight. Omitted by hiring (buttons stay plain).
+  saveStatus?: 'idle' | 'saving-draft' | 'saving-version' | 'saved-draft' | 'saved-version'
   onCancel?: () => void
   isGeneralForm?: boolean
   // Terms offered for term-scoped reference sources (e.g. projects active in a
@@ -115,6 +126,9 @@ export function FormBuilderTab({
   initialQuestions = [],
   initialDescription,
   onSave,
+  onSaveDraft,
+  saveLabel = 'Save Version',
+  saveStatus = 'idle',
   onCancel,
   isGeneralForm = false,
   terms = [],
@@ -122,7 +136,6 @@ export function FormBuilderTab({
   const [questions, setQuestions] = useState<Question[]>(initialQuestions)
   const [description, setDescription] = useState<unknown>(initialDescription ?? null)
   const [editingKey, setEditingKey] = useState<string | null>(null)
-  const [isAdding, setIsAdding] = useState(false)
   const [editForm, setEditForm] = useState<Partial<Question>>({})
   const [optionsText, setOptionsText] = useState('')
   const [maxWordsEnabled, setMaxWordsEnabled] = useState(false)
@@ -164,7 +177,6 @@ export function FormBuilderTab({
   }
   const resetEditState = () => {
     setEditingKey(null)
-    setIsAdding(false)
     setEditForm({})
     setOptionsText('')
     setMaxWordsEnabled(false)
@@ -178,7 +190,6 @@ export function FormBuilderTab({
     setOptionsText(q.data.options?.join('\n') || '')
     setMaxWordsEnabled(q.data.maxWords !== undefined)
     setMaxWordsValue(q.data.maxWords !== undefined ? String(q.data.maxWords) : '')
-    setIsAdding(false)
     if (q.type === 'file' && q.data.accept) {
       const { presets, custom } = parseAcceptIntoPresets(q.data.accept)
       setAcceptPresets(presets)
@@ -190,56 +201,65 @@ export function FormBuilderTab({
   }
   const handleDelete = (key: string) => {
     setQuestions(questions.filter((q) => q.key !== key))
+    if (editingKey === key) resetEditState()
   }
-  const handleSaveEdit = () => {
-    if (!editForm.key || !editForm.data?.label) return
-    const updatedQuestion = buildQuestion({
+
+  // Auto-commit: edits to the inline form flow straight into the question list,
+  // so there's no separate "Save Question" step — the question is part of the
+  // form the moment it's added, and the top-level Save / Save as version is the
+  // only thing that persists. The buffer (editForm + per-type field state) is
+  // rebuilt into its list entry whenever any of it changes.
+  useEffect(() => {
+    if (!editingKey || !editForm.key) return
+    const rebuilt = buildQuestion({
       key: editForm.key,
       type: editForm.type || 'text',
       required: editForm.required || false,
-      label: editForm.data.label,
-      description: editForm.data.description,
+      label: editForm.data?.label || '',
+      description: editForm.data?.description,
       optionsText,
       accept: buildAcceptFromPresets(acceptPresets, acceptCustom),
-      afterDomains: editForm.data.afterDomains,
+      afterDomains: editForm.data?.afterDomains,
       isGeneralForm,
       maxWordsEnabled,
       maxWordsValue,
-      referenceSource: editForm.data.referenceSource,
-      referenceTermId: editForm.data.referenceTermId,
+      referenceSource: editForm.data?.referenceSource,
+      referenceTermId: editForm.data?.referenceTermId,
     })
-    if (isAdding) {
-      setQuestions([...questions, updatedQuestion])
-    } else {
-      setQuestions(
-        questions.map((q) => (q.key === editingKey ? updatedQuestion : q)),
-      )
-    }
+    setQuestions((prev) =>
+      prev.map((q) => (q.key === editForm.key ? rebuilt : q)),
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editForm, optionsText, acceptPresets, acceptCustom, maxWordsEnabled, maxWordsValue])
+
+  // Collapse the inline editor. The data is already in the list (auto-commit),
+  // so this just closes the form — no save needed.
+  const handleDoneEditing = () => {
     resetEditState()
   }
-  const handleCancelEdit = () => {
-    resetEditState()
-  }
+
   const handleAddQuestion = () => {
-    setIsAdding(true)
-    setEditingKey('new')
-    setEditForm({
-      key: `q-${Date.now()}`,
+    const key = `q-${Date.now()}`
+    const newQuestion = buildQuestion({
+      key,
       type: 'text',
       required: true,
-      data: {
-        label: '',
-      },
+      label: '',
+      isGeneralForm,
     })
+    // Append immediately and open it for inline editing — no staging step.
+    setQuestions((prev) => [...prev, newQuestion])
+    setEditingKey(key)
+    setEditForm({ key, type: 'text', required: true, data: { label: '' } })
     setOptionsText('')
     setMaxWordsEnabled(false)
     setMaxWordsValue('')
     setAcceptPresets(new Set())
     setAcceptCustom('')
   }
-  const renderEditForm = (isNew: boolean) => {
+  const renderEditForm = () => {
     return (
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-5 space-y-4">
+      <div className="bg-accent-coral/5 border border-accent-coral/30 rounded-lg p-5 space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="col-span-2">
             <label className="block text-sm font-medium text-foreground/80 mb-1">
@@ -394,7 +414,7 @@ export function FormBuilderTab({
                 rows={4}
                 value={optionsText}
                 onChange={(e) => setOptionsText(e.target.value)}
-                className="block w-full rounded-md border border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
+                className="block w-full rounded-md border border-border bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:border-accent-coral focus:ring-accent-coral sm:text-sm p-2"
                 placeholder="JavaScript&#10;Python&#10;React.js&#10;Figma"
               />
               <p className="text-xs text-gray-500 mt-1">Applicants will rate each skill from 0-5.</p>
@@ -485,7 +505,7 @@ export function FormBuilderTab({
                     className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
                       acceptPresets.has(value)
                         ? 'bg-accent-coral/15 text-accent-coral border-accent-coral/30'
-                        : 'bg-white text-gray-700 border-gray-300 hover:border-accent-coral/50'
+                        : 'bg-card text-foreground/80 border-border hover:border-accent-coral/50 hover:bg-muted/50'
                     }`}
                   >
                     {label}
@@ -496,7 +516,7 @@ export function FormBuilderTab({
                 type="text"
                 value={acceptCustom}
                 onChange={(e) => setAcceptCustom(e.target.value)}
-                className="block w-full rounded-md border border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
+                className="block w-full rounded-md border border-border bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:border-accent-coral focus:ring-accent-coral sm:text-sm p-2"
                 placeholder="Additional types, e.g. .f3z, text/plain"
               />
               <p className="text-xs text-gray-500 mt-1">
@@ -506,18 +526,19 @@ export function FormBuilderTab({
           )}
         </div>
 
-        <div className="flex justify-end gap-3 pt-2">
+        <div className="flex justify-between items-center gap-3 pt-2">
           <button
-            onClick={handleCancelEdit}
-            className="px-3 py-1.5 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-foreground/80 bg-card hover:bg-muted/50"
+            onClick={() => editForm.key && handleDelete(editForm.key)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md text-red-600 hover:bg-red-50"
           >
-            Cancel
+            <Trash2 className="w-4 h-4" />
+            Remove question
           </button>
           <button
-            onClick={handleSaveEdit}
+            onClick={handleDoneEditing}
             className="px-3 py-1.5 border border-transparent text-sm font-medium rounded-md text-white bg-accent-coral hover:bg-accent-coral/90 shadow-sm"
           >
-            Save Question
+            Done
           </button>
         </div>
       </div>
@@ -550,7 +571,7 @@ export function FormBuilderTab({
             className={`rounded-xl ${dragKey === q.key ? 'opacity-40' : ''}`}
           >
             {editingKey === q.key ? (
-              renderEditForm(false)
+              renderEditForm()
             ) : (
               <div
                 className={`flex items-start gap-4 bg-card p-4 rounded-xl border shadow-sm group transition-colors duration-150 ${dragKey ? 'border-gray-300' : 'border-border'}`}
@@ -630,37 +651,62 @@ export function FormBuilderTab({
           </div>
         ))}
 
-        {isAdding ? (
-          renderEditForm(true)
-        ) : (
-          <button
-            onClick={handleAddQuestion}
-            className="w-full py-4 border-2 border-dashed border-gray-300 rounded-xl text-muted-foreground hover:text-blue-600 hover:border-blue-400 hover:bg-blue-50 transition-colors flex items-center justify-center gap-2 font-medium"
-          >
-            <Plus className="w-5 h-5" />
-            Add Question
-          </button>
-        )}
+        <button
+          onClick={handleAddQuestion}
+          className="w-full py-4 border-2 border-dashed border-border rounded-xl text-muted-foreground hover:text-accent-coral hover:border-accent-coral/50 hover:bg-muted/40 transition-colors flex items-center justify-center gap-2 font-medium"
+        >
+          <Plus className="w-5 h-5" />
+          Add Question
+        </button>
       </div>
 
       <div className="flex justify-end gap-3 pt-4 border-t border-border">
-        {onCancel && (
-          <button
-            onClick={onCancel}
-            className="px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-lg text-foreground/80 bg-card hover:bg-muted/50"
-          >
-            Cancel
-          </button>
-        )}
-        {onSave && (
-          <button
-            onClick={() => onSave({ questions, description })}
-            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-green-600 hover:bg-green-700 shadow-sm"
-          >
-            <Save className="w-4 h-4 mr-2" />
-            Save Version
-          </button>
-        )}
+        {(() => {
+          const busy = saveStatus === 'saving-draft' || saveStatus === 'saving-version'
+          return (
+            <>
+              {onCancel && (
+                <button
+                  onClick={onCancel}
+                  disabled={busy}
+                  className="px-4 py-2 border border-border shadow-sm text-sm font-medium rounded-lg text-foreground/80 bg-card hover:bg-muted/50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+              )}
+              {onSaveDraft && (
+                <button
+                  onClick={() => onSaveDraft({ questions, description })}
+                  disabled={busy}
+                  className="inline-flex items-center px-4 py-2 border border-border text-sm font-medium rounded-lg text-foreground bg-card hover:bg-muted/50 shadow-sm disabled:opacity-60"
+                >
+                  {saveStatus === 'saving-draft' ? (
+                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Saving…</>
+                  ) : saveStatus === 'saved-draft' ? (
+                    <><Check className="w-4 h-4 mr-2 text-green-600" /> Saved</>
+                  ) : (
+                    <><Save className="w-4 h-4 mr-2" /> Save</>
+                  )}
+                </button>
+              )}
+              {onSave && (
+                <button
+                  onClick={() => onSave({ questions, description })}
+                  disabled={busy}
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-green-600 hover:bg-green-700 shadow-sm disabled:opacity-60"
+                >
+                  {saveStatus === 'saving-version' ? (
+                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Saving…</>
+                  ) : saveStatus === 'saved-version' ? (
+                    <><Check className="w-4 h-4 mr-2" /> Saved</>
+                  ) : (
+                    <><Save className="w-4 h-4 mr-2" /> {saveLabel}</>
+                  )}
+                </button>
+              )}
+            </>
+          )
+        })()}
       </div>
     </div>
   )

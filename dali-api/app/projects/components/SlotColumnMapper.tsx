@@ -391,9 +391,11 @@ export function SlotColumnMapper({
                 }`}
               />
               <div
-                className={`py-2 flex flex-col lg:flex-row lg:items-center gap-2 border-b border-border last:border-b-0 ${
-                  isDragging ? "opacity-50" : ""
-                }`}
+                className={`py-2 flex flex-col gap-2 border-b border-border last:border-b-0 lg:grid lg:items-center ${
+                  canManage
+                    ? "lg:grid-cols-[auto_14rem_minmax(0,1fr)_auto]"
+                    : "lg:grid-cols-[14rem_minmax(0,1fr)]"
+                } ${isDragging ? "opacity-50" : ""}`}
                 onDragOver={(e) => {
                   if (!dragSourceRef.current) return;
                   e.preventDefault();
@@ -451,10 +453,10 @@ export function SlotColumnMapper({
                     disabled={saving}
                     onChange={(e) => patch(c.uid, { label: e.target.value })}
                     placeholder="Column name"
-                    className="lg:w-56 px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
+                    className="min-w-0 lg:w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
                   />
                 ) : (
-                  <div className="lg:w-56 shrink-0 text-sm font-medium text-foreground">
+                  <div className="min-w-0 text-sm font-medium text-foreground truncate" title={c.label}>
                     {c.label}
                     {isBuiltin && (
                       <span className="ml-1 text-xs font-normal text-muted-foreground">
@@ -467,7 +469,7 @@ export function SlotColumnMapper({
                 {/* Backing question — builtins resolve server-side, role and
                     display columns both pick a form question. */}
                 {isBuiltin ? (
-                  <div className="flex-1 text-sm text-muted-foreground italic">
+                  <div className="min-w-0 text-sm text-muted-foreground italic truncate">
                     Resolved automatically
                   </div>
                 ) : canManage ? (
@@ -478,7 +480,7 @@ export function SlotColumnMapper({
                     onChange={(e) =>
                       patch(c.uid, { questionKey: e.target.value })
                     }
-                    className="flex-1 px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
+                    className="min-w-0 w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
                   >
                     <option value="">— Pick a question —</option>
                     {questions.map((q) => (
@@ -488,7 +490,14 @@ export function SlotColumnMapper({
                     ))}
                   </select>
                 ) : (
-                  <div className="flex-1 text-sm text-foreground">
+                  <div
+                    className="min-w-0 text-sm text-foreground truncate"
+                    title={
+                      questions.find((q) => q.key === c.questionKey)?.label ??
+                      c.questionKey ??
+                      undefined
+                    }
+                  >
                     {questions.find((q) => q.key === c.questionKey)?.label ??
                       c.questionKey ??
                       "—"}
@@ -496,7 +505,7 @@ export function SlotColumnMapper({
                 )}
 
                 {canManage && (
-                  <div className="flex items-center gap-1 shrink-0">
+                  <div className="flex items-center gap-1 shrink-0 lg:justify-self-end">
                     <label className="flex items-center gap-1 text-xs text-muted-foreground mr-1 select-none">
                       <input
                         type="checkbox"

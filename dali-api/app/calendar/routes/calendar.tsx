@@ -1241,7 +1241,7 @@ function ManualBlocksCard({ blocks, timezone }: { blocks: ManualBlockDTO[]; time
           onClick={() => setAdding((v) => !v)}
           className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-md border border-border hover:bg-muted transition-colors"
         >
-          <Plus className="w-3.5 h-3.5" />
+          {adding ? <X className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
           {adding ? "Cancel" : "Add Block"}
         </button>
       </div>
@@ -1260,6 +1260,7 @@ function ManualBlocksCard({ blocks, timezone }: { blocks: ManualBlockDTO[]; time
 
 function AddManualBlockForm({ onDone }: { onDone: () => void }) {
   const fetcher = useFetcher();
+  const [repeats, setRepeats] = useState<Repeats>("none");
   return (
     <fetcher.Form
       method="post"
@@ -1277,13 +1278,13 @@ function AddManualBlockForm({ onDone }: { onDone: () => void }) {
         className="px-2 py-1 text-sm border border-border rounded-md bg-background text-foreground"
       />
       <div className="flex gap-2">
-        <label className="flex-1 text-xs text-muted-foreground flex flex-col gap-1">
+        <label className="flex-1 min-w-0 text-xs text-muted-foreground flex flex-col gap-1">
           Start
           <input
             type="datetime-local"
             name="startTimeLocal"
             required
-            className="px-2 py-1 text-sm border border-border rounded-md bg-background text-foreground"
+            className="w-full min-w-0 px-2 py-1 text-sm border border-border rounded-md bg-background text-foreground"
             onChange={(e) => {
               const dt = e.currentTarget.value ? new Date(e.currentTarget.value).toISOString() : "";
               const hidden = e.currentTarget.form?.querySelector<HTMLInputElement>('input[name="startTime"]');
@@ -1292,13 +1293,13 @@ function AddManualBlockForm({ onDone }: { onDone: () => void }) {
           />
           <input type="hidden" name="startTime" />
         </label>
-        <label className="flex-1 text-xs text-muted-foreground flex flex-col gap-1">
+        <label className="flex-1 min-w-0 text-xs text-muted-foreground flex flex-col gap-1">
           End
           <input
             type="datetime-local"
             name="endTimeLocal"
             required
-            className="px-2 py-1 text-sm border border-border rounded-md bg-background text-foreground"
+            className="w-full min-w-0 px-2 py-1 text-sm border border-border rounded-md bg-background text-foreground"
             onChange={(e) => {
               const dt = e.currentTarget.value ? new Date(e.currentTarget.value).toISOString() : "";
               const hidden = e.currentTarget.form?.querySelector<HTMLInputElement>('input[name="endTime"]');
@@ -1308,11 +1309,23 @@ function AddManualBlockForm({ onDone }: { onDone: () => void }) {
           <input type="hidden" name="endTime" />
         </label>
       </div>
-      <input
-        name="recurrenceRule"
-        placeholder="Recurrence (RRULE, optional, e.g. FREQ=WEEKLY;BYDAY=MO)"
-        className="px-2 py-1 text-xs border border-border rounded-md bg-background text-foreground"
-      />
+      <label className="text-xs text-muted-foreground flex flex-col gap-1">
+        Repeats
+        <select
+          value={repeats}
+          onChange={(e) => setRepeats(e.target.value as Repeats)}
+          className="px-2 py-1 text-sm border border-border rounded-md bg-background text-foreground"
+        >
+          {REPEATS_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      {/* The action reads `recurrenceRule` as an RRULE string; derive it from
+          the friendly Repeats choice so non-technical users never see RRULE. */}
+      <input type="hidden" name="recurrenceRule" value={repeatsToRRule(repeats) ?? ""} />
       <div className="flex justify-end gap-2">
         <button
           type="button"
@@ -3034,26 +3047,12 @@ function SelectedSlotBlock({
   const height = duration * HOUR_PX;
   return (
     <div
-      className="absolute left-0 right-0 z-30 cursor-help"
-      style={{
-        top,
-        height,
-        borderWidth: "2px",
-        borderStyle: "solid",
-        borderColor: "var(--color-foreground)",
-        borderRadius: "0.125rem",
-        background: "transparent",
-      }}
+      className="absolute left-0 right-0 z-30 cursor-help border-2 border-accent-coral bg-accent-coral/10 rounded-sm"
+      style={{ top, height }}
       onMouseEnter={() => setOpen(true)}
       onMouseLeave={() => setOpen(false)}
     >
-      <div
-        className="m-1 inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] font-semibold rounded-sm shadow-sm"
-        style={{
-          color: "var(--color-foreground)",
-          backgroundColor: "var(--color-card)",
-        }}
-      >
+      <div className="m-1 inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] font-semibold rounded-sm shadow-sm bg-accent-coral text-white">
         {available.length}/{total}
       </div>
       {open && (
@@ -3202,8 +3201,10 @@ function WeekGrid({
   // column the drag started in, even when the cursor strays elsewhere.
   const columnRefs = useRef<(HTMLDivElement | null)[]>([]);
   // The committed selection block element, so the portal popover can anchor to
-  // its real on-screen rect and clamp itself to the viewport.
-  const selectionRef = useRef<HTMLDivElement | null>(null);
+  // its real on-screen rect. A callback ref into state (not a plain useRef)
+  // guarantees the portal re-renders the moment the node attaches — a shared
+  // useRef read from a sibling left anchor stuck null.
+  const [anchorEl, setAnchorEl] = useState<HTMLDivElement | null>(null);
 
   const MIN_HOUR = HOURS[0];
   const MAX_HOUR = HOURS[HOURS.length - 1] + 1;
@@ -3348,13 +3349,33 @@ function WeekGrid({
               </Fragment>
             ))}
             {backgroundLayer?.(idx)}
+            {/* Redraw the grid lines above the availability tint so they stay
+                visible over the colored background — but BEFORE events, so
+                Busy blocks render on top of the lines (not the other way
+                round). Hour lines bolder than the 10-minute sub-hour lines. */}
+            {showSubHourGrid &&
+              HOURS.map((_, i) => (
+                <Fragment key={`grid-fg-${i}`}>
+                  <div
+                    className="absolute left-0 right-0 border-t-2 border-foreground/40 pointer-events-none"
+                    style={{ top: i * HOUR_PX }}
+                  />
+                  {Array.from({ length: SUBDIVISIONS_PER_HOUR - 1 }).map((_, s) => (
+                    <div
+                      key={s}
+                      className="absolute left-0 right-0 border-t border-foreground/[0.08] pointer-events-none"
+                      style={{ top: i * HOUR_PX + (HOUR_PX * (s + 1)) / SUBDIVISIONS_PER_HOUR }}
+                    />
+                  ))}
+                </Fragment>
+              ))}
             {isToday && nowLineTop != null && (
               <div
-                className="absolute left-0 right-0 h-0 border-t-2 border-accent-coral pointer-events-none z-30"
+                className="absolute left-0 right-0 h-0.5 bg-accent-coral pointer-events-none z-30"
                 style={{ top: nowLineTop }}
                 aria-label="Current time"
               >
-                <div className="absolute left-0 -top-1 w-2 h-2 rounded-full bg-accent-coral" />
+                <div className="absolute left-0 -top-[3px] w-2 h-2 rounded-full bg-accent-coral" />
               </div>
             )}
             {drag && drag.dayIdx === idx && (() => {
@@ -3386,7 +3407,7 @@ function WeekGrid({
               const resizable = !!onSelectionResize;
               return (
                 <div
-                  ref={selectionRef}
+                  ref={setAnchorEl}
                   className={`absolute left-0 right-0 border-2 border-accent-coral bg-accent-coral/15 rounded-sm z-30 ${
                     resizable ? "" : "pointer-events-none"
                   }`}
@@ -3452,24 +3473,6 @@ function WeekGrid({
               );
             })}
             {overlayLayer?.(idx)}
-            {/* Redraw the grid lines above the availability tint so they stay
-                visible. Hour lines bolder than the 10-minute sub-hour lines. */}
-            {showSubHourGrid &&
-              HOURS.map((_, i) => (
-                <Fragment key={`grid-fg-${i}`}>
-                  <div
-                    className="absolute left-0 right-0 border-t-2 border-foreground/40 pointer-events-none z-20"
-                    style={{ top: i * HOUR_PX }}
-                  />
-                  {Array.from({ length: SUBDIVISIONS_PER_HOUR - 1 }).map((_, s) => (
-                    <div
-                      key={s}
-                      className="absolute left-0 right-0 border-t border-foreground/[0.08] pointer-events-none z-20"
-                      style={{ top: i * HOUR_PX + (HOUR_PX * (s + 1)) / SUBDIVISIONS_PER_HOUR }}
-                    />
-                  ))}
-                </Fragment>
-              ))}
           </div>
         </div>
         );
@@ -3480,7 +3483,7 @@ function WeekGrid({
         is never clipped by the grid's overflow or the screen edge. */}
     {selection && selectionPopover && (
       <SelectionPopoverPortal
-        anchorRef={selectionRef}
+        anchorEl={anchorEl}
         onDismiss={() => onSelectionDismiss?.()}
       >
         {selectionPopover()}
@@ -3496,11 +3499,11 @@ function WeekGrid({
 // fully on-screen. A transparent full-viewport backdrop captures outside clicks
 // to dismiss — and, being in a portal, never lets a click reach a grid column.
 function SelectionPopoverPortal({
-  anchorRef,
+  anchorEl,
   onDismiss,
   children,
 }: {
-  anchorRef: React.RefObject<HTMLElement | null>;
+  anchorEl: HTMLElement | null;
   onDismiss: () => void;
   children: React.ReactNode;
 }) {
@@ -3508,11 +3511,11 @@ function SelectionPopoverPortal({
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
 
   useLayoutEffect(() => {
+    if (!anchorEl) return;
     const place = () => {
-      const anchor = anchorRef.current;
       const card = cardRef.current;
-      if (!anchor || !card) return;
-      const a = anchor.getBoundingClientRect();
+      if (!card) return;
+      const a = anchorEl.getBoundingClientRect();
       const cw = card.offsetWidth;
       const ch = card.offsetHeight;
       const gap = 8;
@@ -3523,21 +3526,55 @@ function SelectionPopoverPortal({
       let left = a.right + gap;
       if (left + cw + margin > vw) left = a.left - gap - cw;
       left = Math.max(margin, Math.min(left, vw - cw - margin));
-      // Align the top with the block, then clamp within the viewport.
-      let top = a.top;
+      // Vertically hug the block: top-align if the card fits below, else
+      // bottom-align with the block (open upward) so it stays adjacent instead
+      // of being yanked far up by a viewport clamp on a late-day selection.
+      let top = a.top + ch + margin <= vh ? a.top : a.bottom - ch;
       top = Math.max(margin, Math.min(top, vh - ch - margin));
-      setPos({ left, top });
+      setPos((prev) =>
+        prev && prev.left === left && prev.top === top ? prev : { left, top },
+      );
     };
     place();
+    // Re-place when the card resizes (block→meeting grows it) or the window
+    // reflows. Deps include anchorEl so this runs the instant the block mounts.
+    const ro = new ResizeObserver(place);
+    if (cardRef.current) ro.observe(cardRef.current);
     window.addEventListener("resize", place);
     window.addEventListener("scroll", place, true);
     return () => {
+      ro.disconnect();
       window.removeEventListener("resize", place);
       window.removeEventListener("scroll", place, true);
     };
-  }, [anchorRef, children]);
+  }, [anchorEl]);
 
   if (typeof document === "undefined") return null;
+
+  // First paint (before the layout effect sets pos): derive a spot from the
+  // anchor's current rect so the popover appears NEXT TO the block, flipping
+  // left / opening upward near the edges. Falls back to centred if no anchor.
+  let left = pos?.left;
+  let top = pos?.top;
+  if (left == null || top == null) {
+    const a = anchorEl?.getBoundingClientRect();
+    if (a) {
+      const CARD_W = 320; // matches w-80
+      const CARD_H = 416; // matches max-h-[26rem]
+      const gap = 8;
+      const margin = 8;
+      left = a.right + gap + CARD_W + gap > window.innerWidth
+        ? a.left - gap - CARD_W // would overflow right → flip to the left side
+        : a.right + gap;
+      left = Math.max(margin, left);
+      const vh = window.innerHeight;
+      const rawTop = a.top + CARD_H + margin <= vh ? a.top : a.bottom - CARD_H;
+      top = Math.max(margin, Math.min(rawTop, vh - CARD_H - margin));
+    } else {
+      left = Math.max(8, window.innerWidth / 2 - 160);
+      top = 80;
+    }
+  }
 
   return createPortal(
     <div className="fixed inset-0 z-50">
@@ -3549,7 +3586,7 @@ function SelectionPopoverPortal({
       <div
         data-calendar-popover
         className="absolute"
-        style={{ left: pos?.left ?? -9999, top: pos?.top ?? -9999, visibility: pos ? "visible" : "hidden" }}
+        style={{ left, top }}
         onMouseDown={(e) => e.stopPropagation()}
       >
         {children}
