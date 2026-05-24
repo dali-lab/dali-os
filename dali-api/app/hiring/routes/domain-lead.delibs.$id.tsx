@@ -3,6 +3,7 @@ import { redirect, useLoaderData, useNavigate, useRevalidator } from "react-rout
 import type { Route } from "./+types/domain-lead.delibs.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
+import { parseSessionCookie } from "~/lib/cookies";
 import { isDomainLead } from "~/lib/roles";
 import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
 import { ArrowLeft, GripVertical, X, Check } from "lucide-react";
@@ -19,6 +20,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
   if (!(await isDomainLead(auth.user.sub))) return redirect("/");
+
+  const me = await prisma.user.findUnique({
+    where: { id: auth.user.sub },
+    select: { firstName: true, lastName: true },
+  });
+  const userName =
+    [me?.firstName, me?.lastName].filter(Boolean).join(" ") || auth.user.email;
 
   const session = await prisma.delibsSession.findUniqueOrThrow({
     where: { id: params.id },
@@ -103,7 +111,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
   });
 
-  return { session, domainApplications };
+  const collabToken = parseSessionCookie(request);
+
+  return { session, domainApplications, collabToken, userName };
 }
 
 type LoaderResult = {
@@ -113,7 +123,8 @@ type LoaderResult = {
 type DomainApp = any;
 
 export default function DelibsKanban() {
-  const { session, domainApplications } = useLoaderData<typeof loader>() as any;
+  const { session, domainApplications, collabToken, userName } =
+    useLoaderData<typeof loader>() as any;
   const navigate = useNavigate();
 
   const columns =
@@ -336,6 +347,9 @@ export default function DelibsKanban() {
         <ApplicantContextModal
           domainApplicationId={selectedDomainApplicationId}
           onClose={() => setSelectedDomainApplicationId(null)}
+          collabToken={collabToken}
+          userName={userName}
+          editable={session.type === "Initial"}
         />
       )}
 

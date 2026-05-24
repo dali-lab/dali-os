@@ -81,6 +81,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         answers: da.answers,
         domain: da.challengeVersion?.domain ?? da.domain ?? null,
         challengeQuestions: da.challengeVersion?.questions ?? [],
+        interviewPrepNote: da.interviewPrepNote,
       },
       application: {
         id: da.application.id,

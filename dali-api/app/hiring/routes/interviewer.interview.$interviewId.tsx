@@ -383,6 +383,18 @@ export default function InterviewDetailPage() {
         </div>
       </div>
 
+      {/* Prep note from deliberations (read-only) */}
+      {interview.domainApplication?.interviewPrepNote?.trim() && (
+        <div className="bg-blue-50 rounded-xl border border-blue-200 shadow-sm p-6">
+          <h2 className="text-sm font-semibold text-blue-900 uppercase tracking-wide mb-2">
+            From deliberations — to bring up in the interview
+          </h2>
+          <p className="text-sm text-blue-900 whitespace-pre-wrap">
+            {interview.domainApplication.interviewPrepNote}
+          </p>
+        </div>
+      )}
+
       {/* Application (collapsible) */}
       <div className="bg-card rounded-xl border border-border shadow-sm">
         <button

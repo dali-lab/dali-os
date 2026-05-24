@@ -5,6 +5,7 @@ vi.mock("~/lib/db", () => ({
     applicationReview: { findUnique: vi.fn() },
     interviewAssignment: { findFirst: vi.fn() },
     interview: { findUnique: vi.fn() },
+    domainApplication: { findUnique: vi.fn() },
     epic: { findFirst: vi.fn() },
   },
 }));
@@ -107,6 +108,52 @@ describe("authorizeCollabDoc", () => {
       (isHiringLead as any).mockResolvedValue(true);
 
       expect(await authorizeCollabDoc("user1", "interview:int1:notes")).toBe(true);
+    });
+  });
+
+  describe("domainApplication prep-note docs", () => {
+    const found = { application: { applicationCycleId: "cycle1" } };
+
+    it("rejects when the domain application is not found", async () => {
+      mockPrisma.domainApplication.findUnique.mockResolvedValue(null);
+      expect(
+        await authorizeCollabDoc("user1", "domainApplication:da1:prepNote"),
+      ).toBe(false);
+    });
+
+    it("rejects when confidentiality is not signed", async () => {
+      mockPrisma.domainApplication.findUnique.mockResolvedValue(found);
+      (getCycleConfidentialityState as any).mockResolvedValue({
+        status: "unsigned",
+        activeVersionId: "v1",
+      });
+      (isHiringLead as any).mockResolvedValue(true);
+      expect(
+        await authorizeCollabDoc("user1", "domainApplication:da1:prepNote"),
+      ).toBe(false);
+    });
+
+    it("rejects a signed non-lead", async () => {
+      mockPrisma.domainApplication.findUnique.mockResolvedValue(found);
+      expect(
+        await authorizeCollabDoc("user1", "domainApplication:da1:prepNote"),
+      ).toBe(false);
+    });
+
+    it("allows a signed domain lead", async () => {
+      mockPrisma.domainApplication.findUnique.mockResolvedValue(found);
+      (isDomainLead as any).mockResolvedValue(true);
+      expect(
+        await authorizeCollabDoc("user1", "domainApplication:da1:prepNote"),
+      ).toBe(true);
+    });
+
+    it("allows a signed hiring lead", async () => {
+      mockPrisma.domainApplication.findUnique.mockResolvedValue(found);
+      (isHiringLead as any).mockResolvedValue(true);
+      expect(
+        await authorizeCollabDoc("user1", "domainApplication:da1:prepNote"),
+      ).toBe(true);
     });
   });
 
