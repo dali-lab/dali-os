@@ -3,9 +3,11 @@ import { prisma } from "~/lib/db";
 
 // A "task" (todo) is any unread notification — every NotificationKind counts.
 // The Tasks sidebar, Home attention banner, and sidebar count all read this
-// single predicate so they never disagree. Reading a notification (RSVPing,
-// opening its link, submitting the attached form, or hitting "mark all read")
-// clears it from tasks.
+// single predicate so they never disagree. Reading a notification (opening its
+// link, submitting the attached form, or hitting "mark all read") clears it
+// from tasks. Meeting invites are the exception: they only clear once the
+// recipient RSVPs (Accept/Maybe/Decline), and they drop off automatically once
+// the meeting is Cancelled — see TASK_WHERE.
 //
 //   kind === MeetingInvite      → "meeting"      (carries RSVP target)
 //   kind === MeetingReminder    → "reminder"     (calendar fan-out)
@@ -38,6 +40,17 @@ export type Task = {
 const TASK_WHERE = (userId: string): Prisma.NotificationWhereInput => ({
   recipientUserId: userId,
   readAt: null,
+  // A meeting-invite notification drops off Tasks the moment its meeting is
+  // Cancelled — no fan-out delete needed. Notifications not tied to a meeting
+  // (the common case) pass via the `null` branch.
+  AND: [
+    {
+      OR: [
+        { scheduledMeetingId: null },
+        { scheduledMeeting: { status: { not: "Cancelled" } } },
+      ],
+    },
+  ],
   // A notification linked to an InterviewAssignment is only a task while
   // that assignment is still Active on a still-Scheduled interview. As
   // soon as the assignment moves to Declined/Replaced or the interview

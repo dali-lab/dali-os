@@ -592,7 +592,7 @@ function StackedBar({
 }) {
   return (
     <div
-      className="w-9 flex flex-col-reverse rounded-t overflow-hidden"
+      className="w-9 flex flex-col-reverse overflow-hidden"
       style={{
         height: `${series.total === 0 ? 2 : Math.max(8, (series.total / chartMax) * 120)}px`,
         opacity: dim ? 0.55 : 1,

@@ -17,13 +17,20 @@ export async function action({ request, params }: Route.ActionArgs) {
   const id = params.id!;
   const existing = await prisma.notification.findUnique({
     where: { id },
-    select: { recipientUserId: true, readAt: true },
+    select: { recipientUserId: true, readAt: true, scheduledMeetingId: true },
   });
   if (!existing) {
     return withCors(request, Response.json({ error: "Not found" }, { status: 404 }));
   }
   if (existing.recipientUserId !== auth.user.sub) {
     return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+  }
+
+  // A meeting invite only clears once the recipient RSVPs (via the rsvp
+  // endpoint, which sets readAt itself). A plain read — opening its link —
+  // must not dismiss it, so it stays a todo until an Accept/Maybe/Decline.
+  if (existing.scheduledMeetingId) {
+    return withCors(request, Response.json({ ok: true, skipped: "meeting-invite" }));
   }
 
   if (existing.readAt) {

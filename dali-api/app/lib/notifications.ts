@@ -2,7 +2,17 @@
 // and the MCP `list_my_notifications` tool both call into this module so the
 // "what counts as a recent notification" policy lives in one place.
 
+import type { Prisma } from "~/generated/prisma/client";
 import { prisma } from "~/lib/db";
+
+// Invites for a Cancelled meeting are hidden everywhere — inbox, bell, and
+// tasks alike. Combine this with the per-user filter on every query.
+const NOT_CANCELLED_MEETING: Prisma.NotificationWhereInput = {
+  OR: [
+    { scheduledMeetingId: null },
+    { scheduledMeeting: { status: { not: "Cancelled" } } },
+  ],
+};
 
 export interface ListNotificationsOptions {
   /** Hard cap on rows returned. */
@@ -26,9 +36,11 @@ export async function listMyNotifications(
   opts: ListNotificationsOptions = {},
 ): Promise<NotificationListResult> {
   const limit = Math.max(1, Math.min(opts.limit ?? 50, 50));
-  const where = opts.onlyUnread
-    ? { recipientUserId: userId, readAt: null }
-    : { recipientUserId: userId };
+  const where: Prisma.NotificationWhereInput = {
+    recipientUserId: userId,
+    ...(opts.onlyUnread ? { readAt: null } : {}),
+    ...NOT_CANCELLED_MEETING,
+  };
 
   const [items, unreadCount] = await Promise.all([
     prisma.notification.findMany({
@@ -37,7 +49,7 @@ export async function listMyNotifications(
       take: limit,
     }),
     prisma.notification.count({
-      where: { recipientUserId: userId, readAt: null },
+      where: { recipientUserId: userId, readAt: null, ...NOT_CANCELLED_MEETING },
     }),
   ]);
 

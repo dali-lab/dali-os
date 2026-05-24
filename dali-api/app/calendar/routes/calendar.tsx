@@ -1,5 +1,6 @@
 import { Link, redirect, useFetcher, useLoaderData, useRevalidator } from "react-router";
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   ChevronLeft,
   ChevronRight,
@@ -11,15 +12,14 @@ import {
   CalendarDays,
   Building2,
   Wifi,
-  Copy,
   UsersRound,
   X,
   RefreshCw,
+  RotateCcw,
 } from "lucide-react";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { listVisibleGroupsForUser } from "~/lib/groups";
-import { computeFreeIntervals, type Interval } from "~/lib/availability";
 import { CalendarActionSchema } from "~/lib/calendar-schemas";
 import { fetchBusyEvents, listCalendarsForLink } from "~/lib/google-calendar";
 import { getZonedHourFraction, getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
@@ -89,11 +89,23 @@ type LoaderData = {
   timezone: string;
   defaultEventBufferMin: number;
   workingHours: WhDay[];
+  // True once the user has saved any working-hours state (even "all off"). The
+  // client uses this to (a) show the master toggle as off for brand-new users
+  // and (b) seed the full week on first edit so unsaved defaults aren't lost.
+  hasPersistedWorkingHours: boolean;
   manualBlocks: ManualBlockDTO[];
   calendarLinks: CalendarLinkDTO[];
   weekStartIso: string;
   weekEndIso: string;
-  busyIntervals: { startIso: string; endIso: string }[];
+  // External (Google) events for display: real titles + per-calendar colour,
+  // straight from events.list (not the merged availability intervals, which
+  // drop titles). Manual blocks render separately from data.manualBlocks.
+  externalEvents: {
+    startIso: string;
+    endIso: string;
+    title: string;
+    color: string | null;
+  }[];
   ingestionError: string | null;
   groups: GroupOption[];
   users: UserOption[];
@@ -234,7 +246,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const [externalBusyRaw, calendarLinks] = await Promise.all([
     fetchBusyEvents(userId, weekStart, weekEnd).catch((err) => {
       ingestionError = err instanceof Error ? err.message : "Failed to fetch external busy";
-      return [] as { start: string; end: string }[];
+      return [] as Awaited<ReturnType<typeof fetchBusyEvents>>;
     }),
     Promise.all(
       links.map(async (l): Promise<CalendarLinkDTO> => {
@@ -270,40 +282,11 @@ export async function loader({ request }: Route.LoaderArgs) {
     ),
   ]);
 
-  const externalBusy: Interval[] = externalBusyRaw.map((b) => ({
-    start: new Date(b.start),
-    end: new Date(b.end),
-  }));
-
-  // computeFreeIntervals takes a flat list of (dayOfWeek, start, end) entries —
-  // expand each day's segments into its own entry.
-  const workingHoursFlat = workingHours.flatMap((d) =>
-    d.segments.map((s) => ({
-      dayOfWeek: d.dayOfWeek,
-      enabled: true,
-      startMinute: s.startMinute,
-      endMinute: s.endMinute,
-    })),
-  );
-
-  const { busy } = computeFreeIntervals({
-    windowStart: weekStart,
-    windowEnd: weekEnd,
-    workingHours: workingHoursFlat,
-    manualBlocks: blocks.map((b) => ({
-      startTime: b.startTime,
-      endTime: b.endTime,
-      recurrenceRule: b.recurrenceRule,
-    })),
-    externalBusy,
-    bufferMin,
-    timezone,
-  });
-
   const data: LoaderData = {
     timezone,
     defaultEventBufferMin: bufferMin,
     workingHours,
+    hasPersistedWorkingHours: hasAnyPersisted,
     manualBlocks: blocks.map((b) => ({
       id: b.id,
       title: b.title,
@@ -314,9 +297,11 @@ export async function loader({ request }: Route.LoaderArgs) {
     calendarLinks,
     weekStartIso: weekStart.toISOString(),
     weekEndIso: weekEnd.toISOString(),
-    busyIntervals: busy.map((i: Interval) => ({
-      startIso: i.start.toISOString(),
-      endIso: i.end.toISOString(),
+    externalEvents: externalBusyRaw.map((e) => ({
+      startIso: e.start,
+      endIso: e.end,
+      title: e.title ?? "Busy",
+      color: e.color ?? null,
     })),
     ingestionError,
     groups,
@@ -416,6 +401,49 @@ export async function action({ request }: Route.ActionArgs) {
 
     case "reset-working-hours": {
       await prisma.workingHoursDay.deleteMany({ where: { userId } });
+      return null;
+    }
+
+    case "seed-working-hours": {
+      // Materialize the supplied full-week segment set in one transaction. Used
+      // when the user first turns Working Hours on (or edits a day) while the
+      // state is still the in-memory default: persisting only the edited day
+      // would leave the other days with no rows, and the loader's
+      // "hasAnyPersisted ⇒ unlisted day is empty" rule would then silently wipe
+      // the default Mon–Fri hours. Seeding all days at once keeps them.
+      for (const d of input.days) {
+        for (const s of d.segments) {
+          if (s.startMinute >= s.endMinute) {
+            return Response.json({ error: "startMinute must be < endMinute" }, { status: 400 });
+          }
+        }
+      }
+      await prisma.$transaction(async (tx) => {
+        await tx.workingHoursDay.deleteMany({ where: { userId } });
+        const rows = input.days.flatMap((d) =>
+          d.segments.length > 0
+            ? d.segments.map((s) => ({
+                userId,
+                dayOfWeek: d.dayOfWeek,
+                enabled: true,
+                startMinute: s.startMinute,
+                endMinute: s.endMinute,
+                location: s.location,
+              }))
+            : [
+                // Sentinel "explicitly empty" row, same as set-working-segments.
+                {
+                  userId,
+                  dayOfWeek: d.dayOfWeek,
+                  enabled: false,
+                  startMinute: 0,
+                  endMinute: 1,
+                  location: "InPerson" as const,
+                },
+              ],
+        );
+        if (rows.length > 0) await tx.workingHoursDay.createMany({ data: rows });
+      });
       return null;
     }
 
@@ -530,6 +558,18 @@ function coerceFormToAction(raw: Record<string, FormDataEntryValue>): unknown {
         segments,
       };
     }
+    case "seed-working-hours": {
+      const daysRaw = get("days");
+      let days: unknown = [];
+      if (daysRaw) {
+        try {
+          days = JSON.parse(daysRaw);
+        } catch {
+          // Leave empty; zod will surface the validation error.
+        }
+      }
+      return { intent, days };
+    }
     case "copy-weekdays":
     case "reset-working-hours":
       return { intent };
@@ -579,7 +619,7 @@ export default function CalendarPage() {
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex items-center gap-2">
+      <div className="inline-flex self-start rounded-lg border border-border bg-muted/40 p-0.5">
         <PillButton active={tab === "availability"} onClick={() => setTab("availability")}>
           My Availability
         </PillButton>
@@ -608,8 +648,8 @@ function PillButton({
       onClick={onClick}
       className={`px-4 py-1.5 text-sm font-semibold rounded-md transition-colors ${
         active
-          ? "bg-accent-coral text-white"
-          : "text-foreground hover:bg-muted"
+          ? "bg-accent-coral text-white shadow-sm"
+          : "text-muted-foreground hover:text-foreground hover:bg-background/60"
       }`}
     >
       {children}
@@ -623,11 +663,13 @@ function PillButton({
 
 function AvailabilityView({ data }: { data: LoaderData }) {
   // Fill the available iframe viewport (minus tab bar + page padding) so the
-  // grid extends to the screen edge. Floor at 56rem so the 13-hour grid never
-  // gets clipped by the inner overflow-hidden on short viewports.
+  // grid extends to the screen edge. Floor at 56rem so the grid never gets
+  // clipped by the inner overflow-hidden on short viewports.
+  // Drag-to-create now lives inside AvailabilityWeekGrid: the selection stays
+  // drawn on the grid and the editor opens as a popover anchored beside it.
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[400px_1fr] gap-6 lg:h-[max(calc(100vh-9rem),56rem)] lg:min-h-0">
-      <aside className="flex flex-col gap-6 lg:overflow-y-auto lg:overflow-x-hidden lg:pr-2 lg:min-h-0">
+    <div className="grid grid-cols-1 lg:grid-cols-[400px_1fr] gap-6 lg:h-[max(calc(100vh-9rem),56rem)] lg:min-h-0 px-3 pt-2">
+      <aside className="flex flex-col gap-6 lg:overflow-y-auto lg:overflow-x-hidden lg:pr-6 lg:min-h-0">
         <header>
           <h1 className="font-heading text-2xl font-bold text-foreground">Availability</h1>
           <p className="text-sm text-muted-foreground mt-1">
@@ -635,12 +677,15 @@ function AvailabilityView({ data }: { data: LoaderData }) {
           </p>
         </header>
         <CalendarIntegrationsCard links={data.calendarLinks} ingestionError={data.ingestionError} />
-        <WorkingHoursCard workingHours={data.workingHours} />
+        <WorkingHoursCard
+          workingHours={data.workingHours}
+          hasPersisted={data.hasPersistedWorkingHours}
+        />
         <EventBuffersCard bufferMin={data.defaultEventBufferMin} />
         <ManualBlocksCard blocks={data.manualBlocks} timezone={data.timezone} />
       </aside>
       <div className="lg:overflow-hidden lg:min-h-0">
-        <AvailabilityWeekGrid data={data} />
+        <AvailabilityWeekGrid data={data} enableDragCreate />
       </div>
     </div>
   );
@@ -797,9 +842,48 @@ function SubCalendarRow({ linkId, cal }: { linkId: string; cal: SubCalendarDTO }
   );
 }
 
-function WorkingHoursCard({ workingHours }: { workingHours: WhDay[] }) {
-  const copyFetcher = useFetcher();
+function WorkingHoursCard({
+  workingHours,
+  hasPersisted,
+}: {
+  workingHours: WhDay[];
+  hasPersisted: boolean;
+}) {
   const resetFetcher = useFetcher();
+  const toggleFetcher = useFetcher();
+
+  // "On" once the user has saved any working-hours state. While a master-toggle
+  // submit is in flight, reflect the in-flight intent optimistically.
+  const pendingToggleIntent =
+    typeof toggleFetcher.formData?.get("intent") === "string"
+      ? (toggleFetcher.formData.get("intent") as string)
+      : null;
+  const enabled =
+    pendingToggleIntent === "seed-working-hours"
+      ? true
+      : pendingToggleIntent === "reset-working-hours"
+        ? false
+        : hasPersisted;
+
+  const turnOn = () => {
+    // Persist the full Mon–Fri 9–5 default in one shot so the editor opens with
+    // sensible values and every day has a real row.
+    const days = defaultWorkingHours().map((d) => ({
+      dayOfWeek: d.dayOfWeek,
+      segments: d.segments.map((s) => ({
+        startMinute: s.startMinute,
+        endMinute: s.endMinute,
+        location: s.location,
+      })),
+    }));
+    toggleFetcher.submit(
+      { intent: "seed-working-hours", days: JSON.stringify(days) },
+      { method: "post" },
+    );
+  };
+  const turnOff = () =>
+    toggleFetcher.submit({ intent: "reset-working-hours" }, { method: "post" });
+
   return (
     <section>
       <div className="flex items-center justify-between mb-3">
@@ -808,35 +892,65 @@ function WorkingHoursCard({ workingHours }: { workingHours: WhDay[] }) {
           Working Hours
         </h2>
         <div className="flex items-center gap-1">
-          <copyFetcher.Form method="post">
-            <input type="hidden" name="intent" value="copy-weekdays" />
-            <button
-              type="submit"
-              title="Copy Monday's hours to Tue–Fri"
-              className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors text-muted-foreground"
-            >
-              <Copy className="w-3 h-3" />
-              Weekdays
-            </button>
-          </copyFetcher.Form>
-          <resetFetcher.Form method="post">
-            <input type="hidden" name="intent" value="reset-working-hours" />
-            <button
-              type="submit"
-              aria-label="Reset working hours to defaults"
-              title="Reset to defaults"
-              className="p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
-          </resetFetcher.Form>
+          {enabled && (
+            <>
+              <resetFetcher.Form
+                method="post"
+                onSubmit={(e) => {
+                  // Re-seed the default week rather than wiping to "off" — this
+                  // button resets hours, it doesn't disable the feature.
+                  e.preventDefault();
+                  const days = defaultWorkingHours().map((d) => ({
+                    dayOfWeek: d.dayOfWeek,
+                    segments: d.segments.map((s) => ({
+                      startMinute: s.startMinute,
+                      endMinute: s.endMinute,
+                      location: s.location,
+                    })),
+                  }));
+                  resetFetcher.submit(
+                    { intent: "seed-working-hours", days: JSON.stringify(days) },
+                    { method: "post" },
+                  );
+                }}
+              >
+                <button
+                  type="submit"
+                  aria-label="Reset working hours to defaults"
+                  title="Reset to defaults"
+                  className="p-1 text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                </button>
+              </resetFetcher.Form>
+            </>
+          )}
+          {/* Master on/off switch */}
+          <button
+            type="button"
+            role="switch"
+            aria-checked={enabled}
+            aria-label="Working hours enabled"
+            onClick={enabled ? turnOff : turnOn}
+            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+              enabled ? "bg-accent-coral" : "bg-border"
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                enabled ? "translate-x-4" : "translate-x-0.5"
+              }`}
+            />
+          </button>
         </div>
       </div>
-      <div className="bg-card border border-border rounded-md p-3 flex flex-col gap-2">
-        {workingHours.map((d) => (
-          <DayRow key={d.dayOfWeek} day={d} />
-        ))}
-      </div>
+      {enabled && (
+        <div className="bg-card border border-border rounded-md p-3 flex flex-col gap-2">
+          {workingHours.map((d) => (
+            <DayRow key={d.dayOfWeek} day={d} allDays={workingHours} />
+          ))}
+        </div>
+      )}
     </section>
   );
 }
@@ -845,17 +959,22 @@ const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 type LocalSegment = { startMinute: number; endMinute: number; location: "InPerson" | "Remote" };
 
-function DayRow({ day }: { day: WhDay }) {
+function DayRow({ day, allDays }: { day: WhDay; allDays: WhDay[] }) {
   const fetcher = useFetcher();
   // Optimistic state: while a submit is pending, render the in-flight values
-  // rather than the loader values so edits feel instant.
+  // rather than the loader values so edits feel instant. We submit the whole
+  // week (seed-working-hours), so pull this day's slice back out of `days`.
   const pending = fetcher.formData;
   const pendingSegments: LocalSegment[] | null = (() => {
     if (!pending) return null;
-    const raw = pending.get("segments");
+    const raw = pending.get("days");
     if (typeof raw !== "string") return null;
     try {
-      return JSON.parse(raw) as LocalSegment[];
+      const parsed = JSON.parse(raw) as {
+        dayOfWeek: number;
+        segments: LocalSegment[];
+      }[];
+      return parsed.find((d) => d.dayOfWeek === day.dayOfWeek)?.segments ?? [];
     } catch {
       return null;
     }
@@ -870,13 +989,24 @@ function DayRow({ day }: { day: WhDay }) {
 
   const enabled = segments.length > 0;
 
+  // Persist the whole week every time so a day that currently has no DB row
+  // (e.g. an unsaved default) isn't dropped by the loader's "unlisted ⇒ empty"
+  // rule. `next` replaces this day's segments; other days carry through as-is.
   const submitSegments = (next: LocalSegment[]) => {
+    const days = allDays.map((d) =>
+      d.dayOfWeek === day.dayOfWeek
+        ? { dayOfWeek: d.dayOfWeek, segments: next }
+        : {
+            dayOfWeek: d.dayOfWeek,
+            segments: d.segments.map((s) => ({
+              startMinute: s.startMinute,
+              endMinute: s.endMinute,
+              location: s.location,
+            })),
+          },
+    );
     fetcher.submit(
-      {
-        intent: "set-working-segments",
-        dayOfWeek: String(day.dayOfWeek),
-        segments: JSON.stringify(next),
-      },
+      { intent: "seed-working-hours", days: JSON.stringify(days) },
       { method: "post" },
     );
   };
@@ -952,15 +1082,20 @@ function DayRow({ day }: { day: WhDay }) {
                   icon={<Wifi className="w-3.5 h-3.5" />}
                 />
               </div>
-              <button
-                type="button"
-                onClick={() => removeSegment(idx)}
-                aria-label={`Remove ${DAY_LABELS[day.dayOfWeek]} segment ${idx + 1}`}
-                title="Remove segment"
-                className="p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
+              {/* With a single segment the day checkbox already removes it
+                  (un-checking clears the day), so the delete button only
+                  appears when there are multiple segments to pick from. */}
+              {segments.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => removeSegment(idx)}
+                  aria-label={`Remove ${DAY_LABELS[day.dayOfWeek]} segment ${idx + 1}`}
+                  title="Remove segment"
+                  className="p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
           ))}
           <button
@@ -1052,9 +1187,7 @@ function EventBuffersCard({ bufferMin }: { bufferMin: number }) {
     { label: "5m", value: 5 },
     { label: "10m", value: 10 },
     { label: "15m", value: 15 },
-    { label: "30m", value: 30 },
-    { label: "45m", value: 45 },
-    { label: "60m", value: 60 },
+    { label: "30m", value: 30 }
   ];
   return (
     <section>
@@ -1063,9 +1196,6 @@ function EventBuffersCard({ bufferMin }: { bufferMin: number }) {
         Event Buffers
       </h2>
       <div className="bg-card border border-border rounded-md p-3">
-        <p className="text-xs text-muted-foreground mb-3">
-          Add padding around all calendar and manual events so you're never booked back-to-back.
-        </p>
         <div className="flex flex-wrap gap-2">
           {options.map((o) => (
             <button
@@ -1263,7 +1393,9 @@ function WeekToolbar({
   onRefresh,
   refreshing,
 }: {
-  legend: { color: string; label: string }[];
+  // `color` is a Tailwind bg-* class; `swatch` is a raw CSS color for tints
+  // that are computed at runtime (e.g. the availability gradient stops).
+  legend: { color?: string; swatch?: string; label: string }[];
   monthLabel: string;
   weekStartIso: string;
   onRefresh?: () => void;
@@ -1321,7 +1453,10 @@ function WeekToolbar({
       <div className="flex items-center gap-3 text-xs text-muted-foreground">
         {legend.map((l) => (
           <span key={l.label} className="inline-flex items-center gap-1.5">
-            <span className={`inline-block w-3 h-3 rounded-sm ${l.color}`} />
+            <span
+              className={`inline-block w-3 h-3 rounded-sm border border-border ${l.color ?? ""}`}
+              style={l.swatch ? { backgroundColor: l.swatch } : undefined}
+            />
             {l.label}
           </span>
         ))}
@@ -1330,8 +1465,12 @@ function WeekToolbar({
   );
 }
 
-const HOURS = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
-const HOUR_PX = 56;
+// Visible hour rows: 8am through 9pm (the grid body bottom edge is 10pm).
+const HOURS = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21];
+const HOUR_PX = 54;
+// Grid is snapped/subdivided into 10-minute cells.
+const SUBDIVISIONS_PER_HOUR = 6; // 60 / 10
+const SNAP_HOURS = 1 / SUBDIVISIONS_PER_HOUR; // 10 minutes as a fraction of an hour
 
 // Refetch when the tab regains focus (visibilitychange covers tab switches,
 // focus covers window-level focus on browsers that don't fire visibilitychange
@@ -1364,7 +1503,15 @@ function useNow(intervalMs = 60_000): Date | null {
   return now;
 }
 
-function AvailabilityWeekGrid({ data }: { data: LoaderData }) {
+function AvailabilityWeekGrid({
+  data,
+  enableDragCreate = false,
+}: {
+  data: LoaderData;
+  // When set, dragging a range commits a selection (kept drawn on the grid) and
+  // opens the create-editor popover anchored beside it.
+  enableDragCreate?: boolean;
+}) {
   const revalidator = useRevalidator();
   const refresh = () => revalidator.revalidate();
   useRefreshOnFocus(refresh);
@@ -1374,11 +1521,24 @@ function AvailabilityWeekGrid({ data }: { data: LoaderData }) {
     return { dayOfWeek: d.getUTCDay(), num: d.getUTCDate(), dateUtc: d };
   });
 
-  // Build per-day event blocks from busy intervals.
-  const eventsByDay: Record<number, EventBlock[]> = {};
-  for (const b of data.busyIntervals) {
-    const start = new Date(b.startIso);
-    const end = new Date(b.endIso);
+  // Committed drag selection: the grid coordinates (for drawing + anchoring the
+  // popover) plus the resolved local datetime strings the editor form needs.
+  const [selection, setSelection] = useState<
+    | {
+        dayIdx: number;
+        startHour: number;
+        endHour: number;
+        startLocal: string;
+        endLocal: string;
+      }
+    | null
+  >(null);
+
+  // Place one block into the right day column. Returns false if the event
+  // falls outside the visible week (so callers can skip it).
+  const placeBlock = (startIso: string, endIso: string, block: Omit<EventBlock, "startHour" | "duration">, into: Record<number, EventBlock[]>) => {
+    const start = new Date(startIso);
+    const end = new Date(endIso);
     const ymd = getZonedYMD(start, data.timezone);
     const dayMidnight = zonedDayStartUtc(ymd.year, ymd.month, ymd.day, data.timezone);
     const startHour = (start.getTime() - dayMidnight.getTime()) / 3_600_000;
@@ -1386,15 +1546,28 @@ function AvailabilityWeekGrid({ data }: { data: LoaderData }) {
     const dayIdx = days.findIndex(
       (d) => d.dateUtc.getUTCFullYear() === ymd.year && d.dateUtc.getUTCMonth() + 1 === ymd.month && d.dateUtc.getUTCDate() === ymd.day,
     );
-    if (dayIdx < 0) continue;
-    if (!eventsByDay[dayIdx]) eventsByDay[dayIdx] = [];
-    eventsByDay[dayIdx].push({
-      startHour,
-      duration,
-      label: "Busy",
+    if (dayIdx < 0) return;
+    if (!into[dayIdx]) into[dayIdx] = [];
+    into[dayIdx].push({ startHour, duration, ...block });
+  };
+
+  // Build per-day event blocks: external (Google) events with their real title
+  // and source-calendar colour, plus the user's own manual blocks.
+  const eventsByDay: Record<number, EventBlock[]> = {};
+  for (const e of data.externalEvents) {
+    placeBlock(e.startIso, e.endIso, {
+      label: e.title,
+      className: e.color ? "" : EVENT_CORAL,
+      bgColor: e.color ?? undefined,
+      borderClassName: e.color ? undefined : "border-accent-coral-light",
+    }, eventsByDay);
+  }
+  for (const b of data.manualBlocks) {
+    placeBlock(b.startTime, b.endTime, {
+      label: b.title || "Busy",
       className: EVENT_CORAL,
       borderClassName: "border-accent-coral-light",
-    });
+    }, eventsByDay);
   }
 
   const monthLabel = new Intl.DateTimeFormat("en-US", {
@@ -1402,6 +1575,19 @@ function AvailabilityWeekGrid({ data }: { data: LoaderData }) {
     month: "long",
     year: "numeric",
   }).format(weekStart);
+
+  // Legend: one swatch per enabled, coloured sub-calendar (so a multi-calendar
+  // week shows which colour maps to which calendar). Dedupe by colour.
+  const calLegend: { swatch: string; label: string }[] = [];
+  const seenColors = new Set<string>();
+  for (const link of data.calendarLinks) {
+    for (const sub of link.subCalendars ?? []) {
+      if (sub.enabled && sub.color && !seenColors.has(sub.color)) {
+        seenColors.add(sub.color);
+        calLegend.push({ swatch: sub.color, label: sub.summary });
+      }
+    }
+  }
 
   return (
     <section className="bg-card border border-border rounded-lg p-4 flex flex-col">
@@ -1411,19 +1597,80 @@ function AvailabilityWeekGrid({ data }: { data: LoaderData }) {
         onRefresh={refresh}
         refreshing={revalidator.state !== "idle"}
         legend={[
-          { color: "bg-accent-green", label: "Available" },
-          { color: "bg-muted", label: "Outside Hours" },
-          { color: "bg-accent-coral", label: "Busy" },
+          // Free time is left uncolored, so it carries no legend swatch.
+          // Only meaningful when working hours are on (otherwise no stripes).
+          ...(data.hasPersistedWorkingHours
+            ? [{ color: "bg-muted", label: "Outside Hours" }]
+            : []),
+          // Per-calendar colours when available; else a single generic "Busy".
+          ...(calLegend.length > 0
+            ? calLegend
+            : [{ color: "bg-accent-coral", label: "Busy" }]),
         ]}
       />
+      {enableDragCreate && (
+        <p className="px-1 pb-2 text-[11px] text-muted-foreground">
+          Drag a range on the grid to create a block or meeting.
+        </p>
+      )}
       <WeekGrid
         days={days}
         showProviderRow
+        showSubHourGrid
         timezone={data.timezone}
         backgroundLayer={(dayIdx) =>
-          workingHoursStripeLayer(data.workingHours, days[dayIdx].dayOfWeek, { wash: true })
+          workingHoursStripeLayer(data.workingHours, days[dayIdx].dayOfWeek, {
+            enabled: data.hasPersistedWorkingHours,
+          })
         }
         eventsByDay={eventsByDay}
+        onDayPointerSelect={
+          enableDragCreate
+            ? (dayIdx, startHour, endHour) => {
+                const day = days[dayIdx];
+                if (!day) return;
+                setSelection({
+                  dayIdx,
+                  startHour,
+                  endHour,
+                  startLocal: dayHourToLocal(day.dateUtc, startHour),
+                  endLocal: dayHourToLocal(day.dateUtc, endHour),
+                });
+              }
+            : undefined
+        }
+        selection={
+          selection
+            ? { dayIdx: selection.dayIdx, startHour: selection.startHour, endHour: selection.endHour }
+            : null
+        }
+        selectionPopover={
+          selection
+            ? () => (
+                <CreateFromDragPopover
+                  data={data}
+                  startLocal={selection.startLocal}
+                  endLocal={selection.endLocal}
+                  onClose={() => setSelection(null)}
+                />
+              )
+            : undefined
+        }
+        onSelectionDismiss={() => setSelection(null)}
+        onSelectionResize={(startHour, endHour) =>
+          setSelection((prev) => {
+            if (!prev) return prev;
+            const day = days[prev.dayIdx];
+            if (!day) return prev;
+            return {
+              ...prev,
+              startHour,
+              endHour,
+              startLocal: dayHourToLocal(day.dateUtc, startHour),
+              endLocal: dayHourToLocal(day.dateUtc, endHour),
+            };
+          })
+        }
       />
     </section>
   );
@@ -1432,6 +1679,20 @@ function AvailabilityWeekGrid({ data }: { data: LoaderData }) {
 // Hard-coded dark text that doesn't flip in dark mode (the dark-blue token does).
 const EVENT_TEXT = "text-[hsl(203_38%_18%)]";
 const EVENT_CORAL = `bg-accent-coral-light ${EVENT_TEXT}`;
+
+// Schedule-preview availability tint: interpolate from white (no one free) to a
+// deep green (everyone free) by `frac` (0..1). Lerping the color itself — not
+// just opacity over a fixed light green — gives real contrast between the
+// "few free" and "all free" ends. The deep end is darker/more saturated than
+// the accent-green token so the gradient reads clearly.
+const AVAIL_DEEP_GREEN: [number, number, number] = [46, 125, 50]; // #2E7D32
+function availabilityTint(frac: number): string {
+  const f = Math.max(0, Math.min(1, frac));
+  const r = Math.round(255 + (AVAIL_DEEP_GREEN[0] - 255) * f);
+  const g = Math.round(255 + (AVAIL_DEEP_GREEN[1] - 255) * f);
+  const b = Math.round(255 + (AVAIL_DEEP_GREEN[2] - 255) * f);
+  return `rgb(${r}, ${g}, ${b})`;
+}
 
 /* ------------------------------------------------------------------ */
 /* Schedule view                                                        */
@@ -1476,6 +1737,325 @@ function toDatetimeLocal(d: Date): string {
   return (
     `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
     `T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  );
+}
+
+// Map a grid day column (UTC-midnight anchored, as the WeekGrid stores its days)
+// + a fractional hour into the "YYYY-MM-DDTHH:mm" datetime-local string. Shared
+// by the schedule grid and the availability drag-to-create handler.
+function dayHourToLocal(dayDateUtc: Date, hour: number): string {
+  const y = dayDateUtc.getUTCFullYear();
+  const m = dayDateUtc.getUTCMonth();
+  const d = dayDateUtc.getUTCDate();
+  const h = Math.floor(hour);
+  const mins = Math.round((hour - h) * 60);
+  return toDatetimeLocal(new Date(y, m, d, h, mins));
+}
+
+/* ------------------------------------------------------------------ */
+/* Drag-to-create side modal (My Availability tab)                      */
+/* ------------------------------------------------------------------ */
+
+type DragCreateKind = "block" | "meeting";
+
+function CreateFromDragPopover({
+  data,
+  startLocal,
+  endLocal,
+  onClose,
+}: {
+  data: LoaderData;
+  startLocal: string;
+  endLocal: string;
+  onClose: () => void;
+}) {
+  const revalidator = useRevalidator();
+  const [kind, setKind] = useState<DragCreateKind>("block");
+  const [title, setTitle] = useState("");
+  const [start, setStart] = useState(startLocal);
+  const [end, setEnd] = useState(endLocal);
+  // Follow the committed selection while the user resizes it on the grid (the
+  // startLocal/endLocal props change). Manual edits to the inputs below still
+  // win until the next resize re-syncs.
+  useEffect(() => {
+    setStart(startLocal);
+    setEnd(endLocal);
+  }, [startLocal, endLocal]);
+  const [repeats, setRepeats] = useState<Repeats>("none");
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const googleLinks = data.calendarLinks.filter((l) => l.provider === "Google" && l.enabled);
+  const [organizerCalendarLinkId, setOrganizerCalendarLinkId] = useState<string>(
+    googleLinks[0]?.id ?? "",
+  );
+
+  const usersById = new Map(data.users.map((u) => [u.id, u]));
+  const groupsById = new Map(data.groups.map((g) => [g.id, g]));
+  const resolvedParticipantIds = (() => {
+    const set = new Set<string>(selectedUserIds);
+    for (const gid of selectedGroupIds) {
+      const g = groupsById.get(gid);
+      if (g) for (const uid of g.memberIds) set.add(uid);
+    }
+    return Array.from(set);
+  })();
+
+  const startEndValid =
+    !!start && !!end && new Date(end).getTime() > new Date(start).getTime();
+  const duration = durationMinutesBetween(start, end);
+  const canSubmit = title.trim().length > 0 && startEndValid && !submitting;
+
+  // Close on Escape.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!canSubmit) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      if (kind === "block") {
+        // Manual blocks are owned by the route action (add-manual-block).
+        const body = new FormData();
+        body.set("intent", "add-manual-block");
+        body.set("title", title.trim());
+        body.set("startTime", new Date(start).toISOString());
+        body.set("endTime", new Date(end).toISOString());
+        const rrule = repeatsToRRule(repeats);
+        if (rrule) body.set("recurrenceRule", rrule);
+        const res = await fetch("/calendar", { method: "POST", credentials: "include", body });
+        if (!res.ok) {
+          const j = await res.json().catch(() => null);
+          setError(j?.error ?? "Failed to create block");
+          return;
+        }
+      } else {
+        // Meetings reuse the scheduled-meeting endpoint: invitees, recurrence,
+        // and (when an organizer calendar + invitees are present) a real Google
+        // Calendar invite. A solo meeting stays in-app only.
+        const payload: Record<string, unknown> = {
+          title: title.trim(),
+          durationMinutes: duration,
+          startTime: new Date(start).toISOString(),
+        };
+        const rrule = repeatsToRRule(repeats);
+        if (rrule) payload.recurrenceRule = rrule;
+        if (organizerCalendarLinkId) payload.organizerCalendarLinkId = organizerCalendarLinkId;
+        if (selectedGroupIds.length === 1 && selectedUserIds.length === 0) {
+          payload.scopeType = "Group";
+          payload.groupId = selectedGroupIds[0];
+        } else if (resolvedParticipantIds.length > 0) {
+          payload.scopeType = "UserList";
+          payload.participantUserIds = resolvedParticipantIds;
+        } else {
+          payload.scopeType = "None";
+        }
+        const res = await fetch("/api/scheduled-meetings", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const j = await res.json().catch(() => null);
+        if (!res.ok) {
+          setError(j?.error ?? "Failed to create meeting");
+          return;
+        }
+      }
+      revalidator.revalidate();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Network error");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div
+      className="w-80 max-h-[26rem] overflow-y-auto rounded-lg border border-border bg-card shadow-xl"
+      role="dialog"
+      aria-modal="false"
+      aria-label="New on your calendar"
+    >
+      <div className="flex items-center justify-between px-3 py-2 border-b border-border sticky top-0 bg-card z-10">
+        <h2 className="font-heading font-semibold text-sm text-foreground">New on your calendar</h2>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className="p-1 text-muted-foreground hover:text-foreground rounded-md hover:bg-muted"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+
+      <form onSubmit={submit} className="p-3 space-y-3">
+          {/* Type toggle */}
+          <div className="inline-flex rounded-md border border-border p-0.5 bg-background">
+            <button
+              type="button"
+              onClick={() => setKind("block")}
+              className={`px-3 py-1.5 text-xs font-semibold rounded transition-colors ${
+                kind === "block" ? "bg-accent-coral text-white" : "text-muted-foreground hover:bg-muted"
+              }`}
+            >
+              Personal block
+            </button>
+            <button
+              type="button"
+              onClick={() => setKind("meeting")}
+              className={`px-3 py-1.5 text-xs font-semibold rounded transition-colors ${
+                kind === "meeting" ? "bg-accent-coral text-white" : "text-muted-foreground hover:bg-muted"
+              }`}
+            >
+              Meeting
+            </button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {kind === "block"
+              ? "Blocks your own time. Not shared with anyone."
+              : "Invites people and (with a linked Google account) sends a Google Calendar invite."}
+          </p>
+
+          <div>
+            <label htmlFor="drag-title" className="block text-sm font-medium text-foreground mb-1">
+              Title
+            </label>
+            <input
+              id="drag-title"
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              required
+              autoFocus
+              placeholder={kind === "block" ? "e.g. Focus time" : "e.g. Design sync"}
+              className="w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label htmlFor="drag-start" className="block text-sm font-medium text-foreground mb-1">
+                Starts
+              </label>
+              <input
+                id="drag-start"
+                type="datetime-local"
+                value={start}
+                onChange={(e) => setStart(e.target.value)}
+                className="w-full px-2 py-2 text-sm border border-border rounded-md bg-background text-foreground"
+              />
+            </div>
+            <div>
+              <label htmlFor="drag-end" className="block text-sm font-medium text-foreground mb-1">
+                Ends
+              </label>
+              <input
+                id="drag-end"
+                type="datetime-local"
+                value={end}
+                min={start || undefined}
+                onChange={(e) => setEnd(e.target.value)}
+                className={`w-full px-2 py-2 text-sm border rounded-md bg-background text-foreground ${
+                  startEndValid ? "border-border" : "border-red-500"
+                }`}
+              />
+            </div>
+          </div>
+          {!startEndValid && <p className="text-xs text-red-600">End must be after start.</p>}
+
+          <div>
+            <label htmlFor="drag-repeats" className="block text-sm font-medium text-foreground mb-1">
+              Repeats
+            </label>
+            <select
+              id="drag-repeats"
+              value={repeats}
+              onChange={(e) => setRepeats(e.target.value as Repeats)}
+              className="w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground"
+            >
+              {REPEATS_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {kind === "meeting" && (
+            <>
+              <div>
+                <label
+                  htmlFor="drag-organizer"
+                  className="block text-sm font-medium text-foreground mb-1"
+                >
+                  Send invite from
+                </label>
+                {googleLinks.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    No Google calendar linked. The meeting will be in-app only.
+                  </p>
+                ) : (
+                  <select
+                    id="drag-organizer"
+                    value={organizerCalendarLinkId}
+                    onChange={(e) => setOrganizerCalendarLinkId(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground"
+                  >
+                    <option value="">No invite (in-app notification only)</option>
+                    {googleLinks.map((l) => (
+                      <option key={l.id} value={l.id}>
+                        {l.displayName ? `${l.displayName} — ${l.externalEmail}` : l.externalEmail}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              <ParticipantPicker
+                users={data.users}
+                groups={data.groups}
+                selectedUserIds={selectedUserIds}
+                selectedGroupIds={selectedGroupIds}
+                onChangeUsers={setSelectedUserIds}
+                onChangeGroups={setSelectedGroupIds}
+                usersById={usersById}
+                groupsById={groupsById}
+                resolvedCount={resolvedParticipantIds.length}
+              />
+            </>
+          )}
+
+          {error && <p className="text-sm text-red-700">{error}</p>}
+
+          <div className="flex items-center justify-end gap-2 pt-1">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-3 py-2 text-sm font-medium rounded-md border border-border hover:bg-muted"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={!canSubmit}
+              className="px-4 py-2 rounded-md bg-accent-coral text-white text-sm font-medium hover:bg-accent-coral/90 transition-colors disabled:opacity-50"
+            >
+              {submitting ? "Creating…" : kind === "block" ? "Add block" : "Create meeting"}
+            </button>
+          </div>
+        </form>
+    </div>
   );
 }
 
@@ -1530,6 +2110,7 @@ function ScheduleView({ data }: { data: LoaderData }) {
         showingSelfOnly={resolvedParticipantIds.length === 0}
         users={data.users}
         workingHours={data.workingHours}
+        workingHoursEnabled={data.hasPersistedWorkingHours}
         durationMinutes={duration}
         timezone={data.timezone}
         weekStartIso={data.weekStartIso}
@@ -2027,6 +2608,7 @@ function ScheduleWeekGrid({
   showingSelfOnly = false,
   users,
   workingHours,
+  workingHoursEnabled,
   durationMinutes,
   timezone,
   weekStartIso,
@@ -2042,6 +2624,8 @@ function ScheduleWeekGrid({
   users: UserOption[];
   // The viewer's own working hours, used to stripe out non-working hours.
   workingHours: WhDay[];
+  // False when the Working Hours feature is off — suppresses the stripes.
+  workingHoursEnabled: boolean;
   durationMinutes: number;
   timezone: string;
   weekStartIso: string;
@@ -2053,6 +2637,10 @@ function ScheduleWeekGrid({
   const [data, setData] = useState<GroupAvailResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // When set (via the participant roster below the toolbar), the grid overlays
+  // just this one participant's free intervals so you can read one person's
+  // availability at a glance instead of the aggregate gradient.
+  const [hoveredUserId, setHoveredUserId] = useState<string | null>(null);
   // Bumped to force the fetch effect to re-run without changing inputs (manual
   // refresh button + tab-focus refresh).
   const [refreshKey, setRefreshKey] = useState(0);
@@ -2130,7 +2718,7 @@ function ScheduleWeekGrid({
   // already encoded in the cell's saturation.
   const eventsByDay: Record<number, EventBlock[]> = {};
   const totalParticipants = participantIds.length;
-  const CELL_HOURS = 0.25;
+  const CELL_HOURS = SNAP_HOURS; // 10-minute availability cells
   const GRID_START_H = HOURS[0];
   const GRID_END_H = HOURS[HOURS.length - 1] + 1;
   const CELLS_PER_DAY = Math.round((GRID_END_H - GRID_START_H) / CELL_HOURS);
@@ -2186,6 +2774,39 @@ function ScheduleWeekGrid({
         return cells;
       })
     : [];
+
+  // Per-day free blocks for the single hovered participant. When set, the grid
+  // paints these (solid green) instead of the aggregate gradient so the user
+  // can read one person's availability at a glance. Each interval is clamped to
+  // the visible [GRID_START_H, GRID_END_H) window of its day column.
+  const hoveredFreeByColIdx: { startHour: number; durationHours: number }[][] =
+    data && hoveredUserId
+      ? (() => {
+          const free = data.perUser.find((u) => u.userId === hoveredUserId)?.free ?? [];
+          const ivs = free
+            .map((iv) => ({
+              startMs: new Date(iv.startIso).getTime(),
+              endMs: new Date(iv.endIso).getTime(),
+            }))
+            .sort((a, b) => a.startMs - b.startMs);
+          return days.map((_, colIdx) => {
+            const dayStartMs = weekStart.getTime() + colIdx * 86_400_000;
+            const winStartMs = dayStartMs + GRID_START_H * 3_600_000;
+            const winEndMs = dayStartMs + GRID_END_H * 3_600_000;
+            const blocks: { startHour: number; durationHours: number }[] = [];
+            for (const iv of ivs) {
+              const s = Math.max(iv.startMs, winStartMs);
+              const e = Math.min(iv.endMs, winEndMs);
+              if (e <= s) continue;
+              blocks.push({
+                startHour: (s - dayStartMs) / 3_600_000,
+                durationHours: (e - s) / 3_600_000,
+              });
+            }
+            return blocks;
+          });
+        })()
+      : [];
 
   // Compute the selected-slot overlay (rendered separately so we can show a
   // hover popover with attending vs. unavailable participants).
@@ -2246,19 +2867,17 @@ function ScheduleWeekGrid({
   return (
     <section className="bg-card border border-border rounded-lg p-4 flex flex-col">
       <WeekToolbar
-        monthLabel={showingSelfOnly ? "Your availability" : "Schedule preview"}
+        monthLabel={"Schedule preview"}
         weekStartIso={weekStartIso}
         onRefresh={refresh}
         refreshing={loading || revalidator.state !== "idle"}
         legend={
           showingSelfOnly
-            ? [
-                { color: "bg-[rgba(132,188,105,0.8)]", label: "Free" },
-              ]
+            ? [{ swatch: availabilityTint(1), label: "Free" }]
             : [
-                { color: "bg-[rgba(132,188,105,0.18)]", label: "Few free" },
-                { color: "bg-[rgba(132,188,105,0.5)]", label: "Some free" },
-                { color: "bg-[rgba(132,188,105,0.8)]", label: "All free" },
+                { swatch: availabilityTint(0.33), label: "Few free" },
+                { swatch: availabilityTint(0.66), label: "Some free" },
+                { swatch: availabilityTint(1), label: "All free" },
               ]
         }
       />
@@ -2270,31 +2889,48 @@ function ScheduleWeekGrid({
           {error && (
             <div className="px-4 py-2 text-xs text-red-700">{error}</div>
           )}
-          {onSelectRange && (
-            <p className="px-4 py-1 text-[11px] text-muted-foreground">
-              Drag a range on the grid to set the meeting time.
-            </p>
+          {!showingSelfOnly && data && participantIds.length > 0 && (
+            <ParticipantAvailabilityRoster
+              participantIds={participantIds}
+              users={users}
+              hoveredUserId={hoveredUserId}
+              onHover={setHoveredUserId}
+            />
           )}
           <WeekGrid
             days={days}
             eventsByDay={eventsByDay}
-            showQuarterHourGrid
+            showSubHourGrid
             timezone={timezone}
             backgroundLayer={(dayIdx) => (
               <>
-                {/* Gradient first so the working-hours stripes draw on top. */}
-                {(tintsByColIdx[dayIdx] ?? []).map((t, i) => (
-                  <BlockBlock
-                    key={`tint-${i}`}
-                    topHour={GRID_START_H}
-                    startHour={t.startHour}
-                    duration={CELL_HOURS}
-                    style={{
-                      backgroundColor: `rgba(132, 188, 105, ${0.15 + 0.65 * t.alpha})`,
-                    }}
-                  />
-                ))}
-                {workingHoursStripeLayer(workingHours, days[dayIdx].dayOfWeek)}
+                {hoveredUserId ? (
+                  // One participant's own free intervals (solid green), so the
+                  // user can read that person's availability at a glance.
+                  (hoveredFreeByColIdx[dayIdx] ?? []).map((b, i) => (
+                    <BlockBlock
+                      key={`hover-${i}`}
+                      topHour={GRID_START_H}
+                      startHour={b.startHour}
+                      duration={b.durationHours}
+                      style={{ backgroundColor: availabilityTint(1) }}
+                    />
+                  ))
+                ) : (
+                  /* Aggregate gradient. Drawn first so the stripes layer on top. */
+                  (tintsByColIdx[dayIdx] ?? []).map((t, i) => (
+                    <BlockBlock
+                      key={`tint-${i}`}
+                      topHour={GRID_START_H}
+                      startHour={t.startHour}
+                      duration={CELL_HOURS}
+                      style={{ backgroundColor: availabilityTint(t.alpha) }}
+                    />
+                  ))
+                )}
+                {workingHoursStripeLayer(workingHours, days[dayIdx].dayOfWeek, {
+                  enabled: workingHoursEnabled,
+                })}
               </>
             )}
             overlayLayer={(dayIdx) => {
@@ -2306,6 +2942,9 @@ function ScheduleWeekGrid({
                   duration={selectedSlot.duration}
                   available={selectedSlot.available}
                   unavailable={selectedSlot.unavailable}
+                  // Flip the popover to the left edge for the rightmost columns
+                  // (Fri/Sat) so the attendee list isn't clipped off-screen.
+                  flipLeft={dayIdx >= 5}
                 />
               );
             }}
@@ -2314,15 +2953,10 @@ function ScheduleWeekGrid({
                 ? (dayIdx, startHour, endHour) => {
                     const day = days[dayIdx];
                     if (!day) return;
-                    const y = day.dateUtc.getUTCFullYear();
-                    const m = day.dateUtc.getUTCMonth();
-                    const d = day.dateUtc.getUTCDate();
-                    const toLocal = (hour: number) => {
-                      const h = Math.floor(hour);
-                      const mins = Math.round((hour - h) * 60);
-                      return toDatetimeLocal(new Date(y, m, d, h, mins));
-                    };
-                    onSelectRange(toLocal(startHour), toLocal(endHour));
+                    onSelectRange(
+                      dayHourToLocal(day.dateUtc, startHour),
+                      dayHourToLocal(day.dateUtc, endHour),
+                    );
                   }
                 : undefined
             }
@@ -2333,16 +2967,66 @@ function ScheduleWeekGrid({
   );
 }
 
+// Roster of the picked participants. Hovering a name asks the grid to overlay
+// just that person's free intervals (see hoveredUserId in ScheduleWeekGrid).
+function ParticipantAvailabilityRoster({
+  participantIds,
+  users,
+  hoveredUserId,
+  onHover,
+}: {
+  participantIds: string[];
+  users: UserOption[];
+  hoveredUserId: string | null;
+  onHover: (userId: string | null) => void;
+}) {
+  const usersById = new Map(users.map((u) => [u.id, u]));
+  return (
+    <div className="px-2 pb-4 flex flex-wrap items-center gap-1.5">
+      {participantIds.map((uid) => {
+        const u = usersById.get(uid) ?? {
+          id: uid,
+          firstName: uid,
+          lastName: "",
+          daliEmail: null,
+        };
+        const active = hoveredUserId === uid;
+        return (
+          <button
+            key={uid}
+            type="button"
+            onMouseEnter={() => onHover(uid)}
+            onMouseLeave={() => onHover(null)}
+            onFocus={() => onHover(uid)}
+            onBlur={() => onHover(null)}
+            className={`px-2 py-0.5 rounded-full text-xs font-medium transition-colors ${
+              active
+                ? "bg-accent-green text-[hsl(203_38%_18%)]"
+                : "bg-muted text-muted-foreground hover:bg-muted/70"
+            }`}
+          >
+            {userLabel(u)}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function SelectedSlotBlock({
   startHour,
   duration,
   available,
   unavailable,
+  flipLeft = false,
 }: {
   startHour: number;
   duration: number;
   available: UserOption[];
   unavailable: UserOption[];
+  // Open the attendee popover toward the left for rightmost columns so it
+  // doesn't get clipped off the right edge of the screen.
+  flipLeft?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const total = available.length + unavailable.length;
@@ -2374,7 +3058,9 @@ function SelectedSlotBlock({
       </div>
       {open && (
         <div
-          className="absolute left-full ml-2 top-0 z-40 w-56 rounded-md shadow-lg p-2 text-xs"
+          className={`absolute top-0 z-40 w-56 rounded-md shadow-lg p-2 text-xs ${
+            flipLeft ? "right-full mr-2" : "left-full ml-2"
+          }`}
           style={{
             backgroundColor: "var(--color-card)",
             color: "var(--color-foreground)",
@@ -2428,6 +3114,9 @@ type EventBlock = {
   label: string;
   /** Tailwind classes for the colored body (bg + text). */
   className: string;
+  /** Arbitrary hex background (e.g. a Google calendar colour). Overrides the
+   *  className background when set; text flips to a readable on-colour shade. */
+  bgColor?: string;
   /** Border color class for the outer wrapper (defaults to matching the body). */
   borderClassName?: string;
   /** Background tint for the buffer strip + frame (e.g. "bg-accent-coral/25"). */
@@ -2447,7 +3136,11 @@ function WeekGrid({
   overlayLayer,
   showProviderRow = false,
   onDayPointerSelect,
-  showQuarterHourGrid = false,
+  selection,
+  selectionPopover,
+  onSelectionDismiss,
+  onSelectionResize,
+  showSubHourGrid = false,
   timezone,
 }: {
   days: { dayOfWeek: number; num: number; dateUtc: Date }[];
@@ -2456,7 +3149,15 @@ function WeekGrid({
   overlayLayer?: (dayIdx: number) => React.ReactNode;
   showProviderRow?: boolean;
   onDayPointerSelect?: (dayIdx: number, startHour: number, endHour: number) => void;
-  showQuarterHourGrid?: boolean;
+  // A committed selection (controlled by the parent) drawn as a persistent
+  // accent block. selectionPopover renders the editor in a viewport-clamped
+  // portal; onSelectionDismiss fires when the user clicks the grid backdrop.
+  // onSelectionResize fires while dragging the block's top/bottom handles.
+  selection?: { dayIdx: number; startHour: number; endHour: number } | null;
+  selectionPopover?: () => React.ReactNode;
+  onSelectionDismiss?: () => void;
+  onSelectionResize?: (startHour: number, endHour: number) => void;
+  showSubHourGrid?: boolean;
   // When set, the column matching "today" in this timezone is highlighted and a
   // horizontal current-time line is drawn in it.
   timezone?: string;
@@ -2491,11 +3192,19 @@ function WeekGrid({
     null | { dayIdx: number; anchor: number; hover: number }
   >(null);
 
+  // Resize-drag state for the committed selection's top/bottom handles. `edge`
+  // says which end is moving; `fixed` is the opposite end's hour (held still).
+  const [resize, setResize] = useState<
+    null | { edge: "start" | "end"; fixed: number }
+  >(null);
+
   // Column DOM refs so window-level mousemove can compute Y relative to the
   // column the drag started in, even when the cursor strays elsewhere.
   const columnRefs = useRef<(HTMLDivElement | null)[]>([]);
+  // The committed selection block element, so the portal popover can anchor to
+  // its real on-screen rect and clamp itself to the viewport.
+  const selectionRef = useRef<HTMLDivElement | null>(null);
 
-  const SNAP_HOURS = 0.25; // 15 minutes
   const MIN_HOUR = HOURS[0];
   const MAX_HOUR = HOURS[HOURS.length - 1] + 1;
 
@@ -2508,6 +3217,11 @@ function WeekGrid({
   const onDayMouseDown = (dayIdx: number) => (e: React.MouseEvent<HTMLDivElement>) => {
     if (!onDayPointerSelect) return;
     if (e.button !== 0) return;
+    // While a selection's editor is open, freeze the grid: a new drag would
+    // move the committed selection out from under the open form. (The popover
+    // itself lives in a body portal, so its clicks never reach a column — this
+    // only guards clicks on the grid behind/around it.)
+    if (selection) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const h = hourFromY(e.clientY - rect.top);
     setDrag({ dayIdx, anchor: h, hover: h });
@@ -2542,7 +3256,45 @@ function WeekGrid({
     };
   }, [drag, onDayPointerSelect, MAX_HOUR]);
 
+  // Resizing the committed selection by dragging its top/bottom handle. The
+  // moving edge follows the cursor (snapped, clamped, never crossing the fixed
+  // edge); onSelectionResize streams the new range up so the popover form and
+  // the block stay in sync live.
+  const startResize = (edge: "start" | "end") => (e: React.MouseEvent) => {
+    if (!selection || !onSelectionResize) return;
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setResize({ edge, fixed: edge === "start" ? selection.endHour : selection.startHour });
+  };
+
+  useEffect(() => {
+    if (!resize || !selection || !onSelectionResize) return;
+    const col = columnRefs.current[selection.dayIdx];
+    const onMove = (e: MouseEvent) => {
+      if (!col) return;
+      const rect = col.getBoundingClientRect();
+      const h = hourFromY(e.clientY - rect.top);
+      // Keep at least one snap-step of height and don't let edges cross.
+      if (resize.edge === "start") {
+        const start = Math.min(h, resize.fixed - SNAP_HOURS);
+        onSelectionResize(Math.max(MIN_HOUR, start), resize.fixed);
+      } else {
+        const end = Math.max(h, resize.fixed + SNAP_HOURS);
+        onSelectionResize(resize.fixed, Math.min(MAX_HOUR, end));
+      }
+    };
+    const onUp = () => setResize(null);
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [resize, selection, onSelectionResize, MIN_HOUR, MAX_HOUR]);
+
   return (
+    <div className="relative">
     <div className="flex border border-border rounded-md overflow-hidden select-none">
       {/* Hour axis */}
       <div className="flex flex-col w-14 border-r border-border bg-card text-[11px] text-muted-foreground">
@@ -2578,26 +3330,21 @@ function WeekGrid({
           >
             {HOURS.map((_, i) => (
               <Fragment key={i}>
+                {/* Hour line — distinctly heavier (2px, darker) than the faint
+                    10-minute sub-hour lines. */}
                 <div
-                  className="absolute left-0 right-0 border-t border-foreground/30"
+                  className="absolute left-0 right-0 border-t-2 border-foreground/45"
                   style={{ top: i * HOUR_PX }}
                 />
-                {showQuarterHourGrid && (
-                  <>
+                {showSubHourGrid &&
+                  // 10-minute sub-hour lines (skip index 0; that's the hour line).
+                  Array.from({ length: SUBDIVISIONS_PER_HOUR - 1 }).map((_, s) => (
                     <div
-                      className="absolute left-0 right-0 border-t border-foreground/30"
-                      style={{ top: i * HOUR_PX + HOUR_PX * 0.25 }}
+                      key={s}
+                      className="absolute left-0 right-0 border-t border-foreground/[0.08]"
+                      style={{ top: i * HOUR_PX + (HOUR_PX * (s + 1)) / SUBDIVISIONS_PER_HOUR }}
                     />
-                    <div
-                      className="absolute left-0 right-0 border-t border-foreground/30"
-                      style={{ top: i * HOUR_PX + HOUR_PX * 0.5 }}
-                    />
-                    <div
-                      className="absolute left-0 right-0 border-t border-foreground/30"
-                      style={{ top: i * HOUR_PX + HOUR_PX * 0.75 }}
-                    />
-                  </>
-                )}
+                  ))}
               </Fragment>
             ))}
             {backgroundLayer?.(idx)}
@@ -2616,22 +3363,58 @@ function WeekGrid({
               const heightHours = Math.max(SNAP_HOURS, hi - lo);
               return (
                 <div
-                  className="absolute left-0 right-0 border-2 pointer-events-none rounded-sm z-30 shadow-md"
+                  className="absolute left-0 right-0 border-2 border-accent-coral bg-accent-coral/15 pointer-events-none rounded-sm z-30 shadow-md"
                   style={{
                     top: (lo - MIN_HOUR) * HOUR_PX,
                     height: heightHours * HOUR_PX,
-                    borderColor: "var(--color-foreground)",
                   }}
                 >
-                  <div
-                    className="px-1 py-0.5 text-[11px] font-semibold rounded-sm m-1 inline-block shadow-sm"
-                    style={{
-                      color: "var(--color-foreground)",
-                      backgroundColor: "var(--color-card)",
-                    }}
-                  >
+                  <div className="px-1 py-0.5 text-[11px] font-semibold rounded-sm m-1 inline-block shadow-sm bg-accent-coral text-white">
                     {formatHourMinute(lo)} – {formatHourMinute(hi)}
                   </div>
+                </div>
+              );
+            })()}
+            {/* Committed selection block — stays drawn where the drag landed,
+                with top/bottom handles to resize it. The editor popover renders
+                in a viewport-clamped portal (below), not clipped by the grid. */}
+            {selection && selection.dayIdx === idx && (() => {
+              const lo = selection.startHour;
+              const hi = selection.endHour;
+              const top = (lo - MIN_HOUR) * HOUR_PX;
+              const height = Math.max(SNAP_HOURS, hi - lo) * HOUR_PX;
+              const resizable = !!onSelectionResize;
+              return (
+                <div
+                  ref={selectionRef}
+                  className={`absolute left-0 right-0 border-2 border-accent-coral bg-accent-coral/15 rounded-sm z-30 ${
+                    resizable ? "" : "pointer-events-none"
+                  }`}
+                  style={{ top, height }}
+                >
+                  <div className="px-1 py-0.5 text-[11px] font-semibold rounded-sm m-1 inline-block bg-accent-coral text-white pointer-events-none">
+                    {formatHourMinute(lo)} – {formatHourMinute(hi)}
+                  </div>
+                  {resizable && (
+                    <>
+                      {/* Top handle */}
+                      <div
+                        onMouseDown={startResize("start")}
+                        className="absolute -top-1 left-0 right-0 h-2 cursor-ns-resize flex items-center justify-center group"
+                        aria-label="Adjust start time"
+                      >
+                        <span className="w-8 h-1 rounded-full bg-accent-coral group-hover:h-1.5 transition-all" />
+                      </div>
+                      {/* Bottom handle */}
+                      <div
+                        onMouseDown={startResize("end")}
+                        className="absolute -bottom-1 left-0 right-0 h-2 cursor-ns-resize flex items-center justify-center group"
+                        aria-label="Adjust end time"
+                      >
+                        <span className="w-8 h-1 rounded-full bg-accent-coral group-hover:h-1.5 transition-all" />
+                      </div>
+                    </>
+                  )}
                 </div>
               );
             })()}
@@ -2654,10 +3437,13 @@ function WeekGrid({
                   }}
                 >
                   <div
-                    className={`absolute left-0 right-0 px-1.5 py-1 text-[11px] font-medium overflow-hidden ${e.className}`}
+                    className={`absolute left-0 right-0 px-1.5 py-1 text-[11px] font-medium overflow-hidden ${e.className} ${
+                      e.bgColor ? "text-white" : ""
+                    }`}
                     style={{
                       top: bufferBefore * HOUR_PX,
                       height: e.duration * HOUR_PX,
+                      ...(e.bgColor ? { backgroundColor: e.bgColor } : {}),
                     }}
                   >
                     {e.label && <span className="truncate block">{e.label}</span>}
@@ -2666,25 +3452,22 @@ function WeekGrid({
               );
             })}
             {overlayLayer?.(idx)}
-            {showQuarterHourGrid &&
+            {/* Redraw the grid lines above the availability tint so they stay
+                visible. Hour lines bolder than the 10-minute sub-hour lines. */}
+            {showSubHourGrid &&
               HOURS.map((_, i) => (
                 <Fragment key={`grid-fg-${i}`}>
                   <div
-                    className="absolute left-0 right-0 border-t border-foreground/20 pointer-events-none z-20"
+                    className="absolute left-0 right-0 border-t-2 border-foreground/40 pointer-events-none z-20"
                     style={{ top: i * HOUR_PX }}
                   />
-                  <div
-                    className="absolute left-0 right-0 border-t border-foreground/20 pointer-events-none z-20"
-                    style={{ top: i * HOUR_PX + HOUR_PX * 0.25 }}
-                  />
-                  <div
-                    className="absolute left-0 right-0 border-t border-foreground/20 pointer-events-none z-20"
-                    style={{ top: i * HOUR_PX + HOUR_PX * 0.5 }}
-                  />
-                  <div
-                    className="absolute left-0 right-0 border-t border-foreground/20 pointer-events-none z-20"
-                    style={{ top: i * HOUR_PX + HOUR_PX * 0.75 }}
-                  />
+                  {Array.from({ length: SUBDIVISIONS_PER_HOUR - 1 }).map((_, s) => (
+                    <div
+                      key={s}
+                      className="absolute left-0 right-0 border-t border-foreground/[0.08] pointer-events-none z-20"
+                      style={{ top: i * HOUR_PX + (HOUR_PX * (s + 1)) / SUBDIVISIONS_PER_HOUR }}
+                    />
+                  ))}
                 </Fragment>
               ))}
           </div>
@@ -2692,6 +3475,87 @@ function WeekGrid({
         );
       })}
     </div>
+    {/* Editor popover — rendered in a portal at <body>, anchored to the
+        selection block's real screen rect and clamped to the viewport, so it
+        is never clipped by the grid's overflow or the screen edge. */}
+    {selection && selectionPopover && (
+      <SelectionPopoverPortal
+        anchorRef={selectionRef}
+        onDismiss={() => onSelectionDismiss?.()}
+      >
+        {selectionPopover()}
+      </SelectionPopoverPortal>
+    )}
+    </div>
+  );
+}
+
+// Floats the selection editor next to the committed block. Renders into <body>
+// (so the grid's overflow-hidden can't clip it) and positions itself fixed,
+// preferring the block's right side but flipping left / shifting up to stay
+// fully on-screen. A transparent full-viewport backdrop captures outside clicks
+// to dismiss — and, being in a portal, never lets a click reach a grid column.
+function SelectionPopoverPortal({
+  anchorRef,
+  onDismiss,
+  children,
+}: {
+  anchorRef: React.RefObject<HTMLElement | null>;
+  onDismiss: () => void;
+  children: React.ReactNode;
+}) {
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+
+  useLayoutEffect(() => {
+    const place = () => {
+      const anchor = anchorRef.current;
+      const card = cardRef.current;
+      if (!anchor || !card) return;
+      const a = anchor.getBoundingClientRect();
+      const cw = card.offsetWidth;
+      const ch = card.offsetHeight;
+      const gap = 8;
+      const margin = 8;
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      // Prefer the right of the block; flip left if it would overflow.
+      let left = a.right + gap;
+      if (left + cw + margin > vw) left = a.left - gap - cw;
+      left = Math.max(margin, Math.min(left, vw - cw - margin));
+      // Align the top with the block, then clamp within the viewport.
+      let top = a.top;
+      top = Math.max(margin, Math.min(top, vh - ch - margin));
+      setPos({ left, top });
+    };
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [anchorRef, children]);
+
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-50">
+      <div
+        className="absolute inset-0"
+        onMouseDown={onDismiss}
+        aria-hidden="true"
+      />
+      <div
+        data-calendar-popover
+        className="absolute"
+        style={{ left: pos?.left ?? -9999, top: pos?.top ?? -9999, visibility: pos ? "visible" : "hidden" }}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        {children}
+      </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -2727,8 +3591,11 @@ function DayBg({ className, style }: { className?: string; style?: React.CSSProp
 function workingHoursStripeLayer(
   workingHours: WhDay[],
   dow: number,
-  options?: { wash?: boolean },
+  options?: { enabled?: boolean },
 ): React.ReactNode {
+  // When the Working Hours feature is off, the whole day is unrestricted — draw
+  // no "outside hours" stripes at all.
+  if (options?.enabled === false) return null;
   const wh = workingHours.find((w) => w.dayOfWeek === dow);
   if (!wh || wh.segments.length === 0) return <DayBg style={STRIPE_STYLE} />;
   const sorted = wh.segments
@@ -2763,16 +3630,6 @@ function workingHoursStripeLayer(
           style={STRIPE_STYLE}
         />
       ))}
-      {options?.wash &&
-        merged.map((s, i) => (
-          <BlockBlock
-            key={`wash-${i}`}
-            topHour={dayStart}
-            startHour={s.start}
-            duration={s.end - s.start}
-            className="bg-accent-green/20 dark:bg-accent-green/15"
-          />
-        ))}
     </>
   );
 }

@@ -1322,8 +1322,18 @@ model GroupDefinition {
   // groups, or null for user-created groups. Used to prevent duplicate
   // backfill and block manual edits/deletes from the UI.
   systemKey       String?   @unique
+  // Set when a static group is manually archived. A group is also treated as
+  // archived once every term in boundTermIds has ended (derived at read time);
+  // archivedAt only records an explicit, term-independent archive action.
+  archivedAt      DateTime?
+  // Term ids this static group is scoped to. Empty = not term-bound (never
+  // auto-archives). When non-empty, the group auto-archives once the latest
+  // bound term's endDate has passed. System (Dynamic) groups never use this.
+  boundTermIds    String[] @default([])
 
   createdAt DateTime @default(now())
+
+  @@index([archivedAt])
 }
 
 enum GroupType {

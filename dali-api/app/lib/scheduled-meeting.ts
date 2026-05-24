@@ -150,3 +150,36 @@ export async function createScheduledMeeting(
     gcalError,
   };
 }
+
+export type CancelScheduledMeetingResult =
+  | { ok: true; alreadyCancelled: boolean }
+  | { ok: false; error: string; status: number };
+
+/**
+ * Cancel a meeting. Only the organizer may cancel. Flipping the status to
+ * Cancelled is all that's needed to pull the invite out of every recipient's
+ * todos, tasks, attention banner, and notification bell — those surfaces filter
+ * on `scheduledMeeting.status !== "Cancelled"` rather than fanning out deletes.
+ * The Google Calendar event (if any) is left in place; deleting it would need a
+ * new google-calendar helper and is out of scope here.
+ */
+export async function cancelScheduledMeeting(
+  meetingId: string,
+  actorUserId: string,
+): Promise<CancelScheduledMeetingResult> {
+  const meeting = await prisma.scheduledMeeting.findUnique({
+    where: { id: meetingId },
+    select: { id: true, organizerId: true, status: true },
+  });
+  if (!meeting) return { ok: false, error: "Not found", status: 404 };
+  if (meeting.organizerId !== actorUserId) {
+    return { ok: false, error: "Only the organizer can cancel", status: 403 };
+  }
+  if (meeting.status === "Cancelled") return { ok: true, alreadyCancelled: true };
+
+  await prisma.scheduledMeeting.update({
+    where: { id: meetingId },
+    data: { status: "Cancelled" },
+  });
+  return { ok: true, alreadyCancelled: false };
+}

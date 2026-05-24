@@ -310,6 +310,15 @@ html {
   color-scheme: light dark;
 }
 
+/* The sidebar shell is dark navy in both color modes. Force a dark scrollbar
+   for its scroll area so the (light-mode) browser scrollbar track doesn't paint
+   a pale strip against the dark nav. `color-scheme: dark` covers WebKit/Blink;
+   `scrollbar-color` covers Firefox (thumb / track tuned to the navy). */
+.sidebar-scroll {
+  color-scheme: dark;
+  scrollbar-color: hsl(203 20% 45%) transparent;
+}
+
 body {
   background-color: var(--color-background);
   color: var(--color-foreground);

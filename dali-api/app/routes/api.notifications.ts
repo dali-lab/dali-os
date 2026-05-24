@@ -38,9 +38,15 @@ export async function action({ request }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
 
-  // POST with no id = "mark all read"
+  // POST with no id = "mark all read". Meeting invites are excluded: they
+  // clear only when the recipient RSVPs (Accept/Maybe/Decline), never on a
+  // blanket read.
   await prisma.notification.updateMany({
-    where: { recipientUserId: auth.user.sub, readAt: null },
+    where: {
+      recipientUserId: auth.user.sub,
+      readAt: null,
+      scheduledMeetingId: null,
+    },
     data: { readAt: new Date() },
   });
 

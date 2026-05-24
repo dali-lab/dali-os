@@ -75,7 +75,9 @@ describe("find_mutual_freebusy", () => {
   });
 
   it("returns mutual free slots in a single-weekday window", async () => {
-    // Wed 2026-05-13 09:00 ET → 17:00 ET (default working hours).
+    // Wed 2026-05-13 09:00 ET → 17:00 ET. Neither user has persisted working
+    // hours (findMany → []), so each is treated as available all day; with no
+    // busy events the whole queried window is mutually free.
     const out = await runFindMutualFreebusy("user-1", {
       participantUserIds: ["user-2"],
       windowStart: "2026-05-13T13:00:00Z", // 09:00 ET
