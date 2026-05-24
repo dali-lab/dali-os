@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { Form, Link, redirect, useActionData, useFetcher, useLoaderData, useSubmit } from "react-router";
+import { Form, Link, redirect, useActionData, useFetcher, useLoaderData, useNavigation, useSubmit } from "react-router";
 import type { Route } from "./+types/members.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isAdmin, isHiringLead } from "~/lib/roles";
 import { initialsFromName } from "~/lib/display";
+import { resolvePhotoUrl } from "~/lib/photo";
 import { EditableSection } from "~/components/EditableSection";
+import { PhotoUploadField } from "~/components/PhotoUploadField";
 import {
   ALLOWED_LEVELS,
   parseLevel,
@@ -23,7 +25,8 @@ export const meta: Route.MetaFunction = ({ data }) => {
 };
 
 // Profile fields a member (or an admin) may edit. Identity/auth columns
-// (netId, *Email) are intentionally not here.
+// (netId, *Email) are intentionally not here. photoUrl is handled separately
+// via the image-upload control, not as a plain text field.
 const TEXT_FIELDS = [
   "firstName",
   "lastName",
@@ -33,7 +36,6 @@ const TEXT_FIELDS = [
   "linkedinUrl",
   "githubUrl",
   "personalSite",
-  "photoUrl",
   "timeZone",
 ] as const;
 
@@ -87,6 +89,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     orderBy: { displayName: "asc" },
   });
 
+  // Resolve for the header <img>. The raw key stays on `member.photoUrl` so
+  // the upload field's hidden input round-trips it unchanged on save.
+  const photoUrlResolved = await resolvePhotoUrl(member.photoUrl);
+
   return {
     member: {
       ...member,
@@ -101,6 +107,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     canEdit,
     canManageEligibility,
     allDomains,
+    photoUrlResolved,
   };
 }
 
@@ -165,6 +172,11 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
   }
 
+  // photoUrl carries an S3 key (or a legacy URL) from the upload control;
+  // blank means "no photo".
+  const photoUrlRaw = (form.get("photoUrl") as string | null)?.trim() ?? "";
+  data.photoUrl = photoUrlRaw === "" ? null : photoUrlRaw;
+
   const classYearRaw = (form.get("classYear") as string | null)?.trim() ?? "";
   if (classYearRaw === "") {
     data.classYear = null;
@@ -189,15 +201,33 @@ const FIELD_LABELS: Record<string, string> = {
   linkedinUrl: "LinkedIn URL",
   githubUrl: "GitHub URL",
   personalSite: "Personal site",
-  photoUrl: "Photo URL",
   timeZone: "Time zone (IANA, e.g. America/New_York)",
 };
 
 export default function MemberDetail() {
-  const { member, canEdit, canManageEligibility, allDomains } = useLoaderData<typeof loader>();
+  const { member, canEdit, canManageEligibility, allDomains, photoUrlResolved } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const submit = useSubmit();
+  const navigation = useNavigation();
   const formRef = useRef<HTMLFormElement | null>(null);
+  const wasSubmitting = useRef(false);
+
+  // This page renders inside a TabWorkspace iframe; a successful save only
+  // revalidates the iframe's loaders, not the parent shell. Tell the parent
+  // so it can refresh the sidebar avatar. A save that returns a validation
+  // error keeps `actionData.error` set; a success redirects and clears it.
+  useEffect(() => {
+    if (navigation.state === "submitting") {
+      wasSubmitting.current = true;
+      return;
+    }
+    if (navigation.state === "idle" && wasSubmitting.current) {
+      wasSubmitting.current = false;
+      if (!actionData?.error && typeof window !== "undefined" && window.parent !== window) {
+        window.parent.postMessage({ type: "dali:profileUpdated" }, window.location.origin);
+      }
+    }
+  }, [navigation.state, actionData]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -206,9 +236,9 @@ export default function MemberDetail() {
       </Link>
 
       <header className="flex flex-col items-center gap-4 text-center">
-        {member.photoUrl ? (
+        {photoUrlResolved ? (
           <img
-            src={member.photoUrl}
+            src={photoUrlResolved}
             alt=""
             className="w-32 h-32 rounded-lg object-cover border border-border"
           />
@@ -247,6 +277,13 @@ export default function MemberDetail() {
             ref={formRef}
             className="flex flex-col gap-3 w-full"
           >
+            <PhotoUploadField
+              userId={member.id}
+              name={`${member.firstName} ${member.lastName}`}
+              initialKey={member.photoUrl}
+              initialPreviewUrl={photoUrlResolved}
+              readOnly={!editing}
+            />
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {TEXT_FIELDS.map((field) => (
                 <Field

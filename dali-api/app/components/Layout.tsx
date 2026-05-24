@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Link, useLocation } from 'react-router'
+import { Link, useLocation, useRevalidator } from 'react-router'
 import {
   LogOut,
   Users,
@@ -38,6 +38,7 @@ import { useUnreadNotificationCount, useOpenTasks, UnreadBadge } from '~/compone
 
 interface LayoutProps {
   user: { email: string; firstName?: string; lastName?: string }
+  photoUrl?: string | null
   isHiringLead?: boolean
   isAdmin?: boolean
   isDomainLead?: boolean
@@ -51,8 +52,13 @@ const EXPANDED_AREAS_KEY = 'dali:sidebar:expanded-areas'
 
 type AreaKey = 'hiring' | 'projects' | 'members' | 'partners' | 'education' | 'internal-processes' | 'admin-console'
 
-export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLead = false, canViewForms = false, canViewStaffing = false, isInterviewer = false }: LayoutProps) {
+export function Layout({ user, photoUrl, isHiringLead = false, isAdmin = false, isDomainLead = false, canViewForms = false, canViewStaffing = false, isInterviewer = false }: LayoutProps) {
   const location = useLocation()
+  const { revalidate } = useRevalidator()
+  // Held in a ref so the message listener (mounted once) always calls the
+  // latest revalidate without needing to re-subscribe.
+  const revalidateRef = useRef(revalidate)
+  revalidateRef.current = revalidate
   const [focusedTabUrl, setFocusedTabUrl] = useState<string | null>(null)
   // Sidebar highlight follows the focused workspace tab when one is open;
   // otherwise it falls back to the parent route.
@@ -136,6 +142,10 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
         typeof data.label === 'string'
       ) {
         workspaceRef.current?.setTabLabel(data.url, data.label)
+      } else if (data.type === 'dali:profileUpdated') {
+        // A profile edit inside a workspace iframe doesn't re-run the shell
+        // loader, so re-fetch it to refresh the footer avatar.
+        revalidateRef.current()
       }
     }
     window.addEventListener('message', handler)
@@ -616,7 +626,16 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
                           key={t.id}
                           type="button"
                           title={t.title}
-                          onClick={() => openInWorkspace({ url: t.link!, label: t.title })}
+                          onClick={() => {
+                            // Tasks are notification rows — POST /read clears
+                            // the tile + drops the count once the user acts.
+                            fetch(`/api/notifications/${t.id}/read`, {
+                              method: 'POST',
+                              credentials: 'include',
+                              keepalive: true,
+                            })
+                            openInWorkspace({ url: t.link!, label: t.title })
+                          }}
                           className={`${cls} text-white/55 hover:text-white hover:bg-white/5`}
                         >
                           <span className="truncate">{t.title}</span>
@@ -771,8 +790,18 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
               collapsed ? 'p-1.5' : 'flex-1 min-w-0 px-2 py-1.5 text-left'
             }`}
           >
-            <div className="relative w-8 h-8 rounded-full bg-accent-coral text-white flex items-center justify-center font-bold text-xs flex-shrink-0">
-              {initials}
+            <div className="relative w-8 h-8 flex-shrink-0">
+              {photoUrl ? (
+                <img
+                  src={photoUrl}
+                  alt=""
+                  className="w-8 h-8 rounded-full object-cover"
+                />
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-accent-coral text-white flex items-center justify-center font-bold text-xs">
+                  {initials}
+                </div>
+              )}
               <UnreadBadge count={unreadCount} />
             </div>
             {!collapsed && (
@@ -838,9 +867,19 @@ export function Layout({ user, isHiringLead = false, isAdmin = false, isDomainLe
           <Link
             to="/profile"
             aria-label={unreadCount > 0 ? `Profile (${unreadCount} unread)` : 'Profile'}
-            className="relative w-8 h-8 rounded-full bg-accent-coral text-white flex items-center justify-center font-bold text-xs"
+            className="relative w-8 h-8 rounded-full flex items-center justify-center"
           >
-            {initials}
+            {photoUrl ? (
+              <img
+                src={photoUrl}
+                alt=""
+                className="w-8 h-8 rounded-full object-cover"
+              />
+            ) : (
+              <span className="w-8 h-8 rounded-full bg-accent-coral text-white flex items-center justify-center font-bold text-xs">
+                {initials}
+              </span>
+            )}
             <UnreadBadge count={unreadCount} />
           </Link>
           <a href="/logout" className="text-white/40 hover:text-white/70 transition" title="Log out">

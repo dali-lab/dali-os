@@ -14,6 +14,7 @@ const SNAPSHOT_MIN_INTERVAL_MS = 30_000;
  *   review:{reviewId}:rejectionRationale
  *   interview:{interviewId}:notes
  *   interview:{interviewId}:recommendation
+ *   domainApplication:{domainApplicationId}:prepNote
  */
 function parseDocName(name: string) {
   const parts = name.split(":");
@@ -37,6 +38,14 @@ async function seedContent(name: string): Promise<string | null> {
     if (!review) return null;
     if (field === "feedback") return review.feedback;
     if (field === "rejectionRationale") return review.rejectionRationale;
+  }
+
+  if (entity === "domainApplication") {
+    if (field === "prepNote") {
+      const da = await prisma.domainApplication.findUnique({ where: { id } });
+      if (!da) return null;
+      return da.interviewPrepNote ?? "";
+    }
   }
 
   if (entity === "interview") {
@@ -178,6 +187,15 @@ export async function storeDocument(
       await prisma.applicationReview.update({
         where: { id },
         data: { rejectionRationale: plainText },
+      });
+    }
+  }
+
+  if (entity === "domainApplication") {
+    if (field === "prepNote") {
+      await prisma.domainApplication.update({
+        where: { id },
+        data: { interviewPrepNote: plainText },
       });
     }
   }

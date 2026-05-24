@@ -7,7 +7,8 @@ import { getUserRoles } from "~/lib/roles";
 import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
 import { presignAnswers } from "~/hiring/lib/presign";
 import { ApplicationViewer } from "~/hiring/components/ApplicationViewer";
-import type { Question } from "~/types";
+import { ReviewSummary } from "~/hiring/components/ReviewSummary";
+import type { Question, RubricCriterion } from "~/types";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const name = (data as { applicantName?: string } | undefined)?.applicantName;
@@ -50,7 +51,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           applicationCycleId: true,
           generalChallengeVersion: { select: { questions: true, description: true } },
           internToFullFormVersion: { select: { questions: true } },
-          applicationCycle: { select: { name: true, cycleType: true } },
+          applicationCycle: {
+            select: {
+              name: true,
+              cycleType: true,
+              generalRubricVersion: { select: { criteria: true } },
+              domains: { select: { domainId: true, rubricVersion: { select: { criteria: true } } } },
+            },
+          },
           user: { select: { firstName: true, lastName: true } },
         },
       },
@@ -101,6 +109,20 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   for (const q of generalQuestions) questionLabels[q.key] = q.data.label;
   for (const q of (da.challengeVersion?.questions as unknown as Question[]) ?? []) {
     questionLabels[q.key] = q.data.label;
+  }
+
+  // Criterion labels for the Scores list: the cycle's general rubric plus this
+  // domain's rubric. Scores are keyed by criterion key (e.g. "crit-1778..."),
+  // so without this map the page renders the raw keys.
+  const cycle = da.application.applicationCycle;
+  const criterionLabels: Record<string, string> = {};
+  const generalCriteria =
+    (cycle.generalRubricVersion?.criteria as unknown as RubricCriterion[]) ?? [];
+  const domainCriteria =
+    (cycle.domains.find((d) => d.domainId === effectiveDomainId)?.rubricVersion
+      ?.criteria as unknown as RubricCriterion[]) ?? [];
+  for (const c of [...generalCriteria, ...domainCriteria]) {
+    criterionLabels[c.key] = c.label;
   }
 
   // Submitted reviews for THIS domain application, with reviewer identity.
@@ -175,18 +197,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     domainName,
     application,
     questionLabels,
+    criterionLabels,
     reviews,
     selectedReviewId,
   };
 }
-
-const RECOMMENDATION_TONE: Record<string, string> = {
-  "Strong Hire": "bg-green-100 text-green-800",
-  Hire: "bg-green-50 text-green-700",
-  "Lean Hire": "bg-lime-50 text-lime-700",
-  "Lean No Hire": "bg-amber-50 text-amber-700",
-  "No Hire": "bg-red-50 text-red-700",
-};
 
 export default function ApplicationReadOnlyDetail() {
   const data = useLoaderData<typeof loader>();
@@ -264,105 +279,38 @@ export default function ApplicationReadOnlyDetail() {
                   </select>
                 </div>
 
-                {selected && <ReviewView review={selected} />}
+                {selected && (
+                  <ReviewSummary
+                    overallRecommendation={selected.overallRecommendation}
+                    scores={selected.scores}
+                    criteria={Object.fromEntries(
+                      Object.entries(data.criterionLabels).map(([key, label]) => [
+                        key,
+                        { label },
+                      ]),
+                    )}
+                    feedback={selected.feedback}
+                    rejectionRationale={selected.rejectionRationale}
+                    footerNote={
+                      selected.submittedAt ? (
+                        <>
+                          Submitted{" "}
+                          {new Date(selected.submittedAt).toLocaleDateString(undefined, {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                          })}
+                          . Highlighted passages from this review appear inline on the left.
+                        </>
+                      ) : null
+                    }
+                  />
+                )}
               </div>
             )}
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-function ReviewView({
-  review,
-}: {
-  review: {
-    reviewerName: string;
-    scores: Record<string, number>;
-    feedback: string;
-    rejectionRationale: string;
-    overallRecommendation: string | null;
-    submittedAt: string | null;
-  };
-}) {
-  const scoreEntries = Object.entries(review.scores ?? {});
-  return (
-    <div className="space-y-5">
-      {/* Overall recommendation */}
-      {review.overallRecommendation && (
-        <div>
-          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">
-            Overall Recommendation
-          </h3>
-          <span
-            className={`inline-flex items-center px-2.5 py-1 rounded-md text-sm font-medium ${
-              RECOMMENDATION_TONE[review.overallRecommendation] ??
-              "bg-muted text-foreground"
-            }`}
-          >
-            {review.overallRecommendation}
-          </span>
-        </div>
-      )}
-
-      {/* Scores */}
-      {scoreEntries.length > 0 && (
-        <div>
-          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">
-            Scores
-          </h3>
-          <ul className="space-y-1">
-            {scoreEntries.map(([key, value]) => (
-              <li
-                key={key}
-                className="flex items-center justify-between text-sm border-b border-border/60 py-1"
-              >
-                <span className="text-muted-foreground">{key}</span>
-                <span className="font-medium text-foreground">{value}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* Feedback */}
-      <div>
-        <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">
-          Internal Feedback
-        </h3>
-        {review.feedback.trim() ? (
-          <p className="text-sm text-foreground whitespace-pre-wrap">
-            {review.feedback}
-          </p>
-        ) : (
-          <p className="text-sm text-muted-foreground italic">No feedback.</p>
-        )}
-      </div>
-
-      {/* Rejection rationale */}
-      {review.rejectionRationale.trim() && (
-        <div>
-          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">
-            Rejection Rationale
-          </h3>
-          <p className="text-sm text-foreground whitespace-pre-wrap">
-            {review.rejectionRationale}
-          </p>
-        </div>
-      )}
-
-      {review.submittedAt && (
-        <p className="text-[11px] text-muted-foreground/70 pt-2 border-t border-border">
-          Submitted{" "}
-          {new Date(review.submittedAt).toLocaleDateString(undefined, {
-            month: "short",
-            day: "numeric",
-            year: "numeric",
-          })}
-          . Highlighted passages from this review appear inline on the left.
-        </p>
-      )}
     </div>
   );
 }

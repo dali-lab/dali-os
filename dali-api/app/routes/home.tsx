@@ -165,6 +165,27 @@ function AttentionBanner({
               <a
                 key={t.id}
                 href={t.link}
+                onClick={(e) => {
+                  // Tasks are themselves notification rows, so POST /read
+                  // clears the tile + the count once the user acts on it.
+                  // keepalive lets the request survive the navigation.
+                  fetch(`/api/notifications/${t.id}/read`, {
+                    method: "POST",
+                    credentials: "include",
+                    keepalive: true,
+                  });
+                  // Inside a TabWorkspace iframe: hand the URL to the parent
+                  // shell so the user lands in a real tab instead of being
+                  // stranded in the chrome-less embed.
+                  const link = t.link!;
+                  if (link.startsWith("/") && window.self !== window.top) {
+                    e.preventDefault();
+                    window.parent.postMessage(
+                      { type: "dali:openTab", url: link, label: t.title },
+                      window.location.origin,
+                    );
+                  }
+                }}
                 className={`${cls} hover:border-accent-coral/50 transition-colors`}
               >
                 {inner}

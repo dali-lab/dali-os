@@ -9,6 +9,7 @@ vi.mock("~/lib/db", () => {
     applicationReview: { findUnique: vi.fn(), update: vi.fn() },
     interview: { findUnique: vi.fn(), update: vi.fn() },
     interviewAssignment: { findMany: vi.fn() },
+    domainApplication: { findUnique: vi.fn(), update: vi.fn() },
     $executeRaw: vi.fn().mockResolvedValue(1),
     $transaction: vi.fn((fn: (tx: any) => Promise<any>) => fn(mock)),
   };
@@ -117,6 +118,32 @@ describe("loadDocument", () => {
 
     expect(getPlainText(doc)).toBe("existing feedback");
   });
+
+  it("seeds from DomainApplication.interviewPrepNote when no CollabDocument exists", async () => {
+    mockPrisma.collabDocument.findUnique.mockResolvedValue(null);
+    mockPrisma.domainApplication.findUnique.mockResolvedValue({
+      id: "da1",
+      interviewPrepNote: "ask about scaling",
+    });
+
+    const doc = new Y.Doc();
+    await loadDocument("domainApplication:da1:prepNote", doc);
+
+    expect(getPlainText(doc)).toBe("ask about scaling");
+  });
+
+  it("seeds an empty prep note without error when none exists yet", async () => {
+    mockPrisma.collabDocument.findUnique.mockResolvedValue(null);
+    mockPrisma.domainApplication.findUnique.mockResolvedValue({
+      id: "da1",
+      interviewPrepNote: null,
+    });
+
+    const doc = new Y.Doc();
+    await loadDocument("domainApplication:da1:prepNote", doc);
+
+    expect(getPlainText(doc)).toBe("");
+  });
 });
 
 describe("storeDocument", () => {
@@ -149,6 +176,29 @@ describe("storeDocument", () => {
     expect(mockPrisma.applicationReview.update).toHaveBeenCalledWith({
       where: { id: "r1" },
       data: { feedback: "updated feedback" },
+    });
+  });
+
+  it("syncs prep-note plaintext back to DomainApplication", async () => {
+    const doc = new Y.Doc();
+    const frag = doc.getXmlFragment("default");
+    doc.transact(() => {
+      const p = new Y.XmlElement("paragraph");
+      const t = new Y.XmlText();
+      t.insert(0, "bring up the take-home");
+      p.insert(0, [t]);
+      frag.push([p]);
+    });
+
+    mockPrisma.collabDocument.upsert.mockResolvedValue({});
+    mockPrisma.domainApplication.update.mockResolvedValue({});
+
+    const result = await storeDocument("domainApplication:da1:prepNote", doc);
+
+    expect(result!.plainText).toBe("bring up the take-home");
+    expect(mockPrisma.domainApplication.update).toHaveBeenCalledWith({
+      where: { id: "da1" },
+      data: { interviewPrepNote: "bring up the take-home" },
     });
   });
 });

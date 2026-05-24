@@ -327,6 +327,12 @@ model DomainApplication {
   // the challenge version. Empty `{}` on InternToFull (no per-domain content).
   answers Json
 
+  // Free-form note written by leads during Initial delibs ("specific things to
+  // bring up in the interview"). Edited live as a collaborative doc
+  // (domainApplication:{id}:prepNote); this column is the plaintext mirror that
+  // the read-only interview page reads.
+  interviewPrepNote String?
+
   // Whether this domain is currently selected by the applicant.
   // False means the applicant deselected the domain but the record is
   // preserved so answers survive re-selection.

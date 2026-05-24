@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useFetcher } from "react-router";
 import { X } from "lucide-react";
+import { CollaborativeEditor } from "~/components/CollaborativeEditor";
 
 const RECOMMENDATION_COLORS: Record<string, string> = {
   "Strong Hire": "bg-green-100 text-green-800",
@@ -26,11 +27,22 @@ const STAGE_LABELS: Record<string, string> = {
 export interface ApplicantContextModalProps {
   domainApplicationId: string;
   onClose: () => void;
+  /**
+   * When `editable` is true and a `collabToken` is supplied, the interview-prep
+   * note renders as a live collaborative editor (Initial delibs). Otherwise the
+   * note is shown read-only, and hidden entirely when empty.
+   */
+  collabToken?: string | null;
+  userName?: string;
+  editable?: boolean;
 }
 
 export function ApplicantContextModal({
   domainApplicationId,
   onClose,
+  collabToken,
+  userName,
+  editable = false,
 }: ApplicantContextModalProps) {
   const fetcher = useFetcher();
 
@@ -97,6 +109,14 @@ export function ApplicantContextModal({
         </div>
 
         <div className="p-6 space-y-6">
+          <InterviewPrepNoteSection
+            domainApplicationId={domainApplicationId}
+            editable={editable}
+            collabToken={collabToken}
+            userName={userName}
+            note={data?.domainApplication?.interviewPrepNote ?? null}
+          />
+
           {isLoading && (
             <p className="text-sm text-muted-foreground">Loading applicant context…</p>
           )}
@@ -132,6 +152,68 @@ export function ApplicantContextModal({
         </div>
       </div>
     </div>
+  );
+}
+
+export function InterviewPrepNoteSection({
+  domainApplicationId,
+  editable,
+  collabToken,
+  userName,
+  note,
+}: {
+  domainApplicationId: string;
+  editable: boolean;
+  collabToken?: string | null;
+  userName?: string;
+  note: string | null;
+}) {
+  const title = "Interview Prep Note";
+  const description = "Specific things to bring up in the interview.";
+
+  if (editable) {
+    return (
+      <section className="bg-card border border-border rounded-lg overflow-hidden">
+        <div className="px-4 py-2 bg-muted/50 border-b border-border">
+          <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+        </div>
+        <div className="p-4 space-y-2">
+          <p className="text-xs text-muted-foreground">
+            {description} Edited live with other leads; shown to interviewers.
+          </p>
+          {collabToken && userName ? (
+            <CollaborativeEditor
+              editorId="prep-note"
+              documentName={`domainApplication:${domainApplicationId}:prepNote`}
+              token={collabToken}
+              userName={userName}
+              placeholder="Specific things to bring up in the interview…"
+            />
+          ) : (
+            <div className="p-3 bg-yellow-50 rounded-lg border border-yellow-200 text-sm text-yellow-800">
+              Session expired — please refresh to enable collaborative editing.
+            </div>
+          )}
+        </div>
+      </section>
+    );
+  }
+
+  // Read-only contexts (e.g. Final delibs, reviewer view): show the synced
+  // plaintext if present, otherwise hide the section entirely.
+  if (!note || note.trim().length === 0) return null;
+
+  return (
+    <section className="bg-card border border-border rounded-lg overflow-hidden">
+      <div className="px-4 py-2 bg-muted/50 border-b border-border">
+        <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+      </div>
+      <div className="p-4">
+        <p className="text-sm text-foreground bg-muted/50 rounded p-3 whitespace-pre-wrap">
+          {note}
+        </p>
+      </div>
+    </section>
   );
 }
 

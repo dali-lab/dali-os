@@ -43,6 +43,11 @@ const POPOVER_WIDTH = 256
 const POPOVER_ESTIMATED_HEIGHT = 220
 const VIEWPORT_MARGIN = 8
 
+// Hover tooltip for existing annotations. Positioned with fixed viewport
+// coordinates and clamped so highlights near a screen edge don't clip it.
+const TOOLTIP_MAX_WIDTH = 288
+const TOOLTIP_ESTIMATED_HEIGHT = 80
+
 function clampPopoverPosition(
   x: number,
   y: number,
@@ -76,6 +81,13 @@ const COLOR_CLASSES: Record<HighlightColor, string> = {
 
 const COLOR_OPTIONS: HighlightColor[] = ['yellow', 'green', 'red', 'blue']
 
+interface TooltipPosition {
+  left: number
+  top?: number
+  bottom?: number
+  below: boolean
+}
+
 function AnnotationMark({
   ann,
   highlighted,
@@ -85,16 +97,35 @@ function AnnotationMark({
   highlighted: string
   onAnnotationClick: (annotationId: string, x: number, y: number) => void
 }) {
-  const [hovered, setHovered] = useState(false)
+  const [tooltip, setTooltip] = useState<TooltipPosition | null>(null)
   const ref = useRef<HTMLElement>(null)
 
+  const showTooltip = useCallback(() => {
+    if (!ref.current || !ann.comment || ann.id === '__pending__') return
+    const rect = ref.current.getBoundingClientRect()
+    // Center on the mark, then clamp the center so the bubble (up to
+    // TOOLTIP_MAX_WIDTH wide, translated -50%) stays inside the viewport.
+    const half = TOOLTIP_MAX_WIDTH / 2
+    const left = Math.max(
+      VIEWPORT_MARGIN + half,
+      Math.min(rect.left + rect.width / 2, window.innerWidth - VIEWPORT_MARGIN - half),
+    )
+    // Prefer rendering above the mark; flip below when it sits too near the top.
+    const fitsAbove = rect.top - VIEWPORT_MARGIN - TOOLTIP_ESTIMATED_HEIGHT >= VIEWPORT_MARGIN
+    setTooltip(
+      fitsAbove
+        ? { left, bottom: window.innerHeight - rect.top + VIEWPORT_MARGIN, below: false }
+        : { left, top: rect.bottom + VIEWPORT_MARGIN, below: true },
+    )
+  }, [ann.comment, ann.id])
+
   return (
-    <span className="relative inline">
+    <span className="inline">
       <mark
         ref={ref}
         className={`cursor-pointer rounded-sm ${COLOR_CLASSES[ann.color]}`}
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
+        onMouseEnter={showTooltip}
+        onMouseLeave={() => setTooltip(null)}
         onClick={(e) => {
           e.stopPropagation()
           onAnnotationClick(ann.id, e.clientX, e.clientY)
@@ -102,12 +133,16 @@ function AnnotationMark({
       >
         {highlighted}
       </mark>
-      {hovered && ann.comment && ann.id !== '__pending__' && (
-        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 pointer-events-none">
-          <span className="block bg-gray-900 text-white text-xs rounded-lg px-3 py-2 max-w-xs whitespace-pre-wrap shadow-lg">
+      {tooltip && (
+        <span
+          className="fixed z-50 pointer-events-none -translate-x-1/2"
+          style={{ left: tooltip.left, top: tooltip.top, bottom: tooltip.bottom, maxWidth: TOOLTIP_MAX_WIDTH }}
+        >
+          {tooltip.below && <span className="block w-2 h-2 bg-gray-900 rotate-45 mx-auto -mb-1" />}
+          <span className="block bg-gray-900 text-white text-xs rounded-lg px-3 py-2 whitespace-pre-wrap shadow-lg">
             {ann.comment}
           </span>
-          <span className="block w-2 h-2 bg-gray-900 rotate-45 mx-auto -mt-1" />
+          {!tooltip.below && <span className="block w-2 h-2 bg-gray-900 rotate-45 mx-auto -mt-1" />}
         </span>
       )}
     </span>
@@ -323,7 +358,7 @@ export interface ApplicationViewerProps {
         questions: unknown
         description?: unknown
         domain: { name: string; displayName?: string }
-        challenge: { name: string }
+        challenge?: { name: string }
       } | null
       domain?: { name: string; displayName?: string } | null
     }>
