@@ -10,23 +10,29 @@ test.describe('calendar settings persistence', () => {
     await page.goto('/calendar?embed=1');
     await expect(page.getByRole('heading', { name: 'Availability' })).toBeVisible();
 
-    // Normalize: ensure Monday is enabled before the actual test.
+    // Working Hours is off by default and the per-day editor is hidden until
+    // the master switch is on. Turn it on, which seeds the Mon–Fri default so
+    // Monday's segment editor appears.
+    const masterSwitch = page.getByRole('switch', { name: /Working hours enabled/i });
     if ((await page.getByLabel('Mon segment 1 start').count()) === 0) {
-      await page.getByRole('button', { name: /Mon enabled/i }).click();
+      await masterSwitch.click();
       await expect(page.getByLabel('Mon segment 1 start')).toBeVisible();
       await page.waitForLoadState('networkidle');
     }
 
-    // Disable Monday.
+    // Disable Monday via its per-day toggle (only present while the master
+    // switch is on).
     await page.getByRole('button', { name: /Mon enabled/i }).click();
     await expect(page.getByLabel('Mon segment 1 start')).toHaveCount(0);
     await page.waitForLoadState('networkidle');
 
-    // Reload and assert state persists.
+    // Reload and assert the disabled state persists. The master switch stays on
+    // (other days still have segments), so the editor — and Monday's toggle —
+    // remain visible.
     await page.reload();
     await expect(page.getByLabel('Mon segment 1 start')).toHaveCount(0);
 
-    // Toggle back on (leaves DB in enabled state for next run).
+    // Toggle Monday back on (leaves DB in enabled state for the next run).
     await page.getByRole('button', { name: /Mon enabled/i }).click();
     await expect(page.getByLabel('Mon segment 1 start')).toBeVisible();
     await page.waitForLoadState('networkidle');
@@ -34,13 +40,13 @@ test.describe('calendar settings persistence', () => {
 
   test('event buffer selection persists', async ({ page }) => {
     await page.goto('/calendar?embed=1');
-    // Pick 45m specifically so this test doesn't collide with the 15m default
-    // or the 30m value other ad-hoc clicks tend to leave behind.
-    await page.getByRole('button', { name: '45m', exact: true }).click();
-    await expect(page.getByText(/45-minute buffer will be added/)).toBeVisible();
+    // Pick 30m (the largest offered option) so this test doesn't collide with
+    // the 15m default.
+    await page.getByRole('button', { name: '30m', exact: true }).click();
+    await expect(page.getByText(/30-minute buffer will be added/)).toBeVisible();
     await page.waitForLoadState('networkidle');
     await page.reload();
-    await expect(page.getByText(/45-minute buffer will be added/)).toBeVisible();
+    await expect(page.getByText(/30-minute buffer will be added/)).toBeVisible();
   });
 
   test('Add Google Account link is present and points at OAuth start', async ({ page }) => {
