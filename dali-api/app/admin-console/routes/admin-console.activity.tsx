@@ -1,10 +1,16 @@
-import { Form, Link, redirect, useLoaderData, useSearchParams } from "react-router";
+import { Form, Link, redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/admin-console.activity";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
 import { AUDIT_ACTIONS } from "~/lib/audit";
-import { parseAuditFilters, buildAuditWhere, hasAnyFilter } from "~/lib/audit-query";
+import {
+  parseAuditFilters,
+  buildAuditWhere,
+  resolveAuditTextFilters,
+  activeFilterParams,
+  hasAnyFilter,
+} from "~/lib/audit-query";
 import { ListTodo, ChevronLeft, ChevronRight, X } from "lucide-react";
 
 export const meta: Route.MetaFunction = () => [{ title: "Activity · Operations · DALI OS" }];
@@ -17,11 +23,6 @@ export const meta: Route.MetaFunction = () => [{ title: "Activity · Operations 
 
 const PAGE_SIZE = 50;
 
-function toIsoDate(d: Date | undefined): string {
-  if (!d) return "";
-  return d.toISOString().slice(0, 10);
-}
-
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
@@ -31,7 +32,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   const page = Math.max(1, Number(url.searchParams.get("page") ?? "1") || 1);
   const skip = (page - 1) * PAGE_SIZE;
   const filters = parseAuditFilters(url.searchParams);
-  const where = buildAuditWhere(filters);
+  const baseWhere = buildAuditWhere(filters);
+  const textPatch = await resolveAuditTextFilters(prisma, filters);
+  const where = { ...baseWhere, ...textPatch };
 
   // Take one extra to detect whether a next page exists without a separate
   // count() query (count() over a large AuditLog is expensive).
@@ -66,13 +69,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   return {
     page,
     hasNext,
-    filters: {
-      action: filters.action ?? "",
-      userId: filters.userId ?? "",
-      targetId: filters.targetId ?? "",
-      from: toIsoDate(filters.from),
-      to: toIsoDate(filters.to),
-    },
+    filters,
     anyFilter: hasAnyFilter(filters),
     actions: AUDIT_ACTIONS,
     entries: entries.map((e) => ({
@@ -103,16 +100,18 @@ function displayActor(
   return <span>{name || u.daliEmail || "—"}</span>;
 }
 
+const inputClass =
+  "bg-page border border-border rounded px-2 py-1.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring";
+
 export default function AdminConsoleActivity() {
   const { page, hasNext, filters, anyFilter, actions, entries } = useLoaderData<typeof loader>();
-  const [searchParams] = useSearchParams();
 
-  // Build the page-N href while preserving the current filter params (but
-  // not the existing `page` slot, which we replace).
+  // Pagination links: carry active filters but never the previous page slot.
   function pageHref(nextPage: number): string {
-    const next = new URLSearchParams(searchParams);
-    next.set("page", String(nextPage));
-    return `?${next.toString()}`;
+    const params = activeFilterParams(filters);
+    if (nextPage > 1) params.set("page", String(nextPage));
+    const qs = params.toString();
+    return qs ? `?${qs}` : "?";
   }
 
   return (
@@ -133,8 +132,8 @@ export default function AdminConsoleActivity() {
           Action
           <select
             name="action"
-            defaultValue={filters.action}
-            className="bg-page border border-border rounded px-2 py-1.5 text-sm text-foreground font-mono"
+            defaultValue={filters.action ?? ""}
+            className={`${inputClass} font-mono`}
           >
             <option value="">All</option>
             {actions.map((a) => (
@@ -145,23 +144,23 @@ export default function AdminConsoleActivity() {
           </select>
         </label>
         <label className="text-xs text-muted-foreground flex flex-col gap-1">
-          Actor id
+          Actor
           <input
             type="text"
-            name="userId"
-            defaultValue={filters.userId}
-            placeholder="cuid"
-            className="bg-page border border-border rounded px-2 py-1.5 text-sm text-foreground font-mono"
+            name="actor"
+            defaultValue={filters.actor ?? ""}
+            placeholder="name, email, or id"
+            className={inputClass}
           />
         </label>
         <label className="text-xs text-muted-foreground flex flex-col gap-1">
-          Target id
+          Target
           <input
             type="text"
-            name="targetId"
-            defaultValue={filters.targetId}
-            placeholder="cuid"
-            className="bg-page border border-border rounded px-2 py-1.5 text-sm text-foreground font-mono"
+            name="target"
+            defaultValue={filters.target ?? ""}
+            placeholder="name, email, or id"
+            className={inputClass}
           />
         </label>
         <label className="text-xs text-muted-foreground flex flex-col gap-1">
@@ -169,8 +168,8 @@ export default function AdminConsoleActivity() {
           <input
             type="date"
             name="from"
-            defaultValue={filters.from}
-            className="bg-page border border-border rounded px-2 py-1.5 text-sm text-foreground"
+            defaultValue={filters.from ?? ""}
+            className={inputClass}
           />
         </label>
         <label className="text-xs text-muted-foreground flex flex-col gap-1">
@@ -178,8 +177,8 @@ export default function AdminConsoleActivity() {
           <input
             type="date"
             name="to"
-            defaultValue={filters.to}
-            className="bg-page border border-border rounded px-2 py-1.5 text-sm text-foreground"
+            defaultValue={filters.to ?? ""}
+            className={inputClass}
           />
         </label>
         <div className="sm:col-span-5 flex items-center gap-2">

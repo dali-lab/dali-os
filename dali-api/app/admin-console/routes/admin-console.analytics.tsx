@@ -209,7 +209,7 @@ export default function AdminConsoleAnalytics() {
         </h2>
         {errors.length === 0 ? (
           <p className="px-4 py-6 text-sm text-muted-foreground/70">
-            No client errors in the last {windowDays} days. 🎉
+            No client errors in the last {windowDays} days.
           </p>
         ) : (
           <table className="w-full text-sm">

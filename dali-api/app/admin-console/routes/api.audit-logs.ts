@@ -3,7 +3,11 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { parseAuditFilters, buildAuditWhere } from "~/lib/audit-query";
+import {
+  parseAuditFilters,
+  buildAuditWhere,
+  resolveAuditTextFilters,
+} from "~/lib/audit-query";
 
 const MAX_LIMIT = 200;
 const DEFAULT_LIMIT = 50;
@@ -29,7 +33,10 @@ export async function loader({ request }: Route.LoaderArgs) {
   const offset = Math.max(Number(url.searchParams.get("offset") ?? 0) || 0, 0);
 
   const filters = parseAuditFilters(url.searchParams);
-  const where = buildAuditWhere(filters);
+  const where = {
+    ...buildAuditWhere(filters),
+    ...(await resolveAuditTextFilters(prisma, filters)),
+  };
 
   const [entries, total] = await Promise.all([
     prisma.auditLog.findMany({
