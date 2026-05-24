@@ -3348,6 +3348,26 @@ function WeekGrid({
               </Fragment>
             ))}
             {backgroundLayer?.(idx)}
+            {/* Redraw the grid lines above the availability tint so they stay
+                visible over the colored background — but BEFORE events, so
+                Busy blocks render on top of the lines (not the other way
+                round). Hour lines bolder than the 10-minute sub-hour lines. */}
+            {showSubHourGrid &&
+              HOURS.map((_, i) => (
+                <Fragment key={`grid-fg-${i}`}>
+                  <div
+                    className="absolute left-0 right-0 border-t-2 border-foreground/40 pointer-events-none"
+                    style={{ top: i * HOUR_PX }}
+                  />
+                  {Array.from({ length: SUBDIVISIONS_PER_HOUR - 1 }).map((_, s) => (
+                    <div
+                      key={s}
+                      className="absolute left-0 right-0 border-t border-foreground/[0.08] pointer-events-none"
+                      style={{ top: i * HOUR_PX + (HOUR_PX * (s + 1)) / SUBDIVISIONS_PER_HOUR }}
+                    />
+                  ))}
+                </Fragment>
+              ))}
             {isToday && nowLineTop != null && (
               <div
                 className="absolute left-0 right-0 h-0 border-t-2 border-accent-coral pointer-events-none z-30"
@@ -3452,24 +3472,6 @@ function WeekGrid({
               );
             })}
             {overlayLayer?.(idx)}
-            {/* Redraw the grid lines above the availability tint so they stay
-                visible. Hour lines bolder than the 10-minute sub-hour lines. */}
-            {showSubHourGrid &&
-              HOURS.map((_, i) => (
-                <Fragment key={`grid-fg-${i}`}>
-                  <div
-                    className="absolute left-0 right-0 border-t-2 border-foreground/40 pointer-events-none z-20"
-                    style={{ top: i * HOUR_PX }}
-                  />
-                  {Array.from({ length: SUBDIVISIONS_PER_HOUR - 1 }).map((_, s) => (
-                    <div
-                      key={s}
-                      className="absolute left-0 right-0 border-t border-foreground/[0.08] pointer-events-none z-20"
-                      style={{ top: i * HOUR_PX + (HOUR_PX * (s + 1)) / SUBDIVISIONS_PER_HOUR }}
-                    />
-                  ))}
-                </Fragment>
-              ))}
           </div>
         </div>
         );
