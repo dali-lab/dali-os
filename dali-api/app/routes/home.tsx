@@ -1,19 +1,23 @@
 import { useState } from "react";
-import { redirect, useLoaderData, useRevalidator } from "react-router";
+import { redirect, useLoaderData } from "react-router";
 import {
   ListTodo,
   Check,
   X as XIcon,
   CalendarDays,
-  ChevronLeft,
-  ChevronRight,
   ExternalLink,
   HelpCircle,
   CalendarClock,
+  GraduationCap,
+  Users2,
+  ArrowRight,
 } from "lucide-react";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { listOpenTasks, type Task } from "~/lib/tasks";
+import { fetchBusyEvents } from "~/lib/google-calendar";
+import { currentTerm, hasCycleAccess } from "~/lib/roles";
+import { getActiveCycle } from "~/hiring/lib/cycles";
 import type { Route } from "./+types/home";
 
 type HomeNotification = {
@@ -28,27 +32,92 @@ type HomeNotification = {
   rsvp: "Accepted" | "Declined" | "Tentative" | null;
 };
 
+type AgendaEvent = {
+  id: string;
+  title: string;
+  startIso: string;
+  durationMinutes: number;
+  isOrganizer: boolean;
+};
+
+type BusyBlock = { startIso: string; endIso: string };
+
+type HiringFocus = {
+  cycleId: string;
+  cycleName: string;
+  currentStatus: "Open" | "UnderReview";
+  isInterviewer: boolean;
+  activeAssignments: number;
+  upcomingThisWeek: number;
+};
+
+type StaffingFocus = {
+  name: string;
+};
+
+// Local-time Sunday 00:00 of the week containing `d`. The week grid renders
+// Sun → Sat, matching how the lab already talks about the schedule.
+function startOfWeekLocal(d: Date): Date {
+  const out = new Date(d);
+  out.setHours(0, 0, 0, 0);
+  out.setDate(out.getDate() - out.getDay());
+  return out;
+}
+
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
   if (auth.user.type === "applicant") return redirect("/portal");
 
-  const items = await prisma.notification.findMany({
-    where: { recipientUserId: auth.user.sub },
-    orderBy: { createdAt: "desc" },
-    take: 50,
-    select: {
-      id: true,
-      kind: true,
-      title: true,
-      body: true,
-      link: true,
-      readAt: true,
-      createdAt: true,
-      scheduledMeetingId: true,
-      rsvp: true,
-    },
-  });
+  const now = new Date();
+  const weekStart = startOfWeekLocal(now);
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekEnd.getDate() + 7);
+
+  const [items, tasks, meetings, busyEvents, activeCycle, term] =
+    await Promise.all([
+      prisma.notification.findMany({
+        where: { recipientUserId: auth.user.sub },
+        orderBy: { createdAt: "desc" },
+        take: 50,
+        select: {
+          id: true,
+          kind: true,
+          title: true,
+          body: true,
+          link: true,
+          readAt: true,
+          createdAt: true,
+          scheduledMeetingId: true,
+          rsvp: true,
+        },
+      }),
+      listOpenTasks(auth.user.sub),
+      prisma.scheduledMeeting.findMany({
+        where: {
+          status: "Confirmed",
+          selectedAt: { gte: weekStart, lt: weekEnd },
+          OR: [
+            { organizerId: auth.user.sub },
+            { participantUserIds: { has: auth.user.sub } },
+          ],
+        },
+        select: {
+          id: true,
+          title: true,
+          selectedAt: true,
+          durationMinutes: true,
+          organizerId: true,
+        },
+        orderBy: { selectedAt: "asc" },
+      }),
+      // Google busy can fail (token expiry, network) — degrade silently so a
+      // bad calendar link never breaks the home tab.
+      fetchBusyEvents(auth.user.sub, weekStart, weekEnd).catch(() => []),
+      getActiveCycle("Standard"),
+      currentTerm(),
+    ]);
+
   const notifications: HomeNotification[] = items.map((n) => ({
     id: n.id,
     kind: n.kind,
@@ -60,13 +129,95 @@ export async function loader({ request }: Route.LoaderArgs) {
     scheduledMeetingId: n.scheduledMeetingId,
     rsvp: n.rsvp,
   }));
-  const tasks = await listOpenTasks(auth.user.sub);
-  return { user: auth.user, notifications, tasks };
+
+  const weekEvents: AgendaEvent[] = meetings
+    .filter((m) => m.selectedAt !== null)
+    .map((m) => ({
+      id: m.id,
+      title: m.title,
+      startIso: m.selectedAt!.toISOString(),
+      durationMinutes: m.durationMinutes,
+      isOrganizer: m.organizerId === auth.user.sub,
+    }));
+
+  const busy: BusyBlock[] = busyEvents.map((b) => ({
+    startIso: b.start,
+    endIso: b.end,
+  }));
+
+  let hiring: HiringFocus | null = null;
+  if (activeCycle) {
+    const access = await hasCycleAccess(auth.user.sub, activeCycle.id);
+    if (access) {
+      const interviewerRows = await prisma.cycleInterviewer.findMany({
+        where: {
+          userId: auth.user.sub,
+          applicationCycleId: activeCycle.id,
+        },
+        select: { id: true },
+      });
+      let activeAssignments = 0;
+      let upcomingThisWeek = 0;
+      if (interviewerRows.length > 0) {
+        const assignments = await prisma.interviewAssignment.findMany({
+          where: {
+            cycleInterviewerId: { in: interviewerRows.map((r) => r.id) },
+            status: "Active",
+            interview: { status: "Scheduled" },
+          },
+          select: { interview: { select: { startTime: true } } },
+        });
+        activeAssignments = assignments.length;
+        upcomingThisWeek = assignments.filter((a) => {
+          const t = a.interview.startTime;
+          return t >= weekStart && t < weekEnd;
+        }).length;
+      }
+      hiring = {
+        cycleId: activeCycle.id,
+        cycleName: activeCycle.name,
+        currentStatus: activeCycle.currentStatus,
+        isInterviewer: interviewerRows.length > 0,
+        activeAssignments,
+        upcomingThisWeek,
+      };
+    }
+  }
+
+  let staffing: StaffingFocus | null = null;
+  if (term) {
+    const cycle = await prisma.staffingCycle.findUnique({
+      where: { termId: term.id },
+      select: { name: true },
+    });
+    if (cycle) staffing = { name: cycle.name };
+  }
+
+  return {
+    user: auth.user,
+    notifications,
+    tasks,
+    weekEvents,
+    busy,
+    weekStartIso: weekStart.toISOString(),
+    hiring,
+    staffing,
+  };
 }
 
 export default function Home() {
-  const { user, notifications, tasks } = useLoaderData<typeof loader>();
+  const {
+    user,
+    notifications,
+    tasks,
+    weekEvents,
+    busy,
+    weekStartIso,
+    hiring,
+    staffing,
+  } = useLoaderData<typeof loader>();
   const firstName = user.firstName || user.email.split("@")[0];
+  const railHasContent = hiring !== null || staffing !== null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -83,8 +234,26 @@ export default function Home() {
         <AttentionBanner tasks={tasks} notifications={notifications} />
       )}
 
-      <div className="flex flex-col gap-6">
-        <WeekCalendarPanel />
+      <div
+        className={
+          railHasContent
+            ? "flex flex-col gap-6 lg:flex-row lg:items-start"
+            : "flex flex-col gap-6"
+        }
+      >
+        <div className={railHasContent ? "flex-1 min-w-0" : ""}>
+          <WeekAgendaPanel
+            events={weekEvents}
+            busy={busy}
+            weekStartIso={weekStartIso}
+          />
+        </div>
+        {railHasContent && (
+          <aside className="flex flex-col gap-4 lg:w-72 lg:shrink-0">
+            {hiring && <HiringFocusCard data={hiring} />}
+            {staffing && <StaffingCard data={staffing} />}
+          </aside>
+        )}
       </div>
     </div>
   );
@@ -362,128 +531,313 @@ function NotificationCard({ notification }: { notification: HomeNotification }) 
 }
 
 /* ------------------------------------------------------------------ */
-/* This-week calendar                                                  */
+/* This-week agenda — real meetings + Google busy on a Sun–Sat grid     */
 /* ------------------------------------------------------------------ */
 
-const HOURS = [9, 10, 11, 12, 13, 14, 15, 16, 17];
+// Visible window is 8am–8pm. Anything earlier/later is clipped to the
+// grid edges so a 7am standup or 9pm partner call still shows as a
+// bar at the top/bottom rather than disappearing.
+const HOUR_START = 8;
+const HOUR_END = 20;
+const HOURS = Array.from(
+  { length: HOUR_END - HOUR_START + 1 },
+  (_, i) => HOUR_START + i,
+);
+const VISIBLE_HOURS = HOUR_END - HOUR_START;
 const HOUR_PX = 44;
-const DAYS = [
-  { key: "SUN", num: 10 },
-  { key: "MON", num: 11 },
-  { key: "TUE", num: 12 },
-  { key: "WED", num: 13 },
-  { key: "THU", num: 14 },
-  { key: "FRI", num: 15 },
-  { key: "SAT", num: 16 },
-];
+const DAY_KEYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 
-const EVENT_TEXT = "text-[hsl(203_38%_18%)]";
+function formatHour(h: number) {
+  if (h === 12) return "12 PM";
+  if (h === 0) return "12 AM";
+  return h > 12 ? `${h - 12} PM` : `${h} AM`;
+}
 
-type WeekEvent = {
-  startHour: number;
-  duration: number;
-  label: string;
-  className: string;
-};
+// Convert a Date to its local hour-of-day as a float (e.g. 14.5 for 2:30pm).
+function localHourFloat(d: Date): number {
+  return d.getHours() + d.getMinutes() / 60;
+}
 
-const WEEK_EVENTS: Record<number, WeekEvent[]> = {
-  1: [
-    { startHour: 10, duration: 1, label: "Standup", className: `bg-accent-teal ${EVENT_TEXT}` },
-    { startHour: 14, duration: 1.5, label: "Design crit", className: `bg-accent-coral-light ${EVENT_TEXT}` },
-  ],
-  2: [
-    { startHour: 11, duration: 1, label: "Partner sync", className: `bg-accent-green ${EVENT_TEXT}` },
-  ],
-  3: [
-    { startHour: 9, duration: 1, label: "Standup", className: `bg-accent-teal ${EVENT_TEXT}` },
-    { startHour: 15, duration: 2, label: "DALI hours", className: `bg-accent-coral-light ${EVENT_TEXT}` },
-  ],
-  4: [
-    { startHour: 13, duration: 1, label: "1:1 w/ PM", className: `bg-accent-green ${EVENT_TEXT}` },
-  ],
-  5: [
-    { startHour: 16, duration: 1, label: "Lab meeting", className: `bg-accent-coral-light ${EVENT_TEXT}` },
-  ],
-};
+// Returns null when the event lies entirely outside the visible window
+// (so it's dropped rather than rendered as a zero-height sliver).
+function clipToWindow(
+  startHour: number,
+  endHour: number,
+): { top: number; height: number } | null {
+  const s = Math.max(startHour, HOUR_START);
+  const e = Math.min(endHour, HOUR_END);
+  if (e <= s) return null;
+  return {
+    top: (s - HOUR_START) * HOUR_PX,
+    height: (e - s) * HOUR_PX,
+  };
+}
 
-function WeekCalendarPanel() {
+function WeekAgendaPanel({
+  events,
+  busy,
+  weekStartIso,
+}: {
+  events: AgendaEvent[];
+  busy: BusyBlock[];
+  weekStartIso: string;
+}) {
+  const weekStart = new Date(weekStartIso);
+  const days = DAY_KEYS.map((key, idx) => {
+    const date = new Date(weekStart);
+    date.setDate(date.getDate() + idx);
+    return { key, date, num: date.getDate() };
+  });
+  const todayIdx = (() => {
+    const now = new Date();
+    const startOfToday = new Date(now);
+    startOfToday.setHours(0, 0, 0, 0);
+    const diffDays = Math.floor(
+      (startOfToday.getTime() - weekStart.getTime()) / 86_400_000,
+    );
+    return diffDays >= 0 && diffDays < 7 ? diffDays : -1;
+  })();
+
+  const eventsByDay: AgendaEvent[][] = days.map(() => []);
+  for (const ev of events) {
+    const start = new Date(ev.startIso);
+    const idx = Math.floor(
+      (new Date(start.getFullYear(), start.getMonth(), start.getDate()).getTime() -
+        weekStart.getTime()) /
+        86_400_000,
+    );
+    if (idx >= 0 && idx < 7) eventsByDay[idx].push(ev);
+  }
+
+  const busyByDay: BusyBlock[][] = days.map(() => []);
+  for (const b of busy) {
+    const start = new Date(b.startIso);
+    const idx = Math.floor(
+      (new Date(start.getFullYear(), start.getMonth(), start.getDate()).getTime() -
+        weekStart.getTime()) /
+        86_400_000,
+    );
+    if (idx >= 0 && idx < 7) busyByDay[idx].push(b);
+  }
+
+  const rangeLabel = (() => {
+    const end = new Date(weekStart);
+    end.setDate(end.getDate() + 6);
+    const fmt = (d: Date) =>
+      d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    return `${fmt(weekStart)} – ${fmt(end)}`;
+  })();
+
   return (
     <section className="bg-card border border-border rounded-lg p-4 flex flex-col">
       <div className="flex items-center justify-between mb-3">
         <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
           <CalendarDays className="w-4 h-4 text-accent-coral" />
           This Week
+          <span className="text-xs font-normal text-muted-foreground ml-1">
+            {rangeLabel}
+          </span>
         </h2>
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            aria-label="Previous week"
-            className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-          <button
-            type="button"
-            className="px-3 py-1 text-xs font-semibold rounded-md border border-border hover:bg-muted transition-colors"
-          >
-            Today
-          </button>
-          <button
-            type="button"
-            aria-label="Next week"
-            className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <ChevronRight className="w-4 h-4" />
-          </button>
-        </div>
+        <a
+          href="/calendar"
+          onClick={(e) => {
+            if (window.self !== window.top) {
+              e.preventDefault();
+              window.parent.postMessage(
+                { type: "dali:openTab", url: "/calendar", label: "Calendar" },
+                window.location.origin,
+              );
+            }
+          }}
+          className="inline-flex items-center gap-1 text-xs font-semibold text-muted-foreground hover:text-foreground"
+        >
+          Open calendar
+          <ArrowRight className="w-3 h-3" />
+        </a>
       </div>
       <div className="flex border border-border rounded-md overflow-hidden">
         <div className="flex flex-col w-12 border-r border-border bg-card text-[10px] text-muted-foreground">
           <div className="h-9 border-b border-border" />
-          {HOURS.map((h) => (
-            <div key={h} style={{ height: HOUR_PX }} className="px-1.5 pt-0.5 text-right">
+          {HOURS.slice(0, -1).map((h) => (
+            <div
+              key={h}
+              style={{ height: HOUR_PX }}
+              className="px-1.5 pt-0.5 text-right"
+            >
               {formatHour(h)}
             </div>
           ))}
         </div>
-        {DAYS.map((d, idx) => (
-          <div key={d.key} className="flex-1 min-w-0 border-r last:border-r-0 border-border flex flex-col">
-            <div className="flex flex-col items-center justify-center border-b border-border h-9">
+        {days.map((d, idx) => (
+          <div
+            key={d.key}
+            className="flex-1 min-w-0 border-r last:border-r-0 border-border flex flex-col"
+          >
+            <div
+              className={`flex flex-col items-center justify-center border-b border-border h-9 ${idx === todayIdx ? "bg-accent-coral/10" : ""}`}
+            >
               <div className="text-[9px] font-semibold text-muted-foreground tracking-wide">
                 {d.key}
               </div>
-              <div className="text-xs font-bold text-foreground">{d.num}</div>
+              <div
+                className={`text-xs font-bold ${idx === todayIdx ? "text-accent-coral" : "text-foreground"}`}
+              >
+                {d.num}
+              </div>
             </div>
-            <div className="relative" style={{ height: HOURS.length * HOUR_PX }}>
-              {HOURS.map((_, i) => (
+            <div className="relative" style={{ height: VISIBLE_HOURS * HOUR_PX }}>
+              {HOURS.slice(0, -1).map((_, i) => (
                 <div
                   key={i}
                   className="absolute left-0 right-0 border-t border-border/60"
                   style={{ top: i * HOUR_PX }}
                 />
               ))}
-              {(WEEK_EVENTS[idx] ?? []).map((e, i) => (
-                <div
-                  key={i}
-                  className={`absolute left-0 right-0 mx-0.5 px-1 py-0.5 rounded-sm text-[10px] font-medium overflow-hidden ${e.className}`}
-                  style={{
-                    top: (e.startHour - HOURS[0]) * HOUR_PX,
-                    height: e.duration * HOUR_PX,
-                  }}
-                >
-                  <span className="truncate block">{e.label}</span>
-                </div>
-              ))}
+              {busyByDay[idx].map((b, i) => {
+                const start = new Date(b.startIso);
+                const end = new Date(b.endIso);
+                const pos = clipToWindow(
+                  localHourFloat(start),
+                  localHourFloat(end),
+                );
+                if (!pos) return null;
+                return (
+                  <div
+                    key={`busy-${i}`}
+                    title="Busy (from your Google Calendar)"
+                    className="absolute left-0 right-0 bg-muted/60"
+                    style={{ top: pos.top, height: pos.height }}
+                  />
+                );
+              })}
+              {eventsByDay[idx].map((ev) => {
+                const start = new Date(ev.startIso);
+                const startHour = localHourFloat(start);
+                const endHour = startHour + ev.durationMinutes / 60;
+                const pos = clipToWindow(startHour, endHour);
+                if (!pos) return null;
+                const timeLabel = start.toLocaleTimeString(undefined, {
+                  hour: "numeric",
+                  minute: "2-digit",
+                });
+                return (
+                  <div
+                    key={ev.id}
+                    title={`${ev.title} — ${timeLabel}`}
+                    className={`absolute left-0 right-0 mx-0.5 px-1 py-0.5 rounded-sm text-[10px] font-medium overflow-hidden text-[hsl(203_38%_18%)] ${ev.isOrganizer ? "bg-accent-coral-light" : "bg-accent-teal"}`}
+                    style={{ top: pos.top, height: pos.height }}
+                  >
+                    <span className="truncate block">{ev.title}</span>
+                  </div>
+                );
+              })}
             </div>
           </div>
         ))}
       </div>
+      {events.length === 0 && (
+        <p className="text-xs text-muted-foreground mt-3">
+          No scheduled meetings this week.
+        </p>
+      )}
     </section>
   );
 }
 
-function formatHour(h: number) {
-  if (h === 12) return "12 PM";
-  if (h === 0) return "12 AM";
-  return h > 12 ? `${h - 12} PM` : `${h} AM`;
+/* ------------------------------------------------------------------ */
+/* Conditional right-rail cards — each renders only when there is real  */
+/* content; the rail itself collapses when none are present.            */
+/* ------------------------------------------------------------------ */
+
+function RailLink({
+  href,
+  label,
+}: {
+  href: string;
+  label: string;
+}) {
+  return (
+    <a
+      href={href}
+      onClick={(e) => {
+        if (href.startsWith("/") && window.self !== window.top) {
+          e.preventDefault();
+          window.parent.postMessage(
+            { type: "dali:openTab", url: href, label },
+            window.location.origin,
+          );
+        }
+      }}
+      className="inline-flex items-center gap-1 text-xs font-semibold text-accent-coral hover:underline"
+    >
+      {label}
+      <ArrowRight className="w-3 h-3" />
+    </a>
+  );
+}
+
+function HiringFocusCard({ data }: { data: HiringFocus }) {
+  const phaseLabel =
+    data.currentStatus === "Open" ? "Applications open" : "In review";
+  const destination = data.isInterviewer
+    ? `/hiring/reviewer`
+    : `/hiring/applications`;
+  return (
+    <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
+      <div className="flex items-start justify-between gap-2">
+        <div className="inline-flex items-center gap-2">
+          <GraduationCap className="w-4 h-4 text-accent-coral" />
+          <h2 className="font-heading font-semibold text-sm text-foreground">
+            Hiring
+          </h2>
+        </div>
+        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-accent-coral/10 text-accent-coral">
+          {phaseLabel}
+        </span>
+      </div>
+      <p className="text-xs text-muted-foreground -mt-1">{data.cycleName}</p>
+      {data.isInterviewer ? (
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-bold text-foreground">
+              {data.upcomingThisWeek}
+            </span>
+            <span className="text-xs text-muted-foreground">
+              {data.upcomingThisWeek === 1 ? "interview" : "interviews"} this
+              week
+            </span>
+          </div>
+          {data.activeAssignments > data.upcomingThisWeek && (
+            <p className="text-[11px] text-muted-foreground">
+              {data.activeAssignments} active assignment
+              {data.activeAssignments === 1 ? "" : "s"} total
+            </p>
+          )}
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          You have hiring-lead access for this cycle.
+        </p>
+      )}
+      <RailLink href={destination} label="Open" />
+    </section>
+  );
+}
+
+function StaffingCard({ data }: { data: StaffingFocus }) {
+  return (
+    <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
+      <div className="inline-flex items-center gap-2">
+        <Users2 className="w-4 h-4 text-accent-teal" />
+        <h2 className="font-heading font-semibold text-sm text-foreground">
+          Staffing
+        </h2>
+      </div>
+      <p className="text-xs text-muted-foreground -mt-1">{data.name}</p>
+      <p className="text-xs text-foreground">
+        Submit your project preferences for the next term.
+      </p>
+      <RailLink href="/projects/intent-to-work" label="Open intent to work" />
+    </section>
+  );
 }
