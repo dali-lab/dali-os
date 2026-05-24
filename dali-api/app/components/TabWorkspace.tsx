@@ -126,6 +126,16 @@ interface DragOver {
   index: number
 }
 
+// Drop target when a tab is dragged over a pane's content area (not its tab
+// strip). The cursor's horizontal position selects a zone: the edge bands
+// split the workspace, the middle moves the tab into that pane.
+type PaneDropZone = 'split-left' | 'split-right' | 'center'
+
+interface PaneDrop {
+  paneId: string
+  zone: PaneDropZone
+}
+
 export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWorkspaceProps) {
   const [state, setState] = useState<WorkspaceState>(emptyState)
   const [contextMenu, setContextMenu] = useState<
@@ -135,6 +145,11 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
   const hydrated = useRef(false)
   const dragSourceRef = useRef<DragSource | null>(null)
   const [dragOver, setDragOver] = useState<DragOver | null>(null)
+  // True while a tab drag is in flight. Used to mount the content-area drop
+  // overlays only during a drag (iframes swallow native drag events, so the
+  // pane body can't receive dragover/drop without an overlay on top).
+  const [isDragging, setIsDragging] = useState(false)
+  const [paneDrop, setPaneDrop] = useState<PaneDrop | null>(null)
   // Tabs whose iframes are kept alive in the DOM. Switching tabs toggles
   // visibility instead of unmounting, so scroll/form/JS state is preserved.
   // Lazy-mount on first activation — avoids slamming the server on hydrate
@@ -625,6 +640,38 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
     })
   }
 
+  // Pull a tab out of its (single) pane into a brand-new pane on the chosen
+  // side, forming a split. No-op unless there's exactly one pane with at
+  // least two tabs — moving the source pane's only tab would just empty it
+  // and leave a single view. Once two panes exist (the current max), a body
+  // drop is handled as a plain cross-pane move instead.
+  const dropToSplit = (source: DragSource, side: 'left' | 'right') => {
+    setState((prev) => {
+      if (prev.panes.length !== 1) return prev
+      const sourcePane = prev.panes.find((p) => p.id === source.paneId)
+      if (!sourcePane || sourcePane.tabs.length < 2) return prev
+      const sourceTab = sourcePane.tabs.find((t) => t.id === source.tabId)
+      if (!sourceTab) return prev
+
+      const tab: Tab = { ...sourceTab, lastActivatedAt: now() }
+      const remaining = sourcePane.tabs.filter((t) => t.id !== source.tabId)
+      const newPaneId = newId()
+      const updatedSource: Pane = {
+        ...sourcePane,
+        tabs: remaining,
+        activeTabId:
+          sourcePane.activeTabId === source.tabId
+            ? (remaining[0]?.id ?? null)
+            : sourcePane.activeTabId,
+      }
+      const newPane: Pane = { id: newPaneId, tabs: [tab], activeTabId: tab.id }
+      return {
+        focusedPaneId: newPaneId,
+        panes: side === 'left' ? [newPane, updatedSource] : [updatedSource, newPane],
+      }
+    })
+  }
+
   return (
     <div className="flex-1 flex min-h-0">
       {state.panes.map((pane, idx) => {
@@ -648,6 +695,7 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
                   if (dragSourceRef.current) {
                     e.preventDefault()
                     e.dataTransfer.dropEffect = 'move'
+                    if (paneDrop) setPaneDrop(null)
                     const current = dragOver
                     if (current?.paneId !== pane.id || current.index !== pane.tabs.length) {
                       setDragOver({ paneId: pane.id, index: pane.tabs.length })
@@ -662,6 +710,8 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
                   moveTab(src, tgt)
                   dragSourceRef.current = null
                   setDragOver(null)
+                  setPaneDrop(null)
+                  setIsDragging(false)
                 }}
               >
                 {pane.tabs.map((tab, tabIdx) => {
@@ -679,6 +729,7 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
                       draggable
                       onDragStart={(e) => {
                         dragSourceRef.current = { paneId: pane.id, tabId: tab.id }
+                        setIsDragging(true)
                         e.dataTransfer.effectAllowed = 'move'
                         // Firefox requires some dataTransfer data to start a drag.
                         try {
@@ -690,12 +741,15 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
                       onDragEnd={() => {
                         dragSourceRef.current = null
                         setDragOver(null)
+                        setPaneDrop(null)
+                        setIsDragging(false)
                       }}
                       onDragOver={(e) => {
                         if (!dragSourceRef.current) return
                         e.preventDefault()
                         e.stopPropagation()
                         e.dataTransfer.dropEffect = 'move'
+                        if (paneDrop) setPaneDrop(null)
                         const rect = e.currentTarget.getBoundingClientRect()
                         const midpoint = rect.left + rect.width / 2
                         const insertIdx = e.clientX < midpoint ? tabIdx : tabIdx + 1
@@ -715,6 +769,8 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
                         moveTab(src, tgt)
                         dragSourceRef.current = null
                         setDragOver(null)
+                        setPaneDrop(null)
+                        setIsDragging(false)
                       }}
                       onClick={(e) => {
                         e.stopPropagation()
@@ -789,6 +845,60 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
               {!activeTab && (
                 <div className="absolute inset-0 flex items-center justify-center text-muted-foreground/60 text-sm">
                   No content
+                </div>
+              )}
+
+              {/* Drop-catcher sits above the iframe while a tab is being
+                  dragged. iframes eat native drag events, so the pane body
+                  can only receive dragover/drop through this overlay. */}
+              {isDragging && (
+                <div
+                  className="absolute inset-0 z-10"
+                  onDragOver={(e) => {
+                    if (!dragSourceRef.current) return
+                    e.preventDefault()
+                    e.dataTransfer.dropEffect = 'move'
+                    if (dragOver) setDragOver(null)
+                    let zone: PaneDropZone = 'center'
+                    // Split zones are only meaningful for a lone pane with at
+                    // least two tabs. Once split (two panes — the max), every
+                    // body drop is just a move into the hovered pane.
+                    if (state.panes.length === 1 && pane.tabs.length >= 2) {
+                      const rect = e.currentTarget.getBoundingClientRect()
+                      const x = e.clientX - rect.left
+                      const band = rect.width / 3
+                      if (x < band) zone = 'split-left'
+                      else if (x > rect.width - band) zone = 'split-right'
+                    }
+                    if (paneDrop?.paneId !== pane.id || paneDrop.zone !== zone) {
+                      setPaneDrop({ paneId: pane.id, zone })
+                    }
+                  }}
+                  onDrop={(e) => {
+                    if (!dragSourceRef.current) return
+                    e.preventDefault()
+                    const src = dragSourceRef.current
+                    const zone = paneDrop?.paneId === pane.id ? paneDrop.zone : 'center'
+                    if (zone === 'split-left') dropToSplit(src, 'left')
+                    else if (zone === 'split-right') dropToSplit(src, 'right')
+                    else moveTab(src, { paneId: pane.id, index: pane.tabs.length })
+                    dragSourceRef.current = null
+                    setDragOver(null)
+                    setPaneDrop(null)
+                    setIsDragging(false)
+                  }}
+                >
+                  {paneDrop?.paneId === pane.id && (
+                    <div
+                      className={`absolute inset-y-0 bg-accent-coral/20 border-2 border-accent-coral pointer-events-none ${
+                        paneDrop.zone === 'split-left'
+                          ? 'left-0 w-1/2'
+                          : paneDrop.zone === 'split-right'
+                            ? 'right-0 w-1/2'
+                            : 'inset-x-0'
+                      }`}
+                    />
+                  )}
                 </div>
               )}
             </div>
