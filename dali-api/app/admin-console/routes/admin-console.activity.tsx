@@ -17,7 +17,7 @@ const PAGE_SIZE = 50;
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
-  if (!(await isAdmin(auth.user.sub))) return redirect("/admin-console/members");
+  if (!(await isAdmin(auth.user.sub))) return redirect("/admin-console");
 
   const url = new URL(request.url);
   const page = Math.max(1, Number(url.searchParams.get("page") ?? "1") || 1);

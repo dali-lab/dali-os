@@ -8,7 +8,7 @@ vi.mock("~/lib/roles");
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isAdmin, isCore, currentTerm } from "~/lib/roles";
+import { isAdmin, currentTerm } from "~/lib/roles";
 import { action } from "~/admin-console/routes/admin-console.members";
 
 const CORE_ID = "core-1";
@@ -55,7 +55,6 @@ function asCore() {
     ok: true,
     user: { sub: CORE_ID, email: "c@x.com", type: "user" },
   } as any);
-  vi.mocked(isCore).mockResolvedValue(true);
   vi.mocked(isAdmin).mockResolvedValue(false);
 }
 
@@ -64,7 +63,6 @@ function asAdmin() {
     ok: true,
     user: { sub: ADMIN_ID, email: "a@x.com", type: "user" },
   } as any);
-  vi.mocked(isCore).mockResolvedValue(true);
   vi.mocked(isAdmin).mockResolvedValue(true);
 }
 
@@ -73,7 +71,6 @@ function asOutsider() {
     ok: true,
     user: { sub: "rando-1", email: "r@x.com", type: "user" },
   } as any);
-  vi.mocked(isCore).mockResolvedValue(false);
   vi.mocked(isAdmin).mockResolvedValue(false);
 }
 
@@ -86,9 +83,20 @@ function postForm(body: Record<string, string>) {
   });
 }
 
-describe("admin-console.members action — gate", () => {
-  it("rejects non-Core, non-Admin callers with 403", async () => {
+describe("admin-console.members action — gate (Admin-only)", () => {
+  it("rejects non-Admin callers with 403", async () => {
     asOutsider();
+    const res = await action({
+      request: postForm({ intent: "add-core-title", userId: USER_ID, leadTitle: "PM" }),
+      params: {},
+      context: {},
+    } as any);
+    expect((res as Response).status).toBe(403);
+    expect(mockPrisma.coreAssignment.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects Core (non-Admin) callers with 403 on add-core-title", async () => {
+    asCore();
     const res = await action({
       request: postForm({ intent: "add-core-title", userId: USER_ID, leadTitle: "PM" }),
       params: {},
@@ -99,9 +107,9 @@ describe("admin-console.members action — gate", () => {
   });
 });
 
-describe("admin-console.members action — add-core-title (Core or Admin)", () => {
+describe("admin-console.members action — add-core-title (Admin)", () => {
   it("creates a CoreAssignment with the free-text title when none exists", async () => {
-    asCore();
+    asAdmin();
     await action({
       request: postForm({ intent: "add-core-title", userId: USER_ID, leadTitle: "Design Lead" }),
       params: {},
@@ -117,7 +125,7 @@ describe("admin-console.members action — add-core-title (Core or Admin)", () =
   });
 
   it("is a no-op when an identical (user, term, title) row already exists", async () => {
-    asCore();
+    asAdmin();
     mockPrisma.coreAssignment.findFirst.mockResolvedValueOnce({ id: "ca-1" });
     await action({
       request: postForm({ intent: "add-core-title", userId: USER_ID, leadTitle: "PM" }),
@@ -128,7 +136,7 @@ describe("admin-console.members action — add-core-title (Core or Admin)", () =
   });
 
   it("treats an empty title as a null (untitled Core) row", async () => {
-    asCore();
+    asAdmin();
     await action({
       request: postForm({ intent: "add-core-title", userId: USER_ID, leadTitle: "   " }),
       params: {},
@@ -144,9 +152,9 @@ describe("admin-console.members action — add-core-title (Core or Admin)", () =
   });
 });
 
-describe("admin-console.members action — remove-core-title", () => {
+describe("admin-console.members action — remove-core-title (Admin)", () => {
   it("deletes by assignment id", async () => {
-    asCore();
+    asAdmin();
     await action({
       request: postForm({ intent: "remove-core-title", assignmentId: "ca-1" }),
       params: {},
@@ -156,18 +164,7 @@ describe("admin-console.members action — remove-core-title", () => {
   });
 });
 
-describe("admin-console.members action — set-admin (Admin-only)", () => {
-  it("rejects Core callers with 403", async () => {
-    asCore();
-    const res = await action({
-      request: postForm({ intent: "set-admin", userId: USER_ID, value: "true" }),
-      params: {},
-      context: {},
-    } as any);
-    expect((res as Response).status).toBe(403);
-    expect(mockPrisma.adminMembership.upsert).not.toHaveBeenCalled();
-  });
-
+describe("admin-console.members action — set-admin (Admin)", () => {
   it("allows Admin callers", async () => {
     asAdmin();
     await action({

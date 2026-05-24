@@ -28,7 +28,7 @@ export const meta: Route.MetaFunction = () => [{ title: "Domains Â· Operations Â
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
-  if (!(await isCore(auth.user.sub))) return redirect("/admin-console/members");
+  if (!(await isCore(auth.user.sub))) return redirect("/");
   const viewerIsAdmin = await isAdmin(auth.user.sub);
 
   const [users, domains, term] = await Promise.all([
