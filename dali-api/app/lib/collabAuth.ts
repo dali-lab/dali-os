@@ -53,6 +53,25 @@ export async function authorizeCollabDoc(
     return false;
   }
 
+  // domainApplication:{id}:prepNote — the free-form "things to bring up in the
+  // interview" note written during Initial delibs. Same gate as the delibs
+  // moves endpoint: signed confidentiality plus domain lead or hiring lead.
+  // (The "Initial only" edit window is enforced UI-side — the doc name carries
+  // no DelibsSession context to gate on here.)
+  if (entity === "domainApplication") {
+    const da = await prisma.domainApplication.findUnique({
+      where: { id },
+      select: { application: { select: { applicationCycleId: true } } },
+    });
+    if (!da) return false;
+    const cycleId = da.application.applicationCycleId;
+    const confState = await getCycleConfidentialityState(userSub, cycleId);
+    if (confState.status !== "signed") return false;
+    if (await isDomainLead(userSub)) return true;
+    if (await isHiringLead(userSub)) return true;
+    return false;
+  }
+
   if (entity === "interview") {
     const interview = await prisma.interview.findUnique({
       where: { id },
