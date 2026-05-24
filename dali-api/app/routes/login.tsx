@@ -9,7 +9,7 @@ const OAUTH_STATE_COOKIE = "__dali_oauth_state";
 const RATE_LIMIT_MAX = 5;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 
-export const meta: Route.MetaFunction = () => [{ title: "Sign in · DALI OS" }];
+export const meta: Route.MetaFunction = () => [{ title: "DALI OS · Sign in" }];
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -144,14 +144,19 @@ export default function Login() {
       {/* Right form panel */}
       <div className="w-full md:w-1/2 min-h-screen flex items-center justify-center px-6 md:px-12 lg:px-16 bg-page">
         <div className="w-full max-w-sm">
-          {/* Mobile-only logo (left panel is hidden on small screens) */}
-          <img
-            src="/logo-blue.svg"
-            alt="DALI Lab"
-            className="md:hidden h-12 w-auto mb-8"
-          />
+          {/* Mobile-only logo + wordmark (left panel is hidden on small screens) */}
+          <div className="md:hidden mb-8 flex items-center gap-3">
+            <img
+              src="/logo-blue.svg"
+              alt="DALI Lab"
+              className="h-12 w-auto"
+            />
+            <span className="font-heading text-2xl font-bold text-dark-blue">
+              DALI OS
+            </span>
+          </div>
           <h1 className="font-heading text-3xl font-bold text-dark-blue mb-2">
-            Sign in
+            Sign in to DALI OS
           </h1>
           <p className="text-muted-foreground mb-10">
             Select how you'd like to continue
