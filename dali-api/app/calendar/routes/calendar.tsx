@@ -3201,8 +3201,10 @@ function WeekGrid({
   // column the drag started in, even when the cursor strays elsewhere.
   const columnRefs = useRef<(HTMLDivElement | null)[]>([]);
   // The committed selection block element, so the portal popover can anchor to
-  // its real on-screen rect and clamp itself to the viewport.
-  const selectionRef = useRef<HTMLDivElement | null>(null);
+  // its real on-screen rect. A callback ref into state (not a plain useRef)
+  // guarantees the portal re-renders the moment the node attaches — a shared
+  // useRef read from a sibling left anchor stuck null.
+  const [anchorEl, setAnchorEl] = useState<HTMLDivElement | null>(null);
 
   const MIN_HOUR = HOURS[0];
   const MAX_HOUR = HOURS[HOURS.length - 1] + 1;
@@ -3369,11 +3371,11 @@ function WeekGrid({
               ))}
             {isToday && nowLineTop != null && (
               <div
-                className="absolute left-0 right-0 h-0 border-t-2 border-accent-coral pointer-events-none z-30"
+                className="absolute left-0 right-0 h-0.5 bg-accent-coral pointer-events-none z-30"
                 style={{ top: nowLineTop }}
                 aria-label="Current time"
               >
-                <div className="absolute left-0 -top-1 w-2 h-2 rounded-full bg-accent-coral" />
+                <div className="absolute left-0 -top-[3px] w-2 h-2 rounded-full bg-accent-coral" />
               </div>
             )}
             {drag && drag.dayIdx === idx && (() => {
@@ -3405,7 +3407,7 @@ function WeekGrid({
               const resizable = !!onSelectionResize;
               return (
                 <div
-                  ref={selectionRef}
+                  ref={setAnchorEl}
                   className={`absolute left-0 right-0 border-2 border-accent-coral bg-accent-coral/15 rounded-sm z-30 ${
                     resizable ? "" : "pointer-events-none"
                   }`}
@@ -3481,7 +3483,7 @@ function WeekGrid({
         is never clipped by the grid's overflow or the screen edge. */}
     {selection && selectionPopover && (
       <SelectionPopoverPortal
-        anchorRef={selectionRef}
+        anchorEl={anchorEl}
         onDismiss={() => onSelectionDismiss?.()}
       >
         {selectionPopover()}
@@ -3497,11 +3499,11 @@ function WeekGrid({
 // fully on-screen. A transparent full-viewport backdrop captures outside clicks
 // to dismiss — and, being in a portal, never lets a click reach a grid column.
 function SelectionPopoverPortal({
-  anchorRef,
+  anchorEl,
   onDismiss,
   children,
 }: {
-  anchorRef: React.RefObject<HTMLElement | null>;
+  anchorEl: HTMLElement | null;
   onDismiss: () => void;
   children: React.ReactNode;
 }) {
@@ -3509,11 +3511,11 @@ function SelectionPopoverPortal({
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
 
   useLayoutEffect(() => {
+    if (!anchorEl) return;
     const place = () => {
-      const anchor = anchorRef.current;
       const card = cardRef.current;
-      if (!anchor || !card) return;
-      const a = anchor.getBoundingClientRect();
+      if (!card) return;
+      const a = anchorEl.getBoundingClientRect();
       const cw = card.offsetWidth;
       const ch = card.offsetHeight;
       const gap = 8;
@@ -3524,33 +3526,55 @@ function SelectionPopoverPortal({
       let left = a.right + gap;
       if (left + cw + margin > vw) left = a.left - gap - cw;
       left = Math.max(margin, Math.min(left, vw - cw - margin));
-      // Align the top with the block, then clamp within the viewport.
-      let top = a.top;
+      // Vertically hug the block: top-align if the card fits below, else
+      // bottom-align with the block (open upward) so it stays adjacent instead
+      // of being yanked far up by a viewport clamp on a late-day selection.
+      let top = a.top + ch + margin <= vh ? a.top : a.bottom - ch;
       top = Math.max(margin, Math.min(top, vh - ch - margin));
-      // Only update on a real change. Setting a fresh {left,top} object every
-      // run would re-trigger this effect endlessly if it depended on `children`
-      // (a new element each render), so we both guard here and use empty deps.
       setPos((prev) =>
         prev && prev.left === left && prev.top === top ? prev : { left, top },
       );
     };
     place();
-    // Safety net: if the anchor/card weren't laid out on the first synchronous
-    // pass, re-measure next frame so the popover still appears.
-    const raf = requestAnimationFrame(place);
+    // Re-place when the card resizes (block→meeting grows it) or the window
+    // reflows. Deps include anchorEl so this runs the instant the block mounts.
+    const ro = new ResizeObserver(place);
+    if (cardRef.current) ro.observe(cardRef.current);
     window.addEventListener("resize", place);
     window.addEventListener("scroll", place, true);
     return () => {
-      cancelAnimationFrame(raf);
+      ro.disconnect();
       window.removeEventListener("resize", place);
       window.removeEventListener("scroll", place, true);
     };
-    // anchorRef is a stable ref; placement re-runs via the resize/scroll
-    // listeners. Intentionally not depending on `children` to avoid thrashing.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [anchorEl]);
 
   if (typeof document === "undefined") return null;
+
+  // First paint (before the layout effect sets pos): derive a spot from the
+  // anchor's current rect so the popover appears NEXT TO the block, flipping
+  // left / opening upward near the edges. Falls back to centred if no anchor.
+  let left = pos?.left;
+  let top = pos?.top;
+  if (left == null || top == null) {
+    const a = anchorEl?.getBoundingClientRect();
+    if (a) {
+      const CARD_W = 320; // matches w-80
+      const CARD_H = 416; // matches max-h-[26rem]
+      const gap = 8;
+      const margin = 8;
+      left = a.right + gap + CARD_W + gap > window.innerWidth
+        ? a.left - gap - CARD_W // would overflow right → flip to the left side
+        : a.right + gap;
+      left = Math.max(margin, left);
+      const vh = window.innerHeight;
+      const rawTop = a.top + CARD_H + margin <= vh ? a.top : a.bottom - CARD_H;
+      top = Math.max(margin, Math.min(rawTop, vh - CARD_H - margin));
+    } else {
+      left = Math.max(8, window.innerWidth / 2 - 160);
+      top = 80;
+    }
+  }
 
   return createPortal(
     <div className="fixed inset-0 z-50">
@@ -3562,7 +3586,7 @@ function SelectionPopoverPortal({
       <div
         data-calendar-popover
         className="absolute"
-        style={{ left: pos?.left ?? -9999, top: pos?.top ?? -9999, visibility: pos ? "visible" : "hidden" }}
+        style={{ left, top }}
         onMouseDown={(e) => e.stopPropagation()}
       >
         {children}
