@@ -1,9 +1,11 @@
-import { Link, redirect, useLoaderData } from "react-router";
+import { Form, Link, redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/admin-console.activity";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
-import { ListTodo, ChevronLeft, ChevronRight } from "lucide-react";
+import { AUDIT_ACTIONS } from "~/lib/audit";
+import { buildAuditWhere, parseAuditFilters, hasActiveFilters } from "~/lib/audit-query";
+import { ListTodo, ChevronLeft, ChevronRight, X } from "lucide-react";
 
 export const meta: Route.MetaFunction = () => [{ title: "Activity · Operations · DALI OS" }];
 
@@ -22,10 +24,13 @@ export async function loader({ request }: Route.LoaderArgs) {
   const url = new URL(request.url);
   const page = Math.max(1, Number(url.searchParams.get("page") ?? "1") || 1);
   const skip = (page - 1) * PAGE_SIZE;
+  const filters = parseAuditFilters(url.searchParams);
+  const where = buildAuditWhere(url.searchParams);
 
   // Take one extra to detect whether a next page exists without a separate
   // count() query (count() over a large AuditLog table is expensive).
   const rows = await prisma.auditLog.findMany({
+    where,
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: PAGE_SIZE + 1,
     skip,
@@ -54,6 +59,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   return {
     page,
     hasNext,
+    filters,
+    anyFilter: hasActiveFilters(filters),
+    actions: AUDIT_ACTIONS,
     entries: entries.map((e) => ({
       id: e.id,
       createdAt: e.createdAt.toISOString(),
@@ -74,8 +82,25 @@ function displayActor(u: { firstName: string; lastName: string; daliEmail: strin
   return <span>{name || u.daliEmail || "—"}</span>;
 }
 
+const inputClass =
+  "bg-card border border-border rounded-md px-2 py-1.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring";
+
 export default function AdminConsoleActivity() {
-  const { page, hasNext, entries } = useLoaderData<typeof loader>();
+  const { page, hasNext, entries, filters, anyFilter, actions } = useLoaderData<typeof loader>();
+
+  // Carry the active filters into pagination links so Prev/Next don't reset
+  // the view. Omit page=1 to keep the first page's URL clean.
+  const pageHref = (target: number) => {
+    const params = new URLSearchParams();
+    if (filters.action) params.set("action", filters.action);
+    if (filters.userId) params.set("userId", filters.userId);
+    if (filters.targetId) params.set("targetId", filters.targetId);
+    if (filters.from) params.set("from", filters.from);
+    if (filters.to) params.set("to", filters.to);
+    if (target > 1) params.set("page", String(target));
+    const qs = params.toString();
+    return qs ? `?${qs}` : "?";
+  };
 
   return (
     <div className="space-y-4">
@@ -86,6 +111,53 @@ export default function AdminConsoleActivity() {
           page {page}
         </span>
       </div>
+
+      {/* GET form: submitting writes the filters to the URL and re-runs the
+          loader. No page field, so changing a filter resets to page 1. */}
+      <Form method="get" className="flex flex-wrap items-end gap-3 bg-card border border-border rounded-lg p-3">
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Action
+          <select name="action" defaultValue={filters.action ?? ""} className={inputClass}>
+            <option value="">All actions</option>
+            {actions.map((a) => (
+              <option key={a} value={a}>{a}</option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Actor id
+          <input name="userId" defaultValue={filters.userId ?? ""} placeholder="user id" className={`${inputClass} font-mono`} />
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Target id
+          <input name="targetId" defaultValue={filters.targetId ?? ""} placeholder="resource id" className={`${inputClass} font-mono`} />
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          From
+          <input type="date" name="from" defaultValue={filters.from ?? ""} className={inputClass} />
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          To
+          <input type="date" name="to" defaultValue={filters.to ?? ""} className={inputClass} />
+        </label>
+        <div className="flex items-center gap-2">
+          <button
+            type="submit"
+            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-sm font-medium bg-foreground text-background hover:bg-foreground/90"
+          >
+            Filter
+          </button>
+          {anyFilter && (
+            <Link
+              to="?"
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-sm bg-card border border-border text-muted-foreground hover:bg-muted/50"
+            >
+              <X className="w-3.5 h-3.5" />
+              Clear
+            </Link>
+          )}
+        </div>
+      </Form>
 
       <div className="bg-card border border-border rounded-lg overflow-x-auto">
         <table className="w-full text-sm min-w-[760px]">
@@ -102,7 +174,7 @@ export default function AdminConsoleActivity() {
             {entries.length === 0 && (
               <tr>
                 <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground/70">
-                  No activity on this page.
+                  {anyFilter ? "No activity matches these filters." : "No activity on this page."}
                 </td>
               </tr>
             )}
@@ -136,7 +208,7 @@ export default function AdminConsoleActivity() {
       <nav className="flex items-center justify-between" aria-label="Activity pagination">
         {page > 1 ? (
           <Link
-            to={`?page=${page - 1}`}
+            to={pageHref(page - 1)}
             prefetch="render"
             className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-sm bg-card border border-border text-foreground hover:bg-muted/50"
           >
@@ -146,7 +218,7 @@ export default function AdminConsoleActivity() {
         ) : <span />}
         {hasNext ? (
           <Link
-            to={`?page=${page + 1}`}
+            to={pageHref(page + 1)}
             prefetch="render"
             className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-sm bg-card border border-border text-foreground hover:bg-muted/50"
           >

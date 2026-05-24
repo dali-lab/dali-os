@@ -1,19 +1,25 @@
 import { getClientIp } from "~/lib/rate-limit";
 import type { Prisma } from "~/generated/prisma/client";
 
-export type AuditAction =
-  | "login.success"
-  | "login.failure"
-  | "logout"
-  | "auth.token.invalid"
-  | "role.change"
-  | "decision.finalize"
-  | "decision.release"
-  | "interview.invite-reminder.sent"
-  | "email.send"
-  | "email.extension_notice"
-  | "confidentiality.sign"
-  | "mcp.tool_called";
+// Single source of truth for the set of audit actions. Kept as a runtime
+// array (not just a type union) so the activity viewer can render it as a
+// filter dropdown and the query builder can validate incoming filters.
+export const AUDIT_ACTIONS = [
+  "login.success",
+  "login.failure",
+  "logout",
+  "auth.token.invalid",
+  "role.change",
+  "decision.finalize",
+  "decision.release",
+  "interview.invite-reminder.sent",
+  "email.send",
+  "email.extension_notice",
+  "confidentiality.sign",
+  "mcp.tool_called",
+] as const;
+
+export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
 export type AuditEvent = {
   action: AuditAction;
