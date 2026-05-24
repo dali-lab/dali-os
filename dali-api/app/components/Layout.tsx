@@ -34,7 +34,7 @@ import {
 } from 'lucide-react'
 import { userInitials } from '~/lib/display'
 import { TabWorkspace, type TabWorkspaceHandle, type OpenTabRequest } from '~/components/TabWorkspace'
-import { useUnreadNotificationCount, useOpenTasks, UnreadBadge } from '~/components/NotificationBell'
+import { useOpenTasks } from '~/components/NotificationBell'
 
 interface LayoutProps {
   user: { email: string; firstName?: string; lastName?: string }
@@ -477,7 +477,6 @@ export function Layout({ user, photoUrl, isHiringLead = false, isAdmin = false, 
   const activeSection = activeArea?.sections.find((s) => s.active)
 
   const initials = userInitials(user)
-  const unreadCount = useUnreadNotificationCount()
   const openTasks = useOpenTasks()
   const taskCount = openTasks.length
   const sidebarWidth = collapsed ? 'w-16' : 'w-64'
@@ -766,7 +765,7 @@ export function Layout({ user, photoUrl, isHiringLead = false, isAdmin = false, 
           <button
             type="button"
             onClick={() => openInWorkspace({ url: '/profile', label: 'Profile' })}
-            title={collapsed ? `Open profile${unreadCount > 0 ? ` (${unreadCount} unread)` : ''}` : undefined}
+            title={collapsed ? 'Open profile' : undefined}
             aria-label="Open profile"
             className={`flex items-center gap-2 rounded-md hover:bg-white/5 transition-colors ${
               collapsed ? 'p-1.5' : 'flex-1 min-w-0 px-2 py-1.5 text-left'
@@ -784,7 +783,6 @@ export function Layout({ user, photoUrl, isHiringLead = false, isAdmin = false, 
                   {initials}
                 </div>
               )}
-              <UnreadBadge count={unreadCount} />
             </div>
             {!collapsed && (
               <span className="text-xs text-white/80 truncate min-w-0">{user.email}</span>
@@ -848,7 +846,7 @@ export function Layout({ user, photoUrl, isHiringLead = false, isAdmin = false, 
         <div className="flex items-center gap-3">
           <Link
             to="/profile"
-            aria-label={unreadCount > 0 ? `Profile (${unreadCount} unread)` : 'Profile'}
+            aria-label="Profile"
             className="relative w-8 h-8 rounded-full flex items-center justify-center"
           >
             {photoUrl ? (
@@ -862,7 +860,6 @@ export function Layout({ user, photoUrl, isHiringLead = false, isAdmin = false, 
                 {initials}
               </span>
             )}
-            <UnreadBadge count={unreadCount} />
           </Link>
           <a href="/logout" className="text-white/40 hover:text-white/70 transition" title="Log out">
             <LogOut className="w-4 h-4" />
