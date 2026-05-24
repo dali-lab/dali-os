@@ -9,8 +9,7 @@
 // as serialized ProseMirror JSON.
 
 import { z } from "zod";
-import { Prisma } from "~/generated/prisma/client";
-import { prisma } from "~/lib/db";
+import { prisma, Prisma } from "~/lib/db";
 import type { Question } from "~/types";
 import { isReferenceSourceKey, referenceSourceNeedsTerm } from "./reference-sources.shared";
 
