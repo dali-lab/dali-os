@@ -1241,7 +1241,7 @@ function ManualBlocksCard({ blocks, timezone }: { blocks: ManualBlockDTO[]; time
           onClick={() => setAdding((v) => !v)}
           className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-md border border-border hover:bg-muted transition-colors"
         >
-          <Plus className="w-3.5 h-3.5" />
+          {adding ? <X className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
           {adding ? "Cancel" : "Add Block"}
         </button>
       </div>
@@ -1260,6 +1260,7 @@ function ManualBlocksCard({ blocks, timezone }: { blocks: ManualBlockDTO[]; time
 
 function AddManualBlockForm({ onDone }: { onDone: () => void }) {
   const fetcher = useFetcher();
+  const [repeats, setRepeats] = useState<Repeats>("none");
   return (
     <fetcher.Form
       method="post"
@@ -1308,11 +1309,23 @@ function AddManualBlockForm({ onDone }: { onDone: () => void }) {
           <input type="hidden" name="endTime" />
         </label>
       </div>
-      <input
-        name="recurrenceRule"
-        placeholder="Recurrence (RRULE, optional, e.g. FREQ=WEEKLY;BYDAY=MO)"
-        className="px-2 py-1 text-xs border border-border rounded-md bg-background text-foreground"
-      />
+      <label className="text-xs text-muted-foreground flex flex-col gap-1">
+        Repeats
+        <select
+          value={repeats}
+          onChange={(e) => setRepeats(e.target.value as Repeats)}
+          className="px-2 py-1 text-sm border border-border rounded-md bg-background text-foreground"
+        >
+          {REPEATS_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      {/* The action reads `recurrenceRule` as an RRULE string; derive it from
+          the friendly Repeats choice so non-technical users never see RRULE. */}
+      <input type="hidden" name="recurrenceRule" value={repeatsToRRule(repeats) ?? ""} />
       <div className="flex justify-end gap-2">
         <button
           type="button"
@@ -3528,7 +3541,12 @@ function SelectionPopoverPortal({
       // Align the top with the block, then clamp within the viewport.
       let top = a.top;
       top = Math.max(margin, Math.min(top, vh - ch - margin));
-      setPos({ left, top });
+      // Only update on a real change. Setting a fresh {left,top} object every
+      // run would re-trigger this effect endlessly if it depended on `children`
+      // (a new element each render), so we both guard here and use empty deps.
+      setPos((prev) =>
+        prev && prev.left === left && prev.top === top ? prev : { left, top },
+      );
     };
     place();
     window.addEventListener("resize", place);
@@ -3537,7 +3555,10 @@ function SelectionPopoverPortal({
       window.removeEventListener("resize", place);
       window.removeEventListener("scroll", place, true);
     };
-  }, [anchorRef, children]);
+    // anchorRef is a stable ref; placement re-runs via the resize/scroll
+    // listeners. Intentionally not depending on `children` to avoid thrashing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (typeof document === "undefined") return null;
 
