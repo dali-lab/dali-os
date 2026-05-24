@@ -61,11 +61,6 @@ export function SubmissionDatabase({
             >
               <td className="px-4 py-2">
                 <span className="text-foreground">{r.name}</span>
-                {r.email && (
-                  <div className="text-xs text-muted-foreground">
-                    {r.email}
-                  </div>
-                )}
               </td>
               {columns.map((c) => {
                 const v = r.cells[c.key] ?? "";

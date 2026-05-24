@@ -9,6 +9,7 @@
 // as serialized ProseMirror JSON.
 
 import { z } from "zod";
+import { Prisma } from "~/generated/prisma/client";
 import { prisma } from "~/lib/db";
 import type { Question } from "~/types";
 import { isReferenceSourceKey, referenceSourceNeedsTerm } from "./reference-sources.shared";
@@ -79,6 +80,10 @@ export type FormDetail = {
   published: boolean;
   publicToken: string | null;
   versions: FormVersionDetail[];
+  // Editable working copy, if one exists. The editor seeds the builder from
+  // this; null means start from the latest version (or blank). Never served
+  // to fillers.
+  draft: { questions: Question[]; description: unknown } | null;
 };
 
 // The full form + every version (newest last), for the dedicated editor page.
@@ -96,6 +101,9 @@ export async function loadFormForEdit(
     },
   });
   if (!form) return null;
+  const draftQuestions = form.draftQuestions
+    ? (form.draftQuestions as unknown as Question[])
+    : null;
   return {
     id: form.id,
     name: form.name,
@@ -112,6 +120,13 @@ export async function loadFormForEdit(
       // intro holds serialized ProseMirror JSON (see module note).
       description: v.intro ? safeParse(v.intro) : null,
     })),
+    draft: draftQuestions
+      ? {
+          questions: draftQuestions,
+          // draftIntro mirrors FormVersion.intro (serialized ProseMirror JSON).
+          description: form.draftIntro ? safeParse(form.draftIntro) : null,
+        }
+      : null,
   };
 }
 
@@ -251,6 +266,14 @@ export const ActionSchema = z.discriminatedUnion("intent", [
     folderId: z.string().optional(), // "" = top level
   }),
   z.object({
+    // "Save" — persist the editable working copy. Lenient: a draft may hold a
+    // work-in-progress question set, so it isn't held to save-version's rules.
+    intent: z.literal("save-draft"),
+    id: z.string().min(1),
+    questions: z.string(), // JSON-encoded Question[]
+    description: z.string().optional(), // JSON-encoded ProseMirror doc
+  }),
+  z.object({
     intent: z.literal("save-version"),
     id: z.string().min(1),
     questions: z.string(), // JSON-encoded Question[]
@@ -343,6 +366,34 @@ export async function runFormsAction(
       await prisma.form.delete({ where: { id: input.id } });
       return { ok: true };
     }
+    case "save-draft": {
+      const exists = await prisma.form.findUnique({
+        where: { id: input.id },
+        select: { id: true },
+      });
+      if (!exists) return { error: "Not found", status: 404 };
+
+      // The draft is a working copy — parse it but don't enforce save-version's
+      // completeness rules (labels, valid reference sources, non-empty). It's
+      // never served to fillers, so a half-finished draft is fine to store.
+      let questions: unknown;
+      try {
+        questions = JSON.parse(input.questions);
+      } catch {
+        return { error: "Could not parse questions.", status: 400 };
+      }
+      if (!isQuestionArray(questions))
+        return { error: "Could not parse questions.", status: 400 };
+
+      await prisma.form.update({
+        where: { id: input.id },
+        data: {
+          draftQuestions: questions as object,
+          draftIntro: input.description?.trim() || null,
+        },
+      });
+      return { ok: true };
+    }
     case "save-version": {
       const exists = await prisma.form.findUnique({
         where: { id: input.id },
@@ -382,16 +433,25 @@ export async function runFormsAction(
         orderBy: { versionNumber: "desc" },
         select: { versionNumber: true },
       });
-      await prisma.formVersion.create({
-        data: {
-          formId: input.id,
-          versionNumber: (last?.versionNumber ?? 0) + 1,
-          questions: questions as object,
-          // Reuse the intro column to store the rich-text description JSON.
-          intro: input.description?.trim() || null,
-          createdById: userId,
-        },
-      });
+      // Freeze the working copy into an immutable, fillable version and clear
+      // the draft — the two happen together so the editor never shows a stale
+      // draft alongside the version it just became.
+      await prisma.$transaction([
+        prisma.formVersion.create({
+          data: {
+            formId: input.id,
+            versionNumber: (last?.versionNumber ?? 0) + 1,
+            questions: questions as object,
+            // Reuse the intro column to store the rich-text description JSON.
+            intro: input.description?.trim() || null,
+            createdById: userId,
+          },
+        }),
+        prisma.form.update({
+          where: { id: input.id },
+          data: { draftQuestions: Prisma.DbNull, draftIntro: null },
+        }),
+      ]);
       return { ok: true };
     }
     case "create-folder": {

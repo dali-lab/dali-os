@@ -2267,6 +2267,15 @@ model Form {
   published   Boolean @default(false)
   publicToken String? @unique
 
+  // Editable working copy. "Save" writes here; the draft is mutable and is
+  // NEVER served to fillers. "Save as version" freezes the draft into an
+  // immutable FormVersion and clears these back to null. Published fills
+  // always read the latest FormVersion, so a draft is unusable until it's
+  // saved as a version. `draftIntro` mirrors FormVersion.intro (serialized
+  // ProseMirror description JSON).
+  draftQuestions Json?
+  draftIntro     String?
+
   versions      FormVersion[]
   submissions   FormSubmission[]
   notifications Notification[]

@@ -76,6 +76,24 @@ export const prisma = {
     create: vi.fn(),
     update: vi.fn(),
   },
+  form: {
+    findUnique: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+    create: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+  },
+  formVersion: {
+    findFirst: vi.fn(),
+    create: vi.fn(),
+  },
+  formFolder: {
+    findUnique: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+    create: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+  },
   userAvailabilitySettings: {
     findUnique: vi.fn().mockResolvedValue(null),
   },

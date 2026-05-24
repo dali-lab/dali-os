@@ -36,15 +36,11 @@ export default function Library() {
 
   return (
     <div className="space-y-8">
-      <header>
-        <h1 className="text-2xl font-bold text-foreground">Library</h1>
-        <p className="mt-1 text-muted-foreground">
-          Reusable hiring artifacts — challenges, rubrics, and confidentiality
-          agreements — versioned independently of any cycle.
-        </p>
-      </header>
-
-      <div className="flex items-center gap-2" role="tablist" aria-label="Library section">
+      <div
+        className="inline-flex self-start rounded-lg border border-border bg-muted/40 p-0.5"
+        role="tablist"
+        aria-label="Library section"
+      >
         {TABS.map((t) => {
           const active = t.id === tab;
           return (
@@ -56,8 +52,8 @@ export default function Library() {
               onClick={() => selectTab(t.id)}
               className={`px-4 py-1.5 text-sm font-semibold rounded-md transition-colors ${
                 active
-                  ? "bg-accent-coral text-white"
-                  : "text-foreground hover:bg-muted"
+                  ? "bg-accent-coral text-white shadow-sm"
+                  : "text-muted-foreground hover:text-foreground hover:bg-background/60"
               }`}
             >
               {t.label}
