@@ -25,9 +25,19 @@ export const links: Route.LinksFunction = () => [
   { rel: "alternate icon", href: "/favicon.ico" },
   { rel: "apple-touch-icon", href: "/icon-blue.svg" },
   { rel: "mask-icon", href: "/icon-blue.svg", color: "#1E5779" },
+  { rel: "manifest", href: "/manifest.webmanifest" },
 ];
 
-export const meta: Route.MetaFunction = () => [{ title: "DALI OS" }];
+// og:site_name and application-name pin the app's name to "DALI OS" for
+// crawlers (Google's OAuth verification reads these). Without them Google
+// falls back to the domain/favicon and resolves the name as "DALI Lab",
+// which fails the consent-screen name-match check.
+export const meta: Route.MetaFunction = () => [
+  { title: "DALI OS" },
+  { name: "application-name", content: "DALI OS" },
+  { property: "og:site_name", content: "DALI OS" },
+  { property: "og:title", content: "DALI OS" },
+];
 
 export function Layout({ children }: { children: React.ReactNode }) {
   // Published as a <meta> tag rather than an inline <script> so that
