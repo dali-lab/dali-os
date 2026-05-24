@@ -55,3 +55,28 @@ export function parseBearerHeader(request: Request): string | null {
 export function parseSessionId(request: Request): string | null {
   return parseSessionCookie(request) ?? parseBearerHeader(request);
 }
+
+// Same precedence as parseSessionId, but also reports which source the
+// credential came from. Used by lib/auth.ts to distinguish stale browser
+// cookies (benign, expected after rotation/expiry/logout) from invalid
+// bearer tokens (worth a security signal for MCP clients).
+export type SessionCredentialSource = "cookie" | "bearer";
+export function parseSessionIdWithSource(
+  request: Request,
+): { raw: string; source: SessionCredentialSource } | null {
+  const cookie = parseSessionCookie(request);
+  if (cookie) return { raw: cookie, source: "cookie" };
+  const bearer = parseBearerHeader(request);
+  if (bearer) return { raw: bearer, source: "bearer" };
+  return null;
+}
+
+// Raw session ids are 32 random bytes encoded as base64url → exactly 43 chars
+// from [A-Za-z0-9_-]. A cookie value that fits this shape but doesn't resolve
+// to a DB row is almost certainly a stale browser cookie (server rotated,
+// session expired, user logged out elsewhere); anything else in the cookie
+// slot is malformed and worth flagging.
+const SESSION_ID_FORMAT_RE = /^[A-Za-z0-9_-]{43}$/;
+export function looksLikeWellFormedSessionId(raw: string): boolean {
+  return SESSION_ID_FORMAT_RE.test(raw);
+}

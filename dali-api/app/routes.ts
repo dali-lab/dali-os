@@ -39,6 +39,7 @@ export default [
     route("admin-console/domains", "admin-console/routes/admin-console.domains.tsx"),
     route("admin-console/announcements", "admin-console/routes/admin-console.announcements.tsx"),
     route("admin-console/activity", "admin-console/routes/admin-console.activity.tsx"),
+    route("admin-console/analytics", "admin-console/routes/admin-console.analytics.tsx"),
 
     // Projects
     route("projects/list", "projects/routes/projects.list.tsx"),
@@ -266,6 +267,9 @@ export default [
 
   // Audit logs (admin)
   route("api/audit-logs", "admin-console/routes/api.audit-logs.ts"),
+
+  // Site analytics (client error beacon)
+  route("api/analytics/error", "routes/api.analytics.error.ts"),
 
   // Collaborative editing version history
   route("api/collab/versions", "routes/api.collab.versions.ts"),

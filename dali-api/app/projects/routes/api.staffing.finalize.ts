@@ -4,6 +4,7 @@ import { requireAuth } from "~/lib/auth";
 import { canManageStaffing } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { postMessage } from "~/slack/lib/slack-client";
+import { logAuditEvent } from "~/lib/audit";
 
 // POST /api/staffing/finalize
 //
@@ -202,6 +203,19 @@ export async function action({ request }: Route.ActionArgs) {
       message: "GitHub team provisioning is not configured.",
     };
   }
+
+  await logAuditEvent({
+    action: "staffing.finalize",
+    userId: auth.user.sub,
+    targetId: project.id,
+    metadata: {
+      cycleId: cycle.id,
+      automations: Array.from(selected),
+      confirmedCount,
+      results,
+    },
+    request,
+  });
 
   return withCors(request, Response.json({ results }));
 }

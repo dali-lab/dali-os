@@ -3,9 +3,18 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
+import {
+  parseAuditFilters,
+  buildAuditWhere,
+  resolveAuditTextFilters,
+} from "~/lib/audit-query";
 
 const MAX_LIMIT = 200;
 const DEFAULT_LIMIT = 50;
+
+// Filterable on the indexed columns (action, userId, createdAt) plus the
+// non-indexed targetId — shared with the /admin-console/activity viewer via
+// lib/audit-query.ts so both surfaces interpret the same params identically.
 
 export async function loader({ request }: Route.LoaderArgs) {
   const preflight = handlePreflight(request);
@@ -17,17 +26,30 @@ export async function loader({ request }: Route.LoaderArgs) {
     return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
 
   const url = new URL(request.url);
-  const limit = Math.min(Number(url.searchParams.get("limit") ?? DEFAULT_LIMIT) || DEFAULT_LIMIT, MAX_LIMIT);
+  const limit = Math.min(
+    Number(url.searchParams.get("limit") ?? DEFAULT_LIMIT) || DEFAULT_LIMIT,
+    MAX_LIMIT,
+  );
   const offset = Math.max(Number(url.searchParams.get("offset") ?? 0) || 0, 0);
+
+  const filters = parseAuditFilters(url.searchParams);
+  const where = {
+    ...buildAuditWhere(filters),
+    ...(await resolveAuditTextFilters(prisma, filters)),
+  };
 
   const [entries, total] = await Promise.all([
     prisma.auditLog.findMany({
+      where,
       orderBy: { createdAt: "desc" },
       take: limit,
       skip: offset,
     }),
-    prisma.auditLog.count(),
+    prisma.auditLog.count({ where }),
   ]);
 
-  return withCors(request, Response.json({ total, limit, offset, entries }));
+  return withCors(
+    request,
+    Response.json({ total, limit, offset, filters, entries }),
+  );
 }

@@ -3,6 +3,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { canManageStaffing } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
+import { logAuditEvent } from "~/lib/audit";
 
 // POST /api/staffing/assign
 //
@@ -99,6 +100,19 @@ export async function action({ request }: Route.ActionArgs) {
         },
       });
     }
+  });
+
+  await logAuditEvent({
+    action: "staffing.assign",
+    userId: assignerId,
+    targetId: body.userId,
+    metadata: {
+      cycleId: body.cycleId,
+      projectId: body.projectId,
+      domainId: body.domainId ?? null,
+      level: body.level ?? null,
+    },
+    request,
   });
 
   return withCors(request, Response.json({ ok: true }));

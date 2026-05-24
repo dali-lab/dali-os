@@ -1,16 +1,25 @@
-import { Link, redirect, useLoaderData } from "react-router";
+import { Form, Link, redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/admin-console.activity";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
-import { ListTodo, ChevronLeft, ChevronRight } from "lucide-react";
+import { AUDIT_ACTIONS } from "~/lib/audit";
+import {
+  parseAuditFilters,
+  buildAuditWhere,
+  resolveAuditTextFilters,
+  activeFilterParams,
+  hasAnyFilter,
+} from "~/lib/audit-query";
+import { ListTodo, ChevronLeft, ChevronRight, X } from "lucide-react";
 
 export const meta: Route.MetaFunction = () => [{ title: "Activity · Operations · DALI OS" }];
 
-// Read-only viewer over the AuditLog table — the same data that
-// /api/audit-logs returns programmatically. Offset-paginated; the Next link
-// uses prefetch="render" so the next page's loader runs the moment the
-// current page renders, making the click feel instant.
+// Read-only viewer over the AuditLog table. Offset-paginated and filterable
+// on the indexed columns (action, userId, createdAt) plus a cheap equality
+// check on targetId. The Next link uses prefetch="render" so the next page's
+// loader runs the moment the current page renders, making the click feel
+// instant.
 
 const PAGE_SIZE = 50;
 
@@ -22,10 +31,15 @@ export async function loader({ request }: Route.LoaderArgs) {
   const url = new URL(request.url);
   const page = Math.max(1, Number(url.searchParams.get("page") ?? "1") || 1);
   const skip = (page - 1) * PAGE_SIZE;
+  const filters = parseAuditFilters(url.searchParams);
+  const baseWhere = buildAuditWhere(filters);
+  const textPatch = await resolveAuditTextFilters(prisma, filters);
+  const where = { ...baseWhere, ...textPatch };
 
   // Take one extra to detect whether a next page exists without a separate
-  // count() query (count() over a large AuditLog table is expensive).
+  // count() query (count() over a large AuditLog is expensive).
   const rows = await prisma.auditLog.findMany({
+    where,
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: PAGE_SIZE + 1,
     skip,
@@ -35,32 +49,36 @@ export async function loader({ request }: Route.LoaderArgs) {
   const entries = rows.slice(0, PAGE_SIZE);
 
   // Resolve actor + target display names in a single round-trip rather than
-  // per-row. Targets in this table are typed loosely (string id with no FK
-  // back to a single table), so we only attempt User resolution and fall
-  // back to the raw id when it doesn't match.
+  // per-row. Targets are typed loosely (string id with no FK back to a
+  // single table), so we only attempt User resolution and fall back to the
+  // raw id when it doesn't match.
   const ids = new Set<string>();
   for (const e of entries) {
     if (e.userId) ids.add(e.userId);
     if (e.targetId) ids.add(e.targetId);
   }
-  const users = ids.size === 0
-    ? []
-    : await prisma.user.findMany({
-        where: { id: { in: Array.from(ids) } },
-        select: { id: true, firstName: true, lastName: true, daliEmail: true },
-      });
+  const users =
+    ids.size === 0
+      ? []
+      : await prisma.user.findMany({
+          where: { id: { in: Array.from(ids) } },
+          select: { id: true, firstName: true, lastName: true, daliEmail: true },
+        });
   const userById = new Map(users.map((u) => [u.id, u]));
 
   return {
     page,
     hasNext,
+    filters,
+    anyFilter: hasAnyFilter(filters),
+    actions: AUDIT_ACTIONS,
     entries: entries.map((e) => ({
       id: e.id,
       createdAt: e.createdAt.toISOString(),
       action: e.action,
-      actor: e.userId ? userById.get(e.userId) ?? null : null,
+      actor: e.userId ? (userById.get(e.userId) ?? null) : null,
       actorId: e.userId,
-      target: e.targetId ? userById.get(e.targetId) ?? null : null,
+      target: e.targetId ? (userById.get(e.targetId) ?? null) : null,
       targetId: e.targetId,
       metadata: e.metadata,
       ip: e.ip,
@@ -68,14 +86,55 @@ export async function loader({ request }: Route.LoaderArgs) {
   };
 }
 
-function displayActor(u: { firstName: string; lastName: string; daliEmail: string | null } | null, fallbackId: string | null) {
-  if (!u) return fallbackId ? <span className="font-mono text-xs text-muted-foreground/70">{fallbackId.slice(0, 8)}…</span> : <span className="text-muted-foreground/60 italic">system</span>;
-  const name = `${u.firstName} ${u.lastName}`.trim();
-  return <span>{name || u.daliEmail || "—"}</span>;
+type PersonRow = { firstName: string; lastName: string; daliEmail: string | null };
+
+function displayPerson(u: PersonRow | null, fallbackId: string | null) {
+  if (u) {
+    const name = `${u.firstName} ${u.lastName}`.trim();
+    return <span>{name || u.daliEmail || "—"}</span>;
+  }
+  // Has an id but couldn't resolve it (User row missing, or targetId points
+  // at a non-User resource like a domain/group/document).
+  if (fallbackId) {
+    return (
+      <span className="font-mono text-xs text-muted-foreground/70">{fallbackId.slice(0, 8)}…</span>
+    );
+  }
+  return null;
 }
 
+// Actor column: a missing userId means an unauthenticated request (token
+// validation failure, etc.), and "system" is the meaningful label.
+function displayActor(u: PersonRow | null, fallbackId: string | null) {
+  return (
+    displayPerson(u, fallbackId) ?? (
+      <span className="text-muted-foreground/60 italic">system</span>
+    )
+  );
+}
+
+// Target column: a missing targetId means the action simply has no target
+// (login.success, email.send, confidentiality.sign, …). Don't fabricate a
+// "system" label — render an em-dash like the empty-metadata cell.
+function displayTarget(u: PersonRow | null, fallbackId: string | null) {
+  return (
+    displayPerson(u, fallbackId) ?? <span className="text-muted-foreground/50">—</span>
+  );
+}
+
+const inputClass =
+  "bg-page border border-border rounded px-2 py-1.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring";
+
 export default function AdminConsoleActivity() {
-  const { page, hasNext, entries } = useLoaderData<typeof loader>();
+  const { page, hasNext, filters, anyFilter, actions, entries } = useLoaderData<typeof loader>();
+
+  // Pagination links: carry active filters but never the previous page slot.
+  function pageHref(nextPage: number): string {
+    const params = activeFilterParams(filters);
+    if (nextPage > 1) params.set("page", String(nextPage));
+    const qs = params.toString();
+    return qs ? `?${qs}` : "?";
+  }
 
   return (
     <div className="space-y-4">
@@ -86,6 +145,73 @@ export default function AdminConsoleActivity() {
           page {page}
         </span>
       </div>
+
+      <Form
+        method="get"
+        className="bg-card border border-border rounded-lg p-3 grid grid-cols-1 sm:grid-cols-4 gap-2 items-end"
+      >
+        <label className="text-xs text-muted-foreground flex flex-col gap-1">
+          Action
+          <select
+            name="action"
+            defaultValue={filters.action ?? ""}
+            className={`${inputClass} font-mono`}
+          >
+            <option value="">All</option>
+            {actions.map((a) => (
+              <option key={a} value={a}>
+                {a}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="text-xs text-muted-foreground flex flex-col gap-1">
+          Person
+          <input
+            type="text"
+            name="person"
+            defaultValue={filters.person ?? ""}
+            placeholder="name, email, or id"
+            title="Matches as actor or target — what did this person do, and what was done to them"
+            className={inputClass}
+          />
+        </label>
+        <label className="text-xs text-muted-foreground flex flex-col gap-1">
+          From
+          <input
+            type="date"
+            name="from"
+            defaultValue={filters.from ?? ""}
+            className={inputClass}
+          />
+        </label>
+        <label className="text-xs text-muted-foreground flex flex-col gap-1">
+          To
+          <input
+            type="date"
+            name="to"
+            defaultValue={filters.to ?? ""}
+            className={inputClass}
+          />
+        </label>
+        <div className="sm:col-span-4 flex items-center gap-2">
+          <button
+            type="submit"
+            className="px-3 py-1.5 rounded-md text-sm bg-primary text-primary-foreground hover:opacity-90"
+          >
+            Apply
+          </button>
+          {anyFilter && (
+            <Link
+              to="?"
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-sm bg-card border border-border text-muted-foreground hover:text-foreground"
+            >
+              <X className="w-3.5 h-3.5" />
+              Clear filters
+            </Link>
+          )}
+        </div>
+      </Form>
 
       <div className="bg-card border border-border rounded-lg overflow-x-auto">
         <table className="w-full text-sm min-w-[760px]">
@@ -102,7 +228,9 @@ export default function AdminConsoleActivity() {
             {entries.length === 0 && (
               <tr>
                 <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground/70">
-                  No activity on this page.
+                  {anyFilter
+                    ? "No activity matches these filters."
+                    : "No activity on this page."}
                 </td>
               </tr>
             )}
@@ -111,16 +239,15 @@ export default function AdminConsoleActivity() {
                 <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
                   {new Date(e.createdAt).toLocaleString()}
                 </td>
-                <td className="px-4 py-3">
-                  {displayActor(e.actor, e.actorId)}
-                </td>
+                <td className="px-4 py-3">{displayActor(e.actor, e.actorId)}</td>
                 <td className="px-4 py-3 font-mono text-xs text-foreground">{e.action}</td>
-                <td className="px-4 py-3">
-                  {displayActor(e.target, e.targetId)}
-                </td>
+                <td className="px-4 py-3">{displayTarget(e.target, e.targetId)}</td>
                 <td className="px-4 py-3">
                   {e.metadata ? (
-                    <code className="block text-[11px] text-muted-foreground bg-muted/40 rounded px-1.5 py-0.5 max-w-md truncate" title={JSON.stringify(e.metadata)}>
+                    <code
+                      className="block text-[11px] text-muted-foreground bg-muted/40 rounded px-1.5 py-0.5 max-w-md truncate"
+                      title={JSON.stringify(e.metadata)}
+                    >
                       {JSON.stringify(e.metadata)}
                     </code>
                   ) : (
@@ -136,24 +263,28 @@ export default function AdminConsoleActivity() {
       <nav className="flex items-center justify-between" aria-label="Activity pagination">
         {page > 1 ? (
           <Link
-            to={`?page=${page - 1}`}
+            to={pageHref(page - 1)}
             prefetch="render"
             className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-sm bg-card border border-border text-foreground hover:bg-muted/50"
           >
             <ChevronLeft className="w-4 h-4" />
             Previous
           </Link>
-        ) : <span />}
+        ) : (
+          <span />
+        )}
         {hasNext ? (
           <Link
-            to={`?page=${page + 1}`}
+            to={pageHref(page + 1)}
             prefetch="render"
             className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-sm bg-card border border-border text-foreground hover:bg-muted/50"
           >
             Next
             <ChevronRight className="w-4 h-4" />
           </Link>
-        ) : <span className="text-xs text-muted-foreground/60">End of log</span>}
+        ) : (
+          <span className="text-xs text-muted-foreground/60">End of log</span>
+        )}
       </nav>
     </div>
   );

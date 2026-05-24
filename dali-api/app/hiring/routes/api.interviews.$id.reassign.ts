@@ -7,6 +7,7 @@ import { parseJson } from "~/lib/validate";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
 import { sendReassignmentEmails } from "~/hiring/lib/interview-emails";
 import { notifyInterviewAssigned } from "~/hiring/lib/interview-notifications";
+import { logAuditEvent } from "~/lib/audit";
 
 const ReassignSchema = z.object({
   assignmentId: z.string().min(1).max(100),
@@ -123,6 +124,20 @@ export async function action({ request, params }: Route.ActionArgs) {
       createdByUserId: auth.user.sub,
     }).catch(() => {});
   }
+
+  await logAuditEvent({
+    action: "interview.reassign",
+    userId: auth.user.sub,
+    targetId: interview.id,
+    metadata: {
+      cycleId: interview.applicationCycleId,
+      oldCycleInterviewerId: assignment.cycleInterviewerId,
+      newCycleInterviewerId,
+      oldAssignmentId: assignmentId,
+      newAssignmentId,
+    },
+    request,
+  });
 
   return Response.json({ success: true });
 }

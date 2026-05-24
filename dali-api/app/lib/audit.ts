@@ -1,19 +1,42 @@
 import { getClientIp } from "~/lib/rate-limit";
 import type { Prisma } from "~/generated/prisma/client";
 
-export type AuditAction =
-  | "login.success"
-  | "login.failure"
-  | "logout"
-  | "auth.token.invalid"
-  | "role.change"
-  | "decision.finalize"
-  | "decision.release"
-  | "interview.invite-reminder.sent"
-  | "email.send"
-  | "email.extension_notice"
-  | "confidentiality.sign"
-  | "mcp.tool_called";
+// The closed set of action strings written to AuditLog. Exported as an array
+// so the activity-log UI can render a filter dropdown without having to scan
+// the table for distinct values.
+export const AUDIT_ACTIONS = [
+  "login.success",
+  "login.failure",
+  "logout",
+  "auth.token.invalid",
+  "auth.token.malformed",
+  "role.change",
+  "decision.finalize",
+  "decision.release",
+  "interview.invite-reminder.sent",
+  "interview.complete",
+  "interview.reopen",
+  "interview.reassign",
+  "interview.decline",
+  "review.submit",
+  "review.unsubmit",
+  "domain.create",
+  "domain.delete",
+  "domain.lead.add",
+  "domain.lead.remove",
+  "group.create",
+  "group.update",
+  "group.delete",
+  "staffing.assign",
+  "staffing.finalize",
+  "document.delete",
+  "email.send",
+  "email.extension_notice",
+  "confidentiality.sign",
+  "mcp.tool_called",
+] as const;
+
+export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
 export type AuditEvent = {
   action: AuditAction;

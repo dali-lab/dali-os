@@ -6,6 +6,7 @@ import { requireAuth } from "~/lib/auth";
 import { isCore, isDomainLead, isAdmin } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
+import { logAuditEvent } from "~/lib/audit";
 
 const CreateDomainSchema = z.object({
   name: z.string().trim().min(1).max(100),
@@ -71,5 +72,12 @@ export async function action({ request }: Route.ActionArgs) {
     data: { name, code, displayName: name },
   });
   await ensureDomainGroup(domain.id, domain.displayName);
+  await logAuditEvent({
+    action: "domain.create",
+    userId: auth.user.sub,
+    targetId: domain.id,
+    metadata: { name: domain.name, code: domain.code },
+    request,
+  });
   return withCors(request, Response.json(domain, { status: 201 }));
 }

@@ -6,9 +6,14 @@ import {
   Scripts,
   ScrollRestoration,
 } from "react-router";
+import { useEffect } from "react";
 
 import type { Route } from "./+types/root";
 import "./app.css";
+import {
+  AnalyticsErrorReporter,
+  reportBoundaryError,
+} from "~/components/AnalyticsErrorReporter";
 
 export const links: Route.LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
@@ -66,6 +71,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       </head>
       <body>
         {children}
+        <AnalyticsErrorReporter />
         <ScrollRestoration />
         <Scripts />
       </body>
@@ -92,6 +98,15 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
     details = error.message;
     stack = error.stack;
   }
+
+  // Only report genuine render-time errors — 404s and other intentional
+  // routing responses are not crashes.
+  const reportable = !isRouteErrorResponse(error) && error;
+  useEffect(() => {
+    if (!reportable) return;
+    if (typeof window === "undefined") return;
+    reportBoundaryError(error, window.location.pathname);
+  }, [reportable, error]);
 
   return (
     <main className="pt-16 p-4 container mx-auto">

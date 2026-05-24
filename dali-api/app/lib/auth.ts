@@ -1,4 +1,8 @@
-import { clearSessionCookie, parseSessionId } from "~/lib/cookies";
+import {
+  clearSessionCookie,
+  parseSessionIdWithSource,
+  looksLikeWellFormedSessionId,
+} from "~/lib/cookies";
 import { logAuditEvent } from "~/lib/audit";
 import { lookupSession, rollSession, hashSessionId } from "~/lib/session";
 
@@ -79,14 +83,29 @@ function buildAuthUser(user: {
 }
 
 export async function requireAuth(request: Request): Promise<AuthResult> {
-  const raw = parseSessionId(request);
-  if (!raw) {
+  const credential = parseSessionIdWithSource(request);
+  if (!credential) {
     return { ok: false, response: unauthorized(), reason: "no_session" };
   }
 
-  const session = await lookupSession(raw);
+  const session = await lookupSession(credential.raw);
   if (!session) {
-    await logAuditEvent({ action: "auth.token.invalid", request });
+    // A stale browser cookie — well-formed but no longer in the DB — is the
+    // expected outcome after session rotation, logout-in-another-tab, or the
+    // 30-day rolling expiry. It generates one of these on every loader of
+    // every page until the cookie is cleared, so logging it floods the audit
+    // table with no security value. Filter to two cases worth keeping:
+    //   - cookie present but malformed → potential probing, log it
+    //   - bearer token miss → MCP client signal, log it (clients should refresh
+    //     before presenting an expired token)
+    const malformedCookie =
+      credential.source === "cookie" &&
+      !looksLikeWellFormedSessionId(credential.raw);
+    if (credential.source === "bearer") {
+      await logAuditEvent({ action: "auth.token.invalid", request });
+    } else if (malformedCookie) {
+      await logAuditEvent({ action: "auth.token.malformed", request });
+    }
     return { ok: false, response: unauthorizedClearingCookies(), reason: "not_found" };
   }
 
