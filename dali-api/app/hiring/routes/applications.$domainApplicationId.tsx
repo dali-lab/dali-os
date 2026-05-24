@@ -7,6 +7,7 @@ import { getUserRoles } from "~/lib/roles";
 import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
 import { presignAnswers } from "~/hiring/lib/presign";
 import { ApplicationViewer } from "~/hiring/components/ApplicationViewer";
+import { ReviewSummary } from "~/hiring/components/ReviewSummary";
 import type { Question, RubricCriterion } from "~/types";
 
 export const meta: Route.MetaFunction = ({ data }) => {
@@ -202,14 +203,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   };
 }
 
-const RECOMMENDATION_TONE: Record<string, string> = {
-  "Strong Hire": "bg-green-100 text-green-800",
-  Hire: "bg-green-50 text-green-700",
-  "Lean Hire": "bg-lime-50 text-lime-700",
-  "Lean No Hire": "bg-amber-50 text-amber-700",
-  "No Hire": "bg-red-50 text-red-700",
-};
-
 export default function ApplicationReadOnlyDetail() {
   const data = useLoaderData<typeof loader>();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -287,9 +280,30 @@ export default function ApplicationReadOnlyDetail() {
                 </div>
 
                 {selected && (
-                  <ReviewView
-                    review={selected}
-                    criterionLabels={data.criterionLabels}
+                  <ReviewSummary
+                    overallRecommendation={selected.overallRecommendation}
+                    scores={selected.scores}
+                    criteria={Object.fromEntries(
+                      Object.entries(data.criterionLabels).map(([key, label]) => [
+                        key,
+                        { label },
+                      ]),
+                    )}
+                    feedback={selected.feedback}
+                    rejectionRationale={selected.rejectionRationale}
+                    footerNote={
+                      selected.submittedAt ? (
+                        <>
+                          Submitted{" "}
+                          {new Date(selected.submittedAt).toLocaleDateString(undefined, {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                          })}
+                          . Highlighted passages from this review appear inline on the left.
+                        </>
+                      ) : null
+                    }
                   />
                 )}
               </div>
@@ -297,103 +311,6 @@ export default function ApplicationReadOnlyDetail() {
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-function ReviewView({
-  review,
-  criterionLabels,
-}: {
-  review: {
-    reviewerName: string;
-    scores: Record<string, number>;
-    feedback: string;
-    rejectionRationale: string;
-    overallRecommendation: string | null;
-    submittedAt: string | null;
-  };
-  criterionLabels: Record<string, string>;
-}) {
-  const scoreEntries = Object.entries(review.scores ?? {});
-  return (
-    <div className="space-y-5">
-      {/* Overall recommendation */}
-      {review.overallRecommendation && (
-        <div>
-          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">
-            Overall Recommendation
-          </h3>
-          <span
-            className={`inline-flex items-center px-2.5 py-1 rounded-md text-sm font-medium ${
-              RECOMMENDATION_TONE[review.overallRecommendation] ??
-              "bg-muted text-foreground"
-            }`}
-          >
-            {review.overallRecommendation}
-          </span>
-        </div>
-      )}
-
-      {/* Scores */}
-      {scoreEntries.length > 0 && (
-        <div>
-          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">
-            Scores
-          </h3>
-          <ul className="space-y-1">
-            {scoreEntries.map(([key, value]) => (
-              <li
-                key={key}
-                className="flex items-center justify-between text-sm border-b border-border/60 py-1"
-              >
-                <span className="text-muted-foreground">
-                  {criterionLabels[key] ?? key}
-                </span>
-                <span className="font-medium text-foreground">{value}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* Feedback */}
-      <div>
-        <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">
-          Internal Feedback
-        </h3>
-        {review.feedback.trim() ? (
-          <p className="text-sm text-foreground whitespace-pre-wrap">
-            {review.feedback}
-          </p>
-        ) : (
-          <p className="text-sm text-muted-foreground italic">No feedback.</p>
-        )}
-      </div>
-
-      {/* Rejection rationale */}
-      {review.rejectionRationale.trim() && (
-        <div>
-          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">
-            Rejection Rationale
-          </h3>
-          <p className="text-sm text-foreground whitespace-pre-wrap">
-            {review.rejectionRationale}
-          </p>
-        </div>
-      )}
-
-      {review.submittedAt && (
-        <p className="text-[11px] text-muted-foreground/70 pt-2 border-t border-border">
-          Submitted{" "}
-          {new Date(review.submittedAt).toLocaleDateString(undefined, {
-            month: "short",
-            day: "numeric",
-            year: "numeric",
-          })}
-          . Highlighted passages from this review appear inline on the left.
-        </p>
-      )}
     </div>
   );
 }
