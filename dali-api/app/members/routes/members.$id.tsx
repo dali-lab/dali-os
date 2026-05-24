@@ -5,7 +5,9 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
 import { initialsFromName } from "~/lib/display";
+import { resolvePhotoUrl } from "~/lib/photo";
 import { EditableSection } from "~/components/EditableSection";
+import { PhotoUploadField } from "~/components/PhotoUploadField";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const m = (data as { member?: { firstName: string; lastName: string } } | undefined)?.member;
@@ -13,7 +15,8 @@ export const meta: Route.MetaFunction = ({ data }) => {
 };
 
 // Profile fields a member (or an admin) may edit. Identity/auth columns
-// (netId, *Email) are intentionally not here.
+// (netId, *Email) are intentionally not here. photoUrl is handled separately
+// via the image-upload control, not as a plain text field.
 const TEXT_FIELDS = [
   "firstName",
   "lastName",
@@ -23,7 +26,6 @@ const TEXT_FIELDS = [
   "linkedinUrl",
   "githubUrl",
   "personalSite",
-  "photoUrl",
   "timeZone",
 ] as const;
 
@@ -57,7 +59,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const admin = await isAdmin(auth.user.sub);
   const canEdit = admin || auth.user.sub === member.id;
 
-  return { member, canEdit };
+  // Resolve for the header <img>. The raw key stays on `member.photoUrl` so
+  // the upload field's hidden input round-trips it unchanged on save.
+  const photoUrlResolved = await resolvePhotoUrl(member.photoUrl);
+
+  return { member, canEdit, photoUrlResolved };
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -90,6 +96,11 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
   }
 
+  // photoUrl carries an S3 key (or a legacy URL) from the upload control;
+  // blank means "no photo".
+  const photoUrlRaw = (form.get("photoUrl") as string | null)?.trim() ?? "";
+  data.photoUrl = photoUrlRaw === "" ? null : photoUrlRaw;
+
   const classYearRaw = (form.get("classYear") as string | null)?.trim() ?? "";
   if (classYearRaw === "") {
     data.classYear = null;
@@ -114,12 +125,11 @@ const FIELD_LABELS: Record<string, string> = {
   linkedinUrl: "LinkedIn URL",
   githubUrl: "GitHub URL",
   personalSite: "Personal site",
-  photoUrl: "Photo URL",
   timeZone: "Time zone (IANA, e.g. America/New_York)",
 };
 
 export default function MemberDetail() {
-  const { member, canEdit } = useLoaderData<typeof loader>();
+  const { member, canEdit, photoUrlResolved } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const submit = useSubmit();
   const navigation = useNavigation();
@@ -150,9 +160,9 @@ export default function MemberDetail() {
       </Link>
 
       <header className="flex flex-col items-center gap-4 text-center">
-        {member.photoUrl ? (
+        {photoUrlResolved ? (
           <img
-            src={member.photoUrl}
+            src={photoUrlResolved}
             alt=""
             className="w-32 h-32 rounded-lg object-cover border border-border"
           />
@@ -191,6 +201,13 @@ export default function MemberDetail() {
             ref={formRef}
             className="flex flex-col gap-3 w-full"
           >
+            <PhotoUploadField
+              userId={member.id}
+              name={`${member.firstName} ${member.lastName}`}
+              initialKey={member.photoUrl}
+              initialPreviewUrl={photoUrlResolved}
+              readOnly={!editing}
+            />
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {TEXT_FIELDS.map((field) => (
                 <Field

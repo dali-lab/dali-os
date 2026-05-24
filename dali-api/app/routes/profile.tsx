@@ -10,6 +10,7 @@ import {
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { getUserRoles, currentTerm } from "~/lib/roles";
+import { resolvePhotoUrl } from "~/lib/photo";
 import { userInitials } from "~/lib/display";
 import type { Route } from "./+types/profile";
 
@@ -69,7 +70,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   ].filter(Boolean) as string[];
 
   return {
-    user,
+    user: { ...user, photoUrl: await resolvePhotoUrl(user.photoUrl) },
     email: auth.user.email,
     roleLabels,
     termCode: term?.code ?? null,
