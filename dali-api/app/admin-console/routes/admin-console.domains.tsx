@@ -19,7 +19,7 @@ import {
   RemoveDomainLeadButton,
 } from "~/admin-console/components/admin-console-shared";
 
-export const meta: Route.MetaFunction = () => [{ title: "Domains · Admin console · DALI OS" }];
+export const meta: Route.MetaFunction = () => [{ title: "Domains · Operations · DALI OS" }];
 
 // Phase 2 rewrite: domain-lead assignments now key off User.id (not
 // DALIMember.id) and require a termId. Lead picker lists Users with a

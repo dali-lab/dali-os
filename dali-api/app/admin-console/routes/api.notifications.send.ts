@@ -2,7 +2,7 @@ import type { Route } from "./+types/api.notifications.send";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isAdmin } from "~/lib/roles";
+import { isHiringLead } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import { resolveGroupMembers, resolveAllLabMembers } from "~/lib/groups";
@@ -41,7 +41,7 @@ export async function action({ request }: Route.ActionArgs) {
 
   const auth = await requireAuth(request);
   if (!auth.ok) return withCors(request, auth.response);
-  if (!(await isAdmin(auth.user.sub)))
+  if (!(await isHiringLead(auth.user.sub)))
     return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
 
   if (request.method !== "POST") {

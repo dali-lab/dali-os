@@ -5,7 +5,7 @@ import { requireAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
 import { ListTodo, ChevronLeft, ChevronRight } from "lucide-react";
 
-export const meta: Route.MetaFunction = () => [{ title: "Activity · Admin console · DALI OS" }];
+export const meta: Route.MetaFunction = () => [{ title: "Activity · Operations · DALI OS" }];
 
 // Read-only viewer over the AuditLog table — the same data that
 // /api/audit-logs returns programmatically. Offset-paginated; the Next link
