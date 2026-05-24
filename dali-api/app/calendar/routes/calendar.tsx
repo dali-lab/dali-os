@@ -1278,13 +1278,13 @@ function AddManualBlockForm({ onDone }: { onDone: () => void }) {
         className="px-2 py-1 text-sm border border-border rounded-md bg-background text-foreground"
       />
       <div className="flex gap-2">
-        <label className="flex-1 text-xs text-muted-foreground flex flex-col gap-1">
+        <label className="flex-1 min-w-0 text-xs text-muted-foreground flex flex-col gap-1">
           Start
           <input
             type="datetime-local"
             name="startTimeLocal"
             required
-            className="px-2 py-1 text-sm border border-border rounded-md bg-background text-foreground"
+            className="w-full min-w-0 px-2 py-1 text-sm border border-border rounded-md bg-background text-foreground"
             onChange={(e) => {
               const dt = e.currentTarget.value ? new Date(e.currentTarget.value).toISOString() : "";
               const hidden = e.currentTarget.form?.querySelector<HTMLInputElement>('input[name="startTime"]');
@@ -1293,13 +1293,13 @@ function AddManualBlockForm({ onDone }: { onDone: () => void }) {
           />
           <input type="hidden" name="startTime" />
         </label>
-        <label className="flex-1 text-xs text-muted-foreground flex flex-col gap-1">
+        <label className="flex-1 min-w-0 text-xs text-muted-foreground flex flex-col gap-1">
           End
           <input
             type="datetime-local"
             name="endTimeLocal"
             required
-            className="px-2 py-1 text-sm border border-border rounded-md bg-background text-foreground"
+            className="w-full min-w-0 px-2 py-1 text-sm border border-border rounded-md bg-background text-foreground"
             onChange={(e) => {
               const dt = e.currentTarget.value ? new Date(e.currentTarget.value).toISOString() : "";
               const hidden = e.currentTarget.form?.querySelector<HTMLInputElement>('input[name="endTime"]');
@@ -3047,26 +3047,12 @@ function SelectedSlotBlock({
   const height = duration * HOUR_PX;
   return (
     <div
-      className="absolute left-0 right-0 z-30 cursor-help"
-      style={{
-        top,
-        height,
-        borderWidth: "2px",
-        borderStyle: "solid",
-        borderColor: "var(--color-foreground)",
-        borderRadius: "0.125rem",
-        background: "transparent",
-      }}
+      className="absolute left-0 right-0 z-30 cursor-help border-2 border-accent-coral bg-accent-coral/10 rounded-sm"
+      style={{ top, height }}
       onMouseEnter={() => setOpen(true)}
       onMouseLeave={() => setOpen(false)}
     >
-      <div
-        className="m-1 inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] font-semibold rounded-sm shadow-sm"
-        style={{
-          color: "var(--color-foreground)",
-          backgroundColor: "var(--color-card)",
-        }}
-      >
+      <div className="m-1 inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] font-semibold rounded-sm shadow-sm bg-accent-coral text-white">
         {available.length}/{total}
       </div>
       {open && (
@@ -3549,9 +3535,13 @@ function SelectionPopoverPortal({
       );
     };
     place();
+    // Safety net: if the anchor/card weren't laid out on the first synchronous
+    // pass, re-measure next frame so the popover still appears.
+    const raf = requestAnimationFrame(place);
     window.addEventListener("resize", place);
     window.addEventListener("scroll", place, true);
     return () => {
+      cancelAnimationFrame(raf);
       window.removeEventListener("resize", place);
       window.removeEventListener("scroll", place, true);
     };
