@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.documents.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 
 // POST   /api/documents/:id — rename. Body: { title }
@@ -10,7 +10,7 @@ import { withCors, handlePreflight } from "~/lib/cors";
 //                             archived pages drop out of the project list).
 //
 // Documents are project-scoped FreeForm Pages. Same permission model as
-// project edit (isHiringLead === Admin || Core).
+// project edit (isCore === Admin || Core).
 
 type Body = { title: string };
 
@@ -28,7 +28,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (request.method !== "POST" && request.method !== "DELETE") {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
-  if (!(await isHiringLead(auth.user.sub))) {
+  if (!(await isCore(auth.user.sub))) {
     return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
   }
 

@@ -2,7 +2,7 @@ import type { Route } from "./+types/api.cycles.$cycleId.interview-config";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead, hasCycleAccess } from "~/lib/roles";
+import { isCore, hasCycleAccess } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import { isValidTimezone } from "~/lib/timezone";
@@ -55,7 +55,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const auth = await requireAuth(request);
   if (!auth.ok) return withCors(request, auth.response);
-  if (!(await isHiringLead(auth.user.sub))) return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+  if (!(await isCore(auth.user.sub))) return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
 
   if (request.method !== "POST") {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));

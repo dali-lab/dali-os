@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.projects.$id.documents";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 
 // POST /api/projects/:id/documents
@@ -12,7 +12,7 @@ import { withCors, handlePreflight } from "~/lib/cors";
 //
 // The rich-text body lives in the collab editor (contentDocId), which is a
 // separate system; this route only creates the Page shell + title. Same
-// permission model as project edit (isHiringLead === Admin || Core).
+// permission model as project edit (isCore === Admin || Core).
 
 type Body = { title: string };
 
@@ -30,7 +30,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (request.method !== "POST") {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
-  if (!(await isHiringLead(auth.user.sub))) {
+  if (!(await isCore(auth.user.sub))) {
     return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
   }
 

@@ -1,7 +1,7 @@
 import { redirect } from "react-router";
 import type { Route } from "./+types/forms.edit.$formId";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { loadFormForEdit, runFormsAction } from "~/forms/lib/forms-data";
 import { FormDetail } from "~/forms/components/FormDetail";
@@ -14,7 +14,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
   if (auth.user.type === "applicant") return redirect("/portal");
-  if (!(await isHiringLead(auth.user.sub))) return redirect("/");
+  if (!(await isCore(auth.user.sub))) return redirect("/");
 
   const form = await loadFormForEdit(params.formId);
   if (!form) return redirect("/forms");
@@ -35,7 +35,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
-  if (!(await isHiringLead(auth.user.sub)))
+  if (!(await isCore(auth.user.sub)))
     return Response.json({ error: "Forbidden" }, { status: 403 });
 
   const result = await runFormsAction(await request.formData(), auth.user.sub);

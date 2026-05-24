@@ -11,7 +11,7 @@ export const meta: Route.MetaFunction = () => [
 
 // Database view of every application submission for a cycle. One row per
 // (applicant, domain) — i.e. per DomainApplication. Access:
-//   • Core/Admin (isHiringLead): every domain in every cycle.
+//   • Core/Admin (isCore): every domain in every cycle.
 //   • Reviewers: only the domains they're a CycleReviewer for, and only the
 //     cycles they're assigned on.
 // Read-only — rows link to the read-only detail page.
@@ -20,8 +20,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!auth.ok) return redirect("/login");
   if (auth.user.type === "applicant") return redirect("/portal");
 
-  const roles = await getUserRoles(auth.user.sub);
-  const isCore = roles.isHiringLead; // Core or Admin
+  const { isCore } = await getUserRoles(auth.user.sub);
 
   // Reviewer assignments across all cycles — used both to decide which cycles
   // a reviewer can see and to scope domains within the selected cycle.

@@ -5,7 +5,7 @@ import { prisma } from "~/lib/db";
 // dropped DALIMember.roles[] enum. See V0_PLAN.md §"Identity model".
 //
 // API shape preserves field names where the value semantics still apply
-// (`isHiringLead`, `isAdmin`, `isDomainLead`) and renames `memberId` →
+// (`isCore`, `isAdmin`, `isDomainLead`) and renames `memberId` →
 // `isLabMember` (boolean) since the new schema keys hiring FKs on userId
 // directly — callers use `auth.user.sub` instead of indirecting through a
 // DALIMember.id.
@@ -14,7 +14,8 @@ import { prisma } from "~/lib/db";
 
 export interface UserRoles {
   isLabMember: boolean;
-  isHiringLead: boolean;
+  /** Core (current term) or Admin. */
+  isCore: boolean;
   isAdmin: boolean;
   isDomainLead: boolean;
   isInstructor: boolean;
@@ -33,15 +34,20 @@ export async function getUserRoles(userId: string): Promise<UserRoles> {
     .split(",")
     .filter(Boolean);
 
+  const term = await currentTerm();
+
   const [member, admin, core, domainLead, instructor] = await Promise.all([
     prisma.dALIMember.findUnique({ where: { userId }, select: { id: true } }),
     prisma.adminMembership.findUnique({ where: { userId }, select: { id: true } }),
-    // Any CoreAssignment is sufficient for "hiring lead-equivalent" access.
-    // Per V0_PLAN.md: Core members have broad access; we don't gate on
-    // leadTitle. Term scoping is not required here — Core seats are
-    // year-long and the few minutes around term rollover don't warrant a
-    // current-term filter at this layer.
-    prisma.coreAssignment.findFirst({ where: { userId }, select: { id: true } }),
+    // Core access tracks the current term: a former Core member from a past
+    // term shouldn't keep broad authority. If the Term table isn't seeded
+    // (term === null), no row can match — treat that as no Core access.
+    term
+      ? prisma.coreAssignment.findFirst({
+          where: { userId, termId: term.id },
+          select: { id: true },
+        })
+      : Promise.resolve(null),
     // DomainLeadAssignment.termId is required post-Phase-2; any row signals
     // domain-lead authority for that user.
     prisma.domainLeadAssignment.findFirst({ where: { userId }, select: { id: true } }),
@@ -56,10 +62,8 @@ export async function getUserRoles(userId: string): Promise<UserRoles> {
 
   return {
     isLabMember: member !== null,
-    // HiringLead semantics: Core members have hiring-lead-equivalent access
-    // (V0_PLAN.md). Admins are a superset of Core. The legacy
-    // DALIMember.roles[].HiringLead enum is gone.
-    isHiringLead: isAdminVal || isCoreVal,
+    // Admins are a superset of Core for access purposes.
+    isCore: isAdminVal || isCoreVal,
     isAdmin: isAdminVal,
     isDomainLead: domainLead !== null,
     isInstructor: isInstructorVal,
@@ -70,17 +74,28 @@ export async function getUserRoles(userId: string): Promise<UserRoles> {
 
 // ─── Individual checks (for route-level guards) ──────────────────────────────
 
-/** HiringLead-equivalent: Core or Admin. */
-export async function isHiringLead(userId: string): Promise<boolean> {
+/**
+ * Core (current term) or Admin. Past-term Core assignments do not count —
+ * Core access is tied to the current Term. If the Term table is empty
+ * (e.g. seed hasn't run), Admin is the only path that passes.
+ */
+export async function isCore(userId: string): Promise<boolean> {
   const envIds = (process.env.ADMIN_USER_IDS ?? "")
     .split(",")
     .filter(Boolean);
   if (envIds.includes(userId)) return true;
-  const [admin, core] = await Promise.all([
-    prisma.adminMembership.findUnique({ where: { userId }, select: { id: true } }),
-    prisma.coreAssignment.findFirst({ where: { userId }, select: { id: true } }),
-  ]);
-  return admin !== null || core !== null;
+  const admin = await prisma.adminMembership.findUnique({
+    where: { userId },
+    select: { id: true },
+  });
+  if (admin !== null) return true;
+  const term = await currentTerm();
+  if (!term) return false;
+  const core = await prisma.coreAssignment.findFirst({
+    where: { userId, termId: term.id },
+    select: { id: true },
+  });
+  return core !== null;
 }
 
 /** Admin: full-time staff. */
@@ -106,21 +121,21 @@ export async function isInstructor(userId: string): Promise<boolean> {
 }
 
 /**
- * Forms & Groups gate: Core, Admin, or Instructor. (`isHiringLead` already
- * covers Core + Admin; Instructors are added on top.)
+ * Forms & Groups gate: Core, Admin, or Instructor. (`isCore` already covers
+ * Core + Admin; Instructors are added on top.)
  */
 export async function canViewForms(userId: string): Promise<boolean> {
-  if (await isHiringLead(userId)) return true;
+  if (await isCore(userId)) return true;
   return isInstructor(userId);
 }
 
 /**
  * Staffing / Intent to Work / Bids / Applications gate: Core or Admin.
- * Same membership set as `isHiringLead` today — named separately so the
- * staffing access policy can diverge from hiring-lead semantics later.
+ * Same membership set as `isCore` today — named separately so the staffing
+ * access policy can diverge later.
  */
 export async function canViewStaffing(userId: string): Promise<boolean> {
-  return isHiringLead(userId);
+  return isCore(userId);
 }
 
 /** DomainLead: has at least one DomainLeadAssignment. */
@@ -174,9 +189,12 @@ export async function currentTerm() {
  */
 export async function canManageStaffing(userId: string): Promise<boolean> {
   if (await isAdmin(userId)) return true;
+  const term = await currentTerm();
+  if (!term) return false;
   const core = await prisma.coreAssignment.findFirst({
     where: {
       userId,
+      termId: term.id,
       leadTitle: { contains: "staffing", mode: "insensitive" },
     },
     select: { id: true },
@@ -188,12 +206,12 @@ export async function canManageStaffing(userId: string): Promise<boolean> {
 
 /**
  * Check whether a user may read cycle-scoped hiring data.
- * Hiring leads and domain leads pass immediately. Other lab members pass
- * only if they are a CycleReviewer or CycleInterviewer for the given cycle.
+ * Core (current term) and domain leads pass immediately. Other lab members
+ * pass only if they are a CycleReviewer or CycleInterviewer for the cycle.
  */
 export async function hasCycleAccess(userId: string, cycleId: string): Promise<boolean> {
   const roles = await getUserRoles(userId);
-  if (roles.isHiringLead || roles.isDomainLead) return true;
+  if (roles.isCore || roles.isDomainLead) return true;
   if (!roles.isLabMember) return false;
 
   const [reviewer, interviewer] = await Promise.all([

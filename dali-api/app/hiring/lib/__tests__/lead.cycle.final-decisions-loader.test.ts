@@ -8,7 +8,7 @@ vi.mock("~/lib/roles");
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
 import { loader } from "~/hiring/routes/lead.cycle.$id";
 
 const USER_ID = "user-hl";
@@ -31,7 +31,7 @@ const mockPrisma = prisma as unknown as {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(requireAuth).mockResolvedValue({ ok: true, user: { sub: USER_ID } } as any);
-  vi.mocked(isHiringLead).mockResolvedValue(true);
+  vi.mocked(isCore).mockResolvedValue(true);
 
   (mockPrisma as any).applicationCycle = {
     findUniqueOrThrow: vi.fn(),

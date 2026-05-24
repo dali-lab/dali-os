@@ -9,7 +9,7 @@ import {
 } from "react-router";
 import type { Route } from "./+types/projects.list";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { ensureProjectGroup } from "~/lib/groups";
 import { ViewToggle, useViewPreference } from "~/components/ViewToggle";
@@ -89,7 +89,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),
-    isHiringLead(auth.user.sub),
+    isCore(auth.user.sub),
   ]);
 
   return { rows, terms, selectedTerm: selected, partnerOrgs, canEdit };
@@ -99,7 +99,7 @@ export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
   if (auth.user.type === "applicant") return redirect("/portal");
-  if (!(await isHiringLead(auth.user.sub))) {
+  if (!(await isCore(auth.user.sub))) {
     return { error: "You don't have permission to create projects." };
   }
 

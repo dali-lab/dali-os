@@ -39,7 +39,7 @@ import { useOpenTasks } from '~/components/NotificationBell'
 interface LayoutProps {
   user: { email: string; firstName?: string; lastName?: string }
   photoUrl?: string | null
-  isHiringLead?: boolean
+  isCore?: boolean
   isAdmin?: boolean
   isDomainLead?: boolean
   canViewForms?: boolean
@@ -52,7 +52,7 @@ const EXPANDED_AREAS_KEY = 'dali:sidebar:expanded-areas'
 
 type AreaKey = 'hiring' | 'projects' | 'members' | 'partners' | 'education' | 'internal-processes' | 'admin-console'
 
-export function Layout({ user, photoUrl, isHiringLead = false, isAdmin = false, isDomainLead = false, canViewForms = false, canViewStaffing = false, isInterviewer = false }: LayoutProps) {
+export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDomainLead = false, canViewForms = false, canViewStaffing = false, isInterviewer = false }: LayoutProps) {
   const location = useLocation()
   const { revalidate } = useRevalidator()
   // Held in a ref so the message listener (mounted once) always calls the
@@ -232,7 +232,7 @@ export function Layout({ user, photoUrl, isHiringLead = false, isAdmin = false, 
       label: 'Cycles',
       to: '/hiring/lead',
       icon: Calendar,
-      show: isHiringLead,
+      show: isCore,
       active: path.startsWith('/hiring/lead'),
       sub: null,
     },
@@ -240,7 +240,7 @@ export function Layout({ user, photoUrl, isHiringLead = false, isAdmin = false, 
       label: 'Analytics',
       to: '/hiring/analytics',
       icon: BarChart3,
-      show: isHiringLead || isDomainLead,
+      show: isCore || isDomainLead,
       active: path.startsWith('/hiring/analytics'),
       sub: null,
     },
@@ -248,7 +248,7 @@ export function Layout({ user, photoUrl, isHiringLead = false, isAdmin = false, 
       label: 'Library',
       to: '/hiring/library',
       icon: FileText,
-      show: isHiringLead || isDomainLead || isAdmin,
+      show: isCore || isDomainLead || isAdmin,
       // Highlight Library on its list page and on the challenge / rubric /
       // agreement detail pages it links into.
       active:
@@ -262,7 +262,7 @@ export function Layout({ user, photoUrl, isHiringLead = false, isAdmin = false, 
       label: 'Emails',
       to: '/hiring/emails',
       icon: Mail,
-      show: isHiringLead,
+      show: isCore,
       active: path.startsWith('/hiring/emails'),
       sub: null,
     },
@@ -270,7 +270,7 @@ export function Layout({ user, photoUrl, isHiringLead = false, isAdmin = false, 
 
   const adminSections = [
     {
-      label: 'Members',
+      label: 'Roles',
       to: '/admin-console/members',
       icon: Users,
       show: true,
@@ -281,7 +281,9 @@ export function Layout({ user, photoUrl, isHiringLead = false, isAdmin = false, 
       label: 'Domains',
       to: '/admin-console/domains',
       icon: Shield,
-      show: isAdmin,
+      // Core or Admin can manage domain leads + eligibilities; only Admin
+      // sees the Create/Delete controls (gated inside the page).
+      show: isCore,
       active: path.startsWith('/admin-console/domains'),
       sub: null,
     },
@@ -289,8 +291,16 @@ export function Layout({ user, photoUrl, isHiringLead = false, isAdmin = false, 
       label: 'Announcements',
       to: '/admin-console/announcements',
       icon: Megaphone,
-      show: isAdmin,
+      show: isCore,
       active: path.startsWith('/admin-console/announcements'),
+      sub: null,
+    },
+    {
+      label: 'Activity',
+      to: '/admin-console/activity',
+      icon: ListTodo,
+      show: isAdmin,
+      active: path.startsWith('/admin-console/activity'),
       sub: null,
     },
   ].filter((s) => s.show)
@@ -464,10 +474,10 @@ export function Layout({ user, photoUrl, isHiringLead = false, isAdmin = false, 
     },
     {
       key: 'admin-console' as AreaKey,
-      label: 'Admin Console',
+      label: 'Operations',
       to: '/admin-console',
       icon: Settings,
-      show: isAdmin,
+      show: isCore,
       active: activeAreaKey === 'admin-console',
       sections: adminSections,
     },

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useFetcher } from "react-router";
-import { Shield, ChevronDown, X, Check } from "lucide-react";
+import { Shield, ChevronDown, X, Check, Plus } from "lucide-react";
 
 // Phase 2 reshape: Member is rooted at User. Role flags derive from typed
 // assignment tables (AdminMembership, CoreAssignment, DomainLeadAssignment)
@@ -17,6 +17,13 @@ export interface DomainLeadAssignmentForMember {
   domain: DomainRow;
 }
 
+// One row per current-term CoreAssignment for a member. leadTitle is a
+// free-text display label; null means "Core" with no specific title.
+export interface CoreAssignmentForMember {
+  id: string;
+  leadTitle: string | null;
+}
+
 export interface Member {
   // User.id — the canonical actor id used by all admin-console actions.
   id: string;
@@ -27,10 +34,11 @@ export interface Member {
   isLabMember: boolean;
   // Presence = Admin (AdminMembership row exists).
   isAdmin: boolean;
-  // Presence = Core in the current term (any CoreAssignment with current term).
-  // We surface this as the "Hiring Lead"-equivalent toggle (Core has hiring
-  // lead-equivalent access per V0_PLAN.md).
+  // Convenience: has any current-term CoreAssignment. Derive from
+  // coreAssignments rather than passing as a separate field where possible.
   isCore: boolean;
+  // All current-term Core titles for this member. Used by the Core picker.
+  coreAssignments: CoreAssignmentForMember[];
   domainLeadAssignments: DomainLeadAssignmentForMember[];
 }
 
@@ -44,8 +52,20 @@ export interface DomainLeadAssignmentWithUser {
   };
 }
 
+export interface DomainEligibilityForDomain {
+  id: string;
+  level: "P1" | "P2" | "P3";
+  user: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    daliEmail: string | null;
+  };
+}
+
 export interface DomainWithCounts extends DomainRow {
   domainLeadAssignments: DomainLeadAssignmentWithUser[];
+  eligibilities: DomainEligibilityForDomain[];
   _count: {
     challengeVersions: number;
     applicationCycles: number;
@@ -53,6 +73,14 @@ export interface DomainWithCounts extends DomainRow {
     cycleReviewers: number;
     cycleInterviewers: number;
     delibsSessions: number;
+    eligibilities: number;
+    projectAssignments: number;
+    projects: number;
+    projectScopes: number;
+    projectRoleRequests: number;
+    partnerApplicationDomains: number;
+    tasks: number;
+    mentorshipPairs: number;
   };
 }
 
@@ -176,7 +204,7 @@ export function DomainLeadPicker({
   );
 }
 
-export function AdminToggle({ member }: { member: Member }) {
+export function AdminToggle({ member, disabled }: { member: Member; disabled?: boolean }) {
   const fetcher = useFetcher();
   const submittedValue = fetcher.formData?.get("value");
   const isAdminMember = submittedValue != null
@@ -190,11 +218,13 @@ export function AdminToggle({ member }: { member: Member }) {
       <input type="hidden" name="value" value={String(!isAdminMember)} />
       <button
         type="submit"
+        disabled={disabled}
+        title={disabled ? "Only Admins can grant or revoke Admin." : undefined}
         className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
           isAdminMember
             ? "bg-blue-100 text-blue-800 hover:bg-blue-200"
             : "bg-muted text-muted-foreground hover:bg-muted"
-        }`}
+        } disabled:opacity-60 disabled:cursor-not-allowed`}
       >
         {isAdminMember ? <Check className="w-3 h-3" /> : <Shield className="w-3 h-3" />}
         {isAdminMember ? "Admin" : "Set Admin"}
@@ -203,29 +233,102 @@ export function AdminToggle({ member }: { member: Member }) {
   );
 }
 
-export function HiringLeadToggle({ member }: { member: Member }) {
+function RemoveCoreTitleButton({ assignmentId }: { assignmentId: string }) {
   const fetcher = useFetcher();
-  const submittedValue = fetcher.formData?.get("value");
-  const isHiringLead = submittedValue != null
-    ? submittedValue === "true"
-    : member.isCore;
-
   return (
-    <fetcher.Form method="post">
-      <input type="hidden" name="intent" value="set-hiring-lead" />
-      <input type="hidden" name="userId" value={member.id} />
-      <input type="hidden" name="value" value={String(!isHiringLead)} />
+    <fetcher.Form method="post" className="inline">
+      <input type="hidden" name="intent" value="remove-core-title" />
+      <input type="hidden" name="assignmentId" value={assignmentId} />
       <button
         type="submit"
-        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
-          isHiringLead
-            ? "bg-green-100 text-green-800 hover:bg-green-200"
-            : "bg-muted text-muted-foreground hover:bg-muted"
-        }`}
+        aria-label="Remove Core title"
+        className="hover:text-green-900 ml-0.5 p-2 -m-1.5 inline-flex items-center justify-center"
       >
-        {isHiringLead ? <Check className="w-3 h-3" /> : <Shield className="w-3 h-3" />}
-        {isHiringLead ? "Hiring Lead" : "Set Hiring Lead"}
+        <X className="w-3 h-3" />
       </button>
     </fetcher.Form>
+  );
+}
+
+// Free-text Core title picker. CoreAssignment.leadTitle is intentionally
+// free-form (display only — Core has broad access regardless of title), so
+// the input accepts any string. Chips render existing titles; clicking
+// "+ Title" reveals a text input that submits on Enter.
+export function CorePicker({ member }: { member: Member }) {
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState("");
+  const fetcher = useFetcher();
+  const submitting = fetcher.state !== "idle";
+  const wasSubmitting = useRef(false);
+
+  // Auto-close the input on a successful submit (resets to chip view).
+  useEffect(() => {
+    if (submitting) wasSubmitting.current = true;
+    else if (wasSubmitting.current) {
+      wasSubmitting.current = false;
+      setValue("");
+      setOpen(false);
+    }
+  }, [submitting]);
+
+  return (
+    <div className="flex flex-wrap gap-1.5 items-center">
+      {member.coreAssignments.length === 0 && !open && (
+        <span className="text-xs text-muted-foreground/70 italic mr-1">Not Core</span>
+      )}
+      {member.coreAssignments.map((a) => (
+        <span
+          key={a.id}
+          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800"
+        >
+          {a.leadTitle ?? "Core"}
+          <RemoveCoreTitleButton assignmentId={a.id} />
+        </span>
+      ))}
+
+      {open ? (
+        <fetcher.Form method="post" className="inline-flex items-center gap-1">
+          <input type="hidden" name="intent" value="add-core-title" />
+          <input type="hidden" name="userId" value={member.id} />
+          <input
+            type="text"
+            name="leadTitle"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder="Title (e.g. PM)"
+            autoFocus
+            onBlur={() => {
+              // Cancel if empty and unfocused.
+              if (!value.trim() && !submitting) setOpen(false);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.preventDefault();
+                setValue("");
+                setOpen(false);
+              }
+            }}
+            className="px-2 py-0.5 text-xs border border-border rounded-md bg-background text-foreground w-28 focus:outline-none focus:ring-2 focus:ring-green-500/30"
+          />
+          <button
+            type="submit"
+            disabled={submitting}
+            className="inline-flex items-center px-1.5 py-0.5 rounded-md text-xs bg-green-700 text-white hover:bg-green-800 disabled:opacity-60"
+            aria-label="Add Core title"
+          >
+            <Check className="w-3 h-3" />
+          </button>
+        </fetcher.Form>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground hover:bg-muted"
+        >
+          <Plus className="w-3 h-3" />
+          Title
+        </button>
+      )}
+    </div>
   );
 }

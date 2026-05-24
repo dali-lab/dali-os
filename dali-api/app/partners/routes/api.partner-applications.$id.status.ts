@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.partner-applications.$id.status";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { isPartnerApplicationStatus } from "../lib/partner-application";
 
@@ -9,7 +9,7 @@ import { isPartnerApplicationStatus } from "../lib/partner-application";
 //
 // Move an application to a different status column (board drag-and-drop, also
 // used by the detail-page status dropdown). Body: { status }. Same permission
-// model as application edit (isHiringLead === Admin || Core).
+// model as application edit (isCore === Admin || Core).
 
 export async function action({ request, params }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
@@ -24,7 +24,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       Response.json({ error: "Method not allowed" }, { status: 405 }),
     );
   }
-  if (!(await isHiringLead(auth.user.sub))) {
+  if (!(await isCore(auth.user.sub))) {
     return withCors(
       request,
       Response.json({ error: "Forbidden" }, { status: 403 }),

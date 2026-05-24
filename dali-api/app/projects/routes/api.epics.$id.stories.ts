@@ -1,14 +1,14 @@
 import type { Route } from "./+types/api.epics.$id.stories";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 
 // POST /api/epics/:id/stories
 //
 // Create a user story under an epic. Body: { title, notes?, status? }.
 // status defaults to "Todo"; position is appended after the current max.
-// Same permission model as epic edit (isHiringLead === Admin || Core).
+// Same permission model as epic edit (isCore === Admin || Core).
 
 const STORY_STATUSES = ["Todo", "InProgress", "Done"] as const;
 type StoryStatus = (typeof STORY_STATUSES)[number];
@@ -41,7 +41,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (request.method !== "POST") {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
-  if (!(await isHiringLead(auth.user.sub))) {
+  if (!(await isCore(auth.user.sub))) {
     return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
   }
 

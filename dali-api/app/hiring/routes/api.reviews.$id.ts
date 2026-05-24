@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.reviews.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead, isDomainLead } from "~/lib/roles";
+import { isCore, isDomainLead } from "~/lib/roles";
 import { safeJson } from "~/lib/safe-json";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
 
@@ -169,7 +169,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
     const isOwner = review.cycleReviewer.userId === auth.user.sub;
     const isLead = await isDomainLead(auth.user.sub);
-    const isHL = await isHiringLead(auth.user.sub);
+    const isHL = await isCore(auth.user.sub);
     if (!isOwner && !isLead && !isHL) {
       return Response.json({ error: "Forbidden" }, { status: 403 });
     }
@@ -197,7 +197,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   if (request.method === "DELETE") {
     const isLead = await isDomainLead(auth.user.sub);
-    const isHL = await isHiringLead(auth.user.sub);
+    const isHL = await isCore(auth.user.sub);
     if (!isLead && !isHL) {
       return Response.json({ error: "Forbidden" }, { status: 403 });
     }

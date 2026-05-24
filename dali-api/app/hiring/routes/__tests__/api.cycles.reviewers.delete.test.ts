@@ -12,7 +12,7 @@ vi.mock("~/lib/roles");
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead, isDomainLead } from "~/lib/roles";
+import { isCore, isDomainLead } from "~/lib/roles";
 import { action } from "~/hiring/routes/api.cycles.$cycleId.reviewers.$reviewerId";
 
 const mockPrisma = prisma as unknown as {
@@ -44,13 +44,13 @@ beforeEach(() => {
     ok: true,
     user: { sub: USER_ID, email: "u@x.com", type: "user" },
   } as any);
-  vi.mocked(isHiringLead).mockResolvedValue(true);
+  vi.mocked(isCore).mockResolvedValue(true);
   vi.mocked(isDomainLead).mockResolvedValue(false);
 });
 
 describe("DELETE /api/hiring/cycles/:cycleId/reviewers/:reviewerId", () => {
   it("returns 403 when caller is not a hiring or domain lead", async () => {
-    vi.mocked(isHiringLead).mockResolvedValueOnce(false);
+    vi.mocked(isCore).mockResolvedValueOnce(false);
     vi.mocked(isDomainLead).mockResolvedValueOnce(false);
     const res = await action({
       request: makeRequest(),

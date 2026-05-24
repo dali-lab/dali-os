@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.tasks.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 
 // PATCH /api/tasks/:id
@@ -10,7 +10,7 @@ import { withCors, handlePreflight } from "~/lib/cors";
 // Status/position changes still go through /api/tasks/:id/move so its
 // column-rebalance logic stays unified. Body is a partial — only present
 // fields are written. Permission model mirrors task creation
-// (isHiringLead === Admin || Core).
+// (isCore === Admin || Core).
 
 const PRIORITIES = ["Low", "Normal", "High", "Urgent"] as const;
 type Priority = (typeof PRIORITIES)[number];
@@ -74,7 +74,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       Response.json({ error: "Method not allowed" }, { status: 405 }),
     );
   }
-  if (!(await isHiringLead(auth.user.sub))) {
+  if (!(await isCore(auth.user.sub))) {
     return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
   }
 

@@ -3,7 +3,7 @@ import { redirect, useLoaderData, useFetcher, Link } from "react-router";
 import type { Route } from "./+types/lead.intern-to-full-cycle.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
 import type { Question } from "~/types";
 import type { Prisma } from "~/generated/prisma/client";
 import { CycleSetupSection as Section } from "~/hiring/components/CycleSetupSection";
@@ -18,7 +18,7 @@ const MIN_POOL_SIZE = 2;
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
-  if (!(await isHiringLead(auth.user.sub))) return redirect("/");
+  if (!(await isCore(auth.user.sub))) return redirect("/");
 
   const cycle = await prisma.applicationCycle.findUniqueOrThrow({
     where: { id: params.id },
@@ -127,7 +127,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
-  if (!(await isHiringLead(auth.user.sub))) return new Response("Forbidden", { status: 403 });
+  if (!(await isCore(auth.user.sub))) return new Response("Forbidden", { status: 403 });
 
   const cycleId = params.id!;
   const formData = await request.formData();

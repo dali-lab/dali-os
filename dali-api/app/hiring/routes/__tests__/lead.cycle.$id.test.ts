@@ -8,7 +8,7 @@ vi.mock("~/lib/roles");
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
 import { action, resolveCycleTab, CYCLE_TABS } from "~/hiring/routes/lead.cycle.$id";
 
 const HIRING_LEAD_ID = "hiring-lead-1";
@@ -48,7 +48,7 @@ beforeEach(() => {
     ok: true,
     user: { sub: HIRING_LEAD_ID, email: "lead@x.com", type: "user" },
   } as any);
-  vi.mocked(isHiringLead).mockResolvedValue(true);
+  vi.mocked(isCore).mockResolvedValue(true);
 });
 
 function makeRequest(form: Record<string, string>) {
@@ -70,7 +70,7 @@ function callAction(form: Record<string, string>) {
 
 describe("admin.cycle.$id action — hiring lead overrides", () => {
   it("returns 403 when caller is not a hiring lead", async () => {
-    vi.mocked(isHiringLead).mockResolvedValueOnce(false);
+    vi.mocked(isCore).mockResolvedValueOnce(false);
     const res = await callAction({ intent: "hl-add-domain-challenge", domainId: DOMAIN_ID, challengeVersionId: CV_ID });
     expect(res).not.toBeNull();
     expect((res as Response).status).toBe(403);

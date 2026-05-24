@@ -8,7 +8,7 @@ vi.mock("~/lib/roles");
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead, isDomainLead } from "~/lib/roles";
+import { isCore, isDomainLead } from "~/lib/roles";
 import { action, validateReviewPatch } from "~/hiring/routes/api.reviews.$id";
 
 const mockPrisma = prisma as unknown as {
@@ -52,7 +52,7 @@ beforeEach(() => {
     user: { sub: USER_ID, email: "u@x.com", type: "user" },
   } as any);
   vi.mocked(isDomainLead).mockResolvedValue(false);
-  vi.mocked(isHiringLead).mockResolvedValue(false);
+  vi.mocked(isCore).mockResolvedValue(false);
 });
 
 describe("validateReviewPatch", () => {

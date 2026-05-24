@@ -16,7 +16,7 @@ import { prisma } from "~/lib/db";
 import { ensureProjectGroup } from "~/lib/groups";
 import { requireAuth } from "~/lib/auth";
 import { parseSessionCookie } from "~/lib/cookies";
-import { isHiringLead, currentTerm } from "~/lib/roles";
+import { isCore, currentTerm } from "~/lib/roles";
 import { TaskBoard } from "../components/TaskBoard";
 import { type TimelineEpic, type EpicStatus } from "../components/EpicsTimeline";
 import {
@@ -157,8 +157,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
   const documents = documentRows.map((d) => ({ id: d.id, title: d.title }));
 
-  // Admin or Core members may edit projects (isHiringLead === Admin || Core).
-  const canEdit = await isHiringLead(auth.user.sub);
+  // Admin or Core members may edit projects (isCore === Admin || Core).
+  const canEdit = await isCore(auth.user.sub);
 
   // Collab editor wiring (same as the hiring routes): session cookie is the
   // WebSocket auth token; userName labels the presence cursor.
@@ -405,7 +405,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!auth.ok) return redirect("/login");
   if (auth.user.type === "applicant") return redirect("/portal");
 
-  if (!(await isHiringLead(auth.user.sub))) {
+  if (!(await isCore(auth.user.sub))) {
     return { error: "You don't have permission to edit this project." };
   }
 

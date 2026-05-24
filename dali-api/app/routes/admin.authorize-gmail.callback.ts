@@ -3,7 +3,7 @@
 // and stores the refresh token on the applications@dali.dartmouth.edu user row.
 
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead } from '~/lib/roles'
+import { isCore } from '~/lib/roles'
 import { prisma } from '~/lib/db'
 
 const GMAIL_STATE_COOKIE = '__dali_gmail_oauth_state'
@@ -25,7 +25,7 @@ export async function loader({ request }: { request: Request }) {
     return new Response(null, { status: 302, headers: { Location: '/login' } })
   }
 
-  if (!(await isHiringLead(auth.user.sub))) {
+  if (!(await isCore(auth.user.sub))) {
     return new Response(null, { status: 302, headers: { Location: '/' } })
   }
 

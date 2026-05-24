@@ -29,7 +29,7 @@ export async function runWhoami(user: WhoamiUser) {
   // Coarse, externally-stable tier label.
   let tier: "admin" | "core" | "domain-lead" | "member" | "non-member";
   if (roles.isAdmin) tier = "admin";
-  else if (roles.isHiringLead) tier = "core";
+  else if (roles.isCore) tier = "core";
   else if (roles.isDomainLead) tier = "domain-lead";
   else if (roles.isLabMember) tier = "member";
   else tier = "non-member";

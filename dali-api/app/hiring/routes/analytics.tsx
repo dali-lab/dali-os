@@ -56,7 +56,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!auth.ok) return redirect("/login");
 
   const roles = await getUserRoles(auth.user.sub);
-  if (!roles.isHiringLead && !roles.isDomainLead) return redirect("/");
+  if (!roles.isCore && !roles.isDomainLead) return redirect("/");
 
   // Cycles for the selector
   const allCycles = await prisma.applicationCycle.findMany({

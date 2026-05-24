@@ -2,7 +2,7 @@ import { redirect, useLoaderData, Link } from "react-router";
 import { ChevronRight } from "lucide-react";
 import type { Route } from "./+types/forms.$folderId";
 import { requireAuth } from "~/lib/auth";
-import { isHiringLead } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
 import { loadFormsLevel, runFormsAction } from "~/forms/lib/forms-data";
 import { FormsBrowser } from "~/forms/components/FormsBrowser";
 
@@ -14,7 +14,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
   if (auth.user.type === "applicant") return redirect("/portal");
-  if (!(await isHiringLead(auth.user.sub))) return redirect("/");
+  if (!(await isCore(auth.user.sub))) return redirect("/");
 
   const level = await loadFormsLevel(params.folderId);
   if (!level) return redirect("/forms"); // unknown folder → top level
@@ -24,7 +24,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
-  if (!(await isHiringLead(auth.user.sub)))
+  if (!(await isCore(auth.user.sub)))
     return Response.json({ error: "Forbidden" }, { status: 403 });
 
   const result = await runFormsAction(

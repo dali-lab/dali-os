@@ -13,7 +13,7 @@ import type { Route } from "./+types/partners.applications.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { parseSessionCookie } from "~/lib/cookies";
-import { canViewStaffing, isHiringLead } from "~/lib/roles";
+import { canViewStaffing, isCore } from "~/lib/roles";
 import {
   PARTNER_APPLICATION_STATUSES as STATUSES,
   PARTNER_APPLICATION_STATUS_LABELS as STATUS_LABEL,
@@ -81,7 +81,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       orderBy: { sortKey: "desc" },
       select: { id: true, code: true },
     }),
-    isHiringLead(auth.user.sub),
+    isCore(auth.user.sub),
   ]);
 
   // Domains not yet on this application — offered in the "add scope" picker.
@@ -126,7 +126,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
   if (auth.user.type === "applicant") return redirect("/portal");
-  if (!(await isHiringLead(auth.user.sub))) {
+  if (!(await isCore(auth.user.sub))) {
     return { error: "You don't have permission to edit this application." };
   }
 
