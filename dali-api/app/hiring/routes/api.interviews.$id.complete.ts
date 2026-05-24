@@ -5,6 +5,7 @@ import { requireAuth } from "~/lib/auth";
 import { parseJson } from "~/lib/validate";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
 import { isCore } from "~/lib/roles";
+import { logAuditEvent } from "~/lib/audit";
 
 const VALID_RECOMMENDATIONS = ["Strong Hire", "Hire", "Lean Hire", "Lean No Hire", "No Hire"] as const;
 
@@ -63,6 +64,16 @@ export async function action({ request, params }: Route.ActionArgs) {
       where: { id: params.id },
       data: { status: "Scheduled" },
     });
+    await logAuditEvent({
+      action: "interview.reopen",
+      userId: auth.user.sub,
+      targetId: interview.id,
+      metadata: {
+        cycleId: interview.applicationCycleId,
+        domainApplicationId: interview.domainApplicationId,
+      },
+      request,
+    });
     return Response.json(updated);
   }
 
@@ -82,6 +93,18 @@ export async function action({ request, params }: Route.ActionArgs) {
       recommendation,
       recommendationNotes: recommendationNotes ?? null,
     },
+  });
+
+  await logAuditEvent({
+    action: "interview.complete",
+    userId: auth.user.sub,
+    targetId: interview.id,
+    metadata: {
+      cycleId: interview.applicationCycleId,
+      domainApplicationId: interview.domainApplicationId,
+      recommendation,
+    },
+    request,
   });
 
   return Response.json(updated);

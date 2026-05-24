@@ -303,6 +303,14 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
       active: path.startsWith('/admin-console/activity'),
       sub: null,
     },
+    {
+      label: 'Analytics',
+      to: '/admin-console/analytics',
+      icon: BarChart3,
+      show: isAdmin,
+      active: path.startsWith('/admin-console/analytics'),
+      sub: null,
+    },
   ].filter((s) => s.show)
 
   const projectsSections = [

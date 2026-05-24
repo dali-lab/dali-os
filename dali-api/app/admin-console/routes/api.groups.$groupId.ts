@@ -5,6 +5,7 @@ import { requireAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
+import { logAuditEvent } from "~/lib/audit";
 
 const UpdateGroupSchema = z.object({
   name: z.string().trim().min(1).max(100).optional(),
@@ -35,6 +36,12 @@ export async function action({ request, params }: Route.ActionArgs) {
         Response.json({ error: "System-managed groups cannot be deleted" }, { status: 400 }),
       );
     await prisma.groupDefinition.delete({ where: { id: groupId } });
+    await logAuditEvent({
+      action: "group.delete",
+      userId: auth.user.sub,
+      targetId: groupId,
+      request,
+    });
     return withCors(request, new Response(null, { status: 204 }));
   }
 
@@ -68,6 +75,17 @@ export async function action({ request, params }: Route.ActionArgs) {
         ...(body.name !== undefined ? { name: body.name } : {}),
         ...(body.staticMemberIds !== undefined ? { staticMemberIds: body.staticMemberIds } : {}),
       },
+    });
+    await logAuditEvent({
+      action: "group.update",
+      userId: auth.user.sub,
+      targetId: groupId,
+      metadata: {
+        renamed: body.name !== undefined,
+        membersChanged: body.staticMemberIds !== undefined,
+        memberCount: body.staticMemberIds?.length,
+      },
+      request,
     });
     return withCors(request, Response.json(updated));
   }

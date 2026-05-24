@@ -3,6 +3,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
+import { logAuditEvent } from "~/lib/audit";
 
 // POST   /api/documents/:id — rename. Body: { title }
 // DELETE /api/documents/:id — soft delete (sets archivedAt, matching the
@@ -45,6 +46,13 @@ export async function action({ request, params }: Route.ActionArgs) {
     await prisma.page.update({
       where: { id: pageId },
       data: { archivedAt: new Date() },
+    });
+    await logAuditEvent({
+      action: "document.delete",
+      userId: auth.user.sub,
+      targetId: pageId,
+      metadata: { workspaceType: page.workspaceType, soft: true },
+      request,
     });
     return withCors(request, Response.json({ ok: true }));
   }

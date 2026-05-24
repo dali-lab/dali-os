@@ -3,6 +3,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
+import { logAuditEvent } from "~/lib/audit";
 
 const RELATION_LABELS: Record<string, string> = {
   challengeVersions: "challenge versions",
@@ -89,7 +90,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (blocking.length > 0) return { kind: "in-use" as const, blocking };
 
     await tx.domain.delete({ where: { id: domainId } });
-    return { kind: "ok" as const };
+    return { kind: "ok" as const, name: domain.name, code: domain.code };
   });
 
   if (result.kind === "not-found") {
@@ -104,5 +105,12 @@ export async function action({ request, params }: Route.ActionArgs) {
           ),
         );
   }
+  await logAuditEvent({
+    action: "domain.delete",
+    userId: auth.user.sub,
+    targetId: domainId,
+    metadata: { name: result.name, code: result.code },
+    request,
+  });
   return withCors(request, Response.json({ ok: true }));
 }

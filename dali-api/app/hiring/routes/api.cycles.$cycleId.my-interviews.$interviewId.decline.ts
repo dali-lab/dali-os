@@ -4,6 +4,7 @@ import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { reassignInterviewer, isNoReplacementError } from "~/hiring/lib/scheduling";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
+import { logAuditEvent } from "~/lib/audit";
 
 export async function action({ request, params }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
@@ -49,6 +50,16 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   try {
     const result = await reassignInterviewer(params.interviewId!, assignment.id);
+    await logAuditEvent({
+      action: "interview.decline",
+      userId: auth.user.sub,
+      targetId: params.interviewId,
+      metadata: {
+        cycleId: params.cycleId,
+        declinedAssignmentId: assignment.id,
+      },
+      request,
+    });
     return withCors(request, Response.json(result));
   } catch (err) {
     if (isNoReplacementError(err)) {

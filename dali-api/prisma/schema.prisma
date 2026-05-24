@@ -1076,6 +1076,39 @@ model AuditLog {
   @@index([createdAt])
 }
 
+// ─── Site Analytics ──────────────────────────────────────────────────────────
+
+// Product-usage telemetry, distinct from AuditLog. PageView captures every
+// document/navigation hit; ClientError captures uncaught browser errors. Both
+// are time-bounded — see lib/analytics.ts for retention policy.
+model PageView {
+  id         String   @id @default(cuid())
+  createdAt  DateTime @default(now())
+  userId     String? // null for unauthenticated visits (rare — most routes require auth)
+  sessionId  String // signed cookie id, rotated on login/logout
+  path       String // normalized route pattern (e.g. /projects/:id), not raw URL
+  referrer   String?
+  durationMs Int? // optional, reported by next-nav beacon
+
+  @@index([createdAt])
+  @@index([userId, createdAt])
+  @@index([path, createdAt])
+}
+
+model ClientError {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  userId    String?
+  path      String
+  message   String
+  stack     String?
+  userAgent String?
+  release   String? // git sha from build, groups errors across deploys
+
+  @@index([createdAt])
+  @@index([message, createdAt])
+}
+
 // ─── Confidentiality Agreements ──────────────────────────────────────────────
 
 // Named, versioned confidentiality agreement — independent of any cycle.

@@ -6,6 +6,7 @@ import { getUserRoles } from '~/lib/roles'
 import { getActiveCycle } from '~/hiring/lib/cycles'
 import { prisma } from '~/lib/db'
 import { resolvePhotoUrl } from '~/lib/photo'
+import { recordPageView } from '~/lib/analytics'
 import type { Route } from './+types/layout'
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -45,6 +46,13 @@ export async function loader({ request }: Route.LoaderArgs) {
   // so it works even when ?embed=1 gets stripped from a redirect Location.
   const fetchDest = request.headers.get('sec-fetch-dest')
   const isEmbedded = fetchDest === 'iframe' || fetchDest === 'frame'
+
+  // Pageview is fire-and-forget — never blocks the response.
+  recordPageView({
+    request,
+    userId: auth.user.sub,
+    sessionId: auth.sessionId,
+  })
 
   return { user: auth.user, photoUrl, isCore: core, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, isEmbedded }
 }

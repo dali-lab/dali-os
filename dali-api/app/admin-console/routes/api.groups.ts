@@ -6,6 +6,7 @@ import { requireAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
+import { logAuditEvent } from "~/lib/audit";
 
 const CreateGroupSchema = z.object({
   name: z.string().trim().min(1).max(100),
@@ -44,6 +45,13 @@ export async function action({ request }: Route.ActionArgs) {
 
   const group = await prisma.groupDefinition.create({
     data: { name: body.name, type: "Static", staticMemberIds: body.staticMemberIds },
+  });
+  await logAuditEvent({
+    action: "group.create",
+    userId: auth.user.sub,
+    targetId: group.id,
+    metadata: { name: group.name, memberCount: body.staticMemberIds.length },
+    request,
   });
   return withCors(request, Response.json(group, { status: 201 }));
 }

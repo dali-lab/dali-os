@@ -3,6 +3,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore, isDomainLead } from "~/lib/roles";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
+import { logAuditEvent } from "~/lib/audit";
 
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
@@ -42,6 +43,17 @@ export async function action({ request, params }: Route.ActionArgs) {
       submittedAt: null,
       submittedById: null,
     },
+  });
+
+  await logAuditEvent({
+    action: "review.unsubmit",
+    userId: auth.user.sub,
+    targetId: review.id,
+    metadata: {
+      cycleId: review.cycleReviewer.applicationCycleId,
+      reviewerUserId: review.cycleReviewer.userId,
+    },
+    request,
   });
 
   return Response.json(updated);
