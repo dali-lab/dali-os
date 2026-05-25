@@ -35,6 +35,13 @@ export type Task = {
   createdAt: string;
   source: "meeting" | "reminder" | "announcement" | "general";
   dueAt: string | null;
+  // True when the task clears by completing its own action: RSVPing a meeting
+  // invite or submitting an attached form. Those carry their own
+  // mark-as-read, so they get no Confirm button. Everything else — including
+  // tasks that merely link somewhere (interview assignments, a General
+  // notification with a link) — is false: opening the link doesn't mean the
+  // user is done, so the UI offers a "Confirm" button that marks it read.
+  hasAction: boolean;
 };
 
 const TASK_WHERE = (userId: string): Prisma.NotificationWhereInput => ({
@@ -87,6 +94,7 @@ export async function listOpenTasks(userId: string): Promise<Task[]> {
       link: true,
       dueAt: true,
       createdAt: true,
+      scheduledMeetingId: true,
       scheduledMeeting: { select: { selectedAt: true } },
       // Attached published form, if any — link the recipient straight to it.
       form: { select: { published: true, publicToken: true } },
@@ -114,6 +122,11 @@ export async function listOpenTasks(userId: string): Promise<Task[]> {
         ? `/forms/fill/${n.form.publicToken}`
         : null;
 
+    // A self-clearing action — RSVP (meeting invite) or an attached form —
+    // marks the task read on its own, so no Confirm button. A bare link
+    // doesn't count: opening it isn't the same as being done.
+    const hasAction = !!n.scheduledMeetingId || !!formLink;
+
     return {
       id: n.id,
       title: n.title,
@@ -122,6 +135,7 @@ export async function listOpenTasks(userId: string): Promise<Task[]> {
       createdAt: n.createdAt.toISOString(),
       source,
       dueAt,
+      hasAction,
     };
   });
 }

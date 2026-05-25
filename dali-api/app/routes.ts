@@ -58,6 +58,11 @@ export default [
     ),
     route("projects/:id", "projects/routes/projects.$id.tsx"),
 
+    // Documents & files — full-page reusable editor + file viewer. Literal
+    // "file" segment precedes the :pageId param so it isn't captured.
+    route("documents/file/:fileId", "routes/documents.file.$fileId.tsx"),
+    route("documents/:pageId", "routes/documents.$pageId.tsx"),
+
     // Members directory (separate from admin-console/members)
     route("members", "members/routes/members.tsx"),
     route("members/groups", "members/routes/members.groups.tsx"),
@@ -198,6 +203,21 @@ export default [
   // Project documents (collab Pages scoped to the project)
   route("api/projects/:id/documents", "projects/routes/api.projects.$id.documents.ts"),
   route("api/documents/:id", "projects/routes/api.documents.$id.ts"),
+
+  // Project files (standalone uploads with versions)
+  route("api/projects/:id/files", "projects/routes/api.projects.$id.files.ts"),
+  route("api/files/:id", "projects/routes/api.files.$id.ts"),
+
+  // Lab-wide document/file tags
+  route("api/doctags", "routes/api.doctags.ts"),
+  route("api/doctags/apply", "routes/api.doctags.apply.ts"),
+
+  // Comments + inline annotations on documents and files
+  route("api/comments", "routes/api.comments.ts"),
+  route("api/comments/:id", "routes/api.comments.$id.ts"),
+
+  // Document export (server-rendered PDF / Word)
+  route("documents/:pageId/export", "routes/documents.$pageId.export.ts"),
 
   // Partner application status (board drag-and-drop) + domain scope
   route("api/partner-applications/:id/status", "partners/routes/api.partner-applications.$id.status.ts"),

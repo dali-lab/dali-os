@@ -2,6 +2,12 @@ import { useEffect, useState } from "react";
 
 const POLL_INTERVAL_MS = 60_000;
 
+// Same-window event that forces an immediate poll, so an action that changes
+// the task list (e.g. confirming a task on Home) updates the sidebar at once
+// instead of waiting up to a full poll interval. The shell relays the
+// cross-frame `dali:tasksChanged` postMessage into this event — see Layout.tsx.
+export const TASKS_CHANGED_EVENT = "dali:tasksChanged";
+
 // Open task (todo). Mirrors the `Task` shape from ~/lib/tasks, but only the
 // fields the sidebar needs — kept local so this client module doesn't import
 // server code.
@@ -47,9 +53,11 @@ function usePolledCounts(): Polled {
     };
     refresh();
     const id = window.setInterval(refresh, POLL_INTERVAL_MS);
+    window.addEventListener(TASKS_CHANGED_EVENT, refresh);
     return () => {
       cancelled = true;
       window.clearInterval(id);
+      window.removeEventListener(TASKS_CHANGED_EVENT, refresh);
     };
   }, []);
   return state;

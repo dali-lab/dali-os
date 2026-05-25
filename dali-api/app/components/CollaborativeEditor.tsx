@@ -11,8 +11,11 @@ import {
   ySyncPluginKey,
   yCursorPlugin,
   yUndoPlugin,
+  absolutePositionToRelativePosition,
   relativePositionToAbsolutePosition,
 } from "y-prosemirror";
+import { Decoration, DecorationSet } from "@tiptap/pm/view";
+import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { IndexeddbPersistence } from "y-indexeddb";
 import {
   ACTIVITY_THROTTLE_MS,
@@ -40,7 +43,31 @@ interface CollaborativeEditorProps {
    * the page-level presence bar.
    */
   editorId?: string;
+
+  /**
+   * Inline-comment support (opt-in). When provided, a floating "Comment"
+   * button appears on a non-empty text selection; clicking it encodes the
+   * selected range to Yjs relative positions and calls onRequestComment so the
+   * host can persist a DocComment with that anchor. `commentAnchors` are the
+   * existing anchors to highlight; clicking a comment in the rail can call the
+   * imperative `focusAnchor` exposed via onReady.
+   */
+  inlineComments?: InlineCommentOpts;
 }
+
+export type CommentAnchor = { from: string; to: string };
+
+export type InlineCommentOpts = {
+  enabled: boolean;
+  // Persisted anchors to render as highlights, keyed by comment id.
+  anchors: { id: string; anchor: CommentAnchor }[];
+  // User selected text and clicked Comment; host opens its composer.
+  onRequestComment: (anchor: CommentAnchor) => void;
+  // Hands the host an imperative scroll-to-anchor fn once the editor mounts.
+  onReady?: (api: { focusAnchor: (anchor: CommentAnchor) => void }) => void;
+};
+
+const commentDecoKey = new PluginKey("inlineCommentDecorations");
 
 // Custom cursor/selection builders so we can add an `.idle` class — the
 // default builders don't know about our `idle` flag.
@@ -88,6 +115,85 @@ function createCollabExtension(
       ];
     },
   });
+}
+
+// Highlights persisted inline-comment ranges. Reads anchors via a getter so the
+// host can update them without rebuilding the editor; a meta on the comment key
+// forces a recompute. Decorations are derived from Yjs relative positions
+// resolved against the live doc, so they track the right text as it moves.
+function createCommentDecorationExtension(
+  ydoc: Y.Doc,
+  fragment: Y.XmlFragment,
+  getAnchors: () => { id: string; anchor: { from: string; to: string } }[],
+) {
+  return Extension.create({
+    name: "inlineCommentDecorations",
+    addProseMirrorPlugins() {
+      return [
+        new Plugin({
+          key: commentDecoKey,
+          state: {
+            init: () => DecorationSet.empty,
+            apply(tr, old, _oldState, newState) {
+              if (!tr.docChanged && !tr.getMeta(commentDecoKey)) return old;
+              const binding = ySyncPluginKey.getState(newState)?.binding;
+              if (!binding) return DecorationSet.empty;
+              const decos: Decoration[] = [];
+              for (const { id, anchor } of getAnchors()) {
+                const from = decodeAbsolute(ydoc, fragment, binding, anchor.from);
+                const to = decodeAbsolute(ydoc, fragment, binding, anchor.to);
+                if (from == null || to == null || from >= to) continue;
+                decos.push(
+                  Decoration.inline(from, to, {
+                    class: "inline-comment-highlight",
+                    "data-comment-id": id,
+                  }),
+                );
+              }
+              return DecorationSet.create(newState.doc, decos);
+            },
+          },
+          props: {
+            decorations(state) {
+              return commentDecoKey.getState(state);
+            },
+          },
+        }),
+      ];
+    },
+  });
+}
+
+// Encode an absolute ProseMirror position to a Yjs relative position string.
+// Relative positions are stable across collaborative edits, so a comment
+// anchored to one stays attached to the same text as others type around it.
+function encodeRelative(
+  ydoc: Y.Doc,
+  fragment: Y.XmlFragment,
+  binding: unknown,
+  pos: number,
+): string | null {
+  try {
+    const rel = absolutePositionToRelativePosition(pos, fragment, binding as never);
+    return JSON.stringify(Array.from(Y.encodeRelativePosition(rel)));
+  } catch {
+    return null;
+  }
+}
+
+function decodeAbsolute(
+  ydoc: Y.Doc,
+  fragment: Y.XmlFragment,
+  binding: unknown,
+  encoded: string,
+): number | null {
+  try {
+    const rel = Y.decodeRelativePosition(Uint8Array.from(JSON.parse(encoded) as number[]));
+    const abs = relativePositionToAbsolutePosition(ydoc, fragment, rel, binding as never);
+    return abs ?? null;
+  } catch {
+    return null;
+  }
 }
 
 // Module-level cache so StrictMode's double-mount reuses the same Y.Doc /
@@ -212,10 +318,17 @@ function CollaborativeEditorInner({
   placeholder = "Start typing...",
   className,
   editorId,
+  inlineComments,
   entry,
 }: CollaborativeEditorProps & { entry: DocEntry }) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  // Live inline-comment anchors, read by the decoration plugin's getter.
+  const anchorsRef = useRef(inlineComments?.anchors ?? []);
+  anchorsRef.current = inlineComments?.anchors ?? [];
+  // Floating "Comment" button position (viewport coords) when a non-empty
+  // selection exists; null hides it.
+  const [commentBtn, setCommentBtn] = useState<{ top: number; left: number } | null>(null);
   const color = userColor ?? nameToColor(userName);
   // Read latest values inside the awareness effect without re-running it
   // on rename — that would trigger a setUser write and idle-timer churn.
@@ -237,6 +350,15 @@ function CollaborativeEditorInner({
       }),
       Placeholder.configure({ placeholder }),
       createCollabExtension(entry.fragment, entry.provider),
+      ...(inlineComments?.enabled
+        ? [
+            createCommentDecorationExtension(
+              entry.ydoc,
+              entry.fragment,
+              () => anchorsRef.current,
+            ),
+          ]
+        : []),
     ],
     editable: !disabled,
     editorProps: {
@@ -259,6 +381,68 @@ function CollaborativeEditorInner({
   useEffect(() => {
     if (editor) editor.setEditable(!disabled);
   }, [editor, disabled]);
+
+  // Inline comments: recompute decorations when the anchor list changes, show a
+  // floating Comment button on non-empty selections, and expose focusAnchor.
+  const onRequestComment = inlineComments?.onRequestComment;
+  const onReadyRef = useRef(inlineComments?.onReady);
+  onReadyRef.current = inlineComments?.onReady;
+
+  useEffect(() => {
+    if (!editor || !inlineComments?.enabled) return;
+    // Force the decoration plugin to recompute against the new anchors.
+    editor.view.dispatch(editor.view.state.tr.setMeta(commentDecoKey, true));
+  }, [editor, inlineComments?.enabled, inlineComments?.anchors]);
+
+  useEffect(() => {
+    if (!editor || !inlineComments?.enabled) return;
+    const update = () => {
+      const { from, to, empty } = editor.state.selection;
+      if (empty || disabled) {
+        setCommentBtn(null);
+        return;
+      }
+      const container = containerRef.current;
+      if (!container) return;
+      const start = editor.view.coordsAtPos(from);
+      const end = editor.view.coordsAtPos(to);
+      const box = container.getBoundingClientRect();
+      setCommentBtn({
+        top: Math.min(start.top, end.top) - box.top - 30,
+        left: (start.left + end.left) / 2 - box.left,
+      });
+    };
+    editor.on("selectionUpdate", update);
+    editor.on("blur", () => setTimeout(() => setCommentBtn(null), 150));
+    return () => {
+      editor.off("selectionUpdate", update);
+    };
+  }, [editor, inlineComments?.enabled, disabled]);
+
+  useEffect(() => {
+    if (!editor || !inlineComments?.enabled) return;
+    onReadyRef.current?.({
+      focusAnchor: (anchor) => {
+        const binding = ySyncPluginKey.getState(editor.state)?.binding;
+        if (!binding) return;
+        const from = decodeAbsolute(entry.ydoc, entry.fragment, binding, anchor.from);
+        if (from == null) return;
+        editor.chain().focus().setTextSelection(from).scrollIntoView().run();
+      },
+    });
+  }, [editor, entry, inlineComments?.enabled]);
+
+  function requestCommentOnSelection() {
+    if (!editor) return;
+    const binding = ySyncPluginKey.getState(editor.state)?.binding;
+    if (!binding) return;
+    const { from, to } = editor.state.selection;
+    const fromRel = encodeRelative(entry.ydoc, entry.fragment, binding, from);
+    const toRel = encodeRelative(entry.ydoc, entry.fragment, binding, to);
+    if (!fromRel || !toRel) return;
+    setCommentBtn(null);
+    onRequestComment?.({ from: fromRel, to: toRel });
+  }
 
   // The editor's own awareness carries name/color/idle for inline cursor
   // labels. This is a separate awareness from the page-level presence (one
@@ -404,6 +588,20 @@ function CollaborativeEditorInner({
           onClose={() => setHistoryOpen(false)}
         />
       )}
+      {inlineComments?.enabled && commentBtn && (
+        <button
+          type="button"
+          onMouseDown={(e) => {
+            // Keep the selection alive through the click.
+            e.preventDefault();
+            requestCommentOnSelection();
+          }}
+          style={{ top: commentBtn.top, left: commentBtn.left }}
+          className="absolute z-20 -translate-x-1/2 px-2 py-1 rounded-md bg-foreground text-background text-xs font-medium shadow-lg whitespace-nowrap"
+        >
+          💬 Comment
+        </button>
+      )}
       <EditorContent editor={editor} />
       {/*
         y-prosemirror's default cursor builder renders:
@@ -436,6 +634,11 @@ function CollaborativeEditorInner({
         }
         .ProseMirror-yjs-selection.idle {
           background-color: color-mix(in srgb, var(--yjs-user-color) 10%, transparent);
+        }
+        .inline-comment-highlight {
+          background-color: rgba(251, 191, 36, 0.28);
+          border-bottom: 2px solid rgba(217, 119, 6, 0.6);
+          cursor: pointer;
         }
         .ProseMirror-yjs-cursor > div {
           position: absolute;

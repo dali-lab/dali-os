@@ -3510,6 +3510,25 @@ function SelectionPopoverPortal({
   const cardRef = useRef<HTMLDivElement | null>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
 
+  // Dismiss on a genuine outside click. We can't use a full-viewport backdrop
+  // for this: the selection block (with its resize handles) lives in the grid
+  // *under* this portal, so a covering backdrop would swallow handle mousedowns
+  // and dismiss the selection the instant the user grabs a handle. Instead,
+  // listen at the document and ignore mousedowns that land inside the popover
+  // card or the anchored selection block (so resizing it works).
+  useEffect(() => {
+    const onDocMouseDown = (e: MouseEvent) => {
+      const target = e.target as Node | null;
+      if (!target) return;
+      if (cardRef.current?.contains(target)) return;
+      if (anchorEl?.contains(target)) return;
+      onDismiss();
+    };
+    // Capture phase so we see the event even if something stops propagation.
+    document.addEventListener("mousedown", onDocMouseDown, true);
+    return () => document.removeEventListener("mousedown", onDocMouseDown, true);
+  }, [anchorEl, onDismiss]);
+
   useLayoutEffect(() => {
     if (!anchorEl) return;
     const place = () => {
@@ -3577,20 +3596,19 @@ function SelectionPopoverPortal({
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-50">
-      <div
-        className="absolute inset-0"
-        onMouseDown={onDismiss}
-        aria-hidden="true"
-      />
-      <div
-        data-calendar-popover
-        className="absolute"
-        style={{ left, top }}
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        {children}
-      </div>
+    // No covering backdrop: the card is positioned `fixed` on its own so it
+    // doesn't sit over the grid's selection block, leaving the block's resize
+    // handles clickable. Outside-click dismissal is handled by the document
+    // listener above. The card still stops propagation so a click inside the
+    // form can't bubble out to anything behind it.
+    <div
+      ref={cardRef}
+      data-calendar-popover
+      className="fixed z-50"
+      style={{ left, top }}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      {children}
     </div>,
     document.body,
   );

@@ -1,12 +1,10 @@
-import { useState } from "react";
+import { useState, type MouseEvent } from "react";
 import { redirect, useLoaderData, useRevalidator } from "react-router";
 import {
   ListTodo,
   Check,
   X as XIcon,
   CalendarDays,
-  ChevronLeft,
-  ChevronRight,
   ExternalLink,
   HelpCircle,
   CalendarClock,
@@ -14,7 +12,13 @@ import {
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { listOpenTasks, type Task } from "~/lib/tasks";
+import { fetchGeneralCalendarEvents } from "~/lib/general-calendar";
+import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
 import type { Route } from "./+types/home";
+
+// The home week calendar is rendered in this fixed lab timezone, matching the
+// /calendar route's default.
+const HOME_TZ = "America/New_York";
 
 type HomeNotification = {
   id: string;
@@ -69,11 +73,63 @@ export async function loader({ request }: Route.LoaderArgs) {
     rsvp: n.rsvp,
   }));
   const tasks = await listOpenTasks(auth.user.sub);
-  return { user: auth.user, notifications, tasks };
+
+  // Current week (Sunday→following Sunday) in the lab timezone, used both to
+  // build the day columns and to window the calendar fetch.
+  const now = new Date();
+  const ymd = getZonedYMD(now, HOME_TZ);
+  const todayMidnightUtc = new Date(Date.UTC(ymd.year, ymd.month - 1, ymd.day));
+  const dow = todayMidnightUtc.getUTCDay();
+  const sundayUtc = new Date(todayMidnightUtc.getTime() - dow * 86_400_000);
+  const weekStart = zonedDayStartUtc(
+    sundayUtc.getUTCFullYear(),
+    sundayUtc.getUTCMonth() + 1,
+    sundayUtc.getUTCDate(),
+    HOME_TZ,
+  );
+  const nextSundayUtc = new Date(sundayUtc.getTime() + 7 * 86_400_000);
+  const weekEnd = zonedDayStartUtc(
+    nextSundayUtc.getUTCFullYear(),
+    nextSundayUtc.getUTCMonth() + 1,
+    nextSundayUtc.getUTCDate(),
+    HOME_TZ,
+  );
+
+  // Day columns (Sun..Sat) with the calendar date number shown in each header.
+  const weekDays: WeekDayDTO[] = Array.from({ length: 7 }).map((_, i) => {
+    const dayUtc = new Date(weekStart.getTime() + i * 86_400_000);
+    const dy = getZonedYMD(dayUtc, HOME_TZ);
+    return { num: dy.day };
+  });
+
+  // Real events from the public DALI General Calendar (empty when unconfigured
+  // or on fetch failure — the panel then shows an empty grid + hint).
+  const rawEvents = await fetchGeneralCalendarEvents(weekStart, weekEnd);
+  const weekEvents: HomeWeekEvent[] = [];
+  for (const ev of rawEvents) {
+    if (ev.allDay) continue; // all-day events don't map onto the hour grid
+    const e = getZonedYMD(ev.start, HOME_TZ);
+    const dayMidnight = zonedDayStartUtc(e.year, e.month, e.day, HOME_TZ);
+    const colIdx = Math.round((dayMidnight.getTime() - weekStart.getTime()) / 86_400_000);
+    if (colIdx < 0 || colIdx > 6) continue;
+    const startHour = (ev.start.getTime() - dayMidnight.getTime()) / 3_600_000;
+    const duration = Math.max(0.5, (ev.end.getTime() - ev.start.getTime()) / 3_600_000);
+    weekEvents.push({ colIdx, startHour, duration, label: ev.summary });
+  }
+
+  return { user: auth.user, notifications, tasks, weekDays, weekEvents };
 }
 
+type WeekDayDTO = { num: number };
+type HomeWeekEvent = {
+  colIdx: number;
+  startHour: number;
+  duration: number;
+  label: string;
+};
+
 export default function Home() {
-  const { user, notifications, tasks } = useLoaderData<typeof loader>();
+  const { user, notifications, tasks, weekDays, weekEvents } = useLoaderData<typeof loader>();
   const firstName = user.firstName || user.email.split("@")[0];
 
   return (
@@ -92,7 +148,7 @@ export default function Home() {
       )}
 
       <div className="flex flex-col gap-6">
-        <WeekCalendarPanel />
+        <WeekCalendarPanel days={weekDays} events={weekEvents} />
       </div>
     </div>
   );
@@ -147,76 +203,9 @@ function AttentionBanner({
 
       {tasks.length > 0 && (
         <div className="flex gap-2 overflow-x-auto pb-1">
-          {tasks.map((t) => {
-            const inner = (
-              <>
-                <span className="block text-sm font-semibold text-foreground truncate">
-                  {t.title}
-                </span>
-                {t.dueAt ? (
-                  <span className="inline-flex items-center gap-1 text-[11px] font-medium text-accent-coral mt-1">
-                    <CalendarClock className="w-3 h-3" />
-                    {formatDeadline(t.dueAt)}
-                  </span>
-                ) : (
-                  <span className="block text-[11px] text-muted-foreground mt-1">
-                    {t.source === "meeting"
-                      ? "Awaiting your response"
-                      : "Action needed"}
-                  </span>
-                )}
-              </>
-            );
-            const cls =
-              "flex-shrink-0 w-56 bg-card border border-border rounded-md px-3 py-2";
-
-            // Meeting invites clear only on RSVP, never on a click — so they
-            // render Accept/Maybe/Decline inline instead of a read-on-click
-            // link. The RSVP revalidates, dropping the answered invite.
-            if (t.source === "meeting") {
-              return (
-                <div key={t.id} className={cls}>
-                  {inner}
-                  <RsvpButtons notificationId={t.id} />
-                </div>
-              );
-            }
-
-            return t.link ? (
-              <a
-                key={t.id}
-                href={t.link}
-                onClick={(e) => {
-                  // Tasks are themselves notification rows, so POST /read
-                  // clears the tile + the count once the user acts on it.
-                  // keepalive lets the request survive the navigation.
-                  fetch(`/api/notifications/${t.id}/read`, {
-                    method: "POST",
-                    credentials: "include",
-                    keepalive: true,
-                  });
-                  // Inside a TabWorkspace iframe: hand the URL to the parent
-                  // shell so the user lands in a real tab instead of being
-                  // stranded in the chrome-less embed.
-                  const link = t.link!;
-                  if (link.startsWith("/") && window.self !== window.top) {
-                    e.preventDefault();
-                    window.parent.postMessage(
-                      { type: "dali:openTab", url: link, label: t.title },
-                      window.location.origin,
-                    );
-                  }
-                }}
-                className={`${cls} hover:border-accent-coral/50 transition-colors`}
-              >
-                {inner}
-              </a>
-            ) : (
-              <div key={t.id} className={cls}>
-                {inner}
-              </div>
-            );
-          })}
+          {tasks.map((t) => (
+            <TaskCard key={t.id} task={t} />
+          ))}
         </div>
       )}
 
@@ -231,6 +220,147 @@ function AttentionBanner({
       )}
     </div>
   );
+}
+
+/* ------------------------------------------------------------------ */
+/* Task card (the top row of the attention banner)                      */
+/*                                                                       */
+/* Three shapes, by how the task clears:                                 */
+/*   - meeting invite  → RSVP buttons (Accept/Maybe/Decline)             */
+/*   - has an attached form (hasAction + link) → link to the form; the   */
+/*     submit marks it read, so no Confirm                               */
+/*   - everything else → its link (if any) plus a Confirm button that    */
+/*     marks the notification read. A bare link doesn't self-clear, so   */
+/*     Confirm is how the user says "handled".                           */
+/* ------------------------------------------------------------------ */
+
+function TaskCard({ task: t }: { task: Task }) {
+  const revalidator = useRevalidator();
+  const [confirming, setConfirming] = useState(false);
+  const cls =
+    "flex-shrink-0 w-56 bg-card border border-border rounded-md px-3 py-2";
+
+  const meta = t.dueAt ? (
+    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-accent-coral mt-1">
+      <CalendarClock className="w-3 h-3" />
+      {formatDeadline(t.dueAt)}
+    </span>
+  ) : (
+    <span className="block text-[11px] text-muted-foreground mt-1">
+      {t.source === "meeting" ? "Awaiting your response" : "Action needed"}
+    </span>
+  );
+
+  const title = (
+    <span className="block text-sm font-semibold text-foreground truncate">
+      {t.title}
+    </span>
+  );
+
+  // Meeting invites clear only on RSVP, never on a click — Accept/Maybe/Decline
+  // inline. The RSVP revalidates, dropping the answered invite.
+  if (t.source === "meeting") {
+    return (
+      <div className={cls}>
+        {title}
+        {meta}
+        <RsvpButtons notificationId={t.id} />
+      </div>
+    );
+  }
+
+  // Form tasks self-clear on submit, so the whole tile is the form link and
+  // there's no Confirm.
+  if (t.hasAction && t.link) {
+    return (
+      <a
+        href={t.link}
+        onClick={(e) => openTaskLink(e, t.link!, t.title)}
+        className={`${cls} hover:border-accent-coral/50 transition-colors`}
+      >
+        {title}
+        {meta}
+      </a>
+    );
+  }
+
+  // Everything else: a Confirm button marks the task read. If it also carries
+  // a link, expose it as a separate "Open" affordance so navigating and
+  // confirming stay distinct actions.
+  async function confirm() {
+    setConfirming(true);
+    try {
+      await fetch(`/api/notifications/${t.id}/read`, {
+        method: "POST",
+        credentials: "include",
+      });
+      revalidator.revalidate();
+      notifyTasksChanged();
+    } catch {
+      setConfirming(false);
+    }
+  }
+
+  return (
+    <div className={cls}>
+      {title}
+      {meta}
+      <div className="flex items-center gap-1.5 mt-2">
+        <button
+          type="button"
+          onClick={confirm}
+          disabled={confirming}
+          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 disabled:opacity-50"
+        >
+          <Check className="w-3 h-3" />
+          {confirming ? "Confirming…" : "Confirm"}
+        </button>
+        {t.link && (
+          <a
+            href={t.link}
+            onClick={(e) => openTaskLink(e, t.link!, t.title)}
+            className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md border border-border text-foreground hover:bg-muted"
+          >
+            <ExternalLink className="w-3 h-3" />
+            Open
+          </a>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Open a task's link, handling the TabWorkspace iframe case: inside the embed,
+// hand the URL to the parent shell so the user lands in a real tab instead of
+// being stranded in the chrome-less iframe.
+function openTaskLink(
+  e: MouseEvent<HTMLAnchorElement>,
+  link: string,
+  label: string,
+) {
+  if (link.startsWith("/") && window.self !== window.top) {
+    e.preventDefault();
+    window.parent.postMessage(
+      { type: "dali:openTab", url: link, label },
+      window.location.origin,
+    );
+  }
+}
+
+// Tell the shell's sidebar task poller that the task list changed, so its
+// count + list update immediately instead of on the next poll. Inside the
+// TabWorkspace iframe the poller lives in the parent, so relay via postMessage;
+// the shell re-dispatches it as a same-window event (see Layout.tsx). On a
+// standalone Home page (no iframe) dispatch the event directly.
+function notifyTasksChanged() {
+  if (window.self !== window.top) {
+    window.parent.postMessage(
+      { type: "dali:tasksChanged" },
+      window.location.origin,
+    );
+  } else {
+    window.dispatchEvent(new Event("dali:tasksChanged"));
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -297,8 +427,10 @@ function RsvpButtons({
       if (json.gcalError) {
         setError(`Recorded in-app, but Google sync failed: ${json.gcalError}`);
       } else {
-        // Drop the answered invite from tasks/banner on the next loader pass.
+        // Drop the answered invite from tasks/banner on the next loader pass,
+        // and refresh the shell's sidebar task count right away.
         revalidator.revalidate();
+        notifyTasksChanged();
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Network error");
@@ -425,78 +557,45 @@ function NotificationCard({ notification }: { notification: HomeNotification }) 
 /* This-week calendar                                                  */
 /* ------------------------------------------------------------------ */
 
-const HOURS = [9, 10, 11, 12, 13, 14, 15, 16, 17];
+const HOURS = [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21];
 const HOUR_PX = 44;
-const DAYS = [
-  { key: "SUN", num: 10 },
-  { key: "MON", num: 11 },
-  { key: "TUE", num: 12 },
-  { key: "WED", num: 13 },
-  { key: "THU", num: 14 },
-  { key: "FRI", num: 15 },
-  { key: "SAT", num: 16 },
+const DAY_KEYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+
+// Fixed dark text that doesn't flip in dark mode — paired only with the light
+// accent tints below so it stays high-contrast in both themes. (The saturated
+// `accent-teal` made dark text hard to read in light mode; use its light twin.)
+const EVENT_TEXT = "text-[hsl(203_38%_18%)]";
+// Cycle a few light accent fills so adjacent events are visually distinguishable.
+const EVENT_FILLS = [
+  `bg-accent-teal-light ${EVENT_TEXT}`,
+  `bg-accent-coral-light ${EVENT_TEXT}`,
+  `bg-accent-green ${EVENT_TEXT}`,
 ];
 
-const EVENT_TEXT = "text-[hsl(203_38%_18%)]";
-
-type WeekEvent = {
-  startHour: number;
-  duration: number;
-  label: string;
-  className: string;
-};
-
-const WEEK_EVENTS: Record<number, WeekEvent[]> = {
-  1: [
-    { startHour: 10, duration: 1, label: "Standup", className: `bg-accent-teal ${EVENT_TEXT}` },
-    { startHour: 14, duration: 1.5, label: "Design crit", className: `bg-accent-coral-light ${EVENT_TEXT}` },
-  ],
-  2: [
-    { startHour: 11, duration: 1, label: "Partner sync", className: `bg-accent-green ${EVENT_TEXT}` },
-  ],
-  3: [
-    { startHour: 9, duration: 1, label: "Standup", className: `bg-accent-teal ${EVENT_TEXT}` },
-    { startHour: 15, duration: 2, label: "DALI hours", className: `bg-accent-coral-light ${EVENT_TEXT}` },
-  ],
-  4: [
-    { startHour: 13, duration: 1, label: "1:1 w/ PM", className: `bg-accent-green ${EVENT_TEXT}` },
-  ],
-  5: [
-    { startHour: 16, duration: 1, label: "Lab meeting", className: `bg-accent-coral-light ${EVENT_TEXT}` },
-  ],
-};
-
-function WeekCalendarPanel() {
+function WeekCalendarPanel({
+  days,
+  events,
+}: {
+  days: WeekDayDTO[];
+  events: HomeWeekEvent[];
+}) {
+  const hasEvents = events.length > 0;
   return (
     <section className="bg-card border border-border rounded-lg p-4 flex flex-col">
       <div className="flex items-center justify-between mb-3">
         <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
           <CalendarDays className="w-4 h-4 text-accent-coral" />
           This Week
+          <span className="text-xs font-normal text-muted-foreground">
+            · DALI General Calendar
+          </span>
         </h2>
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            aria-label="Previous week"
-            className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-          <button
-            type="button"
-            className="px-3 py-1 text-xs font-semibold rounded-md border border-border hover:bg-muted transition-colors"
-          >
-            Today
-          </button>
-          <button
-            type="button"
-            aria-label="Next week"
-            className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <ChevronRight className="w-4 h-4" />
-          </button>
-        </div>
       </div>
+      {!hasEvents && (
+        <p className="mb-2 text-xs text-muted-foreground">
+          No events this week, or the DALI General Calendar isn't connected yet.
+        </p>
+      )}
       <div className="flex border border-border rounded-md overflow-hidden">
         <div className="flex flex-col w-12 border-r border-border bg-card text-[10px] text-muted-foreground">
           <div className="h-9 border-b border-border" />
@@ -506,13 +605,13 @@ function WeekCalendarPanel() {
             </div>
           ))}
         </div>
-        {DAYS.map((d, idx) => (
-          <div key={d.key} className="flex-1 min-w-0 border-r last:border-r-0 border-border flex flex-col">
+        {DAY_KEYS.map((key, idx) => (
+          <div key={key} className="flex-1 min-w-0 border-r last:border-r-0 border-border flex flex-col">
             <div className="flex flex-col items-center justify-center border-b border-border h-9">
               <div className="text-[9px] font-semibold text-muted-foreground tracking-wide">
-                {d.key}
+                {key}
               </div>
-              <div className="text-xs font-bold text-foreground">{d.num}</div>
+              <div className="text-xs font-bold text-foreground">{days[idx]?.num ?? ""}</div>
             </div>
             <div className="relative" style={{ height: HOURS.length * HOUR_PX }}>
               {HOURS.map((_, i) => (
@@ -522,18 +621,27 @@ function WeekCalendarPanel() {
                   style={{ top: i * HOUR_PX }}
                 />
               ))}
-              {(WEEK_EVENTS[idx] ?? []).map((e, i) => (
-                <div
-                  key={i}
-                  className={`absolute left-0 right-0 mx-0.5 px-1 py-0.5 rounded-sm text-[10px] font-medium overflow-hidden ${e.className}`}
-                  style={{
-                    top: (e.startHour - HOURS[0]) * HOUR_PX,
-                    height: e.duration * HOUR_PX,
-                  }}
-                >
-                  <span className="truncate block">{e.label}</span>
-                </div>
-              ))}
+              {events
+                .filter((e) => e.colIdx === idx)
+                .map((e, i) => {
+                  // Clamp to the visible 9am–10pm window so off-hours events
+                  // still show a sliver at the grid edge rather than overflow.
+                  const top = Math.max(0, (e.startHour - HOURS[0]) * HOUR_PX);
+                  const rawHeight = e.duration * HOUR_PX;
+                  const maxHeight = HOURS.length * HOUR_PX - top;
+                  return (
+                    <div
+                      key={i}
+                      className={`absolute left-0 right-0 mx-0.5 px-1 py-0.5 rounded-sm text-[10px] font-medium overflow-hidden ${
+                        EVENT_FILLS[i % EVENT_FILLS.length]
+                      }`}
+                      style={{ top, height: Math.min(rawHeight, maxHeight) }}
+                      title={e.label}
+                    >
+                      <span className="block leading-tight break-words">{e.label}</span>
+                    </div>
+                  );
+                })}
             </div>
           </div>
         ))}
