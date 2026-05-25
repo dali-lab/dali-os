@@ -66,6 +66,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       id: true,
       domainId: true,
       answers: true,
+      // Free-form note leads write during Initial delibs as interview prep.
+      // The collab layer keeps this column in sync with the live Yjs doc, so
+      // reading it directly is safe. Lead-only on the UI.
+      interviewPrepNote: true,
       domain: { select: { displayName: true } },
       challengeVersion: {
         select: {
@@ -436,6 +440,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     interviews,
     decisions: visibleDecisions,
     delibs,
+    interviewPrepNote: canSeeDelibs ? da.interviewPrepNote : null,
     canSeePreReleaseDecisions,
     canSeeDelibs,
     selectedReviewId,
@@ -551,7 +556,10 @@ export default function ApplicationReadOnlyDetail() {
         </div>
       </div>
 
-      <InterviewsSection interviews={data.interviews} />
+      <InterviewsSection
+        interviews={data.interviews}
+        interviewPrepNote={data.interviewPrepNote}
+      />
       <DecisionsSection
         decisions={data.decisions}
         canSeePreReleaseDecisions={data.canSeePreReleaseDecisions}
@@ -566,7 +574,14 @@ type InterviewRow = LoaderData["interviews"][number];
 type DecisionRow = LoaderData["decisions"][number];
 type DelibsRef = LoaderData["delibs"][number];
 
-function InterviewsSection({ interviews }: { interviews: InterviewRow[] }) {
+function InterviewsSection({
+  interviews,
+  interviewPrepNote,
+}: {
+  interviews: InterviewRow[];
+  interviewPrepNote: string | null;
+}) {
+  const hasPrepNote = interviewPrepNote != null && interviewPrepNote.trim().length > 0;
   return (
     <section className="bg-card rounded-xl border border-border shadow-sm">
       <div className="px-6 py-4 border-b border-border bg-muted/50">
@@ -577,6 +592,19 @@ function InterviewsSection({ interviews }: { interviews: InterviewRow[] }) {
             : `${interviews.length} ${interviews.length === 1 ? "interview" : "interviews"}`}
         </p>
       </div>
+      {hasPrepNote && (
+        <div className="px-6 py-3 border-b border-border bg-amber-50/40">
+          <div className="text-xs font-bold text-amber-900 uppercase tracking-wider">
+            Interview prep note
+          </div>
+          <p className="mt-1 text-sm text-foreground whitespace-pre-wrap">
+            {interviewPrepNote}
+          </p>
+          <p className="mt-1 text-[11px] text-muted-foreground/80">
+            Set by leads during Initial delibs.
+          </p>
+        </div>
+      )}
       {interviews.length > 0 && (
         <ul className="divide-y divide-border">
           {interviews.map((iv) => {
