@@ -1,5 +1,5 @@
 import PDFDocument from "pdfkit";
-import type { PMNode } from "./export";
+import type { PMNode } from "./export-html";
 
 // Render ProseMirror JSON to a PDF buffer with pdfkit — pure JS, no headless
 // browser, so it runs under `npm ci --omit=dev` on the Alpine runtime. Walks

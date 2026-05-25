@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { renderNodes, buildExportHtml, type PMNode } from "../export";
+// Import the pure renderers from export-html (no DB import) so this unit test
+// doesn't pull in the Prisma client via export.ts → ~/lib/db.
+import { renderNodes, buildExportHtml, type PMNode } from "../export-html";
 import { renderProseMirrorToPdf } from "../export-pdf";
 
 describe("renderNodes (ProseMirror JSON → HTML)", () => {
