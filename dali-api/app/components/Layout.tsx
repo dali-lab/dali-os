@@ -36,7 +36,7 @@ import {
 } from 'lucide-react'
 import { userInitials } from '~/lib/display'
 import { TabWorkspace, type TabWorkspaceHandle, type OpenTabRequest } from '~/components/TabWorkspace'
-import { useOpenTasks } from '~/components/NotificationBell'
+import { useOpenTasks, TASKS_CHANGED_EVENT } from '~/components/NotificationBell'
 
 interface LayoutProps {
   user: { email: string; firstName?: string; lastName?: string }
@@ -147,6 +147,11 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
       if (!data) return
       if (data.type === 'dali:openTab' && typeof data.url === 'string') {
         workspaceRef.current?.openTab({ url: data.url, label: data.label || data.url })
+      } else if (data.type === 'dali:openTabToSide' && typeof data.url === 'string') {
+        // Open in a second pane to the side (splitting if needed) — used by an
+        // embedded page that wants its target as a split-screen tab, e.g. a
+        // project document opening beside the project page.
+        workspaceRef.current?.openTabToSide({ url: data.url, label: data.label || data.url })
       } else if (
         data.type === 'dali:setTabLabel' &&
         typeof data.url === 'string' &&
@@ -157,6 +162,11 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
         // A profile edit inside a workspace iframe doesn't re-run the shell
         // loader, so re-fetch it to refresh the footer avatar.
         revalidateRef.current()
+      } else if (data.type === TASKS_CHANGED_EVENT) {
+        // Confirming/acting on a task inside an iframe (e.g. Home) doesn't
+        // touch the shell's task poller. Relay it to a same-window event so
+        // the sidebar Tasks count + list refresh immediately.
+        window.dispatchEvent(new Event(TASKS_CHANGED_EVENT))
       }
     }
     window.addEventListener('message', handler)
@@ -643,7 +653,9 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
                               method: 'POST',
                               credentials: 'include',
                               keepalive: true,
-                            })
+                            }).then(() =>
+                              window.dispatchEvent(new Event(TASKS_CHANGED_EVENT)),
+                            )
                             openInWorkspace({ url: t.link!, label: t.title })
                           }}
                           className={`${cls} text-white/55 hover:text-white hover:bg-white/5`}

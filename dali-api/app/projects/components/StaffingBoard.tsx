@@ -1,6 +1,13 @@
 import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
-import { DndContext, useDroppable, type DragEndEvent } from "@dnd-kit/core";
+import {
+  DndContext,
+  PointerSensor,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
 import {
   buildBoard,
   resolveAssignmentInputs,
@@ -68,6 +75,13 @@ export function StaffingBoard({
   const memberById = useMemo(
     () => new Map(members.map((m) => [m.userId, m])),
     [members],
+  );
+
+  // The whole member card is both draggable and clickable. A small activation
+  // distance disambiguates the two: a press that moves <6px fires the card's
+  // onClick (open bid); past that it starts a drag, suppressing the click.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
   );
 
   function handleDragEnd(event: DragEndEvent) {
@@ -158,8 +172,8 @@ export function StaffingBoard({
         </div>
         <p className="text-xs text-muted-foreground hidden sm:block">
           {canManage
-            ? "Drag a member onto a project. Click a name to view their bid."
-            : "Click a name to view their bid."}
+            ? "Drag a member onto a project. Click a card to view their bid."
+            : "Click a card to view their bid."}
         </p>
       </div>
 
@@ -173,7 +187,7 @@ export function StaffingBoard({
           iframe + other boards) the default useId differs between SSR and
           client, hydration-mismatches dnd-kit's internal ids, and drag never
           activates. A fixed id keeps server/client deterministic. */}
-      <DndContext id="staffing-board" onDragEnd={handleDragEnd}>
+      <DndContext id="staffing-board" sensors={sensors} onDragEnd={handleDragEnd}>
         {/* pt-1 keeps each column's top border off the scroll-clip edge so it
             stays visible; px on the row prevents the first/last column border
             being shaved by overflow-x. */}

@@ -11,7 +11,7 @@ import {
   type TaskStatus,
   type Priority,
 } from "../lib/task-board";
-import { TaskModal } from "./TaskModal";
+import { TaskModal, type NewTaskValues } from "./TaskModal";
 
 type Props = {
   projectId: string;
@@ -36,9 +36,6 @@ export function TaskBoard({ projectId, initialTasks, options, canManage }: Props
   const [tasks, setTasks] = useState<TaskCardModel[]>(initialTasks);
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
-  const [draft, setDraft] = useState("");
-  // Optional <input type="date"> value for the new task. Empty = no deadline.
-  const [draftDueAt, setDraftDueAt] = useState("");
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
 
   const board = useMemo(() => buildTaskBoard(tasks), [tasks]);
@@ -99,47 +96,62 @@ export function TaskBoard({ projectId, initialTasks, options, canManage }: Props
     });
   }
 
-  async function handleCreate(title: string) {
-    const trimmed = title.trim();
-    if (!trimmed) return;
+  // Create from the modal. The POST endpoint only takes title/status/dueAt, so
+  // priority/domain/assignees are applied with a follow-up PATCH via the same
+  // optimistic path the card edits use.
+  async function handleCreate(values: NewTaskValues) {
     setError(null);
-    const dueAtIso = draftDueAt ? endOfDayIso(draftDueAt) : null;
-    try {
-      const res = await fetch(`/api/projects/${projectId}/tasks`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: trimmed,
-          status: CREATE_STATUS,
-          dueAt: dueAtIso,
-        }),
-      });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error ?? `Request failed: ${res.status}`);
-      }
-      const { id } = (await res.json()) as { id: string };
-      setTasks((cur) => [
-        ...cur,
-        {
-          id,
-          title: trimmed,
-          status: CREATE_STATUS,
-          priority: "Normal",
-          position: nextPositionInColumn(board, CREATE_STATUS),
-          dueAt: dueAtIso,
-          epicId: null,
-          sprintId: null,
-          assignees: [],
-          domain: null,
-        },
-      ]);
-      setDraft("");
-      setDraftDueAt("");
-      setIsCreating(false);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create task");
+    const res = await fetch(`/api/projects/${projectId}/tasks`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: values.title,
+        status: CREATE_STATUS,
+        dueAt: values.dueAt,
+      }),
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      setError(body.error ?? `Request failed: ${res.status}`);
+      throw new Error("create failed");
+    }
+    const { id } = (await res.json()) as { id: string };
+
+    const domain =
+      values.domainId == null
+        ? null
+        : options.domains.find((d) => d.id === values.domainId) ?? null;
+    const assignees = values.assigneeIds.map((aid) => {
+      const m = options.members.find((m) => m.id === aid);
+      return { id: aid, name: m?.name ?? "" };
+    });
+
+    setTasks((cur) => [
+      ...cur,
+      {
+        id,
+        title: values.title,
+        status: CREATE_STATUS,
+        priority: values.priority,
+        position: nextPositionInColumn(board, CREATE_STATUS),
+        dueAt: values.dueAt,
+        epicId: null,
+        sprintId: null,
+        assignees,
+        domain,
+      },
+    ]);
+    setIsCreating(false);
+
+    // Push the fields the create endpoint doesn't accept. patchTask owns its
+    // own optimistic update + rollback, so the card already reflects them.
+    const patch: Partial<TaskCardModel> = {};
+    if (values.priority !== "Normal") patch.priority = values.priority;
+    if (domain) patch.domain = domain;
+    if (assignees.length > 0) patch.assignees = assignees;
+    if (Object.keys(patch).length > 0) {
+      await patchTask(id, patch);
     }
   }
 
@@ -153,62 +165,13 @@ export function TaskBoard({ projectId, initialTasks, options, canManage }: Props
 
       {canManage && (
         <div>
-          {isCreating ? (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                void handleCreate(draft);
-              }}
-              className="flex flex-wrap items-center gap-1.5"
-            >
-              <input
-                autoFocus
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Escape") {
-                    setIsCreating(false);
-                    setDraft("");
-                    setDraftDueAt("");
-                  }
-                }}
-                placeholder={`New task in "${TASK_STATUS_LABELS[CREATE_STATUS]}"`}
-                className="flex-1 max-w-sm px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-              />
-              <input
-                type="date"
-                aria-label="Due date (optional)"
-                value={draftDueAt}
-                onChange={(e) => setDraftDueAt(e.target.value)}
-                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
-              />
-              <button
-                type="submit"
-                className="px-3 py-1.5 text-xs font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
-              >
-                Add
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsCreating(false);
-                  setDraft("");
-                  setDraftDueAt("");
-                }}
-                className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors"
-              >
-                Cancel
-              </button>
-            </form>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setIsCreating(true)}
-              className="px-3 py-1.5 text-xs font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
-            >
-              + Add task
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => setIsCreating(true)}
+            className="px-3 py-1.5 text-xs font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
+          >
+            + Add task
+          </button>
         </div>
       )}
 
@@ -234,6 +197,15 @@ export function TaskBoard({ projectId, initialTasks, options, canManage }: Props
           canManage={canManage}
           onClose={() => setOpenTaskId(null)}
           onPatch={(patch) => patchTask(openTask.id, patch)}
+        />
+      )}
+
+      {isCreating && (
+        <TaskModal
+          options={options}
+          canManage={canManage}
+          onClose={() => setIsCreating(false)}
+          onCreate={handleCreate}
         />
       )}
     </div>
@@ -267,7 +239,7 @@ function Column({
         <div className="text-[11px] text-muted-foreground">{cards.length}</div>
       </div>
 
-      <div className="flex flex-col gap-2 p-2 min-h-[120px]">
+      <div className="flex flex-col gap-2 p-2 min-h-[360px]">
         {cards.length === 0 ? (
           <div className="text-xs text-muted-foreground italic text-center py-4">
             Empty
@@ -372,15 +344,6 @@ function TaskCard({
       </button>
     </div>
   );
-}
-
-// A date-only input (YYYY-MM-DD) is timezone-agnostic on the client; pin it
-// to end-of-day LOCAL time so a deadline of "Mar 12" doesn't fire its
-// reminder a day early in Eastern. Returns an ISO UTC string.
-function endOfDayIso(dateOnly: string): string {
-  const [y, m, d] = dateOnly.split("-").map(Number);
-  const local = new Date(y, (m ?? 1) - 1, d ?? 1, 23, 59, 59);
-  return local.toISOString();
 }
 
 // Short label for the pill: "Mar 12" if it's this year, otherwise "Mar 12, 2027".

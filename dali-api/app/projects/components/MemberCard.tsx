@@ -32,39 +32,39 @@ export function MemberCard({ card, columnId, projectNames, onOpenBid, draggable 
   const fullName = `${card.firstName} ${card.lastName}`.trim();
 
   // Only wire dnd listeners + grab cursor when draggable. Read-only viewers
-  // still see the card and can click the name to open the bid modal.
+  // still see the card and can click it to open the bid modal.
   const dragProps = draggable ? { ...attributes, ...listeners } : {};
 
+  // Clicking anywhere on the card opens the member's bid. The DndContext uses
+  // a small activation-distance constraint, so a pointer press that doesn't
+  // move past the threshold lands here as a click rather than starting a drag.
   return (
     <div
       ref={setNodeRef}
       style={style}
       {...dragProps}
+      onClick={onOpenBid}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpenBid();
+        }
+      }}
+      aria-label={`View ${fullName}'s bid`}
+      title="View bid"
       className={`bg-card border border-border rounded-md p-2.5 flex flex-col gap-1.5 select-none ${
-        draggable ? "cursor-grab active:cursor-grabbing" : ""
+        draggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"
       } ${isDragging ? "opacity-60 shadow-lg" : "hover:bg-muted/20"}`}
     >
       <div className="flex items-start gap-2">
         <Avatar photoUrl={card.photoUrl} name={fullName} />
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-1.5 flex-wrap">
-            <button
-              type="button"
-              onClick={(e) => {
-                // Don't trigger drag-start. Open the modal instead.
-                e.stopPropagation();
-                onOpenBid();
-              }}
-              // Block the dnd-kit pointer listeners from receiving this
-              // click — without this, dnd-kit's pointer activation can swallow
-              // it. We re-attach listeners on the outer wrapper above so the
-              // rest of the card surface still drags.
-              onPointerDown={(e) => e.stopPropagation()}
-              className="text-sm font-semibold text-foreground truncate hover:underline text-left"
-              title="View bid"
-            >
+            <span className="text-sm font-semibold text-foreground truncate text-left">
               {fullName}
-            </button>
+            </span>
           </div>
           <RoleStrip card={card} />
         </div>

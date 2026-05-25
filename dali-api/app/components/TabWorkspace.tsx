@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { X, Columns2, SplitSquareHorizontal } from 'lucide-react'
+import { X, Maximize2, SplitSquareHorizontal } from 'lucide-react'
 
 export interface OpenTabRequest {
   url: string
@@ -629,6 +629,27 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
     })
   }
 
+  // Full screen a tab: collapse the split back to a single pane so the given
+  // tab fills the workspace. The other pane's tabs are NOT discarded — they're
+  // merged into the surviving pane's tab strip (LRU-capped), so the tab list is
+  // untouched; only the split layout goes away. The chosen tab becomes active.
+  // No-op with one pane (already full width).
+  const fullScreenTab = (paneId: string, tabId: string) => {
+    setState((prev) => {
+      if (prev.panes.length < 2) return prev
+      const target = prev.panes.find((p) => p.id === paneId)
+      if (!target) return prev
+      // The target pane's tabs first (so the chosen one and its siblings keep
+      // their order), then the other panes' tabs appended after.
+      const others = prev.panes.filter((p) => p.id !== paneId).flatMap((p) => p.tabs)
+      const merged = appendWithLruCap([...target.tabs, ...others], tabId)
+      return {
+        panes: [{ id: paneId, tabs: merged, activeTabId: tabId }],
+        focusedPaneId: paneId,
+      }
+    })
+  }
+
   // Move a tab to (targetPaneId, targetIndex). targetIndex is the insertion
   // point in the destination pane's tabs[] AFTER the source tab has been
   // removed from its origin pane — callers can pass an index computed against
@@ -971,26 +992,31 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onClick={(e) => e.stopPropagation()}
         >
-          <button
-            type="button"
-            onClick={() => {
-              openTabToSide(contextMenu.paneId, contextMenu.tabId)
-              setContextMenu(null)
-            }}
-            className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-muted text-left"
-          >
-            {state.panes.length >= 2 ? (
-              <>
-                <Columns2 className="w-3.5 h-3.5" />
-                Move to other pane
-              </>
-            ) : (
-              <>
-                <SplitSquareHorizontal className="w-3.5 h-3.5" />
-                Open to the side
-              </>
-            )}
-          </button>
+          {state.panes.length >= 2 ? (
+            <button
+              type="button"
+              onClick={() => {
+                fullScreenTab(contextMenu.paneId, contextMenu.tabId)
+                setContextMenu(null)
+              }}
+              className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-muted text-left"
+            >
+              <Maximize2 className="w-3.5 h-3.5" />
+              Full screen
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                openTabToSide(contextMenu.paneId, contextMenu.tabId)
+                setContextMenu(null)
+              }}
+              className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-muted text-left"
+            >
+              <SplitSquareHorizontal className="w-3.5 h-3.5" />
+              Open to the side
+            </button>
+          )}
           <button
             type="button"
             onClick={() => {

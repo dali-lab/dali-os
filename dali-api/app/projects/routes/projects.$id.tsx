@@ -11,6 +11,8 @@ import {
 } from "react-router";
 import { Check, Pencil, X } from "lucide-react";
 import { EditableSection } from "~/components/EditableSection";
+import { TagPicker } from "~/components/TagPicker";
+import { uploadFileToS3, formatBytes } from "~/lib/upload-client";
 import type { Route } from "./+types/projects.$id";
 import { prisma } from "~/lib/db";
 import { ensureProjectGroup } from "~/lib/groups";
@@ -24,8 +26,6 @@ import {
   type EditableEpic,
   type EditableSprint,
 } from "../components/EpicSprintManager";
-import { CollaborativeEditor } from "~/components/CollaborativeEditor";
-import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import type {
   TaskBoardOptions,
   TaskCardModel,
@@ -38,14 +38,36 @@ export const meta: Route.MetaFunction = ({ data }) => {
   return [{ title: p ? `${p.name} · Projects · DALI OS` : "Project · DALI OS" }];
 };
 
+// Open a project document as a split-screen tab. This page renders inside a
+// TabWorkspace iframe, so we ask the parent shell to open /documents/:id in a
+// second pane beside the project (dali:openTabToSide → Layout). When somehow
+// rendered standalone (no iframe), fall back to a normal same-tab navigation.
+function openDocumentTab(pageId: string, label: string) {
+  const url = `/documents/${pageId}`;
+  if (typeof window !== "undefined" && window.self !== window.top) {
+    window.parent.postMessage(
+      { type: "dali:openTabToSide", url, label },
+      window.location.origin,
+    );
+  } else if (typeof window !== "undefined") {
+    window.location.assign(url);
+  }
+}
+
 const STATUSES = ["Active", "Paused", "Archived"] as const;
 type ProjectStatus = (typeof STATUSES)[number];
 
-const TABS = ["overview", "work"] as const;
+const TABS = ["overview", "scope", "work"] as const;
 type Tab = (typeof TABS)[number];
 function isTab(x: string | null): x is Tab {
-  return x === "overview" || x === "work";
+  return x === "overview" || x === "scope" || x === "work";
 }
+
+const TAB_LABELS: Record<Tab, string> = {
+  overview: "Overview",
+  scope: "Scope",
+  work: "Work",
+};
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -153,9 +175,45 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       archivedAt: null,
     },
     orderBy: { position: "asc" },
-    select: { id: true, title: true },
+    select: {
+      id: true,
+      title: true,
+      tags: { select: { tag: { select: { id: true, label: true, slug: true, color: true } } } },
+    },
   });
-  const documents = documentRows.map((d) => ({ id: d.id, title: d.title }));
+  const documents = documentRows.map((d) => ({
+    id: d.id,
+    title: d.title,
+    tags: d.tags.map((t) => t.tag).sort((a, b) => a.label.localeCompare(b.label)),
+  }));
+
+  // Project files — standalone uploads with their current version + tags.
+  const fileRows = await prisma.projectFile.findMany({
+    where: { projectId: project.id, archivedAt: null },
+    orderBy: { createdAt: "asc" },
+    select: {
+      id: true,
+      title: true,
+      currentVersion: { select: { fileName: true, sizeBytes: true } },
+      _count: { select: { versions: true } },
+      tags: { select: { tag: { select: { id: true, label: true, slug: true, color: true } } } },
+    },
+  });
+  const files = fileRows.map((f) => ({
+    id: f.id,
+    title: f.title,
+    fileName: f.currentVersion?.fileName ?? null,
+    sizeBytes: f.currentVersion?.sizeBytes ?? null,
+    versionCount: f._count.versions,
+    tags: f.tags.map((t) => t.tag).sort((a, b) => a.label.localeCompare(b.label)),
+  }));
+
+  // Lab-wide active tags, for the tag pickers on docs and files.
+  const allTags = await prisma.docTag.findMany({
+    where: { archivedAt: null },
+    orderBy: { label: "asc" },
+    select: { id: true, label: true, slug: true, color: true },
+  });
 
   // Admin or Core members may edit projects (isCore === Admin || Core).
   const canEdit = await isCore(auth.user.sub);
@@ -375,6 +433,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       overviewPageId: project.overviewPageId,
       prdPageId: project.prdPageId,
       startTerm,
+      // Full term set, chronological (earliest first) so the header can list
+      // every term the project runs rather than just the start term.
+      terms: [...plannedTerms]
+        .reverse()
+        .map((t) => ({ id: t.id, code: t.code })),
       isActiveThisTerm,
       actualTermCount: plannedTerms.length,
       termCount: project.termCount,
@@ -389,6 +452,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     teams,
     termStatuses,
     documents,
+    files,
+    allTags,
     epics,
     editableEpics,
     sprints,
@@ -397,6 +462,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     canEdit,
     collabToken,
     userName,
+    currentUserId: auth.user.sub,
   };
 }
 
@@ -573,6 +639,8 @@ export default function ProjectDetail() {
     project,
     teams,
     documents,
+    files,
+    allTags,
     epics,
     editableEpics,
     sprints,
@@ -632,26 +700,36 @@ export default function ProjectDetail() {
                 : "border-transparent text-muted-foreground hover:text-foreground"
             }`}
           >
-            {t === "overview" ? "Overview" : "Work"}
+            {TAB_LABELS[t]}
           </button>
         ))}
       </div>
 
-      {tab === "overview" ? (
+      {tab === "overview" && (
         <OverviewTab
           project={project}
           teams={teams}
           documents={documents}
+          files={files}
+          allTags={allTags}
+          canEdit={canEdit}
+          actionError={actionData?.error}
+        />
+      )}
+
+      {tab === "scope" && (
+        <ScopeTab
+          project={project}
           allDomainOptions={allDomainOptions}
           plannedTerms={plannedTerms}
           allTermOptions={allTermOptions}
           domainScopeGrid={domainScopeGrid}
           canEdit={canEdit}
           actionError={actionData?.error}
-          collabToken={collabToken}
-          userName={userName}
         />
-      ) : (
+      )}
+
+      {tab === "work" && (
         // Work tab keys off the raw edit permission, not the page-level
         // Edit-mode toggle: epics/sprints/tasks each gate their own inline
         // edit affordances, so there's nothing to "turn on" first.
@@ -697,11 +775,14 @@ function ProjectHeader({
       ? `${project.termCount} ${project.termCount === 1 ? "term" : "terms"}`
       : `${actualTermCount} of ${project.termCount} terms`;
 
+  const termsLabel =
+    project.terms.length > 0
+      ? project.terms.map((t) => t.code).join(", ")
+      : "No terms yet";
+
   const subtitle = (
     <p className="text-sm text-muted-foreground mt-1">
-      {project.startTerm
-        ? `Start term ${project.startTerm.code}`
-        : "No terms yet"}
+      {termsLabel}
       {" · "}
       {termCountLabel}
       {" · "}
@@ -1390,29 +1471,19 @@ function OverviewTab({
   project,
   teams,
   documents,
-  allDomainOptions,
-  plannedTerms,
-  allTermOptions,
-  domainScopeGrid,
+  files,
+  allTags,
   canEdit,
   actionError,
-  collabToken,
-  userName,
 }: {
   project: LoaderData["project"];
   teams: LoaderData["teams"];
   documents: LoaderData["documents"];
-  allDomainOptions: LoaderData["allDomainOptions"];
-  plannedTerms: LoaderData["plannedTerms"];
-  allTermOptions: LoaderData["allTermOptions"];
-  domainScopeGrid: LoaderData["domainScopeGrid"];
+  files: LoaderData["files"];
+  allTags: LoaderData["allTags"];
   canEdit: boolean;
   actionError?: string;
-  collabToken: string | null;
-  userName: string;
 }) {
-  const submit = useSubmit();
-
   return (
     <div className="flex flex-col gap-4">
       {actionError && (
@@ -1423,6 +1494,62 @@ function OverviewTab({
 
       {/* Description — its own segment on top, separate from Project details */}
       <DescriptionSegment description={project.description} canEdit={canEdit} />
+
+      {/* Project details. Editable as one section; commits via intent=details
+          which expects the full field set. Section-level Save submits and
+          closes; Cancel reverts (the wrapper remounts the body which resets
+          defaultValue inputs). */}
+      <DetailsSegment project={project} canEdit={canEdit} />
+
+      {/* Team — read-only summary, separate from the editable details. */}
+      <section className="bg-card border border-border rounded-lg p-4">
+        <TeamSection teams={teams} />
+      </section>
+
+      {/* Documents — collab-doc pages; rows + Add open the doc as a split-screen
+          tab beside the project (via the TabWorkspace shell). */}
+      <DocumentsBlock
+        projectId={project.id}
+        documents={documents}
+        allTags={allTags}
+        canEdit={canEdit}
+      />
+
+      {/* Files — standalone uploads with versions + tags. */}
+      <FilesBlock
+        projectId={project.id}
+        files={files}
+        allTags={allTags}
+        canEdit={canEdit}
+      />
+    </div>
+  );
+}
+
+function ScopeTab({
+  project,
+  allDomainOptions,
+  plannedTerms,
+  allTermOptions,
+  domainScopeGrid,
+  canEdit,
+  actionError,
+}: {
+  project: LoaderData["project"];
+  allDomainOptions: LoaderData["allDomainOptions"];
+  plannedTerms: LoaderData["plannedTerms"];
+  allTermOptions: LoaderData["allTermOptions"];
+  domainScopeGrid: LoaderData["domainScopeGrid"];
+  canEdit: boolean;
+  actionError?: string;
+}) {
+  return (
+    <div className="flex flex-col gap-4">
+      {actionError && (
+        <div className="bg-destructive/10 border border-destructive/30 text-destructive text-sm rounded-md px-3 py-2">
+          {actionError}
+        </div>
+      )}
 
       {/* Declared domains — editable; if none declared the derived set from
           assignments + bids is shown as a fallback so a freshly-created
@@ -1454,26 +1581,6 @@ function OverviewTab({
           canEdit={canEdit}
         />
       )}
-
-      {/* Project details. Editable as one section; commits via intent=details
-          which expects the full field set. Section-level Save submits and
-          closes; Cancel reverts (the wrapper remounts the body which resets
-          defaultValue inputs). */}
-      <DetailsSegment project={project} canEdit={canEdit} />
-
-      {/* Team — read-only summary, separate from the editable details. */}
-      <section className="bg-card border border-border rounded-lg p-4">
-        <TeamSection teams={teams} />
-      </section>
-
-      {/* Documents block */}
-      <DocumentsBlock
-        projectId={project.id}
-        documents={documents}
-        canEdit={canEdit}
-        collabToken={collabToken}
-        userName={userName}
-      />
     </div>
   );
 }
@@ -1481,45 +1588,58 @@ function OverviewTab({
 function DocumentsBlock({
   projectId,
   documents,
+  allTags,
   canEdit,
-  collabToken,
-  userName,
 }: {
   projectId: string;
   documents: LoaderData["documents"];
+  allTags: LoaderData["allTags"];
   canEdit: boolean;
-  collabToken: string | null;
-  userName: string;
 }) {
   const revalidator = useRevalidator();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [adding, setAdding] = useState(false);
-  const [draft, setDraft] = useState("");
-  const [editId, setEditId] = useState<string | null>(null);
-  const [editTitle, setEditTitle] = useState("");
-  // Which document's body editor is expanded open (null = none).
-  const [openId, setOpenId] = useState<string | null>(null);
 
-  function run(fn: () => Promise<void>) {
+  // Add document: create an "Untitled" page immediately, then open it as a
+  // split-screen tab beside the project. The title is renamed inline in the
+  // editor (auto-saves), so there's no separate title prompt first.
+  async function createDocument() {
     setBusy(true);
     setError(null);
-    fn()
-      .then(() => revalidator.revalidate())
-      .catch((e) => setError(e instanceof Error ? e.message : "Something went wrong"))
-      .finally(() => setBusy(false));
+    try {
+      const title = "Untitled";
+      const res = await fetch(`/api/projects/${projectId}/documents`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title }),
+      });
+      const b = (await res.json().catch(() => ({}))) as { id?: string; error?: string };
+      if (!res.ok || !b.id) throw new Error(b.error ?? "Failed to create document");
+      openDocumentTab(b.id, title);
+      revalidator.revalidate();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong");
+    } finally {
+      setBusy(false);
+    }
   }
 
-  async function call(url: string, method: "POST" | "DELETE", body?: unknown) {
-    const res = await fetch(url, {
-      method,
-      credentials: "include",
-      headers: body ? { "Content-Type": "application/json" } : undefined,
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    if (!res.ok) {
-      const b = (await res.json().catch(() => ({}))) as { error?: string };
-      throw new Error(b.error ?? `Request failed: ${res.status}`);
+  async function deleteDocument(id: string, title: string) {
+    if (!window.confirm(`Delete document "${title}"?`)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/documents/${id}`, { method: "DELETE", credentials: "include" });
+      if (!res.ok) {
+        const b = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(b.error ?? "Failed to delete");
+      }
+      revalidator.revalidate();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -1527,13 +1647,14 @@ function DocumentsBlock({
     <section className="bg-card border border-border rounded-lg p-4">
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-sm font-semibold text-foreground">Documents</h2>
-        {canEdit && !adding && (
+        {canEdit && (
           <button
             type="button"
-            onClick={() => setAdding(true)}
-            className="text-xs font-medium text-accent-coral hover:underline"
+            disabled={busy}
+            onClick={() => void createDocument()}
+            className="text-xs font-medium text-accent-coral hover:underline disabled:opacity-60"
           >
-            + Add document
+            {busy ? "Adding…" : "+ Add document"}
           </button>
         )}
       </div>
@@ -1544,156 +1665,203 @@ function DocumentsBlock({
         </div>
       )}
 
-      {adding && (
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            const title = draft.trim();
-            if (!title) return;
-            run(async () => {
-              await call(`/api/projects/${projectId}/documents`, "POST", { title });
-              setAdding(false);
-              setDraft("");
-            });
-          }}
-          className="flex items-end gap-2 mb-3"
-        >
-          <label className="flex flex-col gap-1 text-xs flex-1">
-            <span className="text-muted-foreground">Title</span>
-            <input
-              autoFocus
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-            />
-          </label>
-          <button
-            type="submit"
-            disabled={busy}
-            className="px-3 py-1.5 text-xs font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 disabled:opacity-60 transition-colors"
-          >
-            Add
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setAdding(false);
-              setDraft("");
-            }}
-            className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors"
-          >
-            Cancel
-          </button>
-        </form>
-      )}
-
-      {documents.length === 0 && !adding ? (
+      {documents.length === 0 ? (
         <p className="text-sm text-muted-foreground italic">No documents yet.</p>
       ) : (
         <div className="flex flex-col divide-y divide-border">
-          {documents.map((doc) =>
-            editId === doc.id ? (
-              <form
-                key={doc.id}
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  const title = editTitle.trim();
-                  if (!title) return;
-                  run(async () => {
-                    await call(`/api/documents/${doc.id}`, "POST", { title });
-                    setEditId(null);
-                  });
-                }}
-                className="py-2 flex items-end gap-2"
-              >
-                <input
-                  autoFocus
-                  value={editTitle}
-                  onChange={(e) => setEditTitle(e.target.value)}
-                  className="flex-1 px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-                />
-                <button
-                  type="submit"
-                  disabled={busy}
-                  className="px-3 py-1.5 text-xs font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 disabled:opacity-60 transition-colors"
-                >
-                  Save
-                </button>
+          {documents.map((doc) => (
+            <div key={doc.id} className="py-2.5 flex flex-col gap-1.5">
+              <div className="flex items-center justify-between gap-3 text-sm">
                 <button
                   type="button"
-                  onClick={() => setEditId(null)}
-                  className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors"
+                  onClick={() => openDocumentTab(doc.id, doc.title)}
+                  className="truncate text-left font-medium text-foreground hover:text-accent-coral"
                 >
-                  Cancel
+                  {doc.title}
                 </button>
-              </form>
-            ) : (
-              <div key={doc.id} className="py-2">
-                <div className="flex items-center justify-between gap-3 text-sm">
+                {canEdit && (
                   <button
                     type="button"
-                    onClick={() => setOpenId(openId === doc.id ? null : doc.id)}
-                    className="text-foreground truncate text-left hover:text-accent-coral"
-                    title={openId === doc.id ? "Collapse" : "Open"}
+                    disabled={busy}
+                    onClick={() => void deleteDocument(doc.id, doc.title)}
+                    className="text-xs text-destructive hover:underline disabled:opacity-60 flex-shrink-0"
                   >
-                    {openId === doc.id ? "▾ " : "▸ "}
-                    {doc.title}
+                    Delete
                   </button>
-                  {canEdit && (
-                    <div className="flex items-center gap-3 flex-shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditId(doc.id);
-                          setEditTitle(doc.title);
-                        }}
-                        className="text-xs text-muted-foreground hover:text-foreground"
-                      >
-                        Rename
-                      </button>
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => {
-                          if (!window.confirm(`Delete document "${doc.title}"?`)) return;
-                          run(() => call(`/api/documents/${doc.id}`, "DELETE"));
-                        }}
-                        className="text-xs text-destructive hover:underline disabled:opacity-60"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  )}
-                </div>
+                )}
+              </div>
+              <TagPicker
+                targetType="doc"
+                targetId={doc.id}
+                applied={doc.tags}
+                allTags={allTags}
+                canEdit={canEdit}
+                canCreate={canEdit}
+                onChange={() => revalidator.revalidate()}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
 
-                {openId === doc.id && (
-                  <div className="mt-2">
-                    {collabToken ? (
-                      <PresenceProvider
-                        pageId={`doc:${doc.id}`}
-                        token={collabToken}
-                        userName={userName}
-                      >
-                        <CollaborativeEditor
-                          editorId={`doc:${doc.id}:body`}
-                          documentName={`doc:${doc.id}:body`}
-                          token={collabToken}
-                          userName={userName}
-                          disabled={!canEdit}
-                          placeholder="Start writing…"
-                          className="border border-border rounded-md"
-                        />
-                      </PresenceProvider>
-                    ) : (
-                      <p className="text-xs text-muted-foreground italic">
-                        Sign in again to edit this document.
-                      </p>
-                    )}
+function FilesBlock({
+  projectId,
+  files,
+  allTags,
+  canEdit,
+}: {
+  projectId: string;
+  files: LoaderData["files"];
+  allTags: LoaderData["allTags"];
+  canEdit: boolean;
+}) {
+  const revalidator = useRevalidator();
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  // When set, the chosen file is added as a new version of this file id;
+  // otherwise it creates a new ProjectFile.
+  const versionForId = useRef<string | null>(null);
+
+  async function onPick(e: React.ChangeEvent<HTMLInputElement>) {
+    const picked = e.target.files?.[0];
+    e.target.value = "";
+    if (!picked) return;
+    const targetId = versionForId.current;
+    versionForId.current = null;
+
+    setBusy(true);
+    setError(null);
+    try {
+      const meta = await uploadFileToS3(picked, `project-files/${projectId}`);
+      if (targetId) {
+        const res = await fetch(`/api/files/${targetId}`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ intent: "version", ...meta }),
+        });
+        if (!res.ok) {
+          const b = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(b.error ?? "Failed to upload new version");
+        }
+      } else {
+        const res = await fetch(`/api/projects/${projectId}/files`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: picked.name, ...meta }),
+        });
+        if (!res.ok) {
+          const b = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(b.error ?? "Failed to add file");
+        }
+      }
+      revalidator.revalidate();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteFile(id: string, title: string) {
+    if (!window.confirm(`Delete file "${title}"? All versions will be removed.`)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/files/${id}`, { method: "DELETE", credentials: "include" });
+      if (!res.ok) {
+        const b = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(b.error ?? "Failed to delete");
+      }
+      revalidator.revalidate();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="bg-card border border-border rounded-lg p-4">
+      <input ref={fileInputRef} type="file" className="hidden" onChange={onPick} />
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-sm font-semibold text-foreground">Files</h2>
+        {canEdit && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              versionForId.current = null;
+              fileInputRef.current?.click();
+            }}
+            className="text-xs font-medium text-accent-coral hover:underline disabled:opacity-60"
+          >
+            {busy ? "Uploading…" : "+ Add file"}
+          </button>
+        )}
+      </div>
+
+      {error && (
+        <div className="bg-destructive/10 border border-destructive/30 text-destructive text-xs rounded-md px-3 py-2 mb-3">
+          {error}
+        </div>
+      )}
+
+      {files.length === 0 ? (
+        <p className="text-sm text-muted-foreground italic">No files yet.</p>
+      ) : (
+        <div className="flex flex-col divide-y divide-border">
+          {files.map((f) => (
+            <div key={f.id} className="py-2.5 flex flex-col gap-1.5">
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <Link to={`/documents/file/${f.id}`} className="min-w-0 truncate hover:text-accent-coral">
+                  <span className="text-foreground font-medium">{f.title}</span>
+                  <span className="text-muted-foreground ml-2 text-xs">
+                    {f.fileName}
+                    {f.sizeBytes != null ? ` · ${formatBytes(f.sizeBytes)}` : ""}
+                    {f.versionCount > 1 ? ` · v${f.versionCount}` : ""}
+                  </span>
+                </Link>
+                {canEdit && (
+                  <div className="flex items-center gap-3 flex-shrink-0">
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => {
+                        versionForId.current = f.id;
+                        fileInputRef.current?.click();
+                      }}
+                      className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-60"
+                    >
+                      New version
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void deleteFile(f.id, f.title)}
+                      className="text-xs text-destructive hover:underline disabled:opacity-60"
+                    >
+                      Delete
+                    </button>
                   </div>
                 )}
               </div>
-            ),
-          )}
+              <TagPicker
+                targetType="file"
+                targetId={f.id}
+                applied={f.tags}
+                allTags={allTags}
+                canEdit={canEdit}
+                canCreate={canEdit}
+                onChange={() => revalidator.revalidate()}
+              />
+            </div>
+          ))}
         </div>
       )}
     </section>
