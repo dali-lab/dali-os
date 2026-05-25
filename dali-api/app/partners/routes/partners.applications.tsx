@@ -14,6 +14,7 @@ import {
 } from "@dnd-kit/core";
 import type { Route } from "./+types/partners.applications";
 import { requireAuth } from "~/lib/auth";
+import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { prisma } from "~/lib/db";
 import { canViewStaffing, isCore } from "~/lib/roles";
 import {
@@ -727,7 +728,10 @@ function ApplicationsTable({ rows }: { rows: ApplicationRow[] }) {
           {rows.map((a) => (
             <tr
               key={a.id}
-              onClick={() => navigate(`/partners/applications/${a.id}`)}
+              onClick={() => {
+                const url = `/partners/applications/${a.id}`;
+                if (!requestOpenTabIfEmbedded(url, a.title)) navigate(url);
+              }}
               className="border-t border-border hover:bg-muted/20 cursor-pointer"
             >
               <td className="px-4 py-2 text-foreground">{a.title}</td>
@@ -911,7 +915,10 @@ function ApplicationCard({
       ref={setNodeRef}
       style={style}
       {...dragProps}
-      onClick={() => navigate(`/partners/applications/${app.id}`)}
+      onClick={() => {
+        const url = `/partners/applications/${app.id}`;
+        if (!requestOpenTabIfEmbedded(url, app.title)) navigate(url);
+      }}
       className={`border border-border rounded-md bg-background p-2.5 text-sm flex flex-col gap-2 ${
         draggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"
       } ${isDragging ? "opacity-60 shadow-lg" : "hover:bg-muted/20"}`}

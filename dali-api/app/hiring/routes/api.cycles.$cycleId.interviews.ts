@@ -46,10 +46,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       orderBy: { startTime: "asc" },
     }),
     // Pre-filter: DAs in this cycle with at least one Released
-    // InvitedToInterview decision and no Scheduled interview. We confirm the
-    // *latest* Released decision is InvitedToInterview in JS — a follow-up
-    // Rejected/Waitlisted would override and the candidate is no longer
-    // awaiting scheduling.
+    // InvitedToInterview decision and no Scheduled or Completed interview. We
+    // confirm the *latest* Released decision is InvitedToInterview in JS — a
+    // follow-up Rejected/Waitlisted would override and the candidate is no
+    // longer awaiting scheduling. Cancelled interviews stay pending so they
+    // can be rescheduled.
     prisma.domainApplication.findMany({
       where: {
         selected: true,
@@ -57,7 +58,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         decisions: {
           some: { type: "InvitedToInterview", stage: "Released" },
         },
-        interviews: { none: { status: "Scheduled" } },
+        interviews: { none: { status: { in: ["Scheduled", "Completed"] } } },
       },
       include: {
         application: {

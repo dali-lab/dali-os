@@ -1,5 +1,5 @@
 import { Link, redirect, useLoaderData, useSearchParams } from "react-router";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Calendar, MapPin, Users } from "lucide-react";
 import type { Route } from "./+types/applications.$domainApplicationId";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
@@ -9,6 +9,37 @@ import { presignAnswers } from "~/hiring/lib/presign";
 import { ApplicationViewer } from "~/hiring/components/ApplicationViewer";
 import { ReviewSummary } from "~/hiring/components/ReviewSummary";
 import type { Question, RubricCriterion } from "~/types";
+
+const INTERVIEW_STATUS_COLORS: Record<string, string> = {
+  Scheduled: "bg-blue-100 text-blue-700",
+  Completed: "bg-green-100 text-green-700",
+  CancelledByApplicant: "bg-red-100 text-red-700",
+  CancelledByAdmin: "bg-muted text-foreground/80",
+};
+
+const INTERVIEW_STATUS_LABELS: Record<string, string> = {
+  CancelledByApplicant: "Cancelled (applicant)",
+  CancelledByAdmin: "Cancelled (admin)",
+};
+
+const DECISION_COLORS: Record<string, string> = {
+  Rejected: "bg-red-100 text-red-700",
+  InvitedToInterview: "bg-blue-100 text-blue-700",
+  Accepted: "bg-green-100 text-green-700",
+  Waitlisted: "bg-yellow-100 text-yellow-700",
+};
+
+const STAGE_LABELS: Record<string, string> = {
+  Draft: "Draft",
+  Final: "Finalized",
+  Released: "Released",
+};
+
+const LOCATION_LABELS: Record<string, string> = {
+  PodAppa: "Pod Appa",
+  PodMomo: "Pod Momo",
+  Online: "Online",
+};
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const name = (data as { applicantName?: string } | undefined)?.applicantName;
@@ -125,21 +156,101 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     criterionLabels[c.key] = c.label;
   }
 
-  // Submitted reviews for THIS domain application, with reviewer identity.
-  const reviewRows = await prisma.applicationReview.findMany({
-    where: { domainApplicationId: da.id, submittedAt: { not: null } },
-    orderBy: { submittedAt: "asc" },
-    select: {
-      id: true,
-      scores: true,
-      feedback: true,
-      rejectionRationale: true,
-      overallRecommendation: true,
-      annotations: true,
-      submittedAt: true,
-      submittedBy: { select: { firstName: true, lastName: true } },
-    },
-  });
+  // Per-section role flags. Page-level access (above) already restricts plain
+  // reviewers to DAs in their own domain; these flags further gate
+  // pre-Released decisions and delibs context to leads only.
+  const canSeePreReleaseDecisions = roles.isCore || roles.isDomainLead;
+  const canSeeDelibs = roles.isCore || roles.isDomainLead;
+
+  // Submitted reviews, interviews (+ assignments + latest note per assignment),
+  // decisions, and delibs sessions for this DA — all in parallel.
+  const [reviewRows, interviewRows, decisionRows, delibsSessions] = await Promise.all([
+    prisma.applicationReview.findMany({
+      where: { domainApplicationId: da.id, submittedAt: { not: null } },
+      orderBy: { submittedAt: "asc" },
+      select: {
+        id: true,
+        scores: true,
+        feedback: true,
+        rejectionRationale: true,
+        overallRecommendation: true,
+        annotations: true,
+        submittedAt: true,
+        submittedBy: { select: { firstName: true, lastName: true } },
+      },
+    }),
+    prisma.interview.findMany({
+      where: { domainApplicationId: da.id },
+      orderBy: { startTime: "asc" },
+      select: {
+        id: true,
+        startTime: true,
+        endTime: true,
+        status: true,
+        location: true,
+        zoomJoinUrl: true,
+        assignments: {
+          where: { status: "Active" },
+          select: {
+            id: true,
+            role: true,
+            cycleInterviewer: {
+              select: {
+                userId: true,
+                user: { select: { firstName: true, lastName: true } },
+                domain: { select: { name: true } },
+              },
+            },
+            // Latest note version per assignment. Mirrors the orderBy DESC
+            // pattern used by api.interview-assignments.$id.notes.ts.
+            noteVersions: {
+              orderBy: { createdAt: "desc" },
+              take: 1,
+              select: { id: true, content: true, createdAt: true },
+            },
+          },
+        },
+      },
+    }),
+    // Decisions are append-only. We fetch all rows; visibility per stage is
+    // gated in the response shaping below.
+    prisma.decision.findMany({
+      where: { domainApplicationId: da.id },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        type: true,
+        stage: true,
+        notes: true,
+        waitlistRank: true,
+        createdAt: true,
+        madeBy: { select: { firstName: true, lastName: true } },
+      },
+    }),
+    // Delibs sessions reference DAs by id inside columnOrder JSON, not by FK.
+    // There's at most one Initial + one Final session per (domain, cycle), so
+    // this is bounded.
+    canSeeDelibs
+      ? prisma.delibsSession.findMany({
+          where: { domainId: effectiveDomainId, applicationCycleId: cycleId },
+          select: {
+            id: true,
+            type: true,
+            status: true,
+            columnOrder: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        })
+      : Promise.resolve([] as Array<{
+          id: string;
+          type: "Initial" | "Final";
+          status: "Active" | "Closed";
+          columnOrder: unknown;
+          createdAt: Date;
+          updatedAt: Date;
+        }>),
+  ]);
   const reviews = reviewRows.map((r) => ({
     id: r.id,
     reviewerName:
@@ -152,6 +263,85 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     annotations: (r.annotations as object[]) ?? [],
     submittedAt: r.submittedAt ? r.submittedAt.toISOString() : null,
   }));
+
+  const interviews = interviewRows.map((iv) => ({
+    id: iv.id,
+    startTime: iv.startTime.toISOString(),
+    endTime: iv.endTime.toISOString(),
+    status: iv.status,
+    location: iv.location,
+    zoomJoinUrl: iv.zoomJoinUrl,
+    assignments: iv.assignments.map((a) => {
+      const isViewerThisInterviewer = a.cycleInterviewer.userId === auth.user.sub;
+      const latest = a.noteVersions[0];
+      return {
+        id: a.id,
+        role: a.role,
+        interviewerName:
+          [a.cycleInterviewer.user.firstName, a.cycleInterviewer.user.lastName]
+            .filter(Boolean)
+            .join(" ")
+            .trim() || "Interviewer",
+        domainName: a.cycleInterviewer.domain.name,
+        canEditNotes: isViewerThisInterviewer,
+        latestNote: latest
+          ? {
+              content: latest.content,
+              createdAt: latest.createdAt.toISOString(),
+            }
+          : null,
+      };
+    }),
+  }));
+
+  // Decisions: applicants never reach this page; reviewers (in-domain) see only
+  // Released. Core/DomainLead see the full append-only history.
+  const visibleDecisions = decisionRows
+    .filter((d) => canSeePreReleaseDecisions || d.stage === "Released")
+    .map((d) => ({
+      id: d.id,
+      type: d.type,
+      stage: d.stage,
+      notes: d.notes,
+      waitlistRank: d.waitlistRank,
+      createdAt: d.createdAt.toISOString(),
+      madeByName:
+        [d.madeBy?.firstName, d.madeBy?.lastName].filter(Boolean).join(" ").trim() || null,
+    }));
+
+  // For each delibs session, find which column this DA sits in (if any). Some
+  // closed sessions may not contain the DA at all — exclude those.
+  type DelibsRef = {
+    id: string;
+    type: "Initial" | "Final";
+    status: "Active" | "Closed";
+    column: string | null;
+    updatedAt: string;
+  };
+  const delibs: DelibsRef[] = canSeeDelibs
+    ? delibsSessions
+        .map((s): DelibsRef | null => {
+          const cols = (s.columnOrder ?? {}) as Record<string, unknown>;
+          let column: string | null = null;
+          for (const [name, ids] of Object.entries(cols)) {
+            if (Array.isArray(ids) && ids.includes(da.id)) {
+              column = name;
+              break;
+            }
+          }
+          // Only surface sessions that actually reference this DA. An active
+          // session for the domain doesn't necessarily contain every DA.
+          if (column === null) return null;
+          return {
+            id: s.id,
+            type: s.type,
+            status: s.status,
+            column,
+            updatedAt: s.updatedAt.toISOString(),
+          };
+        })
+        .filter((s): s is DelibsRef => s !== null)
+    : [];
 
   // Selected review = ?review= if valid, else the first.
   const url = new URL(request.url);
@@ -199,6 +389,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     questionLabels,
     criterionLabels,
     reviews,
+    interviews,
+    decisions: visibleDecisions,
+    delibs,
+    canSeePreReleaseDecisions,
+    canSeeDelibs,
     selectedReviewId,
   };
 }
@@ -311,6 +506,233 @@ export default function ApplicationReadOnlyDetail() {
           </div>
         </div>
       </div>
+
+      <InterviewsSection interviews={data.interviews} />
+      <DecisionsSection
+        decisions={data.decisions}
+        canSeePreReleaseDecisions={data.canSeePreReleaseDecisions}
+      />
+      {data.canSeeDelibs && <DelibsSection delibs={data.delibs} />}
     </div>
+  );
+}
+
+type LoaderData = Exclude<Awaited<ReturnType<typeof loader>>, Response>;
+type InterviewRow = LoaderData["interviews"][number];
+type DecisionRow = LoaderData["decisions"][number];
+type DelibsRef = LoaderData["delibs"][number];
+
+function InterviewsSection({ interviews }: { interviews: InterviewRow[] }) {
+  return (
+    <section className="bg-card rounded-xl border border-border shadow-sm">
+      <div className="px-6 py-4 border-b border-border bg-muted/50">
+        <h2 className="text-lg font-bold text-foreground">Interviews</h2>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          {interviews.length === 0
+            ? "No interviews yet."
+            : `${interviews.length} ${interviews.length === 1 ? "interview" : "interviews"}`}
+        </p>
+      </div>
+      {interviews.length > 0 && (
+        <ul className="divide-y divide-border">
+          {interviews.map((iv) => {
+            const start = new Date(iv.startTime);
+            const end = new Date(iv.endTime);
+            const statusLabel = INTERVIEW_STATUS_LABELS[iv.status] ?? iv.status;
+            const statusClass =
+              INTERVIEW_STATUS_COLORS[iv.status] ?? "bg-muted text-foreground/80";
+            const locationLabel = LOCATION_LABELS[iv.location] ?? iv.location;
+            return (
+              <li key={iv.id} className="px-6 py-4 space-y-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span
+                    className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${statusClass}`}
+                  >
+                    {statusLabel}
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 text-sm text-foreground">
+                    <Calendar className="w-3.5 h-3.5 text-muted-foreground" aria-hidden />
+                    {start.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                    {" · "}
+                    {start.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
+                    {" – "}
+                    {end.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <MapPin className="w-3.5 h-3.5" aria-hidden />
+                    {locationLabel}
+                    {iv.location === "Online" && iv.zoomJoinUrl && (
+                      <a
+                        href={iv.zoomJoinUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:underline ml-1"
+                      >
+                        link
+                      </a>
+                    )}
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Users className="w-3.5 h-3.5" aria-hidden />
+                    {iv.assignments.length === 0
+                      ? "No interviewers assigned"
+                      : iv.assignments
+                          .map((a) => `${a.interviewerName} (${a.role === "InDomain" ? a.domainName : "Cross"})`)
+                          .join(", ")}
+                  </span>
+                </div>
+                {iv.assignments.length > 0 && (
+                  <div className="space-y-2 pl-1">
+                    {iv.assignments.map((a) => (
+                      <div key={a.id} className="rounded-md border border-border bg-background/50 p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="text-sm font-medium text-foreground">
+                            {a.interviewerName}{" "}
+                            <span className="text-xs font-normal text-muted-foreground">
+                              · {a.role === "InDomain" ? a.domainName : `Cross (${a.domainName})`}
+                            </span>
+                          </div>
+                          {a.canEditNotes && (
+                            <Link
+                              to={`/hiring/interviewer/interview/${iv.id}`}
+                              className="text-xs text-blue-600 hover:underline"
+                            >
+                              Open in interviewer view
+                            </Link>
+                          )}
+                        </div>
+                        {a.latestNote ? (
+                          <>
+                            <p className="mt-2 text-sm text-foreground whitespace-pre-wrap">
+                              {a.latestNote.content}
+                            </p>
+                            <p className="mt-1 text-[11px] text-muted-foreground/80">
+                              Latest version saved{" "}
+                              {new Date(a.latestNote.createdAt).toLocaleString(undefined, {
+                                month: "short",
+                                day: "numeric",
+                                hour: "numeric",
+                                minute: "2-digit",
+                              })}
+                            </p>
+                          </>
+                        ) : (
+                          <p className="mt-2 text-xs text-muted-foreground/70 italic">
+                            No notes yet.
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function DecisionsSection({
+  decisions,
+  canSeePreReleaseDecisions,
+}: {
+  decisions: DecisionRow[];
+  canSeePreReleaseDecisions: boolean;
+}) {
+  return (
+    <section className="bg-card rounded-xl border border-border shadow-sm">
+      <div className="px-6 py-4 border-b border-border bg-muted/50">
+        <h2 className="text-lg font-bold text-foreground">Decisions</h2>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          {decisions.length === 0
+            ? canSeePreReleaseDecisions
+              ? "No decisions recorded."
+              : "No released decisions yet."
+            : `${decisions.length} ${decisions.length === 1 ? "record" : "records"}`}
+          {!canSeePreReleaseDecisions && decisions.length > 0 && " (released only)"}
+        </p>
+      </div>
+      {decisions.length > 0 && (
+        <ol className="divide-y divide-border">
+          {decisions.map((d) => (
+            <li key={d.id} className="px-6 py-3 flex items-start gap-3">
+              <span
+                className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold flex-shrink-0 ${
+                  DECISION_COLORS[d.type] ?? "bg-muted text-foreground/80"
+                }`}
+              >
+                {d.type}
+                {d.waitlistRank != null && ` #${d.waitlistRank}`}
+              </span>
+              <span className="text-xs text-muted-foreground flex-shrink-0 mt-0.5">
+                {STAGE_LABELS[d.stage] ?? d.stage}
+              </span>
+              <div className="flex-1 min-w-0">
+                {d.notes && (
+                  <p className="text-sm text-foreground whitespace-pre-wrap">{d.notes}</p>
+                )}
+              </div>
+              <div className="text-xs text-muted-foreground/80 text-right flex-shrink-0">
+                <div>
+                  {new Date(d.createdAt).toLocaleDateString(undefined, {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                  })}
+                </div>
+                {d.madeByName && (
+                  <div className="text-[11px] text-muted-foreground/70">by {d.madeByName}</div>
+                )}
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
+  );
+}
+
+function DelibsSection({ delibs }: { delibs: DelibsRef[] }) {
+  return (
+    <section className="bg-card rounded-xl border border-border shadow-sm">
+      <div className="px-6 py-4 border-b border-border bg-muted/50">
+        <h2 className="text-lg font-bold text-foreground">Delibs</h2>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          {delibs.length === 0
+            ? "Not part of any delibs session."
+            : `${delibs.length} ${delibs.length === 1 ? "session" : "sessions"}`}
+        </p>
+      </div>
+      {delibs.length > 0 && (
+        <ul className="divide-y divide-border">
+          {delibs.map((s) => (
+            <li key={s.id} className="px-6 py-3 flex items-center gap-3">
+              <span className="text-sm font-medium text-foreground">{s.type} delibs</span>
+              <span
+                className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${
+                  s.status === "Active"
+                    ? "bg-amber-100 text-amber-800"
+                    : "bg-muted text-foreground/80"
+                }`}
+              >
+                {s.status}
+              </span>
+              {s.column && (
+                <span className="text-xs text-muted-foreground">in “{s.column}”</span>
+              )}
+              <span className="ml-auto text-xs text-muted-foreground/70">
+                Updated{" "}
+                {new Date(s.updatedAt).toLocaleDateString(undefined, {
+                  month: "short",
+                  day: "numeric",
+                })}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }

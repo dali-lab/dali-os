@@ -11,6 +11,7 @@ import {
 import type { Route } from "./+types/members";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
+import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { prisma } from "~/lib/db";
 import { initialsFromName } from "~/lib/display";
 import { resolvePhotoUrl } from "~/lib/photo";
@@ -449,7 +450,11 @@ function MembersTable({ rows }: { rows: MemberRow[] }) {
           {rows.map((m) => (
             <tr
               key={m.id}
-              onClick={() => navigate(`/members/${m.id}`)}
+              onClick={() => {
+                const url = `/members/${m.id}`;
+                const label = `${m.firstName ?? ""} ${m.lastName ?? ""}`.trim() || "Member";
+                if (!requestOpenTabIfEmbedded(url, label)) navigate(url);
+              }}
               className="border-t border-border hover:bg-muted/20 cursor-pointer"
             >
               <td className="px-4 py-2 text-foreground">

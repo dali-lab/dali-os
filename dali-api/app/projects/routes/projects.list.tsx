@@ -10,6 +10,7 @@ import {
 import type { Route } from "./+types/projects.list";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
+import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { prisma } from "~/lib/db";
 import { ensureProjectGroup } from "~/lib/groups";
 import { ViewToggle, useViewPreference } from "~/components/ViewToggle";
@@ -334,7 +335,10 @@ function ProjectsTable({ rows }: { rows: ProjectRow[] }) {
           {rows.map((p) => (
             <tr
               key={p.id}
-              onClick={() => navigate(`/projects/${p.id}`)}
+              onClick={() => {
+                const url = `/projects/${p.id}`;
+                if (!requestOpenTabIfEmbedded(url, p.name)) navigate(url);
+              }}
               className="border-t border-border hover:bg-muted/20 cursor-pointer"
             >
               <td className="px-4 py-2 text-foreground">{p.name}</td>
