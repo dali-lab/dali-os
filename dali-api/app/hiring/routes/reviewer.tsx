@@ -11,6 +11,7 @@ import {
   ListOrdered,
 } from 'lucide-react'
 import { getReviewStatus } from '~/hiring/lib/review-status'
+import { requestOpenTabIfEmbedded } from '~/components/workspace-link'
 import { CycleSelector } from '~/hiring/components/CycleSelector'
 import { getActiveCycle, cycleStatusToStage, inferUnderReviewStage } from '~/hiring/lib/cycles'
 import { getCycleConfidentialityState } from '~/hiring/lib/confidentiality'
@@ -635,8 +636,13 @@ export default function ReviewerDashboard() {
                       )}
                       <Link
                         to={`/hiring/reviewer/application/${interview.domainApplication?.application?.id}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                        onClick={(e) => {
+                          const url = `/hiring/reviewer/application/${interview.domainApplication?.application?.id}`
+                          const label = applicant
+                            ? `${applicant.firstName ?? ''} ${applicant.lastName ?? ''}`.trim() || 'Applicant'
+                            : 'Applicant'
+                          if (requestOpenTabIfEmbedded(url, label)) e.preventDefault()
+                        }}
                         className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center mt-1"
                       >
                         View Application{' '}

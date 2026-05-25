@@ -15,6 +15,7 @@ import {
   type NotificationSlotType,
 } from "~/hiring/lib/email-variables";
 import { Modal } from "~/components/Modal";
+import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { ChallengePreviewModal } from "~/hiring/components/ChallengePreviewModal";
 import { Settings, Users, Calendar, AlertTriangle, Trash2, Plus, CheckCircle, ArrowRight, Circle, ChevronRight, X, LayoutDashboard, Eye, Mail } from 'lucide-react'
 import { formatVersionLabel, buildVersionNumberMap } from "~/lib/formatVersion";
@@ -2139,8 +2140,11 @@ export default function HiringLeadCycleDetails() {
                       <td className="px-4 py-3 font-medium text-foreground">
                         <Link
                           to={`/hiring/applications/${p.domainApplication.id}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                          onClick={(e) => {
+                            const url = `/hiring/applications/${p.domainApplication.id}`
+                            const label = `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() || 'Applicant'
+                            if (requestOpenTabIfEmbedded(url, label)) e.preventDefault()
+                          }}
                           className="hover:underline focus:outline-none focus:ring-2 focus:ring-accent-coral/40 rounded"
                         >
                           {u.firstName} {u.lastName}
@@ -2187,8 +2191,12 @@ export default function HiringLeadCycleDetails() {
                       <td className="px-4 py-3 font-medium text-foreground">
                         <Link
                           to={`/hiring/applications/${interview.domainApplication.id}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                          onClick={(e) => {
+                            const u = interview.domainApplication.application.user
+                            const url = `/hiring/applications/${interview.domainApplication.id}`
+                            const label = `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() || 'Applicant'
+                            if (requestOpenTabIfEmbedded(url, label)) e.preventDefault()
+                          }}
                           className="hover:underline focus:outline-none focus:ring-2 focus:ring-accent-coral/40 rounded"
                         >
                           {interview.domainApplication.application.user.firstName} {interview.domainApplication.application.user.lastName}
@@ -2350,8 +2358,11 @@ export default function HiringLeadCycleDetails() {
                       <div className="min-w-0">
                         <Link
                           to={`/hiring/applications/${p.domainApplication.id}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                          onClick={(e) => {
+                            const url = `/hiring/applications/${p.domainApplication.id}`
+                            const label = `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() || 'Applicant'
+                            if (requestOpenTabIfEmbedded(url, label)) e.preventDefault()
+                          }}
                           className="block font-medium text-foreground truncate hover:underline"
                         >
                           {u.firstName} {u.lastName}
@@ -2394,8 +2405,12 @@ export default function HiringLeadCycleDetails() {
                       <div className="min-w-0">
                         <Link
                           to={`/hiring/applications/${interview.domainApplication.id}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                          onClick={(e) => {
+                            const u = interview.domainApplication.application.user
+                            const url = `/hiring/applications/${interview.domainApplication.id}`
+                            const label = `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() || 'Applicant'
+                            if (requestOpenTabIfEmbedded(url, label)) e.preventDefault()
+                          }}
                           className="block font-medium text-foreground truncate hover:underline"
                         >
                           {interview.domainApplication.application.user.firstName} {interview.domainApplication.application.user.lastName}

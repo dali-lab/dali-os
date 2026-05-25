@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Form, Link, useLoaderData, useSearchParams, useRevalidator, useSubmit } from "react-router";
+import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { redirect } from "react-router";
 import type { Route } from "./+types/domain-lead";
 import { prisma } from "~/lib/db";
@@ -2373,8 +2374,12 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                   )}
                   <Link
                     to={`/hiring/domain-lead/application/${da?.id}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                    onClick={(e) => {
+                      if (!da?.id) return
+                      const url = `/hiring/domain-lead/application/${da.id}`
+                      const label = `${app.user.firstName ?? ''} ${app.user.lastName ?? ''}`.trim() || 'Applicant'
+                      if (requestOpenTabIfEmbedded(url, label)) e.preventDefault()
+                    }}
                     className="text-blue-600 hover:text-blue-800 font-medium"
                   >
                     Review →
@@ -2471,8 +2476,12 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                 )}
                 <Link
                   to={`/hiring/domain-lead/application/${da?.id}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  onClick={(e) => {
+                    if (!da?.id) return
+                    const url = `/hiring/domain-lead/application/${da.id}`
+                    const label = `${app.user.firstName ?? ''} ${app.user.lastName ?? ''}`.trim() || 'Applicant'
+                    if (requestOpenTabIfEmbedded(url, label)) e.preventDefault()
+                  }}
                   className="text-blue-600 hover:text-blue-800 text-sm font-medium"
                 >
                   Review →
