@@ -1,4 +1,5 @@
 import { useNavigate } from "react-router";
+import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 
 export interface ApplicationRow {
   id: string;
@@ -49,7 +50,12 @@ export function ApplicationList({ rows, selectedStatusLabel }: Props) {
               {rows.map((r) => (
                 <tr
                   key={r.id}
-                  onClick={() => navigate(`/hiring/applications/${r.id}`)}
+                  onClick={() => {
+                    const url = `/hiring/applications/${r.id}`;
+                    if (!requestOpenTabIfEmbedded(url, r.applicantName)) {
+                      navigate(url);
+                    }
+                  }}
                   className="border-t border-border hover:bg-muted/20 cursor-pointer"
                 >
                   <td className="px-4 py-2 text-accent-coral">{r.applicantName}</td>
