@@ -61,6 +61,7 @@ interface InterviewRow {
   location: string
   zoomJoinUrl: string | null
   domainApplication: {
+    id: string
     challengeVersion: { domain: { name: string } }
     application: { user: { firstName: string; lastName: string } }
   }
@@ -1187,6 +1188,10 @@ export default function HiringLeadCycleDetails() {
   // Filters for the interviews table — domain + status. "all" disables.
   const [interviewDomainFilter, setInterviewDomainFilter] = useState<string>('all')
   const [interviewStatusFilter, setInterviewStatusFilter] = useState<string>('all')
+  // Cancelled interviews are hidden by default — they duplicate the
+  // "Awaiting Schedule" row for the same applicant and clutter the
+  // "what comes next" view.
+  const [showCancelledInterviews, setShowCancelledInterviews] = useState<boolean>(false)
 
   // ── Coverage heatmap state ──
   const [coverage, setCoverage] = useState<{
@@ -1998,16 +2003,25 @@ export default function HiringLeadCycleDetails() {
       ) : tab === 'interviews' && (() => {
         // Filter inputs derived from current data so empty options never show.
         const domainFor = (p: PendingInviteRow) => p.domainApplication.challengeVersion?.domain.name ?? p.domainApplication.domain.name
+        const isCancelled = (status: string) =>
+          status === 'CancelledByApplicant' || status === 'CancelledByAdmin'
+        // Hide cancelled interviews unless the user opted in. A cancelled-only
+        // applicant still surfaces via the pending list ("Awaiting Schedule"),
+        // so the dashboard keeps 1 row per applicant.
+        const visibleInterviews = showCancelledInterviews
+          ? interviews
+          : interviews.filter(i => !isCancelled(i.status))
+        const hiddenCancelledCount = interviews.length - visibleInterviews.length
         const availableDomains = Array.from(new Set<string>([
-          ...interviews.map(i => i.domainApplication.challengeVersion.domain.name).filter(Boolean),
+          ...visibleInterviews.map(i => i.domainApplication.challengeVersion.domain.name).filter(Boolean),
           ...pendingInvites.map(domainFor).filter(Boolean),
         ])).sort()
         const availableStatuses = Array.from(new Set<string>([
           ...(pendingInvites.length > 0 ? ['Awaiting Schedule'] : []),
-          ...interviews.map(i => i.status),
+          ...visibleInterviews.map(i => i.status),
         ]))
         const filtersActive = interviewDomainFilter !== 'all' || interviewStatusFilter !== 'all'
-        const filteredInterviews = interviews.filter(i => {
+        const filteredInterviews = visibleInterviews.filter(i => {
           if (interviewDomainFilter !== 'all' && i.domainApplication.challengeVersion.domain.name !== interviewDomainFilter) return false
           if (interviewStatusFilter !== 'all' && i.status !== interviewStatusFilter) return false
           return true
@@ -2018,7 +2032,10 @@ export default function HiringLeadCycleDetails() {
           return true
         })
         const totalRows = filteredInterviews.length + filteredPending.length
-        const totalAll = interviews.length + pendingInvites.length
+        const totalAll = visibleInterviews.length + pendingInvites.length
+        // Show the filter bar whenever there's any data — including cancelled
+        // interviews that are currently hidden — so the toggle stays reachable.
+        const hasAnyRows = interviews.length + pendingInvites.length > 0
         const tableEmpty = totalRows === 0
         // "Resend invite" needs a CycleNotificationEmail bound to
         // InterviewInviteReminder. Without one the button has no template
@@ -2047,7 +2064,7 @@ export default function HiringLeadCycleDetails() {
             <span>Controls marked with <Mail className="w-3 h-3 inline-block align-middle text-blue-600" /> send an email when committed. Hover the icon to see who receives it.</span>
           </div>
           <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-            {totalAll > 0 && (
+            {hasAnyRows && (
               <div className="px-4 sm:px-6 py-3 border-b border-border bg-card flex flex-wrap items-center gap-3">
                 <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
                   <span className="font-medium">Domain</span>
@@ -2085,6 +2102,15 @@ export default function HiringLeadCycleDetails() {
                     Clear filters
                   </button>
                 )}
+                <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={showCancelledInterviews}
+                    onChange={(e) => setShowCancelledInterviews(e.target.checked)}
+                    className="w-3.5 h-3.5 rounded border-border accent-accent-coral"
+                  />
+                  <span>Show cancelled{hiddenCancelledCount > 0 && !showCancelledInterviews ? ` (${hiddenCancelledCount})` : ''}</span>
+                </label>
                 <span className="ml-auto text-xs text-muted-foreground">
                   Showing {totalRows} of {totalAll}
                 </span>
@@ -2111,7 +2137,12 @@ export default function HiringLeadCycleDetails() {
                   return (
                     <tr key={`pending-${p.id}`} className="bg-amber-50/40 hover:bg-amber-50 transition">
                       <td className="px-4 py-3 font-medium text-foreground">
-                        {u.firstName} {u.lastName}
+                        <Link
+                          to={`/hiring/applications/${p.domainApplication.id}`}
+                          className="hover:underline focus:outline-none focus:ring-2 focus:ring-accent-coral/40 rounded"
+                        >
+                          {u.firstName} {u.lastName}
+                        </Link>
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">{domainName || '—'}</td>
                       <td className="px-4 py-3 text-muted-foreground text-xs italic">
@@ -2152,7 +2183,12 @@ export default function HiringLeadCycleDetails() {
                   return (
                     <tr key={interview.id} className="hover:bg-muted/50 transition">
                       <td className="px-4 py-3 font-medium text-foreground">
-                        {interview.domainApplication.application.user.firstName} {interview.domainApplication.application.user.lastName}
+                        <Link
+                          to={`/hiring/applications/${interview.domainApplication.id}`}
+                          className="hover:underline focus:outline-none focus:ring-2 focus:ring-accent-coral/40 rounded"
+                        >
+                          {interview.domainApplication.application.user.firstName} {interview.domainApplication.application.user.lastName}
+                        </Link>
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">{domainName || '—'}</td>
                       <td className="px-4 py-3 text-muted-foreground">
@@ -2308,9 +2344,12 @@ export default function HiringLeadCycleDetails() {
                   <li key={`pending-${p.id}`} className="px-4 py-3 space-y-1 bg-amber-50/40">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <div className="font-medium text-foreground truncate">
+                        <Link
+                          to={`/hiring/applications/${p.domainApplication.id}`}
+                          className="block font-medium text-foreground truncate hover:underline"
+                        >
                           {u.firstName} {u.lastName}
-                        </div>
+                        </Link>
                         <div className="text-xs text-muted-foreground mt-0.5">{domainName || '—'}</div>
                       </div>
                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold flex-shrink-0 bg-amber-100 text-amber-800">
@@ -2347,9 +2386,12 @@ export default function HiringLeadCycleDetails() {
                   <li key={interview.id} className="px-4 py-3 space-y-2">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <div className="font-medium text-foreground truncate">
+                        <Link
+                          to={`/hiring/applications/${interview.domainApplication.id}`}
+                          className="block font-medium text-foreground truncate hover:underline"
+                        >
                           {interview.domainApplication.application.user.firstName} {interview.domainApplication.application.user.lastName}
-                        </div>
+                        </Link>
                         <div className="text-xs text-muted-foreground mt-0.5">{domainName || '—'}</div>
                       </div>
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold flex-shrink-0 ${
