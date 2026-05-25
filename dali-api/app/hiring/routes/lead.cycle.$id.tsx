@@ -22,10 +22,13 @@ import { formatVersionLabel, buildVersionNumberMap } from "~/lib/formatVersion";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { sendExtensionNoticeIfDue, resendExtensionNotice } from "~/hiring/lib/extension-notice";
 import { ConfidentialityGate } from "~/hiring/components/ConfidentialityGate";
-import { zonedDayStartUtc, zonedDayEndUtc, getZonedYMD } from "~/lib/timezone";
-
-const APPLICATION_TZ = "America/New_York";
-const APPLICATION_TZ_LABEL = "ET";
+import {
+  zonedDayStartUtc,
+  zonedDayEndUtc,
+  getZonedYMD,
+  APPLICATION_TZ,
+  APPLICATION_TZ_LABEL,
+} from "~/lib/timezone";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 

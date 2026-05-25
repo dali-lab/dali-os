@@ -12,6 +12,7 @@ import {
 } from "~/hiring/lib/intern-eligibility";
 import type { Question } from "~/types";
 import { ChallengeQuestionField } from "~/hiring/components/ChallengeQuestionField";
+import { APPLICATION_TZ, APPLICATION_TZ_LABEL } from "~/lib/timezone";
 
 export const meta: Route.MetaFunction = () => [
   { title: "Fellowship · DALI OS" },
@@ -268,7 +269,8 @@ export default function InternToFullRoute() {
               month: "long",
               day: "numeric",
               year: "numeric",
-            })}`}
+              timeZone: APPLICATION_TZ,
+            })} ${APPLICATION_TZ_LABEL}`}
         </p>
         {internDomains.length > 0 && (
           <p className="mt-2 text-xs text-muted-foreground">

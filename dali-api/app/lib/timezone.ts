@@ -1,3 +1,8 @@
+/** The lab's application timezone. Cycle close dates anchor to this zone. */
+export const APPLICATION_TZ = "America/New_York";
+/** Short label shown next to displayed application close dates/times. */
+export const APPLICATION_TZ_LABEL = "ET";
+
 export function isValidTimezone(tz: unknown): tz is string {
   if (typeof tz !== "string" || tz.length === 0) return false;
   try {

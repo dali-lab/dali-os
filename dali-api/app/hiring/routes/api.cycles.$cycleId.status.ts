@@ -6,6 +6,7 @@ import { isCore, hasCycleAccess } from "~/lib/roles";
 import { autoCloseIfExpired, findOtherActiveCycleId } from "~/hiring/lib/cycles";
 import { eligibleInternUserIds } from "~/hiring/lib/intern-eligibility";
 import { inReviewPipelineFilter } from "~/hiring/lib/application-pipeline-filter";
+import { APPLICATION_TZ } from "~/lib/timezone";
 import type { Route } from "./+types/api.cycles.$cycleId.status";
 
 const STATUS_ORDER = ["Draft", "Open", "UnderReview", "Completed"] as const;
@@ -170,7 +171,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (cycle.cycleType === "InternToFull" && !cycle.internsNotifiedAt) {
       const userIds = await eligibleInternUserIds();
       const closeText = cycle.closeDate
-        ? ` Apply by ${cycle.closeDate.toLocaleDateString("en-US", { month: "long", day: "numeric" })}.`
+        ? ` Apply by ${cycle.closeDate.toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: APPLICATION_TZ })}.`
         : "";
       fanOutPlan = {
         userIds,

@@ -8,6 +8,12 @@ import type { Question } from "~/types";
 import type { Prisma } from "~/generated/prisma/client";
 import { CycleSetupSection as Section } from "~/hiring/components/CycleSetupSection";
 import { ChallengePreviewModal } from "~/hiring/components/ChallengePreviewModal";
+import {
+  zonedDayEndUtc,
+  getZonedYMD,
+  APPLICATION_TZ,
+  APPLICATION_TZ_LABEL,
+} from "~/lib/timezone";
 
 export const meta: Route.MetaFunction = () => [
   { title: "Fellowship cycle · DALI OS" },
@@ -135,9 +141,16 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   if (intent === "set-close-date") {
     const closeDate = (formData.get("closeDate") as string) || null;
+    let parsedClose: Date | null = null;
+    if (closeDate) {
+      // Deadline is 11:59:59 PM Eastern on the selected date so interns get the
+      // full day in the lab's local time (not late evening UTC on the server).
+      const [y, m, d] = closeDate.split("-").map(Number);
+      parsedClose = zonedDayEndUtc(y, m, d, APPLICATION_TZ);
+    }
     await prisma.applicationCycle.update({
       where: { id: cycleId },
-      data: { closeDate: closeDate ? new Date(closeDate) : null },
+      data: { closeDate: parsedClose },
     });
     return { ok: true };
   }
@@ -366,12 +379,18 @@ function CloseDateSection({
   disabled: boolean;
 }) {
   const fetcher = useFetcher();
-  const [value, setValue] = useState(closeDate ? closeDate.slice(0, 16) : "");
+  const initial = closeDate
+    ? (() => {
+        const { year, month, day } = getZonedYMD(new Date(closeDate), APPLICATION_TZ);
+        return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      })()
+    : "";
+  const [value, setValue] = useState(initial);
   return (
     <Section title="Close date" description="When the application window closes for interns.">
       <div className="flex items-center gap-3">
         <input
-          type="datetime-local"
+          type="date"
           value={value}
           onChange={(e) => setValue(e.target.value)}
           disabled={disabled}
@@ -387,6 +406,9 @@ function CloseDateSection({
           Save
         </button>
       </div>
+      <p className="mt-2 text-xs text-muted-foreground">
+        Applications stop at 11:59 PM {APPLICATION_TZ_LABEL} on this date.
+      </p>
     </Section>
   );
 }
