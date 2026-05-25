@@ -32,7 +32,7 @@ export type DomainDemand = { domainId: string; domainName: string; slots: number
 
 type Props = {
   cycleId: string;
-  termCode: string;
+  termId: string;
   terms: { id: string; code: string }[];
   projects: ProjectMeta[];
   members: MemberInput[];
@@ -45,7 +45,7 @@ type Props = {
 
 export function StaffingBoard({
   cycleId,
-  termCode,
+  termId,
   terms,
   projects,
   members,
@@ -151,7 +151,7 @@ export function StaffingBoard({
           </label>
           <select
             id="staffing-term"
-            value={termCode}
+            value={termId}
             onChange={(e) => {
               setSearchParams(
                 (prev) => {
@@ -164,7 +164,7 @@ export function StaffingBoard({
             className="text-sm px-2 py-1 border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
           >
             {terms.map((t) => (
-              <option key={t.id} value={t.code}>
+              <option key={t.id} value={t.id}>
                 {t.code}
               </option>
             ))}

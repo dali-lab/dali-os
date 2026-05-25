@@ -8,7 +8,6 @@ import { prisma } from "~/lib/db";
 import type { Question } from "~/types";
 import { resolveReferenceOptions } from "./reference-sources";
 import { currentTerm } from "~/lib/roles";
-import { ensureStaffingCycle } from "~/projects/lib/staffing-cycle";
 import { interpretBidForm } from "~/projects/lib/bid-form-interpreter";
 import { validateBids, replaceBidSet } from "~/projects/lib/bid-validation";
 import { interpretIntentForm } from "~/projects/lib/intent-form-interpreter";
@@ -18,7 +17,7 @@ import {
   validateMapping,
   type ColumnMapping,
 } from "~/projects/lib/slot-roles";
-import type { Slot } from "~/projects/lib/form-slots";
+import { pickStaffingBinding, type Slot } from "~/projects/lib/form-slots";
 
 export type PublicForm = {
   formId: string;
@@ -179,6 +178,7 @@ export async function submitMemberForm(args: {
         select: {
           slot: true,
           columnMapping: true,
+          updatedAt: true,
           staffingCycle: {
             select: { id: true, termId: true, maxPreferencesPerMember: true },
           },
@@ -215,18 +215,14 @@ export async function submitMemberForm(args: {
   const bad = await validateAnswers(questions, args.answers, args.userId);
   if (bad) return bad;
 
-  // Is this form bound to a staffing slot for the *current* term's cycle?
-  // The binding rows list every cycle it's bound to; we only act on the live
-  // cycle so a stale binding to an old term doesn't fire.
+  // Which staffing cycle (if any) this submission feeds is decided by the
+  // form's own bindings, not the calendar's current term — see
+  // pickStaffingBinding. currentTerm only breaks ties when a form is reused
+  // across cycles.
   const term = await currentTerm();
-  const liveCycle = term
-    ? await ensureStaffingCycle(term.id, term.code)
-    : null;
-  const staffingBinding = form.cycleBindings.find(
-    (b) =>
-      (b.slot === "project-bids" || b.slot === "intent-to-work") &&
-      liveCycle != null &&
-      b.staffingCycle.id === liveCycle.id,
+  const staffingBinding = pickStaffingBinding(
+    form.cycleBindings,
+    term?.id ?? null,
   );
 
   if (!staffingBinding) {

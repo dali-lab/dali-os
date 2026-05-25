@@ -10,7 +10,10 @@ const AUTOMATIONS: {
   id: Automation;
   label: string;
   description: string;
-  // Stubs render disabled with a "Not configured" note.
+  // `configured: false` renders disabled with a "Not configured" note. A
+  // `true` automation is wired end-to-end; runtime gaps (e.g. a missing env var
+  // or unset project field) are reported by the server as a per-step "skipped"
+  // result rather than disabling the control here.
   configured: boolean;
 }[] = [
   {
@@ -27,15 +30,15 @@ const AUTOMATIONS: {
     configured: true,
   },
   {
+    id: "github",
+    label: "Set up GitHub teams",
+    description: "Create the project's GitHub team and add the confirmed roster.",
+    configured: true,
+  },
+  {
     id: "gmail",
     label: "Create Gmail accounts",
     description: "Provision project Google Workspace accounts.",
-    configured: false,
-  },
-  {
-    id: "github",
-    label: "Set up GitHub teams",
-    description: "Create the project's GitHub team and add members.",
     configured: false,
   },
 ];

@@ -39,12 +39,21 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const items = await prisma.notification.findMany({
     // Hide invites whose meeting was Cancelled — they shouldn't appear in the
-    // banner, just as they're dropped from tasks and the bell.
+    // banner, just as they're dropped from tasks and the bell. Also hide
+    // already-answered invites (Accepted/Declined/Tentative): once the user has
+    // RSVP'd, the card has served its purpose and shouldn't linger.
     where: {
       recipientUserId: auth.user.sub,
-      OR: [
-        { scheduledMeetingId: null },
-        { scheduledMeeting: { status: { not: "Cancelled" } } },
+      AND: [
+        {
+          OR: [
+            { scheduledMeetingId: null },
+            { scheduledMeeting: { status: { not: "Cancelled" } } },
+          ],
+        },
+        {
+          OR: [{ scheduledMeetingId: null }, { rsvp: null }],
+        },
       ],
     },
     orderBy: { createdAt: "desc" },
@@ -143,9 +152,7 @@ export default function Home() {
         </p>
       </header>
 
-      {(tasks.length > 0 || notifications.length > 0) && (
-        <AttentionBanner tasks={tasks} notifications={notifications} />
-      )}
+      <AttentionBanner tasks={tasks} notifications={notifications} />
 
       <div className="flex flex-col gap-6">
         <WeekCalendarPanel days={weekDays} events={weekEvents} />
@@ -182,7 +189,22 @@ function AttentionBanner({
   // list. Drop those duplicates — the task card is the richer rendering
   // (deadline + form link) — so each item shows once.
   const taskIds = new Set(tasks.map((t) => t.id));
-  const extraNotifications = notifications.filter((n) => !taskIds.has(n.id));
+  const extraNotifications = notifications.filter((n) => {
+    if (taskIds.has(n.id)) return false;
+    // A read notification still belongs on the banner only when it's a meeting
+    // invite: we keep those so the RSVP/status badge stays reachable. Every
+    // other read notification (e.g. an interview assignment already opened, so
+    // it's no longer a task) is finished business — its Dismiss can't change
+    // anything server-side, so the card would just sit here un-clearable. Drop
+    // it so Dismiss actually removes it for good on revalidate.
+    if (n.readAt && n.kind !== "MeetingInvite") return false;
+    return true;
+  });
+
+  // Nothing to surface once duplicates and finished (read, non-invite)
+  // notifications are filtered out — render nothing rather than an empty
+  // banner with a bare header.
+  if (tasks.length === 0 && extraNotifications.length === 0) return null;
 
   // "Needs attention" = open tasks + unread non-task notifications. Read
   // notifications still render below (so RSVP stays reachable) but don't
@@ -476,10 +498,29 @@ function RsvpButtons({
 }
 
 function NotificationCard({ notification }: { notification: HomeNotification }) {
+  const revalidator = useRevalidator();
   const isUnread = !notification.readAt;
   const isInvite = notification.kind === "MeetingInvite" && !!notification.scheduledMeetingId;
   const accent = isUnread ? "border-l-accent-coral" : "border-l-accent-teal";
   const [rsvp, setRsvp] = useState<HomeNotification["rsvp"]>(notification.rsvp);
+  const [dismissing, setDismissing] = useState(false);
+
+  // Invites clear by RSVP, never by dismiss (the /read endpoint exempts them),
+  // so the Dismiss control is offered for every other notification. It marks
+  // the row read and revalidates, dropping the card from the banner.
+  async function dismiss() {
+    setDismissing(true);
+    try {
+      await fetch(`/api/notifications/${notification.id}/read`, {
+        method: "POST",
+        credentials: "include",
+      });
+      revalidator.revalidate();
+      notifyTasksChanged();
+    } catch {
+      setDismissing(false);
+    }
+  }
 
   return (
     <div
@@ -488,38 +529,52 @@ function NotificationCard({ notification }: { notification: HomeNotification }) 
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
           <span className="text-sm font-semibold text-foreground truncate">{notification.title}</span>
-          {notification.link && (
-            <a
-              href={notification.link}
-              onClick={(e) => {
-                if (!notification.readAt) {
-                  // keepalive: true so the POST survives the navigation
-                  // that the anchor's default action is about to start.
-                  fetch(`/api/notifications/${notification.id}/read`, {
-                    method: "POST",
-                    credentials: "include",
-                    keepalive: true,
-                  });
-                }
-                // If we're inside a TabWorkspace iframe, ask the parent to
-                // open the link as a new tab instead of letting it navigate
-                // the iframe (which strands the user in chrome-less embed
-                // mode with no way back).
-                const link = notification.link!;
-                if (link.startsWith("/") && window.self !== window.top) {
-                  e.preventDefault();
-                  window.parent.postMessage(
-                    { type: "dali:openTab", url: link, label: notification.title },
-                    window.location.origin,
-                  );
-                }
-              }}
-              className="text-muted-foreground hover:text-foreground"
-              aria-label="Open linked page"
-            >
-              <ExternalLink className="w-3.5 h-3.5" />
-            </a>
-          )}
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            {notification.link && (
+              <a
+                href={notification.link}
+                onClick={(e) => {
+                  if (!notification.readAt) {
+                    // keepalive: true so the POST survives the navigation
+                    // that the anchor's default action is about to start.
+                    fetch(`/api/notifications/${notification.id}/read`, {
+                      method: "POST",
+                      credentials: "include",
+                      keepalive: true,
+                    });
+                  }
+                  // If we're inside a TabWorkspace iframe, ask the parent to
+                  // open the link as a new tab instead of letting it navigate
+                  // the iframe (which strands the user in chrome-less embed
+                  // mode with no way back).
+                  const link = notification.link!;
+                  if (link.startsWith("/") && window.self !== window.top) {
+                    e.preventDefault();
+                    window.parent.postMessage(
+                      { type: "dali:openTab", url: link, label: notification.title },
+                      window.location.origin,
+                    );
+                  }
+                }}
+                className="text-muted-foreground hover:text-foreground"
+                aria-label="Open linked page"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            )}
+            {!isInvite && (
+              <button
+                type="button"
+                onClick={dismiss}
+                disabled={dismissing}
+                className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-md border border-border text-foreground hover:bg-muted disabled:opacity-50"
+                aria-label="Dismiss notification"
+              >
+                <Check className="w-3 h-3" />
+                {dismissing ? "Dismissing…" : "Dismiss"}
+              </button>
+            )}
+          </div>
         </div>
         {notification.body && (
           <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{notification.body}</p>

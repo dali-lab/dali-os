@@ -65,6 +65,14 @@ export function MemberCard({ card, columnId, projectNames, onOpenBid, draggable 
             <span className="text-sm font-semibold text-foreground truncate text-left">
               {fullName}
             </span>
+            {card.unresolvedBid && (
+              <span
+                className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded bg-amber-100 text-amber-800"
+                title="Submitted a bid, but none of their picks matched an open role for this term — needs a staffing lead's attention."
+              >
+                Bid unresolved
+              </span>
+            )}
           </div>
           <RoleStrip card={card} />
         </div>
@@ -140,7 +148,15 @@ function BidStrip({
   // Always show the member's top 3 project preferences in rank order,
   // regardless of which column the card is in.
   if (card.topPreferences.length === 0) {
-    return <p className="text-[11px] text-muted-foreground italic">No project bids</p>;
+    // Distinguish "submitted a bid that resolved to nothing" from "never bid" —
+    // the former needs a lead to fix open roles, the latter is just empty.
+    return (
+      <p className="text-[11px] text-muted-foreground italic">
+        {card.unresolvedBid
+          ? "Bid submitted — no picks matched an open role"
+          : "No project bids"}
+      </p>
+    );
   }
   return (
     <ol className="text-[11px] text-muted-foreground flex flex-col gap-0.5">

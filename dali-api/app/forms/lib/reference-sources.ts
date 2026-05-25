@@ -37,19 +37,20 @@ export type ReferenceContext = {
 };
 
 const LOADERS = {
-  // Projects with at least one open role this term — mirrors the projects a
-  // member can actually bid on (see api.project-bids.ts role-request gate).
+  // Projects a member can bid on this term: non-archived projects that run
+  // this term (ProjectTerm) AND declare at least one domain (ProjectDomain).
+  // Biddability is domain-driven now, not gated on ProjectRoleRequest — a
+  // project with declared scope is biddable even without manually-entered role
+  // requests (see bid-validation.ts).
   "projects:open-this-term": async () => {
     const term = await currentTerm();
     if (!term) return [];
-    const roleRequests = await prisma.projectRoleRequest.findMany({
-      where: { termId: term.id },
-      select: { projectId: true },
-    });
-    const projectIds = [...new Set(roleRequests.map((r) => r.projectId))];
-    if (projectIds.length === 0) return [];
     const projects = await prisma.project.findMany({
-      where: { id: { in: projectIds } },
+      where: {
+        status: { not: "Archived" },
+        projectTerms: { some: { termId: term.id } },
+        domains: { some: {} },
+      },
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     });

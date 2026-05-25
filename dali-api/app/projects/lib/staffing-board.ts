@@ -29,6 +29,12 @@ export type MemberInput = {
   coreTitles: string[];
   preferences: Preference[];
   domainLevels: DomainLevel[];
+  // True when the member submitted a project-bids form for this cycle but it
+  // produced no usable preference (e.g. the bid projects have no open role in
+  // an eligibility domain). They still belong on the board — flagged — so a
+  // staffing lead notices, rather than vanishing. Derived in the loader; never
+  // set for members whose preferences resolved normally.
+  unresolvedBid?: boolean;
 };
 
 export type Assignment = {
@@ -54,6 +60,9 @@ export type MemberCardModel = {
   level: Level | null;
   // Member's top 3 project preferences in rank order. Always shown on the card.
   topPreferences: { projectId: string; rank: number }[];
+  // Mirrors MemberInput.unresolvedBid — the card renders a badge so the member
+  // is visibly distinguished from one who simply hasn't been placed yet.
+  unresolvedBid: boolean;
 };
 
 export const UNASSIGNED = "__unassigned__";
@@ -129,6 +138,7 @@ function toCard(
       .sort((a, b) => a.preferenceRank - b.preferenceRank)
       .slice(0, 3)
       .map((p) => ({ projectId: p.projectId, rank: p.preferenceRank })),
+    unresolvedBid: member.unresolvedBid ?? false,
   };
 }
 

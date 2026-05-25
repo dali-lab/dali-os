@@ -4,6 +4,7 @@ import { requireAuth } from "~/lib/auth";
 import { canManageStaffing } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { postMessage } from "~/slack/lib/slack-client";
+import { ensureTeam, addTeamMember } from "~/slack/lib/github-app";
 import { logAuditEvent } from "~/lib/audit";
 
 // POST /api/staffing/finalize
@@ -17,7 +18,8 @@ import { logAuditEvent } from "~/lib/audit";
 //     Confirmed, and upsert canonical ProjectAssignment + DomainEligibility.
 //   - slack:       post the confirmed roster to STAFFING_SLACK_CHANNEL.
 //   - gmail:       STUB — no Google Admin SDK wired up yet.
-//   - github:      STUB — GitHub App lacks org-team scope.
+//   - github:      get-or-create the project's GITHUB_ORG team (from
+//                  Project.githubTeamSlug) and add the confirmed roster.
 
 const AUTOMATIONS = ["assignments", "slack", "gmail", "github"] as const;
 type Automation = (typeof AUTOMATIONS)[number];
@@ -79,7 +81,7 @@ export async function action({ request }: Route.ActionArgs) {
   }
   const project = await prisma.project.findUnique({
     where: { id: body.projectId },
-    select: { id: true, name: true },
+    select: { id: true, name: true, githubTeamSlug: true },
   });
   if (!project) {
     return withCors(request, Response.json({ error: "Project not found" }, { status: 404 }));
@@ -196,12 +198,56 @@ export async function action({ request }: Route.ActionArgs) {
     };
   }
 
-  // ── github (stub) ──────────────────────────────────────────────────────────
+  // ── github ───────────────────────────────────────────────────────────────
+  // Get-or-create the project's org team (Project.githubTeamSlug, persistent
+  // across terms) and add the confirmed roster. Re-runnable: ensureTeam and the
+  // membership PUT are both idempotent, and we never remove anyone. Roster
+  // members without a stored githubUsername are skipped and reported.
   if (selected.has("github")) {
-    results.github = {
-      status: "skipped",
-      message: "GitHub team provisioning is not configured.",
-    };
+    if (!process.env.GITHUB_ORG) {
+      results.github = { status: "skipped", message: "GITHUB_ORG not set." };
+    } else if (!project.githubTeamSlug) {
+      results.github = {
+        status: "skipped",
+        message: "No GitHub team configured for this project — set one on the project page.",
+      };
+    } else {
+      try {
+        const roster = await prisma.staffingAssignment.findMany({
+          where: { staffingCycleId: cycle.id, projectId: project.id, status: "Confirmed" },
+          select: {
+            user: {
+              select: { firstName: true, lastName: true, githubUsername: true },
+            },
+          },
+        });
+        // Distinct usernames among the roster; collect those missing a handle
+        // so the lead knows who to follow up with.
+        const withHandle = new Set<string>();
+        const missing: string[] = [];
+        for (const r of roster) {
+          const handle = r.user.githubUsername?.trim();
+          if (handle) withHandle.add(handle);
+          else missing.push(`${r.user.firstName} ${r.user.lastName}`);
+        }
+
+        const team = await ensureTeam(project.githubTeamSlug);
+        for (const username of withHandle) {
+          await addTeamMember(team.slug, username);
+        }
+
+        const parts = [
+          `${team.created ? "Created" : "Updated"} team "${team.slug}"`,
+          `added ${withHandle.size} member${withHandle.size === 1 ? "" : "s"}`,
+        ];
+        if (missing.length > 0) {
+          parts.push(`skipped ${missing.length} with no GitHub username (${missing.join(", ")})`);
+        }
+        results.github = { status: "ok", message: `${parts.join("; ")}.` };
+      } catch (err) {
+        results.github = { status: "error", message: errMsg(err) };
+      }
+    }
   }
 
   await logAuditEvent({

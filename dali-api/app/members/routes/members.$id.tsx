@@ -35,6 +35,7 @@ const TEXT_FIELDS = [
   "hometown",
   "linkedinUrl",
   "githubUrl",
+  "githubUsername",
   "personalSite",
   "timeZone",
 ] as const;
@@ -58,6 +59,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       hometown: true,
       linkedinUrl: true,
       githubUrl: true,
+      githubUsername: true,
       personalSite: true,
       photoUrl: true,
       timeZone: true,
@@ -200,6 +202,7 @@ const FIELD_LABELS: Record<string, string> = {
   hometown: "Hometown",
   linkedinUrl: "LinkedIn URL",
   githubUrl: "GitHub URL",
+  githubUsername: "GitHub username",
   personalSite: "Personal site",
   timeZone: "Time zone (IANA, e.g. America/New_York)",
 };
