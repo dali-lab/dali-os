@@ -2139,6 +2139,8 @@ export default function HiringLeadCycleDetails() {
                       <td className="px-4 py-3 font-medium text-foreground">
                         <Link
                           to={`/hiring/applications/${p.domainApplication.id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
                           className="hover:underline focus:outline-none focus:ring-2 focus:ring-accent-coral/40 rounded"
                         >
                           {u.firstName} {u.lastName}
@@ -2185,6 +2187,8 @@ export default function HiringLeadCycleDetails() {
                       <td className="px-4 py-3 font-medium text-foreground">
                         <Link
                           to={`/hiring/applications/${interview.domainApplication.id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
                           className="hover:underline focus:outline-none focus:ring-2 focus:ring-accent-coral/40 rounded"
                         >
                           {interview.domainApplication.application.user.firstName} {interview.domainApplication.application.user.lastName}
@@ -2346,6 +2350,8 @@ export default function HiringLeadCycleDetails() {
                       <div className="min-w-0">
                         <Link
                           to={`/hiring/applications/${p.domainApplication.id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
                           className="block font-medium text-foreground truncate hover:underline"
                         >
                           {u.firstName} {u.lastName}
@@ -2388,6 +2394,8 @@ export default function HiringLeadCycleDetails() {
                       <div className="min-w-0">
                         <Link
                           to={`/hiring/applications/${interview.domainApplication.id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
                           className="block font-medium text-foreground truncate hover:underline"
                         >
                           {interview.domainApplication.application.user.firstName} {interview.domainApplication.application.user.lastName}

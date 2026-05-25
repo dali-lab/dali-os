@@ -635,6 +635,8 @@ export default function ReviewerDashboard() {
                       )}
                       <Link
                         to={`/hiring/reviewer/application/${interview.domainApplication?.application?.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
                         className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center mt-1"
                       >
                         View Application{' '}

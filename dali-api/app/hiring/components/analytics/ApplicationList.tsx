@@ -1,5 +1,3 @@
-import { useNavigate } from "react-router";
-
 export interface ApplicationRow {
   id: string;
   applicantName: string;
@@ -17,8 +15,6 @@ interface Props {
 }
 
 export function ApplicationList({ rows, selectedStatusLabel }: Props) {
-  const navigate = useNavigate();
-
   return (
     <div className="bg-card border border-border rounded-lg">
       <div className="flex items-center justify-end px-4 py-3 border-b border-border">
@@ -49,7 +45,7 @@ export function ApplicationList({ rows, selectedStatusLabel }: Props) {
               {rows.map((r) => (
                 <tr
                   key={r.id}
-                  onClick={() => navigate(`/hiring/applications/${r.id}`)}
+                  onClick={() => window.open(`/hiring/applications/${r.id}`, "_blank", "noopener,noreferrer")}
                   className="border-t border-border hover:bg-muted/20 cursor-pointer"
                 >
                   <td className="px-4 py-2 text-accent-coral">{r.applicantName}</td>

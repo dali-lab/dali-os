@@ -2373,6 +2373,8 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                   )}
                   <Link
                     to={`/hiring/domain-lead/application/${da?.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
                     className="text-blue-600 hover:text-blue-800 font-medium"
                   >
                     Review →
@@ -2469,6 +2471,8 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                 )}
                 <Link
                   to={`/hiring/domain-lead/application/${da?.id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="text-blue-600 hover:text-blue-800 text-sm font-medium"
                 >
                   Review →
