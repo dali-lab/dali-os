@@ -189,6 +189,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         status: true,
         location: true,
         zoomJoinUrl: true,
+        // Joint outcome — synced from `interview:{id}:recommendation` doc.
+        recommendation: true,
+        recommendationNotes: true,
         assignments: {
           where: { status: "Active" },
           select: {
@@ -200,13 +203,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
                 user: { select: { firstName: true, lastName: true } },
                 domain: { select: { name: true } },
               },
-            },
-            // Latest note version per assignment. Mirrors the orderBy DESC
-            // pattern used by api.interview-assignments.$id.notes.ts.
-            noteVersions: {
-              orderBy: { createdAt: "desc" },
-              take: 1,
-              select: { id: true, content: true, createdAt: true },
             },
           },
         },
@@ -264,35 +260,83 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     submittedAt: r.submittedAt ? r.submittedAt.toISOString() : null,
   }));
 
-  const interviews = interviewRows.map((iv) => ({
-    id: iv.id,
-    startTime: iv.startTime.toISOString(),
-    endTime: iv.endTime.toISOString(),
-    status: iv.status,
-    location: iv.location,
-    zoomJoinUrl: iv.zoomJoinUrl,
-    assignments: iv.assignments.map((a) => {
-      const isViewerThisInterviewer = a.cycleInterviewer.userId === auth.user.sub;
-      const latest = a.noteVersions[0];
-      return {
-        id: a.id,
-        role: a.role,
-        interviewerName:
-          [a.cycleInterviewer.user.firstName, a.cycleInterviewer.user.lastName]
-            .filter(Boolean)
-            .join(" ")
-            .trim() || "Interviewer",
-        domainName: a.cycleInterviewer.domain.name,
-        canEditNotes: isViewerThisInterviewer,
-        latestNote: latest
-          ? {
-              content: latest.content,
-              createdAt: latest.createdAt.toISOString(),
-            }
-          : null,
-      };
-    }),
-  }));
+  // Interview notes live in CollabDocumentVersion (Yjs/Tiptap), not in the
+  // legacy InterviewNoteVersion table. There are two doc kinds per interview:
+  //   interview:{id}:notes                          — joint, shared by both
+  //                                                   interviewers
+  //   interview:{id}:rec-notes-{assignmentId}       — per-interviewer private
+  //                                                   recommendation notes
+  // Joint recommendation text is synced from `interview:{id}:recommendation`
+  // back to Interview.recommendationNotes, so we read that column directly.
+  const collabDocNames: string[] = [];
+  for (const iv of interviewRows) {
+    collabDocNames.push(`interview:${iv.id}:notes`);
+    if (canSeePreReleaseDecisions) {
+      for (const a of iv.assignments) {
+        collabDocNames.push(`interview:${iv.id}:rec-notes-${a.id}`);
+      }
+    }
+  }
+  const collabVersionRows = collabDocNames.length > 0
+    ? await prisma.collabDocumentVersion.findMany({
+        where: { name: { in: collabDocNames } },
+        orderBy: { createdAt: "desc" },
+        select: { name: true, plainText: true, createdAt: true },
+      })
+    : [];
+  // Keep only the latest snapshot per doc name.
+  const latestCollabByName = new Map<string, { plainText: string; createdAt: Date }>();
+  for (const row of collabVersionRows) {
+    if (!latestCollabByName.has(row.name)) {
+      latestCollabByName.set(row.name, {
+        plainText: row.plainText,
+        createdAt: row.createdAt,
+      });
+    }
+  }
+
+  const interviews = interviewRows.map((iv) => {
+    const jointNotes = latestCollabByName.get(`interview:${iv.id}:notes`) ?? null;
+    return {
+      id: iv.id,
+      startTime: iv.startTime.toISOString(),
+      endTime: iv.endTime.toISOString(),
+      status: iv.status,
+      location: iv.location,
+      zoomJoinUrl: iv.zoomJoinUrl,
+      recommendation: iv.recommendation,
+      recommendationNotes: iv.recommendationNotes,
+      jointNotes: jointNotes
+        ? {
+            plainText: jointNotes.plainText,
+            updatedAt: jointNotes.createdAt.toISOString(),
+          }
+        : null,
+      assignments: iv.assignments.map((a) => {
+        const isViewerThisInterviewer = a.cycleInterviewer.userId === auth.user.sub;
+        const privateNotes = canSeePreReleaseDecisions
+          ? latestCollabByName.get(`interview:${iv.id}:rec-notes-${a.id}`) ?? null
+          : null;
+        return {
+          id: a.id,
+          role: a.role,
+          interviewerName:
+            [a.cycleInterviewer.user.firstName, a.cycleInterviewer.user.lastName]
+              .filter(Boolean)
+              .join(" ")
+              .trim() || "Interviewer",
+          domainName: a.cycleInterviewer.domain.name,
+          canEditNotes: isViewerThisInterviewer,
+          privateNotes: privateNotes
+            ? {
+                plainText: privateNotes.plainText,
+                updatedAt: privateNotes.createdAt.toISOString(),
+              }
+            : null,
+        };
+      }),
+    };
+  });
 
   // Decisions: applicants never reach this page; reviewers (in-domain) see only
   // Released. Core/DomainLead see the full append-only history.
@@ -581,48 +625,89 @@ function InterviewsSection({ interviews }: { interviews: InterviewRow[] }) {
                           .join(", ")}
                   </span>
                 </div>
-                {iv.assignments.length > 0 && (
+                <div className="rounded-md border border-border bg-background/50 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                      Joint notes
+                    </div>
+                    {iv.assignments.some((a) => a.canEditNotes) && (
+                      <Link
+                        to={`/hiring/interviewer/interview/${iv.id}`}
+                        className="text-xs text-blue-600 hover:underline"
+                      >
+                        Open in interviewer view
+                      </Link>
+                    )}
+                  </div>
+                  {iv.jointNotes && iv.jointNotes.plainText.trim().length > 0 ? (
+                    <>
+                      <p className="mt-2 text-sm text-foreground whitespace-pre-wrap">
+                        {iv.jointNotes.plainText}
+                      </p>
+                      <p className="mt-1 text-[11px] text-muted-foreground/80">
+                        Last edit{" "}
+                        {new Date(iv.jointNotes.updatedAt).toLocaleString(undefined, {
+                          month: "short",
+                          day: "numeric",
+                          hour: "numeric",
+                          minute: "2-digit",
+                        })}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="mt-2 text-xs text-muted-foreground/70 italic">
+                      No notes yet.
+                    </p>
+                  )}
+                </div>
+                {(iv.recommendation || iv.recommendationNotes) && (
+                  <div className="rounded-md border border-border bg-background/50 p-3">
+                    <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                      Joint recommendation
+                    </div>
+                    {iv.recommendation && (
+                      <div className="mt-2">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-muted text-foreground/80">
+                          {iv.recommendation}
+                        </span>
+                      </div>
+                    )}
+                    {iv.recommendationNotes && iv.recommendationNotes.trim().length > 0 && (
+                      <p className="mt-2 text-sm text-foreground whitespace-pre-wrap">
+                        {iv.recommendationNotes}
+                      </p>
+                    )}
+                  </div>
+                )}
+                {iv.assignments.some((a) => a.privateNotes) && (
                   <div className="space-y-2 pl-1">
-                    {iv.assignments.map((a) => (
-                      <div key={a.id} className="rounded-md border border-border bg-background/50 p-3">
-                        <div className="flex items-center justify-between gap-2">
+                    <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                      Per-interviewer notes
+                    </div>
+                    {iv.assignments
+                      .filter((a) => a.privateNotes && a.privateNotes.plainText.trim().length > 0)
+                      .map((a) => (
+                        <div key={a.id} className="rounded-md border border-border bg-background/50 p-3">
                           <div className="text-sm font-medium text-foreground">
                             {a.interviewerName}{" "}
                             <span className="text-xs font-normal text-muted-foreground">
                               · {a.role === "InDomain" ? a.domainName : `Cross (${a.domainName})`}
                             </span>
                           </div>
-                          {a.canEditNotes && (
-                            <Link
-                              to={`/hiring/interviewer/interview/${iv.id}`}
-                              className="text-xs text-blue-600 hover:underline"
-                            >
-                              Open in interviewer view
-                            </Link>
-                          )}
-                        </div>
-                        {a.latestNote ? (
-                          <>
-                            <p className="mt-2 text-sm text-foreground whitespace-pre-wrap">
-                              {a.latestNote.content}
-                            </p>
-                            <p className="mt-1 text-[11px] text-muted-foreground/80">
-                              Latest version saved{" "}
-                              {new Date(a.latestNote.createdAt).toLocaleString(undefined, {
-                                month: "short",
-                                day: "numeric",
-                                hour: "numeric",
-                                minute: "2-digit",
-                              })}
-                            </p>
-                          </>
-                        ) : (
-                          <p className="mt-2 text-xs text-muted-foreground/70 italic">
-                            No notes yet.
+                          <p className="mt-2 text-sm text-foreground whitespace-pre-wrap">
+                            {a.privateNotes!.plainText}
                           </p>
-                        )}
-                      </div>
-                    ))}
+                          <p className="mt-1 text-[11px] text-muted-foreground/80">
+                            Last edit{" "}
+                            {new Date(a.privateNotes!.updatedAt).toLocaleString(undefined, {
+                              month: "short",
+                              day: "numeric",
+                              hour: "numeric",
+                              minute: "2-digit",
+                            })}
+                          </p>
+                        </div>
+                      ))}
                   </div>
                 )}
               </li>
