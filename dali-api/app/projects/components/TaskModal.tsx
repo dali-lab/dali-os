@@ -1,7 +1,8 @@
-// Detail-edit dialog for a project task. Opened by clicking a card on the
-// TaskBoard. Edits are saved on close via the parent's onPatch (one network
-// call per dirty field) — the parent owns optimistic state, so this just
-// collects values and hands them back.
+// Create/edit dialog for a project task. Opened by clicking a card on the
+// TaskBoard (edit) or the "+ Add task" button (create). In edit mode the
+// parent owns optimistic state, so this just collects the changed fields and
+// hands them back via onPatch on close. In create mode there's no task yet, so
+// it collects the full set of fields and hands them to onCreate on submit.
 
 import { useEffect, useState } from "react";
 import { Modal } from "~/components/Modal";
@@ -11,54 +12,70 @@ const PRIORITIES: Priority[] = ["Low", "Normal", "High", "Urgent"];
 
 type Patch = Partial<TaskCardModel>;
 
+// Field values collected by the modal in create mode. The board turns these
+// into a POST (title/dueAt) plus follow-up patches (priority/domain/assignees).
+export type NewTaskValues = {
+  title: string;
+  priority: Priority;
+  dueAt: string | null;
+  domainId: string | null;
+  assigneeIds: string[];
+};
+
 export function TaskModal({
   task,
   options,
   canManage,
   onClose,
   onPatch,
+  onCreate,
 }: {
-  task: TaskCardModel;
+  // Present in edit mode; omitted (create mode) opens an empty form.
+  task?: TaskCardModel;
   options: TaskBoardOptions;
   canManage: boolean;
   onClose: () => void;
-  onPatch: (patch: Patch) => Promise<void> | void;
+  onPatch?: (patch: Patch) => Promise<void> | void;
+  onCreate?: (values: NewTaskValues) => Promise<void> | void;
 }) {
-  const [title, setTitle] = useState(task.title);
-  const [priority, setPriority] = useState<Priority>(task.priority);
+  const isCreate = !task;
+  const [title, setTitle] = useState(task?.title ?? "");
+  const [priority, setPriority] = useState<Priority>(task?.priority ?? "Normal");
   const [assigneeIds, setAssigneeIds] = useState<string[]>(
-    task.assignees.map((a) => a.id),
+    task?.assignees.map((a) => a.id) ?? [],
   );
   const [dueDate, setDueDate] = useState<string>(
-    task.dueAt ? dateInputValue(task.dueAt) : "",
+    task?.dueAt ? dateInputValue(task.dueAt) : "",
   );
-  const [domainId, setDomainId] = useState<string>(task.domain?.id ?? "");
+  const [domainId, setDomainId] = useState<string>(task?.domain?.id ?? "");
+  const [saving, setSaving] = useState(false);
 
   // Reset local state if the modal stays mounted across task changes (it
-  // shouldn't today, but cheap insurance).
+  // shouldn't today, but cheap insurance). Create mode has no task to track.
   useEffect(() => {
+    if (!task) return;
     setTitle(task.title);
     setPriority(task.priority);
     setAssigneeIds(task.assignees.map((a) => a.id));
     setDueDate(task.dueAt ? dateInputValue(task.dueAt) : "");
     setDomainId(task.domain?.id ?? "");
-  }, [task.id]);
+  }, [task?.id]);
 
-  function diffPatch(): Patch {
+  function diffPatch(current: TaskCardModel): Patch {
     const patch: Patch = {};
-    if (title.trim() && title.trim() !== task.title) patch.title = title.trim();
-    if (priority !== task.priority) patch.priority = priority;
+    if (title.trim() && title.trim() !== current.title) patch.title = title.trim();
+    if (priority !== current.priority) patch.priority = priority;
     const nextDueIso = dueDate ? endOfDayIso(dueDate) : null;
-    if (nextDueIso !== task.dueAt) patch.dueAt = nextDueIso;
+    if (nextDueIso !== current.dueAt) patch.dueAt = nextDueIso;
     const nextDomain =
       domainId === ""
         ? null
         : options.domains.find((d) => d.id === domainId) ?? null;
-    const currentDomainId = task.domain?.id ?? null;
+    const currentDomainId = current.domain?.id ?? null;
     const nextDomainId = nextDomain?.id ?? null;
     if (nextDomainId !== currentDomainId) patch.domain = nextDomain;
     const sortedNext = [...assigneeIds].sort();
-    const sortedCurrent = task.assignees.map((a) => a.id).sort();
+    const sortedCurrent = current.assignees.map((a) => a.id).sort();
     const assigneesChanged =
       sortedNext.length !== sortedCurrent.length ||
       sortedNext.some((id, i) => id !== sortedCurrent[i]);
@@ -72,11 +89,30 @@ export function TaskModal({
   }
 
   async function handleSave() {
-    const patch = diffPatch();
+    if (!task || !onPatch) return;
+    const patch = diffPatch(task);
     if (Object.keys(patch).length > 0) {
       await onPatch(patch);
     }
     onClose();
+  }
+
+  async function handleCreate() {
+    const trimmed = title.trim();
+    if (!trimmed || !onCreate) return;
+    setSaving(true);
+    try {
+      await onCreate({
+        title: trimmed,
+        priority,
+        dueAt: dueDate ? endOfDayIso(dueDate) : null,
+        domainId: domainId === "" ? null : domainId,
+        assigneeIds,
+      });
+      onClose();
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -90,11 +126,12 @@ export function TaskModal({
         <div className="flex items-start justify-between gap-3">
           <input
             id="task-modal-title"
+            autoFocus={isCreate}
             value={title}
             disabled={!canManage}
             onChange={(e) => setTitle(e.target.value)}
             className="flex-1 text-lg font-semibold text-foreground bg-transparent border-0 border-b border-transparent focus:border-border focus:outline-none px-0 py-1 disabled:opacity-100"
-            placeholder="Task title"
+            placeholder={isCreate ? "New task title" : "Task title"}
           />
           <button
             type="button"
@@ -166,15 +203,25 @@ export function TaskModal({
           >
             Cancel
           </button>
-          {canManage && (
-            <button
-              type="button"
-              onClick={() => void handleSave()}
-              className="px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
-            >
-              Save
-            </button>
-          )}
+          {canManage &&
+            (isCreate ? (
+              <button
+                type="button"
+                onClick={() => void handleCreate()}
+                disabled={!title.trim() || saving}
+                className="px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 disabled:opacity-50 transition-colors"
+              >
+                {saving ? "Creating…" : "Create task"}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => void handleSave()}
+                className="px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
+              >
+                Save
+              </button>
+            ))}
         </div>
       </div>
     </Modal>

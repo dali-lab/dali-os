@@ -87,22 +87,22 @@ model User {
   mentorshipPairsAsMentor MentorshipPair[]       @relation("MentorPairs")
 
   // ─── Phase 1: project workspace back-relations ────────────────────────────
-  createdTasks  Task[]         @relation("TaskCreatedBy")
-  taskAssignees TaskAssignee[]
-  taskComments  TaskComment[]
+  createdTasks               Task[]               @relation("TaskCreatedBy")
+  taskAssignees              TaskAssignee[]
+  taskComments               TaskComment[]
   projectDomainScopesUpdated ProjectDomainScope[] @relation("ProjectDomainScopeUpdatedBy")
 
   // ─── Phase 1: staffing back-relations ─────────────────────────────────────
   staffingPreferences   StaffingPreference[]
-  essentialityFormsAsPm EssentialityForm[]   @relation("EssentialityFormPm")
+  essentialityFormsAsPm EssentialityForm[]         @relation("EssentialityFormPm")
   essentialityRatings   EssentialityRating[]
   staffingAssignments   StaffingAssignment[]
   intentToWork          IntentToWork[]
-  formsCreated     Form[]
-  formFolders      FormFolder[]
-  formVersions     FormVersion[]
-  formSubmissions  FormSubmission[]
-  formBindingsSet  StaffingCycleFormBinding[]
+  formsCreated          Form[]
+  formFolders           FormFolder[]
+  formVersions          FormVersion[]
+  formSubmissions       FormSubmission[]
+  formBindingsSet       StaffingCycleFormBinding[]
 
   // ─── Phase 1: education back-relations ────────────────────────────────────
   educationApplications  EducationApplication[]  @relation("EducationApplicant")
@@ -129,10 +129,10 @@ model User {
   oneTimeTokens OneTimeToken[]
 
   // ─── Phase 1: Gmail integration (single per User) ─────────────────────────
-  gmailIntegration GmailIntegration?
+  gmailIntegration      GmailIntegration?
   // ─── Notification relations ────────────────────────────────────────────────
-  receivedNotifications Notification[] @relation("NotificationRecipient")
-  authoredNotifications Notification[] @relation("NotificationAuthor")
+  receivedNotifications Notification[]    @relation("NotificationRecipient")
+  authoredNotifications Notification[]    @relation("NotificationAuthor")
 
   // ─── Phase 2: hiring FK back-relations (formerly via DALIMember) ──────────
   cycleReviewers                          CycleReviewer[]
@@ -144,6 +144,10 @@ model User {
   legacyEmailTemplatesCreated             LegacyEmailTemplate[]
   emailTemplateVersionsCreated            EmailTemplateVersion[]
   confidentialityAgreementVersionsCreated ConfidentialityAgreementVersion[]
+
+  // ─── Documents & files ───────────────────────────────────────────────────
+  projectFileVersionsUploaded ProjectFileVersion[] @relation("ProjectFileVersionUploader")
+  docComments                 DocComment[]         @relation("DocCommentAuthor")
 }
 
 // A DALI lab member. userId is optional because a member may be known (e.g. via daliEmail)
@@ -255,9 +259,9 @@ model Application {
   answers Json
 
   userId                    String
-  user                      User             @relation(fields: [userId], references: [id])
+  user                      User              @relation(fields: [userId], references: [id])
   applicationCycleId        String
-  applicationCycle          ApplicationCycle @relation(fields: [applicationCycleId], references: [id])
+  applicationCycle          ApplicationCycle  @relation(fields: [applicationCycleId], references: [id])
   // Pinned at application creation time so that form updates do not affect
   // in-progress drafts. Required on Standard cycles; null on InternToFull
   // cycles (which pin `internToFullFormVersionId` instead). One of the two
@@ -304,7 +308,7 @@ model InternToFullFormVersion {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
 
-  version   Int      @unique
+  version   Int  @unique
   questions Json
 
   createdById String
@@ -339,7 +343,7 @@ model DomainApplication {
   selected Boolean @default(true)
 
   applicationId      String
-  application        Application      @relation(fields: [applicationId], references: [id])
+  application        Application       @relation(fields: [applicationId], references: [id])
   // Pins the questions the applicant answered. Always set on Standard cycles
   // (per-domain challenge). Null on InternToFull (questions live on the
   // Application via internToFullFormVersionId — there's nothing per-domain
@@ -350,7 +354,7 @@ model DomainApplication {
   // of cycle type — single source of truth for "what domain is this for".
   // Backfilled from challengeVersion.domainId for pre-existing Standard rows.
   domainId           String
-  domain             Domain           @relation(fields: [domainId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  domain             Domain            @relation(fields: [domainId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   interviews Interview[]
   reviews    ApplicationReview[]
@@ -399,14 +403,14 @@ model Domain {
   domainApplications    DomainApplication[]
 
   // ─── Phase 1 back-relations ───────────────────────────────────────────────
-  eligibilities       DomainEligibility[]
-  projectAssignments  ProjectAssignment[]
-  mentorshipPairs     MentorshipPair[]
-  tasks               Task[]
-  projectRoleRequests ProjectRoleRequest[]
+  eligibilities             DomainEligibility[]
+  projectAssignments        ProjectAssignment[]
+  mentorshipPairs           MentorshipPair[]
+  tasks                     Task[]
+  projectRoleRequests       ProjectRoleRequest[]
   partnerApplicationDomains PartnerApplicationDomain[]
-  projects            ProjectDomain[]
-  projectScopes       ProjectDomainScope[]
+  projects                  ProjectDomain[]
+  projectScopes             ProjectDomainScope[]
 }
 
 // Immutable snapshot of a challenge. Never update rows in this table —
@@ -728,7 +732,7 @@ model ApplicationReview {
 
   submittedAt   DateTime? // null = in progress; non-null = read-only while set
   submittedById String? // records who authored the final review (set on submit, cleared on unsubmit)
-  submittedBy   User?   @relation("ApplicationReviewSubmittedBy", fields: [submittedById], references: [id])
+  submittedBy   User?     @relation("ApplicationReviewSubmittedBy", fields: [submittedById], references: [id])
 
   @@unique([cycleReviewerId, domainApplicationId])
 }
@@ -836,6 +840,144 @@ model CollabDocumentVersion {
   collabDocument CollabDocument @relation(fields: [name], references: [name], onDelete: Cascade)
 
   @@index([name, createdAt(sort: Desc)])
+}
+
+// ─── Documents: tags, files, comments ────────────────────────────────────────
+
+// Lab-wide, curated tag list applied to documents (Pages) and uploaded files.
+// Examples: shipping, handoff, fullstack, UI/UX, hardware, graphics,
+// animation, data. New tags are added by Core/Admin only (mirrors the curated
+// Domain registry); everyone with edit access may apply existing tags.
+// Archived (soft-deleted) tags stay attached to existing items but drop out of
+// the picker.
+model DocTag {
+  id         String    @id @default(cuid())
+  label      String
+  // Stable, lowercased identifier (e.g. "ui-ux"). Used for de-dup and to keep
+  // links/filters stable when the human label is edited.
+  slug       String    @unique
+  // Optional Tailwind-friendly accent (hex or token); UI falls back to a
+  // neutral chip when null.
+  color      String?
+  archivedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  pages PageTag[]
+  files ProjectFileTag[]
+}
+
+// m2m: DocTag ↔ Page (documents).
+model PageTag {
+  pageId String
+  tagId  String
+
+  page Page   @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  tag  DocTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([pageId, tagId])
+  @@index([tagId])
+}
+
+// m2m: DocTag ↔ ProjectFile (uploads).
+model ProjectFileTag {
+  fileId String
+  tagId  String
+
+  file ProjectFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  tag  DocTag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([fileId, tagId])
+  @@index([tagId])
+}
+
+// A standalone uploaded file attached to a project's Files section. The binary
+// lives in S3 (see app/lib/s3.ts); each upload is a ProjectFileVersion row.
+// Re-uploading creates a new version and advances currentVersionId, so older
+// versions stay downloadable/restorable (mirrors CollabDocumentVersion).
+model ProjectFile {
+  id               String  @id @default(cuid())
+  projectId        String
+  // Human-facing name, independent of any single version's stored filename so
+  // a rename survives re-upload.
+  title            String
+  // Points at the version surfaced by default. Nullable only transiently
+  // during the create→first-version transaction.
+  currentVersionId String? @unique
+
+  archivedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  versions       ProjectFileVersion[] @relation("FileVersions")
+  currentVersion ProjectFileVersion?  @relation("FileCurrentVersion", fields: [currentVersionId], references: [id])
+
+  tags     ProjectFileTag[]
+  comments DocComment[]
+
+  @@index([projectId, archivedAt])
+}
+
+model ProjectFileVersion {
+  id           String   @id @default(cuid())
+  fileId       String
+  // S3 object key under the uploads/ prefix.
+  s3Key        String
+  // Original client filename for this version, shown on download.
+  fileName     String
+  contentType  String
+  sizeBytes    Int
+  uploadedById String
+  createdAt    DateTime @default(now())
+
+  file       ProjectFile @relation("FileVersions", fields: [fileId], references: [id], onDelete: Cascade)
+  uploadedBy User        @relation("ProjectFileVersionUploader", fields: [uploadedById], references: [id])
+
+  // Back-relation for ProjectFile.currentVersion (a file points at one of its
+  // own versions). Optional + named to disambiguate from FileVersions.
+  fileAsCurrent ProjectFile? @relation("FileCurrentVersion")
+
+  @@index([fileId, createdAt(sort: Desc)])
+}
+
+// Threaded comments on documents and files. `targetType` discriminates the
+// loose polymorphic `targetId` (a Page.id or ProjectFile.id) — no DB FK on the
+// id column because it spans two tables; the app dispatches on targetType.
+// `anchor` carries a Yjs relative-position range for inline (text-anchored)
+// comments on documents; null = a comment on the whole doc/file. Replies set
+// `parentId` to a root comment (one level of threading).
+model DocComment {
+  id         String           @id @default(cuid())
+  targetType DocCommentTarget
+  targetId   String
+  parentId   String?
+  authorId   String
+  body       String
+  // { from: <encoded RelativePosition>, to: <encoded RelativePosition> } for
+  // inline doc comments. Null for doc-level / file-level comments.
+  anchor     Json?
+  resolvedAt DateTime?
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  author  User         @relation("DocCommentAuthor", fields: [authorId], references: [id])
+  parent  DocComment?  @relation("DocCommentThread", fields: [parentId], references: [id], onDelete: Cascade)
+  replies DocComment[] @relation("DocCommentThread")
+
+  // Back-relation when targetType=file. Kept loose: only the file side is a
+  // real relation (Pages are referenced by id without a back-relation to avoid
+  // a second FK on the polymorphic column).
+  file   ProjectFile? @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  fileId String?
+
+  @@index([targetType, targetId, createdAt])
+  @@index([parentId])
+}
+
+enum DocCommentTarget {
+  doc
+  file
 }
 
 // ─── OAuth & Sessions ────────────────────────────────────────────────────────
@@ -1217,8 +1359,8 @@ model UserCalendarLink {
   lastSyncedAt   DateTime?
   syncError      String?
 
-  user            User                @relation(fields: [userId], references: [id])
-  hostedMeetings  ScheduledMeeting[]
+  user           User               @relation(fields: [userId], references: [id])
+  hostedMeetings ScheduledMeeting[]
 
   @@unique([userId, provider, externalEmail])
   @@index([userId])
@@ -1362,7 +1504,7 @@ model GroupDefinition {
   // Term ids this static group is scoped to. Empty = not term-bound (never
   // auto-archives). When non-empty, the group auto-archives once the latest
   // bound term's endDate has passed. System (Dynamic) groups never use this.
-  boundTermIds    String[] @default([])
+  boundTermIds    String[]  @default([])
 
   createdAt DateTime @default(now())
 
@@ -1700,6 +1842,8 @@ model Project {
   // gating off this set is a follow-up.
   domains         ProjectDomain[]
   domainScopes    ProjectDomainScope[]
+  // Standalone uploaded files in the project's Files section.
+  files           ProjectFile[]
 
   createdAt DateTime @default(now())
 }
@@ -1928,7 +2072,7 @@ model Task {
   // Optional domain label (Design, Dev, etc.) — shown as a chip on the card
   // and editable in the task modal. Independent of who's assigned so the
   // label survives reassignment.
-  domainId         String?
+  domainId String?
 
   // Subtasks: simple checklist field rather than hierarchical Task→Task
   // children (Linear/Notion style).
@@ -2192,7 +2336,7 @@ model StaffingCycle {
   // Member preference limit (UI-configurable per cycle, default 3).
   maxPreferencesPerMember Int    @default(3)
 
-  term              Term                 @relation(fields: [termId], references: [id])
+  term              Term                       @relation(fields: [termId], references: [id])
   preferences       StaffingPreference[]
   essentialityForms EssentialityForm[]
   assignments       StaffingAssignment[]
@@ -2376,7 +2520,7 @@ model FormSubmission {
   staffingCycle   StaffingCycle? @relation(fields: [staffingCycleId], references: [id], onDelete: SetNull)
   // Which slot it was filled for (mirrors StaffingCycleFormBinding.slot, e.g.
   // "project-bids"). Null unless staffingCycleId is set.
-  slot String?
+  slot            String?
 
   answers Json
 
@@ -2518,6 +2662,11 @@ model Page {
 
   parent   Page?  @relation("PageTree", fields: [parentPageId], references: [id])
   children Page[] @relation("PageTree")
+
+  // Lab-wide tags applied to this document. Comments (doc-level + inline) live
+  // in DocComment with targetType=doc, targetId=Page.id — referenced loosely
+  // (no back-relation) to keep the polymorphic target column FK-free.
+  tags PageTag[]
 
   // Reverse of Project.overviewPageId. The polymorphic `workspaceId` column
   // above is intentionally NOT declared as a Prisma relation — workspaceType
@@ -2838,7 +2987,7 @@ model GmailIntegration {
 // in a Slack thread; it's filed (or cancelled) when they react to the bot's
 // preview message with ✅ (or ❌). See app/slack/.
 model SlackBugReportDraft {
-  id                     String                @id @default(cuid())
+  id                     String               @id @default(cuid())
   // Source thread on Slack — channel + the parent message ts identify the thread.
   slackChannelId         String
   slackThreadTs          String
@@ -2850,13 +2999,13 @@ model SlackBugReportDraft {
   // Snapshot of the thread at filing time so the issue body can be re-derived
   // or audited even if Slack messages get edited or deleted.
   threadJson             Json
-  status                 SlackBugReportStatus  @default(Pending)
+  status                 SlackBugReportStatus @default(Pending)
   githubIssueNumber      Int?
   githubIssueUrl         String?
   // Captured so we can surface "who asked" in the issue body + audit.
   requestedBySlackUserId String
-  createdAt              DateTime              @default(now())
-  updatedAt              DateTime              @updatedAt
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
 
   @@unique([slackChannelId, previewMessageTs])
   @@index([status])
@@ -2880,19 +3029,19 @@ enum SlackBugReportStatus {
 // `partnerOrgId` is a required FK: applications are always tied to a known
 // PartnerOrg (Q: "linked to partner is very important").
 model PartnerApplication {
-  id           String  @id @default(cuid())
-  partnerOrgId String
-  title        String
+  id                 String                   @id @default(cuid())
+  partnerOrgId       String
+  title              String
   // Short pitch summary. The long-form, versionable Statement of Work lives
   // in the collab doc named `partner-sow:{id}` (see sowDocId) — same Yjs +
   // CollabDocumentVersion machinery as project documents, so it gets
   // automatic version snapshots and the existing version-history UI.
-  summary      String?
+  summary            String?
   // Free-form collab doc name for the SOW. Null until the SOW is first
   // opened/created. Not a Prisma relation: CollabDocument is keyed by its
   // unique `name`, addressed at the app layer.
-  sowDocId     String?                    @unique
-  status       PartnerApplicationStatus   @default(Submitted)
+  sowDocId           String?                  @unique
+  status             PartnerApplicationStatus @default(Submitted)
   // Set when status moves to Accepted and a Project is spun up. Loose ref to
   // Project.id; no relation to avoid a Project→PartnerApplication cycle.
   resultingProjectId String?

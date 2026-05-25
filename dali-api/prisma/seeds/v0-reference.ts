@@ -221,12 +221,37 @@ async function seedMentorNoteTemplate() {
   console.log(`✓ Seeded default mentor-note template.`);
 }
 
+// Lab-wide document/file tags. Idempotent: upsert by slug so re-runs and
+// label edits made via the Admin UI are preserved (we never overwrite an
+// existing row's label/color here — we only create missing ones).
+async function seedDocTags() {
+  const TAGS: { label: string; slug: string }[] = [
+    { label: "Shipping", slug: "shipping" },
+    { label: "Handoff", slug: "handoff" },
+    { label: "Fullstack", slug: "fullstack" },
+    { label: "UI/UX", slug: "ui-ux" },
+    { label: "Hardware", slug: "hardware" },
+    { label: "Graphics", slug: "graphics" },
+    { label: "Animation", slug: "animation" },
+    { label: "Data", slug: "data" },
+  ];
+  let created = 0;
+  for (const t of TAGS) {
+    const existing = await prisma.docTag.findUnique({ where: { slug: t.slug } });
+    if (existing) continue;
+    await prisma.docTag.create({ data: { label: t.label, slug: t.slug } });
+    created++;
+  }
+  console.log(`✓ Seeded ${created} doc tags (${TAGS.length - created} already present).`);
+}
+
 async function main() {
   console.log("Running v0 reference-data seed against", process.env.DATABASE_URL?.split("@")[1]?.split("/")[0] ?? "(unknown DB)");
   await seedDomains();
   await seedTerms();
   await seedPageTemplates();
   await seedMentorNoteTemplate();
+  await seedDocTags();
   // MCP OAuth clients are no longer seeded — clients register themselves
   // via RFC 7591 Dynamic Client Registration at /oauth/register.
   console.log("Done.");
