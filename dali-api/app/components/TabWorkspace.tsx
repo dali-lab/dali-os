@@ -198,9 +198,40 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
     return tab.url
   }
 
+  // Stable `title` for each iframe, captured at first mount. The visible tab
+  // label can be refined by `setTabLabel` as the iframe navigates, but the
+  // iframe's `title` attribute is the section's identity (e.g. "Cycles") and
+  // must NOT shift under it — both so it reads consistently and so anything
+  // addressing the frame by title stays valid across in-tab navigation.
+  const seedTitlesRef = useRef<Map<string, string>>(new Map())
+  const titleFor = (tab: Tab): string => {
+    const existing = seedTitlesRef.current.get(tab.id)
+    if (existing !== undefined) return existing
+    seedTitlesRef.current.set(tab.id, tab.label)
+    return tab.label
+  }
+
   // tabId → its <iframe>, so a `dali:tabNavigated` message can be attributed
   // to the right tab by matching the message's source window.
   const iframeElsRef = useRef<Map<string, HTMLIFrameElement>>(new Map())
+  // Stable ref callback PER tab id. The iframe's ref MUST keep the same
+  // function identity across renders: an inline `ref={(el) => …}` is a new
+  // function every render, so React detaches (ref(null)) and reattaches the
+  // iframe node — and re-attaching an iframe reloads it from `src` (the mount
+  // seed), snapping an in-iframe navigation back to the section root. Caching
+  // one callback per id keeps the node attached so in-tab navigation sticks.
+  const iframeRefCbs = useRef<Map<string, (el: HTMLIFrameElement | null) => void>>(new Map())
+  const registerIframe = (tabId: string) => {
+    let cb = iframeRefCbs.current.get(tabId)
+    if (!cb) {
+      cb = (el: HTMLIFrameElement | null) => {
+        if (el) iframeElsRef.current.set(tabId, el)
+        else iframeElsRef.current.delete(tabId)
+      }
+      iframeRefCbs.current.set(tabId, cb)
+    }
+    return cb
+  }
 
   // Hydrate from localStorage on first client render.
   useEffect(() => {
@@ -1013,12 +1044,9 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
                 return (
                   <iframe
                     key={tab.id}
-                    ref={(el) => {
-                      if (el) iframeElsRef.current.set(tab.id, el)
-                      else iframeElsRef.current.delete(tab.id)
-                    }}
+                    ref={registerIframe(tab.id)}
                     src={addEmbedParam(seedFor(tab))}
-                    title={tab.label}
+                    title={titleFor(tab)}
                     className="absolute inset-0 w-full h-full border-0"
                     style={{ display: isActive ? 'block' : 'none' }}
                     onLoad={onIframeLoad(tab.id)}
