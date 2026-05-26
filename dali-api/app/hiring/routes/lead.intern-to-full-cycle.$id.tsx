@@ -148,6 +148,22 @@ export async function action({ request, params }: Route.ActionArgs) {
       const [y, m, d] = closeDate.split("-").map(Number);
       parsedClose = zonedDayEndUtc(y, m, d, APPLICATION_TZ);
     }
+    // While the cycle is Open, a past close date would immediately flip the
+    // cycle to UnderReview on the next loader hit (autoCloseIfExpired). That's
+    // almost never what a lead means when editing a live cycle, so reject it.
+    if (parsedClose && parsedClose.getTime() < Date.now()) {
+      const latest = await prisma.applicationCycleStatusUpdate.findFirst({
+        where: { applicationCycleId: cycleId },
+        orderBy: { createdAt: "desc" },
+        select: { newStatus: true },
+      });
+      if (latest?.newStatus === "Open") {
+        return Response.json(
+          { error: "Close date is in the past. Pick a future date, or close the cycle from the status control." },
+          { status: 400 },
+        );
+      }
+    }
     await prisma.applicationCycle.update({
       where: { id: cycleId },
       data: { closeDate: parsedClose },
@@ -342,7 +358,11 @@ export default function InternToFullCycleSetup() {
         <StatusButton cycleId={cycle.id} currentStatus={cycle.status} />
       </header>
 
-      <CloseDateSection cycleId={cycle.id} closeDate={cycle.closeDate} disabled={isOpen} />
+      <CloseDateSection
+        cycleId={cycle.id}
+        closeDate={cycle.closeDate}
+        status={cycle.status}
+      />
 
       <FormVersionSection
         cycleId={cycle.id}
@@ -370,15 +390,15 @@ export default function InternToFullCycleSetup() {
 }
 
 function CloseDateSection({
-  cycleId,
+  cycleId: _cycleId,
   closeDate,
-  disabled,
+  status,
 }: {
   cycleId: string;
   closeDate: string | null;
-  disabled: boolean;
+  status: string;
 }) {
-  const fetcher = useFetcher();
+  const fetcher = useFetcher<{ ok?: boolean; error?: string }>();
   const initial = closeDate
     ? (() => {
         const { year, month, day } = getZonedYMD(new Date(closeDate), APPLICATION_TZ);
@@ -386,6 +406,12 @@ function CloseDateSection({
       })()
     : "";
   const [value, setValue] = useState(initial);
+  // Editable in Draft (cycle setup) and Open (live extensions/shortenings).
+  // Locked once we're in UnderReview/Completed — the application window is
+  // closed and changing the date here wouldn't reopen it.
+  const disabled = status !== "Draft" && status !== "Open";
+  const isOpen = status === "Open";
+  const error = fetcher.data && "error" in fetcher.data ? fetcher.data.error : null;
   return (
     <Section title="Close date" description="When the application window closes for interns.">
       <div className="flex items-center gap-3">
@@ -407,8 +433,13 @@ function CloseDateSection({
         </button>
       </div>
       <p className="mt-2 text-xs text-muted-foreground">
-        Applications stop at 11:59 PM {APPLICATION_TZ_LABEL} on this date.
+        {isOpen
+          ? `Update to extend or shorten this active cycle. Applications stop at 11:59 PM ${APPLICATION_TZ_LABEL} on the selected date. Interns who already received the open-cycle notification may still see the old date.`
+          : `Applications stop at 11:59 PM ${APPLICATION_TZ_LABEL} on this date.`}
       </p>
+      {error && (
+        <p className="mt-2 text-xs text-red-700">{error}</p>
+      )}
     </Section>
   );
 }
