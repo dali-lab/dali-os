@@ -82,11 +82,16 @@ export default function AppLayoutRoute() {
 
   // When embedded, keep the parent workspace in sync with this iframe on every
   // in-iframe navigation:
-  //  - `dali:tabNavigated` updates the tab's stored URL so the sidebar
-  //    highlight tracks the current page and a reload restores it (the iframe
-  //    src is pinned to its mount seed, so this never reloads the frame).
-  //  - `dali:setTabLabel` refreshes the tab label from document.title.
-  // The reported URL drops `embed=1` so it matches how tabs are stored/opened.
+  //  - `dali:tabNavigated` updates the tab's stored URL (with `embed=1`
+  //    stripped, matching how tabs are stored) so the sidebar highlight tracks
+  //    the current page and a reload restores it. The iframe src is pinned to
+  //    its mount seed, so this never reloads the frame.
+  //  - `dali:setTabLabel` refreshes the tab label from document.title, keyed by
+  //    the iframe's RAW location (still carrying `embed=1` on first load). A
+  //    sidebar-opened section root is stored without `embed`, so its raw URL
+  //    won't match and its friendly sidebar label ("Cycles", "Domain", …) is
+  //    preserved; only a deeper client-side navigation (where `embed` has been
+  //    dropped from the URL) matches and refines the label.
   // setTimeout gives React Router a tick to write the title from meta.
   useEffect(() => {
     if (!embedded) return
@@ -95,10 +100,10 @@ export default function AppLayoutRoute() {
     const params = new URLSearchParams(location.search)
     params.delete('embed')
     const query = params.toString()
-    const url = location.pathname + (query ? `?${query}` : '')
+    const cleanUrl = location.pathname + (query ? `?${query}` : '')
 
     window.parent.postMessage(
-      { type: 'dali:tabNavigated', url },
+      { type: 'dali:tabNavigated', url: cleanUrl },
       window.location.origin,
     )
 
@@ -107,7 +112,11 @@ export default function AppLayoutRoute() {
       const label = raw.replace(/\s*·\s*DALI OS\s*$/, '').trim() || raw
       if (!label) return
       window.parent.postMessage(
-        { type: 'dali:setTabLabel', url, label },
+        {
+          type: 'dali:setTabLabel',
+          url: window.location.pathname + window.location.search,
+          label,
+        },
         window.location.origin,
       )
     }, 50)
