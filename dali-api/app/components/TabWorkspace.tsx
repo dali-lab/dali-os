@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { X, Maximize2, SplitSquareHorizontal, Loader2 } from 'lucide-react'
+import { X, Maximize2, SplitSquareHorizontal, Loader2, ChevronLeft, ChevronRight, Copy } from 'lucide-react'
 
 export interface OpenTabRequest {
   url: string
@@ -9,6 +9,11 @@ export interface OpenTabRequest {
 export interface TabWorkspaceHandle {
   /** Open a tab in the focused pane, or focus it if already open anywhere. */
   openTab: (req: OpenTabRequest) => void
+  /** Open a tab in the focused pane WITHOUT switching to it. Used by
+   *  sidebar middle-click to open a section in the background, matching
+   *  browser-tab middle-click behaviour. If the tab is already open it
+   *  stays where it is and the user's current focus isn't disturbed. */
+  openTabInBackground: (req: OpenTabRequest) => void
   /** Open a tab in a second pane to the side (splitting if there's only one
    *  pane), or focus it if already open there. Used by the sidebar's
    *  right-click "Open to the side". */
@@ -32,6 +37,12 @@ interface Tab {
   // focuses the already-open tab even after it has drifted to a sub-page.
   origin: string
   lastActivatedAt: number
+  // Browser-style per-tab history. backStack[last] is the most recent prior
+  // url; forwardStack[last] is the next url if the user clicks forward. A
+  // brand-new navigation clears forwardStack. Capped at HISTORY_CAP so a
+  // long-lived tab can't blow up localStorage.
+  backStack: string[]
+  forwardStack: string[]
 }
 
 interface Pane {
@@ -40,13 +51,27 @@ interface Pane {
   activeTabId: string | null
 }
 
+interface ClosedTab {
+  label: string
+  url: string
+  origin: string
+  backStack: string[]
+  forwardStack: string[]
+  closedAt: number
+}
+
 interface WorkspaceState {
   panes: Pane[]
   focusedPaneId: string
+  // LRU of recently-closed tabs (most-recent last). Capped at CLOSED_CAP so a
+  // long-lived session can't grow this without bound. Reopened via mod+shift+T.
+  closedTabs: ClosedTab[]
 }
 
-const STORAGE_KEY = 'dali:tabworkspace:v3'
+const STORAGE_KEY = 'dali:tabworkspace:v4'
 const MAX_TABS_PER_PANE = 10
+const HISTORY_CAP = 50
+const CLOSED_CAP = 10
 
 function newId() {
   return Math.random().toString(36).slice(2, 10)
@@ -58,7 +83,11 @@ function now() {
 
 function emptyState(): WorkspaceState {
   const paneId = newId()
-  return { panes: [{ id: paneId, tabs: [], activeTabId: null }], focusedPaneId: paneId }
+  return {
+    panes: [{ id: paneId, tabs: [], activeTabId: null }],
+    focusedPaneId: paneId,
+    closedTabs: [],
+  }
 }
 
 function isValidState(s: unknown): s is WorkspaceState {
@@ -73,12 +102,33 @@ function isValidState(s: unknown): s is WorkspaceState {
         typeof t?.id !== 'string' ||
         typeof t.label !== 'string' ||
         typeof t.url !== 'string' ||
-        typeof t.lastActivatedAt !== 'number'
+        typeof t.lastActivatedAt !== 'number' ||
+        !Array.isArray(t.backStack) ||
+        !Array.isArray(t.forwardStack) ||
+        t.backStack.some((u) => typeof u !== 'string') ||
+        t.forwardStack.some((u) => typeof u !== 'string')
       )
         return false
     }
   }
-  return typeof v.focusedPaneId === 'string'
+  if (typeof v.focusedPaneId !== 'string') return false
+  // `closedTabs` is optional for forward-compat with v4 entries written before
+  // this field existed; loadState backfills it to [].
+  if (v.closedTabs !== undefined) {
+    if (!Array.isArray(v.closedTabs)) return false
+    for (const c of v.closedTabs) {
+      if (
+        typeof c?.label !== 'string' ||
+        typeof c.url !== 'string' ||
+        typeof c.origin !== 'string' ||
+        typeof c.closedAt !== 'number' ||
+        !Array.isArray(c.backStack) ||
+        !Array.isArray(c.forwardStack)
+      )
+        return false
+    }
+  }
+  return true
 }
 
 function loadState(): WorkspaceState {
@@ -96,6 +146,7 @@ function loadState(): WorkspaceState {
         ...p,
         tabs: p.tabs.map((t) => (t.origin ? t : { ...t, origin: t.url })),
       })),
+      closedTabs: Array.isArray(parsed.closedTabs) ? parsed.closedTabs : [],
     }
   } catch {
     return emptyState()
@@ -166,6 +217,11 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
     | { paneId: string; tabId: string; x: number; y: number }
     | null
   >(null)
+  // Right-click menu on a back/forward arrow → list of stack entries.
+  const [historyMenu, setHistoryMenu] = useState<
+    | { paneId: string; side: 'back' | 'forward'; x: number; y: number }
+    | null
+  >(null)
   const hydrated = useRef(false)
   const dragSourceRef = useRef<DragSource | null>(null)
   const [dragOver, setDragOver] = useState<DragOver | null>(null)
@@ -214,6 +270,11 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
   // tabId → its <iframe>, so a `dali:tabNavigated` message can be attributed
   // to the right tab by matching the message's source window.
   const iframeElsRef = useRef<Map<string, HTMLIFrameElement>>(new Map())
+  // tabId → the URL we just asked the iframe to navigate to via back/forward.
+  // When the resulting `dali:tabNavigated` arrives, we recognise it isn't a
+  // "new" navigation and skip pushing to backStack / clearing forwardStack
+  // (the goBack/goForward callers already updated the stacks themselves).
+  const pendingHistoryOpRef = useRef<Map<string, string>>(new Map())
   // Stable ref callback PER tab id. The iframe's ref MUST keep the same
   // function identity across renders: an inline `ref={(el) => …}` is a new
   // function every render, so React detaches (ref(null)) and reattaches the
@@ -250,11 +311,14 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
         // "most specific" (the section the user actually navigated to), so
         // the last entry is what should be visible on first paint.
         lastActivatedAt: seedTime - (initialTabs.length - 1 - i),
+        backStack: [],
+        forwardStack: [],
       }))
       const paneId = loaded.panes[0]?.id ?? newId()
       setState({
         panes: [{ id: paneId, tabs, activeTabId: tabs[tabs.length - 1]?.id ?? null }],
         focusedPaneId: paneId,
+        closedTabs: loaded.closedTabs,
       })
     } else if (!isEmpty && initialTabs && initialTabs.length > 1) {
       // Storage already has tabs. Ensure the "specific" tab from initialTabs
@@ -286,6 +350,8 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
           url: target.url,
           origin: target.url,
           lastActivatedAt: now(),
+          backStack: [],
+          forwardStack: [],
         }
         setState({
           ...loaded,
@@ -341,11 +407,20 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
         const panes = prev.panes.map((p) => ({
           ...p,
           tabs: p.tabs.map((t) => {
-            if (t.id === tabId && t.url !== nextUrl) {
-              changed = true
+            if (t.id !== tabId || t.url === nextUrl) return t
+            changed = true
+            // Caused by our own back/forward — stacks were already adjusted
+            // by goBack/goForward, so just sync url.
+            const pending = pendingHistoryOpRef.current.get(t.id)
+            if (pending === nextUrl) {
+              pendingHistoryOpRef.current.delete(t.id)
               return { ...t, url: nextUrl }
             }
-            return t
+            // A new in-tab navigation: push the old url onto backStack and
+            // clear forwardStack (browser semantics).
+            const back = [...t.backStack, t.url]
+            if (back.length > HISTORY_CAP) back.splice(0, back.length - HISTORY_CAP)
+            return { ...t, url: nextUrl, backStack: back, forwardStack: [] }
           }),
         }))
         return changed ? { ...prev, panes } : prev
@@ -416,6 +491,8 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
             url: req.url,
             origin: req.url,
             lastActivatedAt: now(),
+            backStack: [],
+            forwardStack: [],
           }
           return {
             ...prev,
@@ -425,6 +502,35 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
                     ...p,
                     tabs: appendWithLruCap([...p.tabs, newTab], newTab.id),
                     activeTabId: newTab.id,
+                  }
+                : p,
+            ),
+          }
+        })
+      },
+      openTabInBackground: (req) => {
+        setState((prev) => {
+          // If already open, leave it alone — middle-clicking a sidebar item
+          // for an open tab shouldn't yank the user away from what they're
+          // viewing.
+          if (findTabPane(prev, req.url)) return prev
+          const newTab: Tab = {
+            id: newId(),
+            label: req.label,
+            url: req.url,
+            origin: req.url,
+            lastActivatedAt: now() - 1, // older than the currently-active tab
+            backStack: [],
+            forwardStack: [],
+          }
+          return {
+            ...prev,
+            panes: prev.panes.map((p) =>
+              p.id === prev.focusedPaneId
+                ? {
+                    ...p,
+                    tabs: appendWithLruCap([...p.tabs, newTab], newTab.id),
+                    // intentionally do NOT change activeTabId.
                   }
                 : p,
             ),
@@ -458,6 +564,8 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
             url: req.url,
             origin: req.url,
             lastActivatedAt: now(),
+            backStack: [],
+            forwardStack: [],
           }
           // Already split — open in the pane that isn't focused.
           if (prev.panes.length >= 2) {
@@ -535,6 +643,7 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
   // detach/re-attach from each iframe on every state change.
   const handlersRef = useRef<{
     onShortcut: (e: KeyboardEvent) => void
+    onMouseNav: (e: MouseEvent) => void
   } | null>(null)
 
   const stateRef = useRef(state)
@@ -546,13 +655,40 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
     handlersRef.current = {
       onShortcut: (e: KeyboardEvent) => {
         const mod = e.metaKey || e.ctrlKey
-        if (!mod) return
 
         const s = stateRef.current
         const focusedPane = s.panes.find((p) => p.id === s.focusedPaneId) ?? s.panes[0]
         if (!focusedPane) return
 
-        // mod + alt + arrow / number — pane navigation
+        // alt + arrow (no mod) — in-tab back/forward. Mirrors the browser
+        // shortcut and intentionally NOT the same as mod+alt+arrow below,
+        // which switches tabs in the focused pane.
+        if (!mod && e.altKey && !e.shiftKey) {
+          if (e.key === 'ArrowLeft') {
+            e.preventDefault()
+            goBack(focusedPane.id)
+            return
+          }
+          if (e.key === 'ArrowRight') {
+            e.preventDefault()
+            goForward(focusedPane.id)
+            return
+          }
+          return
+        }
+
+        if (!mod) return
+
+        // mod + [ / mod + ] — in-tab back/forward.
+        if (!e.altKey && !e.shiftKey && (e.key === '[' || e.key === ']')) {
+          e.preventDefault()
+          if (e.key === '[') goBack(focusedPane.id)
+          else goForward(focusedPane.id)
+          return
+        }
+
+        // mod + alt + arrow / number — pane navigation (next/prev tab).
+        // Distinct from plain alt+arrow above (which is in-tab back/forward).
         if (e.altKey && !e.shiftKey) {
           const tabs = focusedPane.tabs
           if (tabs.length === 0) return
@@ -595,6 +731,13 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
           return
         }
 
+        // mod + shift + t — reopen most recently closed tab.
+        if (e.shiftKey && (e.key === 't' || e.key === 'T')) {
+          e.preventDefault()
+          reopenLastClosed()
+          return
+        }
+
         // mod + \ — toggle split
         if (!e.altKey && !e.shiftKey && e.key === '\\') {
           if (s.panes.length >= 2) {
@@ -612,14 +755,33 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
           return
         }
       },
+      // Mouse thumb-buttons → in-tab back/forward. Preventing default also
+      // suppresses the browser's own top-level history navigation, which
+      // would otherwise unload the entire app shell.
+      onMouseNav: (e: MouseEvent) => {
+        if (e.button !== 3 && e.button !== 4) return
+        const s = stateRef.current
+        const focusedPane = s.panes.find((p) => p.id === s.focusedPaneId) ?? s.panes[0]
+        if (!focusedPane) return
+        e.preventDefault()
+        if (e.button === 3) goBack(focusedPane.id)
+        else goForward(focusedPane.id)
+      },
     }
   }
 
   // Attach the shortcut listener to window.
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => handlersRef.current?.onShortcut(e)
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
+    const onKey = (e: KeyboardEvent) => handlersRef.current?.onShortcut(e)
+    const onMouse = (e: MouseEvent) => handlersRef.current?.onMouseNav(e)
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('mousedown', onMouse)
+    window.addEventListener('auxclick', onMouse)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('mousedown', onMouse)
+      window.removeEventListener('auxclick', onMouse)
+    }
   }, [])
 
   // Ref-callback for each iframe: attach the shortcut listener to its
@@ -630,10 +792,13 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
     setLoadedTabIds((prev) => (prev.has(tabId) ? prev : new Set(prev).add(tabId)))
     const doc = e.currentTarget.contentDocument
     if (!doc) return
-    const handler = (ev: Event) => handlersRef.current?.onShortcut(ev as KeyboardEvent)
+    const onKey = (ev: Event) => handlersRef.current?.onShortcut(ev as KeyboardEvent)
+    const onMouse = (ev: Event) => handlersRef.current?.onMouseNav(ev as MouseEvent)
     // The previous document — if any — is gone with the previous navigation,
     // so its listener is gone with it. No need to remove first.
-    doc.addEventListener('keydown', handler)
+    doc.addEventListener('keydown', onKey)
+    doc.addEventListener('mousedown', onMouse)
+    doc.addEventListener('auxclick', onMouse)
   }
 
   // Close context menu on click-anywhere.
@@ -647,6 +812,140 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
       window.removeEventListener('contextmenu', onDocClick)
     }
   }, [contextMenu])
+
+  // Same for the history dropdown.
+  useEffect(() => {
+    if (!historyMenu) return
+    const onDocClick = () => setHistoryMenu(null)
+    window.addEventListener('click', onDocClick)
+    window.addEventListener('contextmenu', onDocClick)
+    return () => {
+      window.removeEventListener('click', onDocClick)
+      window.removeEventListener('contextmenu', onDocClick)
+    }
+  }, [historyMenu])
+
+  // Browser-style back/forward for the pane's active tab. The iframe's own
+  // `window.history` would work mid-session but is wiped on a parent reload
+  // (each tab's iframe re-mounts fresh), so we drive navigation via an
+  // explicit per-tab stack + a `dali:navigate` postMessage that the embedded
+  // layout turns into a react-router navigate().
+  // Walk the active tab's back or forward stack `steps` entries. The
+  // single-step case is the default (Back / Forward arrows). The history
+  // dropdown uses larger N to jump directly to an earlier or later page —
+  // the intervening URLs flip to the opposite stack so it stays equivalent
+  // to clicking back/forward N times.
+  const navigateActiveTab = (
+    paneId: string,
+    direction: 'back' | 'forward',
+    steps = 1,
+  ) => {
+    const pane = stateRef.current.panes.find((p) => p.id === paneId)
+    if (!pane) return
+    const tab = pane.tabs.find((t) => t.id === pane.activeTabId)
+    if (!tab) return
+    const source = direction === 'back' ? tab.backStack : tab.forwardStack
+    if (steps < 1 || steps > source.length) return
+    const consumed = source.slice(source.length - steps) // [oldest…newest in this jump]
+    const target = consumed[0]
+    pendingHistoryOpRef.current.set(tab.id, target)
+    // Entries that pass to the opposite stack, in the order they'd be pushed
+    // by N sequential single-step navigations: current url first, then each
+    // consumed entry except the final target.
+    const opposite: string[] = [tab.url]
+    for (let k = consumed.length - 1; k >= 1; k--) opposite.push(consumed[k])
+    setState((prev) => ({
+      ...prev,
+      panes: prev.panes.map((p) =>
+        p.id !== paneId
+          ? p
+          : {
+              ...p,
+              tabs: p.tabs.map((t) => {
+                if (t.id !== tab.id) return t
+                if (direction === 'back') {
+                  const fwd = [...t.forwardStack, ...opposite]
+                  if (fwd.length > HISTORY_CAP) fwd.splice(0, fwd.length - HISTORY_CAP)
+                  return {
+                    ...t,
+                    url: target,
+                    backStack: t.backStack.slice(0, t.backStack.length - steps),
+                    forwardStack: fwd,
+                  }
+                }
+                const back = [...t.backStack, ...opposite]
+                if (back.length > HISTORY_CAP) back.splice(0, back.length - HISTORY_CAP)
+                return {
+                  ...t,
+                  url: target,
+                  backStack: back,
+                  forwardStack: t.forwardStack.slice(0, t.forwardStack.length - steps),
+                }
+              }),
+            },
+      ),
+    }))
+    const iframe = iframeElsRef.current.get(tab.id)
+    iframe?.contentWindow?.postMessage(
+      { type: 'dali:navigate', url: target },
+      window.location.origin,
+    )
+  }
+  const goBack = (paneId: string) => navigateActiveTab(paneId, 'back')
+  const goForward = (paneId: string) => navigateActiveTab(paneId, 'forward')
+
+  // Reopen the most recently closed tab in the focused pane, restoring its
+  // url + history stacks. If the same tab was reopened already (any pane has
+  // the same origin) we still pop and refocus the existing one rather than
+  // duplicating — matches the browser's "reopen closed tab" feel.
+  const reopenLastClosed = () => {
+    setState((prev) => {
+      if (prev.closedTabs.length === 0) return prev
+      const last = prev.closedTabs[prev.closedTabs.length - 1]
+      const closedTabs = prev.closedTabs.slice(0, -1)
+      const existing = findTabPane(prev, last.origin)
+      if (existing) {
+        return {
+          ...prev,
+          focusedPaneId: existing.paneId,
+          panes: prev.panes.map((p) =>
+            p.id !== existing.paneId
+              ? p
+              : {
+                  ...p,
+                  activeTabId: existing.tabId,
+                  tabs: p.tabs.map((t) =>
+                    t.id === existing.tabId ? { ...t, lastActivatedAt: now() } : t,
+                  ),
+                },
+          ),
+          closedTabs,
+        }
+      }
+      const newTab: Tab = {
+        id: newId(),
+        label: last.label,
+        url: last.url,
+        origin: last.origin,
+        lastActivatedAt: now(),
+        backStack: last.backStack,
+        forwardStack: last.forwardStack,
+      }
+      return {
+        ...prev,
+        panes: prev.panes.map((p) =>
+          p.id === prev.focusedPaneId
+            ? {
+                ...p,
+                tabs: appendWithLruCap([...p.tabs, newTab], newTab.id),
+                activeTabId: newTab.id,
+              }
+            : p,
+        ),
+        closedTabs,
+      }
+    })
+  }
 
   const setActiveTab = (paneId: string, tabId: string) => {
     setState((prev) => ({
@@ -668,6 +967,7 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
 
   const closeTab = (paneId: string, tabId: string) => {
     setState((prev) => {
+      const closing = prev.panes.find((p) => p.id === paneId)?.tabs.find((t) => t.id === tabId)
       const panes: Pane[] = []
       for (const p of prev.panes) {
         if (p.id !== paneId) {
@@ -686,6 +986,20 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
         }
         panes.push({ ...p, tabs, activeTabId })
       }
+      // Push to recently-closed LRU so the user can reopen with mod+shift+T.
+      const closedTabs = closing
+        ? [
+            ...prev.closedTabs,
+            {
+              label: closing.label,
+              url: closing.url,
+              origin: closing.origin,
+              backStack: closing.backStack,
+              forwardStack: closing.forwardStack,
+              closedAt: now(),
+            },
+          ].slice(-CLOSED_CAP)
+        : prev.closedTabs
       // If a pane became empty AND there's another pane, remove it.
       const nonEmpty = panes.filter((p) => p.tabs.length > 0)
       if (nonEmpty.length > 0 && nonEmpty.length < panes.length) {
@@ -693,9 +1007,51 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
         return {
           panes: nonEmpty,
           focusedPaneId: focusedStillExists ? prev.focusedPaneId : nonEmpty[0].id,
+          closedTabs,
         }
       }
-      return { ...prev, panes }
+      return { ...prev, panes, closedTabs }
+    })
+  }
+
+  // Duplicate a tab in place: a new tab opens immediately after the source in
+  // the same pane, pointing at the source's current url. We don't copy the
+  // source's history stacks — the duplicate is conceptually a fresh visit to
+  // the same page (matches Chrome's "Duplicate" behaviour) and starts with
+  // empty back/forward.
+  const duplicateTab = (paneId: string, tabId: string) => {
+    setState((prev) => {
+      const pane = prev.panes.find((p) => p.id === paneId)
+      const source = pane?.tabs.find((t) => t.id === tabId)
+      if (!pane || !source) return prev
+      const newTab: Tab = {
+        id: newId(),
+        label: source.label,
+        url: source.url,
+        origin: source.url,
+        lastActivatedAt: now(),
+        backStack: [],
+        forwardStack: [],
+      }
+      const idx = pane.tabs.findIndex((t) => t.id === tabId)
+      const inserted = [
+        ...pane.tabs.slice(0, idx + 1),
+        newTab,
+        ...pane.tabs.slice(idx + 1),
+      ]
+      return {
+        ...prev,
+        focusedPaneId: paneId,
+        panes: prev.panes.map((p) =>
+          p.id !== paneId
+            ? p
+            : {
+                ...p,
+                tabs: appendWithLruCap(inserted, newTab.id),
+                activeTabId: newTab.id,
+              },
+        ),
+      }
     })
   }
 
@@ -745,6 +1101,7 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
           },
           { id: newPaneId, tabs: [tab], activeTabId: tab.id },
         ].filter((p) => p.tabs.length > 0 || prev.panes.length === 1) as Pane[],
+        closedTabs: prev.closedTabs,
       }
     })
   }
@@ -752,10 +1109,23 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
   const closePane = (paneId: string) => {
     setState((prev) => {
       if (prev.panes.length === 1) return prev
+      const closing = prev.panes.find((p) => p.id === paneId)
       const panes = prev.panes.filter((p) => p.id !== paneId)
+      const recorded = closing
+        ? closing.tabs.map((t) => ({
+            label: t.label,
+            url: t.url,
+            origin: t.origin,
+            backStack: t.backStack,
+            forwardStack: t.forwardStack,
+            closedAt: now(),
+          }))
+        : []
+      const closedTabs = [...prev.closedTabs, ...recorded].slice(-CLOSED_CAP)
       return {
         panes,
         focusedPaneId: panes[0].id,
+        closedTabs,
       }
     })
   }
@@ -777,6 +1147,7 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
       return {
         panes: [{ id: paneId, tabs: merged, activeTabId: tabId }],
         focusedPaneId: paneId,
+        closedTabs: prev.closedTabs,
       }
     })
   }
@@ -846,6 +1217,7 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
       return {
         panes,
         focusedPaneId: target.paneId,
+        closedTabs: prev.closedTabs,
       }
     })
   }
@@ -878,6 +1250,7 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
       return {
         focusedPaneId: newPaneId,
         panes: side === 'left' ? [newPane, updatedSource] : [updatedSource, newPane],
+        closedTabs: prev.closedTabs,
       }
     })
   }
@@ -898,6 +1271,52 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
           >
             {/* Tab bar */}
             <div className="flex items-stretch h-10 bg-section-bg border-b border-border">
+              {(() => {
+                const canBack = !!activeTab && activeTab.backStack.length > 0
+                const canFwd = !!activeTab && activeTab.forwardStack.length > 0
+                return (
+                  <div className="flex items-stretch border-r border-border">
+                    <button
+                      type="button"
+                      disabled={!canBack}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        goBack(pane.id)
+                      }}
+                      onContextMenu={(e) => {
+                        if (!canBack) return
+                        e.preventDefault()
+                        e.stopPropagation()
+                        setHistoryMenu({ paneId: pane.id, side: 'back', x: e.clientX, y: e.clientY })
+                      }}
+                      title="Back (right-click for history)"
+                      aria-label="Back"
+                      className="px-2 text-muted-foreground/70 hover:text-foreground hover:bg-muted disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-default"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!canFwd}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        goForward(pane.id)
+                      }}
+                      onContextMenu={(e) => {
+                        if (!canFwd) return
+                        e.preventDefault()
+                        e.stopPropagation()
+                        setHistoryMenu({ paneId: pane.id, side: 'forward', x: e.clientX, y: e.clientY })
+                      }}
+                      title="Forward (right-click for history)"
+                      aria-label="Forward"
+                      className="px-2 text-muted-foreground/70 hover:text-foreground hover:bg-muted disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-default"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                )
+              })()}
               <div
                 className="flex-1 flex items-stretch overflow-x-auto"
                 onDragOver={(e) => {
@@ -1159,6 +1578,17 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
           <button
             type="button"
             onClick={() => {
+              duplicateTab(contextMenu.paneId, contextMenu.tabId)
+              setContextMenu(null)
+            }}
+            className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-muted text-left"
+          >
+            <Copy className="w-3.5 h-3.5" />
+            Duplicate tab
+          </button>
+          <button
+            type="button"
+            onClick={() => {
               closeTab(contextMenu.paneId, contextMenu.tabId)
               setContextMenu(null)
             }}
@@ -1169,6 +1599,46 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
           </button>
         </div>
       )}
+
+      {/* Back/forward history dropdown. Entries are listed most-recent first;
+          clicking entry i navigates i+1 steps in that direction. */}
+      {historyMenu && (() => {
+        const pane = state.panes.find((p) => p.id === historyMenu.paneId)
+        const tab = pane?.tabs.find((t) => t.id === pane.activeTabId)
+        const stack = tab
+          ? historyMenu.side === 'back' ? tab.backStack : tab.forwardStack
+          : []
+        if (stack.length === 0) return null
+        // Display newest first so the first list item == one click on the
+        // arrow. Slice to keep the dropdown bounded; 15 is plenty for casual
+        // recall and avoids running off the screen on small displays.
+        const entries = stack.slice(-15).reverse()
+        return (
+          <div
+            className="fixed z-50 bg-card border border-border rounded-md shadow-lg py-1 min-w-[260px] max-w-[440px] text-xs"
+            style={{ left: historyMenu.x, top: historyMenu.y }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {entries.map((url, displayIdx) => {
+              const steps = displayIdx + 1
+              return (
+                <button
+                  key={`${steps}-${url}`}
+                  type="button"
+                  onClick={() => {
+                    navigateActiveTab(historyMenu.paneId, historyMenu.side, steps)
+                    setHistoryMenu(null)
+                  }}
+                  title={url}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-muted text-left text-foreground"
+                >
+                  <span className="truncate">{url}</span>
+                </button>
+              )
+            })}
+          </div>
+        )
+      })()}
     </div>
   )
 }
