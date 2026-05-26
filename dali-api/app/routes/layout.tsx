@@ -143,6 +143,48 @@ export default function AppLayoutRoute() {
     return () => window.removeEventListener('message', onMsg)
   }, [embedded, navigate])
 
+  // Scroll restoration WITHIN an embedded tab. React Router's <ScrollRestoration>
+  // doesn't reliably restore the iframe window's scroll on in-tab back/forward
+  // (the iframe is its own document and RR's key tracking gets lost across the
+  // shell↔iframe boundary), so we persist scrollY per history entry ourselves.
+  // Keyed by location.key (stable per history entry) in sessionStorage, scoped
+  // to this document, so navigating into a nested page and back restores where
+  // you were. Runs in both embedded and standalone documents — harmless either
+  // way, and standalone deep links benefit too.
+  const SCROLL_KEY_PREFIX = "dali:scroll:";
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const key = SCROLL_KEY_PREFIX + location.key;
+
+    // Restore on entering this location. rAF waits for the new route's content
+    // to paint so the target offset exists; fall back to top when unseen.
+    let raf = 0;
+    try {
+      const saved = window.sessionStorage.getItem(key);
+      raf = window.requestAnimationFrame(() => {
+        window.scrollTo(0, saved ? parseInt(saved, 10) || 0 : 0);
+      });
+    } catch {
+      // sessionStorage disabled — nothing to restore.
+    }
+
+    // Continuously record this entry's scroll while it's the active location,
+    // so a later back-navigation lands where the user left off.
+    const onScroll = () => {
+      try {
+        window.sessionStorage.setItem(key, String(window.scrollY));
+      } catch {
+        // ignore quota / disabled storage
+      }
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.cancelAnimationFrame(raf);
+      onScroll(); // capture final position for this entry before it changes
+      window.removeEventListener("scroll", onScroll);
+    };
+  }, [location.key]);
+
   // Skip the sidebar shell when rendered inside a TabWorkspace iframe.
   if (embedded) {
     return (

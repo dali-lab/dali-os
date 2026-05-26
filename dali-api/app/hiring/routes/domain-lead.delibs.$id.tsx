@@ -11,6 +11,16 @@ import { INITIAL_COLUMNS, FINAL_COLUMNS, buildColumnOrder } from "~/hiring/lib/d
 import { inReviewPipelineFilter } from "~/hiring/lib/application-pipeline-filter";
 import { ApplicantContextModal } from "~/hiring/components/delibs/ApplicantContextModal";
 
+// Same recommendation scale + tones used by the ApplicantContextModal, so the
+// card's reviewer/interviewer recommendation pills read consistently.
+const RECOMMENDATION_COLORS: Record<string, string> = {
+  "Strong Hire": "bg-green-100 text-green-800 border-green-300",
+  Hire: "bg-green-50 text-green-700 border-green-200",
+  "Lean Hire": "bg-yellow-50 text-yellow-700 border-yellow-300",
+  "Lean No Hire": "bg-orange-50 text-orange-700 border-orange-300",
+  "No Hire": "bg-red-100 text-red-700 border-red-300",
+};
+
 export const meta: Route.MetaFunction = ({ data }) => {
   const domain = (data as any)?.session?.domain?.name;
   return [{ title: `${domain ? `${domain} ` : ""}delibs · DALI OS` }];
@@ -107,7 +117,19 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         orderBy: { createdAt: "desc" },
         take: 1,
       },
-      interviews: { where: { status: { in: ["Scheduled", "Completed"] } } },
+      interviews: {
+        where: { status: { in: ["Scheduled", "Completed"] } },
+        include: {
+          assignments: {
+            where: { status: "Active" },
+            include: {
+              cycleInterviewer: {
+                include: { user: { select: { firstName: true, lastName: true } } },
+              },
+            },
+          },
+        },
+      },
     },
   });
 
@@ -433,16 +455,90 @@ export default function DelibsKanban() {
                               </span>
                             )}
                           </div>
-                          {da.reviews
-                            .filter((r: any) => r.overallRecommendation)
-                            .map((r: any) => (
+                          {(() => {
+                            const fmt = (u: any) =>
+                              u ? `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() : "";
+                            const recPill = (rec: string, key: string) => (
                               <span
-                                key={r.id}
-                                className="inline-block mt-1 mr-1 text-[10px] font-medium px-1.5 py-0.5 rounded border border-border bg-muted/50 text-muted-foreground"
+                                key={key}
+                                className={`inline-block text-[10px] font-medium px-1.5 py-0.5 rounded border ${
+                                  RECOMMENDATION_COLORS[rec] ?? "border-border bg-muted/50 text-muted-foreground"
+                                }`}
                               >
-                                {r.overallRecommendation}
+                                {rec}
                               </span>
-                            ))}
+                            );
+                            // Reviewer recommendations: one per submitted review.
+                            const reviewerNames = Array.from(
+                              new Set(
+                                (da.reviews ?? [])
+                                  .map((r: any) => fmt(r.cycleReviewer?.user))
+                                  .filter(Boolean),
+                              ),
+                            );
+                            const reviewerRecs = (da.reviews ?? [])
+                              .filter((r: any) => r.overallRecommendation)
+                              .map((r: any) => ({ id: r.id, rec: r.overallRecommendation as string }));
+                            // Interviewer recommendation: the joint interview rec.
+                            const interviewerNames = Array.from(
+                              new Set(
+                                (da.interviews ?? [])
+                                  .flatMap((iv: any) => iv.assignments ?? [])
+                                  .map((a: any) => fmt(a.cycleInterviewer?.user))
+                                  .filter(Boolean),
+                              ),
+                            );
+                            const interviewRecs = (da.interviews ?? [])
+                              .filter((iv: any) => iv.recommendation)
+                              .map((iv: any) => ({ id: iv.id, rec: iv.recommendation as string }));
+
+                            const hasReviewers = reviewerNames.length > 0 || reviewerRecs.length > 0;
+                            const hasInterviewers = interviewerNames.length > 0 || interviewRecs.length > 0;
+                            if (!hasReviewers && !hasInterviewers) return null;
+
+                            return (
+                              <div className="mt-2 pt-2 border-t border-border space-y-2">
+                                {hasReviewers && (
+                                  <div>
+                                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                                      Reviewers
+                                    </p>
+                                    {reviewerNames.length > 0 && (
+                                      <p className="text-[10px] text-muted-foreground">
+                                        {reviewerNames.join(", ")}
+                                      </p>
+                                    )}
+                                    {reviewerRecs.length > 0 && (
+                                      <div className="flex flex-wrap gap-1 mt-1">
+                                        {reviewerRecs.map((r: { id: string; rec: string }) => recPill(r.rec, r.id))}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                                {hasInterviewers && (
+                                  <div>
+                                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                                      Interviewers
+                                    </p>
+                                    {interviewerNames.length > 0 && (
+                                      <p className="text-[10px] text-muted-foreground">
+                                        {interviewerNames.join(", ")}
+                                      </p>
+                                    )}
+                                    {interviewRecs.length > 0 ? (
+                                      <div className="flex flex-wrap gap-1 mt-1">
+                                        {interviewRecs.map((r: { id: string; rec: string }) => recPill(r.rec, r.id))}
+                                      </div>
+                                    ) : (
+                                      <p className="text-[10px] text-muted-foreground/60 italic mt-0.5">
+                                        No interview recommendation yet.
+                                      </p>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </div>
                       </div>
                     </div>

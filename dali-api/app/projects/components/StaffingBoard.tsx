@@ -141,11 +141,8 @@ export function StaffingBoard({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
+      <div className="flex items-center justify-end gap-3 flex-wrap">
         <div className="flex items-center gap-2">
-          <h2 className="font-heading text-lg font-bold text-foreground">
-            Staffing
-          </h2>
           <label className="sr-only" htmlFor="staffing-term">
             Term
           </label>
@@ -170,11 +167,6 @@ export function StaffingBoard({
             ))}
           </select>
         </div>
-        <p className="text-xs text-muted-foreground hidden sm:block">
-          {canManage
-            ? "Drag a member onto a project. Click a card to view their bid."
-            : "Click a card to view their bid."}
-        </p>
       </div>
 
       {error && (
@@ -226,6 +218,7 @@ export function StaffingBoard({
           onClose={() => setOpenBidUserId(null)}
           memberName={`${openBidMember.firstName} ${openBidMember.lastName}`}
           preferences={openBidMember.preferences}
+          bidFields={openBidMember.bidFields ?? []}
           projectNames={projectNames}
           domainNames={domainNames}
           currentProjectId={openBidColumnId}
