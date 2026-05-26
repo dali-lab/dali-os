@@ -1,5 +1,7 @@
 import type { Prisma } from "~/generated/prisma/client";
 import { prisma } from "~/lib/db";
+import { getActiveCycle } from "~/hiring/lib/cycles";
+import { isInternToFullEligible } from "~/hiring/lib/intern-eligibility";
 
 // A "task" (todo) is any unread notification — every NotificationKind counts.
 // The Tasks sidebar, Home attention banner, and sidebar count all read this
@@ -77,31 +79,73 @@ const TASK_WHERE = (userId: string): Prisma.NotificationWhereInput => ({
 
 /** Count of open tasks for a user. Cheap — used by the sidebar poller. */
 export async function countOpenTasks(userId: string): Promise<number> {
-  return prisma.notification.count({ where: TASK_WHERE(userId) });
+  const [notifs, fellowship] = await Promise.all([
+    prisma.notification.count({ where: TASK_WHERE(userId) }),
+    getFellowshipTask(userId),
+  ]);
+  return notifs + (fellowship ? 1 : 0);
+}
+
+/**
+ * Synthetic "apply to the fellowship" task for current interns when an
+ * InternToFull cycle is Open and they haven't finished their application. This
+ * is not a Notification row — it's derived state, so it persists in the
+ * attention banner across reloads until the user submits or withdraws.
+ */
+export async function getFellowshipTask(userId: string): Promise<Task | null> {
+  if (!(await isInternToFullEligible(userId))) return null;
+  const cycle = await getActiveCycle("InternToFull");
+  if (!cycle || cycle.currentStatus !== "Open") return null;
+
+  const app = await prisma.application.findFirst({
+    where: { userId, applicationCycleId: cycle.id },
+    select: {
+      id: true,
+      statusUpdates: { orderBy: { createdAt: "desc" }, take: 1, select: { newStatus: true, createdAt: true } },
+    },
+  });
+  const status = app?.statusUpdates[0]?.newStatus ?? null;
+  if (status === "Submitted" || status === "Withdrawn") return null;
+
+  const isDraft = status === "Draft";
+  return {
+    id: `fellowship-${cycle.id}`,
+    title: isDraft ? "Continue your fellowship application" : "Apply to the fellowship",
+    body: cycle.name,
+    link: "/intern-to-full",
+    createdAt: (app?.statusUpdates[0]?.createdAt ?? new Date()).toISOString(),
+    source: "general",
+    dueAt: cycle.closeDate ? cycle.closeDate.toISOString() : null,
+    // Clears by self-action (submit / withdraw in /intern-to-full) — no Confirm button.
+    hasAction: true,
+  };
 }
 
 /** Open tasks for a user, newest first, with deadlines resolved. */
 export async function listOpenTasks(userId: string): Promise<Task[]> {
-  const rows = await prisma.notification.findMany({
-    where: TASK_WHERE(userId),
-    orderBy: { createdAt: "desc" },
-    take: 50,
-    select: {
-      id: true,
-      kind: true,
-      title: true,
-      body: true,
-      link: true,
-      dueAt: true,
-      createdAt: true,
-      scheduledMeetingId: true,
-      scheduledMeeting: { select: { selectedAt: true } },
-      // Attached published form, if any — link the recipient straight to it.
-      form: { select: { published: true, publicToken: true } },
-    },
-  });
+  const [rows, fellowship] = await Promise.all([
+    prisma.notification.findMany({
+      where: TASK_WHERE(userId),
+      orderBy: { createdAt: "desc" },
+      take: 50,
+      select: {
+        id: true,
+        kind: true,
+        title: true,
+        body: true,
+        link: true,
+        dueAt: true,
+        createdAt: true,
+        scheduledMeetingId: true,
+        scheduledMeeting: { select: { selectedAt: true } },
+        // Attached published form, if any — link the recipient straight to it.
+        form: { select: { published: true, publicToken: true } },
+      },
+    }),
+    getFellowshipTask(userId),
+  ]);
 
-  return rows.map((n) => {
+  const notifTasks = rows.map((n) => {
     const source: Task["source"] =
       n.kind === "MeetingInvite"
         ? "meeting"
@@ -138,4 +182,6 @@ export async function listOpenTasks(userId: string): Promise<Task[]> {
       hasAction,
     };
   });
+
+  return fellowship ? [fellowship, ...notifTasks] : notifTasks;
 }
