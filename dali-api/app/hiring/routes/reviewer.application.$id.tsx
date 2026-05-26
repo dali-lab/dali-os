@@ -187,12 +187,40 @@ export async function action({ request, params }: Route.ActionArgs) {
         domainApplication: { applicationId: params.id },
         cycleReviewer: { userId: auth.user.sub },
       },
+      include: {
+        domainApplication: {
+          select: {
+            domainId: true,
+            challengeVersion: { select: { domainId: true } },
+            application: { select: { applicationCycleId: true } },
+          },
+        },
+      },
     })
 
     if (existing) {
+      // Pin the domain rubric version these score keys belong to, so a later
+      // rubric edit (which mints new crit-<ts> keys) doesn't orphan them at
+      // render time. Resolve the domain from the review's domain application.
+      const da = existing.domainApplication
+      const domainId = da.domainId ?? da.challengeVersion?.domainId ?? null
+      let rubricVersionId: string | null = existing.rubricVersionId ?? null
+      if (domainId) {
+        const dac = await prisma.domainApplicationCycle.findUnique({
+          where: {
+            domainId_applicationCycleId: {
+              domainId,
+              applicationCycleId: da.application.applicationCycleId,
+            },
+          },
+          select: { rubricVersionId: true },
+        })
+        if (dac?.rubricVersionId) rubricVersionId = dac.rubricVersionId
+      }
+
       await prisma.applicationReview.update({
         where: { id: existing.id },
-        data: { scores, overallRecommendation, annotations },
+        data: { scores, overallRecommendation, annotations, rubricVersionId },
       })
     }
   }

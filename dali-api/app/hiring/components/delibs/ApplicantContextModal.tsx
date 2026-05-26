@@ -140,10 +140,7 @@ export function ApplicantContextModal({
               />
               <ReviewsSection
                 reviews={data.reviews ?? []}
-                criteria={[
-                  ...(data.rubric.generalCriteria ?? []),
-                  ...(data.rubric.domainCriteria ?? []),
-                ]}
+                criteriaByKey={data.criteriaByKey ?? {}}
                 fieldContext={buildFieldContext(data)}
               />
               <DecisionsSection decisions={data.decisions ?? []} />
@@ -355,11 +352,11 @@ function ReviewAnnotations({
 
 export function ReviewsSection({
   reviews,
-  criteria,
+  criteriaByKey,
   fieldContext,
 }: {
   reviews: any[];
-  criteria: any[];
+  criteriaByKey: Record<string, { label: string; maxScore?: number }>;
   fieldContext: FieldContext;
 }) {
   return (
@@ -409,16 +406,18 @@ export function ReviewsSection({
 
                 {Object.keys(scores).length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-1">
-                    {criteria.map((c: any) => {
-                      const score = scores[c.key];
+                    {Object.entries(scores).map(([key, score]) => {
                       if (score == null) return null;
+                      const meta = criteriaByKey[key];
+                      const label = meta?.label ?? key;
                       return (
                         <span
-                          key={c.key}
+                          key={key}
                           className="text-xs bg-muted text-foreground/80 px-1.5 py-0.5 rounded"
-                          title={c.label}
+                          title={label}
                         >
-                          {c.label?.split(" ")[0] ?? c.key}: {score}/{c.maxScore}
+                          {label.split(" ")[0]}: {score}
+                          {meta?.maxScore != null ? `/${meta.maxScore}` : ""}
                         </span>
                       );
                     })}

@@ -128,3 +128,64 @@ describe("PUT /api/hiring/cycles/:cycleId/my-availability — input validation",
     expect(res.status).toBe(200);
   });
 });
+
+describe("PUT /api/hiring/cycles/:cycleId/my-availability — window clip", () => {
+  // Regression: the window bounds were derived by reading the stored
+  // UTC-midnight date through the config timezone, which shifted the whole
+  // window back a day. Every block an interviewer submitted then fell outside
+  // it and was silently discarded — availability saved as empty.
+  it("keeps blocks on the configured start day (ET config, no day-shift)", async () => {
+    (mockPrisma as any).interviewConfig.findUnique = vi.fn().mockResolvedValue({
+      // Stored as UTC midnight; stands for the calendar date 2026-06-01.
+      interviewStartDate: new Date("2026-06-01T00:00:00.000Z"),
+      interviewEndDate: new Date("2026-06-01T00:00:00.000Z"),
+      timezone: "America/New_York",
+    });
+
+    // 9:00–9:30 AM ET on 2026-06-01 (ET is UTC-4 in June).
+    const res = await action({
+      request: makeRequest({
+        blocks: [
+          {
+            startTime: "2026-06-01T13:00:00.000Z",
+            endTime: "2026-06-01T13:30:00.000Z",
+          },
+        ],
+      }),
+      params: { cycleId: CYCLE_ID },
+      context: {},
+    } as any);
+
+    expect(res.status).toBe(200);
+    expect(mockPrisma.interviewerAvailability.createMany).toHaveBeenCalledTimes(1);
+    const arg = mockPrisma.interviewerAvailability.createMany.mock.calls[0][0];
+    expect(arg.data).toHaveLength(1);
+    expect(arg.data[0].startTime.toISOString()).toBe("2026-06-01T13:00:00.000Z");
+  });
+
+  it("still clips blocks genuinely outside the window", async () => {
+    (mockPrisma as any).interviewConfig.findUnique = vi.fn().mockResolvedValue({
+      interviewStartDate: new Date("2026-06-01T00:00:00.000Z"),
+      interviewEndDate: new Date("2026-06-01T00:00:00.000Z"),
+      timezone: "America/New_York",
+    });
+
+    // 9:00 AM ET on 2026-06-05 — four days past the one-day window.
+    const res = await action({
+      request: makeRequest({
+        blocks: [
+          {
+            startTime: "2026-06-05T13:00:00.000Z",
+            endTime: "2026-06-05T13:30:00.000Z",
+          },
+        ],
+      }),
+      params: { cycleId: CYCLE_ID },
+      context: {},
+    } as any);
+
+    expect(res.status).toBe(200);
+    // Nothing valid to write → createMany is skipped (deleteMany still clears).
+    expect(mockPrisma.interviewerAvailability.createMany).not.toHaveBeenCalled();
+  });
+});

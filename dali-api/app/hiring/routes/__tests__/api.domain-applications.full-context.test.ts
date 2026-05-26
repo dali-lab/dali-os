@@ -14,7 +14,10 @@ import { loader } from "~/hiring/routes/api.domain-applications.$id.full-context
 const mockPrisma = prisma as unknown as {
   domainApplication: { findUnique: ReturnType<typeof vi.fn> };
   domainApplicationCycle: { findUnique: ReturnType<typeof vi.fn> };
-  rubricVersion: { findUnique: ReturnType<typeof vi.fn> };
+  rubricVersion: {
+    findUnique: ReturnType<typeof vi.fn>;
+    findMany: ReturnType<typeof vi.fn>;
+  };
 };
 
 const USER_ID = "user-1";
@@ -25,7 +28,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   (mockPrisma as any).domainApplication = { findUnique: vi.fn() };
   (mockPrisma as any).domainApplicationCycle = { findUnique: vi.fn() };
-  (mockPrisma as any).rubricVersion = { findUnique: vi.fn() };
+  (mockPrisma as any).rubricVersion = { findUnique: vi.fn(), findMany: vi.fn() };
   vi.mocked(requireAuth).mockResolvedValue({
     ok: true,
     user: { sub: USER_ID },
@@ -58,6 +61,7 @@ function setupHappyPathDomainApp() {
       {
         id: "rev-1",
         scores: { c1: 4 },
+        rubricVersionId: "drv-1",
         feedback: "good",
         rejectionRationale: "",
         overallRecommendation: "Hire",
@@ -78,12 +82,28 @@ function setupHappyPathDomainApp() {
       },
     ],
   });
+  // Current domain rubric version for the cycle.
   mockPrisma.domainApplicationCycle.findUnique.mockResolvedValue({
-    rubricVersion: { criteria: [{ key: "c1", label: "Craft", maxScore: 5 }] },
+    rubricVersionId: "drv-1",
   });
+  // General-form rubric criteria (fetched directly by the endpoint).
   mockPrisma.rubricVersion.findUnique.mockResolvedValue({
     criteria: [{ key: "g1c", label: "General", maxScore: 5 }],
   });
+  // Resolver queries: first the direct versions (current + pinned), then the
+  // history scan over the same rubricId.
+  mockPrisma.rubricVersion.findMany
+    .mockResolvedValueOnce([
+      {
+        id: "drv-1",
+        rubricId: "rub-1",
+        versionNumber: 1,
+        criteria: [{ key: "c1", label: "Craft", maxScore: 5 }],
+      },
+    ])
+    .mockResolvedValueOnce([
+      { criteria: [{ key: "c1", label: "Craft", maxScore: 5 }] },
+    ]);
 }
 
 describe("GET /api/hiring/domain-applications/:id/full-context", () => {
@@ -114,8 +134,10 @@ describe("GET /api/hiring/domain-applications/:id/full-context", () => {
     expect(json.reviews[0].rejectionRationale).toBe("");
     expect(json.decisions).toHaveLength(1);
     expect(json.decisions[0].notes).toBe("moved from Initial delibs");
-    expect(json.rubric.generalCriteria).toEqual([{ key: "g1c", label: "General", maxScore: 5 }]);
-    expect(json.rubric.domainCriteria).toEqual([{ key: "c1", label: "Craft", maxScore: 5 }]);
+    // Criteria are now returned as a resolved key -> meta map (resilient to
+    // rubric edits) rather than separate general/domain arrays.
+    expect(json.criteriaByKey.g1c).toEqual({ label: "General", maxScore: 5, description: undefined });
+    expect(json.criteriaByKey.c1).toEqual({ label: "Craft", maxScore: 5, description: undefined });
     expect(hasCycleAccess).toHaveBeenCalledWith(USER_ID, CYCLE_ID);
   });
 

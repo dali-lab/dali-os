@@ -69,6 +69,33 @@ export type InlineCommentOpts = {
 
 const commentDecoKey = new PluginKey("inlineCommentDecorations");
 
+// In a contenteditable ProseMirror editor, Tab is not bound by default, so the
+// browser treats it as focus traversal and moves focus out of the editor — to
+// the user it looks like Tab "can't be typed." Bind it: inside a list, Tab/
+// Shift-Tab indent/outdent the item (the Notion/Docs behavior); anywhere else
+// Tab inserts a literal tab character. Returning true in every branch stops the
+// focus-escape default.
+const TabKeymap = Extension.create({
+  name: "tabKeymap",
+  addKeyboardShortcuts() {
+    return {
+      Tab: ({ editor }) => {
+        if (editor.can().sinkListItem("listItem")) {
+          return editor.chain().focus().sinkListItem("listItem").run();
+        }
+        return editor.chain().focus().insertContent("\t").run();
+      },
+      "Shift-Tab": ({ editor }) => {
+        if (editor.can().liftListItem("listItem")) {
+          return editor.chain().focus().liftListItem("listItem").run();
+        }
+        // Nothing to outdent outside a list; swallow it so focus stays put.
+        return true;
+      },
+    };
+  },
+});
+
 // Custom cursor/selection builders so we can add an `.idle` class — the
 // default builders don't know about our `idle` flag.
 function buildCursor(user: AwarenessUser, _clientId: number): HTMLElement {
@@ -349,6 +376,7 @@ function CollaborativeEditorInner({
         undoRedo: false,
       }),
       Placeholder.configure({ placeholder }),
+      TabKeymap,
       createCollabExtension(entry.fragment, entry.provider),
       ...(inlineComments?.enabled
         ? [

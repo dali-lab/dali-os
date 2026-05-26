@@ -14,6 +14,7 @@ import {
   AnalyticsErrorReporter,
   reportBoundaryError,
 } from "~/components/AnalyticsErrorReporter";
+import { NavigationProgress } from "~/components/NavigationProgress";
 
 export const links: Route.LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
@@ -70,6 +71,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <Links />
       </head>
       <body>
+        <NavigationProgress />
         {children}
         <AnalyticsErrorReporter />
         <ScrollRestoration />

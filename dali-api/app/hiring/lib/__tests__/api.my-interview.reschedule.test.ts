@@ -26,6 +26,9 @@ const mockTx: any = {
     findFirst: vi.fn(),
     update: vi.fn(),
   },
+  interviewAssignment: {
+    updateMany: vi.fn(),
+  },
   interviewConfig: {
     findUnique: vi.fn(),
   },
@@ -40,6 +43,7 @@ beforeEach(() => {
 
   mockTx.interview.findFirst = vi.fn();
   mockTx.interview.update = vi.fn();
+  mockTx.interviewAssignment.updateMany = vi.fn();
   mockTx.interviewConfig.findUnique = vi.fn().mockResolvedValue({ rescheduleNoticeHours: 12, bookingNoticeHours: 0 });
 
   // $transaction receives (callback, options); invoke the callback with mockTx
@@ -144,6 +148,12 @@ describe("POST /api/hiring/my-interview/reschedule", () => {
     expect(mockTx.interview.update).toHaveBeenCalledWith({
       where: { id: "int-design" },
       data: { status: "CancelledByApplicant" },
+    });
+
+    // Old slot's assignments released so it leaves interviewer dashboards
+    expect(mockTx.interviewAssignment.updateMany).toHaveBeenCalledWith({
+      where: { interviewId: "int-design", status: "Active" },
+      data: { status: "Declined" },
     });
 
     // New interview assigned to correct DA

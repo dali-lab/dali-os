@@ -31,6 +31,31 @@ export function getZonedYMD(
   };
 }
 
+/** Wall-clock parts of `date` interpreted in `timezone` (month 1-indexed). */
+export function getZonedParts(
+  date: Date,
+  timezone: string,
+): { year: number; month: number; day: number; hour: number; minute: number } {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+  const get = (t: string) =>
+    Number(parts.find((p) => p.type === t)?.value ?? "0");
+  return {
+    year: get("year"),
+    month: get("month"),
+    day: get("day"),
+    hour: get("hour") % 24,
+    minute: get("minute"),
+  };
+}
+
 /**
  * Hour-of-day of `date` interpreted in `timezone`, as a fraction in [0, 24)
  * (e.g. 2:30 PM → 14.5). Used to position the calendar's "current time" line.
@@ -69,13 +94,22 @@ export function zonedDayEndUtc(
 }
 
 /** UTC instant corresponding to local midnight on `year-month-day` in `timezone`. */
-export function zonedDayStartUtc(
+/**
+ * UTC instant corresponding to a wall-clock time `year-month-day hour:minute`
+ * in `timezone`. DST-correct: probes the zone's offset at the guessed instant
+ * and corrects, which resolves transition days the same way the rest of this
+ * module does. The single source of truth for "this local time means this UTC
+ * instant" — `zonedDayStartUtc` is the hour=0, minute=0 case.
+ */
+export function zonedWallTimeUtc(
   year: number,
   month: number,
   day: number,
+  hour: number,
+  minute: number,
   timezone: string,
 ): Date {
-  const utcGuess = new Date(Date.UTC(year, month - 1, day));
+  const utcGuess = new Date(Date.UTC(year, month - 1, day, hour, minute));
   const formatter = new Intl.DateTimeFormat("en-US", {
     timeZone: timezone,
     year: "numeric",
@@ -99,4 +133,13 @@ export function zonedDayStartUtc(
   );
   const offsetMs = localAtUtcMs - utcGuess.getTime();
   return new Date(utcGuess.getTime() - offsetMs);
+}
+
+export function zonedDayStartUtc(
+  year: number,
+  month: number,
+  day: number,
+  timezone: string,
+): Date {
+  return zonedWallTimeUtc(year, month, day, 0, 0, timezone);
 }

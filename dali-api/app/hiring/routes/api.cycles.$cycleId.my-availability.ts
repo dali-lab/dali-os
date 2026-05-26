@@ -4,7 +4,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
-import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
+import { zonedDayStartUtc } from "~/lib/timezone";
 
 const AvailabilitySchema = z.object({
   blocks: z
@@ -23,20 +23,27 @@ const AvailabilitySchema = z.object({
 });
 
 /** UTC bounds [start, end) of the configured interview window in `timezone`.
- * The stored `interviewStartDate`/`interviewEndDate` are nominally UTC midnight
- * but represent calendar dates; we derive the actual day in the configured
- * timezone, then take midnight-on-that-day and midnight-on-(endDate+1) in that
- * timezone as UTC instants. */
+ * The stored `interviewStartDate`/`interviewEndDate` are UTC-midnight stamps
+ * that stand for plain calendar dates (the picker sends a date-only value), so
+ * we read their Y/M/D in UTC — NOT in `timezone`, which would shift the date to
+ * the previous day for any zone west of UTC and slide the whole window off by a
+ * day. We then anchor midnight-on-startDate and midnight-on-(endDate+1) in the
+ * configured timezone. */
 function interviewWindowUtcBounds(config: {
   interviewStartDate: Date;
   interviewEndDate: Date;
   timezone: string;
 }): { start: Date; end: Date } {
-  const startYMD = getZonedYMD(config.interviewStartDate, config.timezone);
-  const endYMD = getZonedYMD(config.interviewEndDate, config.timezone);
-  const start = zonedDayStartUtc(startYMD.year, startYMD.month, startYMD.day, config.timezone);
+  const s = config.interviewStartDate;
+  const e = config.interviewEndDate;
+  const start = zonedDayStartUtc(
+    s.getUTCFullYear(),
+    s.getUTCMonth() + 1,
+    s.getUTCDate(),
+    config.timezone,
+  );
   // End is exclusive — the day after `interviewEndDate`.
-  const endNext = new Date(Date.UTC(endYMD.year, endYMD.month - 1, endYMD.day));
+  const endNext = new Date(Date.UTC(e.getUTCFullYear(), e.getUTCMonth(), e.getUTCDate()));
   endNext.setUTCDate(endNext.getUTCDate() + 1);
   const end = zonedDayStartUtc(
     endNext.getUTCFullYear(),

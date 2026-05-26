@@ -6,7 +6,6 @@ import {
   Clock,
   Check,
   Video,
-  AlertTriangle,
   ChevronDown,
   FileText,
   MapPin,
@@ -24,6 +23,7 @@ import { PresenceBar } from '~/components/collab/PresenceBar'
 import { useSharedString } from '~/components/collab/useSharedString'
 import { ApplicationViewer } from '~/hiring/components/ApplicationViewer'
 import { ReviewSummary } from '~/hiring/components/ReviewSummary'
+import { buildCriteriaLabelMap } from '~/hiring/lib/rubric-criteria'
 import type { Route } from './+types/interviewer.interview.$interviewId'
 import type { Question } from '~/types'
 
@@ -113,7 +113,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // Standard cycles where challengeVersion is always set; the optional chain
   // is just to satisfy TS now that the column is nullable.
   const domainId = interview.domainApplication.challengeVersion?.domainId ?? null
-  let rubricCriteria: any[] = []
+  let domainRubricVersionId: string | null = null
   if (domainId) {
     const domainAppCycle = await prisma.domainApplicationCycle.findUnique({
       where: {
@@ -122,14 +122,20 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           applicationCycleId: interview.applicationCycleId,
         },
       },
+      select: { rubricVersionId: true },
     })
-    if (domainAppCycle?.rubricVersionId) {
-      const rv = await prisma.rubricVersion.findUnique({
-        where: { id: domainAppCycle.rubricVersionId },
-      })
-      rubricCriteria = (rv?.criteria as any[] | null) ?? []
-    }
+    domainRubricVersionId = domainAppCycle?.rubricVersionId ?? null
   }
+  // Criterion key -> label map for the submitted reviews' scores. Resilient to
+  // rubric edits: prefers the current domain rubric but falls back to the
+  // versions pinned on each review (and their history) so keys from older
+  // rubric versions still resolve instead of leaking as raw crit-<ts> keys.
+  const criteriaByKey = await buildCriteriaLabelMap({
+    domainRubricVersionId,
+    pinnedVersionIds: interview.domainApplication.reviews.map(
+      (r: any) => r.rubricVersionId,
+    ),
+  })
 
   const collabToken = parseSessionCookie(request)
 
@@ -165,14 +171,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   return {
       interview: interviewWithPresignedAnswers,
       myAssignment,
-      rubricCriteria,
+      criteriaByKey,
       collabToken,
       userName,
     }
 }
 
 export default function InterviewDetailPage() {
-  const { interview, myAssignment, rubricCriteria, collabToken, userName } =
+  const { interview, myAssignment, criteriaByKey, collabToken, userName } =
     useLoaderData<typeof loader>() as any
 
   const applicant = interview.domainApplication?.application?.user
@@ -203,10 +209,6 @@ export default function InterviewDetailPage() {
   const domainQuestions: any[] =
     interview.domainApplication?.challengeVersion?.questions ?? []
   const submittedReviews: any[] = interview.domainApplication?.reviews ?? []
-  const criteriaByKey: Record<string, { label: string }> = {}
-  for (const c of rubricCriteria as any[]) {
-    if (c?.key) criteriaByKey[c.key] = { label: c.label ?? c.key }
-  }
 
   const questionLabels: Record<string, string> = {}
   for (const q of [...generalQuestions, ...domainQuestions]) {
@@ -248,14 +250,23 @@ export default function InterviewDetailPage() {
     interview.recommendation ?? '',
   )
 
-  // Completed state
-  const [isCompleted, setIsCompleted] = useState(
-    interview.status === 'Completed',
+  // Completed state — also shared live so that when one interviewer marks the
+  // joint recommendation complete, the co-interviewer's open page flips to the
+  // Completed view immediately (rather than only after a manual reload). The
+  // DB write is still the source of truth on next load; this flag mirrors it
+  // for the live session. Seeded from interview.status.
+  const {
+    value: completedFlag,
+    setValue: setCompletedFlag,
+  } = useSharedString(
+    `interview:${interview.id}:rec-status`,
+    collabToken,
+    interview.status === 'Completed' ? 'completed' : '',
   )
+  const isCompleted = completedFlag === 'completed'
+  const setIsCompleted = (next: boolean) =>
+    setCompletedFlag(next ? 'completed' : '')
   const [completing, setCompleting] = useState(false)
-
-  // Decline state
-  const [declining, setDeclining] = useState(false)
 
   // Mark complete
   const handleMarkComplete = useCallback(async () => {
@@ -268,7 +279,9 @@ export default function InterviewDetailPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ recommendation }),
       })
-      if (res.ok) {
+      // 409 = the co-interviewer already submitted this joint recommendation.
+      // That's the success case here, not an error: flip to Completed anyway.
+      if (res.ok || res.status === 409) {
         setIsCompleted(true)
       }
     } finally {
@@ -291,48 +304,6 @@ export default function InterviewDetailPage() {
       setCompleting(false)
     }
   }, [interview.id])
-
-  // Mark unavailable (decline)
-  const handleDecline = useCallback(async () => {
-    if (
-      !confirm(
-        'Are you sure you want to mark yourself as unavailable for this interview?',
-      )
-    )
-      return
-    setDeclining(true)
-    try {
-      const res = await fetch(
-        `/api/hiring/cycles/${interview.applicationCycleId}/my-interviews/${interview.id}/decline`,
-        {
-          method: 'POST',
-          credentials: 'include',
-        },
-      )
-      if (res.ok) {
-        window.location.href = '/hiring/reviewer'
-        return
-      }
-      if (res.status === 409) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string }
-        alert(
-          body.error ??
-            'No replacement interviewer is available. Please contact the hiring lead.',
-        )
-        return
-      }
-      const body = (await res.json().catch(() => ({}))) as { error?: string }
-      alert(`Failed to mark unavailable: ${body.error ?? res.statusText}`)
-    } catch (e) {
-      alert(
-        `Failed to mark unavailable: ${
-          e instanceof Error ? e.message : String(e)
-        }`,
-      )
-    } finally {
-      setDeclining(false)
-    }
-  }, [interview.id, interview.applicationCycleId])
 
   return (
     <PresenceProvider
@@ -433,16 +404,6 @@ export default function InterviewDetailPage() {
               </span>
             </div>
           </div>
-          {!isCompleted && (
-            <button
-              onClick={handleDecline}
-              disabled={declining}
-              className="inline-flex items-center px-3 py-2 text-sm font-medium text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 disabled:opacity-50"
-            >
-              <AlertTriangle className="w-4 h-4 mr-1.5" />
-              {declining ? 'Declining...' : 'Mark Unavailable'}
-            </button>
-          )}
         </div>
       </div>
 
@@ -564,9 +525,14 @@ export default function InterviewDetailPage() {
 
       {/* Joint Recommendation */}
       <div className="bg-card rounded-xl border border-border shadow-sm p-6">
-        <h2 className="text-lg font-semibold text-foreground mb-4">
+        <h2 className="text-lg font-semibold text-foreground mb-1">
           Joint Recommendation
         </h2>
+        <p className="text-xs text-muted-foreground mb-4">
+          One shared recommendation for this interview. Either interviewer
+          submits it on behalf of both — only one of you needs to mark it
+          complete.
+        </p>
 
         {isCompleted ? (
           <div className="p-4 bg-green-50 rounded-lg border border-green-200">
@@ -613,28 +579,6 @@ export default function InterviewDetailPage() {
                   </option>
                 ))}
               </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-foreground/80 mb-1">
-                Your Notes
-              </label>
-              <p className="text-xs text-muted-foreground mb-2">
-                Private — only you can see these notes. Autosaved.
-              </p>
-              {collabToken ? (
-                <CollaborativeEditor
-                  editorId="recommendation"
-                  documentName={`interview:${interview.id}:rec-notes-${myAssignment.id}`}
-                  token={collabToken}
-                  userName={userName}
-                  placeholder="Your notes on the recommendation..."
-                />
-              ) : (
-                <div className="p-4 bg-yellow-50 rounded-lg border border-yellow-200 text-sm text-yellow-800">
-                  Session expired — please refresh.
-                </div>
-              )}
             </div>
 
             <div className="flex items-center gap-3">

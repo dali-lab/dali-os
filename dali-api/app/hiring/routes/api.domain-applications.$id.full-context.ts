@@ -3,6 +3,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { hasCycleAccess } from "~/lib/roles";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
+import { buildCriteriaLabelMap } from "~/hiring/lib/rubric-criteria";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -64,7 +65,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
               applicationCycleId: da.application.applicationCycleId,
             },
           },
-          select: { rubricVersion: { select: { criteria: true } } },
+          select: { rubricVersionId: true },
         })
       : Promise.resolve(null),
     da.application.applicationCycle.generalRubricVersionId
@@ -74,6 +75,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         })
       : Promise.resolve(null),
   ]);
+
+  // Criterion key -> label map resilient to rubric edits (prefers the current
+  // rubric, falls back to each review's pinned version + rubric history).
+  const criteriaByKey = await buildCriteriaLabelMap({
+    domainRubricVersionId: domainCycle?.rubricVersionId ?? null,
+    generalCriteria: generalRubric?.criteria,
+    pinnedVersionIds: da.reviews.map((r) => r.rubricVersionId),
+  });
 
   return Response.json({
       domainApplication: {
@@ -94,9 +103,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       },
       reviews: da.reviews,
       decisions: da.decisions,
-      rubric: {
-        generalCriteria: generalRubric?.criteria ?? [],
-        domainCriteria: domainCycle?.rubricVersion?.criteria ?? [],
-      },
+      criteriaByKey,
     });
 }

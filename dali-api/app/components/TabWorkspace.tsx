@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { X, Maximize2, SplitSquareHorizontal } from 'lucide-react'
+import { X, Maximize2, SplitSquareHorizontal, Loader2 } from 'lucide-react'
 
 export interface OpenTabRequest {
   url: string
@@ -21,7 +21,16 @@ export interface TabWorkspaceHandle {
 interface Tab {
   id: string
   label: string
+  // Where the tab's iframe currently is. Drifts as the user navigates links
+  // inside the iframe (kept in sync via the `dali:tabNavigated` message), and
+  // is persisted so reopening the workspace restores the last page viewed.
+  // NOT fed back into the live iframe's src — see `seedUrlsRef` — so updating
+  // it never reloads the iframe and loses its back/forward history.
   url: string
+  // The section URL the tab was opened from (e.g. /hiring/reviewer). Stable
+  // for the tab's life. Used to dedupe sidebar clicks so re-clicking a section
+  // focuses the already-open tab even after it has drifted to a sub-page.
+  origin: string
   lastActivatedAt: number
 }
 
@@ -36,7 +45,7 @@ interface WorkspaceState {
   focusedPaneId: string
 }
 
-const STORAGE_KEY = 'dali:tabworkspace:v2'
+const STORAGE_KEY = 'dali:tabworkspace:v3'
 const MAX_TABS_PER_PANE = 10
 
 function newId() {
@@ -79,7 +88,15 @@ function loadState(): WorkspaceState {
     if (!raw) return emptyState()
     const parsed = JSON.parse(raw)
     if (!isValidState(parsed)) return emptyState()
-    return parsed
+    // `origin` was added after `url`; backfill it from `url` for any tab
+    // persisted before the field existed so dedup/highlighting keep working.
+    return {
+      ...parsed,
+      panes: parsed.panes.map((p) => ({
+        ...p,
+        tabs: p.tabs.map((t) => (t.origin ? t : { ...t, origin: t.url })),
+      })),
+    }
   } catch {
     return emptyState()
   }
@@ -102,9 +119,12 @@ function appendWithLruCap(tabs: Tab[], protectedTabId: string): Tab[] {
   return [...tabs.slice(0, victimIdx), ...tabs.slice(victimIdx + 1)]
 }
 
+// Locate an open tab for `url`, matching on either its origin (so re-clicking
+// a sidebar section focuses a tab that has since drifted to a sub-page) or its
+// current url (so re-opening the exact deep link focuses it too).
 function findTabPane(state: WorkspaceState, url: string): { paneId: string; tabId: string } | null {
   for (const pane of state.panes) {
-    const tab = pane.tabs.find((t) => t.url === url)
+    const tab = pane.tabs.find((t) => t.origin === url || t.url === url)
     if (tab) return { paneId: pane.id, tabId: tab.id }
   }
   return null
@@ -159,6 +179,28 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
   // Lazy-mount on first activation — avoids slamming the server on hydrate
   // when many tabs were persisted across sessions.
   const [mountedTabIds, setMountedTabIds] = useState<Set<string>>(() => new Set())
+  // Tab ids whose iframe document has finished its initial load. Drives the
+  // per-pane loading overlay: a mounted-but-not-yet-loaded tab shows a spinner
+  // until its iframe's onLoad fires. (In-iframe React Router navigations are
+  // covered separately by the root NavigationProgress bar.)
+  const [loadedTabIds, setLoadedTabIds] = useState<Set<string>>(() => new Set())
+
+  // The URL each iframe was mounted with. Captured once per tab (the first
+  // time it mounts) and used as the iframe `src`, so updating the tab's live
+  // `url` as the user navigates inside the iframe never re-points `src` and
+  // reloads the frame (which would wipe its back/forward history). A fresh
+  // page load re-seeds from the persisted `url`, restoring the last page.
+  const seedUrlsRef = useRef<Map<string, string>>(new Map())
+  const seedFor = (tab: Tab): string => {
+    const existing = seedUrlsRef.current.get(tab.id)
+    if (existing !== undefined) return existing
+    seedUrlsRef.current.set(tab.id, tab.url)
+    return tab.url
+  }
+
+  // tabId → its <iframe>, so a `dali:tabNavigated` message can be attributed
+  // to the right tab by matching the message's source window.
+  const iframeElsRef = useRef<Map<string, HTMLIFrameElement>>(new Map())
 
   // Hydrate from localStorage on first client render.
   useEffect(() => {
@@ -171,6 +213,7 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
         id: newId(),
         label: t.label,
         url: t.url,
+        origin: t.url,
         // Stagger so the last seeded tab is the most recent (it's the active
         // one). The caller orders initial tabs from "anchor" (Home) to
         // "most specific" (the section the user actually navigated to), so
@@ -210,6 +253,7 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
           id: newId(),
           label: target.label,
           url: target.url,
+          origin: target.url,
           lastActivatedAt: now(),
         }
         setState({
@@ -242,6 +286,44 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
     }
   }, [state])
 
+  // Track where each iframe navigates. Embedded pages post `dali:tabNavigated`
+  // with their current location on every in-iframe route change; we attribute
+  // it to a tab by matching the message's source window to that tab's iframe,
+  // then update the tab's live `url` (for persistence + sidebar highlight).
+  // The iframe's `src` is pinned to its mount seed, so this never reloads it.
+  useEffect(() => {
+    function handler(e: MessageEvent) {
+      if (e.origin !== window.location.origin) return
+      const data = e.data
+      if (!data || data.type !== 'dali:tabNavigated' || typeof data.url !== 'string') return
+      let tabId: string | null = null
+      for (const [id, el] of iframeElsRef.current) {
+        if (el.contentWindow === e.source) {
+          tabId = id
+          break
+        }
+      }
+      if (!tabId) return
+      const nextUrl = data.url as string
+      setState((prev) => {
+        let changed = false
+        const panes = prev.panes.map((p) => ({
+          ...p,
+          tabs: p.tabs.map((t) => {
+            if (t.id === tabId && t.url !== nextUrl) {
+              changed = true
+              return { ...t, url: nextUrl }
+            }
+            return t
+          }),
+        }))
+        return changed ? { ...prev, panes } : prev
+      })
+    }
+    window.addEventListener('message', handler)
+    return () => window.removeEventListener('message', handler)
+  }, [])
+
   // Whenever a tab becomes the active tab in any pane, ensure its iframe is
   // mounted. Tabs only mount when actually viewed; persisted-but-unvisited
   // tabs stay dormant until clicked.
@@ -252,6 +334,21 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
         if (pane.activeTabId && !prev.has(pane.activeTabId)) {
           if (!next) next = new Set(prev)
           next.add(pane.activeTabId)
+        }
+      }
+      return next ?? prev
+    })
+  }, [state])
+
+  // Drop loaded-state for tabs that have been closed so the set stays bounded.
+  useEffect(() => {
+    const liveIds = new Set(state.panes.flatMap((p) => p.tabs.map((t) => t.id)))
+    setLoadedTabIds((prev) => {
+      let next: Set<string> | null = null
+      for (const id of prev) {
+        if (!liveIds.has(id)) {
+          if (!next) next = new Set(prev)
+          next.delete(id)
         }
       }
       return next ?? prev
@@ -286,6 +383,7 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
             id: newId(),
             label: req.label,
             url: req.url,
+            origin: req.url,
             lastActivatedAt: now(),
           }
           return {
@@ -327,6 +425,7 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
             id: newId(),
             label: req.label,
             url: req.url,
+            origin: req.url,
             lastActivatedAt: now(),
           }
           // Already split — open in the pane that isn't focused.
@@ -362,7 +461,7 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
           const panes = prev.panes.map((p) => ({
             ...p,
             tabs: p.tabs.map((t) => {
-              if (t.url === url && t.label !== label) {
+              if ((t.url === url || t.origin === url) && t.label !== label) {
                 changed = true
                 return { ...t, label }
               }
@@ -496,7 +595,8 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
   // contentDocument so shortcuts work when focus is inside the embedded page.
   // Re-runs on each iframe load (e.g., when the user navigates a link inside
   // the iframe), at which point contentDocument is a fresh Document object.
-  const onIframeLoad = (e: React.SyntheticEvent<HTMLIFrameElement>) => {
+  const onIframeLoad = (tabId: string) => (e: React.SyntheticEvent<HTMLIFrameElement>) => {
+    setLoadedTabIds((prev) => (prev.has(tabId) ? prev : new Set(prev).add(tabId)))
     const doc = e.currentTarget.contentDocument
     if (!doc) return
     const handler = (ev: Event) => handlersRef.current?.onShortcut(ev as KeyboardEvent)
@@ -913,14 +1013,25 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
                 return (
                   <iframe
                     key={tab.id}
-                    src={addEmbedParam(tab.url)}
+                    ref={(el) => {
+                      if (el) iframeElsRef.current.set(tab.id, el)
+                      else iframeElsRef.current.delete(tab.id)
+                    }}
+                    src={addEmbedParam(seedFor(tab))}
                     title={tab.label}
                     className="absolute inset-0 w-full h-full border-0"
                     style={{ display: isActive ? 'block' : 'none' }}
-                    onLoad={onIframeLoad}
+                    onLoad={onIframeLoad(tab.id)}
                   />
                 )
               })}
+              {/* Spinner over the active tab while its iframe document is
+                  still doing its initial load (before onLoad fires). */}
+              {activeTab && mountedTabIds.has(activeTab.id) && !loadedTabIds.has(activeTab.id) && (
+                <div className="absolute inset-0 flex items-center justify-center bg-section-bg">
+                  <Loader2 className="w-6 h-6 text-accent-teal animate-spin motion-reduce:animate-none" />
+                </div>
+              )}
               {!activeTab && (
                 <div className="absolute inset-0 flex items-center justify-center text-muted-foreground/60 text-sm">
                   No content

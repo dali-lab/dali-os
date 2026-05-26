@@ -89,6 +89,13 @@ export async function action({ request }: Route.ActionArgs) {
           where: { id: current.id },
           data: { status: "CancelledByApplicant" },
         });
+        // Release the old slot's assignments so it stops showing as an
+        // active interview on interviewer dashboards — mirrors the cancel
+        // and withdraw paths.
+        await tx.interviewAssignment.updateMany({
+          where: { interviewId: current.id, status: "Active" },
+          data: { status: "Declined" },
+        });
 
         const created = await assignInterviewers(
           current.applicationCycleId,

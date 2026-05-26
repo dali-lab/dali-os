@@ -9,6 +9,7 @@ import { CheckCircle, Plus, Trash2, Check, Clock, X, CircleDashed, ChevronDown, 
 import { inferDomainApplicationStatus } from "~/hiring/lib/domain-application-status";
 import { inReviewPipelineFilter } from "~/hiring/lib/application-pipeline-filter";
 import { getReviewStatus } from "~/hiring/lib/review-status";
+import { buildCriteriaList } from "~/hiring/lib/rubric-criteria";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { ConfidentialityGate } from "~/hiring/components/ConfidentialityGate";
 import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
@@ -331,7 +332,34 @@ export async function loader({ request }: Route.LoaderArgs) {
         orderBy: { createdAt: "desc" },
       });
       const currentRubricVersionId = cycle?.domains[0]?.rubricVersionId ?? null;
-      const rubricCriteria = (rubricVersionOptions.find((rv) => rv.id === currentRubricVersionId)?.criteria as any[] | null) ?? [];
+      // Flat criteria list for the ReviewModal's score labels, resilient to
+      // rubric edits: current domain rubric + general rubric + any versions
+      // pinned on this domain's reviews (and their history), so scores keyed by
+      // an older rubric version still resolve instead of leaking raw crit-<ts>.
+      const domainReviewVersionIds = cycle
+        ? (
+            await prisma.applicationReview.findMany({
+              where: {
+                domainApplication: {
+                  ...daDomainMatch,
+                  application: { applicationCycleId: cycle.id },
+                },
+                rubricVersionId: { not: null },
+              },
+              select: { rubricVersionId: true },
+              distinct: ["rubricVersionId"],
+            })
+          ).map((r) => r.rubricVersionId)
+        : [];
+      const generalCriteria = cycle?.generalRubricVersionId
+        ? ((rubricVersionOptions.find((rv) => rv.id === cycle.generalRubricVersionId)
+            ?.criteria as any[] | null) ?? undefined)
+        : undefined;
+      const rubricCriteria = await buildCriteriaList({
+        domainRubricVersionId: currentRubricVersionId,
+        generalCriteria,
+        pinnedVersionIds: domainReviewVersionIds,
+      });
 
       // Interviewers for this domain in this cycle (with availability blocks —
       // the component sums their durations to show total hours offered).

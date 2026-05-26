@@ -30,6 +30,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     where: {
       cycleInterviewerId: { in: interviewerRows.map((r) => r.id) },
       status: "Active",
+      // An Active assignment can still hang off a cancelled interview when a
+      // cancel path forgot to decline its assignments (the reschedule path
+      // historically did). Gate on the interview itself so the dashboard
+      // never surfaces a cancelled slot regardless of assignment bookkeeping.
+      interview: { status: "Scheduled" },
     },
     include: {
       interview: {

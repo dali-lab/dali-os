@@ -729,6 +729,15 @@ model ApplicationReview {
   cycleReviewerId String
   cycleReviewer   CycleReviewer @relation(fields: [cycleReviewerId], references: [id])
 
+  // The domain rubric version this review's score keys belong to, pinned at
+  // submit time. Rubric edits create a NEW RubricVersion (with fresh
+  // crit-<ts> keys for added criteria), so without this pin a later edit
+  // orphans old score keys and labels render as raw keys. Nullable: reviews
+  // created before this column existed have no pin (resolver falls back to
+  // scanning version history).
+  rubricVersionId String?
+  rubricVersion   RubricVersion? @relation(fields: [rubricVersionId], references: [id])
+
   scores                Json    @default("{}") // { [criterionKey]: number }
   feedback              String  @default("")
   rejectionRationale    String  @default("")
@@ -812,6 +821,8 @@ model RubricVersion {
   domainApplicationCycles DomainApplicationCycle[]
   // Back-ref: cycles using this as the general form rubric
   cyclesAsGeneralRubric   ApplicationCycle[]       @relation("CycleGeneralRubric")
+  // Back-ref: reviews pinned to this version's criteria at submit time
+  applicationReviews      ApplicationReview[]
 }
 
 // ─── Collaborative Editing ───────────────────────────────────────────────────
