@@ -735,10 +735,10 @@ export default function ProjectDetail() {
             type="button"
             onClick={() => setScopeSettingsOpen(true)}
             className="ml-auto -mb-px inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-            title="Project scope & challenges"
+            title="Domain settings & challenges"
           >
             <Settings className="w-4 h-4" />
-            <span className="hidden sm:inline">Scope settings</span>
+            <span className="hidden sm:inline">Domain settings</span>
           </button>
         )}
       </div>
@@ -768,7 +768,7 @@ export default function ProjectDetail() {
           <div className="flex items-start justify-between gap-3 mb-4">
             <div>
               <h2 id="scope-settings-title" className="font-heading text-lg font-bold text-foreground">
-                Scope &amp; challenges
+                Domain settings
               </h2>
               <p className="text-xs text-muted-foreground mt-0.5">
                 Declared domains, planned terms, and the per-domain challenge
