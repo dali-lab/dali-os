@@ -448,6 +448,79 @@ export async function sendReassignmentEmails(
   }
 }
 
+// Targeted backfill: send the "you're now the interviewer" invite to a
+// single CycleInterviewer for an existing interview. Used by the
+// resend-decline-invites script to repair decline-auto-reassigns that
+// completed before PR #702 wired up sendReassignmentEmails. Does NOT email
+// the applicant, co-interviewers, or the originally-declining interviewer.
+export async function sendInviteEmailToNewInterviewer(
+  interviewId: string,
+  cycleInterviewerId: string,
+): Promise<{ sent: boolean; reason?: string }> {
+  const refreshToken = await getGmailRefreshToken();
+  if (!refreshToken) return { sent: false, reason: "no_refresh_token" };
+
+  const interview = await prisma.interview.findUnique({
+    where: { id: interviewId },
+    include: {
+      domainApplication: {
+        include: {
+          challengeVersion: { include: { domain: { select: { name: true } } } },
+        },
+      },
+    },
+  });
+  if (!interview) return { sent: false, reason: "interview_not_found" };
+
+  const newCI = await prisma.cycleInterviewer.findUnique({
+    where: { id: cycleInterviewerId },
+    include: { user: { select: { firstName: true, daliEmail: true } } },
+  });
+  if (!newCI?.user.daliEmail) return { sent: false, reason: "no_dali_email" };
+
+  const applicant = await getApplicantRecipient(interview.domainApplicationId);
+  const sequence = await bumpIcsSequence(interview.id);
+  const domainName = interview.domainApplication.challengeVersion?.domain?.name ?? "DALI Lab";
+  const firstName = newCI.user.firstName ?? "Interviewer";
+
+  const ics = buildInviteIcs({
+    interviewId: interview.id,
+    summary: `DALI Interview — ${domainName}`,
+    startTime: interview.startTime,
+    endTime: interview.endTime,
+    location: formatLocation(interview.location, interview.zoomJoinUrl),
+    meetingUrl: interview.zoomJoinUrl,
+    organizer: ORGANIZER,
+    attendees: [
+      ...(applicant ? [{ email: applicant.email, name: applicant.firstName }] : []),
+      { email: newCI.user.daliEmail, name: firstName },
+    ],
+    sequence,
+  });
+
+  const rendered = await renderFromBinding(
+    interview.applicationCycleId,
+    "InterviewInviteMentor",
+    {
+      firstName,
+      domain: domainName,
+      time: formatTime(interview.startTime),
+      location: formatLocation(interview.location, interview.zoomJoinUrl),
+      meetingUrl: interview.zoomJoinUrl ?? undefined,
+    },
+  );
+  if (!rendered) return { sent: false, reason: "no_template_binding" };
+
+  await sendEmail({
+    refreshToken,
+    to: newCI.user.daliEmail,
+    subject: rendered.subject,
+    html: rendered.html,
+    ics,
+  });
+  return { sent: true };
+}
+
 export async function sendLocationChangeEmails(
   interviewId: string,
   domainApplicationId: string,
