@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Form, Link, useLoaderData, useSearchParams, useRevalidator, useSubmit } from "react-router";
+import { Form, Link, useLoaderData, useNavigate, useSearchParams, useRevalidator, useSubmit } from "react-router";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { redirect } from "react-router";
 import type { Route } from "./+types/domain-lead";
@@ -35,11 +35,13 @@ const STATUS_LABELS: Record<string, string> = {
   Completed: "Completed",
 };
 
+// Every status/decision pill carries a border in its OWN hue (never a neutral
+// black/gray line on a colored pill) so the whole page reads consistently.
 const STATUS_COLORS: Record<string, string> = {
-  Draft: "bg-muted text-foreground/80",
-  Open: "bg-green-100 text-green-700",
-  UnderReview: "bg-yellow-100 text-yellow-700",
-  Completed: "bg-blue-100 text-blue-700",
+  Draft: "bg-muted text-foreground/80 border border-current/30",
+  Open: "bg-green-100 text-green-700 border border-green-200",
+  UnderReview: "bg-yellow-100 text-yellow-700 border border-yellow-200",
+  Completed: "bg-blue-100 text-blue-700 border border-blue-200",
 };
 
 const STATUS_MESSAGES: Record<string, string> = {
@@ -187,14 +189,18 @@ export async function loader({ request }: Route.LoaderArgs) {
         return latestStatus === "Submitted" && app.domainApplications.length > 0;
       });
 
-      // Interviews for this domain in this cycle. Only Scheduled rows appear
-      // in the dashboard table — cancelled rows are audit-only.
+      // Interviews for this domain in this cycle. Both Scheduled and Completed
+      // rows appear in the dashboard table — only cancelled rows are excluded
+      // (audit-only). Load for any non-Draft cycle: an interview can be booked
+      // while the cycle is still Open (a Released invite + scheduled slot), and
+      // those applicants must surface in the Interviews section rather than
+      // vanishing (they're excluded from Reviews).
       const currentStatus = cycle?.statusUpdates[0]?.newStatus ?? "Draft";
-      const interviews = (currentStatus === "UnderReview" || currentStatus === "Completed") && cycle
+      const interviews = currentStatus !== "Draft" && cycle
         ? await prisma.interview.findMany({
             where: {
               applicationCycleId: cycle.id,
-              status: "Scheduled",
+              status: { in: ["Scheduled", "Completed"] },
               domainApplication: {
                 OR: [
                   { challengeVersion: { domainId: assignment.domainId } },
@@ -643,6 +649,7 @@ function StatPill({ label, value, color = "text-foreground" }: { label: string; 
 
 export default function DomainLeadDashboard() {
   const data = useLoaderData<typeof loader>() as any;
+  const navigate = useNavigate();
   const domainData = data?.domainData ?? [];
 
   if (domainData.length === 0) {
@@ -725,8 +732,8 @@ export default function DomainLeadDashboard() {
                       subtitle="Pick which challenge versions applicants answer."
                       badge={
                         isChallengeReady
-                          ? <span className="text-xs text-green-700 bg-green-100 px-2 py-0.5 rounded-full font-medium">Ready</span>
-                          : <span className="text-xs text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded-full font-medium">Action needed</span>
+                          ? <span className="text-xs text-green-700 bg-green-100 border border-green-200 px-2 py-0.5 rounded-full font-medium">Ready</span>
+                          : <span className="text-xs text-yellow-700 bg-yellow-100 border border-yellow-200 px-2 py-0.5 rounded-full font-medium">Action needed</span>
                       }
                       defaultOpen={!isChallengeReady}
                     >
@@ -762,8 +769,8 @@ export default function DomainLeadDashboard() {
                       }
                       badge={
                         hasLinkedChallenge
-                          ? <span className="text-xs text-green-700 bg-green-100 px-2 py-0.5 rounded-full font-medium">Configured</span>
-                          : <span className="text-xs text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded-full font-medium">Needs attention</span>
+                          ? <span className="text-xs text-green-700 bg-green-100 border border-green-200 px-2 py-0.5 rounded-full font-medium">Configured</span>
+                          : <span className="text-xs text-yellow-700 bg-yellow-100 border border-yellow-200 px-2 py-0.5 rounded-full font-medium">Needs attention</span>
                       }
                       defaultOpen={!hasLinkedChallenge}
                     >
@@ -817,8 +824,8 @@ export default function DomainLeadDashboard() {
                     subtitle="Scoring criteria reviewers use for this domain."
                     badge={
                       currentRubricVersionId
-                        ? <span className="text-xs text-green-700 bg-green-100 px-2 py-0.5 rounded-full font-medium">Set</span>
-                        : <span className="text-xs text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded-full font-medium">Not set</span>
+                        ? <span className="text-xs text-green-700 bg-green-100 border border-green-200 px-2 py-0.5 rounded-full font-medium">Set</span>
+                        : <span className="text-xs text-yellow-700 bg-yellow-100 border border-yellow-200 px-2 py-0.5 rounded-full font-medium">Not set</span>
                     }
                     defaultOpen={!currentRubricVersionId}
                   >
@@ -870,10 +877,21 @@ export default function DomainLeadDashboard() {
                     </div>
                   </Section>
 
-                  {/* Applications */}
-                  {currentStatus !== "Draft" && (
+                  {/* Reviews — applicants still under review plus those rejected
+                      at the review stage. Anyone invited to interview moves to
+                      the Interviews section below, so the two never duplicate. */}
+                  {currentStatus !== "Draft" && (() => {
+                    const reviewApps = apps.filter((a: any) => {
+                      const status = a.domainApplications?.[0]?.inferredStatus;
+                      return (
+                        status !== "InvitedToInterview" &&
+                        status !== "InterviewScheduled" &&
+                        status !== "PostInterviewPending"
+                      );
+                    });
+                    return (
                     <Section
-                      title="Applications"
+                      title="Reviews"
                       badge={
                         confidentialityRequired ? (
                           <span className="text-xs text-muted-foreground">hidden</span>
@@ -894,9 +912,9 @@ export default function DomainLeadDashboard() {
                           reason={confidentialityRequired}
                           next="/hiring/domain-lead"
                         />
-                      ) : apps.length > 0 ? (
+                      ) : reviewApps.length > 0 ? (
                         <ApplicationsTable
-                          apps={apps}
+                          apps={reviewApps}
                           draftDecisions={draftDecisions ?? []}
                           cycleReviewersForDomain={cycleReviewersForDomain}
                           cycleId={cycle.id}
@@ -907,11 +925,12 @@ export default function DomainLeadDashboard() {
                         />
                       ) : (
                         <div className="text-center text-muted-foreground text-sm py-6">
-                          No submitted applications yet.
+                          No applicants in review. Anyone invited to interview appears under Interviews.
                         </div>
                       )}
                     </Section>
-                  )}
+                    );
+                  })()}
 
                   {/* Deliberations — UnderReview only */}
                   {currentStatus === "UnderReview" && (
@@ -992,143 +1011,151 @@ export default function DomainLeadDashboard() {
                             </div>
                           )}
 
-                          {/* Awaiting booking */}
-                          {awaitingBooking.length > 0 && (
-                            <div>
-                              <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">Awaiting Booking</h4>
-                              <div className="divide-y divide-gray-100 border border-border rounded-lg">
-                                {awaitingBooking.map((app: any) => (
-                                  <div key={app.id} className="flex items-center justify-between px-4 py-3">
-                                    <span className="text-sm font-medium text-foreground">
-                                      {app.user.firstName} {app.user.lastName}
-                                    </span>
-                                    <span className="text-xs text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded-full font-medium">
-                                      Invited — not booked
-                                    </span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Scheduled / Completed interviews */}
-                          {interviews.length > 0 && (
-                            <div>
-                              <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">Booked Interviews</h4>
-                              <div className="hidden sm:block overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
-                              <table className="w-full text-sm border border-border rounded-lg overflow-hidden min-w-[640px]">
-                                <thead className="bg-muted/50 text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                                  <tr>
-                                    <th className="px-4 py-2 text-left">Applicant</th>
-                                    <th className="px-4 py-2 text-left">Time</th>
-                                    <th className="px-4 py-2 text-left">Location</th>
-                                    <th className="px-4 py-2 text-left">Status</th>
-                                    <th className="px-4 py-2 text-left">In-Domain</th>
-                                    <th className="px-4 py-2 text-left">Cross-Domain</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-100">
-                                  {interviews.map((interview: any) => {
-                                    const start = new Date(interview.startTime);
-                                    const end = new Date(interview.endTime);
-                                    const formatAssignment = (a: any) => {
-                                      const m = a.cycleInterviewer.user;
-                                      return m.firstName && m.lastName
-                                        ? `${m.firstName} ${m.lastName}`
-                                        : m.daliEmail ?? '?';
-                                    };
-                                    const inDomain = interview.assignments
-                                      .filter((a: any) => a.role === 'InDomain' && a.status === 'Active')
-                                      .map(formatAssignment)
-                                      .join(', ') || '—';
-                                    const crossDomain = interview.assignments
-                                      .filter((a: any) => a.role === 'CrossDomain' && a.status === 'Active')
-                                      .map((a: any) => `${formatAssignment(a)} (${a.cycleInterviewer.domain.name})`)
-                                      .join(', ') || '—';
-                                    return (
-                                      <tr key={interview.id} className="hover:bg-muted/50">
-                                        <td className="px-4 py-3 font-medium text-foreground">
-                                          {interview.domainApplication.application.user.firstName} {interview.domainApplication.application.user.lastName}
-                                        </td>
-                                        <td className="px-4 py-3 text-muted-foreground">
-                                          {start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}{' '}
-                                          {start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} –{' '}
-                                          {end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
-                                        </td>
-                                        <td className="px-4 py-3 text-muted-foreground text-xs">
-                                          {interview.location === 'PodAppa' ? 'Pod Appa' :
-                                           interview.location === 'PodMomo' ? 'Pod Momo' : 'Online'}
-                                          {interview.location === 'Online' && interview.zoomJoinUrl && (
-                                            <a href={interview.zoomJoinUrl} target="_blank" rel="noopener noreferrer"
-                                               className="block text-xs text-blue-600 hover:underline mt-0.5">Zoom</a>
-                                          )}
-                                        </td>
-                                        <td className="px-4 py-3">
-                                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${
-                                            interview.status === "Completed" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"
-                                          }`}>
-                                            {interview.status}
-                                          </span>
-                                        </td>
-                                        <td className="px-4 py-3 text-muted-foreground text-xs">{inDomain}</td>
-                                        <td className="px-4 py-3 text-muted-foreground text-xs">{crossDomain}</td>
+                          {/* One Interviews table: booked interviews AND
+                              invited-but-not-yet-booked applicants share the same
+                              table, with booking surfaced in the Status column.
+                              Styling mirrors the Reviews table (px-6 padding,
+                              bg-muted/50 head, divide-y rows). */}
+                          {(() => {
+                            const fmtAssignment = (a: any) => {
+                              const m = a.cycleInterviewer.user;
+                              return m.firstName && m.lastName
+                                ? `${m.firstName} ${m.lastName}`
+                                : m.daliEmail ?? '?';
+                            };
+                            // Booked rows from interview records.
+                            const bookedRows = interviews.map((interview: any) => {
+                              const start = new Date(interview.startTime);
+                              const end = new Date(interview.endTime);
+                              return {
+                                key: interview.id,
+                                daId: interview.domainApplication?.id as string | undefined,
+                                name: `${interview.domainApplication.application.user.firstName} ${interview.domainApplication.application.user.lastName}`,
+                                booked: true,
+                                status: interview.status as string,
+                                time: `${start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} – ${end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`,
+                                location:
+                                  interview.location === 'PodAppa' ? 'Pod Appa'
+                                  : interview.location === 'PodMomo' ? 'Pod Momo'
+                                  : 'Online',
+                                zoomJoinUrl: interview.location === 'Online' ? interview.zoomJoinUrl : null,
+                                inDomain: interview.assignments
+                                  .filter((a: any) => a.role === 'InDomain' && a.status === 'Active')
+                                  .map(fmtAssignment)
+                                  .join(', ') || '—',
+                                crossDomain: interview.assignments
+                                  .filter((a: any) => a.role === 'CrossDomain' && a.status === 'Active')
+                                  .map((a: any) => `${fmtAssignment(a)} (${a.cycleInterviewer.domain.name})`)
+                                  .join(', ') || '—',
+                              };
+                            });
+                            // Invited-but-not-booked applicants become rows too.
+                            const pendingRows = awaitingBooking.map((app: any) => ({
+                              key: `pending-${app.id}`,
+                              daId: app.domainApplications?.[0]?.id as string | undefined,
+                              name: `${app.user.firstName} ${app.user.lastName}`,
+                              booked: false,
+                              status: 'Invited — not booked',
+                              time: '—',
+                              location: '—',
+                              zoomJoinUrl: null,
+                              inDomain: '—',
+                              crossDomain: '—',
+                            }));
+                            // Awaiting booking first (needs action), then booked.
+                            const rows = [...pendingRows, ...bookedRows];
+                            const statusPill = (row: any) =>
+                              !row.booked
+                                ? 'bg-yellow-100 text-yellow-700 border border-yellow-200'
+                                : row.status === 'Completed'
+                                  ? 'bg-green-100 text-green-700 border border-green-200'
+                                  : 'bg-blue-100 text-blue-700 border border-blue-200';
+                            // Clicking a row opens that applicant's review/detail
+                            // page — same target as the Reviews table.
+                            const openReview = (row: any) => {
+                              if (!row.daId) return;
+                              const url = `/hiring/domain-lead/application/${row.daId}`;
+                              const label = row.name || 'Applicant';
+                              if (!requestOpenTabIfEmbedded(url, label)) navigate(url);
+                            };
+                            if (rows.length === 0) return null;
+                            return (
+                              <div>
+                                <div className="hidden sm:block overflow-x-auto border border-border rounded-lg">
+                                  <table className="w-full text-sm min-w-[640px]">
+                                    <thead className="bg-muted/50 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                                      <tr>
+                                        <th className="px-6 py-3 text-left">Applicant</th>
+                                        <th className="px-6 py-3 text-left">Time</th>
+                                        <th className="px-6 py-3 text-left">Location</th>
+                                        <th className="px-6 py-3 text-left">Status</th>
+                                        <th className="px-6 py-3 text-left">In-Domain</th>
+                                        <th className="px-6 py-3 text-left">Cross-Domain</th>
                                       </tr>
-                                    );
-                                  })}
-                                </tbody>
-                              </table>
-                              </div>
-                              <ul className="sm:hidden space-y-2">
-                                {interviews.map((interview: any) => {
-                                  const start = new Date(interview.startTime);
-                                  const end = new Date(interview.endTime);
-                                  const formatAssignment = (a: any) => {
-                                    const m = a.cycleInterviewer.user;
-                                    return m.firstName && m.lastName
-                                      ? `${m.firstName} ${m.lastName}`
-                                      : m.daliEmail ?? '?';
-                                  };
-                                  const inDomain = interview.assignments
-                                    .filter((a: any) => a.role === 'InDomain' && a.status === 'Active')
-                                    .map(formatAssignment)
-                                    .join(', ') || '—';
-                                  const crossDomain = interview.assignments
-                                    .filter((a: any) => a.role === 'CrossDomain' && a.status === 'Active')
-                                    .map((a: any) => `${formatAssignment(a)} (${a.cycleInterviewer.domain.name})`)
-                                    .join(', ') || '—';
-                                  return (
-                                    <li key={interview.id} className="border border-border rounded-lg p-3 space-y-1.5">
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100">
+                                      {rows.map((row) => (
+                                        <tr
+                                          key={row.key}
+                                          onClick={() => openReview(row)}
+                                          className={`hover:bg-muted/50 ${row.daId ? "cursor-pointer" : ""}`}
+                                        >
+                                          <td className="px-6 py-4 font-medium text-foreground">{row.name}</td>
+                                          <td className="px-6 py-4 text-muted-foreground">{row.time}</td>
+                                          <td className="px-6 py-4 text-muted-foreground text-xs">
+                                            {row.location}
+                                            {row.zoomJoinUrl && (
+                                              <a href={row.zoomJoinUrl} target="_blank" rel="noopener noreferrer"
+                                                 onClick={(e) => e.stopPropagation()}
+                                                 className="block text-xs text-blue-600 hover:underline mt-0.5">Zoom</a>
+                                            )}
+                                          </td>
+                                          <td className="px-6 py-4">
+                                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${statusPill(row)}`}>
+                                              {row.status}
+                                            </span>
+                                          </td>
+                                          <td className="px-6 py-4 text-muted-foreground text-xs">{row.inDomain}</td>
+                                          <td className="px-6 py-4 text-muted-foreground text-xs">{row.crossDomain}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                                <ul className="sm:hidden space-y-2">
+                                  {rows.map((row) => (
+                                    <li
+                                      key={row.key}
+                                      onClick={() => openReview(row)}
+                                      className={`border border-border rounded-lg p-3 space-y-1.5 ${row.daId ? "cursor-pointer hover:bg-muted/50" : ""}`}
+                                    >
                                       <div className="flex items-start justify-between gap-2">
-                                        <div className="font-medium text-foreground min-w-0 truncate">
-                                          {interview.domainApplication.application.user.firstName} {interview.domainApplication.application.user.lastName}
-                                        </div>
-                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold flex-shrink-0 ${
-                                          interview.status === "Completed" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"
-                                        }`}>
-                                          {interview.status}
+                                        <div className="font-medium text-foreground min-w-0 truncate">{row.name}</div>
+                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold flex-shrink-0 ${statusPill(row)}`}>
+                                          {row.status}
                                         </span>
                                       </div>
-                                      <div className="text-xs text-muted-foreground">
-                                        {start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}{' '}
-                                        {start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} –{' '}
-                                        {end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
-                                      </div>
-                                      <div className="text-xs text-muted-foreground">
-                                        {interview.location === 'PodAppa' ? 'Pod Appa' :
-                                         interview.location === 'PodMomo' ? 'Pod Momo' : 'Online'}
-                                        {interview.location === 'Online' && interview.zoomJoinUrl && (
-                                          <a href={interview.zoomJoinUrl} target="_blank" rel="noopener noreferrer"
-                                             className="ml-2 text-blue-600 hover:underline">Zoom</a>
-                                        )}
-                                      </div>
-                                      <div className="text-xs text-muted-foreground"><span className="font-medium">In-Domain:</span> {inDomain}</div>
-                                      <div className="text-xs text-muted-foreground"><span className="font-medium">Cross-Domain:</span> {crossDomain}</div>
+                                      {row.booked && (
+                                        <>
+                                          <div className="text-xs text-muted-foreground">{row.time}</div>
+                                          <div className="text-xs text-muted-foreground">
+                                            {row.location}
+                                            {row.zoomJoinUrl && (
+                                              <a href={row.zoomJoinUrl} target="_blank" rel="noopener noreferrer"
+                                                 onClick={(e) => e.stopPropagation()}
+                                                 className="ml-2 text-blue-600 hover:underline">Zoom</a>
+                                            )}
+                                          </div>
+                                          <div className="text-xs text-muted-foreground"><span className="font-medium">In-Domain:</span> {row.inDomain}</div>
+                                          <div className="text-xs text-muted-foreground"><span className="font-medium">Cross-Domain:</span> {row.crossDomain}</div>
+                                        </>
+                                      )}
                                     </li>
-                                  );
-                                })}
-                              </ul>
-                            </div>
-                          )}
+                                  ))}
+                                </ul>
+                              </div>
+                            );
+                          })()}
                         </div>
                       </Section>
                     ) : null;
@@ -1370,7 +1397,7 @@ function ChallengeSelector({ cycleId, domainId, options, linkedChallengeVersions
           <button
             type="submit"
             disabled={!pickerId}
-            className="px-3 py-2 text-sm font-medium text-white bg-accent-coral rounded-md hover:bg-accent-coral/90 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="px-3 py-2 text-sm font-medium text-white bg-accent-teal rounded-md hover:bg-accent-teal/90 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Add
           </button>
@@ -1508,7 +1535,7 @@ function ReviewerSection({ cycleId, domainId, initialReviewers }: {
           <button
             onClick={addReviewer}
             disabled={!selectedMemberId}
-            className="flex items-center gap-1 px-3 py-2 text-sm font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition disabled:opacity-50"
+            className="flex items-center gap-1 px-3 py-2 text-sm font-medium rounded-lg bg-accent-teal hover:bg-accent-teal/90 text-white transition disabled:opacity-50"
           >
             <Plus className="w-4 h-4" /> Add
           </button>
@@ -1604,7 +1631,7 @@ function RubricPicker({ cycleId, domainId, options, selectedId, locked }: {
             </div>
             <button
               type="submit"
-              className="px-4 py-2 text-sm font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition"
+              className="px-4 py-2 text-sm font-medium rounded-lg bg-accent-teal hover:bg-accent-teal/90 text-white transition"
             >
               Save
             </button>
@@ -1699,7 +1726,7 @@ function InterviewerSection({ cycleId, domainId, initialInterviewers }: {
           <button
             onClick={addInterviewer}
             disabled={!selectedMemberId}
-            className="flex items-center gap-1 px-3 py-2 text-sm font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition disabled:opacity-50"
+            className="flex items-center gap-1 px-3 py-2 text-sm font-medium rounded-lg bg-accent-teal hover:bg-accent-teal/90 text-white transition disabled:opacity-50"
           >
             <Plus className="w-4 h-4" /> Add
           </button>
@@ -1725,7 +1752,7 @@ function InterviewerSection({ cycleId, domainId, initialInterviewers }: {
                         {hoursLabel} available
                       </span>
                     ) : (
-                      <span className="flex items-center gap-1 text-xs font-medium text-muted-foreground bg-muted/50 border border-border px-2 py-0.5 rounded-full">
+                      <span className="flex items-center gap-1 text-xs font-medium text-muted-foreground bg-muted/50 border border-current/40 px-2 py-0.5 rounded-full">
                         <Clock className="w-3 h-3" />
                         No availability
                       </span>
@@ -1821,7 +1848,7 @@ function DelibsSection({ cycleId, domainId, sessions, initialCount, finalCount }
       <button
         onClick={() => openDelibs(type)}
         disabled={loading === type || count === 0}
-        className="px-4 py-2 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition disabled:opacity-50"
+        className="px-4 py-2 text-sm font-medium rounded-lg bg-muted hover:bg-muted/70 text-foreground border border-border transition disabled:opacity-50"
       >
         {loading === type ? "Starting..." : `Start ${type} Delibs${countBadge}`}
       </button>
@@ -1848,11 +1875,14 @@ function DelibsSection({ cycleId, domainId, sessions, initialCount, finalCount }
   );
 }
 
+// bg + text + an explicit same-hue border (e.g. red pill → red border), so the
+// outline always matches the pill and never falls back to the neutral gray
+// border from the global `*` rule.
 const DECISION_COLORS: Record<string, string> = {
-  Rejected: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
-  InvitedToInterview: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
-  Accepted: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
-  Waitlisted: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400",
+  Rejected: "bg-red-100 text-red-700 border-red-300 dark:bg-red-900/30 dark:text-red-400 dark:border-red-700",
+  InvitedToInterview: "bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-700",
+  Accepted: "bg-green-100 text-green-700 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700",
+  Waitlisted: "bg-yellow-100 text-yellow-700 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-700",
 };
 
 const DECISION_LABELS: Record<string, string> = {
@@ -1862,11 +1892,12 @@ const DECISION_LABELS: Record<string, string> = {
   Waitlisted: "Waitlist",
 };
 
-// Draft pills are rendered with reduced opacity + dashed border to read as
-// "tentative", Final pills get a solid border, Released pills are full strength.
+// Stage treatment composes on top of the `border border-current/40` the badge
+// always applies. Draft reads as "tentative" (faded + dashed, same hue);
+// Final/Released keep the solid same-hue border.
 const STAGE_TREATMENT: Record<DecisionPill["stage"], string> = {
-  Draft: "opacity-60 border border-dashed border-current/40",
-  Final: "border border-current/30",
+  Draft: "opacity-60 border-dashed",
+  Final: "",
   Released: "",
 };
 
@@ -1892,12 +1923,15 @@ function DecisionPillBadge({ pill, isCurrent = false }: { pill: DecisionPill; is
   const stageSuffix = ` (${pill.stage.toLowerCase()})`;
   const Icon = DECISION_ICONS[pill.type];
   const tooltip = DECISION_TOOLTIPS[pill.stage](`${baseLabel}${rankSuffix}`);
-  const accent = isCurrent ? "ring-2 ring-offset-1 ring-foreground/30" : "";
+  // "Current" emphasis ring uses the pill's OWN hue (ring-current = its text
+  // color) so it reads as the same color as the border, not a competing gray
+  // ring sitting just outside a red/green/etc. border.
+  const accent = isCurrent ? "ring-2 ring-offset-1 ring-current/60" : "";
   return (
     <span
       title={tooltip}
       aria-label={tooltip}
-      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold ${DECISION_COLORS[pill.type] ?? "bg-muted text-muted-foreground"} ${STAGE_TREATMENT[pill.stage]} ${accent}`}
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold border ${DECISION_COLORS[pill.type] ?? "bg-muted text-muted-foreground border-current/40"} ${STAGE_TREATMENT[pill.stage]} ${accent}`}
     >
       {Icon && <Icon className="w-3 h-3" />}
       {baseLabel}{rankSuffix}{stageSuffix}
@@ -1929,7 +1963,7 @@ function PrePipelinePillBadge({ pill }: { pill: PrePipelinePill }) {
     <span
       title={PRE_PIPELINE_TOOLTIPS[pill]}
       aria-label={PRE_PIPELINE_TOOLTIPS[pill]}
-      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground"
+      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground border border-current/40"
     >
       <Icon className="w-3 h-3" />
       {PRE_PIPELINE_LABELS[pill]}
@@ -2020,12 +2054,6 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
     });
   });
 
-  // Bulk-selection state — set of DomainApplication ids the lead has ticked.
-  // Local React state (not URL) so a refresh resets it; pairs with revalidator.
-  const [selectedDaIds, setSelectedDaIds] = useState<Set<string>>(new Set());
-  const [bulkReviewerId, setBulkReviewerId] = useState("");
-  const [bulkBusy, setBulkBusy] = useState<"assign" | "auto" | null>(null);
-
   const baseApps = filter === "finalize" ? finalizableApps : apps;
   const lowerQuery = query.trim().toLowerCase();
   const filteredApps = lowerQuery === ""
@@ -2053,75 +2081,6 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
         return sortDir === "asc" ? cmp : -cmp;
       });
   const displayedApps = sortedApps;
-  const displayedDaIds: string[] = displayedApps
-    .map((a: any) => a.domainApplications?.[0]?.id)
-    .filter((v: any): v is string => typeof v === "string");
-  const allVisibleSelected = displayedDaIds.length > 0 && displayedDaIds.every((id) => selectedDaIds.has(id));
-  const someVisibleSelected = displayedDaIds.some((id) => selectedDaIds.has(id));
-  const toggleSelected = (daId: string) => {
-    setSelectedDaIds(prev => {
-      const next = new Set(prev);
-      if (next.has(daId)) next.delete(daId);
-      else next.add(daId);
-      return next;
-    });
-  };
-  const toggleSelectAllVisible = () => {
-    setSelectedDaIds(prev => {
-      const next = new Set(prev);
-      if (allVisibleSelected) {
-        for (const id of displayedDaIds) next.delete(id);
-      } else {
-        for (const id of displayedDaIds) next.add(id);
-      }
-      return next;
-    });
-  };
-  const clearSelection = () => setSelectedDaIds(new Set());
-
-  async function bulkAssignReviewer() {
-    if (!bulkReviewerId || selectedDaIds.size === 0) return;
-    setBulkBusy("assign");
-    const ids = Array.from(selectedDaIds);
-    let okCount = 0;
-    let skipCount = 0;
-    for (const daId of ids) {
-      const res = await fetch(`/api/hiring/domain-applications/${daId}/reviews`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cycleReviewerId: bulkReviewerId }),
-      });
-      if (res.ok) okCount++;
-      else skipCount++;
-    }
-    setBulkBusy(null);
-    setBulkReviewerId("");
-    clearSelection();
-    revalidator.revalidate();
-    if (skipCount > 0) {
-      alert(`Assigned ${okCount} of ${ids.length} applicants. ${skipCount} skipped (likely already assigned).`);
-    }
-  }
-
-  async function bulkAutoAssign() {
-    if (selectedDaIds.size === 0) return;
-    setBulkBusy("auto");
-    const res = await fetch(`/api/hiring/cycles/${cycleId}/domains/${domainId}/auto-assign`, {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ applicationIds: Array.from(selectedDaIds) }),
-    });
-    setBulkBusy(null);
-    if (res.ok) {
-      clearSelection();
-      revalidator.revalidate();
-    } else {
-      const body = await res.json().catch(() => ({}));
-      alert(body.error ?? "Auto-assign failed. Check that rubrics are set and reviewers are added.");
-    }
-  }
 
   return (
     <div className="border border-border rounded-lg overflow-hidden">
@@ -2196,7 +2155,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                 }
                 revalidator.revalidate();
               }}
-              className="px-3 py-1.5 text-xs font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition"
+              className="px-3 py-1.5 text-xs font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition"
             >
               Finalize All ({finalizableApps.length})
             </button>
@@ -2222,78 +2181,17 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                     ? "Add reviewers to this domain first"
                     : undefined
               }
-              className="px-3 py-1.5 text-xs font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition disabled:opacity-50"
+              className="px-3 py-1.5 text-xs font-medium rounded-lg bg-muted hover:bg-muted/70 text-foreground border border-border transition disabled:opacity-50"
             >
               Auto-Assign Reviewers
             </button>
           )}
         </div>
       </div>
-      {isUnderReview && selectedDaIds.size > 0 && canAssignReviewers && (
-        <div className="sticky top-0 z-10 px-4 sm:px-6 py-2 border-b border-border bg-blue-50 dark:bg-blue-900/20 flex flex-wrap items-center gap-2">
-          <span className="text-sm font-medium text-foreground">
-            {selectedDaIds.size} selected
-          </span>
-          <button
-            type="button"
-            onClick={clearSelection}
-            className="text-xs text-muted-foreground hover:text-foreground/80 underline"
-          >
-            Clear
-          </button>
-          <div className="ml-auto flex flex-wrap items-center gap-2">
-            <select
-              value={bulkReviewerId}
-              onChange={e => setBulkReviewerId(e.target.value)}
-              className="rounded-md border border-border bg-card px-2 py-1 text-xs"
-              aria-label="Reviewer to assign to selected applicants"
-              disabled={bulkBusy !== null}
-            >
-              <option value="">Assign reviewer…</option>
-              {cycleReviewersForDomain.map((cr: any) => {
-                const m = cr.user;
-                const label = m?.firstName && m?.lastName
-                  ? `${m.firstName} ${m.lastName}`
-                  : m?.daliEmail ?? cr.id;
-                return <option key={cr.id} value={cr.id}>{label}</option>;
-              })}
-            </select>
-            <button
-              type="button"
-              onClick={bulkAssignReviewer}
-              disabled={!bulkReviewerId || bulkBusy !== null}
-              className="px-3 py-1 text-xs font-medium rounded-md bg-accent-coral hover:bg-accent-coral/90 text-white transition disabled:opacity-50"
-            >
-              {bulkBusy === "assign" ? "Assigning..." : "Assign"}
-            </button>
-            <button
-              type="button"
-              onClick={bulkAutoAssign}
-              disabled={bulkBusy !== null || cycleReviewersForDomain.length === 0}
-              title={cycleReviewersForDomain.length === 0 ? "Add reviewers to this domain first" : "Auto-fill reviewer slots on selected applicants"}
-              className="px-3 py-1 text-xs font-medium rounded-md bg-accent-coral hover:bg-accent-coral/90 text-white transition disabled:opacity-50"
-            >
-              {bulkBusy === "auto" ? "Assigning..." : "Auto-assign to selected"}
-            </button>
-          </div>
-        </div>
-      )}
       <div className="hidden sm:block overflow-x-auto">
       <table className="w-full text-sm min-w-[640px]">
         <thead className="bg-muted/50 text-xs font-medium text-muted-foreground uppercase tracking-wide">
           <tr>
-            {isUnderReview && canAssignReviewers && (
-              <th className="pl-6 pr-2 py-3 w-8">
-                <input
-                  type="checkbox"
-                  aria-label="Select all visible applicants"
-                  checked={allVisibleSelected}
-                  ref={el => { if (el) el.indeterminate = !allVisibleSelected && someVisibleSelected; }}
-                  onChange={toggleSelectAllVisible}
-                  className="h-4 w-4 rounded border-border"
-                />
-              </th>
-            )}
             <th className="px-6 py-3 text-left">
               <button
                 type="button"
@@ -2347,23 +2245,24 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                 })
               : null;
             const daId = da?.id as string | undefined;
-            const isSelected = daId ? selectedDaIds.has(daId) : false;
             return (
-              <tr key={app.id} className={`hover:bg-muted/50 ${isSelected ? "bg-blue-50/50 dark:bg-blue-900/10" : ""}`}>
-                {isUnderReview && canAssignReviewers && (
-                  <td className="pl-6 pr-2 py-4 w-8">
-                    <input
-                      type="checkbox"
-                      aria-label={`Select ${app.user.firstName} ${app.user.lastName}`}
-                      checked={isSelected}
-                      disabled={!daId}
-                      onChange={() => daId && toggleSelected(daId)}
-                      className="h-4 w-4 rounded border-border"
-                    />
-                  </td>
-                )}
-                <td className="px-6 py-4 font-medium text-foreground">
-                  {app.user.firstName} {app.user.lastName}
+              <tr key={app.id} className="hover:bg-muted/50">
+                <td className="px-6 py-4 font-medium">
+                  {daId ? (
+                    <Link
+                      to={`/hiring/domain-lead/application/${daId}`}
+                      onClick={(e) => {
+                        const url = `/hiring/domain-lead/application/${daId}`
+                        const label = `${app.user.firstName ?? ''} ${app.user.lastName ?? ''}`.trim() || 'Applicant'
+                        if (requestOpenTabIfEmbedded(url, label)) e.preventDefault()
+                      }}
+                      className="text-foreground hover:text-accent-coral hover:underline"
+                    >
+                      {app.user.firstName} {app.user.lastName}
+                    </Link>
+                  ) : (
+                    <span className="text-foreground">{app.user.firstName} {app.user.lastName}</span>
+                  )}
                 </td>
                 <td className="px-6 py-4">
                   <ReviewerAssignmentCell
@@ -2389,29 +2288,19 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                 </td>
                 <td className="px-6 py-4 text-right">
                   <div className="flex flex-wrap items-center justify-end gap-2">
-                  {isUnderReview && draftToFinalize && (
+                  {isUnderReview && draftToFinalize ? (
                     <button
                       onClick={async () => {
                         await fetch(`/api/hiring/decisions/${draftToFinalize.id}/finalize`, { method: "POST", credentials: "include" });
                         revalidator.revalidate();
                       }}
-                      className="px-2 py-1 text-xs font-medium rounded bg-green-600 hover:bg-green-700 text-white transition"
+                      className="px-2 py-1 text-xs font-medium rounded bg-accent-coral hover:bg-accent-coral/90 text-white transition"
                     >
                       Finalize
                     </button>
+                  ) : (
+                    <span className="text-xs text-muted-foreground/60">—</span>
                   )}
-                  <Link
-                    to={`/hiring/domain-lead/application/${da?.id}`}
-                    onClick={(e) => {
-                      if (!da?.id) return
-                      const url = `/hiring/domain-lead/application/${da.id}`
-                      const label = `${app.user.firstName ?? ''} ${app.user.lastName ?? ''}`.trim() || 'Applicant'
-                      if (requestOpenTabIfEmbedded(url, label)) e.preventDefault()
-                    }}
-                    className="text-blue-600 hover:text-blue-800 font-medium"
-                  >
-                    Review →
-                  </Link>
                   </div>
                 </td>
               </tr>
@@ -2448,23 +2337,26 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
               })
             : null;
           const daId = da?.id as string | undefined;
-          const isSelected = daId ? selectedDaIds.has(daId) : false;
           return (
-            <li key={app.id} className={`px-4 py-3 space-y-2 ${isSelected ? "bg-blue-50/50 dark:bg-blue-900/10" : ""}`}>
+            <li key={app.id} className="px-4 py-3 space-y-2">
               <div className="flex items-center gap-2">
-                {isUnderReview && canAssignReviewers && (
-                  <input
-                    type="checkbox"
-                    aria-label={`Select ${app.user.firstName} ${app.user.lastName}`}
-                    checked={isSelected}
-                    disabled={!daId}
-                    onChange={() => daId && toggleSelected(daId)}
-                    className="h-4 w-4 rounded border-border flex-shrink-0"
-                  />
+                {daId ? (
+                  <Link
+                    to={`/hiring/domain-lead/application/${daId}`}
+                    onClick={(e) => {
+                      const url = `/hiring/domain-lead/application/${daId}`
+                      const label = `${app.user.firstName ?? ''} ${app.user.lastName ?? ''}`.trim() || 'Applicant'
+                      if (requestOpenTabIfEmbedded(url, label)) e.preventDefault()
+                    }}
+                    className="font-medium text-foreground hover:text-accent-coral hover:underline"
+                  >
+                    {app.user.firstName} {app.user.lastName}
+                  </Link>
+                ) : (
+                  <div className="font-medium text-foreground">
+                    {app.user.firstName} {app.user.lastName}
+                  </div>
                 )}
-                <div className="font-medium text-foreground">
-                  {app.user.firstName} {app.user.lastName}
-                </div>
               </div>
               <div>
                 <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Reviewers</div>
@@ -2490,31 +2382,19 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                   <span className="text-xs text-muted-foreground">—</span>
                 )}
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                {isUnderReview && draftToFinalize && (
+              {isUnderReview && draftToFinalize && (
+                <div className="flex flex-wrap items-center gap-2">
                   <button
                     onClick={async () => {
                       await fetch(`/api/hiring/decisions/${draftToFinalize.id}/finalize`, { method: "POST", credentials: "include" });
                       revalidator.revalidate();
                     }}
-                    className="px-2 py-1 text-xs font-medium rounded bg-green-600 hover:bg-green-700 text-white transition"
+                    className="px-2 py-1 text-xs font-medium rounded bg-accent-coral hover:bg-accent-coral/90 text-white transition"
                   >
                     Finalize
                   </button>
-                )}
-                <Link
-                  to={`/hiring/domain-lead/application/${da?.id}`}
-                  onClick={(e) => {
-                    if (!da?.id) return
-                    const url = `/hiring/domain-lead/application/${da.id}`
-                    const label = `${app.user.firstName ?? ''} ${app.user.lastName ?? ''}`.trim() || 'Applicant'
-                    if (requestOpenTabIfEmbedded(url, label)) e.preventDefault()
-                  }}
-                  className="text-blue-600 hover:text-blue-800 text-sm font-medium"
-                >
-                  Review →
-                </Link>
-              </div>
+                </div>
+              )}
             </li>
           );
         })}
@@ -2697,7 +2577,7 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
           <button
             onClick={addReviewer}
             disabled={!selectedReviewerId}
-            className="px-1.5 py-0.5 text-xs font-medium rounded bg-accent-coral text-white hover:bg-accent-coral/90 disabled:opacity-50"
+            className="px-1.5 py-0.5 text-xs font-medium rounded bg-accent-teal text-white hover:bg-accent-teal/90 disabled:opacity-50"
           >
             Add
           </button>

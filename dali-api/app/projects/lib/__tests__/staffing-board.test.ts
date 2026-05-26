@@ -16,6 +16,7 @@ function member(overrides: Partial<MemberInput> = {}): MemberInput {
     isAdmin: false,
     coreTitles: [],
     preferences: [],
+    bidFields: [],
     domainLevels: [],
     ...overrides,
   };

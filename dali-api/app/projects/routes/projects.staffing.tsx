@@ -6,9 +6,11 @@ import { prisma } from "~/lib/db";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { ensureStaffingCycle } from "../lib/staffing-cycle";
 import { getSlotBinding } from "../lib/form-slots";
+import { buildSubmissionView } from "../lib/submission-view.server";
 import { StaffingBoard } from "../components/StaffingBoard";
 import type {
   Assignment,
+  BidField,
   Level,
   MemberInput,
   Preference,
@@ -146,6 +148,30 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Same shape for both pools (members with preferences, and bid-submitters
   // whose bids resolved to none). preferences/unresolvedBid are passed in
   // because they differ between the two.
+  // Full Project Bids answers per member, so clicking a card shows the whole
+  // bid (all form answers), not just the resolved rankings. One call resolves
+  // every member's submission for the cycle (reference answers → project/domain
+  // names) in a few batched queries — cheaper than a fetch per opened card.
+  const bidsBinding = await getSlotBinding(cycle.id, "project-bids");
+  const bidFieldsByUser = new Map<string, BidField[]>();
+  if (bidsBinding) {
+    const view = await buildSubmissionView({
+      cycleIds: [cycle.id],
+      slot: "project-bids",
+      formId: bidsBinding.formId,
+    });
+    for (const row of view.rows) {
+      // Show the member's own form answers (question fields) that have a value.
+      // Builtins like "Submitter" are redundant in a per-member modal.
+      bidFieldsByUser.set(
+        row.userId,
+        row.detailFields
+          .filter((f) => f.source === "question" && f.value.trim() !== "")
+          .map((f) => ({ label: f.label, value: f.value })),
+      );
+    }
+  }
+
   const toMemberInput = async (
     u: (typeof users)[number],
     preferences: Preference[],
@@ -164,6 +190,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       .map((e) => ({ domainName: e.domain.displayName, level: e.level as Level }))
       .sort((a, b) => a.domainName.localeCompare(b.domainName)),
     preferences,
+    bidFields: bidFieldsByUser.get(u.id) ?? [],
     unresolvedBid,
   });
 
@@ -247,7 +274,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   // board legitimately has no new bids to staff — surface that so a lead
   // doesn't read an empty board as a bug. (Legacy StaffingPreference rows
   // may still appear; that's the documented exception.)
-  const bidsFormBound = !!(await getSlotBinding(cycle.id, "project-bids"));
+  const bidsFormBound = !!bidsBinding;
 
   return {
     cycle: {
