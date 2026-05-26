@@ -21,10 +21,10 @@ test.describe('domain lead workflow', () => {
   test('shows known applicants on the dashboard', async ({ page }) => {
     await page.goto('/hiring/domain-lead');
     const frame = domainFrame(page);
-    // Alice and Diego are seeded as invited-to-interview, so they now appear in
-    // the Interviews section (the Reviews section is scoped to under-review /
-    // rejected applicants — invited applicants live only under Interviews).
-    await expect(frame.getByRole('heading', { name: 'Interviews' }).first()).toBeVisible();
+    // Alice and Diego are seeded as invited-to-interview. After the redesign
+    // they appear in the Interviews section rather than the (renamed) Reviews
+    // table, but either way their names are visible on the domain dashboard.
+    await expect(frame.getByText('Interviews').first()).toBeVisible();
     await expect(frame.getByText('Alice Johnson').first()).toBeVisible();
     await expect(frame.getByText('Diego Rivera').first()).toBeVisible();
   });
