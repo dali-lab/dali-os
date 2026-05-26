@@ -18,10 +18,13 @@ test.describe('domain lead workflow', () => {
     await expect(frame.getByText('Open').first()).toBeVisible();
   });
 
-  test('shows applicants table with known applicants', async ({ page }) => {
+  test('shows known applicants on the dashboard', async ({ page }) => {
     await page.goto('/hiring/domain-lead');
     const frame = domainFrame(page);
-    await expect(frame.getByRole('columnheader', { name: 'Applicant' }).first()).toBeVisible();
+    // Alice and Diego are seeded as invited-to-interview, so they now appear in
+    // the Interviews section (the Reviews section is scoped to under-review /
+    // rejected applicants — invited applicants live only under Interviews).
+    await expect(frame.getByRole('heading', { name: 'Interviews' }).first()).toBeVisible();
     await expect(frame.getByText('Alice Johnson').first()).toBeVisible();
     await expect(frame.getByText('Diego Rivera').first()).toBeVisible();
   });
@@ -34,7 +37,8 @@ test.describe('domain lead workflow', () => {
     await expect(frame.getByText(/Challenges \((setup|locked)\)/).first()).toBeVisible();
     await expect(frame.getByText('Rubric').first()).toBeVisible();
     await expect(frame.getByText('Team').first()).toBeVisible();
-    await expect(frame.getByText('Applications').first()).toBeVisible();
+    // "Applications" was renamed to "Reviews".
+    await expect(frame.getByText('Reviews').first()).toBeVisible();
   });
 
   test('application detail page shows challenge responses', async ({ page }) => {
