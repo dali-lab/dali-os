@@ -9,6 +9,7 @@ import { parseColumnMapping, type ColumnMapping } from "./slot-roles";
 export const SLOTS = {
   "intent-to-work": "Intent to Work",
   "project-bids": "Project Bids",
+  "level-up": "Level Up",
 } as const;
 
 export type Slot = keyof typeof SLOTS;
@@ -32,7 +33,12 @@ export function pickStaffingBinding<
   },
 >(bindings: B[], currentTermId: string | null): B | undefined {
   return bindings
-    .filter((b) => b.slot === "project-bids" || b.slot === "intent-to-work")
+    .filter(
+      (b) =>
+        b.slot === "project-bids" ||
+        b.slot === "intent-to-work" ||
+        b.slot === "level-up",
+    )
     .sort((a, b) => {
       if (currentTermId) {
         const aLive = a.staffingCycle.termId === currentTermId;
