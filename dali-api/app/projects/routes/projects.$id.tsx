@@ -9,7 +9,8 @@ import {
   useSearchParams,
   useSubmit,
 } from "react-router";
-import { Check, Pencil, X } from "lucide-react";
+import { Check, Pencil, X, Settings } from "lucide-react";
+import { Modal } from "~/components/Modal";
 import { EditableSection } from "~/components/EditableSection";
 import { TagPicker } from "~/components/TagPicker";
 import { uploadFileToS3, formatBytes } from "~/lib/upload-client";
@@ -18,7 +19,7 @@ import { prisma } from "~/lib/db";
 import { ensureProjectGroup } from "~/lib/groups";
 import { requireAuth } from "~/lib/auth";
 import { parseSessionCookie } from "~/lib/cookies";
-import { isCore, currentTerm } from "~/lib/roles";
+import { isCore, canManageStaffing, currentTerm } from "~/lib/roles";
 import { TaskBoard } from "../components/TaskBoard";
 import { type TimelineEpic, type EpicStatus } from "../components/EpicsTimeline";
 import {
@@ -57,15 +58,17 @@ function openDocumentTab(pageId: string, label: string) {
 const STATUSES = ["Active", "Paused", "Archived"] as const;
 type ProjectStatus = (typeof STATUSES)[number];
 
-const TABS = ["overview", "scope", "work"] as const;
+// "Scope" is no longer a public tab — its domain/term/challenge config moved
+// into a settings popup (gated to Core/Admin/Staff). Public tabs are just the
+// content views.
+const TABS = ["overview", "work"] as const;
 type Tab = (typeof TABS)[number];
 function isTab(x: string | null): x is Tab {
-  return x === "overview" || x === "scope" || x === "work";
+  return x === "overview" || x === "work";
 }
 
 const TAB_LABELS: Record<Tab, string> = {
   overview: "Overview",
-  scope: "Scope",
   work: "Work",
 };
 
@@ -218,6 +221,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   // Admin or Core members may edit projects (isCore === Admin || Core).
   const canEdit = await isCore(auth.user.sub);
+  // The Scope/challenge settings popup is visible to Core, Admin, or staffing
+  // leads. Editing still requires canEdit (isCore) — the action enforces that.
+  const canViewScope = canEdit || (await canManageStaffing(auth.user.sub));
 
   // Collab editor wiring (same as the hiring routes): session cookie is the
   // WebSocket auth token; userName labels the presence cursor.
@@ -462,6 +468,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     tasks,
     boardOptions,
     canEdit,
+    canViewScope,
+    currentTerm: current ? { id: current.id, code: current.code } : null,
     collabToken,
     userName,
     currentUserId: auth.user.sub,
@@ -665,10 +673,13 @@ export default function ProjectDetail() {
     allTermOptions,
     domainScopeGrid,
     canEdit,
+    canViewScope,
+    currentTerm,
     collabToken,
     userName,
   } = useLoaderData() as LoaderData;
   const actionData = useActionData<typeof action>();
+  const [scopeSettingsOpen, setScopeSettingsOpen] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const partnerNames = project.partners.map((p) => p.partnerOrg.name);
 
@@ -717,6 +728,19 @@ export default function ProjectDetail() {
             {TAB_LABELS[t]}
           </button>
         ))}
+        {/* Scope/challenge config lives behind this gear, visible only to
+            Core/Admin/Staff. */}
+        {canViewScope && (
+          <button
+            type="button"
+            onClick={() => setScopeSettingsOpen(true)}
+            className="ml-auto -mb-px inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+            title="Project scope & challenges"
+          >
+            <Settings className="w-4 h-4" />
+            <span className="hidden sm:inline">Scope settings</span>
+          </button>
+        )}
       </div>
 
       {tab === "overview" && (
@@ -727,20 +751,49 @@ export default function ProjectDetail() {
           files={files}
           allTags={allTags}
           canEdit={canEdit}
+          domainScopeGrid={domainScopeGrid}
+          currentTerm={currentTerm}
           actionError={actionData?.error}
         />
       )}
 
-      {tab === "scope" && (
-        <ScopeTab
-          project={project}
-          allDomainOptions={allDomainOptions}
-          plannedTerms={plannedTerms}
-          allTermOptions={allTermOptions}
-          domainScopeGrid={domainScopeGrid}
-          canEdit={canEdit}
-          actionError={actionData?.error}
-        />
+      {/* Scope & challenges, now a settings popup gated to Core/Admin/Staff. */}
+      {canViewScope && (
+        <Modal
+          open={scopeSettingsOpen}
+          onClose={() => setScopeSettingsOpen(false)}
+          labelledBy="scope-settings-title"
+          containerClassName="bg-card rounded-2xl shadow-xl w-full max-w-4xl p-5 sm:p-6 my-auto max-h-[85vh] overflow-y-auto"
+        >
+          <div className="flex items-start justify-between gap-3 mb-4">
+            <div>
+              <h2 id="scope-settings-title" className="font-heading text-lg font-bold text-foreground">
+                Scope &amp; challenges
+              </h2>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Declared domains, planned terms, and the per-domain challenge
+                for each term.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setScopeSettingsOpen(false)}
+              aria-label="Close scope settings"
+              className="text-muted-foreground hover:text-foreground text-xl leading-none px-1"
+            >
+              ×
+            </button>
+          </div>
+          <ScopeTab
+            project={project}
+            allDomainOptions={allDomainOptions}
+            plannedTerms={plannedTerms}
+            allTermOptions={allTermOptions}
+            domainScopeGrid={domainScopeGrid}
+            canEdit={canEdit}
+            actionError={actionData?.error}
+          />
+        </Modal>
       )}
 
       {tab === "work" && (
@@ -1505,6 +1558,8 @@ function OverviewTab({
   files,
   allTags,
   canEdit,
+  domainScopeGrid,
+  currentTerm,
   actionError,
 }: {
   project: LoaderData["project"];
@@ -1513,8 +1568,18 @@ function OverviewTab({
   files: LoaderData["files"];
   allTags: LoaderData["allTags"];
   canEdit: boolean;
+  domainScopeGrid: LoaderData["domainScopeGrid"];
+  currentTerm: LoaderData["currentTerm"];
   actionError?: string;
 }) {
+  // The current term's per-domain challenge, read-only on Overview. Edited in
+  // the Scope settings popup. Only non-empty cells for the current term show.
+  const currentChallenges = currentTerm
+    ? domainScopeGrid.filter(
+        (c) => c.termId === currentTerm.id && c.scope.trim() !== "",
+      )
+    : [];
+
   return (
     <div className="flex flex-col gap-4">
       {actionError && (
@@ -1525,6 +1590,30 @@ function OverviewTab({
 
       {/* Description — its own segment on top, separate from Project details */}
       <DescriptionSegment description={project.description} canEdit={canEdit} />
+
+      {/* Challenge for the current term, per declared domain (read-only). */}
+      {currentTerm && currentChallenges.length > 0 && (
+        <section className="bg-card border border-border rounded-lg p-4">
+          <h3 className="text-sm font-semibold text-foreground mb-3">
+            Challenge{" "}
+            <span className="text-xs font-normal text-muted-foreground">
+              · {currentTerm.code}
+            </span>
+          </h3>
+          <div className="space-y-3">
+            {currentChallenges.map((c) => (
+              <div key={c.domainId}>
+                <div className="text-xs font-medium text-muted-foreground">
+                  {c.domainName}
+                </div>
+                <p className="text-sm text-foreground whitespace-pre-wrap mt-0.5">
+                  {c.scope}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Project details. Editable as one section; commits via intent=details
           which expects the full field set. Section-level Save submits and
