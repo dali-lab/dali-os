@@ -191,9 +191,12 @@ export async function loader({ request }: Route.LoaderArgs) {
 
       // Interviews for this domain in this cycle. Both Scheduled and Completed
       // rows appear in the dashboard table — only cancelled rows are excluded
-      // (audit-only).
+      // (audit-only). Load for any non-Draft cycle: an interview can be booked
+      // while the cycle is still Open (a Released invite + scheduled slot), and
+      // those applicants must surface in the Interviews section rather than
+      // vanishing (they're excluded from Reviews).
       const currentStatus = cycle?.statusUpdates[0]?.newStatus ?? "Draft";
-      const interviews = (currentStatus === "UnderReview" || currentStatus === "Completed") && cycle
+      const interviews = currentStatus !== "Draft" && cycle
         ? await prisma.interview.findMany({
             where: {
               applicationCycleId: cycle.id,
