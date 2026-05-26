@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Outlet, redirect, useLoaderData, useLocation, useSearchParams } from 'react-router'
+import { Outlet, redirect, useLoaderData, useLocation, useNavigate, useSearchParams } from 'react-router'
 import { Layout } from '~/components/Layout'
 import { requireAuth } from "~/lib/auth";
 import { getUserRoles } from '~/lib/roles'
@@ -61,6 +61,7 @@ export default function AppLayoutRoute() {
   const { user, photoUrl, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, isEmbedded } = useLoaderData<typeof loader>()
   const [searchParams] = useSearchParams()
   const location = useLocation()
+  const navigate = useNavigate()
 
   // After a client-side navigation inside the workspace iframe, the loader
   // re-runs via fetch — which carries `Sec-Fetch-Dest: empty`, not `iframe` —
@@ -122,6 +123,25 @@ export default function AppLayoutRoute() {
     }, 50)
     return () => window.clearTimeout(id)
   }, [embedded, location.pathname, location.search])
+
+  // When embedded, accept `dali:navigate` from the parent TabWorkspace —
+  // that's how the per-tab back/forward arrows drive in-iframe navigation.
+  // Going through react-router's navigate() keeps the embedded layout's
+  // navigation flow consistent (loaders re-run, etc.) and our own
+  // `dali:tabNavigated` post just above is what tells the parent the move
+  // landed (parent recognises it as a back/forward via a pending-op ref).
+  useEffect(() => {
+    if (!embedded) return
+    if (typeof window === 'undefined') return
+    function onMsg(e: MessageEvent) {
+      if (e.origin !== window.location.origin) return
+      const d = e.data
+      if (!d || d.type !== 'dali:navigate' || typeof d.url !== 'string') return
+      navigate(d.url)
+    }
+    window.addEventListener('message', onMsg)
+    return () => window.removeEventListener('message', onMsg)
+  }, [embedded, navigate])
 
   // Skip the sidebar shell when rendered inside a TabWorkspace iframe.
   if (embedded) {
