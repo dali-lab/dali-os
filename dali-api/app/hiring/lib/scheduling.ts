@@ -1,6 +1,7 @@
 import type { Prisma } from "~/generated/prisma/client";
 import { prisma } from "~/lib/db";
 import { notifyInterviewAssigned } from "~/hiring/lib/interview-notifications";
+import { sendReassignmentEmails } from "~/hiring/lib/interview-emails";
 
 // New-assignee notifications fire outside transactions (best-effort), so
 // scheduling.ts hands callers the cycleInterviewerIds that need notifying
@@ -482,6 +483,8 @@ export async function reassignInterviewer(
       reassigned: true as const,
       newInterviewerId: created.cycleInterviewerId,
       newAssignmentId: created.id,
+      oldCycleInterviewerId: assignment.cycleInterviewerId,
+      domainApplicationId: interview.domainApplicationId,
     };
   });
 
@@ -489,6 +492,12 @@ export async function reassignInterviewer(
     notifyInterviewAssigned({
       assignmentIds: [result.newAssignmentId],
     }).catch(() => {});
+    sendReassignmentEmails(
+      interviewId,
+      result.domainApplicationId,
+      result.oldCycleInterviewerId,
+      result.newInterviewerId,
+    ).catch(() => {});
   }
 
   return result;
