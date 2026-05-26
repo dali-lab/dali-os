@@ -56,6 +56,11 @@ model User {
   hometown     String?
   linkedinUrl  String?
   githubUrl    String?
+  // Bare GitHub login (e.g. "octocat"), distinct from githubUrl (a display
+  // link). Used to add the member to their project's GitHub team during
+  // staffing finalize. Editable in member details; nullable — a member with no
+  // username is silently skipped (and reported) by that automation.
+  githubUsername String?
   personalSite String?
 
   // ─── Relations: existing ──────────────────────────────────────────────────
@@ -1822,6 +1827,12 @@ model Project {
 
   // Git repositories for this project (URLs). Empty by default.
   repoUrls String[] @default([])
+
+  // GitHub team slug for this project's org team, persistent across terms.
+  // Set on the project detail page. When present, the staffing "Set up GitHub
+  // teams" finalize automation get-or-creates a team with this slug under
+  // GITHUB_ORG and adds the confirmed roster. Null = automation skips.
+  githubTeamSlug String?
 
   overviewPage Page? @relation("ProjectOverview", fields: [overviewPageId], references: [id])
   prdPage      Page? @relation("ProjectPRD", fields: [prdPageId], references: [id])

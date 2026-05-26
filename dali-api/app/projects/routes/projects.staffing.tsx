@@ -58,9 +58,13 @@ export async function loader({ request }: Route.LoaderArgs) {
       .find((t) => t.startDate.getTime() > now) ??
     null;
 
-  const requestedCode = new URL(request.url).searchParams.get("term");
+  // The term is addressed by id, matching the shared TermFilter convention
+  // used by every other term-scoped page (?term=<id>). Honouring a bare code
+  // here would silently miss id-based links from the rest of the app and fall
+  // back to the current term, so a chosen term (e.g. 26S) wouldn't stick.
+  const requestedId = new URL(request.url).searchParams.get("term");
   const selectedTerm =
-    (requestedCode && terms.find((t) => t.code === requestedCode)) ||
+    (requestedId && terms.find((t) => t.id === requestedId)) ||
     currentTermRow ||
     terms[0];
 
@@ -68,7 +72,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     selectedTerm.id,
     selectedTerm.code,
   );
-  const cycleTermCode = selectedTerm.code;
+  const selectedTermId = selectedTerm.id;
 
   // The pool of members on the board is everyone who submitted at least one
   // StaffingPreference for this cycle. Members who didn't bid don't show up.
@@ -139,7 +143,14 @@ export async function loader({ request }: Route.LoaderArgs) {
     prefsByUser.set(p.userId, list);
   }
 
-  const members: MemberInput[] = await Promise.all(users.map(async (u) => ({
+  // Same shape for both pools (members with preferences, and bid-submitters
+  // whose bids resolved to none). preferences/unresolvedBid are passed in
+  // because they differ between the two.
+  const toMemberInput = async (
+    u: (typeof users)[number],
+    preferences: Preference[],
+    unresolvedBid: boolean,
+  ): Promise<MemberInput> => ({
     userId: u.id,
     firstName: u.firstName,
     lastName: u.lastName,
@@ -152,8 +163,51 @@ export async function loader({ request }: Route.LoaderArgs) {
     domainLevels: u.domainEligibilities
       .map((e) => ({ domainName: e.domain.displayName, level: e.level as Level }))
       .sort((a, b) => a.domainName.localeCompare(b.domainName)),
-    preferences: prefsByUser.get(u.id) ?? [],
-  })));
+    preferences,
+    unresolvedBid,
+  });
+
+  const members: MemberInput[] = await Promise.all(
+    users.map((u) => toMemberInput(u, prefsByUser.get(u.id) ?? [], false)),
+  );
+
+  // A member who submitted this cycle's Project Bids form but produced no
+  // StaffingPreference (their picks had no open role in an eligibility domain)
+  // would otherwise vanish — the pool above is preference-derived. Surface them
+  // as flagged Unassigned cards so a staffing lead can act. Only users not
+  // already in the preference pool need adding.
+  const bidSubmitterIds = (
+    await prisma.formSubmission.findMany({
+      where: { staffingCycleId: cycle.id, slot: "project-bids" },
+      select: { userId: true },
+      distinct: ["userId"],
+    })
+  )
+    .map((s) => s.userId)
+    .filter((id): id is string => !!id && !memberUserIds.includes(id));
+
+  if (bidSubmitterIds.length > 0) {
+    const flaggedUsers = await prisma.user.findMany({
+      where: { id: { in: bidSubmitterIds } },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        daliEmail: true,
+        dartmouthEmail: true,
+        photoUrl: true,
+        adminMembership: { select: { id: true } },
+        coreAssignments: { select: { leadTitle: true } },
+        domainEligibilities: {
+          select: { level: true, domain: { select: { displayName: true } } },
+        },
+      },
+    });
+    const flagged = await Promise.all(
+      flaggedUsers.map((u) => toMemberInput(u, [], true)),
+    );
+    members.push(...flagged);
+  }
 
   const initialAssignments: Assignment[] = assignmentRows.map((a) => ({
     userId: a.userId,
@@ -198,7 +252,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   return {
     cycle: {
       id: cycle.id,
-      termCode: cycleTermCode,
+      termId: selectedTermId,
     },
     terms: terms.map((t) => ({ id: t.id, code: t.code })),
     canManage,
@@ -248,7 +302,7 @@ export default function StaffingPage() {
 
       <StaffingBoard
         cycleId={data.cycle.id}
-        termCode={data.cycle.termCode}
+        termId={data.cycle.termId}
         terms={data.terms}
         projects={data.projects}
         members={data.members}

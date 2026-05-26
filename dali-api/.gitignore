@@ -1,5 +1,9 @@
 .DS_Store
+# All env files hold secrets and must never be committed — except the tracked
+# .env.example template.
 .env
+.env.*
+!.env.example
 /node_modules/
 
 # React Router

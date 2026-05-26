@@ -230,6 +230,14 @@ export async function action({ request, params }: Route.ActionArgs) {
             slots: d.expectedMembers,
           }))
       : [];
+    // The project's declared domains are INHERITED from the role requests: the
+    // distinct domains the project needs people in. No role requests → no
+    // domains inherited. After promotion these stay editable the usual way
+    // (the `domains` intent on the project page), so this is just the initial
+    // seed, not a binding.
+    const inheritedDomainIds = Array.from(
+      new Set(roleRequestRows.map((r) => r.domainId)),
+    );
 
     const project = await prisma.$transaction(async (tx) => {
       const created = await tx.project.create({
@@ -242,6 +250,13 @@ export async function action({ request, params }: Route.ActionArgs) {
           partners: { create: { partnerOrgId: app.partnerOrgId } },
           ...(roleRequestRows.length > 0
             ? { roleRequests: { create: roleRequestRows } }
+            : {}),
+          ...(inheritedDomainIds.length > 0
+            ? {
+                domains: {
+                  create: inheritedDomainIds.map((domainId) => ({ domainId })),
+                },
+              }
             : {}),
         },
         select: { id: true },

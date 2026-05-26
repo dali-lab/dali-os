@@ -17,6 +17,32 @@ export function isSlot(value: string): value is Slot {
   return value in SLOTS;
 }
 
+// Which of a form's cycle bindings a submission should feed. A form is bound
+// per-cycle (one binding per cycle+slot), so the binding names the cycle — we
+// pick from the form's own bindings rather than re-deriving the cycle from the
+// calendar's current term, which would silently drop submissions for any term
+// that isn't "live" today. Normally a form drives one staffing slot for one
+// cycle; if it's reused across cycles we prefer the live term's binding, else
+// the most recently updated one, so the choice is always deterministic.
+export function pickStaffingBinding<
+  B extends {
+    slot: string;
+    updatedAt: Date;
+    staffingCycle: { termId: string };
+  },
+>(bindings: B[], currentTermId: string | null): B | undefined {
+  return bindings
+    .filter((b) => b.slot === "project-bids" || b.slot === "intent-to-work")
+    .sort((a, b) => {
+      if (currentTermId) {
+        const aLive = a.staffingCycle.termId === currentTermId;
+        const bLive = b.staffingCycle.termId === currentTermId;
+        if (aLive !== bLive) return aLive ? -1 : 1;
+      }
+      return b.updatedAt.getTime() - a.updatedAt.getTime();
+    })[0];
+}
+
 // The form bound to a slot for a cycle, with just enough of its latest
 // version to surface it to members. `null` when no form is bound.
 export type SlotBinding = {

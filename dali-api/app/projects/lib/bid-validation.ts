@@ -51,57 +51,71 @@ export async function validateBids(
   cycle: BidCycle,
   bids: RawBid[],
 ): Promise<BidValidationResult> {
+  // The form is live and self-served, so a member can submit picks that don't
+  // form a clean ranked set — the same project in two slots, more slots filled
+  // than maxBids, or no eligibility yet. None of these should reject the whole
+  // submission and make the member vanish from the board; we normalize what we
+  // can and record what's left. (Genuine interpretation failures upstream
+  // already produce no bids; this guards the validate step.)
   const maxBids = Math.min(3, cycle.maxPreferencesPerMember);
-  if (bids.length > maxBids) {
-    return { ok: false, error: `You can bid on at most ${maxBids} projects.` };
-  }
 
-  // No duplicate projects — a member ranks distinct projects, not the same
-  // project twice.
-  const seen = new Set(bids.map((b) => b.projectId));
-  if (seen.size !== bids.length) {
-    return { ok: false, error: "Duplicate bid" };
+  // De-duplicate by project, keeping the highest (lowest-numbered) rank — i.e.
+  // the first occurrence, since `bids` is in rank order. Picking the same
+  // project twice collapses to one bid rather than rejecting the submission.
+  const dedupedBids: RawBid[] = [];
+  const seenProjects = new Set<string>();
+  for (const b of bids) {
+    if (seenProjects.has(b.projectId)) continue;
+    seenProjects.add(b.projectId);
+    dedupedBids.push(b);
   }
+  // Then cap at maxBids, keeping the top-ranked ones.
+  const effectiveBids = dedupedBids.slice(0, maxBids);
 
   // The member's eligibility map: domainId -> level. Each bid expands into
-  // one row per eligibility (where the project has an open role).
+  // one row per eligibility (where the project works in that domain). No
+  // eligibility yet → nothing to expand into, so record zero bids rather than
+  // erroring (the member still appears on the board, flagged).
   const eligibilities = await prisma.domainEligibility.findMany({
     where: { userId },
     select: { domainId: true, level: true },
   });
   if (eligibilities.length === 0) {
-    return {
-      ok: false,
-      error: "You have no domain eligibility — no bids can be recorded.",
-    };
+    return { ok: true, bids: [] };
   }
   const levelByDomain = new Map(
     eligibilities.map((e) => [e.domainId, e.level]),
   );
 
-  // Open roles for this term, restricted to the member's eligibility
-  // domains. Keyed (project,domain) for O(1) cross-check.
-  const roleRequests = await prisma.projectRoleRequest.findMany({
+  // Biddability is driven by the project's DECLARED DOMAINS (ProjectDomain),
+  // not by per-term ProjectRoleRequest rows. A project is biddable in a domain
+  // if it works in that domain at all; level comes from the member's
+  // eligibility. (ProjectRoleRequest still exists for headcount display on the
+  // board, but no longer gates whether a bid resolves — a project with scope
+  // but no manually-entered role requests is still biddable.) Restricted to
+  // the bid projects ∩ the member's eligibility domains, keyed (project,domain)
+  // for O(1) cross-check.
+  const projectDomains = await prisma.projectDomain.findMany({
     where: {
-      termId: cycle.termId,
+      projectId: { in: effectiveBids.map((b) => b.projectId) },
       domainId: { in: [...levelByDomain.keys()] },
     },
     select: { projectId: true, domainId: true },
   });
-  const openRoles = new Set(
-    roleRequests.map((r) => `${r.projectId}:${r.domainId}`),
+  const biddable = new Set(
+    projectDomains.map((d) => `${d.projectId}:${d.domainId}`),
   );
 
   const validated: ValidatedBid[] = [];
-  for (let i = 0; i < bids.length; i++) {
-    const b = bids[i];
+  for (let i = 0; i < effectiveBids.length; i++) {
+    const b = effectiveBids[i];
     const rank = i + 1;
-    // Each eligibility the project has an open role in becomes a row. If
-    // the project has no open role in any eligibility domain, the bid
+    // Each eligibility domain the project works in becomes a row. If the
+    // project doesn't work in any of the member's eligibility domains, the bid
     // contributes nothing — silently dropped so the rest of the submission
-    // still records (eligibility/open-role drift shouldn't reject the form).
+    // still records (eligibility/domain drift shouldn't reject the form).
     for (const [domainId, level] of levelByDomain) {
-      if (!openRoles.has(`${b.projectId}:${domainId}`)) continue;
+      if (!biddable.has(`${b.projectId}:${domainId}`)) continue;
       validated.push({
         projectId: b.projectId,
         domainId,

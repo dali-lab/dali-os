@@ -94,6 +94,29 @@ describe("buildBoard", () => {
     expect(board[UNASSIGNED].map((c) => c.userId)).toEqual(["u-a", "u-c", "u-b"]);
   });
 
+  it("defaults unresolvedBid to false for an ordinary member", () => {
+    const board = buildBoard({
+      projectIds: ["p1"],
+      members: [member()],
+      assignments: [],
+    });
+    expect(board[UNASSIGNED][0].unresolvedBid).toBe(false);
+  });
+
+  it("carries an unresolved-bid flag through to the Unassigned card", () => {
+    // A member who bid but produced no preference: no project picks, flagged.
+    const board = buildBoard({
+      projectIds: ["p1"],
+      members: [member({ preferences: [], unresolvedBid: true })],
+      assignments: [],
+    });
+    expect(board[UNASSIGNED]).toHaveLength(1);
+    const card = board[UNASSIGNED][0];
+    expect(card.unresolvedBid).toBe(true);
+    expect(card.topPreferences).toEqual([]);
+    expect(card.level).toBeNull();
+  });
+
   it("carries every domainLevel through to the card", () => {
     const board = buildBoard({
       projectIds: ["p1"],

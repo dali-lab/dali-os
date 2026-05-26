@@ -174,10 +174,21 @@ export async function action({ request }: Route.ActionArgs) {
   if (!(await canManageStaffing(auth.user.sub)))
     return Response.json({ error: "Forbidden" }, { status: 403 });
 
-  const term = await currentTerm();
-  if (!term)
+  // Bind to the cycle for the term the page is VIEWING (?term=), not whatever
+  // term is live today — mirrors the loader's resolution so a binding saved
+  // while viewing a non-live term lands on that term's cycle instead of being
+  // silently written to the current one. Falls back to the current term.
+  const { terms: termOptions, termId: filterTermId } =
+    await resolveTermFilter(request);
+  const fallbackTerm = await currentTerm();
+  const selected =
+    termOptions.find((o) => o.id === filterTermId) ??
+    (fallbackTerm
+      ? { id: fallbackTerm.id, code: fallbackTerm.code }
+      : termOptions[0]);
+  if (!selected)
     return Response.json({ error: "No active staffing term." }, { status: 400 });
-  const cycle = await ensureStaffingCycle(term.id, term.code);
+  const cycle = await ensureStaffingCycle(selected.id, selected.code);
 
   const form = await request.formData();
   const intent = String(form.get("intent"));

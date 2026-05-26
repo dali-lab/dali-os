@@ -84,6 +84,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       calendarEmail: true,
       imageUrl: true,
       repoUrls: true,
+      githubTeamSlug: true,
       overviewPageId: true,
       prdPageId: true,
       projectTerms: {
@@ -430,6 +431,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       calendarEmail: project.calendarEmail,
       imageUrl: project.imageUrl,
       repoUrls: project.repoUrls,
+      githubTeamSlug: project.githubTeamSlug,
       overviewPageId: project.overviewPageId,
       prdPageId: project.prdPageId,
       startTerm,
@@ -610,6 +612,17 @@ export async function action({ request, params }: Route.ActionArgs) {
   const imageUrlRaw = (form.get("imageUrl") as string | null)?.trim() ?? "";
   const repoUrlsRaw = (form.get("repoUrls") as string | null) ?? "";
   const termCountRaw = (form.get("termCount") as string | null) ?? "";
+  const githubTeamRaw = (form.get("githubTeamSlug") as string | null)?.trim() ?? "";
+
+  // Normalize to a GitHub-safe team slug: lowercase, non-alphanumerics → single
+  // hyphens, trimmed. Empty clears the field (automation then skips).
+  const githubTeamSlug =
+    githubTeamRaw === ""
+      ? null
+      : githubTeamRaw
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, "");
 
   // repoUrls textarea: one URL per line, blanks dropped.
   const repoUrls = repoUrlsRaw
@@ -629,6 +642,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       imageUrl: imageUrlRaw === "" ? null : imageUrlRaw,
       repoUrls,
       termCount,
+      githubTeamSlug,
     },
   });
   return redirect(`/projects/${params.id}`);
@@ -1244,6 +1258,23 @@ function DetailsSegment({
               ) : (
                 <span className="px-2 py-1.5 text-sm text-foreground">
                   {project.imageUrl ?? "—"}
+                </span>
+              )}
+            </label>
+
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="text-muted-foreground">GitHub team</span>
+              {editing ? (
+                <input
+                  name="githubTeamSlug"
+                  type="text"
+                  defaultValue={project.githubTeamSlug ?? ""}
+                  placeholder="project-team-name"
+                  className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                />
+              ) : (
+                <span className="px-2 py-1.5 text-sm text-foreground">
+                  {project.githubTeamSlug ?? "—"}
                 </span>
               )}
             </label>
