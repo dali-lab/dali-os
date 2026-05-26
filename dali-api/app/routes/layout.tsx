@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Outlet, redirect, useLoaderData, useSearchParams } from 'react-router'
+import { Outlet, redirect, useLoaderData, useLocation, useSearchParams } from 'react-router'
 import { Layout } from '~/components/Layout'
 import { requireAuth } from "~/lib/auth";
 import { getUserRoles } from '~/lib/roles'
@@ -60,6 +60,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 export default function AppLayoutRoute() {
   const { user, photoUrl, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, isEmbedded } = useLoaderData<typeof loader>()
   const [searchParams] = useSearchParams()
+  const location = useLocation()
 
   // After a client-side navigation inside the workspace iframe, the loader
   // re-runs via fetch — which carries `Sec-Fetch-Dest: empty`, not `iframe` —
@@ -79,13 +80,33 @@ export default function AppLayoutRoute() {
 
   const embedded = isEmbedded || isClientEmbedded || searchParams.get('embed') === '1'
 
-  // When embedded, announce our preferred tab label to the parent workspace.
-  // Source: document.title (set by each route's Route.MetaFunction), with the
-  // shared `· DALI OS` suffix stripped. setTimeout(0) gives React Router a
-  // tick to write the title from meta before we read it.
+  // When embedded, keep the parent workspace in sync with this iframe on every
+  // in-iframe navigation:
+  //  - `dali:tabNavigated` updates the tab's stored URL (with `embed=1`
+  //    stripped, matching how tabs are stored) so the sidebar highlight tracks
+  //    the current page and a reload restores it. The iframe src is pinned to
+  //    its mount seed, so this never reloads the frame.
+  //  - `dali:setTabLabel` refreshes the tab label from document.title, keyed by
+  //    the iframe's RAW location (still carrying `embed=1` on first load). A
+  //    sidebar-opened section root is stored without `embed`, so its raw URL
+  //    won't match and its friendly sidebar label ("Cycles", "Domain", …) is
+  //    preserved; only a deeper client-side navigation (where `embed` has been
+  //    dropped from the URL) matches and refines the label.
+  // setTimeout gives React Router a tick to write the title from meta.
   useEffect(() => {
     if (!embedded) return
     if (typeof window === 'undefined') return
+
+    const params = new URLSearchParams(location.search)
+    params.delete('embed')
+    const query = params.toString()
+    const cleanUrl = location.pathname + (query ? `?${query}` : '')
+
+    window.parent.postMessage(
+      { type: 'dali:tabNavigated', url: cleanUrl },
+      window.location.origin,
+    )
+
     const id = window.setTimeout(() => {
       const raw = document.title
       const label = raw.replace(/\s*·\s*DALI OS\s*$/, '').trim() || raw
@@ -100,7 +121,7 @@ export default function AppLayoutRoute() {
       )
     }, 50)
     return () => window.clearTimeout(id)
-  }, [embedded])
+  }, [embedded, location.pathname, location.search])
 
   // Skip the sidebar shell when rendered inside a TabWorkspace iframe.
   if (embedded) {

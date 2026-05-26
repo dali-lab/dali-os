@@ -3,11 +3,14 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ReviewsSection, InterviewPrepNoteSection } from "../ApplicantContextModal";
 
-function render(reviews: any[]) {
+function render(
+  reviews: any[],
+  criteriaByKey: Record<string, { label: string; maxScore?: number }> = {},
+) {
   return renderToStaticMarkup(
     createElement(ReviewsSection, {
       reviews,
-      criteria: [],
+      criteriaByKey,
       fieldContext: {},
     }),
   );
@@ -59,6 +62,50 @@ describe("ReviewsSection — Internal Feedback / Rejection Rationale", () => {
   it("shows the empty state when no reviewers are assigned", () => {
     const html = render([]);
     expect(html).toContain("No reviewers assigned yet.");
+  });
+
+  it("renders scores by iterating the review's own keys, resolving labels via the map", () => {
+    const html = render(
+      [
+        {
+          id: "rev-1",
+          scores: { "crit-aaa": 5, "crit-bbb": 3 },
+          feedback: "",
+          rejectionRationale: "",
+          overallRecommendation: "Hire",
+          submittedAt: new Date("2026-04-01T00:00:00Z"),
+          cycleReviewer: { user: { firstName: "Rev", lastName: "Iewer" } },
+        },
+      ],
+      {
+        "crit-aaa": { label: "Excitement towards learning", maxScore: 5 },
+        "crit-bbb": { label: "Desire to collaborate", maxScore: 5 },
+      },
+    );
+    // First word of the label + n/max, not the raw key.
+    expect(html).toContain("Excitement: 5/5");
+    expect(html).toContain("Desire: 3/5");
+    expect(html).not.toContain("crit-aaa");
+  });
+
+  it("falls back to the raw key only when the map has no entry (orphaned criterion)", () => {
+    const html = render(
+      [
+        {
+          id: "rev-1",
+          scores: { "crit-1778609863899": 4 },
+          feedback: "",
+          rejectionRationale: "",
+          overallRecommendation: "Hire",
+          submittedAt: new Date("2026-04-01T00:00:00Z"),
+          cycleReviewer: { user: { firstName: "Rev", lastName: "Iewer" } },
+        },
+      ],
+      {},
+    );
+    // No maxScore is appended when the criterion is unknown.
+    expect(html).toContain("crit-1778609863899: 4");
+    expect(html).not.toContain("crit-1778609863899: 4/");
   });
 });
 

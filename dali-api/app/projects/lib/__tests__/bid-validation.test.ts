@@ -43,11 +43,31 @@ describe("validateBids — domain-driven biddability", () => {
     expect(mockPrisma.projectDomain.findMany).toHaveBeenCalled();
   });
 
-  it("drops a bid on a project that doesn't work in any eligibility domain", async () => {
+  it("records a bid on a project OUTSIDE the member's eligibility domains, at the default level", async () => {
+    // Member is Engineering-only, but bids a Design-only project. The bid must
+    // still resolve (product intent: every bid shows), labeled with the
+    // project's domain at the baseline P1 since the member has no level there.
     mockPrisma.domainEligibility.findMany.mockResolvedValue([
       { domainId: "eng", level: "P3" },
     ]);
-    // Project only works in Design; member is Engineering-only → no rows.
+    mockPrisma.projectDomain.findMany.mockResolvedValue([
+      { projectId: "p1", domainId: "design" },
+    ]);
+
+    const res = await validateBids("u1", cycle, [{ projectId: "p1" }]);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.bids).toEqual([
+      { projectId: "p1", domainId: "design", level: "P1", preferenceRank: 1, notes: null },
+    ]);
+  });
+
+  it("produces no rows only when the project declares no domains at all", async () => {
+    // Nothing to do with eligibility — a project with zero ProjectDomain rows
+    // has no column to place a bid in, so it contributes nothing.
+    mockPrisma.domainEligibility.findMany.mockResolvedValue([
+      { domainId: "eng", level: "P3" },
+    ]);
     mockPrisma.projectDomain.findMany.mockResolvedValue([]);
 
     const res = await validateBids("u1", cycle, [{ projectId: "p1" }]);
@@ -77,12 +97,58 @@ describe("validateBids — domain-driven biddability", () => {
     ]);
   });
 
-  it("records zero bids (not an error) when the member has no eligibility — they still appear, flagged", async () => {
+  it("resolves a bid even when the member has NO eligibility at all, at the default level", async () => {
+    // No eligibility no longer drops bids. The project's declared domains drive
+    // the rows; level falls back to P1 since the member has none.
     mockPrisma.domainEligibility.findMany.mockResolvedValue([]);
+    mockPrisma.projectDomain.findMany.mockResolvedValue([
+      { projectId: "p1", domainId: "eng" },
+    ]);
     const res = await validateBids("u1", cycle, [{ projectId: "p1" }]);
     expect(res.ok).toBe(true);
     if (!res.ok) return;
-    expect(res.bids).toEqual([]);
+    expect(res.bids).toEqual([
+      { projectId: "p1", domainId: "eng", level: "P1", preferenceRank: 1, notes: null },
+    ]);
+  });
+
+  it("lands a bid only in the member's eligibility domain when the project overlaps it", async () => {
+    // Member eligible in eng (P2) only; project declares eng + design. The bid
+    // lands ONLY in eng (the overlap) at P2 — design is dropped because the
+    // member is eligible somewhere in this project, so we don't spill into
+    // domains they have nothing to do with.
+    mockPrisma.domainEligibility.findMany.mockResolvedValue([
+      { domainId: "eng", level: "P2" },
+    ]);
+    mockPrisma.projectDomain.findMany.mockResolvedValue([
+      { projectId: "p1", domainId: "eng" },
+      { projectId: "p1", domainId: "design" },
+    ]);
+    const res = await validateBids("u1", cycle, [{ projectId: "p1" }]);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.bids).toEqual([
+      { projectId: "p1", domainId: "eng", level: "P2", preferenceRank: 1, notes: null },
+    ]);
+  });
+
+  it("expands across ALL project domains only when there's no eligibility overlap", async () => {
+    // Member eligible in eng; project declares design + uiux (no overlap). The
+    // bid falls back to every project domain at the default level so it shows.
+    mockPrisma.domainEligibility.findMany.mockResolvedValue([
+      { domainId: "eng", level: "P3" },
+    ]);
+    mockPrisma.projectDomain.findMany.mockResolvedValue([
+      { projectId: "p1", domainId: "design" },
+      { projectId: "p1", domainId: "uiux" },
+    ]);
+    const res = await validateBids("u1", cycle, [{ projectId: "p1" }]);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.bids).toEqual([
+      { projectId: "p1", domainId: "design", level: "P1", preferenceRank: 1, notes: null },
+      { projectId: "p1", domainId: "uiux", level: "P1", preferenceRank: 1, notes: null },
+    ]);
   });
 
   it("de-duplicates the same project picked twice, keeping the highest rank", async () => {

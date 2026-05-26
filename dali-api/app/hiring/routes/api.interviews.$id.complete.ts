@@ -82,9 +82,12 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (body instanceof Response) return body;
   const { recommendation, recommendationNotes } = body;
 
-  if (interview.status === "Completed") {
-    return Response.json({ error: "Interview is already completed" }, { status: 409 });
-  }
+  // The recommendation is joint: a single shared outcome for the interview, set
+  // by either interviewer on behalf of both. So completing an already-completed
+  // interview is idempotent, not an error — the co-interviewer may submit the
+  // same (live-synced) value, or update it to the agreed value. We only record
+  // an audit event on the first transition into Completed.
+  const wasCompleted = interview.status === "Completed";
 
   const updated = await prisma.interview.update({
     where: { id: params.id },
@@ -95,17 +98,19 @@ export async function action({ request, params }: Route.ActionArgs) {
     },
   });
 
-  await logAuditEvent({
-    action: "interview.complete",
-    userId: auth.user.sub,
-    targetId: interview.id,
-    metadata: {
-      cycleId: interview.applicationCycleId,
-      domainApplicationId: interview.domainApplicationId,
-      recommendation,
-    },
-    request,
-  });
+  if (!wasCompleted) {
+    await logAuditEvent({
+      action: "interview.complete",
+      userId: auth.user.sub,
+      targetId: interview.id,
+      metadata: {
+        cycleId: interview.applicationCycleId,
+        domainApplicationId: interview.domainApplicationId,
+        recommendation,
+      },
+      request,
+    });
+  }
 
   return Response.json(updated);
 }

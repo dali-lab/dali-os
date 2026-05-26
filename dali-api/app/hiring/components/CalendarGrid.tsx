@@ -1,5 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { ChevronLeft, ChevronRight, Calendar } from 'lucide-react'
+import { APPLICATION_TZ, zonedWallTimeUtc, getZonedParts } from '~/lib/timezone'
 
 // ─── Types ─���─────────────────────────────────────────────────────────────────
 
@@ -63,31 +64,36 @@ function formatHour(hour: number): string {
   return `${hour - 12} PM`
 }
 
-/** Create a block key from a date — "YYYY-MM-DD-HH-mm" */
-function blockKey(d: Date): string {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  const h = String(d.getHours()).padStart(2, '0')
-  const min = String(d.getMinutes()).padStart(2, '0')
-  return `${y}-${m}-${day}-${h}-${min}`
+// A block key is "YYYY-MM-DD-HH-mm" wall time in the *interview* timezone
+// (`tz`), NOT the browser's. All key↔instant conversions route through `tz` so
+// a "9:00 AM" cell means 9:00 AM in the configured zone for every interviewer,
+// and the UTC instants we save line up with the server's window clip.
+
+/** Build a key from config-timezone wall-clock parts. */
+function partsToKey(year: number, month: number, day: number, hour: number, minute: number): string {
+  const m = String(month).padStart(2, '0')
+  const d = String(day).padStart(2, '0')
+  const h = String(hour).padStart(2, '0')
+  const min = String(minute).padStart(2, '0')
+  return `${year}-${m}-${d}-${h}-${min}`
 }
 
-function blockKeyToDate(key: string): Date {
+/** The UTC instant a block key represents, given the interview timezone. */
+function keyToUtc(key: string, tz: string): Date {
   const [y, m, d, h, min] = key.split('-').map(Number)
-  return new Date(y, m - 1, d, h, min)
+  return zonedWallTimeUtc(y, m, d, h, min, tz)
 }
 
-/** Merge adjacent 15-min blocks into contiguous ranges */
-function mergeBlocks(keys: string[]): { startTime: string; endTime: string }[] {
+/** Merge adjacent 15-min blocks into contiguous UTC ranges. */
+function mergeBlocks(keys: string[], tz: string): { startTime: string; endTime: string }[] {
   if (keys.length === 0) return []
   const sorted = [...keys].sort()
   const ranges: { startTime: string; endTime: string }[] = []
-  let rangeStart = blockKeyToDate(sorted[0])
+  let rangeStart = keyToUtc(sorted[0], tz)
   let rangeEnd = new Date(rangeStart.getTime() + BLOCK_MINUTES * 60_000)
 
   for (let i = 1; i < sorted.length; i++) {
-    const blockStart = blockKeyToDate(sorted[i])
+    const blockStart = keyToUtc(sorted[i], tz)
     const blockEnd = new Date(blockStart.getTime() + BLOCK_MINUTES * 60_000)
     if (blockStart.getTime() === rangeEnd.getTime()) {
       // Extend current range
@@ -102,15 +108,15 @@ function mergeBlocks(keys: string[]): { startTime: string; endTime: string }[] {
   return ranges
 }
 
-/** Expand saved availability ranges into individual block keys */
-function expandBlocks(ranges: { startTime: string; endTime: string }[]): Set<string> {
+/** Expand saved UTC ranges into individual config-timezone block keys. */
+function expandBlocks(ranges: { startTime: string; endTime: string }[], tz: string): Set<string> {
   const keys = new Set<string>()
   for (const r of ranges) {
-    const start = new Date(r.startTime)
     const end = new Date(r.endTime)
-    let cursor = new Date(start)
+    let cursor = new Date(r.startTime)
     while (cursor < end) {
-      keys.add(blockKey(cursor))
+      const p = getZonedParts(cursor, tz)
+      keys.add(partsToKey(p.year, p.month, p.day, p.hour, p.minute))
       cursor = new Date(cursor.getTime() + BLOCK_MINUTES * 60_000)
     }
   }
@@ -129,34 +135,36 @@ export default function CalendarGrid({
   interviewBlocks = [],
   onSave,
   saving = false,
+  timezone = APPLICATION_TZ,
   onImportFromGoogle,
   importing = false,
   pendingPrefill,
 }: CalendarGridProps) {
+  const tz = timezone
   const [weekStart, setWeekStart] = useState(() =>
     getMonday(initialWeekStart ?? rangeStart),
   )
   const [selected, setSelected] = useState<Set<string>>(() =>
-    expandBlocks(savedBlocks),
+    expandBlocks(savedBlocks, tz),
   )
   const [dirty, setDirty] = useState(false)
 
   // Rebuild selection when savedBlocks change (e.g. after save round-trip)
   useEffect(() => {
-    setSelected(expandBlocks(savedBlocks))
+    setSelected(expandBlocks(savedBlocks, tz))
     setDirty(false)
-  }, [savedBlocks])
+  }, [savedBlocks, tz])
 
   // When the parent provides a prefill (e.g. from Google Calendar import),
   // replace the current selection and mark dirty so the user can review/save.
   useEffect(() => {
     if (pendingPrefill) {
-      setSelected(expandBlocks(pendingPrefill))
+      setSelected(expandBlocks(pendingPrefill, tz))
       setDirty(true)
     }
-  }, [pendingPrefill])
+  }, [pendingPrefill, tz])
 
-  const interviewKeys = expandBlocks(interviewBlocks)
+  const interviewKeys = expandBlocks(interviewBlocks, tz)
 
   // Drag state
   const dragging = useRef(false)
@@ -279,7 +287,7 @@ export default function CalendarGrid({
   }, [applyToCell, cellAtPoint])
 
   const handleSave = () => {
-    const merged = mergeBlocks(Array.from(selected))
+    const merged = mergeBlocks(Array.from(selected), tz)
     onSave(merged)
   }
 
@@ -361,12 +369,20 @@ export default function CalendarGrid({
 
                 {/* Day cells */}
                 {weekDays.map((dayDate, colIdx) => {
-                  const cellDate = new Date(dayDate)
-                  cellDate.setHours(hour, minute, 0, 0)
-                  const key = blockKey(cellDate)
+                  // The day cell's calendar date drives the key (config-tz wall
+                  // time); its real instant comes from `keyToUtc` for past-test.
+                  const key = partsToKey(
+                    dayDate.getFullYear(),
+                    dayDate.getMonth() + 1,
+                    dayDate.getDate(),
+                    hour,
+                    minute,
+                  )
                   const isSelected = selected.has(key)
                   const isInterview = interviewKeys.has(key)
-                  const isPast = cellDate < new Date()
+                  const isPast = keyToUtc(key, tz) < new Date()
+                  const cellDate = new Date(dayDate)
+                  cellDate.setHours(0, 0, 0, 0)
                   const isOutOfRange = cellDate < rangeStartDay || cellDate >= dayAfterRangeEnd
                   const isLocked = isInterview || isPast || isOutOfRange
 

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { redirect, useLoaderData, useNavigate, useSearchParams } from "react-router";
+import { Search } from "lucide-react";
 import type { Route } from "./+types/applications";
 import { requireAuth } from "~/lib/auth";
 import { getUserRoles } from "~/lib/roles";
@@ -195,16 +196,23 @@ export default function ApplicationsDatabase() {
   const data = useLoaderData<typeof loader>();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  // Client-side domain filter. "" = all visible domains. Reset when the
-  // cycle changes (different cycle = different domain set) by keying off the
-  // selected cycle id in the dependency below.
+  // Client-side filters. "" = all. Reset when the cycle changes (different
+  // cycle = different domain set) by keying off the selected cycle below.
   const [domainId, setDomainId] = useState("");
+  const [status, setStatus] = useState("");
+  const [query, setQuery] = useState("");
 
   const rows = data.gate === "ok" ? data.rows : [];
-  const filteredRows = useMemo(
-    () => (domainId ? rows.filter((r) => r.domainId === domainId) : rows),
-    [rows, domainId],
-  );
+  const filteredRows = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return rows.filter((r) => {
+      if (domainId && r.domainId !== domainId) return false;
+      if (status && r.status !== status) return false;
+      if (q && !`${r.name} ${r.email ?? ""}`.toLowerCase().includes(q))
+        return false;
+      return true;
+    });
+  }, [rows, domainId, status, query]);
 
   if (data.gate === "empty") {
     return (
@@ -239,6 +247,8 @@ export default function ApplicationsDatabase() {
           value={data.selectedCycleId}
           onChange={(e) => {
             setDomainId("");
+            setStatus("");
+            setQuery("");
             const next = new URLSearchParams(searchParams);
             next.set("cycle", e.target.value);
             setSearchParams(next);
@@ -266,27 +276,56 @@ export default function ApplicationsDatabase() {
             ))}
           </select>
         )}
-        <span className="text-xs text-muted-foreground sm:ml-auto">
-          {filteredRows.length}
-          {filteredRows.length === data.rows.length
-            ? ""
-            : ` of ${data.rows.length}`}{" "}
-          {filteredRows.length === 1 ? "submission" : "submissions"}
-        </span>
+        <select
+          aria-label="Filter by status"
+          value={status}
+          onChange={(e) => setStatus(e.target.value)}
+          className="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground sm:w-40"
+        >
+          <option value="">All statuses</option>
+          {Object.keys(STATUS_TONE).map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>
+        <div className="relative w-full sm:ml-auto sm:w-64 min-w-[12rem]">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/70 pointer-events-none" />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search by name or email"
+            aria-label="Search applicants by name or email"
+            className="w-full pl-8 pr-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+          />
+        </div>
       </div>
 
       <div className="bg-card border border-border rounded-lg overflow-hidden">
         {filteredRows.length === 0 ? (
           <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-            No submissions for {data.selectedCycleName}
-            {data.isCore ? "" : " in your domains"}.
+            {rows.length === 0 ? (
+              <>
+                No submissions for {data.selectedCycleName}
+                {data.isCore ? "" : " in your domains"}.
+              </>
+            ) : (
+              "No applicants match the current filters."
+            )}
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm min-w-[640px]">
               <thead className="bg-muted/30 text-muted-foreground text-xs uppercase tracking-wide">
                 <tr>
-                  <th className="text-left font-medium px-4 py-2">Applicant</th>
+                  <th className="text-left font-medium px-4 py-2">
+                    Applicant ({filteredRows.length}
+                    {filteredRows.length === data.rows.length
+                      ? ""
+                      : ` of ${data.rows.length}`}
+                    )
+                  </th>
                   <th className="text-left font-medium px-4 py-2">Domain</th>
                   <th className="text-left font-medium px-4 py-2">Status</th>
                   <th className="text-left font-medium px-4 py-2">Submitted</th>

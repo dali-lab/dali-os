@@ -8,6 +8,7 @@ import { presignAnswers } from "~/hiring/lib/presign";
 import { ArrowLeft, ChevronDown } from "lucide-react";
 import { ApplicationViewer } from "~/hiring/components/ApplicationViewer";
 import { ReviewSummary } from "~/hiring/components/ReviewSummary";
+import { buildCriteriaLabelMap } from "~/hiring/lib/rubric-criteria";
 import {
   inferDomainApplicationStatus,
   domainApplicationStatusInclude,
@@ -128,7 +129,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   );
   if (confRedirect) return confRedirect;
 
-  // Load rubric criteria for score labels
+  // Resolve criterion-key -> label for score display. Prefers the current
+  // domain rubric, but falls back to the version pinned on each review (and
+  // rubric history) so scores keyed by an older rubric version still resolve.
   const dac = daDomainId
     ? await prisma.domainApplicationCycle.findUnique({
         where: {
@@ -137,13 +140,19 @@ export async function loader({ request, params }: Route.LoaderArgs) {
             applicationCycleId: da.application.applicationCycleId,
           },
         },
-        include: { rubricVersion: true },
+        select: { rubricVersionId: true },
       })
     : null;
 
   const generalRubric = await prisma.applicationCycle.findUnique({
     where: { id: da.application.applicationCycleId },
-    select: { generalRubricVersion: true },
+    select: { generalRubricVersion: { select: { criteria: true } } },
+  });
+
+  const criteriaByKey = await buildCriteriaLabelMap({
+    domainRubricVersionId: dac?.rubricVersionId ?? null,
+    generalCriteria: generalRubric?.generalRubricVersion?.criteria,
+    pinnedVersionIds: (da.reviews ?? []).map((r: any) => r.rubricVersionId),
   });
 
   const cycleStatus = (da.application.applicationCycle.statusUpdates[0]?.newStatus ?? "Draft") as ApplicationCycleStatus;
@@ -171,13 +180,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       domainApplication: { ...da, answers: presignedChallengeAnswers },
       application: { ...da.application, answers: presignedGeneralAnswers },
       inferredStatus,
-      domainRubricCriteria: (dac?.rubricVersion?.criteria as any[]) ?? [],
-      generalRubricCriteria: (generalRubric?.generalRubricVersion?.criteria as any[]) ?? [],
+      criteriaByKey,
     };
 }
 
 export default function DomainLeadApplicationView() {
-  const { domainApplication: da, application, inferredStatus, domainRubricCriteria, generalRubricCriteria } =
+  const { domainApplication: da, application, inferredStatus, criteriaByKey } =
     useLoaderData<typeof loader>() as any;
 
   const generalQuestions: any[] = application.generalChallengeVersion?.questions ?? [];
@@ -186,7 +194,6 @@ export default function DomainLeadApplicationView() {
   const decisions: any[] = da.decisions ?? [];
   const interview = da.interviews?.[0] ?? null;
   const statusInfo = STATUS_BADGE[inferredStatus] ?? STATUS_BADGE.Pending;
-  const allCriteria = [...(generalRubricCriteria ?? []), ...(domainRubricCriteria ?? [])];
 
   const questionLabels: Record<string, string> = {};
   for (const q of [...generalQuestions, ...challengeQuestions]) {
@@ -266,7 +273,7 @@ export default function DomainLeadApplicationView() {
             {reviews.length > 0 && (
               <div className="divide-y divide-gray-100">
                 {reviews.map((review: any) => (
-                  <ReviewCard key={review.id} review={review} criteria={allCriteria} />
+                  <ReviewCard key={review.id} review={review} criteriaByKey={criteriaByKey} />
                 ))}
               </div>
             )}
@@ -340,7 +347,13 @@ export default function DomainLeadApplicationView() {
   );
 }
 
-function ReviewCard({ review, criteria }: { review: any; criteria: any[] }) {
+function ReviewCard({
+  review,
+  criteriaByKey,
+}: {
+  review: any;
+  criteriaByKey: Record<string, { label: string; maxScore?: number }>;
+}) {
   const [expanded, setExpanded] = useState(false);
   const reviewer = review.cycleReviewer?.user;
   const name = reviewer ? `${reviewer.firstName} ${reviewer.lastName}` : "Unknown";
@@ -365,15 +378,19 @@ function ReviewCard({ review, criteria }: { review: any; criteria: any[] }) {
         )}
       </div>
 
-      {/* Scores summary */}
+      {/* Scores summary — iterate the review's own score keys so a score
+          survives even if its criterion was edited out of the current rubric;
+          the resolver supplies the label from the pinned/historical version. */}
       {Object.keys(scores).length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1">
-          {criteria.map((c: any) => {
-            const score = scores[c.key];
+          {Object.entries(scores).map(([key, score]) => {
             if (score == null) return null;
+            const meta = criteriaByKey[key];
+            const label = meta?.label ?? key;
             return (
-              <span key={c.key} className="text-xs bg-muted text-foreground/80 px-1.5 py-0.5 rounded" title={c.label}>
-                {c.label?.split(" ")[0]}: {score}/{c.maxScore}
+              <span key={key} className="text-xs bg-muted text-foreground/80 px-1.5 py-0.5 rounded" title={label}>
+                {label.split(" ")[0]}: {score}
+                {meta?.maxScore != null ? `/${meta.maxScore}` : ""}
               </span>
             );
           })}

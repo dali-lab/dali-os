@@ -1,17 +1,16 @@
 // Shared validation + level-resolution for a member's project bids, used by
 // the form-driven submission path (bid-form-interpreter.ts → public-form.ts).
 //
-// A bid is now JUST a projectId (rank = array index). Domain is no longer
-// asked on the form — instead, each bid expands server-side into one
-// StaffingPreference per (project, eligibility) the member has, with that
-// eligibility's level. Anything outside that eligibility set is silently
-// dropped; anything inside it is recorded so the staffing board can see
-// every (project, domain) combination the member is eligible to fill.
-//
-// Bids must still match an open ProjectRoleRequest for (term, domain) — a
-// project with no open roles in any of the member's eligibility domains is
-// rejected. preferenceRank carries the bid's rank, so all expansions of bid
-// N share rank N.
+// A bid is JUST a projectId (rank = array index). Domain is not asked on the
+// form — instead, each bid expands server-side into StaffingPreference rows:
+// one per domain the PROJECT declares (ProjectDomain) that the member is also
+// eligible in, so a bid normally lands in the member's own domain columns at
+// their eligibility level. Eligibility does NOT gate the bid, though — when the
+// project shares no domain with the member's eligibility, the bid falls back to
+// the project's declared domains (at the default level) so it still shows on
+// the board instead of vanishing. preferenceRank carries the bid's rank, shared
+// across all expansions of bid N. (ProjectRoleRequest is headcount display
+// only; it never gates bids.)
 
 import { prisma } from "~/lib/db";
 
@@ -72,54 +71,55 @@ export async function validateBids(
   // Then cap at maxBids, keeping the top-ranked ones.
   const effectiveBids = dedupedBids.slice(0, maxBids);
 
-  // The member's eligibility map: domainId -> level. Each bid expands into
-  // one row per eligibility (where the project works in that domain). No
-  // eligibility yet → nothing to expand into, so record zero bids rather than
-  // erroring (the member still appears on the board, flagged).
+  // The member's eligibility map: domainId -> level. Used ONLY to label a bid
+  // row with the member's level in that domain — it does NOT gate whether a
+  // bid resolves. A member with no eligibility (or none in the project's
+  // domains) still produces bid rows; they're just marked at the default
+  // level. This keeps every bid visible on the board, per product intent.
   const eligibilities = await prisma.domainEligibility.findMany({
     where: { userId },
     select: { domainId: true, level: true },
   });
-  if (eligibilities.length === 0) {
-    return { ok: true, bids: [] };
-  }
   const levelByDomain = new Map(
     eligibilities.map((e) => [e.domainId, e.level]),
   );
 
-  // Biddability is driven by the project's DECLARED DOMAINS (ProjectDomain),
-  // not by per-term ProjectRoleRequest rows. A project is biddable in a domain
-  // if it works in that domain at all; level comes from the member's
-  // eligibility. (ProjectRoleRequest still exists for headcount display on the
-  // board, but no longer gates whether a bid resolves — a project with scope
-  // but no manually-entered role requests is still biddable.) Restricted to
-  // the bid projects ∩ the member's eligibility domains, keyed (project,domain)
-  // for O(1) cross-check.
+  // Biddability is driven by the project's DECLARED DOMAINS (ProjectDomain) —
+  // never by per-term ProjectRoleRequest rows. A bid expands to a row per
+  // domain the project declares that the member is ALSO eligible in (so a
+  // member's bid normally lands in their own domain columns). Eligibility no
+  // longer GATES the bid, though: when the project shares NO domain with the
+  // member's eligibility, the bid falls back to the project's declared domains
+  // so it still shows on the board instead of vanishing.
   const projectDomains = await prisma.projectDomain.findMany({
-    where: {
-      projectId: { in: effectiveBids.map((b) => b.projectId) },
-      domainId: { in: [...levelByDomain.keys()] },
-    },
+    where: { projectId: { in: effectiveBids.map((b) => b.projectId) } },
     select: { projectId: true, domainId: true },
   });
-  const biddable = new Set(
-    projectDomains.map((d) => `${d.projectId}:${d.domainId}`),
-  );
+  const domainsByProject = new Map<string, string[]>();
+  for (const d of projectDomains) {
+    const list = domainsByProject.get(d.projectId) ?? [];
+    list.push(d.domainId);
+    domainsByProject.set(d.projectId, list);
+  }
+
+  // Level shown on a bid row: the member's eligibility level in that domain if
+  // they have one, else the baseline P1 (Learner). Level never blocks a bid.
+  const DEFAULT_LEVEL: BidLevel = "P1";
 
   const validated: ValidatedBid[] = [];
   for (let i = 0; i < effectiveBids.length; i++) {
     const b = effectiveBids[i];
     const rank = i + 1;
-    // Each eligibility domain the project works in becomes a row. If the
-    // project doesn't work in any of the member's eligibility domains, the bid
-    // contributes nothing — silently dropped so the rest of the submission
-    // still records (eligibility/domain drift shouldn't reject the form).
-    for (const [domainId, level] of levelByDomain) {
-      if (!biddable.has(`${b.projectId}:${domainId}`)) continue;
+    const projDomains = domainsByProject.get(b.projectId) ?? [];
+    // Prefer the project domains the member is eligible in; if there's no
+    // overlap, fall back to all the project's domains so the bid still records.
+    const eligibleOverlap = projDomains.filter((d) => levelByDomain.has(d));
+    const targetDomains = eligibleOverlap.length > 0 ? eligibleOverlap : projDomains;
+    for (const domainId of targetDomains) {
       validated.push({
         projectId: b.projectId,
         domainId,
-        level: level as BidLevel,
+        level: (levelByDomain.get(domainId) ?? DEFAULT_LEVEL) as BidLevel,
         preferenceRank: rank,
         notes: null,
       });

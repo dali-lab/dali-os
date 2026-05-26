@@ -150,7 +150,16 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const review = await prisma.applicationReview.findUnique({
     where: { id: params.id },
-    include: { cycleReviewer: true },
+    include: {
+      cycleReviewer: true,
+      domainApplication: {
+        select: {
+          domainId: true,
+          challengeVersion: { select: { domainId: true } },
+          application: { select: { applicationCycleId: true } },
+        },
+      },
+    },
   });
   if (!review) {
     return Response.json({ error: "Review not found" }, { status: 404 });
@@ -187,9 +196,30 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (!result.ok) {
       return Response.json({ error: result.error }, { status: 400 });
     }
+
+    // When scores are written, pin the domain rubric version those keys belong
+    // to so a later rubric edit can't orphan them at render time. Only the
+    // domain rubric is pinned (its criteria are the crit-<ts> keys that drift);
+    // the general-form rubric is resolved separately by consumers.
+    const patch: typeof result.data & { rubricVersionId?: string } = { ...result.data };
+    const da = review.domainApplication;
+    if (result.data.scores !== undefined && !review.rubricVersionId && da) {
+      const domainId = da.domainId ?? da.challengeVersion?.domainId ?? null;
+      const applicationCycleId = da.application?.applicationCycleId ?? null;
+      if (domainId && applicationCycleId) {
+        const dac = await prisma.domainApplicationCycle.findUnique({
+          where: {
+            domainId_applicationCycleId: { domainId, applicationCycleId },
+          },
+          select: { rubricVersionId: true },
+        });
+        if (dac?.rubricVersionId) patch.rubricVersionId = dac.rubricVersionId;
+      }
+    }
+
     const updated = await prisma.applicationReview.update({
       where: { id: params.id },
-      data: result.data,
+      data: patch,
     });
 
     return Response.json(updated);

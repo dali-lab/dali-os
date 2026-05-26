@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { Link, useLoaderData, useRevalidator, useSearchParams } from 'react-router'
 import {
-  ChevronRight,
   ChevronDown,
   CheckCircle,
   FileText,
@@ -11,7 +10,6 @@ import {
   ListOrdered,
 } from 'lucide-react'
 import { getReviewStatus } from '~/hiring/lib/review-status'
-import { requestOpenTabIfEmbedded } from '~/components/workspace-link'
 import { CycleSelector } from '~/hiring/components/CycleSelector'
 import { getActiveCycle, cycleStatusToStage, inferUnderReviewStage } from '~/hiring/lib/cycles'
 import { getCycleConfidentialityState } from '~/hiring/lib/confidentiality'
@@ -19,15 +17,16 @@ import { ConfidentialityGate } from '~/hiring/components/ConfidentialityGate'
 import { INITIAL_COLUMNS, FINAL_COLUMNS } from '~/hiring/lib/delibs'
 import { ApplicantContextModal } from '~/hiring/components/delibs/ApplicantContextModal'
 import CalendarGrid from '~/hiring/components/CalendarGrid'
-import { getZonedYMD } from '~/lib/timezone'
+import { zonedWallTimeUtc } from '~/lib/timezone'
 
-/** Convert a UTC ISO timestamp to a local-time Date at midnight on the calendar
- * day that the timestamp falls on in `timezone`. The CalendarGrid's date math
- * runs in the browser's local time, so feeding it raw UTC midnight pushes the
- * grid back a day in any timezone west of UTC. */
-function isoToLocalMidnightInTz(iso: string, timezone: string): Date {
-  const { year, month, day } = getZonedYMD(new Date(iso), timezone)
-  return new Date(year, month - 1, day)
+/** The interview-window bound dates are stored as UTC-midnight stamps that
+ * stand for plain calendar dates. Return a browser-local midnight Date on that
+ * same calendar day so CalendarGrid's day-range gating lines up with the
+ * server's window (which also reads these bounds as UTC calendar dates).
+ * Reading the day in a timezone instead would shift it back a day west of UTC. */
+function isoToCalendarDayLocalMidnight(iso: string): Date {
+  const d = new Date(iso)
+  return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())
 }
 import { prisma } from '~/lib/db'
 import { requireAuth } from "~/lib/auth";
@@ -377,8 +376,9 @@ export default function ReviewerDashboard() {
   }, [isCycleInterviewer, activeCycle?.id])
 
   // Fetch scheduled interviews (single call populates both the calendar overlay
-  // and the Assigned Interviews section).
-  useEffect(() => {
+  // and the Assigned Interviews section). Exposed as a callback so declining an
+  // interview from a card can refresh the list in place.
+  const loadScheduledInterviews = useCallback(() => {
     if (!activeCycle) return
     fetch(`/api/hiring/cycles/${activeCycle.id}/my-interviews`, { credentials: 'include' })
       .then(r => r.ok ? r.json() : [])
@@ -393,6 +393,55 @@ export default function ReviewerDashboard() {
       })
       .catch(() => {})
   }, [activeCycle?.id])
+
+  useEffect(() => {
+    loadScheduledInterviews()
+  }, [loadScheduledInterviews])
+
+  // Mark unavailable for an assigned interview, straight from its card.
+  // Mirrors the decline action on the interview detail page, but refreshes the
+  // list in place instead of navigating away.
+  const [decliningId, setDecliningId] = useState<string | null>(null)
+  const handleDeclineInterview = useCallback(
+    async (interviewId: string) => {
+      if (!activeCycle) return
+      if (
+        !confirm(
+          'Are you sure you want to mark yourself as unavailable for this interview?',
+        )
+      )
+        return
+      setDecliningId(interviewId)
+      try {
+        const res = await fetch(
+          `/api/hiring/cycles/${activeCycle.id}/my-interviews/${interviewId}/decline`,
+          { method: 'POST', credentials: 'include' },
+        )
+        if (res.ok) {
+          loadScheduledInterviews()
+          return
+        }
+        const body = (await res.json().catch(() => ({}))) as { error?: string }
+        if (res.status === 409) {
+          alert(
+            body.error ??
+              'No replacement interviewer is available. Please contact the hiring lead.',
+          )
+          return
+        }
+        alert(`Failed to mark unavailable: ${body.error ?? res.statusText}`)
+      } catch (e) {
+        alert(
+          `Failed to mark unavailable: ${
+            e instanceof Error ? e.message : String(e)
+          }`,
+        )
+      } finally {
+        setDecliningId(null)
+      }
+    },
+    [activeCycle?.id, loadScheduledInterviews],
+  )
 
   const handleSaveAvailability = useCallback(
     async (blocks: { startTime: string; endTime: string }[]) => {
@@ -424,9 +473,16 @@ export default function ReviewerDashboard() {
     setImporting(true)
     setImportError(null)
     try {
-      const start = new Date(interviewConfig.interviewStartDate)
-      const end = new Date(interviewConfig.interviewEndDate)
-      const params = new URLSearchParams({ start: start.toISOString(), end: end.toISOString() })
+      const tz = interviewConfig.timezone
+      // The stored bounds are UTC-midnight stamps standing for calendar dates;
+      // read them in UTC and walk day-by-day. Working-hour blocks are built at
+      // wall-clock time in the interview timezone so they line up with the grid
+      // and survive the server's window clip regardless of the browser's zone.
+      const startBound = new Date(interviewConfig.interviewStartDate)
+      const endBound = new Date(interviewConfig.interviewEndDate)
+      const windowStart = zonedWallTimeUtc(startBound.getUTCFullYear(), startBound.getUTCMonth() + 1, startBound.getUTCDate(), 0, 0, tz)
+      const windowEnd = zonedWallTimeUtc(endBound.getUTCFullYear(), endBound.getUTCMonth() + 1, endBound.getUTCDate() + 1, 0, 0, tz)
+      const params = new URLSearchParams({ start: windowStart.toISOString(), end: windowEnd.toISOString() })
       const res = await fetch(`/api/google-calendar/busy?${params}`, { credentials: 'include' })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
@@ -439,17 +495,25 @@ export default function ReviewerDashboard() {
       // hours on weekdays in the range, skip any that overlap a busy event.
       const BLOCK_MS = 15 * 60 * 1000
       const available: { startTime: string; endTime: string }[] = []
-      const cursor = new Date(start)
-      cursor.setHours(0, 0, 0, 0)
-      while (cursor <= end) {
-        const day = cursor.getDay()
-        if (day !== 0 && day !== 6) {
+      // Iterate calendar days from the start bound through the end bound by
+      // UTC date; the block instants themselves are resolved in `tz`.
+      const dayCursor = new Date(Date.UTC(startBound.getUTCFullYear(), startBound.getUTCMonth(), startBound.getUTCDate()))
+      const lastDay = new Date(Date.UTC(endBound.getUTCFullYear(), endBound.getUTCMonth(), endBound.getUTCDate()))
+      while (dayCursor <= lastDay) {
+        const y = dayCursor.getUTCFullYear()
+        const mo = dayCursor.getUTCMonth() + 1
+        const d = dayCursor.getUTCDate()
+        // Weekday as seen in the interview timezone (skip Sat/Sun). Resolved
+        // from the day's noon instant so it can't tip into an adjacent day.
+        const weekday = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short' })
+          .format(zonedWallTimeUtc(y, mo, d, 12, 0, tz))
+        const isWeekend = weekday === 'Sat' || weekday === 'Sun'
+        if (!isWeekend) {
           for (let h = interviewConfig.dayStartHour; h < interviewConfig.dayEndHour; h++) {
             for (let m = 0; m < 60; m += 15) {
-              const blockStart = new Date(cursor)
-              blockStart.setHours(h, m, 0, 0)
+              const blockStart = zonedWallTimeUtc(y, mo, d, h, m, tz)
               const blockEnd = new Date(blockStart.getTime() + BLOCK_MS)
-              if (blockStart < start || blockEnd > end) continue
+              if (blockStart < windowStart || blockEnd > windowEnd) continue
               const overlaps = busyEvents.some(b => {
                 const bs = new Date(b.start)
                 const be = new Date(b.end)
@@ -464,7 +528,7 @@ export default function ReviewerDashboard() {
             }
           }
         }
-        cursor.setDate(cursor.getDate() + 1)
+        dayCursor.setUTCDate(dayCursor.getUTCDate() + 1)
       }
 
       setPendingPrefill(available)
@@ -634,20 +698,6 @@ export default function ReviewerDashboard() {
                       {domains && (
                         <p className="text-xs text-gray-500">{domains}</p>
                       )}
-                      <Link
-                        to={`/hiring/reviewer/application/${interview.domainApplication?.application?.id}`}
-                        onClick={(e) => {
-                          const url = `/hiring/reviewer/application/${interview.domainApplication?.application?.id}`
-                          const label = applicant
-                            ? `${applicant.firstName ?? ''} ${applicant.lastName ?? ''}`.trim() || 'Applicant'
-                            : 'Applicant'
-                          if (requestOpenTabIfEmbedded(url, label)) e.preventDefault()
-                        }}
-                        className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center mt-1"
-                      >
-                        View Application{' '}
-                        <ChevronRight className="w-3 h-3 ml-0.5" />
-                      </Link>
                     </div>
                     <div className="text-right bg-white px-3 py-2 rounded-lg border shadow-sm">
                       <p className="text-sm font-bold text-gray-900">
@@ -670,14 +720,21 @@ export default function ReviewerDashboard() {
                       </p>
                     </div>
                   </div>
-                  <div className="p-6 flex-1 flex flex-col justify-end">
+                  <div className="p-6 flex-1 flex items-end gap-3">
                     <Link
                       to={`/hiring/interviewer/interview/${interview.id}`}
                       className="inline-flex items-center justify-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-lg text-white bg-accent-coral hover:bg-accent-coral/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                     >
-                      <Video className="w-4 h-4 mr-2" />
                       Open Interview
                     </Link>
+                    <button
+                      type="button"
+                      onClick={() => handleDeclineInterview(interview.id)}
+                      disabled={decliningId === interview.id}
+                      className="inline-flex items-center justify-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                    >
+                      {decliningId === interview.id ? 'Marking…' : 'Mark Unavailable'}
+                    </button>
                   </div>
                 </div>
               )
@@ -715,14 +772,15 @@ export default function ReviewerDashboard() {
                 interviews. 15-minute blocks.
               </p>
               <CalendarGrid
-                rangeStart={isoToLocalMidnightInTz(interviewConfig.interviewStartDate, interviewConfig.timezone)}
-                rangeEnd={isoToLocalMidnightInTz(interviewConfig.interviewEndDate, interviewConfig.timezone)}
+                rangeStart={isoToCalendarDayLocalMidnight(interviewConfig.interviewStartDate)}
+                rangeEnd={isoToCalendarDayLocalMidnight(interviewConfig.interviewEndDate)}
                 dayStartHour={interviewConfig.dayStartHour}
                 dayEndHour={interviewConfig.dayEndHour}
                 savedBlocks={savedAvailability}
                 interviewBlocks={interviewBlocks}
                 onSave={handleSaveAvailability}
                 saving={availabilitySaving}
+                timezone={interviewConfig.timezone}
                 onImportFromGoogle={handleImportFromGoogle}
                 importing={importing}
                 pendingPrefill={pendingPrefill}
