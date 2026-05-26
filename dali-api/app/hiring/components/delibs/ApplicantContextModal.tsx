@@ -65,14 +65,14 @@ export function ApplicantContextModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center p-4 overflow-y-auto"
+      className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center p-4"
       onClick={onClose}
     >
       <div
-        className="bg-card rounded-xl shadow-xl w-full max-w-3xl my-8"
+        className="bg-card rounded-xl shadow-xl w-full max-w-5xl my-8 max-h-[90vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-6 py-4 border-b border-border flex items-center justify-between sticky top-0 bg-card rounded-t-xl">
+        <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-card rounded-t-xl flex-shrink-0">
           <div>
             {isLoading || isError || !data ? (
               <h2 className="text-lg font-semibold text-foreground">Applicant Context</h2>
@@ -108,7 +108,7 @@ export function ApplicantContextModal({
           </button>
         </div>
 
-        <div className="p-6 space-y-6">
+        <div className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden flex flex-col p-6 gap-6">
           <InterviewPrepNoteSection
             domainApplicationId={domainApplicationId}
             editable={editable}
@@ -127,24 +127,34 @@ export function ApplicantContextModal({
           )}
 
           {!isLoading && !isError && data && (
-            <>
-              <AnswerSection
-                title="General Application"
-                questions={data.application.generalQuestions}
-                answers={data.application.answers}
-              />
-              <AnswerSection
-                title={`${data.domainApplication.domain?.name ?? "Domain"} Challenge`}
-                questions={data.domainApplication.challengeQuestions}
-                answers={data.domainApplication.answers}
-              />
-              <ReviewsSection
-                reviews={data.reviews ?? []}
-                criteriaByKey={data.criteriaByKey ?? {}}
-                fieldContext={buildFieldContext(data)}
-              />
-              <DecisionsSection decisions={data.decisions ?? []} />
-            </>
+            // Each column scrolls independently so scrolling is predictable:
+            // whichever side the cursor is over moves, the other stays put.
+            <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Left: application answers */}
+              <div className="lg:col-span-2 min-h-0 lg:overflow-y-auto space-y-6 pr-1">
+                <AnswerSection
+                  title="General Application"
+                  questions={data.application.generalQuestions}
+                  answers={data.application.answers}
+                />
+                <AnswerSection
+                  title={`${data.domainApplication.domain?.name ?? "Domain"} Challenge`}
+                  questions={data.domainApplication.challengeQuestions}
+                  answers={data.domainApplication.answers}
+                />
+              </div>
+
+              {/* Right: review + interview + decision data */}
+              <div className="min-h-0 lg:overflow-y-auto space-y-6 pr-1">
+                <ReviewsSection
+                  reviews={data.reviews ?? []}
+                  criteriaByKey={data.criteriaByKey ?? {}}
+                  fieldContext={buildFieldContext(data)}
+                />
+                <InterviewSection interview={data.interviews?.[0] ?? null} />
+                <DecisionsSection decisions={data.decisions ?? []} />
+              </div>
+            </div>
           )}
         </div>
       </div>
@@ -461,6 +471,91 @@ export function ReviewsSection({
           })}
         </div>
       )}
+    </section>
+  );
+}
+
+function InterviewSection({ interview }: { interview: any | null }) {
+  if (!interview) return null;
+  const assignments: any[] = Array.isArray(interview.assignments) ? interview.assignments : [];
+  return (
+    <section className="bg-card border border-border rounded-lg overflow-hidden">
+      <div className="px-4 py-2 bg-muted/50 border-b border-border">
+        <h3 className="text-sm font-semibold text-foreground">Interview</h3>
+      </div>
+      <div className="px-4 py-3 space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-muted-foreground">
+            {new Date(interview.startTime).toLocaleDateString(undefined, { month: "short", day: "numeric" })}{" "}
+            {new Date(interview.startTime).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
+          </span>
+          <span
+            className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+              interview.status === "Completed"
+                ? "bg-green-100 text-green-700"
+                : "bg-blue-100 text-blue-700"
+            }`}
+          >
+            {interview.status}
+          </span>
+        </div>
+        {interview.recommendation && (
+          <div className="text-sm">
+            <span className="text-muted-foreground">Recommendation:</span>{" "}
+            <span className="font-medium text-foreground">{interview.recommendation}</span>
+          </div>
+        )}
+        {interview.recommendationNotes && (
+          <p className="text-xs text-muted-foreground bg-muted/50 rounded p-2 whitespace-pre-wrap">
+            {interview.recommendationNotes}
+          </p>
+        )}
+        {assignments.length > 0 && (
+          <div className="text-xs text-muted-foreground pt-1">
+            Interviewers:{" "}
+            {assignments
+              .map((a) => {
+                const m = a.cycleInterviewer?.user;
+                return m ? `${m.firstName} ${m.lastName}` : "?";
+              })
+              .join(", ")}
+          </div>
+        )}
+
+        {/* Joint interview notes (shared by interviewers). */}
+        <div className="pt-2 border-t border-border">
+          <div className="text-[10px] uppercase tracking-wide font-semibold text-muted-foreground/70 mb-1">
+            Interview notes
+          </div>
+          {interview.jointNotes ? (
+            <p className="text-sm text-foreground whitespace-pre-wrap">{interview.jointNotes}</p>
+          ) : (
+            <p className="text-xs text-muted-foreground/70 italic">No interview notes.</p>
+          )}
+        </div>
+
+        {/* Per-interviewer recommendation notes, when present. */}
+        {assignments.some((a) => a.recNotes) && (
+          <div className="pt-2 space-y-2">
+            {assignments
+              .filter((a) => a.recNotes)
+              .map((a) => {
+                const m = a.cycleInterviewer?.user;
+                const who = m ? `${m.firstName} ${m.lastName}` : "Interviewer";
+                return (
+                  <div key={a.id}>
+                    <div className="text-xs font-medium text-muted-foreground">
+                      {who}&rsquo;s notes
+                    </div>
+                    <p className="mt-0.5 text-sm text-foreground whitespace-pre-wrap">
+                      {a.recNotes}
+                    </p>
+                  </div>
+                );
+              })}
+          </div>
+        )}
+      </div>
     </section>
   );
 }

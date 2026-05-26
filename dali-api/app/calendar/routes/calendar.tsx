@@ -2680,6 +2680,10 @@ function ScheduleWeekGrid({
     let cancelled = false;
     setLoading(true);
     setError(null);
+    // durationMinutes is intentionally omitted: it only affects the server's
+    // ≥-duration match windows (data.days), which this grid never reads — the
+    // gradient and slot breakdown are built from per-user free intervals. Re-
+    // fetching on every drag would just flash "Loading availability…".
     fetch("/api/calendar/group-availability", {
       method: "POST",
       credentials: "include",
@@ -2712,7 +2716,8 @@ function ScheduleWeekGrid({
     return () => {
       cancelled = true;
     };
-  }, [participantKey, durationMinutes, weekStartIso, weekEndIso, timezone, refreshKey]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [participantKey, weekStartIso, weekEndIso, timezone, refreshKey]);
 
   // Build the 7-day axis from the week window so empty days still render.
   const weekStart = new Date(weekStartIso);
@@ -2955,9 +2960,6 @@ function ScheduleWeekGrid({
                   duration={selectedSlot.duration}
                   available={selectedSlot.available}
                   unavailable={selectedSlot.unavailable}
-                  // Flip the popover to the left edge for the rightmost columns
-                  // (Fri/Sat) so the attendee list isn't clipped off-screen.
-                  flipLeft={dayIdx >= 5}
                 />
               );
             }}
@@ -3031,22 +3033,22 @@ function SelectedSlotBlock({
   duration,
   available,
   unavailable,
-  flipLeft = false,
 }: {
   startHour: number;
   duration: number;
   available: UserOption[];
   unavailable: UserOption[];
-  // Open the attendee popover toward the left for rightmost columns so it
-  // doesn't get clipped off the right edge of the screen.
-  flipLeft?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  // Anchor the popover to the block's real on-screen rect (state, not a plain
+  // ref, so the portal re-renders the moment the node attaches).
+  const [anchorEl, setAnchorEl] = useState<HTMLDivElement | null>(null);
   const total = available.length + unavailable.length;
   const top = (startHour - HOURS[0]) * HOUR_PX;
   const height = duration * HOUR_PX;
   return (
     <div
+      ref={setAnchorEl}
       className="absolute left-0 right-0 z-30 cursor-help border-2 border-accent-coral bg-accent-coral/10 rounded-sm"
       style={{ top, height }}
       onMouseEnter={() => setOpen(true)}
@@ -3056,50 +3058,140 @@ function SelectedSlotBlock({
         {available.length}/{total}
       </div>
       {open && (
-        <div
-          className={`absolute top-0 z-40 w-56 rounded-md shadow-lg p-2 text-xs ${
-            flipLeft ? "right-full mr-2" : "left-full ml-2"
-          }`}
-          style={{
-            backgroundColor: "var(--color-card)",
-            color: "var(--color-foreground)",
-            border: "1px solid var(--color-border)",
-          }}
-        >
-          <div className="font-semibold mb-1 text-foreground">
-            {available.length} of {total} can attend
-          </div>
-          {available.length > 0 && (
-            <div className="mb-1.5">
-              <div className="uppercase tracking-wide text-[10px] text-muted-foreground mb-0.5">
-                Available
-              </div>
-              <ul className="space-y-0.5">
-                {available.map((u) => (
-                  <li key={u.id} className="text-green-700 dark:text-green-400">
-                    {userLabel(u)}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {unavailable.length > 0 && (
-            <div>
-              <div className="uppercase tracking-wide text-[10px] text-muted-foreground mb-0.5">
-                Busy
-              </div>
-              <ul className="space-y-0.5">
-                {unavailable.map((u) => (
-                  <li key={u.id} className="text-red-700 dark:text-red-400">
-                    {userLabel(u)}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
+        <SlotAttendeePopover
+          anchorEl={anchorEl}
+          available={available}
+          unavailable={unavailable}
+        />
       )}
     </div>
+  );
+}
+
+// The attendee breakdown for a selected slot. Rendered in a <body> portal so
+// the grid's overflow-hidden / column edges can't clip it, and positioned
+// `fixed` against the slot block's screen rect — preferring the right side but
+// flipping left and clamping vertically to stay fully on-screen. Anchoring off
+// the measured rect (in a layout effect) keeps it from jumping when the
+// availability data refetches under it.
+function SlotAttendeePopover({
+  anchorEl,
+  available,
+  unavailable,
+}: {
+  anchorEl: HTMLElement | null;
+  available: UserOption[];
+  unavailable: UserOption[];
+}) {
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  const total = available.length + unavailable.length;
+
+  useLayoutEffect(() => {
+    if (!anchorEl) return;
+    const place = () => {
+      const card = cardRef.current;
+      if (!card) return;
+      const a = anchorEl.getBoundingClientRect();
+      const cw = card.offsetWidth;
+      const ch = card.offsetHeight;
+      const gap = 8;
+      const margin = 8;
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      // Prefer the right of the block; flip left if it would overflow.
+      let left = a.right + gap;
+      if (left + cw + margin > vw) left = a.left - gap - cw;
+      left = Math.max(margin, Math.min(left, vw - cw - margin));
+      // Top-align with the block when the card fits below, else lift it so the
+      // bottom stays on-screen.
+      let top = a.top + ch + margin <= vh ? a.top : vh - ch - margin;
+      top = Math.max(margin, top);
+      setPos((prev) =>
+        prev && prev.left === left && prev.top === top ? prev : { left, top },
+      );
+    };
+    place();
+    const ro = new ResizeObserver(place);
+    if (cardRef.current) ro.observe(cardRef.current);
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [anchorEl]);
+
+  if (typeof document === "undefined") return null;
+
+  // First paint (before the layout effect measures): estimate a spot beside the
+  // anchor so it renders next to the block, not at (0,0). Hidden via opacity
+  // until measured to avoid a one-frame flash at the estimate, then clamped.
+  const measured = pos != null;
+  let left = pos?.left ?? 0;
+  let top = pos?.top ?? 0;
+  if (!measured) {
+    const a = anchorEl?.getBoundingClientRect();
+    if (a) {
+      const CARD_W = 224; // matches w-56
+      const gap = 8;
+      const margin = 8;
+      left =
+        a.right + gap + CARD_W + margin > window.innerWidth
+          ? a.left - gap - CARD_W
+          : a.right + gap;
+      left = Math.max(margin, left);
+      top = Math.max(margin, a.top);
+    }
+  }
+
+  return createPortal(
+    <div
+      ref={cardRef}
+      className="fixed z-50 w-56 rounded-md shadow-lg p-2 text-xs"
+      style={{
+        left,
+        top,
+        visibility: measured ? "visible" : "hidden",
+        backgroundColor: "var(--color-card)",
+        color: "var(--color-foreground)",
+        border: "1px solid var(--color-border)",
+      }}
+    >
+      <div className="font-semibold mb-1 text-foreground">
+        {available.length} of {total} can attend
+      </div>
+      {available.length > 0 && (
+        <div className="mb-1.5">
+          <div className="uppercase tracking-wide text-[10px] text-muted-foreground mb-0.5">
+            Available
+          </div>
+          <ul className="space-y-0.5">
+            {available.map((u) => (
+              <li key={u.id} className="text-green-700 dark:text-green-400">
+                {userLabel(u)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {unavailable.length > 0 && (
+        <div>
+          <div className="uppercase tracking-wide text-[10px] text-muted-foreground mb-0.5">
+            Busy
+          </div>
+          <ul className="space-y-0.5">
+            {unavailable.map((u) => (
+              <li key={u.id} className="text-red-700 dark:text-red-400">
+                {userLabel(u)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>,
+    document.body,
   );
 }
 
