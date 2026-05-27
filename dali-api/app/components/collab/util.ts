@@ -38,4 +38,10 @@ export interface AwarenessUser {
    * across blur — peer remains associated with their last-focused editor.
    */
   currentEditor?: string;
+  /** User.id — when present, drives dedupe and the "click to profile" link. */
+  userId?: string;
+  /** Resolved photo URL; chips fall back to colored initials when null. */
+  photoUrl?: string | null;
+  /** One-line headline shown in the hover card (e.g. email · class-year). */
+  subtitle?: string | null;
 }

@@ -13,6 +13,8 @@ import { Check, Pencil, X, Settings } from "lucide-react";
 import { Modal } from "~/components/Modal";
 import { EditableSection } from "~/components/EditableSection";
 import { TagPicker } from "~/components/TagPicker";
+import { PresenceProvider } from "~/components/collab/PresenceProvider";
+import { PresenceBar } from "~/components/collab/PresenceBar";
 import { uploadFileToS3, formatBytes } from "~/lib/upload-client";
 import type { Route } from "./+types/projects.$id";
 import { prisma } from "~/lib/db";
@@ -20,6 +22,7 @@ import { ensureProjectGroup } from "~/lib/groups";
 import { requireAuth } from "~/lib/auth";
 import { parseSessionCookie } from "~/lib/cookies";
 import { isCore, isProjectMember, canManageStaffing, currentTerm } from "~/lib/roles";
+import { getPresenceUser } from "~/lib/presence-user";
 import { TaskBoard } from "../components/TaskBoard";
 import { type TimelineEpic, type EpicStatus } from "../components/EpicsTimeline";
 import {
@@ -232,9 +235,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // Collab editor wiring (same as the hiring routes): session cookie is the
   // WebSocket auth token; userName labels the presence cursor.
   const collabToken = parseSessionCookie(request);
-  const userName =
+  const fallbackName =
     [auth.user.firstName, auth.user.lastName].filter(Boolean).join(" ") ||
     auth.user.email;
+  const presenceUser = await getPresenceUser(auth.user.sub, fallbackName);
+  const userName = presenceUser?.name ?? fallbackName;
 
   // Timeline span: prefer the epic's explicit startsAt/endsAt; fall back to
   // the min/max of its sprint dates when either is unset. Each epic also
@@ -478,6 +483,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     collabToken,
     userName,
     currentUserId: auth.user.sub,
+    presencePhotoUrl: presenceUser?.photoUrl ?? null,
+    presenceSubtitle: presenceUser?.subtitle ?? null,
   };
 }
 
@@ -691,6 +698,9 @@ export default function ProjectDetail() {
     currentTerm,
     collabToken,
     userName,
+    currentUserId,
+    presencePhotoUrl,
+    presenceSubtitle,
   } = useLoaderData() as LoaderData;
   const actionData = useActionData<typeof action>();
   const [scopeSettingsOpen, setScopeSettingsOpen] = useState(false);
@@ -709,14 +719,17 @@ export default function ProjectDetail() {
     );
   };
 
-  return (
+  const page = (
     <div className="flex flex-col gap-4">
-      <Link
-        to="/projects/list"
-        className="text-sm text-muted-foreground hover:text-foreground"
-      >
-        ← Back to projects
-      </Link>
+      <div className="flex items-center justify-between gap-3">
+        <Link
+          to="/projects/list"
+          className="text-sm text-muted-foreground hover:text-foreground"
+        >
+          ← Back to projects
+        </Link>
+        <PresenceBar />
+      </div>
 
       {/* Overview header — always on top, not behind a tab */}
       <ProjectHeader
@@ -827,6 +840,21 @@ export default function ProjectDetail() {
         />
       )}
     </div>
+  );
+
+  return collabToken ? (
+    <PresenceProvider
+      pageId={`project:${project.id}`}
+      token={collabToken}
+      userName={userName}
+      userId={currentUserId}
+      photoUrl={presencePhotoUrl}
+      subtitle={presenceSubtitle}
+    >
+      {page}
+    </PresenceProvider>
+  ) : (
+    page
   );
 }
 

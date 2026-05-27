@@ -4,6 +4,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { parseSessionCookie } from "~/lib/cookies";
 import { isCore } from "~/lib/roles";
+import { getPresenceUser } from "~/lib/presence-user";
 import { DocumentEditor } from "~/components/DocumentEditor";
 
 export const meta: Route.MetaFunction = ({ data }) => {
@@ -27,20 +28,21 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       tags: { select: { tag: { select: { id: true, label: true, slug: true, color: true } } } },
     },
   });
-  // Mirrors the doc gate in authorizeCollabDoc: live Project page only.
-  if (!page || page.workspaceType !== "Project" || page.archivedAt !== null) {
+  // Mirrors the doc gate in authorizeCollabDoc: live page, any workspaceType.
+  if (!page || page.archivedAt !== null) {
     throw new Response("Not found", { status: 404 });
   }
 
   const canEdit = await isCore(auth.user.sub);
 
-  // Resolve the parent project for the back link + breadcrumb.
-  const project = page.workspaceId
-    ? await prisma.project.findUnique({
-        where: { id: page.workspaceId },
-        select: { id: true, name: true },
-      })
-    : null;
+  // Parent project for the back link — only present for Project pages.
+  const project =
+    page.workspaceType === "Project" && page.workspaceId
+      ? await prisma.project.findUnique({
+          where: { id: page.workspaceId },
+          select: { id: true, name: true },
+        })
+      : null;
 
   const allTags = await prisma.docTag.findMany({
     where: { archivedAt: null },
@@ -49,8 +51,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
 
   const collabToken = parseSessionCookie(request);
-  const userName =
+  const fallbackName =
     [auth.user.firstName, auth.user.lastName].filter(Boolean).join(" ") || auth.user.email;
+  const presenceUser = await getPresenceUser(auth.user.sub, fallbackName);
 
   return {
     pageId: page.id,
@@ -60,23 +63,38 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     project,
     canEdit,
     collabToken,
-    userName,
+    userName: presenceUser?.name ?? fallbackName,
     currentUserId: auth.user.sub,
+    photoUrl: presenceUser?.photoUrl ?? null,
+    subtitle: presenceUser?.subtitle ?? null,
   };
 }
 
 export default function DocumentPage() {
-  const { pageId, title, tags, allTags, project, canEdit, collabToken, userName, currentUserId } =
-    useLoaderData() as Exclude<Awaited<ReturnType<typeof loader>>, Response>;
+  const {
+    pageId,
+    title,
+    tags,
+    allTags,
+    project,
+    canEdit,
+    collabToken,
+    userName,
+    currentUserId,
+    photoUrl,
+    subtitle,
+  } = useLoaderData() as Exclude<Awaited<ReturnType<typeof loader>>, Response>;
 
   return (
     <div className="flex flex-col gap-4">
-      <Link
-        to={project ? `/projects/${project.id}` : "/projects/list"}
-        className="text-sm text-muted-foreground hover:text-foreground"
-      >
-        ← {project ? `Back to ${project.name}` : "Back to projects"}
-      </Link>
+      {project && (
+        <Link
+          to={`/projects/${project.id}`}
+          className="text-sm text-muted-foreground hover:text-foreground"
+        >
+          ← Back to {project.name}
+        </Link>
+      )}
 
       <DocumentEditor
         pageId={pageId}
@@ -84,6 +102,8 @@ export default function DocumentPage() {
         collabToken={collabToken}
         userName={userName}
         currentUserId={currentUserId}
+        photoUrl={photoUrl}
+        subtitle={subtitle}
         canEdit={canEdit}
         tags={tags}
         allTags={allTags}

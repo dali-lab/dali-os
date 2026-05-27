@@ -3,6 +3,7 @@ import { useRevalidator } from "react-router";
 import { FileDown } from "lucide-react";
 import { CollaborativeEditor, type CommentAnchor } from "./CollaborativeEditor";
 import { PresenceProvider } from "./collab/PresenceProvider";
+import { PresenceBar } from "./collab/PresenceBar";
 import { CommentsRail, type Comment } from "./collab/CommentsRail";
 import { TagPicker, type DocTag } from "./TagPicker";
 
@@ -21,6 +22,8 @@ export function DocumentEditor({
   collabToken,
   userName,
   currentUserId,
+  photoUrl,
+  subtitle,
   canEdit,
   tags,
   allTags,
@@ -30,6 +33,8 @@ export function DocumentEditor({
   collabToken: string | null;
   userName: string;
   currentUserId: string;
+  photoUrl?: string | null;
+  subtitle?: string | null;
   canEdit: boolean;
   tags: DocTag[];
   allTags: DocTag[];
@@ -85,7 +90,7 @@ export function DocumentEditor({
     [],
   );
 
-  return (
+  const body = (
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
       <div className="min-w-0">
         {/* Notion-style title — large, bold, borderless; doubles as the doc
@@ -111,6 +116,7 @@ export function DocumentEditor({
             />
             <div className="flex items-center gap-2 text-xs">
               {savingTitle && <span className="text-muted-foreground">Saving…</span>}
+              <PresenceBar />
               <a
                 href={`/documents/${pageId}/export?format=pdf`}
                 className="inline-flex items-center gap-1 px-2 py-1 rounded border border-border hover:bg-muted text-muted-foreground hover:text-foreground"
@@ -128,25 +134,23 @@ export function DocumentEditor({
         </div>
 
         {collabToken ? (
-          <PresenceProvider pageId={`doc:${pageId}`} token={collabToken} userName={userName}>
-            <CollaborativeEditor
-              editorId={`doc:${pageId}:body`}
-              documentName={`doc:${pageId}:body`}
-              token={collabToken}
-              userName={userName}
-              disabled={!canEdit}
-              placeholder="Start writing…"
-              className="min-h-[60vh]"
-              inlineComments={{
-                enabled: true,
-                anchors,
-                onRequestComment: (a) => setPendingAnchor(a),
-                onReady: (api) => {
-                  focusAnchorRef.current = api.focusAnchor;
-                },
-              }}
-            />
-          </PresenceProvider>
+          <CollaborativeEditor
+            editorId={`doc:${pageId}:body`}
+            documentName={`doc:${pageId}:body`}
+            token={collabToken}
+            userName={userName}
+            disabled={!canEdit}
+            placeholder="Start writing…"
+            className="min-h-[60vh]"
+            inlineComments={{
+              enabled: true,
+              anchors,
+              onRequestComment: (a) => setPendingAnchor(a),
+              onReady: (api) => {
+                focusAnchorRef.current = api.focusAnchor;
+              },
+            }}
+          />
         ) : (
           <p className="text-sm text-muted-foreground italic">
             Sign in again to edit this document.
@@ -167,5 +171,22 @@ export function DocumentEditor({
         />
       </aside>
     </div>
+  );
+
+  // Provider wraps the whole surface so PresenceBar (in the header row) and
+  // the editor share one presence room.
+  return collabToken ? (
+    <PresenceProvider
+      pageId={`doc:${pageId}`}
+      token={collabToken}
+      userName={userName}
+      userId={currentUserId}
+      photoUrl={photoUrl}
+      subtitle={subtitle}
+    >
+      {body}
+    </PresenceProvider>
+  ) : (
+    body
   );
 }

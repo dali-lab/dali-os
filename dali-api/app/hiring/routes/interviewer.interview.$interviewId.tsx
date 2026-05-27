@@ -15,6 +15,7 @@ import {
 import { prisma } from '~/lib/db'
 import { requireAuth } from "~/lib/auth";
 import { parseSessionCookie } from '~/lib/cookies'
+import { getPresenceUser } from '~/lib/presence-user'
 import { requirePageSignedOrRedirect } from '~/hiring/lib/confidentiality'
 import { presignAnswers } from '~/hiring/lib/presign'
 import { CollaborativeEditor } from '~/components/CollaborativeEditor'
@@ -166,7 +167,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
 
   // Build user display name for cursors
-  const userName = [member.firstName, member.lastName].filter(Boolean).join(' ') || auth.user.email
+  const fallbackName = [member.firstName, member.lastName].filter(Boolean).join(' ') || auth.user.email
+  const presenceUser = await getPresenceUser(auth.user.sub, fallbackName)
+  const userName = presenceUser?.name ?? fallbackName
 
   return {
       interview: interviewWithPresignedAnswers,
@@ -174,12 +177,23 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       criteriaByKey,
       collabToken,
       userName,
+      currentUserId: auth.user.sub,
+      presencePhotoUrl: presenceUser?.photoUrl ?? null,
+      presenceSubtitle: presenceUser?.subtitle ?? null,
     }
 }
 
 export default function InterviewDetailPage() {
-  const { interview, myAssignment, criteriaByKey, collabToken, userName } =
-    useLoaderData<typeof loader>() as any
+  const {
+    interview,
+    myAssignment,
+    criteriaByKey,
+    collabToken,
+    userName,
+    currentUserId,
+    presencePhotoUrl,
+    presenceSubtitle,
+  } = useLoaderData<typeof loader>() as any
 
   const applicant = interview.domainApplication?.application?.user
   const domain = interview.domainApplication?.challengeVersion?.domain?.name
@@ -310,6 +324,9 @@ export default function InterviewDetailPage() {
       pageId={`interview:${interview.id}`}
       token={collabToken}
       userName={userName}
+      userId={currentUserId}
+      photoUrl={presencePhotoUrl}
+      subtitle={presenceSubtitle}
     >
     <div className="space-y-8 max-w-6xl mx-auto">
       {/* Back button + presence avatars inline */}
