@@ -556,10 +556,10 @@ function RolePills({
       ))}
       {domainRoles.map((d) => (
         <span
-          key={`${d.domainName}-${d.level}`}
+          key={d.domainName}
           className="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded bg-blue-50 text-blue-700 border border-blue-100"
         >
-          {d.domainName} · {d.level}
+          {d.domainName}
         </span>
       ))}
     </div>

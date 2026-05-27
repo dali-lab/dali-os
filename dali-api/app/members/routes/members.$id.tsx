@@ -442,11 +442,7 @@ function EligibilityRow({
               ))}
             </select>
           </setFetcher.Form>
-        ) : (
-          <span className="text-xs font-medium px-2 py-0.5 rounded-md bg-muted text-muted-foreground">
-            {eligibility.level}
-          </span>
-        )}
+        ) : null}
         {canManage && (
           <removeFetcher.Form method="post" className="inline">
             <input type="hidden" name="intent" value="remove-eligibility" />
