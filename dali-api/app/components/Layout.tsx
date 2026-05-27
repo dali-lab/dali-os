@@ -33,6 +33,7 @@ import {
   Megaphone,
   SplitSquareHorizontal,
   ExternalLink,
+  HelpCircle,
 } from 'lucide-react'
 import { userInitials } from '~/lib/display'
 import { TabWorkspace, type TabWorkspaceHandle, type OpenTabRequest } from '~/components/TabWorkspace'
@@ -892,14 +893,34 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
             )}
           </button>
           {!collapsed && (
-            <a
-              href="/logout"
-              className="p-1.5 text-white/40 hover:text-white/70 hover:bg-white/5 rounded-md transition flex-shrink-0"
-              title="Log out"
-              aria-label="Log out"
-            >
-              <LogOut className="w-4 h-4" />
-            </a>
+            <>
+              <button
+                type="button"
+                {...tabClickProps({ url: '/settings/connected-apps', label: 'Settings' })}
+                className="p-1.5 text-white/40 hover:text-white/70 hover:bg-white/5 rounded-md transition flex-shrink-0"
+                title="Settings"
+                aria-label="Settings"
+              >
+                <Settings className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                {...tabClickProps({ url: '/help/mcp', label: 'Help' })}
+                className="p-1.5 text-white/40 hover:text-white/70 hover:bg-white/5 rounded-md transition flex-shrink-0"
+                title="Help"
+                aria-label="Help"
+              >
+                <HelpCircle className="w-4 h-4" />
+              </button>
+              <a
+                href="/logout"
+                className="p-1.5 text-white/40 hover:text-white/70 hover:bg-white/5 rounded-md transition flex-shrink-0"
+                title="Log out"
+                aria-label="Log out"
+              >
+                <LogOut className="w-4 h-4" />
+              </a>
+            </>
           )}
         </div>
       </div>
