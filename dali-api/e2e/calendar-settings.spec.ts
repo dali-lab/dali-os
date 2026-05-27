@@ -1,24 +1,40 @@
 import { test, expect } from './fixtures';
 
+// Mon–Fri 9–5 InPerson, the same shape the UI's "turn working hours on" button
+// seeds. Materialized directly so each run starts from a known state instead of
+// inheriting whatever the previous run left behind.
+const SEEDED_WEEK = JSON.stringify(
+  Array.from({ length: 7 }, (_, dow) => ({
+    dayOfWeek: dow,
+    segments:
+      dow >= 1 && dow <= 5
+        ? [{ startMinute: 9 * 60, endMinute: 17 * 60, location: 'InPerson' }]
+        : [],
+  })),
+);
+
 test.describe('calendar settings persistence', () => {
   test.beforeEach(async ({ loginAs }) => {
     await loginAs({ daliEmail: 'jordan.taylor@dali.dartmouth.edu' });
   });
 
   test('Monday toggle persists across reloads', async ({ page }) => {
+    // Establish a deterministic starting state: working hours on, Mon–Fri
+    // enabled. This test mutates persistent DB rows, and an interrupted prior
+    // run can leave Monday disabled or working hours off — seeding up front
+    // makes it independent of inherited state rather than relying on a cleanup
+    // step that only runs if the test reaches the end.
+    const seedRes = await page.request.post('/calendar', {
+      form: { intent: 'seed-working-hours', days: SEEDED_WEEK },
+    });
+    expect(seedRes.ok()).toBeTruthy();
+
     // Render the calendar route standalone (skip workspace shell).
     await page.goto('/calendar?embed=1');
     await expect(page.getByRole('heading', { name: 'Availability' })).toBeVisible();
 
-    // Working Hours is off by default and the per-day editor is hidden until
-    // the master switch is on. Turn it on, which seeds the Mon–Fri default so
-    // Monday's segment editor appears.
-    const masterSwitch = page.getByRole('switch', { name: /Working hours enabled/i });
-    if ((await page.getByLabel('Mon segment 1 start').count()) === 0) {
-      await masterSwitch.click();
-      await expect(page.getByLabel('Mon segment 1 start')).toBeVisible();
-      await page.waitForLoadState('networkidle');
-    }
+    // The seed turned working hours on, so Monday's segment editor is present.
+    await expect(page.getByLabel('Mon segment 1 start')).toBeVisible();
 
     // Disable Monday via its per-day toggle (only present while the master
     // switch is on).
@@ -32,7 +48,7 @@ test.describe('calendar settings persistence', () => {
     await page.reload();
     await expect(page.getByLabel('Mon segment 1 start')).toHaveCount(0);
 
-    // Toggle Monday back on (leaves DB in enabled state for the next run).
+    // Toggle Monday back on and confirm the segment reappears.
     await page.getByRole('button', { name: /Mon enabled/i }).click();
     await expect(page.getByLabel('Mon segment 1 start')).toBeVisible();
     await page.waitForLoadState('networkidle');
