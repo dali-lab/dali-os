@@ -29,12 +29,17 @@ type TourStep = {
 };
 
 function findInSidebar(predicate: (el: HTMLButtonElement) => boolean): HTMLElement | null {
-  // Look in both desktop sidebar (<aside>) and the mobile nav panel.
+  // Look in both desktop sidebar (<aside>) and the mobile nav panel. We can't
+  // use offsetParent to detect hidden containers — the desktop sidebar is
+  // position:fixed, which reports offsetParent === null even when visible.
+  // getBoundingClientRect's size is the reliable signal: display:none → 0×0,
+  // anything actually laid out → non-zero.
   const containers = Array.from(
     document.querySelectorAll<HTMLElement>("aside, #mobile-nav-panel"),
   );
   for (const c of containers) {
-    if (c.offsetParent === null) continue; // skip hidden (mobile panel closed)
+    const r = c.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) continue;
     const buttons = c.querySelectorAll<HTMLButtonElement>("button");
     for (const btn of buttons) {
       if (predicate(btn)) return btn;
