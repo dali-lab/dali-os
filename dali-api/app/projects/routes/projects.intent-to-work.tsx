@@ -344,7 +344,9 @@ function Loaded({
           <SubmissionDatabase
             columns={data.tableColumns}
             rows={filtered}
-            detailBase="/projects/intent-to-work"
+            // Carry the viewed term to the detail page; without it the detail
+            // loader falls back to currentTerm() and opens the wrong term.
+            detailBase={`/projects/intent-to-work?term=${encodeURIComponent(data.selectedTerm)}`}
             emptyMessage={
               data.submissions.length === 0
                 ? "No intent submissions yet."

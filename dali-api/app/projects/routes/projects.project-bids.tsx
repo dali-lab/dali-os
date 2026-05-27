@@ -342,7 +342,11 @@ function Loaded({
           <SubmissionDatabase
             columns={data.tableColumns}
             rows={filtered}
-            detailBase="/projects/project-bids"
+            // Carry the viewed term through to the detail page. Without it the
+            // detail loader falls back to currentTerm(), so a bid opened from
+            // 26X would load 26S. selectedTerm is a term id (or the ALL_TERMS
+            // sentinel, which the detail loader resolves the same way).
+            detailBase={`/projects/project-bids?term=${encodeURIComponent(data.selectedTerm)}`}
             emptyMessage={
               data.submissions.length === 0
                 ? "No bid submissions yet."

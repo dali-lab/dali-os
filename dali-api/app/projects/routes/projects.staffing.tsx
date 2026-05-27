@@ -245,6 +245,26 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const domainNames = Object.fromEntries(domains.map((d) => [d.id, d.displayName]));
 
+  // Project columns are non-archived only (you can't staff into an archived
+  // project), but a member can still have ranked one that was later archived.
+  // Resolve names for every project any preference references so the card/modal
+  // shows the project name instead of leaking the raw id. Archived projects
+  // stay out of `projects` (no droppable column) — this map is labels only.
+  const referencedProjectIds = Array.from(
+    new Set(preferences.map((p) => p.projectId)),
+  ).filter((id) => !projects.some((p) => p.id === id));
+  const extraProjectNames =
+    referencedProjectIds.length > 0
+      ? await prisma.project.findMany({
+          where: { id: { in: referencedProjectIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+  const projectNames: Record<string, string> = {
+    ...Object.fromEntries(projects.map((p) => [p.id, p.name])),
+    ...Object.fromEntries(extraProjectNames.map((p) => [p.id, p.name])),
+  };
+
   // Sum slots per (project, domain), drop zero rows, sort the per-project
   // list alphabetically so the chip order is stable run-to-run.
   const demandTotals = new Map<string, number>();
@@ -286,6 +306,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     projects,
     members,
     initialAssignments,
+    projectNames,
     domainNames,
     demandByProject,
     bidsFormBound,
@@ -334,6 +355,7 @@ export default function StaffingPage() {
         projects={data.projects}
         members={data.members}
         initialAssignments={data.initialAssignments}
+        projectNames={data.projectNames}
         domainNames={data.domainNames}
         demandByProject={data.demandByProject}
         canManage={data.canManage}
