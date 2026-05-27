@@ -11,6 +11,7 @@ import {
   currentInternDomains,
 } from "~/hiring/lib/intern-eligibility";
 import type { Question } from "~/types";
+import { InfoBody } from "~/hiring/lib/info-body";
 import { ChallengeQuestionField } from "~/hiring/components/ChallengeQuestionField";
 import { APPLICATION_TZ, APPLICATION_TZ_LABEL } from "~/lib/timezone";
 
@@ -404,9 +405,9 @@ function FormView({
               return (
                 <div
                   key={q.key}
-                  className="rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground whitespace-pre-wrap"
+                  className="rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground"
                 >
-                  {q.data.body ?? ""}
+                  <InfoBody body={q.data.body} />
                 </div>
               );
             }

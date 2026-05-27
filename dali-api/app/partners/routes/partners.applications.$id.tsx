@@ -23,6 +23,8 @@ import {
 import { CollaborativeEditor } from "~/components/CollaborativeEditor";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { EditModeToggle, useEditMode } from "~/components/EditModeToggle";
+import { RichTextEditor } from "~/components/RichTextEditor";
+import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const a = (data as { application?: { title: string } } | undefined)
@@ -750,78 +752,25 @@ function DomainScopeBlock({
         <div className="flex flex-col divide-y divide-border">
           {domains.map((d) =>
             editId === d.id ? (
-              <form
+              <DomainScopeEditRow
                 key={d.id}
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  const fd = new FormData(e.currentTarget);
-                  const members = Math.max(
-                    0,
-                    Number(fd.get("expectedMembers")) || 0,
-                  );
-                  const challenges = (
-                    (fd.get("expectedChallenges") as string | null) ?? ""
-                  ).trim();
+                row={d}
+                busy={busy}
+                onCancel={() => setEditId(null)}
+                onSave={(members, challenges) => {
                   run(async () => {
                     await call(
                       `/api/partner-application-domains/${d.id}`,
                       "POST",
                       {
                         expectedMembers: members,
-                        expectedChallenges: challenges || null,
+                        expectedChallenges: challenges,
                       },
                     );
                     setEditId(null);
                   });
                 }}
-                className="py-3 flex flex-col gap-2"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-foreground">
-                    {d.domainName}
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="submit"
-                      disabled={busy}
-                      className="px-3 py-1.5 text-xs font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 disabled:opacity-60 transition-colors"
-                    >
-                      Save
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setEditId(null)}
-                      className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-                <label className="flex flex-col gap-1 text-xs sm:max-w-[180px]">
-                  <span className="text-muted-foreground">
-                    Expected members
-                  </span>
-                  <input
-                    name="expectedMembers"
-                    type="number"
-                    min={0}
-                    defaultValue={d.expectedMembers}
-                    className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-                  />
-                </label>
-                <label className="flex flex-col gap-1 text-xs">
-                  <span className="text-muted-foreground">
-                    Expected challenges / scope
-                  </span>
-                  <textarea
-                    name="expectedChallenges"
-                    rows={3}
-                    defaultValue={d.expectedChallenges ?? ""}
-                    placeholder="What does the partner expect this domain to deliver?"
-                    className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-                  />
-                </label>
-              </form>
+              />
             ) : (
               <div key={d.id} className="py-3">
                 <div className="flex items-start justify-between gap-3">
@@ -835,10 +784,11 @@ function DomainScopeBlock({
                         {d.expectedMembers === 1 ? "member" : "members"}
                       </span>
                     </div>
-                    {d.expectedChallenges ? (
-                      <p className="text-sm text-muted-foreground mt-1 whitespace-pre-wrap">
-                        {d.expectedChallenges}
-                      </p>
+                    {!isEmptyDoc(d.expectedChallenges) ? (
+                      <RichTextViewer
+                        content={d.expectedChallenges}
+                        className="text-sm text-muted-foreground mt-1"
+                      />
                     ) : (
                       <p className="text-xs text-muted-foreground italic mt-1">
                         No scope description.
@@ -894,6 +844,73 @@ function DomainScopeBlock({
         </div>
       )}
     </section>
+  );
+}
+
+function DomainScopeEditRow({
+  row,
+  busy,
+  onCancel,
+  onSave,
+}: {
+  row: LoaderData["application"]["domains"][number];
+  busy: boolean;
+  onCancel: () => void;
+  onSave: (expectedMembers: number, expectedChallenges: unknown) => void;
+}) {
+  const [members, setMembers] = useState<string>(String(row.expectedMembers));
+  const [challenges, setChallenges] = useState<unknown>(row.expectedChallenges);
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        const n = Math.max(0, Number(members) || 0);
+        onSave(n, isEmptyDoc(challenges) ? null : challenges);
+      }}
+      className="py-3 flex flex-col gap-2"
+    >
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-medium text-foreground">
+          {row.domainName}
+        </span>
+        <div className="flex items-center gap-2">
+          <button
+            type="submit"
+            disabled={busy}
+            className="px-3 py-1.5 text-xs font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 disabled:opacity-60 transition-colors"
+          >
+            Save
+          </button>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+      <label className="flex flex-col gap-1 text-xs sm:max-w-[180px]">
+        <span className="text-muted-foreground">Expected members</span>
+        <input
+          type="number"
+          min={0}
+          value={members}
+          onChange={(e) => setMembers(e.target.value)}
+          className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+        />
+      </label>
+      <label className="flex flex-col gap-1 text-xs">
+        <span className="text-muted-foreground">
+          Expected challenges / scope
+        </span>
+        <RichTextEditor
+          value={challenges}
+          onChange={setChallenges}
+          placeholder="What does the partner expect this domain to deliver?"
+        />
+      </label>
+    </form>
   );
 }
 

@@ -8,6 +8,9 @@ import type { Question } from "~/types";
 import type { Prisma } from "~/generated/prisma/client";
 import { CycleSetupSection as Section } from "~/hiring/components/CycleSetupSection";
 import { ChallengePreviewModal } from "~/hiring/components/ChallengePreviewModal";
+import { RichTextEditor } from "~/components/RichTextEditor";
+import { hasInfoBody } from "~/hiring/lib/info-body";
+
 import {
   zonedDayEndUtc,
   getZonedYMD,
@@ -560,7 +563,7 @@ function CreateFormVersionModal({
   function addInfo() {
     setQs((prev) => [
       ...prev,
-      { key: crypto.randomUUID(), type: "info", required: false, data: { label: "", body: "" } },
+      { key: crypto.randomUUID(), type: "info", required: false, data: { label: "" } },
     ]);
   }
   function removeQ(idx: number) {
@@ -627,12 +630,10 @@ function CreateFormVersionModal({
                   </div>
                 </div>
                 {isInfo ? (
-                  <textarea
-                    value={q.data.body ?? ""}
-                    onChange={(e) => update(idx, { data: { body: e.target.value } })}
+                  <RichTextEditor
+                    value={q.data.body}
+                    onChange={(body) => update(idx, { data: { body } })}
                     placeholder="Free-form text shown to the applicant (e.g. instructions or context)."
-                    rows={4}
-                    className="w-full px-2 py-1.5 text-sm border border-border rounded-md"
                   />
                 ) : (
                   <>
@@ -699,7 +700,7 @@ function CreateFormVersionModal({
           <button
             onClick={() => {
               const cleaned = qs.filter((q) =>
-                q.type === "info" ? (q.data.body ?? "").trim() : q.data.label.trim(),
+                q.type === "info" ? hasInfoBody(q.data.body) : q.data.label.trim(),
               );
               if (cleaned.length === 0) return;
               onSubmit(cleaned);
@@ -719,7 +720,7 @@ function CreateFormVersionModal({
             challengeName="Shortform"
             versionLabel="Draft"
             questions={qs.filter((q) =>
-              q.type === "info" ? (q.data.body ?? "").trim() : q.data.label.trim(),
+              q.type === "info" ? hasInfoBody(q.data.body) : q.data.label.trim(),
             )}
             onClose={() => setPreviewing(false)}
           />
