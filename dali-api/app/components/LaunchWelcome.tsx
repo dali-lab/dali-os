@@ -9,11 +9,43 @@ import {
   X as XIcon,
   Check,
   Bot,
+  Copy,
 } from "lucide-react";
 import { Modal } from "./Modal";
 
 const DONE_KEY = "dalios-launch-welcome-seen-v1";
 const STEP_KEY = "dalios-launch-tour-step-v1";
+
+const CLAUDE_MCP_COMMAND =
+  "claude mcp add --transport http dali-os https://os.dali.dartmouth.edu/mcp";
+
+function CopyableCommand({ command }: { command: string }) {
+  const [copied, setCopied] = useState(false);
+  function copy() {
+    try {
+      navigator.clipboard.writeText(command);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // navigator.clipboard unavailable (insecure context, etc) — give up silently
+    }
+  }
+  return (
+    <div className="flex items-center gap-2 rounded-md bg-zinc-900 px-2.5 py-2 text-xs font-mono text-zinc-100">
+      <code className="flex-1 truncate" title={command}>
+        {command}
+      </code>
+      <button
+        type="button"
+        onClick={copy}
+        className="text-zinc-400 hover:text-white flex-shrink-0"
+        aria-label="Copy command"
+      >
+        {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+      </button>
+    </div>
+  );
+}
 
 type Phase = "modal" | "card" | "done";
 
@@ -103,8 +135,13 @@ const STEPS: TourStep[] = [
     eyebrow: "Connect any AI",
     cta: (
       <>
-        Connect any AI assistant to the <strong>DALI OS MCP</strong> and let
-        it read your DALI data for you.
+        <p>
+          Connect any AI assistant to the <strong>DALI OS MCP</strong> and let
+          it read your DALI data for you. In Claude Code:
+        </p>
+        <div className="mt-2">
+          <CopyableCommand command={CLAUDE_MCP_COMMAND} />
+        </div>
       </>
     ),
     action: {
@@ -453,7 +490,7 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
             </button>
           </div>
 
-          <p className="text-sm text-foreground leading-relaxed">
+          <div className="text-sm text-foreground leading-relaxed">
             {isFinal ? (
               <>
                 That&apos;s the tour. Thanks for coming. Enjoy the launch
@@ -464,7 +501,7 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
             ) : (
               current!.cta
             )}
-          </p>
+          </div>
 
           <div className="flex items-center gap-1.5" aria-hidden="true">
             {STEPS.map((_, i) => (
