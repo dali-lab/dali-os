@@ -10,14 +10,14 @@ export interface PresenceUser {
 
 // Subtitle convention mirrors the profile page header:
 //   "kiran@dali.org · '26"
-// Falls back to whichever email exists, then class-year if present.
+// Falls back to whichever email column has a value, then class-year alone.
 function buildSubtitle(args: {
   daliEmail: string | null;
   dartmouthEmail: string | null;
-  email: string;
+  personalEmail: string | null;
   classYear: number | null;
 }): string | null {
-  const email = args.daliEmail ?? args.dartmouthEmail ?? args.email ?? null;
+  const email = args.daliEmail ?? args.dartmouthEmail ?? args.personalEmail ?? null;
   const yearTail = args.classYear ? `'${String(args.classYear).slice(-2)}` : null;
   if (email && yearTail) return `${email} · ${yearTail}`;
   return email ?? yearTail ?? null;
@@ -38,9 +38,9 @@ export async function getPresenceUser(
       id: true,
       firstName: true,
       lastName: true,
-      email: true,
       daliEmail: true,
       dartmouthEmail: true,
+      personalEmail: true,
       photoUrl: true,
       classYear: true,
     },
@@ -52,12 +52,15 @@ export async function getPresenceUser(
   const name =
     [user.firstName, user.lastName].filter(Boolean).join(" ") ||
     fallbackName ||
-    user.email;
+    user.daliEmail ||
+    user.dartmouthEmail ||
+    user.personalEmail ||
+    userId;
   const photoUrl = await resolvePhotoUrl(user.photoUrl);
   const subtitle = buildSubtitle({
     daliEmail: user.daliEmail,
     dartmouthEmail: user.dartmouthEmail,
-    email: user.email,
+    personalEmail: user.personalEmail,
     classYear: user.classYear,
   });
   return { userId: user.id, name, photoUrl, subtitle };
