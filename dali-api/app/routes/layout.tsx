@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Outlet, redirect, useLoaderData, useLocation, useSearchParams } from 'react-router'
+import { Outlet, redirect, useLoaderData, useLocation, useNavigate, useSearchParams } from 'react-router'
 import { Layout } from '~/components/Layout'
 import { requireAuth } from "~/lib/auth";
 import { getUserRoles } from '~/lib/roles'
@@ -61,6 +61,7 @@ export default function AppLayoutRoute() {
   const { user, photoUrl, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, isEmbedded } = useLoaderData<typeof loader>()
   const [searchParams] = useSearchParams()
   const location = useLocation()
+  const navigate = useNavigate()
 
   // After a client-side navigation inside the workspace iframe, the loader
   // re-runs via fetch — which carries `Sec-Fetch-Dest: empty`, not `iframe` —
@@ -122,6 +123,67 @@ export default function AppLayoutRoute() {
     }, 50)
     return () => window.clearTimeout(id)
   }, [embedded, location.pathname, location.search])
+
+  // When embedded, accept `dali:navigate` from the parent TabWorkspace —
+  // that's how the per-tab back/forward arrows drive in-iframe navigation.
+  // Going through react-router's navigate() keeps the embedded layout's
+  // navigation flow consistent (loaders re-run, etc.) and our own
+  // `dali:tabNavigated` post just above is what tells the parent the move
+  // landed (parent recognises it as a back/forward via a pending-op ref).
+  useEffect(() => {
+    if (!embedded) return
+    if (typeof window === 'undefined') return
+    function onMsg(e: MessageEvent) {
+      if (e.origin !== window.location.origin) return
+      const d = e.data
+      if (!d || d.type !== 'dali:navigate' || typeof d.url !== 'string') return
+      navigate(d.url)
+    }
+    window.addEventListener('message', onMsg)
+    return () => window.removeEventListener('message', onMsg)
+  }, [embedded, navigate])
+
+  // Scroll restoration WITHIN an embedded tab. React Router's <ScrollRestoration>
+  // doesn't reliably restore the iframe window's scroll on in-tab back/forward
+  // (the iframe is its own document and RR's key tracking gets lost across the
+  // shell↔iframe boundary), so we persist scrollY per history entry ourselves.
+  // Keyed by location.key (stable per history entry) in sessionStorage, scoped
+  // to this document, so navigating into a nested page and back restores where
+  // you were. Runs in both embedded and standalone documents — harmless either
+  // way, and standalone deep links benefit too.
+  const SCROLL_KEY_PREFIX = "dali:scroll:";
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const key = SCROLL_KEY_PREFIX + location.key;
+
+    // Restore on entering this location. rAF waits for the new route's content
+    // to paint so the target offset exists; fall back to top when unseen.
+    let raf = 0;
+    try {
+      const saved = window.sessionStorage.getItem(key);
+      raf = window.requestAnimationFrame(() => {
+        window.scrollTo(0, saved ? parseInt(saved, 10) || 0 : 0);
+      });
+    } catch {
+      // sessionStorage disabled — nothing to restore.
+    }
+
+    // Continuously record this entry's scroll while it's the active location,
+    // so a later back-navigation lands where the user left off.
+    const onScroll = () => {
+      try {
+        window.sessionStorage.setItem(key, String(window.scrollY));
+      } catch {
+        // ignore quota / disabled storage
+      }
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.cancelAnimationFrame(raf);
+      onScroll(); // capture final position for this entry before it changes
+      window.removeEventListener("scroll", onScroll);
+    };
+  }, [location.key]);
 
   // Skip the sidebar shell when rendered inside a TabWorkspace iframe.
   if (embedded) {

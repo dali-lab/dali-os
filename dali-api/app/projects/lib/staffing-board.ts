@@ -19,6 +19,13 @@ export type DomainLevel = {
   level: Level;
 };
 
+// One labeled answer from the member's Project Bids form submission — the full
+// bid content shown in the BidModal (question label + resolved string value).
+export type BidField = {
+  label: string;
+  value: string;
+};
+
 export type MemberInput = {
   userId: string;
   firstName: string;
@@ -28,6 +35,9 @@ export type MemberInput = {
   isAdmin: boolean;
   coreTitles: string[];
   preferences: Preference[];
+  // The member's full Project Bids form answers (label/value), shown in the
+  // BidModal alongside the resolved rankings. Empty when there's no submission.
+  bidFields: BidField[];
   domainLevels: DomainLevel[];
   // True when the member submitted a project-bids form for this cycle but it
   // produced no usable preference (e.g. the bid projects have no open role in

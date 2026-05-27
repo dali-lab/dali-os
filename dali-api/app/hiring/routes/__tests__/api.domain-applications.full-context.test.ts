@@ -18,6 +18,7 @@ const mockPrisma = prisma as unknown as {
     findUnique: ReturnType<typeof vi.fn>;
     findMany: ReturnType<typeof vi.fn>;
   };
+  collabDocumentVersion: { findMany: ReturnType<typeof vi.fn> };
 };
 
 const USER_ID = "user-1";
@@ -29,6 +30,7 @@ beforeEach(() => {
   (mockPrisma as any).domainApplication = { findUnique: vi.fn() };
   (mockPrisma as any).domainApplicationCycle = { findUnique: vi.fn() };
   (mockPrisma as any).rubricVersion = { findUnique: vi.fn(), findMany: vi.fn() };
+  (mockPrisma as any).collabDocumentVersion = { findMany: vi.fn() };
   vi.mocked(requireAuth).mockResolvedValue({
     ok: true,
     user: { sub: USER_ID },
@@ -81,7 +83,26 @@ function setupHappyPathDomainApp() {
         madeBy: { firstName: "Lead", lastName: "User" },
       },
     ],
+    interviews: [
+      {
+        id: "iv-1",
+        status: "Completed",
+        startTime: new Date("2026-04-20T15:00:00Z"),
+        recommendation: "Hire",
+        assignments: [
+          {
+            id: "asg-1",
+            cycleInterviewer: { user: { firstName: "Int", lastName: "Erviewer" } },
+          },
+        ],
+      },
+    ],
   });
+  // Latest collab snapshots for the interview's notes docs.
+  mockPrisma.collabDocumentVersion.findMany.mockResolvedValue([
+    { name: "interview:iv-1:notes", plainText: "Discussed the rollback plan." },
+    { name: "interview:iv-1:rec-notes-asg-1", plainText: "Would hire again." },
+  ]);
   // Current domain rubric version for the cycle.
   mockPrisma.domainApplicationCycle.findUnique.mockResolvedValue({
     rubricVersionId: "drv-1",
@@ -134,6 +155,11 @@ describe("GET /api/hiring/domain-applications/:id/full-context", () => {
     expect(json.reviews[0].rejectionRationale).toBe("");
     expect(json.decisions).toHaveLength(1);
     expect(json.decisions[0].notes).toBe("moved from Initial delibs");
+    // The bundle carries the latest interview with resolved collab notes.
+    expect(json.interviews).toHaveLength(1);
+    expect(json.interviews[0].recommendation).toBe("Hire");
+    expect(json.interviews[0].jointNotes).toBe("Discussed the rollback plan.");
+    expect(json.interviews[0].assignments[0].recNotes).toBe("Would hire again.");
     // Criteria are now returned as a resolved key -> meta map (resilient to
     // rubric edits) rather than separate general/domain arrays.
     expect(json.criteriaByKey.g1c).toEqual({ label: "General", maxScore: 5, description: undefined });
