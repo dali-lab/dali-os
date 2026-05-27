@@ -613,9 +613,30 @@ function coerceFormToAction(raw: Record<string, FormDataEntryValue>): unknown {
 
 type Tab = "availability" | "schedule";
 
+const CALENDAR_TAB_STORAGE_KEY = "dali:calendar:tab";
+const AVAILABILITY_SIDEBAR_COLLAPSED_KEY = "dali:calendar:availability:sidebar-collapsed";
+
 export default function CalendarPage() {
   const data = useLoaderData<typeof loader>() as LoaderData;
-  const [tab, setTab] = useState<Tab>("availability");
+  // Persist the active tab in sessionStorage so navigating away and back
+  // (or the workspace iframe re-mounting on tab focus) restores where the
+  // user left off rather than always snapping back to Availability.
+  const [tab, setTab] = useState<Tab>(() => {
+    if (typeof window === "undefined") return "availability";
+    try {
+      const stored = window.sessionStorage.getItem(CALENDAR_TAB_STORAGE_KEY);
+      return stored === "schedule" ? "schedule" : "availability";
+    } catch {
+      return "availability";
+    }
+  });
+  useEffect(() => {
+    try {
+      window.sessionStorage.setItem(CALENDAR_TAB_STORAGE_KEY, tab);
+    } catch {
+      // sessionStorage disabled / quota — ignore
+    }
+  }, [tab]);
 
   return (
     <div className="flex flex-col gap-5">
@@ -667,7 +688,27 @@ function AvailabilityView({ data }: { data: LoaderData }) {
   // clipped by the inner overflow-hidden on short viewports.
   // Drag-to-create now lives inside AvailabilityWeekGrid: the selection stays
   // drawn on the grid and the editor opens as a popover anchored beside it.
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  //
+  // Collapse state is a deliberate user preference ("I want more grid room"),
+  // so it lives in localStorage and sticks across sessions.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return window.localStorage.getItem(AVAILABILITY_SIDEBAR_COLLAPSED_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        AVAILABILITY_SIDEBAR_COLLAPSED_KEY,
+        sidebarCollapsed ? "1" : "0",
+      );
+    } catch {
+      // localStorage disabled / quota — ignore
+    }
+  }, [sidebarCollapsed]);
   return (
     <div
       className={`grid grid-cols-1 gap-6 lg:h-[max(calc(100vh-9rem),56rem)] lg:min-h-0 px-3 pt-2 ${

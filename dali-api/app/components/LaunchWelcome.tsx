@@ -1,13 +1,16 @@
-import { useCallback, useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import {
-  Sparkles,
   PartyPopper,
   FolderKanban,
   CalendarDays,
+  CalendarPlus,
   UserCircle2,
+  Users,
   ArrowRight,
   X as XIcon,
   Check,
+  Bot,
+  MonitorDown,
 } from "lucide-react";
 import { Modal } from "./Modal";
 
@@ -18,15 +21,63 @@ type Phase = "modal" | "card" | "done";
 
 type TourStep = {
   icon: React.ReactNode;
-  /** Short, action-oriented prompt. */
+  /** Short eyebrow label shown above the title on the card. */
+  eyebrow: string;
+  /** Step body — either a CTA to click a sidebar item or an info blurb. */
   cta: React.ReactNode;
-  /** Confirmation shown once the user lands on the matched page. */
-  arrived: React.ReactNode;
-  /** True if the iframe-reported URL means this step is satisfied. */
-  matches: (pathname: string) => boolean;
-  /** Locates the sidebar element to highlight, or null if not currently in DOM. */
-  findTarget: () => HTMLElement | null;
+  /** Confirmation shown after the user lands on the matched page. Required
+   *  for click-driven steps; omitted for info-only steps. */
+  arrived?: React.ReactNode;
+  /** True if the iframe-reported URL means this step is satisfied. Omitted
+   *  for info-only steps. */
+  matches?: (pathname: string) => boolean;
+  /** Locates the sidebar element to highlight. Omitted for info-only steps. */
+  findTarget?: () => HTMLElement | null;
+  /** Optional primary action for info-only steps. Click runs onClick AND
+   *  advances the tour. */
+  action?: { label: string; onClick: () => void };
 };
+
+/** Walks up through any iframe ancestors so the rect is in the parent
+ *  document's viewport coordinates (used by Spotlight on in-iframe targets). */
+function getRectInParent(el: HTMLElement): DOMRect {
+  let rect = el.getBoundingClientRect();
+  let doc: Document | null = el.ownerDocument;
+  while (doc && doc !== document) {
+    const frame = doc.defaultView?.frameElement as HTMLIFrameElement | null;
+    if (!frame) break;
+    const frameRect = frame.getBoundingClientRect();
+    rect = new DOMRect(
+      rect.left + frameRect.left,
+      rect.top + frameRect.top,
+      rect.width,
+      rect.height,
+    );
+    doc = frame.ownerDocument;
+  }
+  return rect;
+}
+
+/** Search any same-origin iframe for a button matching the predicate. Used
+ *  to target in-iframe tab pills (e.g. "Schedule Meeting" on the calendar). */
+function findInIframes(
+  predicate: (el: HTMLButtonElement) => boolean,
+): HTMLElement | null {
+  const iframes = document.querySelectorAll<HTMLIFrameElement>("iframe");
+  for (const iframe of iframes) {
+    try {
+      const doc = iframe.contentDocument;
+      if (!doc) continue;
+      const buttons = doc.querySelectorAll<HTMLButtonElement>("button");
+      for (const btn of buttons) {
+        if (predicate(btn)) return btn;
+      }
+    } catch {
+      // cross-origin iframe or detached — skip
+    }
+  }
+  return null;
+}
 
 function findInSidebar(predicate: (el: HTMLButtonElement) => boolean): HTMLElement | null {
   // Look in both desktop sidebar (<aside>) and the mobile nav panel. We can't
@@ -55,43 +106,112 @@ function findByExactText(text: string) {
 const STEPS: TourStep[] = [
   {
     icon: <FolderKanban className="w-4 h-4" />,
+    eyebrow: "Projects",
     cta: (
       <>
-        Click <strong>Projects</strong> in the sidebar to see every active
-        project.
+        Open <strong>Projects</strong> from the sidebar.
       </>
     ),
-    arrived: <>Nice — every active project lives here.</>,
+    arrived: <>All active projects live here.</>,
     matches: (p) => p.startsWith("/projects"),
     findTarget: () => findByExactText("Projects"),
   },
   {
     icon: <CalendarDays className="w-4 h-4" />,
+    eyebrow: "Calendar",
     cta: (
       <>
-        Now click <strong>Calendar</strong> to see lab meetings and events.
+        Open <strong>Calendar</strong> from the sidebar.
       </>
     ),
-    arrived: <>Lab meetings, standups, and your own events — all in lab time.</>,
+    arrived: <>Lab meetings and events.</>,
     matches: (p) => p.startsWith("/calendar"),
     findTarget: () => findByExactText("Calendar"),
   },
   {
-    icon: <UserCircle2 className="w-4 h-4" />,
+    icon: <CalendarPlus className="w-4 h-4" />,
+    eyebrow: "Schedule Meeting",
     cta: (
       <>
-        Last one — click your <strong>profile</strong> (bottom of the sidebar)
-        to make it yours.
+        At the top of the Calendar, switch to{" "}
+        <strong>Schedule Meeting</strong>.
       </>
     ),
     arrived: (
       <>
-        Add a photo and a few words — this is how the lab gets to know you.
+        See everyone&apos;s availability and create a meeting. No more
+        when2meets.
       </>
     ),
+    // No URL change happens when the pill is clicked (tab state lives in
+    // React state on the calendar page), so this step advances via a DOM
+    // click listener attached to the spotlit element instead of via
+    // dali:tabNavigated. See the find-target effect below.
+    findTarget: () =>
+      findInIframes(
+        (btn) => (btn.textContent || "").trim() === "Schedule Meeting",
+      ),
+  },
+  {
+    icon: <UserCircle2 className="w-4 h-4" />,
+    eyebrow: "Profile",
+    cta: (
+      <>
+        Open your <strong>profile</strong> from the bottom of the sidebar.
+      </>
+    ),
+    arrived: <>Add a photo and your details here.</>,
     matches: (p) => p.startsWith("/profile"),
     findTarget: () =>
       findInSidebar((btn) => btn.getAttribute("aria-label") === "Open profile"),
+  },
+  {
+    icon: <Users className="w-4 h-4" />,
+    eyebrow: "Members",
+    cta: (
+      <>
+        Open <strong>Members</strong> from the sidebar.
+      </>
+    ),
+    arrived: <>Everyone in the lab.</>,
+    matches: (p) => p.startsWith("/members"),
+    findTarget: () => findByExactText("Members"),
+  },
+  {
+    icon: <MonitorDown className="w-4 h-4" />,
+    eyebrow: "Install the app",
+    cta: (
+      <>
+        Pin <strong>DALI OS</strong> to your taskbar. In Chrome, click the
+        install icon at the right of the address bar (or <strong>⋮ →
+        Install DALI OS</strong>).
+      </>
+    ),
+  },
+  {
+    icon: <Bot className="w-4 h-4" />,
+    eyebrow: "Connect any AI",
+    cta: (
+      <>
+        Connect any AI assistant to the <strong>DALI OS MCP</strong> and let
+        it read your DALI data for you.
+      </>
+    ),
+    action: {
+      label: "Open docs",
+      onClick: () => {
+        // Layout listens for dali:openTab on the parent window and opens it
+        // in the workspace iframe rather than navigating the top frame.
+        window.postMessage(
+          {
+            type: "dali:openTab",
+            url: "/help/mcp",
+            label: "Connect AI to DALI OS",
+          },
+          window.location.origin,
+        );
+      },
+    },
   },
 ];
 
@@ -116,19 +236,27 @@ function readStep(): number {
   }
 }
 
-function Spotlight({ target }: { target: HTMLElement }) {
-  const [rect, setRect] = useState<DOMRect | null>(() => target.getBoundingClientRect());
-
+/**
+ * Tracks a target element's bounding rect, polling on resize/scroll plus a
+ * cheap interval so transitions (sidebar collapse, mobile drawer, iframe
+ * scroll) stay glued. Uses getRectInParent so in-iframe targets resolve to
+ * the parent document's viewport coordinates.
+ */
+function useTargetRect(target: HTMLElement | null): DOMRect | null {
+  const [rect, setRect] = useState<DOMRect | null>(() =>
+    target ? getRectInParent(target) : null,
+  );
   useEffect(() => {
+    if (!target) {
+      setRect(null);
+      return;
+    }
     let alive = true;
     function measure() {
-      if (!alive) return;
-      setRect(target.getBoundingClientRect());
+      if (!alive || !target) return;
+      setRect(getRectInParent(target));
     }
     measure();
-    // Sidebar can collapse, page can scroll, mobile drawer can open — poll
-    // cheaply so the spotlight stays glued to the element. Throwaway tour
-    // code, a 150ms tick is plenty smooth.
     const id = window.setInterval(measure, 150);
     window.addEventListener("resize", measure);
     window.addEventListener("scroll", measure, true);
@@ -139,37 +267,51 @@ function Spotlight({ target }: { target: HTMLElement }) {
       window.removeEventListener("scroll", measure, true);
     };
   }, [target]);
+  return rect;
+}
 
+/** Pulsing coral ring positioned around an element. No dim. */
+function PulseRing({ target, zIndex }: { target: HTMLElement; zIndex: number }) {
+  const rect = useTargetRect(target);
   if (!rect) return null;
-
   const PAD = 6;
-  const top = rect.top - PAD;
-  const left = rect.left - PAD;
-  const width = rect.width + PAD * 2;
-  const height = rect.height + PAD * 2;
+  return (
+    <div
+      aria-hidden="true"
+      className="pointer-events-none fixed rounded-md launch-tour-pulse"
+      style={{
+        top: rect.top - PAD,
+        left: rect.left - PAD,
+        width: rect.width + PAD * 2,
+        height: rect.height + PAD * 2,
+        zIndex,
+      }}
+    />
+  );
+}
 
+/** Full spotlight: dims the page everywhere except a cut-out over `target`,
+ *  with a pulsing ring on top. */
+function Spotlight({ target }: { target: HTMLElement }) {
+  const rect = useTargetRect(target);
+  if (!rect) return null;
+  const PAD = 6;
+  const box = {
+    top: rect.top - PAD,
+    left: rect.left - PAD,
+    width: rect.width + PAD * 2,
+    height: rect.height + PAD * 2,
+  };
   return (
     <>
-      {/* Cut-out: a transparent rectangle sitting where the target is, with
-          a massive box-shadow extending outward to dim the rest of the page.
-          pointer-events: none so the user can still click the real element. */}
+      {/* Cut-out: transparent rect with huge outward box-shadow dims the rest
+          of the page. pointer-events: none so clicks pass through. */}
       <div
         aria-hidden="true"
         className="pointer-events-none fixed z-40 rounded-md"
-        style={{
-          top,
-          left,
-          width,
-          height,
-          boxShadow: "0 0 0 9999px rgba(0, 0, 0, 0.55)",
-        }}
+        style={{ ...box, boxShadow: "0 0 0 9999px rgba(0, 0, 0, 0.55)" }}
       />
-      {/* Pulsing coral ring on top of the cut-out for emphasis. */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none fixed z-40 rounded-md launch-tour-pulse"
-        style={{ top, left, width, height }}
-      />
+      <PulseRing target={target} zIndex={41} />
     </>
   );
 }
@@ -178,7 +320,9 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
   const [phase, setPhase] = useState<Phase>("done");
   const [step, setStep] = useState(0);
   const [arrived, setArrived] = useState(false);
-  const [target, setTarget] = useState<HTMLElement | null>(null);
+  const [sidebarTarget, setSidebarTarget] = useState<HTMLElement | null>(null);
+  const nextButtonRef = useRef<HTMLButtonElement | null>(null);
+  const [nextTarget, setNextTarget] = useState<HTMLElement | null>(null);
   const titleId = useId();
 
   useEffect(() => {
@@ -186,37 +330,78 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
     setStep(readStep());
   }, []);
 
-  // Re-resolve the highlight target whenever the active step changes or the
-  // sidebar DOM might have shifted (mobile drawer open/close). Cheap interval
-  // because the sidebar isn't always present at mount time.
+  // Re-resolve the highlight target whenever the active step changes.
+  // Cheap interval because the target may not be present at mount time
+  // (sidebar not laid out yet, calendar iframe still loading, etc.).
+  // Info-only steps (no findTarget) never show a spotlight.
+  //
+  // For steps that have no URL `matches` (e.g. the in-page Schedule Meeting
+  // pill), there's no dali:tabNavigated to advance on, so we attach a DOM
+  // click listener to the resolved target instead. Clicking the spotlit
+  // element flips the step to "arrived" the same way a URL change would.
   useEffect(() => {
     if (phase !== "card") return;
     if (step >= STEPS.length) return;
-    if (arrived) {
-      setTarget(null);
+    const s = STEPS[step];
+    const find = s.findTarget;
+    if (!find || arrived) {
+      setSidebarTarget(null);
       return;
     }
-    const find = STEPS[step].findTarget;
+    const advanceOnClick = !s.matches;
+    let attached: HTMLElement | null = null;
+    function onClick() {
+      setArrived(true);
+    }
     function resolve() {
-      const el = find();
-      setTarget(el);
+      const found = find!();
+      setSidebarTarget(found);
+      if (advanceOnClick && found !== attached) {
+        if (attached) attached.removeEventListener("click", onClick);
+        if (found) found.addEventListener("click", onClick);
+        attached = found;
+      }
     }
     resolve();
     const id = window.setInterval(resolve, 300);
-    return () => window.clearInterval(id);
+    return () => {
+      window.clearInterval(id);
+      if (attached) attached.removeEventListener("click", onClick);
+    };
+  }, [phase, step, arrived]);
+
+  // Pulse the card's primary action button. For click-driven steps this is
+  // the Next button after the user arrives at the matched page. For info-only
+  // steps (e.g. MCP) the primary action is shown immediately, so pulse it
+  // from the start. Refs alone don't trigger re-renders, so we copy the
+  // current DOM node into state once it's in the tree.
+  useEffect(() => {
+    if (phase !== "card") {
+      setNextTarget(null);
+      return;
+    }
+    if (step >= STEPS.length) {
+      setNextTarget(null);
+      return;
+    }
+    const s = STEPS[step];
+    const shouldPulse = s.findTarget ? arrived : true;
+    setNextTarget(shouldPulse ? nextButtonRef.current : null);
   }, [phase, step, arrived]);
 
   // Listen for iframe-reported tab navigation — that's how the workspace
-  // signals "the user is now looking at X". Falls back to top-level pathname
-  // for routes that aren't tab-wrapped.
+  // signals "the user is now looking at X". Sidebar clicks open iframe tabs,
+  // so useLocation on the parent shell never fires.
   const handleUrl = useCallback(
     (url: string) => {
       if (phase !== "card") return;
       if (arrived) return;
       if (step >= STEPS.length) return;
+      const match = STEPS[step].matches;
+      if (!match) return; // info-only step — URL changes don't advance it
       try {
         const path = new URL(url, window.location.origin).pathname;
-        if (STEPS[step].matches(path)) setArrived(true);
+        if (match(path)) setArrived(true);
       } catch {
         // Bad URL — ignore.
       }
@@ -246,6 +431,14 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
     setPhase("card");
   }
 
+  function finishAndGoHome() {
+    window.postMessage(
+      { type: "dali:openTab", url: "/", label: "Home" },
+      window.location.origin,
+    );
+    finishTour();
+  }
+
   function finishTour() {
     try {
       window.localStorage.setItem(DONE_KEY, new Date().toISOString());
@@ -273,11 +466,7 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
     return (
       <Modal open onClose={finishTour} labelledBy={titleId}>
         <div className="flex flex-col gap-4">
-          <div className="flex items-center justify-between">
-            <span className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-accent-coral">
-              <Sparkles className="w-4 h-4" />
-              Welcome
-            </span>
+          <div className="flex items-center justify-end">
             <button
               type="button"
               onClick={finishTour}
@@ -291,21 +480,15 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
               id={titleId}
               className="font-heading text-xl font-bold text-foreground"
             >
-              Hey {firstName} — welcome to DALIos
+              Welcome to DALI OS
             </h2>
             <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
-              This is the new home for everything DALI. Want a quick tour? We'll
-              point you at a few spots in the sidebar — click as you go.
+              Hi {firstName}. DALI OS is the home of everything DALI,
+              replacing Notion as the lab&apos;s internal site. Want a quick
+              tour?
             </p>
           </div>
           <div className="flex items-center justify-end gap-2 pt-2">
-            <button
-              type="button"
-              onClick={finishTour}
-              className="text-sm text-muted-foreground hover:text-foreground px-3 py-2"
-            >
-              Maybe later
-            </button>
             <button
               type="button"
               onClick={startTour}
@@ -325,8 +508,6 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
 
   return (
     <>
-      {/* CSS keyframes for the spotlight pulse. Scoped to this component via
-          the .launch-tour-pulse class so removal = delete file. */}
       <style>{`
         @keyframes launch-tour-pulse {
           0%, 100% {
@@ -347,7 +528,13 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
         }
       `}</style>
 
-      {target && !arrived && !isFinal && <Spotlight target={target} />}
+      {/* Sidebar spotlight before they click. */}
+      {sidebarTarget && !arrived && !isFinal && <Spotlight target={sidebarTarget} />}
+
+      {/* Next-button ring after they arrive (no dim — card is already prominent). */}
+      {nextTarget && arrived && !isFinal && (
+        <PulseRing target={nextTarget} zIndex={60} />
+      )}
 
       <div className="fixed bottom-4 right-4 z-50 w-80 max-w-[calc(100vw-2rem)] pointer-events-auto">
         <div className="bg-card border border-border rounded-2xl shadow-brand-2 p-4 flex flex-col gap-3">
@@ -364,7 +551,7 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
                 ? "Launch party"
                 : arrived
                   ? "You're here"
-                  : `Step ${step + 1} of ${STEPS.length}`}
+                  : current!.eyebrow}
             </span>
             <button
               type="button"
@@ -376,18 +563,15 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
             </button>
           </div>
 
-          <p className="text-sm text-foreground leading-relaxed">
+          <div className="text-sm text-foreground leading-relaxed">
             {isFinal ? (
-              <>
-                That's the tour! 🎉 The site launch party is right around the
-                corner — keep an eye on the calendar for the invite.
-              </>
+              <>Welcome to DALI OS!</>
             ) : arrived ? (
               current!.arrived
             ) : (
               current!.cta
             )}
-          </p>
+          </div>
 
           <div className="flex items-center gap-1.5" aria-hidden="true">
             {STEPS.map((_, i) => (
@@ -407,13 +591,14 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
             {isFinal ? (
               <button
                 type="button"
-                onClick={finishTour}
+                onClick={finishAndGoHome}
                 className="inline-flex items-center gap-1.5 rounded-lg bg-accent-coral px-3 py-1.5 text-sm font-semibold text-white hover:bg-accent-coral/90"
               >
-                Let's go
+                Back to home
               </button>
             ) : arrived ? (
               <button
+                ref={nextButtonRef}
                 type="button"
                 onClick={advance}
                 className="inline-flex items-center gap-1.5 rounded-lg bg-accent-coral px-3 py-1.5 text-sm font-semibold text-white hover:bg-accent-coral/90"
@@ -421,6 +606,28 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
                 Next
                 <ArrowRight className="w-4 h-4" />
               </button>
+            ) : current && !current.findTarget ? (
+              <>
+                <button
+                  type="button"
+                  onClick={advance}
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                >
+                  Skip
+                </button>
+                <button
+                  ref={nextButtonRef}
+                  type="button"
+                  onClick={() => {
+                    current.action?.onClick();
+                    advance();
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-accent-coral px-3 py-1.5 text-sm font-semibold text-white hover:bg-accent-coral/90"
+                >
+                  {current.action?.label ?? "Next"}
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              </>
             ) : (
               <>
                 <button
@@ -436,7 +643,7 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
                   className="text-xs text-muted-foreground hover:text-foreground"
                   title="Skip this step"
                 >
-                  I'm there →
+                  I&apos;m there
                 </button>
               </>
             )}

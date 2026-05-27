@@ -9,7 +9,9 @@ test('admin can log in and reach reviewer page', async ({ page, loginAs }) => {
   await loginAs({ daliEmail: 'admin@dali.dartmouth.edu' });
   await page.goto('/hiring/reviewer');
   await expect(page).toHaveURL(/\/hiring\/reviewer/);
-  await expect(page.locator('body')).toContainText('admin@dali.dartmouth.edu');
+  // Sidebar footer shows the user's first name; assert it inside <aside>
+  // to avoid matching the "Admin" copy that appears elsewhere on the page.
+  await expect(page.locator('aside').first()).toContainText('Admin');
 });
 
 test('domain lead can access domain-lead page', async ({ page, loginAs }) => {
