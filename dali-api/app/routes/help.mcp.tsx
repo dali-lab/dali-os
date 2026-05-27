@@ -1,4 +1,4 @@
-// Member-facing docs for connecting Claude to DALI OS via MCP.
+// Member-facing docs for connecting an AI assistant to DALI OS via MCP.
 
 import type { Route } from "./+types/help.mcp";
 
@@ -11,11 +11,10 @@ export default function McpHelpPage({ loaderData }: Route.ComponentProps) {
   const { mcpUrl } = loaderData;
   return (
     <main className="mx-auto max-w-3xl p-8">
-      <h1 className="text-2xl font-semibold">Connect Claude to DALI OS</h1>
+      <h1 className="text-2xl font-semibold">Connect AI to DALI OS</h1>
       <p className="mt-2 text-sm text-zinc-600">
-        DALI OS exposes an MCP server so AI assistants like Claude can read your
-        DALI data on your behalf. v1 ships a single tool —{" "}
-        <code className="font-mono">whoami</code> — to validate the auth flow.
+        DALI OS exposes an MCP server so AI assistants can read your DALI data
+        on your behalf.
       </p>
 
       <section className="mt-6">
