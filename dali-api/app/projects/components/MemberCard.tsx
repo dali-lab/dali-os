@@ -1,6 +1,12 @@
 import { useDraggable } from "@dnd-kit/core";
 import { initialsFromName } from "~/lib/display";
-import type { MemberCardModel } from "../lib/staffing-board";
+import type { MemberCardModel, Level } from "../lib/staffing-board";
+
+const LEVEL_BADGE: Record<Level, { label: string; cls: string }> = {
+  P1: { label: "P1", cls: "bg-muted text-muted-foreground" },
+  P2: { label: "P2", cls: "bg-accent-teal/15 text-accent-teal" },
+  P3: { label: "P3", cls: "bg-accent-coral/15 text-accent-coral" },
+};
 
 type Props = {
   card: MemberCardModel;
@@ -87,9 +93,13 @@ function DomainLevelStrip({ card }: { card: MemberCardModel }) {
       {card.domainLevels.map((d) => (
         <span
           key={d.domainName}
-          className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded bg-muted text-foreground"
+          className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded bg-muted text-foreground"
+          title={`${d.domainName} · ${LEVEL_BADGE[d.level].label}`}
         >
           {d.domainName}
+          <span className={`px-1 rounded font-bold ${LEVEL_BADGE[d.level].cls}`}>
+            {LEVEL_BADGE[d.level].label}
+          </span>
         </span>
       ))}
     </div>
