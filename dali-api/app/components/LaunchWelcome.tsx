@@ -60,7 +60,7 @@ const STEPS: TourStep[] = [
         Open <strong>Projects</strong> from the sidebar.
       </>
     ),
-    arrived: <>Everything the lab is working on.</>,
+    arrived: <>All active projects live here.</>,
     matches: (p) => p.startsWith("/projects"),
     findTarget: () => findByExactText("Projects"),
   },
@@ -68,10 +68,10 @@ const STEPS: TourStep[] = [
     icon: <CalendarDays className="w-4 h-4" />,
     cta: (
       <>
-        Now try <strong>Calendar</strong>.
+        Open <strong>Calendar</strong> from the sidebar.
       </>
     ),
-    arrived: <>Lab meetings, deadlines, social stuff.</>,
+    arrived: <>Lab meetings and events.</>,
     matches: (p) => p.startsWith("/calendar"),
     findTarget: () => findByExactText("Calendar"),
   },
@@ -79,11 +79,10 @@ const STEPS: TourStep[] = [
     icon: <UserCircle2 className="w-4 h-4" />,
     cta: (
       <>
-        Last one. Click your <strong>profile</strong> at the bottom of the
-        sidebar.
+        Open your <strong>profile</strong> from the bottom of the sidebar.
       </>
     ),
-    arrived: <>Drop a photo in. It&apos;s how the rest of the lab sees you.</>,
+    arrived: <>Add a photo and your details here.</>,
     matches: (p) => p.startsWith("/profile"),
     findTarget: () =>
       findInSidebar((btn) => btn.getAttribute("aria-label") === "Open profile"),
@@ -312,10 +311,11 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
               id={titleId}
               className="font-heading text-xl font-bold text-foreground"
             >
-              DALI OS is live
+              Welcome to DALI OS
             </h2>
             <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
-              Hi {firstName}. The new site is up. Want a quick spin around it?
+              Hi {firstName}. DALI OS is the lab&apos;s new internal site,
+              replacing Notion. Want a quick tour?
             </p>
           </div>
           <div className="flex items-center justify-end gap-2 pt-2">
@@ -403,8 +403,8 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
           <p className="text-sm text-foreground leading-relaxed">
             {isFinal ? (
               <>
-                That&apos;s the tour. There&apos;s a launch party on the
-                calendar. Come celebrate.
+                That&apos;s the tour. Thanks for coming. Enjoy the launch
+                party.
               </>
             ) : arrived ? (
               current!.arrived
@@ -434,7 +434,7 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
                 onClick={finishTour}
                 className="inline-flex items-center gap-1.5 rounded-lg bg-accent-coral px-3 py-1.5 text-sm font-semibold text-white hover:bg-accent-coral/90"
               >
-                Sounds good
+                Done
               </button>
             ) : arrived ? (
               <button
