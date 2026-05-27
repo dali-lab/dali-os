@@ -8,6 +8,7 @@ import {
   ArrowRight,
   X as XIcon,
   Check,
+  Bot,
 } from "lucide-react";
 import { Modal } from "./Modal";
 
@@ -18,14 +19,21 @@ type Phase = "modal" | "card" | "done";
 
 type TourStep = {
   icon: React.ReactNode;
-  /** Short prompt asking the user to click the highlighted thing. */
+  /** Short eyebrow label shown above the title on the card. */
+  eyebrow: string;
+  /** Step body — either a CTA to click a sidebar item or an info blurb. */
   cta: React.ReactNode;
-  /** Shown after the user lands on the matching page. */
-  arrived: React.ReactNode;
-  /** True if the iframe-reported URL means this step is satisfied. */
-  matches: (pathname: string) => boolean;
-  /** Locates the sidebar element to highlight, or null if not in DOM. */
-  findTarget: () => HTMLElement | null;
+  /** Confirmation shown after the user lands on the matched page. Required
+   *  for click-driven steps; omitted for info-only steps. */
+  arrived?: React.ReactNode;
+  /** True if the iframe-reported URL means this step is satisfied. Omitted
+   *  for info-only steps. */
+  matches?: (pathname: string) => boolean;
+  /** Locates the sidebar element to highlight. Omitted for info-only steps. */
+  findTarget?: () => HTMLElement | null;
+  /** Optional primary action for info-only steps. Click runs onClick AND
+   *  advances the tour. */
+  action?: { label: string; onClick: () => void };
 };
 
 function findInSidebar(predicate: (el: HTMLButtonElement) => boolean): HTMLElement | null {
@@ -55,6 +63,7 @@ function findByExactText(text: string) {
 const STEPS: TourStep[] = [
   {
     icon: <FolderKanban className="w-4 h-4" />,
+    eyebrow: "Projects",
     cta: (
       <>
         Open <strong>Projects</strong> from the sidebar.
@@ -66,6 +75,7 @@ const STEPS: TourStep[] = [
   },
   {
     icon: <CalendarDays className="w-4 h-4" />,
+    eyebrow: "Calendar",
     cta: (
       <>
         Open <strong>Calendar</strong> from the sidebar.
@@ -77,6 +87,7 @@ const STEPS: TourStep[] = [
   },
   {
     icon: <UserCircle2 className="w-4 h-4" />,
+    eyebrow: "Profile",
     cta: (
       <>
         Open your <strong>profile</strong> from the bottom of the sidebar.
@@ -86,6 +97,31 @@ const STEPS: TourStep[] = [
     matches: (p) => p.startsWith("/profile"),
     findTarget: () =>
       findInSidebar((btn) => btn.getAttribute("aria-label") === "Open profile"),
+  },
+  {
+    icon: <Bot className="w-4 h-4" />,
+    eyebrow: "Connect any AI",
+    cta: (
+      <>
+        DALI OS speaks <strong>MCP</strong>, so you can connect any AI
+        assistant to read your DALI data on your behalf.
+      </>
+    ),
+    action: {
+      label: "Open docs",
+      onClick: () => {
+        // Layout listens for dali:openTab on the parent window and opens it
+        // in the workspace iframe rather than navigating the top frame.
+        window.postMessage(
+          {
+            type: "dali:openTab",
+            url: "/help/mcp",
+            label: "Connect AI to DALI OS",
+          },
+          window.location.origin,
+        );
+      },
+    },
   },
 ];
 
@@ -204,27 +240,41 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
 
   // Re-resolve the sidebar highlight target whenever the active step changes.
   // Cheap interval because the sidebar may not be present at mount time.
+  // Info-only steps (no findTarget) never show a spotlight.
   useEffect(() => {
     if (phase !== "card") return;
     if (step >= STEPS.length) return;
-    if (arrived) {
+    const find = STEPS[step].findTarget;
+    if (!find || arrived) {
       setSidebarTarget(null);
       return;
     }
-    const find = STEPS[step].findTarget;
     function resolve() {
-      setSidebarTarget(find());
+      setSidebarTarget(find!());
     }
     resolve();
     const id = window.setInterval(resolve, 300);
     return () => window.clearInterval(id);
   }, [phase, step, arrived]);
 
-  // After arriving, point the next-button ref into local state so PulseRing
-  // re-renders against a stable element. (Refs alone don't trigger re-renders.)
+  // Pulse the card's primary action button. For click-driven steps this is
+  // the Next button after the user arrives at the matched page. For info-only
+  // steps (e.g. MCP) the primary action is shown immediately, so pulse it
+  // from the start. Refs alone don't trigger re-renders, so we copy the
+  // current DOM node into state once it's in the tree.
   useEffect(() => {
-    setNextTarget(arrived ? nextButtonRef.current : null);
-  }, [arrived, step]);
+    if (phase !== "card") {
+      setNextTarget(null);
+      return;
+    }
+    if (step >= STEPS.length) {
+      setNextTarget(null);
+      return;
+    }
+    const s = STEPS[step];
+    const shouldPulse = s.findTarget ? arrived : true;
+    setNextTarget(shouldPulse ? nextButtonRef.current : null);
+  }, [phase, step, arrived]);
 
   // Listen for iframe-reported tab navigation — that's how the workspace
   // signals "the user is now looking at X". Sidebar clicks open iframe tabs,
@@ -234,9 +284,11 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
       if (phase !== "card") return;
       if (arrived) return;
       if (step >= STEPS.length) return;
+      const match = STEPS[step].matches;
+      if (!match) return; // info-only step — URL changes don't advance it
       try {
         const path = new URL(url, window.location.origin).pathname;
-        if (STEPS[step].matches(path)) setArrived(true);
+        if (match(path)) setArrived(true);
       } catch {
         // Bad URL — ignore.
       }
@@ -389,7 +441,7 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
                 ? "Launch party"
                 : arrived
                   ? "You're here"
-                  : `Step ${step + 1} of ${STEPS.length}`}
+                  : current!.eyebrow}
             </span>
             <button
               type="button"
@@ -447,6 +499,28 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
                 Next
                 <ArrowRight className="w-4 h-4" />
               </button>
+            ) : current && !current.findTarget ? (
+              <>
+                <button
+                  type="button"
+                  onClick={advance}
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                >
+                  Skip
+                </button>
+                <button
+                  ref={nextButtonRef}
+                  type="button"
+                  onClick={() => {
+                    current.action?.onClick();
+                    advance();
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-accent-coral px-3 py-1.5 text-sm font-semibold text-white hover:bg-accent-coral/90"
+                >
+                  {current.action?.label ?? "Next"}
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              </>
             ) : (
               <>
                 <button
