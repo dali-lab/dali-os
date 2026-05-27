@@ -314,8 +314,9 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
               Welcome to DALI OS
             </h2>
             <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
-              Hi {firstName}. DALI OS is the lab&apos;s new internal site,
-              replacing Notion. Want a quick tour?
+              Hi {firstName}. DALI OS is the home of everything DALI,
+              replacing Notion as the lab&apos;s internal site. Want a quick
+              tour?
             </p>
           </div>
           <div className="flex items-center justify-end gap-2 pt-2">
