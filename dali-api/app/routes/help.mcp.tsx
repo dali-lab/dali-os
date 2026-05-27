@@ -3,7 +3,7 @@
 import type { Route } from "./+types/help.mcp";
 
 export async function loader() {
-  const base = process.env.API_BASE_URL ?? "https://dalios.dartmouth.edu";
+  const base = process.env.API_BASE_URL ?? "https://os.dali.dartmouth.edu";
   return { mcpUrl: `${base}/mcp` };
 }
 
@@ -21,12 +21,19 @@ export default function McpHelpPage({ loaderData }: Route.ComponentProps) {
       <section className="mt-6">
         <h2 className="text-lg font-semibold">Claude Code</h2>
         <pre className="mt-2 overflow-x-auto rounded bg-zinc-900 p-3 text-xs text-zinc-100">
-          claude mcp add --transport http dali-os {mcpUrl}
+          claude mcp add --transport http dalios {mcpUrl}
         </pre>
         <p className="mt-2 text-sm text-zinc-600">
           Claude Code will open a browser to authorize you and then keep the
           bearer in its credential store.
         </p>
+      </section>
+
+      <section className="mt-6">
+        <h2 className="text-lg font-semibold">Codex</h2>
+        <pre className="mt-2 overflow-x-auto rounded bg-zinc-900 p-3 text-xs text-zinc-100">
+          codex mcp add dalios {mcpUrl}
+        </pre>
       </section>
 
       <section className="mt-6">
@@ -38,7 +45,7 @@ export default function McpHelpPage({ loaderData }: Route.ComponentProps) {
         <pre className="mt-2 overflow-x-auto rounded bg-zinc-900 p-3 text-xs text-zinc-100">
 {`{
   "mcpServers": {
-    "dali-os": {
+    "dalios": {
       "transport": { "type": "http", "url": "${mcpUrl}" }
     }
   }

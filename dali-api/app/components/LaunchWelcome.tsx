@@ -18,6 +18,8 @@ const STEP_KEY = "dalios-launch-tour-step-v1";
 
 const CLAUDE_MCP_COMMAND =
   "claude mcp add --transport http dalios https://os.dali.dartmouth.edu/mcp";
+const CODEX_MCP_COMMAND =
+  "codex mcp add dalios https://os.dali.dartmouth.edu/mcp";
 
 function CopyableCommand({ command }: { command: string }) {
   const [copied, setCopied] = useState(false);
@@ -137,10 +139,21 @@ const STEPS: TourStep[] = [
       <>
         <p>
           Connect any AI assistant to the <strong>DALI OS MCP</strong> and let
-          it read your DALI data for you. In Claude Code:
+          it read your DALI data for you.
         </p>
-        <div className="mt-2">
-          <CopyableCommand command={CLAUDE_MCP_COMMAND} />
+        <div className="mt-2 space-y-2">
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">
+              Claude Code
+            </div>
+            <CopyableCommand command={CLAUDE_MCP_COMMAND} />
+          </div>
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">
+              Codex
+            </div>
+            <CopyableCommand command={CODEX_MCP_COMMAND} />
+          </div>
         </div>
       </>
     ),
