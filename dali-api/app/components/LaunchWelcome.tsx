@@ -178,6 +178,17 @@ const STEPS: TourStep[] = [
     findTarget: () => findByExactText("Members"),
   },
   {
+    icon: <MonitorDown className="w-4 h-4" />,
+    eyebrow: "Install the app",
+    cta: (
+      <>
+        Pin <strong>DALI OS</strong> to your taskbar. In Chrome, click the
+        install icon at the right of the address bar (or <strong>⋮ →
+        Install DALI OS</strong>).
+      </>
+    ),
+  },
+  {
     icon: <Bot className="w-4 h-4" />,
     eyebrow: "Connect any AI",
     cta: (
@@ -201,17 +212,6 @@ const STEPS: TourStep[] = [
         );
       },
     },
-  },
-  {
-    icon: <MonitorDown className="w-4 h-4" />,
-    eyebrow: "Install the app",
-    cta: (
-      <>
-        Pin <strong>DALI OS</strong> to your taskbar. In Chrome, click the
-        install icon at the right of the address bar (or <strong>⋮ →
-        Install DALI OS</strong>).
-      </>
-    ),
   },
 ];
 
