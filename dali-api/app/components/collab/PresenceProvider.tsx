@@ -38,6 +38,9 @@ export interface Peer {
   idle: boolean;
   isMe: boolean;
   currentEditor?: string;
+  userId?: string;
+  photoUrl?: string | null;
+  subtitle?: string | null;
 }
 
 interface EditorRegistration {
@@ -123,7 +126,10 @@ function peersEqual(a: Peer[], b: Peer[]): boolean {
       x.color !== y.color ||
       x.idle !== y.idle ||
       x.isMe !== y.isMe ||
-      x.currentEditor !== y.currentEditor
+      x.currentEditor !== y.currentEditor ||
+      x.userId !== y.userId ||
+      x.photoUrl !== y.photoUrl ||
+      x.subtitle !== y.subtitle
     ) {
       return false;
     }
@@ -136,6 +142,9 @@ interface PresenceProviderProps {
   token: string | null | undefined;
   userName: string;
   userColor?: string;
+  userId?: string;
+  photoUrl?: string | null;
+  subtitle?: string | null;
   children: ReactNode;
 }
 
@@ -144,6 +153,9 @@ export function PresenceProvider({
   token,
   userName,
   userColor,
+  userId,
+  photoUrl,
+  subtitle,
   children,
 }: PresenceProviderProps) {
   const [entry, setEntry] = useState<DocEntry | null>(null);
@@ -156,9 +168,15 @@ export function PresenceProvider({
   // followPeer stay identity-stable across awareness ticks.
   const userNameRef = useRef(userName);
   const colorRef = useRef(color);
+  const userIdRef = useRef(userId);
+  const photoUrlRef = useRef(photoUrl);
+  const subtitleRef = useRef(subtitle);
   const peersRef = useRef<Peer[]>([]);
   userNameRef.current = userName;
   colorRef.current = color;
+  userIdRef.current = userId;
+  photoUrlRef.current = photoUrl;
+  subtitleRef.current = subtitle;
   peersRef.current = peers;
 
   const editorsRef = useRef(new Map<string, EditorRegistration>());
@@ -194,6 +212,9 @@ export function PresenceProvider({
           idle: !!u.idle,
           isMe: clientId === entry.ydoc.clientID,
           currentEditor: u.currentEditor,
+          userId: u.userId,
+          photoUrl: u.photoUrl ?? null,
+          subtitle: u.subtitle ?? null,
         });
       });
       // Bail when shape-relevant fields are unchanged. Awareness fires on
@@ -223,6 +244,9 @@ export function PresenceProvider({
         ...patch,
         name: userNameRef.current,
         color: colorRef.current,
+        userId: userIdRef.current,
+        photoUrl: photoUrlRef.current ?? null,
+        subtitle: subtitleRef.current ?? null,
       } satisfies AwarenessUser);
     },
     [entry],
