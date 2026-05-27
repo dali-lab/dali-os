@@ -1,5 +1,15 @@
 import { useEffect, useId, useState } from "react";
-import { Sparkles, ArrowRight, ArrowLeft, PartyPopper } from "lucide-react";
+import { useNavigate } from "react-router";
+import {
+  Sparkles,
+  ArrowRight,
+  ArrowLeft,
+  PartyPopper,
+  Home,
+  FolderKanban,
+  CalendarDays,
+  UserCircle2,
+} from "lucide-react";
 import { Modal } from "./Modal";
 
 const STORAGE_KEY = "dalios-launch-welcome-seen-v1";
@@ -9,6 +19,8 @@ type Step = {
   eyebrow: string;
   title: string;
   body: React.ReactNode;
+  /** Path to navigate to when this step becomes active. Omit to stay put. */
+  to?: string;
 };
 
 function buildSteps(firstName: string): Step[] {
@@ -20,34 +32,60 @@ function buildSteps(firstName: string): Step[] {
       body: (
         <>
           This is the new home for everything DALI: projects, staffing,
-          mentorship, the calendar, your profile, and more. Take a quick tour —
-          it&apos;s short, promise.
+          mentorship, the calendar, your profile, and more. We&apos;ll walk you
+          through the main spots — should take under a minute.
         </>
       ),
+      to: "/",
     },
     {
-      icon: <Sparkles className="w-6 h-6 text-accent-coral" />,
-      eyebrow: "Your home",
+      icon: <Home className="w-6 h-6 text-accent-coral" />,
+      eyebrow: "Home",
       title: "Start here every day",
       body: (
         <>
           The home tab surfaces what needs your attention: open tasks, meeting
-          invites, and the lab&apos;s week at a glance. If something is on fire,
-          it shows up here first.
+          invites, and the lab&apos;s week at a glance. If something is on
+          fire, it shows up here first.
         </>
       ),
+      to: "/",
     },
     {
-      icon: <Sparkles className="w-6 h-6 text-accent-coral" />,
-      eyebrow: "Explore",
-      title: "Projects, profiles, and more",
+      icon: <FolderKanban className="w-6 h-6 text-accent-coral" />,
+      eyebrow: "Projects",
+      title: "Find your work",
       body: (
         <>
-          Use the sidebar to jump between projects, the calendar, and your
-          profile. Hover any project to see its team — click in to see sprints,
-          tasks, and updates.
+          Browse every active project, see who&apos;s on each team, and click in
+          to find sprints, tasks, and project updates.
         </>
       ),
+      to: "/projects/list",
+    },
+    {
+      icon: <CalendarDays className="w-6 h-6 text-accent-coral" />,
+      eyebrow: "Calendar",
+      title: "Never miss a meeting",
+      body: (
+        <>
+          Lab meetings, project standups, and your own events — all in one
+          place, in lab time. RSVPs flow back to home so nothing slips.
+        </>
+      ),
+      to: "/calendar",
+    },
+    {
+      icon: <UserCircle2 className="w-6 h-6 text-accent-coral" />,
+      eyebrow: "Your profile",
+      title: "Make it yours",
+      body: (
+        <>
+          Add a photo, set your domains, and tell the lab a little about
+          yourself. Your profile is how the rest of DALI gets to know you.
+        </>
+      ),
+      to: "/profile",
     },
     {
       icon: <PartyPopper className="w-6 h-6 text-accent-coral" />,
@@ -60,6 +98,7 @@ function buildSteps(firstName: string): Step[] {
           invite — we&apos;d love to see you there.
         </>
       ),
+      to: "/",
     },
   ];
 }
@@ -68,6 +107,7 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState(0);
   const titleId = useId();
+  const navigate = useNavigate();
 
   useEffect(() => {
     try {
@@ -91,6 +131,14 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
     }
     setOpen(false);
   }
+
+  function goTo(nextStep: number) {
+    const target = steps[nextStep];
+    setStep(nextStep);
+    if (target.to) navigate(target.to);
+  }
+
+  if (!open) return null;
 
   return (
     <Modal open={open} onClose={close} labelledBy={titleId}>
@@ -141,7 +189,7 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
         <div className="flex items-center justify-between gap-2 pt-2">
           <button
             type="button"
-            onClick={() => setStep((s) => Math.max(0, s - 1))}
+            onClick={() => goTo(Math.max(0, step - 1))}
             disabled={isFirst}
             className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground disabled:opacity-0 disabled:pointer-events-none"
           >
@@ -150,7 +198,7 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
           </button>
           <button
             type="button"
-            onClick={() => (isLast ? close() : setStep((s) => s + 1))}
+            onClick={() => (isLast ? close() : goTo(step + 1))}
             className="inline-flex items-center gap-1.5 rounded-lg bg-accent-coral px-4 py-2 text-sm font-semibold text-white hover:bg-accent-coral/90"
           >
             {isLast ? "Let's go" : "Next"}

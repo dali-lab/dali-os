@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Outlet, redirect, useLoaderData, useLocation, useNavigate, useSearchParams } from 'react-router'
 import { Layout } from '~/components/Layout'
+import { LaunchWelcome } from '~/components/LaunchWelcome'
 import { requireAuth } from "~/lib/auth";
 import { getUserRoles } from '~/lib/roles'
 import { getActiveCycle } from '~/hiring/lib/cycles'
@@ -197,6 +198,9 @@ export default function AppLayoutRoute() {
   }
 
   return (
-    <Layout user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} />
+    <>
+      <Layout user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} />
+      <LaunchWelcome firstName={user.firstName || user.email.split('@')[0]} />
+    </>
   )
 }
