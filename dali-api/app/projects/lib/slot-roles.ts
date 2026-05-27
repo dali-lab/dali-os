@@ -133,6 +133,29 @@ export const SLOT_ROLES: Record<Slot, RoleDef[]> = {
     DISPLAY_ROLE,
     SUBMITTER_ROLE,
   ],
+  "level-up": [
+    {
+      role: "target-domain",
+      defaultLabel: "Applying In",
+      required: false,
+      // Accepts any question type: a reference-domain question yields a domain
+      // ID as the raw answer; a choice/text question yields a display name
+      // string. The Level Up action resolves both (ID lookup first, then
+      // displayName match).
+      constraint: "any",
+      requiredCount: 1,
+    },
+    {
+      role: "target-level",
+      defaultLabel: "Applying For",
+      required: false,
+      constraint: "choice",
+      requiredCount: 1,
+    },
+    DISPLAY_ROLE,
+    SUBMITTER_ROLE,
+    HIRED_ROLES_ROLE,
+  ],
 };
 
 // Builtins a slot must include in its mapping for the configuration to be
@@ -142,6 +165,7 @@ export const SLOT_ROLES: Record<Slot, RoleDef[]> = {
 export const REQUIRED_BUILTINS: Record<Slot, BuiltinSource[]> = {
   "project-bids": ["submitter", "hiredRoles"],
   "intent-to-work": [],
+  "level-up": ["submitter"],
 };
 
 // A column is filled from one of two source kinds: a form question, or a

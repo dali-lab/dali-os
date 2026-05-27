@@ -6,12 +6,19 @@ import { MAX_UPLOAD_BYTES } from './file-validation'
 const REGION = process.env.AWS_REGION
 const BUCKET = process.env.AWS_S3_BUCKET
 
+// `responseChecksumValidation: "WHEN_REQUIRED"` opts out of the SDK's default
+// behavior of adding `x-amz-checksum-mode=ENABLED` to presigned GetObject URLs.
+// That extra query param breaks SigV4 (signed headers don't account for it),
+// producing "signature does not match" on the browser-side fetch. We don't
+// rely on response checksum validation — S3 already integrity-checks via TLS.
 const s3 = new S3Client({
   region: REGION,
   credentials: {
     accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
   },
+  responseChecksumValidation: "WHEN_REQUIRED",
+  requestChecksumCalculation: "WHEN_REQUIRED",
 })
 
 // Generate a presigned POST policy for uploading a file directly from the

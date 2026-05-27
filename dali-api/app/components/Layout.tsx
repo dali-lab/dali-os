@@ -104,6 +104,27 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
     workspaceRef.current?.openTabToSide(req)
   }
 
+  // Props bundle for any sidebar button that opens a tab. Adds two browser-
+  // style shortcuts on top of the plain "open & focus" left-click:
+  //   - Cmd/Ctrl + click  → open to the side (split-pane)
+  //   - middle-click       → open in background (don't switch tabs)
+  // `auxClick` fires for middle/right-click; we filter to button 1 (middle)
+  // and preventDefault so the browser doesn't autoscroll.
+  const tabClickProps = (req: OpenTabRequest) => ({
+    onClick: (e: React.MouseEvent) => {
+      if (e.metaKey || e.ctrlKey) {
+        workspaceRef.current?.openTabToSide(req)
+        return
+      }
+      workspaceRef.current?.openTab(req)
+    },
+    onAuxClick: (e: React.MouseEvent) => {
+      if (e.button !== 1) return
+      e.preventDefault()
+      workspaceRef.current?.openTabInBackground(req)
+    },
+  })
+
   useEffect(() => {
     if (typeof window === 'undefined') return
     setCollapsed(window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1')
@@ -367,6 +388,14 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
       active: path.startsWith('/projects/project-bids'),
       sub: null,
     },
+    {
+      label: 'Level Up',
+      to: '/projects/level-up',
+      icon: TrendingUp,
+      show: canViewStaffing,
+      active: path.startsWith('/projects/level-up'),
+      sub: null,
+    },
   ].filter((s) => s.show)
 
   const membersSections = [
@@ -426,14 +455,6 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
       show: true,
       active: path.startsWith('/internal-processes/transfer'),
       sub: null as { label: string; to: string; active: boolean }[] | null,
-    },
-    {
-      label: 'Level Up',
-      to: '/internal-processes/level-up',
-      icon: TrendingUp,
-      show: true,
-      active: path.startsWith('/internal-processes/level-up'),
-      sub: null,
     },
     {
       label: 'JobX',
@@ -526,7 +547,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
       <div className={`h-14 flex items-center flex-shrink-0 ${collapsed ? 'justify-center px-2' : 'justify-between px-3 gap-2'}`}>
         <button
           type="button"
-          onClick={() => openInWorkspace({ url: '/', label: 'Home' })}
+          {...tabClickProps({ url: '/', label: 'Home' })}
           className="flex items-center gap-2.5 min-w-0 focus:outline-none"
           title="Home"
         >
@@ -609,7 +630,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
               <button
                 type="button"
                 title={collapsed ? 'Home' : undefined}
-                onClick={() => openInWorkspace({ url: '/', label: 'Home' })}
+                {...tabClickProps({ url: '/', label: 'Home' })}
                 className={`flex items-center gap-3 rounded-md ${collapsed ? 'px-3 py-2 justify-center' : 'px-3 py-2'} text-sm font-heading font-semibold text-left transition-colors hover:bg-white/5 ${
                   homeActive ? 'text-white' : 'text-white/65 hover:text-white'
                 }`}
@@ -622,7 +643,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
                   <button
                     type="button"
                     title={collapsed ? `Tasks (${taskCount})` : undefined}
-                    onClick={() => openInWorkspace({ url: '/', label: 'Home' })}
+                    {...tabClickProps({ url: '/', label: 'Home' })}
                     className={`relative flex items-center gap-3 rounded-md ${collapsed ? 'px-3 py-2 justify-center' : 'px-3 py-2'} text-sm font-heading font-semibold text-left text-white transition-colors hover:bg-white/5`}
                   >
                     {headerInner}
@@ -684,7 +705,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
             <button
               type="button"
               title={collapsed ? 'Calendar' : undefined}
-              onClick={() => openInWorkspace({ url: '/calendar', label: 'Calendar' })}
+              {...tabClickProps({ url: '/calendar', label: 'Calendar' })}
               className={`flex items-center gap-3 rounded-md ${collapsed ? 'px-3 py-2 justify-center' : 'px-3 py-2'} text-sm font-heading font-semibold text-left transition-colors hover:bg-white/5 ${
                 calendarActive ? 'text-white' : 'text-white/65 hover:text-white'
               }`}
@@ -700,7 +721,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
             <button
               type="button"
               title={collapsed ? 'Forms' : undefined}
-              onClick={() => openInWorkspace({ url: '/forms', label: 'Forms' })}
+              {...tabClickProps({ url: '/forms', label: 'Forms' })}
               className={`flex items-center gap-3 rounded-md ${collapsed ? 'px-3 py-2 justify-center' : 'px-3 py-2'} text-sm font-heading font-semibold text-left transition-colors hover:bg-white/5 ${
                 formsActive ? 'text-white' : 'text-white/65 hover:text-white'
               }`}
@@ -724,7 +745,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
                   type="button"
                   title={collapsed ? area.label : undefined}
                   aria-expanded={expanded}
-                  onClick={() => {
+                  onClick={(e) => {
                     // Clicking the parent label:
                     //   - if you're already on this area AND its subtabs are
                     //     open, collapse them (re-click to close);
@@ -733,8 +754,10 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
                     //     subtab the user visited inside this area (so
                     //     reopening after closing the tab returns you there),
                     //     and fall back to the first subtab / area.to.
+                    // Modifier+click and middle-click follow the same
+                    // browser-style rules as the leaf items (tabClickProps).
                     // The chevron beside this button is still a pure toggle.
-                    if (area.active && expanded && area.sections.length > 0) {
+                    if (area.active && expanded && area.sections.length > 0 && !e.metaKey && !e.ctrlKey) {
                       toggleAreaExpanded(area.key, area.active)
                       return
                     }
@@ -751,7 +774,28 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
                       rememberedSection?.label ??
                       area.sections[0]?.label ??
                       area.label
-                    openInWorkspace({ url: target, label })
+                    if (e.metaKey || e.ctrlKey) {
+                      workspaceRef.current?.openTabToSide({ url: target, label })
+                    } else {
+                      openInWorkspace({ url: target, label })
+                    }
+                  }}
+                  onAuxClick={(e) => {
+                    if (e.button !== 1) return
+                    e.preventDefault()
+                    const activeSection = area.sections.find((s) => s.active)
+                    const remembered = lastSubtabUrl[area.key]
+                    const rememberedSection = remembered
+                      ? area.sections.find((s) => s.to === remembered)
+                      : undefined
+                    const target =
+                      activeSection?.to ?? remembered ?? area.sections[0]?.to ?? area.to
+                    const label =
+                      activeSection?.label ??
+                      rememberedSection?.label ??
+                      area.sections[0]?.label ??
+                      area.label
+                    workspaceRef.current?.openTabInBackground({ url: target, label })
                   }}
                   className={`flex-1 flex items-center gap-3 ${collapsed ? 'px-3 py-2 justify-center' : 'pl-3 pr-1 py-2'} text-sm font-heading font-semibold text-left transition-colors ${
                     area.active ? 'text-white' : 'text-white/65 hover:text-white'
@@ -782,7 +826,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
                     <button
                       key={section.to}
                       type="button"
-                      onClick={() => openInWorkspace({ url: section.to, label: section.label })}
+                      {...tabClickProps({ url: section.to, label: section.label })}
                       onContextMenu={(e) => {
                         e.preventDefault()
                         setSubtabMenu({
@@ -813,7 +857,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
         <div className={`flex items-center gap-1 px-1 py-1 ${collapsed ? 'justify-center' : ''}`}>
           <button
             type="button"
-            onClick={() => openInWorkspace({ url: '/profile', label: 'Profile' })}
+            {...tabClickProps({ url: '/profile', label: 'Profile' })}
             title={collapsed ? 'Open profile' : undefined}
             aria-label="Open profile"
             className={`flex items-center gap-2 rounded-md hover:bg-white/5 transition-colors ${
@@ -876,7 +920,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
           </button>
           <button
             type="button"
-            onClick={() => openInWorkspace({ url: '/', label: 'Home' })}
+            {...tabClickProps({ url: '/', label: 'Home' })}
             className="flex items-center gap-2.5"
             title="Home"
           >

@@ -30,14 +30,12 @@ COPY --from=build /app/prisma.config.ts ./prisma.config.ts
 # The Fly release command runs `tsx prisma/seed.ts`. Runtime node_modules is
 # --omit=dev so it lacks tsx; tsx also needs tsconfig.json to resolve the
 # `~/*` -> ./app/* path alias used by the app code the seed imports. Overlay
-# the pinned tsx (+ its esbuild/get-tsconfig deps) and tsconfig from the build
-# stage instead of letting `npx` pull an unpinned tsx from the network.
+# the pinned tsx (+ its esbuild dep) and tsconfig from the build stage instead
+# of letting `npx` pull an unpinned tsx from the network.
 COPY --from=build /app/tsconfig.json ./tsconfig.json
 COPY --from=build /app/node_modules/tsx ./node_modules/tsx
 COPY --from=build /app/node_modules/esbuild ./node_modules/esbuild
 COPY --from=build /app/node_modules/@esbuild ./node_modules/@esbuild
-COPY --from=build /app/node_modules/get-tsconfig ./node_modules/get-tsconfig
-COPY --from=build /app/node_modules/resolve-pkg-maps ./node_modules/resolve-pkg-maps
 # .bin/tsx is a symlink in the build stage; copying it as a file breaks it.
 # Recreate it so the bare `tsx` in prisma.config.ts resolves via PATH.
 RUN ln -sf ../tsx/dist/cli.mjs ./node_modules/.bin/tsx

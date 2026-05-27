@@ -56,6 +56,11 @@ export default [
       "projects/project-bids/:userId",
       "projects/routes/projects.project-bids.$userId.tsx",
     ),
+    route("projects/level-up", "projects/routes/projects.level-up.tsx"),
+    route(
+      "projects/level-up/:userId",
+      "projects/routes/projects.level-up.$userId.tsx",
+    ),
     route("projects/:id", "projects/routes/projects.$id.tsx"),
 
     // Documents & files — full-page reusable editor + file viewer. Literal
