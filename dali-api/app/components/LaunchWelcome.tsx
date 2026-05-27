@@ -5,6 +5,7 @@ import {
   CalendarDays,
   CalendarPlus,
   UserCircle2,
+  Users,
   ArrowRight,
   X as XIcon,
   Check,
@@ -162,6 +163,18 @@ const STEPS: TourStep[] = [
     matches: (p) => p.startsWith("/profile"),
     findTarget: () =>
       findInSidebar((btn) => btn.getAttribute("aria-label") === "Open profile"),
+  },
+  {
+    icon: <Users className="w-4 h-4" />,
+    eyebrow: "Members",
+    cta: (
+      <>
+        Open <strong>Members</strong> from the sidebar.
+      </>
+    ),
+    arrived: <>Everyone in the lab.</>,
+    matches: (p) => p.startsWith("/members"),
+    findTarget: () => findByExactText("Members"),
   },
   {
     icon: <Bot className="w-4 h-4" />,
