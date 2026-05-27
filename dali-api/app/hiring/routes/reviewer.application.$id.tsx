@@ -199,9 +199,10 @@ export async function action({ request, params }: Route.ActionArgs) {
     })
 
     if (existing) {
-      // Pin the domain rubric version these score keys belong to, so a later
-      // rubric edit (which mints new crit-<ts> keys) doesn't orphan them at
-      // render time. Resolve the domain from the review's domain application.
+      // Pin the rubric version these score keys belong to, so a later rubric
+      // edit (which mints new crit-<ts> keys) doesn't orphan them at render
+      // time. Prefer the per-domain rubric (Standard cycles); fall back to the
+      // cycle-level general rubric (InternToFull, which has no per-domain).
       const da = existing.domainApplication
       const domainId = da.domainId ?? da.challengeVersion?.domainId ?? null
       let rubricVersionId: string | null = existing.rubricVersionId ?? null
@@ -216,6 +217,13 @@ export async function action({ request, params }: Route.ActionArgs) {
           select: { rubricVersionId: true },
         })
         if (dac?.rubricVersionId) rubricVersionId = dac.rubricVersionId
+      }
+      if (!rubricVersionId) {
+        const ac = await prisma.applicationCycle.findUnique({
+          where: { id: da.application.applicationCycleId },
+          select: { generalRubricVersionId: true },
+        })
+        if (ac?.generalRubricVersionId) rubricVersionId = ac.generalRubricVersionId
       }
 
       await prisma.applicationReview.update({

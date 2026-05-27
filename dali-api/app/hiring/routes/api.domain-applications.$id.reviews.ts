@@ -104,11 +104,15 @@ export async function action({ request, params }: Route.ActionArgs) {
     return Response.json({ error: "A general application rubric must be set before assigning reviewers to applications" }, { status: 400 });
   }
 
-  const domainCycle = await prisma.domainApplicationCycle.findUnique({
-    where: { domainId_applicationCycleId: { domainId, applicationCycleId: cycle.id } },
-  });
-  if (!domainCycle?.rubricVersionId) {
-    return Response.json({ error: "A domain rubric must be set before assigning reviewers to applications in this domain" }, { status: 400 });
+  // InternToFull cycles use only the cycle-level general rubric; per-domain
+  // rubrics aren't part of that flow, so skip the per-domain check.
+  if (cycle.cycleType !== "InternToFull") {
+    const domainCycle = await prisma.domainApplicationCycle.findUnique({
+      where: { domainId_applicationCycleId: { domainId, applicationCycleId: cycle.id } },
+    });
+    if (!domainCycle?.rubricVersionId) {
+      return Response.json({ error: "A domain rubric must be set before assigning reviewers to applications in this domain" }, { status: 400 });
+    }
   }
 
   const review = await prisma.applicationReview.create({

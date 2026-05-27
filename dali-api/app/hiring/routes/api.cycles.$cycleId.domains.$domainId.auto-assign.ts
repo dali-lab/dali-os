@@ -50,7 +50,9 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!domainCycle) {
     return Response.json({ error: "Domain not part of this cycle" }, { status: 404 });
   }
-  if (!domainCycle.rubricVersionId) {
+  // InternToFull cycles only require the cycle-level general rubric — there
+  // are no per-domain rubrics in that flow.
+  if (cycle.cycleType !== "InternToFull" && !domainCycle.rubricVersionId) {
     return Response.json({ error: "A domain rubric must be set before assigning reviewers to applications" }, { status: 400 });
   }
 
@@ -65,10 +67,15 @@ export async function action({ request, params }: Route.ActionArgs) {
     return Response.json({ error: "No reviewers assigned to this domain" }, { status: 400 });
   }
 
+  // DomainApplication.domainId is denormalized (set for both Standard and
+  // InternToFull rows). On Standard cycles it's backfilled from
+  // challengeVersion.domain; on InternToFull there is no challengeVersion, so
+  // we must match on the direct relation. Filtering by domainId works for
+  // both.
   const domainApps = await prisma.domainApplication.findMany({
     where: {
       selected: true,
-      challengeVersion: { domainId: domainId! },
+      domainId: domainId!,
       application: {
         applicationCycleId: cycleId!,
         ...inReviewPipelineFilter,
