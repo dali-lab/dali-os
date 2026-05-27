@@ -111,7 +111,7 @@ function readStep(): number {
   }
 }
 
-function SpotlightRing({ target }: { target: HTMLElement }) {
+function Spotlight({ target }: { target: HTMLElement }) {
   const [rect, setRect] = useState<DOMRect | null>(() => target.getBoundingClientRect());
 
   useEffect(() => {
@@ -122,8 +122,8 @@ function SpotlightRing({ target }: { target: HTMLElement }) {
     }
     measure();
     // Sidebar can collapse, page can scroll, mobile drawer can open — poll
-    // cheaply so the ring stays glued to the element. Throwaway tour code,
-    // a 150ms tick is plenty smooth.
+    // cheaply so the spotlight stays glued to the element. Throwaway tour
+    // code, a 150ms tick is plenty smooth.
     const id = window.setInterval(measure, 150);
     window.addEventListener("resize", measure);
     window.addEventListener("scroll", measure, true);
@@ -136,17 +136,36 @@ function SpotlightRing({ target }: { target: HTMLElement }) {
   }, [target]);
 
   if (!rect) return null;
+
+  const PAD = 6;
+  const top = rect.top - PAD;
+  const left = rect.left - PAD;
+  const width = rect.width + PAD * 2;
+  const height = rect.height + PAD * 2;
+
   return (
-    <div
-      aria-hidden="true"
-      className="pointer-events-none fixed z-50 rounded-md launch-tour-pulse"
-      style={{
-        top: rect.top - 4,
-        left: rect.left - 4,
-        width: rect.width + 8,
-        height: rect.height + 8,
-      }}
-    />
+    <>
+      {/* Cut-out: a transparent rectangle sitting where the target is, with
+          a massive box-shadow extending outward to dim the rest of the page.
+          pointer-events: none so the user can still click the real element. */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed z-40 rounded-md"
+        style={{
+          top,
+          left,
+          width,
+          height,
+          boxShadow: "0 0 0 9999px rgba(0, 0, 0, 0.55)",
+        }}
+      />
+      {/* Pulsing coral ring on top of the cut-out for emphasis. */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed z-40 rounded-md launch-tour-pulse"
+        style={{ top, left, width, height }}
+      />
+    </>
   );
 }
 
@@ -323,7 +342,7 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
         }
       `}</style>
 
-      {target && !arrived && !isFinal && <SpotlightRing target={target} />}
+      {target && !arrived && !isFinal && <Spotlight target={target} />}
 
       <div className="fixed bottom-4 right-4 z-50 w-80 max-w-[calc(100vw-2rem)] pointer-events-auto">
         <div className="bg-card border border-border rounded-2xl shadow-brand-2 p-4 flex flex-col gap-3">
