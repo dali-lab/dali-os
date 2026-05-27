@@ -388,6 +388,14 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
       active: path.startsWith('/projects/project-bids'),
       sub: null,
     },
+    {
+      label: 'Level Up',
+      to: '/projects/level-up',
+      icon: TrendingUp,
+      show: canViewStaffing,
+      active: path.startsWith('/projects/level-up'),
+      sub: null,
+    },
   ].filter((s) => s.show)
 
   const membersSections = [
@@ -447,14 +455,6 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
       show: true,
       active: path.startsWith('/internal-processes/transfer'),
       sub: null as { label: string; to: string; active: boolean }[] | null,
-    },
-    {
-      label: 'Level Up',
-      to: '/internal-processes/level-up',
-      icon: TrendingUp,
-      show: true,
-      active: path.startsWith('/internal-processes/level-up'),
-      sub: null,
     },
     {
       label: 'JobX',
