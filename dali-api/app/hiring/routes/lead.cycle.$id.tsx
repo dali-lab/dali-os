@@ -4,6 +4,10 @@ import type { Route } from "./+types/lead.cycle.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
+import { parseSessionCookie } from "~/lib/cookies";
+import { getPresenceUser } from "~/lib/presence-user";
+import { PresenceProvider } from "~/components/collab/PresenceProvider";
+import { PresenceBar } from "~/components/collab/PresenceBar";
 import { renderEmail } from "~/lib/email";
 import {
   TEMPLATE_VARIABLES,
@@ -389,6 +393,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     })),
   };
 
+  const collabToken = parseSessionCookie(request);
+  const presenceUser = await getPresenceUser(auth.user.sub);
+
   return {
       cycle: cycleWithCvNumbers,
       allDomains,
@@ -408,6 +415,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       currentConfidentialityBinding,
       confidentialitySignatures,
       confidentialityRequired,
+      collabToken,
+      currentUserId: auth.user.sub,
+      presenceUserName: presenceUser?.name ?? auth.user.email,
+      presencePhotoUrl: presenceUser?.photoUrl ?? null,
+      presenceSubtitle: presenceUser?.subtitle ?? null,
     };
 }
 
@@ -1466,13 +1478,16 @@ export default function HiringLeadCycleDetails() {
     }
   }
 
-  return (
+  const page = (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <h1 className="text-2xl font-bold text-foreground">{cycle?.name ?? 'Cycle Management'}</h1>
         <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-bold ${STATUS_COLORS[cycleStatus] ?? ''}`}>
           {STATUS_LABELS[cycleStatus] ?? cycleStatus}
         </span>
+        <div className="ml-auto">
+          <PresenceBar />
+        </div>
         <p className="w-full text-xs text-muted-foreground">
           Cycle ID <span className="font-mono bg-muted px-1.5 py-0.5 rounded">{cycleId}</span>
         </p>
@@ -3212,6 +3227,26 @@ export default function HiringLeadCycleDetails() {
         )
       })()}
     </div>
+  )
+
+  const collabToken = loaderData?.collabToken as string | null | undefined
+  const currentUserId = loaderData?.currentUserId as string | undefined
+  const presenceUserName = (loaderData?.presenceUserName as string | undefined) ?? ''
+  const presencePhotoUrl = (loaderData?.presencePhotoUrl as string | null | undefined) ?? null
+  const presenceSubtitle = (loaderData?.presenceSubtitle as string | null | undefined) ?? null
+  return collabToken ? (
+    <PresenceProvider
+      pageId={`cycle:${cycleId}`}
+      token={collabToken}
+      userName={presenceUserName}
+      userId={currentUserId}
+      photoUrl={presencePhotoUrl}
+      subtitle={presenceSubtitle}
+    >
+      {page}
+    </PresenceProvider>
+  ) : (
+    page
   )
 }
 

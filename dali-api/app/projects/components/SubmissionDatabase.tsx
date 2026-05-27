@@ -25,12 +25,19 @@ export function SubmissionDatabase({
 }: {
   columns: DbColumn[];
   rows: DbRow[];
-  // Row links to `${detailBase}/${userId}` (term query string already on it
-  // if needed — caller builds it).
+  // Path the row links under: `${detailBase-path}/${userId}`. May carry a
+  // `?term=` query string (caller builds it); we splice the userId into the
+  // path so the query stays after it: `/base/userId?term=...`.
   detailBase: string;
   emptyMessage: string;
 }) {
   const navigate = useNavigate();
+
+  const detailUrl = (userId: string) => {
+    const [path, query] = detailBase.split("?");
+    const base = `${path.replace(/\/$/, "")}/${userId}`;
+    return query ? `${base}?${query}` : base;
+  };
 
   if (rows.length === 0) {
     return (
@@ -58,7 +65,7 @@ export function SubmissionDatabase({
             <tr
               key={r.userId}
               onClick={() => {
-                const url = `${detailBase}/${r.userId}`;
+                const url = detailUrl(r.userId);
                 if (!requestOpenTabIfEmbedded(url, r.name)) navigate(url);
               }}
               className="border-t border-border hover:bg-muted/20 cursor-pointer"

@@ -37,6 +37,9 @@ type Props = {
   projects: ProjectMeta[];
   members: MemberInput[];
   initialAssignments: Assignment[];
+  // Project id → name for label resolution. Covers archived projects a member
+  // ranked that aren't board columns, so cards/modal never show a raw id.
+  projectNames: Record<string, string>;
   domainNames: Record<string, string>;
   demandByProject: Record<string, DomainDemand[]>;
   /** Staffing leads can drag. Members get a read-only board. */
@@ -50,6 +53,7 @@ export function StaffingBoard({
   projects,
   members,
   initialAssignments,
+  projectNames,
   domainNames,
   demandByProject,
   canManage,
@@ -61,10 +65,6 @@ export function StaffingBoard({
   // Project id whose finalize modal is open, or null.
   const [finalizeProjectId, setFinalizeProjectId] = useState<string | null>(null);
 
-  const projectNames = useMemo(
-    () => Object.fromEntries(projects.map((p) => [p.id, p.name])),
-    [projects],
-  );
   const projectIds = useMemo(() => projects.map((p) => p.id), [projects]);
 
   const board = useMemo(

@@ -105,15 +105,17 @@ export async function authorizeCollabDoc(
     return false;
   }
 
-  // doc:{pageId}:body — project document pages. Access mirrors the project
-  // edit gate used by the project document API routes (isCore ===
-  // Admin || Core). The page must be a live (non-archived) Project page.
+  // doc:{pageId}:body — any live FreeForm page. Access mirrors the page edit
+  // gate used by the document API routes (isCore === Admin || Core). The
+  // page must be a live (non-archived) Page; workspaceType is unrestricted
+  // so Lab + EducationOffering pages can be edited the same way as Project
+  // pages.
   if (entity === "doc") {
     const page = await prisma.page.findUnique({
       where: { id },
-      select: { workspaceType: true, archivedAt: true },
+      select: { archivedAt: true },
     });
-    if (!page || page.workspaceType !== "Project" || page.archivedAt !== null) {
+    if (!page || page.archivedAt !== null) {
       return false;
     }
     return isCore(userSub);

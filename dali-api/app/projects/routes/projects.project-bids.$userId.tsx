@@ -5,7 +5,7 @@ import { canViewStaffing, currentTerm } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { ensureStaffingCycle } from "../lib/staffing-cycle";
 import { getSlotBinding } from "../lib/form-slots";
-import { resolveTermFilter } from "~/lib/terms";
+import { ALL_TERMS, resolveTermFilter } from "~/lib/terms";
 import { buildSubmissionView } from "../lib/submission-view.server";
 
 const SLOT = "project-bids" as const;
@@ -64,6 +64,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     // can see they're not currently surfaced in the board table.
     fields: row.detailFields,
     cycleName: cycle.name,
+    // Preserve the viewed term on the way back, so the list reopens on the
+    // same term instead of resetting to the current one.
+    backTo: `/projects/project-bids?term=${encodeURIComponent(
+      isAll ? ALL_TERMS : term.id,
+    )}`,
   };
 }
 
@@ -73,7 +78,7 @@ export default function ProjectBidSubmissionDetail() {
     <div className="flex flex-col gap-6">
       <div>
         <Link
-          to="/projects/project-bids"
+          to={data.backTo}
           className="text-sm text-accent-coral hover:underline"
         >
           ← Back to Project Bids

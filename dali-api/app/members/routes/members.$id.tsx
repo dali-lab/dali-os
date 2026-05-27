@@ -6,8 +6,12 @@ import { requireAuth } from "~/lib/auth";
 import { isAdmin, isCore } from "~/lib/roles";
 import { initialsFromName } from "~/lib/display";
 import { resolvePhotoUrl } from "~/lib/photo";
+import { parseSessionCookie } from "~/lib/cookies";
+import { getPresenceUser } from "~/lib/presence-user";
 import { EditableSection } from "~/components/EditableSection";
 import { PhotoUploadField } from "~/components/PhotoUploadField";
+import { PresenceProvider } from "~/components/collab/PresenceProvider";
+import { PresenceBar } from "~/components/collab/PresenceBar";
 import {
   ALLOWED_LEVELS,
   parseLevel,
@@ -95,6 +99,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // the upload field's hidden input round-trips it unchanged on save.
   const photoUrlResolved = await resolvePhotoUrl(member.photoUrl);
 
+  const collabToken = parseSessionCookie(request);
+  const presenceUser = await getPresenceUser(auth.user.sub);
+
   return {
     member: {
       ...member,
@@ -110,6 +117,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     canManageEligibility,
     allDomains,
     photoUrlResolved,
+    collabToken,
+    currentUserId: auth.user.sub,
+    presenceUserName: presenceUser?.name ?? auth.user.email,
+    presencePhotoUrl: presenceUser?.photoUrl ?? null,
+    presenceSubtitle: presenceUser?.subtitle ?? null,
   };
 }
 
@@ -208,7 +220,18 @@ const FIELD_LABELS: Record<string, string> = {
 };
 
 export default function MemberDetail() {
-  const { member, canEdit, canManageEligibility, allDomains, photoUrlResolved } = useLoaderData<typeof loader>();
+  const {
+    member,
+    canEdit,
+    canManageEligibility,
+    allDomains,
+    photoUrlResolved,
+    collabToken,
+    currentUserId,
+    presenceUserName,
+    presencePhotoUrl,
+    presenceSubtitle,
+  } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const submit = useSubmit();
   const navigation = useNavigation();
@@ -232,11 +255,14 @@ export default function MemberDetail() {
     }
   }, [navigation.state, actionData]);
 
-  return (
+  const page = (
     <div className="flex flex-col gap-4">
-      <Link to="/members" className="text-sm text-muted-foreground hover:text-foreground">
-        ← Back to members
-      </Link>
+      <div className="flex items-center justify-between gap-3">
+        <Link to="/members" className="text-sm text-muted-foreground hover:text-foreground">
+          ← Back to members
+        </Link>
+        <PresenceBar />
+      </div>
 
       <header className="flex flex-col items-center gap-4 text-center">
         {photoUrlResolved ? (
@@ -315,6 +341,21 @@ export default function MemberDetail() {
         canManage={canManageEligibility}
       />
     </div>
+  );
+
+  return collabToken ? (
+    <PresenceProvider
+      pageId={`member:${member.id}`}
+      token={collabToken}
+      userName={presenceUserName}
+      userId={currentUserId}
+      photoUrl={presencePhotoUrl}
+      subtitle={presenceSubtitle}
+    >
+      {page}
+    </PresenceProvider>
+  ) : (
+    page
   );
 }
 
