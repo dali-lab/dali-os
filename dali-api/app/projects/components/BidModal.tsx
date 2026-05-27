@@ -1,5 +1,5 @@
 import { Modal } from "~/components/Modal";
-import type { BidField, Level, Preference } from "../lib/staffing-board";
+import type { BidField, Preference } from "../lib/staffing-board";
 
 type BidModalProps = {
   open: boolean;
@@ -15,12 +15,6 @@ type BidModalProps = {
   domainNames: Record<string, string>;
   // Project the card is currently in (if assigned). Highlighted in the list.
   currentProjectId: string | null;
-};
-
-const LEVEL_LABEL: Record<Level, string> = {
-  P1: "P1 · Learner",
-  P2: "P2 · Doer",
-  P3: "P3 · Mentor",
 };
 
 export function BidModal({
@@ -88,7 +82,7 @@ export function BidModal({
                           #{p.preferenceRank} · {projectNames[p.projectId] ?? p.projectId}
                         </span>
                         <span className="text-xs text-muted-foreground">
-                          {domainNames[p.domainId] ?? p.domainId} · {LEVEL_LABEL[p.level]}
+                          {domainNames[p.domainId] ?? p.domainId}
                         </span>
                       </div>
                       {p.notes && (
