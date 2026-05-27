@@ -667,23 +667,51 @@ function AvailabilityView({ data }: { data: LoaderData }) {
   // clipped by the inner overflow-hidden on short viewports.
   // Drag-to-create now lives inside AvailabilityWeekGrid: the selection stays
   // drawn on the grid and the editor opens as a popover anchored beside it.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[400px_1fr] gap-6 lg:h-[max(calc(100vh-9rem),56rem)] lg:min-h-0 px-3 pt-2">
-      <aside className="flex flex-col gap-6 lg:overflow-y-auto lg:overflow-x-hidden lg:pr-6 lg:min-h-0">
-        <header>
-          <h1 className="font-heading text-2xl font-bold text-foreground">Availability</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Configure when you're available for meetings and pairing.
-          </p>
-        </header>
-        <CalendarIntegrationsCard links={data.calendarLinks} ingestionError={data.ingestionError} />
-        <WorkingHoursCard
-          workingHours={data.workingHours}
-          hasPersisted={data.hasPersistedWorkingHours}
-        />
-        <EventBuffersCard bufferMin={data.defaultEventBufferMin} />
-        <ManualBlocksCard blocks={data.manualBlocks} timezone={data.timezone} />
-      </aside>
+    <div
+      className={`grid grid-cols-1 gap-6 lg:h-[max(calc(100vh-9rem),56rem)] lg:min-h-0 px-3 pt-2 ${
+        sidebarCollapsed ? "lg:grid-cols-[3rem_1fr]" : "lg:grid-cols-[400px_1fr]"
+      }`}
+    >
+      {sidebarCollapsed ? (
+        <button
+          type="button"
+          onClick={() => setSidebarCollapsed(false)}
+          className="hidden lg:flex lg:flex-col lg:items-center lg:min-h-0 rounded-lg border border-border py-3 text-muted-foreground hover:bg-muted hover:text-foreground"
+          aria-label="Expand availability settings"
+          title="Expand settings"
+        >
+          <ChevronRight className="h-5 w-5 shrink-0" />
+        </button>
+      ) : (
+        <aside className="flex flex-col gap-6 lg:overflow-y-auto lg:overflow-x-hidden lg:pr-6 lg:min-h-0">
+          <header className="flex items-start justify-between gap-2">
+            <div>
+              <h1 className="font-heading text-2xl font-bold text-foreground">Availability</h1>
+              <p className="text-sm text-muted-foreground mt-1">
+                Configure when you're available for meetings and pairing.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSidebarCollapsed(true)}
+              className="hidden lg:inline-flex shrink-0 rounded-md border border-border p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+              aria-label="Collapse availability settings"
+              title="Collapse settings"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+          </header>
+          <CalendarIntegrationsCard links={data.calendarLinks} ingestionError={data.ingestionError} />
+          <WorkingHoursCard
+            workingHours={data.workingHours}
+            hasPersisted={data.hasPersistedWorkingHours}
+          />
+          <EventBuffersCard bufferMin={data.defaultEventBufferMin} />
+          <ManualBlocksCard blocks={data.manualBlocks} timezone={data.timezone} />
+        </aside>
+      )}
       <div className="lg:overflow-hidden lg:min-h-0">
         <AvailabilityWeekGrid data={data} enableDragCreate />
       </div>
