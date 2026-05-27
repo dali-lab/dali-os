@@ -3107,7 +3107,9 @@ model PartnerApplicationDomain {
   id                 String  @id @default(cuid())
   applicationId      String
   domainId           String
-  expectedChallenges String?
+  // Rich-text ProseMirror JSON doc (Tiptap StarterKit + Link). Pre-migration
+  // rows were free text and have been wrapped into a single-paragraph doc.
+  expectedChallenges Json?
   expectedMembers    Int     @default(0)
 
   application PartnerApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
