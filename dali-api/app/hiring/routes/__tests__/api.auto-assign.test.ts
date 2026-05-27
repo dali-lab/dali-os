@@ -90,3 +90,42 @@ describe("auto-assign action — withdrawn applications are skipped", () => {
     expect(body).toEqual({ assigned: 0 });
   });
 });
+
+describe("auto-assign action — InternToFull cycles", () => {
+  it("skips the per-domain rubric requirement on InternToFull cycles", async () => {
+    mockPrisma.applicationCycle.findUniqueOrThrow.mockResolvedValueOnce({
+      id: CYCLE_ID,
+      generalRubricVersionId: "rubric-general",
+      cycleType: "InternToFull",
+    });
+    mockPrisma.domainApplicationCycle.findUnique.mockResolvedValueOnce({
+      reviewersPerApplication: 2,
+      rubricVersionId: null,
+    });
+
+    const res = await callAction();
+
+    // Doesn't bail out at the per-domain rubric check.
+    expect((res as Response).status).toBe(200);
+    expect(mockPrisma.domainApplication.findMany).toHaveBeenCalledTimes(1);
+  });
+
+  it("still requires the cycle-level general rubric on InternToFull cycles", async () => {
+    mockPrisma.applicationCycle.findUniqueOrThrow.mockResolvedValueOnce({
+      id: CYCLE_ID,
+      generalRubricVersionId: null,
+      cycleType: "InternToFull",
+    });
+
+    const res = await callAction();
+    expect((res as Response).status).toBe(400);
+    expect(mockPrisma.domainApplication.findMany).not.toHaveBeenCalled();
+  });
+
+  it("filters DomainApplications by direct domainId (works for InternToFull with no challengeVersion)", async () => {
+    await callAction();
+
+    const where = mockPrisma.domainApplication.findMany.mock.calls[0][0].where;
+    expect(where.domainId).toBe(DOMAIN_ID);
+  });
+});

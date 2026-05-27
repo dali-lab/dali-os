@@ -1,6 +1,7 @@
 import type { Question } from "~/types";
 import { ChallengeQuestionField } from "~/hiring/components/ChallengeQuestionField";
 import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
+import { InfoBody } from "~/hiring/lib/info-body";
 
 export interface ChallengePreviewProps {
   description?: unknown;
@@ -31,9 +32,9 @@ export function ChallengePreview({ description, questions }: ChallengePreviewPro
               return (
                 <div
                   key={q.key}
-                  className="rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground whitespace-pre-wrap"
+                  className="rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground"
                 >
-                  {q.data.body ?? ""}
+                  <InfoBody body={q.data.body} />
                 </div>
               );
             }

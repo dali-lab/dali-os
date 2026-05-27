@@ -818,29 +818,25 @@ export default function DomainLeadDashboard() {
                     </div>
                   )}
 
-                  {/* Rubric — scoring criteria for this domain */}
-                  <Section
-                    title="Rubric"
-                    subtitle="Scoring criteria reviewers use for this domain."
-                    badge={
-                      currentRubricVersionId
-                        ? <span className="text-xs text-green-700 bg-green-100 border border-green-200 px-2 py-0.5 rounded-full font-medium">Set</span>
-                        : <span className="text-xs text-yellow-700 bg-yellow-100 border border-yellow-200 px-2 py-0.5 rounded-full font-medium">Not set</span>
-                    }
-                    defaultOpen={!currentRubricVersionId}
-                  >
-                    <div>
-                      <RubricPicker
-                        cycleId={cycle.id}
-                        domainId={assignment.domainId}
-                        options={rubricVersionOptions ?? []}
-                        selectedId={currentRubricVersionId}
-                        locked={hasApplicationReviews}
-                      />
+                  {/* Rubric — scoring criteria.
+                      InternToFull cycles use only the cycle-level general
+                      rubric (set by the hiring lead), so the per-domain picker
+                      is hidden and replaced with a read-only summary. */}
+                  {isInternToFull ? (
+                    <Section
+                      title="Rubric"
+                      subtitle="Cycle-wide rubric set by the hiring lead — applies to every application."
+                      badge={
+                        cycle.generalRubricVersionId
+                          ? <span className="text-xs text-green-700 bg-green-100 border border-green-200 px-2 py-0.5 rounded-full font-medium">Set</span>
+                          : <span className="text-xs text-yellow-700 bg-yellow-100 border border-yellow-200 px-2 py-0.5 rounded-full font-medium">Not set</span>
+                      }
+                      defaultOpen={!cycle.generalRubricVersionId}
+                    >
                       {!cycle.generalRubricVersionId && (
-                        <div className="mt-3 flex items-center gap-2 text-sm text-yellow-800 bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-2">
+                        <div className="flex items-center gap-2 text-sm text-yellow-800 bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-2">
                           <Clock className="w-4 h-4 flex-shrink-0" />
-                          <span>Waiting on hiring lead to set the general application rubric — reviewer assignment is blocked until both rubrics are set.</span>
+                          <span>Waiting on hiring lead to set the cycle rubric — reviewer assignment is blocked until it's set.</span>
                         </div>
                       )}
                       <div className="mt-2">
@@ -848,8 +844,40 @@ export default function DomainLeadDashboard() {
                           All Rubrics →
                         </Link>
                       </div>
-                    </div>
-                  </Section>
+                    </Section>
+                  ) : (
+                    <Section
+                      title="Rubric"
+                      subtitle="Scoring criteria reviewers use for this domain."
+                      badge={
+                        currentRubricVersionId
+                          ? <span className="text-xs text-green-700 bg-green-100 border border-green-200 px-2 py-0.5 rounded-full font-medium">Set</span>
+                          : <span className="text-xs text-yellow-700 bg-yellow-100 border border-yellow-200 px-2 py-0.5 rounded-full font-medium">Not set</span>
+                      }
+                      defaultOpen={!currentRubricVersionId}
+                    >
+                      <div>
+                        <RubricPicker
+                          cycleId={cycle.id}
+                          domainId={assignment.domainId}
+                          options={rubricVersionOptions ?? []}
+                          selectedId={currentRubricVersionId}
+                          locked={hasApplicationReviews}
+                        />
+                        {!cycle.generalRubricVersionId && (
+                          <div className="mt-3 flex items-center gap-2 text-sm text-yellow-800 bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-2">
+                            <Clock className="w-4 h-4 flex-shrink-0" />
+                            <span>Waiting on hiring lead to set the general application rubric — reviewer assignment is blocked until both rubrics are set.</span>
+                          </div>
+                        )}
+                        <div className="mt-2">
+                          <Link to="/hiring/library?tab=rubrics" className="text-xs text-blue-600 hover:text-blue-800 font-medium">
+                            All Rubrics →
+                          </Link>
+                        </div>
+                      </div>
+                    </Section>
+                  )}
 
                   {/* Team — Reviewers (+ Interviewers for Standard cycles only). */}
                   <Section
@@ -920,7 +948,7 @@ export default function DomainLeadDashboard() {
                           cycleId={cycle.id}
                           domainId={assignment.domainId}
                           currentStatus={currentStatus}
-                          canAssignReviewers={!!currentRubricVersionId && !!cycle.generalRubricVersionId}
+                          canAssignReviewers={isInternToFull ? !!cycle.generalRubricVersionId : !!currentRubricVersionId && !!cycle.generalRubricVersionId}
                           rubricCriteria={rubricCriteria ?? []}
                         />
                       ) : (

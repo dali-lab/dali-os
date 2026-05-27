@@ -131,8 +131,10 @@ export interface Question {
     // save-version rebuilds `data` and drops it.
     referenceOptions?: { value: string; label: string }[]
     // For type === 'info': free-form prose rendered as a non-question text
-    // block in the form. Plain text; line breaks preserved.
-    body?: string
+    // block in the form. Stored as a ProseMirror JSON doc (Tiptap StarterKit
+    // + Link). Legacy rows written before the rich-text upgrade may still be
+    // a plain string; readers should handle both.
+    body?: unknown
   }
 }
 
