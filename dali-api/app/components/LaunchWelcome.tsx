@@ -103,8 +103,8 @@ const STEPS: TourStep[] = [
     eyebrow: "Connect any AI",
     cta: (
       <>
-        DALI OS speaks <strong>MCP</strong>, so you can connect any AI
-        assistant to read your DALI data on your behalf.
+        Connect any AI assistant to the <strong>DALI OS MCP</strong> and let
+        it read your DALI data for you.
       </>
     ),
     action: {
