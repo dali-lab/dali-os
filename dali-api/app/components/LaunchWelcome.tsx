@@ -552,10 +552,7 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
 
           <div className="text-sm text-foreground leading-relaxed">
             {isFinal ? (
-              <>
-                That&apos;s the tour. Thanks for coming. Enjoy the launch
-                party.
-              </>
+              <>Welcome to DALI OS.</>
             ) : arrived ? (
               current!.arrived
             ) : (
