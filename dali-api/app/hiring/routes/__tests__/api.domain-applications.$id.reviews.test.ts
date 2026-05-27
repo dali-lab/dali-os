@@ -223,4 +223,71 @@ describe("POST /api/hiring/domain-applications/:id/reviews", () => {
     expect(res.status).toBe(400);
     expect(mockPrisma.applicationReview.create).not.toHaveBeenCalled();
   });
+
+  it("skips the per-domain rubric check on InternToFull cycles (201)", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.applicationCycle.findUniqueOrThrow.mockResolvedValueOnce({
+      id: CYCLE_ID,
+      generalRubricVersionId: "grv-1",
+      cycleType: "InternToFull",
+    });
+    // No per-domain rubric — would be a 400 on Standard, but allowed here.
+    mockPrisma.domainApplicationCycle.findUnique.mockResolvedValueOnce(null);
+
+    const res = await action({
+      request: makeRequest(),
+      params: { id: DA_ID },
+      context: {},
+    } as any);
+
+    expect(res.status).toBe(201);
+    expect(mockPrisma.domainApplicationCycle.findUnique).not.toHaveBeenCalled();
+    expect(mockPrisma.applicationReview.create).toHaveBeenCalledWith({
+      data: { domainApplicationId: DA_ID, cycleReviewerId: CYCLE_REVIEWER_ID },
+    });
+  });
+
+  it("still requires the general rubric on InternToFull cycles (400)", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.applicationCycle.findUniqueOrThrow.mockResolvedValueOnce({
+      id: CYCLE_ID,
+      generalRubricVersionId: null,
+      cycleType: "InternToFull",
+    });
+
+    const res = await action({
+      request: makeRequest(),
+      params: { id: DA_ID },
+      context: {},
+    } as any);
+
+    expect(res.status).toBe(400);
+    expect(mockPrisma.applicationReview.create).not.toHaveBeenCalled();
+  });
+
+  it("resolves the domain via DomainApplication.domainId on InternToFull (no challengeVersion)", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    // InternToFull DAs link Domain directly — challengeVersion is null.
+    mockPrisma.domainApplication.findUniqueOrThrow.mockResolvedValueOnce({
+      id: DA_ID,
+      selected: true,
+      application: { applicationCycleId: CYCLE_ID },
+      challengeVersion: null,
+      domainId: DOMAIN_ID,
+    });
+    mockPrisma.applicationCycle.findUniqueOrThrow.mockResolvedValueOnce({
+      id: CYCLE_ID,
+      generalRubricVersionId: "grv-1",
+      cycleType: "InternToFull",
+    });
+
+    const res = await action({
+      request: makeRequest(),
+      params: { id: DA_ID },
+      context: {},
+    } as any);
+
+    expect(res.status).toBe(201);
+    expect(mockPrisma.applicationReview.create).toHaveBeenCalled();
+  });
 });
