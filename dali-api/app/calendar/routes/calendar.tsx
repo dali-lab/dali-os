@@ -613,9 +613,29 @@ function coerceFormToAction(raw: Record<string, FormDataEntryValue>): unknown {
 
 type Tab = "availability" | "schedule";
 
+const CALENDAR_TAB_STORAGE_KEY = "dali:calendar:tab";
+
 export default function CalendarPage() {
   const data = useLoaderData<typeof loader>() as LoaderData;
-  const [tab, setTab] = useState<Tab>("availability");
+  // Persist the active tab in sessionStorage so navigating away and back
+  // (or the workspace iframe re-mounting on tab focus) restores where the
+  // user left off rather than always snapping back to Availability.
+  const [tab, setTab] = useState<Tab>(() => {
+    if (typeof window === "undefined") return "availability";
+    try {
+      const stored = window.sessionStorage.getItem(CALENDAR_TAB_STORAGE_KEY);
+      return stored === "schedule" ? "schedule" : "availability";
+    } catch {
+      return "availability";
+    }
+  });
+  useEffect(() => {
+    try {
+      window.sessionStorage.setItem(CALENDAR_TAB_STORAGE_KEY, tab);
+    } catch {
+      // sessionStorage disabled / quota — ignore
+    }
+  }, [tab]);
 
   return (
     <div className="flex flex-col gap-5">
