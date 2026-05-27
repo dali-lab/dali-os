@@ -4,6 +4,7 @@ import {
   PartyPopper,
   FolderKanban,
   CalendarDays,
+  CalendarPlus,
   UserCircle2,
   ArrowRight,
   X as XIcon,
@@ -35,6 +36,47 @@ type TourStep = {
    *  advances the tour. */
   action?: { label: string; onClick: () => void };
 };
+
+/** Walks up through any iframe ancestors so the rect is in the parent
+ *  document's viewport coordinates (used by Spotlight on in-iframe targets). */
+function getRectInParent(el: HTMLElement): DOMRect {
+  let rect = el.getBoundingClientRect();
+  let doc: Document | null = el.ownerDocument;
+  while (doc && doc !== document) {
+    const frame = doc.defaultView?.frameElement as HTMLIFrameElement | null;
+    if (!frame) break;
+    const frameRect = frame.getBoundingClientRect();
+    rect = new DOMRect(
+      rect.left + frameRect.left,
+      rect.top + frameRect.top,
+      rect.width,
+      rect.height,
+    );
+    doc = frame.ownerDocument;
+  }
+  return rect;
+}
+
+/** Search any same-origin iframe for a button matching the predicate. Used
+ *  to target in-iframe tab pills (e.g. "Schedule Meeting" on the calendar). */
+function findInIframes(
+  predicate: (el: HTMLButtonElement) => boolean,
+): HTMLElement | null {
+  const iframes = document.querySelectorAll<HTMLIFrameElement>("iframe");
+  for (const iframe of iframes) {
+    try {
+      const doc = iframe.contentDocument;
+      if (!doc) continue;
+      const buttons = doc.querySelectorAll<HTMLButtonElement>("button");
+      for (const btn of buttons) {
+        if (predicate(btn)) return btn;
+      }
+    } catch {
+      // cross-origin iframe or detached — skip
+    }
+  }
+  return null;
+}
 
 function findInSidebar(predicate: (el: HTMLButtonElement) => boolean): HTMLElement | null {
   // Look in both desktop sidebar (<aside>) and the mobile nav panel. We can't
@@ -84,6 +126,30 @@ const STEPS: TourStep[] = [
     arrived: <>Lab meetings and events.</>,
     matches: (p) => p.startsWith("/calendar"),
     findTarget: () => findByExactText("Calendar"),
+  },
+  {
+    icon: <CalendarPlus className="w-4 h-4" />,
+    eyebrow: "Schedule Meeting",
+    cta: (
+      <>
+        At the top of the Calendar, switch to{" "}
+        <strong>Schedule Meeting</strong>.
+      </>
+    ),
+    arrived: (
+      <>
+        See everyone&apos;s availability and create a meeting. No more
+        when2meets.
+      </>
+    ),
+    // No URL change happens when the pill is clicked (tab state lives in
+    // React state on the calendar page), so this step advances via a DOM
+    // click listener attached to the spotlit element instead of via
+    // dali:tabNavigated. See the find-target effect below.
+    findTarget: () =>
+      findInIframes(
+        (btn) => (btn.textContent || "").trim() === "Schedule Meeting",
+      ),
   },
   {
     icon: <UserCircle2 className="w-4 h-4" />,
@@ -148,11 +214,13 @@ function readStep(): number {
 
 /**
  * Tracks a target element's bounding rect, polling on resize/scroll plus a
- * cheap interval so transitions (sidebar collapse, mobile drawer) stay glued.
+ * cheap interval so transitions (sidebar collapse, mobile drawer, iframe
+ * scroll) stay glued. Uses getRectInParent so in-iframe targets resolve to
+ * the parent document's viewport coordinates.
  */
 function useTargetRect(target: HTMLElement | null): DOMRect | null {
   const [rect, setRect] = useState<DOMRect | null>(() =>
-    target ? target.getBoundingClientRect() : null,
+    target ? getRectInParent(target) : null,
   );
   useEffect(() => {
     if (!target) {
@@ -162,7 +230,7 @@ function useTargetRect(target: HTMLElement | null): DOMRect | null {
     let alive = true;
     function measure() {
       if (!alive || !target) return;
-      setRect(target.getBoundingClientRect());
+      setRect(getRectInParent(target));
     }
     measure();
     const id = window.setInterval(measure, 150);
@@ -238,23 +306,44 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
     setStep(readStep());
   }, []);
 
-  // Re-resolve the sidebar highlight target whenever the active step changes.
-  // Cheap interval because the sidebar may not be present at mount time.
+  // Re-resolve the highlight target whenever the active step changes.
+  // Cheap interval because the target may not be present at mount time
+  // (sidebar not laid out yet, calendar iframe still loading, etc.).
   // Info-only steps (no findTarget) never show a spotlight.
+  //
+  // For steps that have no URL `matches` (e.g. the in-page Schedule Meeting
+  // pill), there's no dali:tabNavigated to advance on, so we attach a DOM
+  // click listener to the resolved target instead. Clicking the spotlit
+  // element flips the step to "arrived" the same way a URL change would.
   useEffect(() => {
     if (phase !== "card") return;
     if (step >= STEPS.length) return;
-    const find = STEPS[step].findTarget;
+    const s = STEPS[step];
+    const find = s.findTarget;
     if (!find || arrived) {
       setSidebarTarget(null);
       return;
     }
+    const advanceOnClick = !s.matches;
+    let attached: HTMLElement | null = null;
+    function onClick() {
+      setArrived(true);
+    }
     function resolve() {
-      setSidebarTarget(find!());
+      const found = find!();
+      setSidebarTarget(found);
+      if (advanceOnClick && found !== attached) {
+        if (attached) attached.removeEventListener("click", onClick);
+        if (found) found.addEventListener("click", onClick);
+        attached = found;
+      }
     }
     resolve();
     const id = window.setInterval(resolve, 300);
-    return () => window.clearInterval(id);
+    return () => {
+      window.clearInterval(id);
+      if (attached) attached.removeEventListener("click", onClick);
+    };
   }, [phase, step, arrived]);
 
   // Pulse the card's primary action button. For click-driven steps this is

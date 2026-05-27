@@ -889,7 +889,9 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
               )}
             </div>
             {!collapsed && (
-              <span className="text-xs text-white/80 truncate min-w-0">{user.email}</span>
+              <span className="text-xs text-white/80 truncate min-w-0">
+                {user.firstName}
+              </span>
             )}
           </button>
           {!collapsed && (
