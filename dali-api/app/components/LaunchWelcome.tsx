@@ -17,7 +17,7 @@ const DONE_KEY = "dalios-launch-welcome-seen-v1";
 const STEP_KEY = "dalios-launch-tour-step-v1";
 
 const CLAUDE_MCP_COMMAND =
-  "claude mcp add --transport http dali-os https://os.dali.dartmouth.edu/mcp";
+  "claude mcp add --transport http dalios https://os.dali.dartmouth.edu/mcp";
 
 function CopyableCommand({ command }: { command: string }) {
   const [copied, setCopied] = useState(false);
