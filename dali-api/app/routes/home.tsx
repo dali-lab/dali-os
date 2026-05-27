@@ -14,6 +14,7 @@ import { prisma } from "~/lib/db";
 import { listOpenTasks, type Task } from "~/lib/tasks";
 import { fetchGeneralCalendarEvents } from "~/lib/general-calendar";
 import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
+import { LaunchWelcome } from "~/components/LaunchWelcome";
 import type { Route } from "./+types/home";
 
 // The home week calendar is rendered in this fixed lab timezone, matching the
@@ -143,6 +144,7 @@ export default function Home() {
 
   return (
     <div className="flex flex-col gap-6">
+      <LaunchWelcome firstName={firstName} />
       <header>
         <h1 className="font-heading text-2xl font-bold text-foreground">
           Welcome back, {firstName}
