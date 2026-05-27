@@ -3474,15 +3474,22 @@ function WeekGrid({
               const lo = Math.min(drag.anchor, drag.hover);
               const hi = Math.max(drag.anchor, drag.hover);
               const heightHours = Math.max(SNAP_HOURS, hi - lo);
+              const top = (lo - MIN_HOUR) * HOUR_PX;
+              // Caption sits above the rectangle's top edge so a short (e.g.
+              // 10-min) selection doesn't have the text spilling through the
+              // box into the slot below. Near the grid's top there's no room
+              // above (the column clips overflow), so drop it just inside.
+              const captionBelow = top < 16;
               return (
                 <div
                   className="absolute left-0 right-0 border-2 border-accent-coral bg-accent-coral/15 pointer-events-none rounded-sm z-30 shadow-md"
-                  style={{
-                    top: (lo - MIN_HOUR) * HOUR_PX,
-                    height: heightHours * HOUR_PX,
-                  }}
+                  style={{ top, height: heightHours * HOUR_PX }}
                 >
-                  <div className="px-1 py-0.5 text-[11px] font-semibold rounded-sm m-1 inline-block shadow-sm bg-accent-coral text-white">
+                  <div
+                    className={`absolute left-0 px-1 py-0.5 rounded bg-white/75 text-[11px] font-semibold leading-none whitespace-nowrap text-accent-coral ${
+                      captionBelow ? "top-1" : "bottom-full mb-1"
+                    }`}
+                  >
                     {formatHourMinute(lo)} – {formatHourMinute(hi)}
                   </div>
                 </div>
@@ -3505,7 +3512,12 @@ function WeekGrid({
                   }`}
                   style={{ top, height }}
                 >
-                  <div className="px-1 py-0.5 text-[11px] font-semibold rounded-sm m-1 inline-block bg-accent-coral text-white pointer-events-none">
+                  {/* Caption above the top edge — see drag-preview note. */}
+                  <div
+                    className={`absolute left-0 px-1 py-0.5 rounded bg-white/75 text-[11px] font-semibold leading-none whitespace-nowrap text-accent-coral pointer-events-none ${
+                      top < 16 ? "top-1" : "bottom-full mb-1"
+                    }`}
+                  >
                     {formatHourMinute(lo)} – {formatHourMinute(hi)}
                   </div>
                   {resizable && (

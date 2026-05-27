@@ -148,6 +148,22 @@ export async function isDomainLead(userId: string): Promise<boolean> {
 }
 
 /**
+ * Whether the user is staffed on a project — a ProjectAssignment row for that
+ * project in any term (past contributors keep access). Used to grant
+ * content-edit access to the project hub; scope/domain settings stay Core/Admin.
+ */
+export async function isProjectMember(
+  userId: string,
+  projectId: string,
+): Promise<boolean> {
+  const row = await prisma.projectAssignment.findFirst({
+    where: { userId, projectId },
+    select: { id: true },
+  });
+  return row !== null;
+}
+
+/**
  * Lab-membership gate. Returns the DALIMember row (thin marker — just
  * `{ id, userId, createdAt, updatedAt }`) if the user is a member, null
  * otherwise. The row is now a presence-only marker; callers should not

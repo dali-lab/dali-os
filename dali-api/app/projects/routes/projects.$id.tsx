@@ -19,7 +19,7 @@ import { prisma } from "~/lib/db";
 import { ensureProjectGroup } from "~/lib/groups";
 import { requireAuth } from "~/lib/auth";
 import { parseSessionCookie } from "~/lib/cookies";
-import { isCore, canManageStaffing, currentTerm } from "~/lib/roles";
+import { isCore, isProjectMember, canManageStaffing, currentTerm } from "~/lib/roles";
 import { TaskBoard } from "../components/TaskBoard";
 import { type TimelineEpic, type EpicStatus } from "../components/EpicsTimeline";
 import {
@@ -219,11 +219,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     select: { id: true, label: true, slug: true, color: true },
   });
 
-  // Admin or Core members may edit projects (isCore === Admin || Core).
-  const canEdit = await isCore(auth.user.sub);
+  // Content edits (name/status, description, details, docs/files, epics/
+  // sprints/tasks) are open to Core/Admin *and* anyone staffed on this project
+  // in any term. Scope/domain settings stay Core/Admin only (canEditScope).
+  const core = await isCore(auth.user.sub);
+  const canEditScope = core;
+  const canEdit = core || (await isProjectMember(auth.user.sub, params.id));
   // The Scope/challenge settings popup is visible to Core, Admin, or staffing
-  // leads. Editing still requires canEdit (isCore) — the action enforces that.
-  const canViewScope = canEdit || (await canManageStaffing(auth.user.sub));
+  // leads. Editing still requires canEditScope (isCore) — the action enforces that.
+  const canViewScope = canEditScope || (await canManageStaffing(auth.user.sub));
 
   // Collab editor wiring (same as the hiring routes): session cookie is the
   // WebSocket auth token; userName labels the presence cursor.
@@ -468,6 +472,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     tasks,
     boardOptions,
     canEdit,
+    canEditScope,
     canViewScope,
     currentTerm: current ? { id: current.id, code: current.code } : null,
     collabToken,
@@ -481,12 +486,20 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!auth.ok) return redirect("/login");
   if (auth.user.type === "applicant") return redirect("/portal");
 
-  if (!(await isCore(auth.user.sub))) {
+  // Content edits are open to Core/Admin or anyone staffed on the project;
+  // scope/domain settings (scopesBulk, domains, terms) stay Core/Admin only.
+  const core = await isCore(auth.user.sub);
+  if (!core && !(await isProjectMember(auth.user.sub, params.id))) {
     return { error: "You don't have permission to edit this project." };
   }
 
   const form = await request.formData();
   const intent = (form.get("intent") as string | null) ?? "details";
+
+  const SCOPE_INTENTS = ["scopesBulk", "domains", "terms"];
+  if (SCOPE_INTENTS.includes(intent) && !core) {
+    return { error: "Only Core or Admin can change domain settings." };
+  }
 
   // Header form: name + status only.
   if (intent === "header") {
@@ -673,6 +686,7 @@ export default function ProjectDetail() {
     allTermOptions,
     domainScopeGrid,
     canEdit,
+    canEditScope,
     canViewScope,
     currentTerm,
     collabToken,
@@ -790,7 +804,7 @@ export default function ProjectDetail() {
             plannedTerms={plannedTerms}
             allTermOptions={allTermOptions}
             domainScopeGrid={domainScopeGrid}
-            canEdit={canEdit}
+            canEdit={canEditScope}
             actionError={actionData?.error}
           />
         </Modal>
