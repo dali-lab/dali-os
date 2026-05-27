@@ -407,6 +407,14 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
     setPhase("card");
   }
 
+  function finishAndGoHome() {
+    window.postMessage(
+      { type: "dali:openTab", url: "/", label: "Home" },
+      window.location.origin,
+    );
+    finishTour();
+  }
+
   function finishTour() {
     try {
       window.localStorage.setItem(DONE_KEY, new Date().toISOString());
@@ -573,10 +581,10 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
             {isFinal ? (
               <button
                 type="button"
-                onClick={finishTour}
+                onClick={finishAndGoHome}
                 className="inline-flex items-center gap-1.5 rounded-lg bg-accent-coral px-3 py-1.5 text-sm font-semibold text-white hover:bg-accent-coral/90"
               >
-                Done
+                Back to home
               </button>
             ) : arrived ? (
               <button
