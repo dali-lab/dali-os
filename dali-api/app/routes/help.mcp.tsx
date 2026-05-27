@@ -1,10 +1,40 @@
 // Member-facing docs for connecting an AI assistant to DALI OS via MCP.
 
+import { useState } from "react";
+import { Check, Copy } from "lucide-react";
 import type { Route } from "./+types/help.mcp";
 
 export async function loader() {
   const base = process.env.API_BASE_URL ?? "https://os.dali.dartmouth.edu";
   return { mcpUrl: `${base}/mcp` };
+}
+
+function CopyBlock({ content }: { content: string }) {
+  const [copied, setCopied] = useState(false);
+  function copy() {
+    try {
+      navigator.clipboard.writeText(content);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // clipboard unavailable — give up silently
+    }
+  }
+  return (
+    <div className="relative mt-2">
+      <pre className="overflow-x-auto rounded bg-zinc-900 p-3 pr-10 text-xs text-zinc-100 whitespace-pre">
+        {content}
+      </pre>
+      <button
+        type="button"
+        onClick={copy}
+        aria-label="Copy to clipboard"
+        className="absolute top-2 right-2 p-1.5 rounded text-zinc-400 hover:text-white hover:bg-white/10"
+      >
+        {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+      </button>
+    </div>
+  );
 }
 
 export default function McpHelpPage({ loaderData }: Route.ComponentProps) {
@@ -19,9 +49,7 @@ export default function McpHelpPage({ loaderData }: Route.ComponentProps) {
 
       <section className="mt-6">
         <h2 className="text-lg font-semibold">Claude Code</h2>
-        <pre className="mt-2 overflow-x-auto rounded bg-zinc-900 p-3 text-xs text-zinc-100">
-          claude mcp add --transport http dalios {mcpUrl}
-        </pre>
+        <CopyBlock content={`claude mcp add --transport http dalios ${mcpUrl}`} />
         <p className="mt-2 text-sm text-zinc-600">
           Claude Code will open a browser to authorize you and then keep the
           bearer in its credential store.
@@ -30,9 +58,7 @@ export default function McpHelpPage({ loaderData }: Route.ComponentProps) {
 
       <section className="mt-6">
         <h2 className="text-lg font-semibold">Codex</h2>
-        <pre className="mt-2 overflow-x-auto rounded bg-zinc-900 p-3 text-xs text-zinc-100">
-          codex mcp add dalios {mcpUrl}
-        </pre>
+        <CopyBlock content={`codex mcp add dalios ${mcpUrl}`} />
       </section>
 
       <section className="mt-6">
@@ -41,15 +67,15 @@ export default function McpHelpPage({ loaderData }: Route.ComponentProps) {
           Add this entry to your Claude Desktop config (<code>claude_desktop_config.json</code>)
           and restart the app:
         </p>
-        <pre className="mt-2 overflow-x-auto rounded bg-zinc-900 p-3 text-xs text-zinc-100">
-{`{
+        <CopyBlock
+          content={`{
   "mcpServers": {
     "dalios": {
       "transport": { "type": "http", "url": "${mcpUrl}" }
     }
   }
 }`}
-        </pre>
+        />
       </section>
 
       <section className="mt-6">
