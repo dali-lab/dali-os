@@ -31,6 +31,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     include: {
       statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
       internToFullFormVersion: true,
+      generalRubricVersion: { include: { rubric: true } },
       domains: {
         include: {
           domain: true,
@@ -84,14 +85,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
             questions: (cycle.internToFullFormVersion.questions as unknown as Question[]) ?? [],
           }
         : null,
+      generalRubricVersionId: cycle.generalRubricVersionId,
+      generalRubricLabel: cycle.generalRubricVersion
+        ? `${cycle.generalRubricVersion.rubric.name} v${cycle.generalRubricVersion.versionNumber}`
+        : null,
       targetDomains: cycle.domains.map((d) => ({
         domainId: d.domainId,
         code: d.domain.code,
         displayName: d.domain.displayName,
-        rubricVersionId: d.rubricVersionId,
-        rubricLabel: d.rubricVersion
-          ? `${d.rubricVersion.rubric.name} v${d.rubricVersion.versionNumber}`
-          : null,
         isReady: d.isReady,
       })),
       // InternToFull uses a single reviewer pool: each member reads every DA
@@ -275,14 +276,11 @@ export async function action({ request, params }: Route.ActionArgs) {
     return { ok: true };
   }
 
-  if (intent === "set-domain-rubric") {
-    const domainId = formData.get("domainId") as string;
+  if (intent === "set-general-rubric") {
     const rubricVersionId = (formData.get("rubricVersionId") as string) || null;
-    await prisma.domainApplicationCycle.update({
-      where: {
-        domainId_applicationCycleId: { domainId, applicationCycleId: cycleId },
-      },
-      data: { rubricVersionId },
+    await prisma.applicationCycle.update({
+      where: { id: cycleId },
+      data: { generalRubricVersionId: rubricVersionId },
     });
     return { ok: true };
   }
@@ -371,11 +369,17 @@ export default function InternToFullCycleSetup() {
         disabled={isOpen}
       />
 
+      <GeneralRubricSection
+        cycleId={cycle.id}
+        currentRubricVersionId={cycle.generalRubricVersionId}
+        currentRubricLabel={cycle.generalRubricLabel}
+        allRubricVersions={allRubricVersions}
+      />
+
       <TargetDomainsSection
         cycleId={cycle.id}
         targetDomains={cycle.targetDomains}
         allDomains={allDomains}
-        allRubricVersions={allRubricVersions}
         disabled={isOpen}
       />
 
@@ -729,7 +733,6 @@ function TargetDomainsSection({
   cycleId,
   targetDomains,
   allDomains,
-  allRubricVersions,
   disabled,
 }: {
   cycleId: string;
@@ -737,12 +740,9 @@ function TargetDomainsSection({
     domainId: string;
     code: string;
     displayName: string;
-    rubricVersionId: string | null;
-    rubricLabel: string | null;
     isReady: boolean;
   }[];
   allDomains: { id: string; code: string; displayName: string }[];
-  allRubricVersions: { id: string; label: string }[];
   disabled: boolean;
 }) {
   const fetcher = useFetcher();
@@ -761,7 +761,7 @@ function TargetDomainsSection({
   return (
     <Section
       title="Target domains"
-      description="Domains interns can apply to convert into. Each gets its own rubric and reviewer pool."
+      description="Domains interns can apply to convert into. All domains share the cycle's general rubric and a single reviewer pool."
     >
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">
         {allDomains.map((d) => {
@@ -796,7 +796,6 @@ function TargetDomainsSection({
               key={d.domainId}
               cycleId={cycleId}
               domain={d}
-              allRubricVersions={allRubricVersions}
               disabled={disabled}
             />
           ))}
@@ -807,70 +806,92 @@ function TargetDomainsSection({
 }
 
 function DomainConfigRow({
-  cycleId,
+  cycleId: _cycleId,
   domain,
-  allRubricVersions,
   disabled,
 }: {
   cycleId: string;
   domain: {
     domainId: string;
     displayName: string;
-    rubricVersionId: string | null;
-    rubricLabel: string | null;
     isReady: boolean;
   };
-  allRubricVersions: { id: string; label: string }[];
   disabled: boolean;
 }) {
   const fetcher = useFetcher();
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 py-2">
       <div className="text-sm font-medium text-dark-blue min-w-32">{domain.displayName}</div>
-      <div className="flex items-center gap-2 text-xs">
-        <span className="text-muted-foreground">Rubric:</span>
-        <select
-          value={domain.rubricVersionId ?? ""}
+      <label className="flex items-center gap-1 text-xs">
+        <input
+          type="checkbox"
+          checked={domain.isReady}
+          disabled={disabled}
           onChange={(e) =>
             fetcher.submit(
               {
-                intent: "set-domain-rubric",
+                intent: "toggle-domain-ready",
                 domainId: domain.domainId,
-                rubricVersionId: e.target.value,
+                ready: String(e.target.checked),
               },
               { method: "post" },
             )
           }
-          disabled={disabled}
-          className="px-2 py-1 border border-border rounded text-xs"
+        />
+        Ready
+      </label>
+    </div>
+  );
+}
+
+function GeneralRubricSection({
+  cycleId: _cycleId,
+  currentRubricVersionId,
+  currentRubricLabel,
+  allRubricVersions,
+}: {
+  cycleId: string;
+  currentRubricVersionId: string | null;
+  currentRubricLabel: string | null;
+  allRubricVersions: { id: string; label: string }[];
+}) {
+  const fetcher = useFetcher();
+  return (
+    <Section
+      title="Rubric"
+      description="Scoring criteria reviewers use for every application in this cycle. Required before reviewers can be assigned."
+    >
+      {currentRubricLabel ? (
+        <p className="text-sm font-medium text-dark-blue mb-3">{currentRubricLabel}</p>
+      ) : (
+        <p className="text-sm text-muted-foreground mb-3">No rubric pinned yet.</p>
+      )}
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          value={currentRubricVersionId ?? ""}
+          onChange={(e) => {
+            fetcher.submit(
+              { intent: "set-general-rubric", rubricVersionId: e.target.value },
+              { method: "post" },
+            );
+          }}
+          className="px-3 py-2 text-sm border border-border rounded-md"
         >
-          <option value="">— none —</option>
+          <option value="">— pick a rubric version —</option>
           {allRubricVersions.map((rv) => (
             <option key={rv.id} value={rv.id}>
               {rv.label}
             </option>
           ))}
         </select>
-        <label className="flex items-center gap-1 ml-3">
-          <input
-            type="checkbox"
-            checked={domain.isReady}
-            disabled={disabled}
-            onChange={(e) =>
-              fetcher.submit(
-                {
-                  intent: "toggle-domain-ready",
-                  domainId: domain.domainId,
-                  ready: String(e.target.checked),
-                },
-                { method: "post" },
-              )
-            }
-          />
-          Ready
-        </label>
+        <Link
+          to="/hiring/library?tab=rubrics"
+          className="text-xs font-medium text-blue-700 hover:underline"
+        >
+          Manage rubrics →
+        </Link>
       </div>
-    </div>
+    </Section>
   );
 }
 
