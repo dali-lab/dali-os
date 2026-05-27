@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import {
   Sparkles,
   PartyPopper,
@@ -18,13 +18,13 @@ type Phase = "modal" | "card" | "done";
 
 type TourStep = {
   icon: React.ReactNode;
-  /** Short, action-oriented prompt. */
+  /** Short prompt asking the user to click the highlighted thing. */
   cta: React.ReactNode;
-  /** Confirmation shown once the user lands on the matched page. */
+  /** Shown after the user lands on the matching page. */
   arrived: React.ReactNode;
   /** True if the iframe-reported URL means this step is satisfied. */
   matches: (pathname: string) => boolean;
-  /** Locates the sidebar element to highlight, or null if not currently in DOM. */
+  /** Locates the sidebar element to highlight, or null if not in DOM. */
   findTarget: () => HTMLElement | null;
 };
 
@@ -57,11 +57,10 @@ const STEPS: TourStep[] = [
     icon: <FolderKanban className="w-4 h-4" />,
     cta: (
       <>
-        Click <strong>Projects</strong> in the sidebar to see every active
-        project.
+        Open <strong>Projects</strong> from the sidebar.
       </>
     ),
-    arrived: <>Nice — every active project lives here.</>,
+    arrived: <>Everything the lab is working on.</>,
     matches: (p) => p.startsWith("/projects"),
     findTarget: () => findByExactText("Projects"),
   },
@@ -69,10 +68,10 @@ const STEPS: TourStep[] = [
     icon: <CalendarDays className="w-4 h-4" />,
     cta: (
       <>
-        Now click <strong>Calendar</strong> to see lab meetings and events.
+        Now try <strong>Calendar</strong>.
       </>
     ),
-    arrived: <>Lab meetings, standups, and your own events — all in lab time.</>,
+    arrived: <>Lab meetings, deadlines, social stuff.</>,
     matches: (p) => p.startsWith("/calendar"),
     findTarget: () => findByExactText("Calendar"),
   },
@@ -80,15 +79,11 @@ const STEPS: TourStep[] = [
     icon: <UserCircle2 className="w-4 h-4" />,
     cta: (
       <>
-        Last one — click your <strong>profile</strong> (bottom of the sidebar)
-        to make it yours.
+        Last one. Click your <strong>profile</strong> at the bottom of the
+        sidebar.
       </>
     ),
-    arrived: (
-      <>
-        Add a photo and a few words — this is how the lab gets to know you.
-      </>
-    ),
+    arrived: <>Drop a photo in. It&apos;s how the rest of the lab sees you.</>,
     matches: (p) => p.startsWith("/profile"),
     findTarget: () =>
       findInSidebar((btn) => btn.getAttribute("aria-label") === "Open profile"),
@@ -116,19 +111,25 @@ function readStep(): number {
   }
 }
 
-function Spotlight({ target }: { target: HTMLElement }) {
-  const [rect, setRect] = useState<DOMRect | null>(() => target.getBoundingClientRect());
-
+/**
+ * Tracks a target element's bounding rect, polling on resize/scroll plus a
+ * cheap interval so transitions (sidebar collapse, mobile drawer) stay glued.
+ */
+function useTargetRect(target: HTMLElement | null): DOMRect | null {
+  const [rect, setRect] = useState<DOMRect | null>(() =>
+    target ? target.getBoundingClientRect() : null,
+  );
   useEffect(() => {
+    if (!target) {
+      setRect(null);
+      return;
+    }
     let alive = true;
     function measure() {
-      if (!alive) return;
+      if (!alive || !target) return;
       setRect(target.getBoundingClientRect());
     }
     measure();
-    // Sidebar can collapse, page can scroll, mobile drawer can open — poll
-    // cheaply so the spotlight stays glued to the element. Throwaway tour
-    // code, a 150ms tick is plenty smooth.
     const id = window.setInterval(measure, 150);
     window.addEventListener("resize", measure);
     window.addEventListener("scroll", measure, true);
@@ -139,37 +140,51 @@ function Spotlight({ target }: { target: HTMLElement }) {
       window.removeEventListener("scroll", measure, true);
     };
   }, [target]);
+  return rect;
+}
 
+/** Pulsing coral ring positioned around an element. No dim. */
+function PulseRing({ target, zIndex }: { target: HTMLElement; zIndex: number }) {
+  const rect = useTargetRect(target);
   if (!rect) return null;
-
   const PAD = 6;
-  const top = rect.top - PAD;
-  const left = rect.left - PAD;
-  const width = rect.width + PAD * 2;
-  const height = rect.height + PAD * 2;
+  return (
+    <div
+      aria-hidden="true"
+      className="pointer-events-none fixed rounded-md launch-tour-pulse"
+      style={{
+        top: rect.top - PAD,
+        left: rect.left - PAD,
+        width: rect.width + PAD * 2,
+        height: rect.height + PAD * 2,
+        zIndex,
+      }}
+    />
+  );
+}
 
+/** Full spotlight: dims the page everywhere except a cut-out over `target`,
+ *  with a pulsing ring on top. */
+function Spotlight({ target }: { target: HTMLElement }) {
+  const rect = useTargetRect(target);
+  if (!rect) return null;
+  const PAD = 6;
+  const box = {
+    top: rect.top - PAD,
+    left: rect.left - PAD,
+    width: rect.width + PAD * 2,
+    height: rect.height + PAD * 2,
+  };
   return (
     <>
-      {/* Cut-out: a transparent rectangle sitting where the target is, with
-          a massive box-shadow extending outward to dim the rest of the page.
-          pointer-events: none so the user can still click the real element. */}
+      {/* Cut-out: transparent rect with huge outward box-shadow dims the rest
+          of the page. pointer-events: none so clicks pass through. */}
       <div
         aria-hidden="true"
         className="pointer-events-none fixed z-40 rounded-md"
-        style={{
-          top,
-          left,
-          width,
-          height,
-          boxShadow: "0 0 0 9999px rgba(0, 0, 0, 0.55)",
-        }}
+        style={{ ...box, boxShadow: "0 0 0 9999px rgba(0, 0, 0, 0.55)" }}
       />
-      {/* Pulsing coral ring on top of the cut-out for emphasis. */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none fixed z-40 rounded-md launch-tour-pulse"
-        style={{ top, left, width, height }}
-      />
+      <PulseRing target={target} zIndex={41} />
     </>
   );
 }
@@ -178,7 +193,9 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
   const [phase, setPhase] = useState<Phase>("done");
   const [step, setStep] = useState(0);
   const [arrived, setArrived] = useState(false);
-  const [target, setTarget] = useState<HTMLElement | null>(null);
+  const [sidebarTarget, setSidebarTarget] = useState<HTMLElement | null>(null);
+  const nextButtonRef = useRef<HTMLButtonElement | null>(null);
+  const [nextTarget, setNextTarget] = useState<HTMLElement | null>(null);
   const titleId = useId();
 
   useEffect(() => {
@@ -186,29 +203,33 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
     setStep(readStep());
   }, []);
 
-  // Re-resolve the highlight target whenever the active step changes or the
-  // sidebar DOM might have shifted (mobile drawer open/close). Cheap interval
-  // because the sidebar isn't always present at mount time.
+  // Re-resolve the sidebar highlight target whenever the active step changes.
+  // Cheap interval because the sidebar may not be present at mount time.
   useEffect(() => {
     if (phase !== "card") return;
     if (step >= STEPS.length) return;
     if (arrived) {
-      setTarget(null);
+      setSidebarTarget(null);
       return;
     }
     const find = STEPS[step].findTarget;
     function resolve() {
-      const el = find();
-      setTarget(el);
+      setSidebarTarget(find());
     }
     resolve();
     const id = window.setInterval(resolve, 300);
     return () => window.clearInterval(id);
   }, [phase, step, arrived]);
 
+  // After arriving, point the next-button ref into local state so PulseRing
+  // re-renders against a stable element. (Refs alone don't trigger re-renders.)
+  useEffect(() => {
+    setNextTarget(arrived ? nextButtonRef.current : null);
+  }, [arrived, step]);
+
   // Listen for iframe-reported tab navigation — that's how the workspace
-  // signals "the user is now looking at X". Falls back to top-level pathname
-  // for routes that aren't tab-wrapped.
+  // signals "the user is now looking at X". Sidebar clicks open iframe tabs,
+  // so useLocation on the parent shell never fires.
   const handleUrl = useCallback(
     (url: string) => {
       if (phase !== "card") return;
@@ -291,11 +312,10 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
               id={titleId}
               className="font-heading text-xl font-bold text-foreground"
             >
-              Hey {firstName} — welcome to DALIos
+              DALI OS is live
             </h2>
             <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
-              This is the new home for everything DALI. Want a quick tour? We'll
-              point you at a few spots in the sidebar — click as you go.
+              Hi {firstName}. The new site is up. Want a quick spin around it?
             </p>
           </div>
           <div className="flex items-center justify-end gap-2 pt-2">
@@ -304,7 +324,7 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
               onClick={finishTour}
               className="text-sm text-muted-foreground hover:text-foreground px-3 py-2"
             >
-              Maybe later
+              Not now
             </button>
             <button
               type="button"
@@ -325,8 +345,6 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
 
   return (
     <>
-      {/* CSS keyframes for the spotlight pulse. Scoped to this component via
-          the .launch-tour-pulse class so removal = delete file. */}
       <style>{`
         @keyframes launch-tour-pulse {
           0%, 100% {
@@ -347,7 +365,13 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
         }
       `}</style>
 
-      {target && !arrived && !isFinal && <Spotlight target={target} />}
+      {/* Sidebar spotlight before they click. */}
+      {sidebarTarget && !arrived && !isFinal && <Spotlight target={sidebarTarget} />}
+
+      {/* Next-button ring after they arrive (no dim — card is already prominent). */}
+      {nextTarget && arrived && !isFinal && (
+        <PulseRing target={nextTarget} zIndex={60} />
+      )}
 
       <div className="fixed bottom-4 right-4 z-50 w-80 max-w-[calc(100vw-2rem)] pointer-events-auto">
         <div className="bg-card border border-border rounded-2xl shadow-brand-2 p-4 flex flex-col gap-3">
@@ -379,8 +403,8 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
           <p className="text-sm text-foreground leading-relaxed">
             {isFinal ? (
               <>
-                That's the tour! 🎉 The site launch party is right around the
-                corner — keep an eye on the calendar for the invite.
+                That&apos;s the tour. There&apos;s a launch party on the
+                calendar. Come celebrate.
               </>
             ) : arrived ? (
               current!.arrived
@@ -410,10 +434,11 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
                 onClick={finishTour}
                 className="inline-flex items-center gap-1.5 rounded-lg bg-accent-coral px-3 py-1.5 text-sm font-semibold text-white hover:bg-accent-coral/90"
               >
-                Let's go
+                Sounds good
               </button>
             ) : arrived ? (
               <button
+                ref={nextButtonRef}
                 type="button"
                 onClick={advance}
                 className="inline-flex items-center gap-1.5 rounded-lg bg-accent-coral px-3 py-1.5 text-sm font-semibold text-white hover:bg-accent-coral/90"
@@ -436,7 +461,7 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
                   className="text-xs text-muted-foreground hover:text-foreground"
                   title="Skip this step"
                 >
-                  I'm there →
+                  I&apos;m there
                 </button>
               </>
             )}
