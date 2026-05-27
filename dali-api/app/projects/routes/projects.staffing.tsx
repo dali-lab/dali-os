@@ -4,6 +4,10 @@ import { requireAuth } from "~/lib/auth";
 import { canManageStaffing, canViewStaffing } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { resolvePhotoUrl } from "~/lib/photo";
+import { parseSessionCookie } from "~/lib/cookies";
+import { getPresenceUser } from "~/lib/presence-user";
+import { PresenceProvider } from "~/components/collab/PresenceProvider";
+import { PresenceBar } from "~/components/collab/PresenceBar";
 import { ensureStaffingCycle } from "../lib/staffing-cycle";
 import { getSlotBinding } from "../lib/form-slots";
 import { buildSubmissionView } from "../lib/submission-view.server";
@@ -44,8 +48,18 @@ export async function loader({ request }: Route.LoaderArgs) {
       sortKey: true,
     },
   });
+  const collabToken = parseSessionCookie(request);
+  const presenceUser = await getPresenceUser(auth.user.sub);
+  const presence = {
+    collabToken,
+    currentUserId: auth.user.sub,
+    presenceUserName: presenceUser?.name ?? auth.user.email,
+    presencePhotoUrl: presenceUser?.photoUrl ?? null,
+    presenceSubtitle: presenceUser?.subtitle ?? null,
+  };
+
   if (terms.length === 0) {
-    return { cycle: null, canManage, terms: [] };
+    return { cycle: null, canManage, terms: [], ...presence };
   }
 
   // Current term = the one bracketing now(); if we're between terms, the next
@@ -289,6 +303,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     domainNames,
     demandByProject,
     bidsFormBound,
+    ...presence,
   };
 }
 
@@ -308,15 +323,18 @@ export default function StaffingPage() {
     );
   }
 
-  return (
+  const page = (
     <div className="flex flex-col gap-4">
-      <header>
-        <h1 className="font-heading text-2xl font-bold text-foreground">Staffing</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          {data.canManage
-            ? "Pick a term, then drag-and-drop project assignments. Changes are saved as Proposed staffing assignments."
-            : "Pick a term to view its proposed assignments."}
-        </p>
+      <header className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="font-heading text-2xl font-bold text-foreground">Staffing</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            {data.canManage
+              ? "Pick a term, then drag-and-drop project assignments. Changes are saved as Proposed staffing assignments."
+              : "Pick a term to view its proposed assignments."}
+          </p>
+        </div>
+        <PresenceBar />
       </header>
 
       {!data.bidsFormBound && (
@@ -339,5 +357,20 @@ export default function StaffingPage() {
         canManage={data.canManage}
       />
     </div>
+  );
+
+  return data.collabToken ? (
+    <PresenceProvider
+      pageId={`staffing:term:${data.cycle.termId}`}
+      token={data.collabToken}
+      userName={data.presenceUserName}
+      userId={data.currentUserId}
+      photoUrl={data.presencePhotoUrl}
+      subtitle={data.presenceSubtitle}
+    >
+      {page}
+    </PresenceProvider>
+  ) : (
+    page
   );
 }

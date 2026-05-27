@@ -5,6 +5,7 @@ import { prisma } from '~/lib/db'
 import { requireAuth } from "~/lib/auth";
 import { hasCycleAccess } from '~/lib/roles'
 import { parseSessionCookie } from '~/lib/cookies'
+import { getPresenceUser } from '~/lib/presence-user'
 import { requirePageSignedOrRedirect } from '~/hiring/lib/confidentiality'
 import { presignAnswers } from '~/hiring/lib/presign'
 import type { Route } from './+types/reviewer.application.$id'
@@ -165,9 +166,21 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   // Pass JWT for WebSocket auth
   const collabToken = parseSessionCookie(request)
-  const userName = [reviewer.firstName, reviewer.lastName].filter(Boolean).join(' ') || auth.user.email
+  const fallbackName =
+    [reviewer.firstName, reviewer.lastName].filter(Boolean).join(' ') || auth.user.email
+  const presenceUser = await getPresenceUser(auth.user.sub, fallbackName)
+  const userName = presenceUser?.name ?? fallbackName
 
-  return { application, reviewer, existingReview: review, collabToken, userName }
+  return {
+    application,
+    reviewer,
+    existingReview: review,
+    collabToken,
+    userName,
+    currentUserId: auth.user.sub,
+    presencePhotoUrl: presenceUser?.photoUrl ?? null,
+    presenceSubtitle: presenceUser?.subtitle ?? null,
+  }
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -231,7 +244,16 @@ export async function action({ request, params }: Route.ActionArgs) {
 const RECOMMENDATIONS = ['Strong Hire', 'Hire', 'Lean Hire', 'Lean No Hire', 'No Hire'] as const
 
 export default function ReviewerApplicationReview() {
-  const { application, reviewer, existingReview, collabToken, userName } = useLoaderData<typeof loader>()
+  const {
+    application,
+    reviewer,
+    existingReview,
+    collabToken,
+    userName,
+    currentUserId,
+    presencePhotoUrl,
+    presenceSubtitle,
+  } = useLoaderData<typeof loader>()
   const submit = useSubmit()
 
   const cycle = application.applicationCycle
@@ -340,6 +362,9 @@ export default function ReviewerApplicationReview() {
       pageId={`review:${existingReview?.id ?? application.id}`}
       token={collabToken}
       userName={userName}
+      userId={currentUserId}
+      photoUrl={presencePhotoUrl}
+      subtitle={presenceSubtitle}
     >
     <div className="space-y-6 pb-12 relative">
       <div>
