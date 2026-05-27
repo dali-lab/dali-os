@@ -146,6 +146,9 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
     const areaKey: AreaKey | null =
       path.startsWith('/admin-console') ? 'admin-console'
       : path.startsWith('/hiring') ? 'hiring'
+      // Level Up lives at /projects/level-up but is surfaced under Internal
+      // Processes — resolve it there before the generic /projects branch.
+      : path.startsWith('/projects/level-up') ? 'internal-processes'
       : path.startsWith('/projects') ? 'projects'
       : path.startsWith('/members') ? 'members'
       : path.startsWith('/partners') ? 'partners'
@@ -234,6 +237,9 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
   const activeAreaKey: AreaKey | null =
     path.startsWith('/admin-console') ? 'admin-console'
     : path.startsWith('/hiring') ? 'hiring'
+    // Level Up lives at /projects/level-up but is surfaced under Internal
+    // Processes — resolve it there before the generic /projects branch.
+    : path.startsWith('/projects/level-up') ? 'internal-processes'
     : path.startsWith('/projects') ? 'projects'
     : path.startsWith('/members') ? 'members'
     : path.startsWith('/partners') ? 'partners'
@@ -388,14 +394,6 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
       active: path.startsWith('/projects/project-bids'),
       sub: null,
     },
-    {
-      label: 'Level Up',
-      to: '/projects/level-up',
-      icon: TrendingUp,
-      show: canViewStaffing,
-      active: path.startsWith('/projects/level-up'),
-      sub: null,
-    },
   ].filter((s) => s.show)
 
   const membersSections = [
@@ -455,6 +453,18 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
       show: true,
       active: path.startsWith('/internal-processes/transfer'),
       sub: null as { label: string; to: string; active: boolean }[] | null,
+    },
+    {
+      label: 'Level Up',
+      // Page lives under /projects/level-up; surfaced here under Internal
+      // Processes. Match both so the entry highlights on either path.
+      to: '/projects/level-up',
+      icon: TrendingUp,
+      show: canViewStaffing,
+      active:
+        path.startsWith('/projects/level-up') ||
+        path.startsWith('/internal-processes/level-up'),
+      sub: null,
     },
     {
       label: 'JobX',
