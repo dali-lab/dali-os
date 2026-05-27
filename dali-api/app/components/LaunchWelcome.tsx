@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import {
-  Sparkles,
   PartyPopper,
   FolderKanban,
   CalendarDays,
@@ -442,11 +441,7 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
     return (
       <Modal open onClose={finishTour} labelledBy={titleId}>
         <div className="flex flex-col gap-4">
-          <div className="flex items-center justify-between">
-            <span className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-accent-coral">
-              <Sparkles className="w-4 h-4" />
-              Welcome
-            </span>
+          <div className="flex items-center justify-end">
             <button
               type="button"
               onClick={finishTour}
@@ -469,13 +464,6 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
             </p>
           </div>
           <div className="flex items-center justify-end gap-2 pt-2">
-            <button
-              type="button"
-              onClick={finishTour}
-              className="text-sm text-muted-foreground hover:text-foreground px-3 py-2"
-            >
-              Not now
-            </button>
             <button
               type="button"
               onClick={startTour}
