@@ -43,10 +43,10 @@ describe("validateBids — domain-driven biddability", () => {
     expect(mockPrisma.projectDomain.findMany).toHaveBeenCalled();
   });
 
-  it("records a bid on a project OUTSIDE the member's eligibility domains, at the default level", async () => {
-    // Member is Engineering-only, but bids a Design-only project. The bid must
-    // still resolve (product intent: every bid shows), labeled with the
-    // project's domain at the baseline P1 since the member has no level there.
+  it("still records ONE bid on a project OUTSIDE the member's eligibility domains, at the project's domain/P1", async () => {
+    // Member is Engineering-only, but bids a Design-only project. Eligibility
+    // never gates a bid: it still resolves to one row, placed in the project's
+    // declared domain at the baseline P1.
     mockPrisma.domainEligibility.findMany.mockResolvedValue([
       { domainId: "eng", level: "P3" },
     ]);
@@ -62,9 +62,10 @@ describe("validateBids — domain-driven biddability", () => {
     ]);
   });
 
-  it("produces no rows only when the project declares no domains at all", async () => {
-    // Nothing to do with eligibility — a project with zero ProjectDomain rows
-    // has no column to place a bid in, so it contributes nothing.
+  it("records a bid on a project with NO declared domains in the member's own eligibility domain", async () => {
+    // Real case (Deserto): the project declares zero ProjectDomain rows. The bid
+    // must still resolve — fall back to the member's own highest-level
+    // eligibility domain so it lands in a real column instead of vanishing.
     mockPrisma.domainEligibility.findMany.mockResolvedValue([
       { domainId: "eng", level: "P3" },
     ]);
@@ -73,7 +74,24 @@ describe("validateBids — domain-driven biddability", () => {
     const res = await validateBids("u1", cycle, [{ projectId: "p1" }]);
     expect(res.ok).toBe(true);
     if (!res.ok) return;
-    expect(res.bids).toEqual([]);
+    expect(res.bids).toEqual([
+      { projectId: "p1", domainId: "eng", level: "P3", preferenceRank: 1, notes: null },
+    ]);
+  });
+
+  it("STILL records a bid when the project declares no domains AND the member has no eligibility (empty domain)", async () => {
+    // The bid is never dropped. With no project domain and no member domain, it
+    // falls back to the empty-string domain at P1 — the card still shows under
+    // the project column (the board places bids by project, not domain).
+    mockPrisma.domainEligibility.findMany.mockResolvedValue([]);
+    mockPrisma.projectDomain.findMany.mockResolvedValue([]);
+
+    const res = await validateBids("u1", cycle, [{ projectId: "p1" }]);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.bids).toEqual([
+      { projectId: "p1", domainId: "", level: "P1", preferenceRank: 1, notes: null },
+    ]);
   });
 
   it("uses the member's eligibility level, and ranks bids by submission order", async () => {
@@ -97,9 +115,9 @@ describe("validateBids — domain-driven biddability", () => {
     ]);
   });
 
-  it("resolves a bid even when the member has NO eligibility at all, at the default level", async () => {
-    // No eligibility no longer drops bids. The project's declared domains drive
-    // the rows; level falls back to P1 since the member has none.
+  it("still records a bid when the member has NO eligibility, in the project's first declared domain at P1", async () => {
+    // No eligibility never drops a bid. With no member domain to prefer, it
+    // lands in the project's first declared domain at the baseline P1.
     mockPrisma.domainEligibility.findMany.mockResolvedValue([]);
     mockPrisma.projectDomain.findMany.mockResolvedValue([
       { projectId: "p1", domainId: "eng" },
@@ -112,11 +130,9 @@ describe("validateBids — domain-driven biddability", () => {
     ]);
   });
 
-  it("lands a bid only in the member's eligibility domain when the project overlaps it", async () => {
-    // Member eligible in eng (P2) only; project declares eng + design. The bid
-    // lands ONLY in eng (the overlap) at P2 — design is dropped because the
-    // member is eligible somewhere in this project, so we don't spill into
-    // domains they have nothing to do with.
+  it("lands a multi-domain bid in the member's eligibility domain (single row, their level)", async () => {
+    // Member eligible in eng (P2) only; project declares eng + design. ONE row,
+    // in eng (the overlap) at P2 — never one-row-per-domain.
     mockPrisma.domainEligibility.findMany.mockResolvedValue([
       { domainId: "eng", level: "P2" },
     ]);
@@ -132,9 +148,28 @@ describe("validateBids — domain-driven biddability", () => {
     ]);
   });
 
-  it("expands across ALL project domains only when there's no eligibility overlap", async () => {
-    // Member eligible in eng; project declares design + uiux (no overlap). The
-    // bid falls back to every project domain at the default level so it shows.
+  it("picks the member's HIGHEST-level overlapping domain for a multi-domain project", async () => {
+    // Member eligible in eng (P1) and design (P3); project declares both. The
+    // single row uses design (P3) — the strongest claim wins.
+    mockPrisma.domainEligibility.findMany.mockResolvedValue([
+      { domainId: "eng", level: "P1" },
+      { domainId: "design", level: "P3" },
+    ]);
+    mockPrisma.projectDomain.findMany.mockResolvedValue([
+      { projectId: "p1", domainId: "eng" },
+      { projectId: "p1", domainId: "design" },
+    ]);
+    const res = await validateBids("u1", cycle, [{ projectId: "p1" }]);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.bids).toEqual([
+      { projectId: "p1", domainId: "design", level: "P3", preferenceRank: 1, notes: null },
+    ]);
+  });
+
+  it("records ONE bid when the project shares no domain with eligibility (project's first domain, P1)", async () => {
+    // Member eligible in eng; project declares design + uiux (no overlap). Never
+    // gated: one row in the project's first declared domain at P1.
     mockPrisma.domainEligibility.findMany.mockResolvedValue([
       { domainId: "eng", level: "P3" },
     ]);
@@ -147,7 +182,6 @@ describe("validateBids — domain-driven biddability", () => {
     if (!res.ok) return;
     expect(res.bids).toEqual([
       { projectId: "p1", domainId: "design", level: "P1", preferenceRank: 1, notes: null },
-      { projectId: "p1", domainId: "uiux", level: "P1", preferenceRank: 1, notes: null },
     ]);
   });
 
