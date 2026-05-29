@@ -3,14 +3,13 @@
 //
 // A bid is JUST a projectId (rank = array index). Domain is not asked on the
 // form — instead, each bid expands server-side into StaffingPreference rows:
-// one per domain the PROJECT declares (ProjectDomain) that the member is also
-// eligible in, so a bid normally lands in the member's own domain columns at
-// their eligibility level. Eligibility does NOT gate the bid, though — when the
-// project shares no domain with the member's eligibility, the bid falls back to
-// the project's declared domains (at the default level) so it still shows on
-// the board instead of vanishing. preferenceRank carries the bid's rank, shared
-// across all expansions of bid N. (ProjectRoleRequest is headcount display
-// only; it never gates bids.)
+// exactly ONE StaffingPreference per ranked project. Eligibility NEVER gates a
+// bid — every project the member ranked produces a row, regardless of whether
+// they're eligible in any of its domains. The single row's domainId is chosen
+// (see pickDomain) just to give the board a column and satisfy the row's unique
+// key; the domains a member is actually available for are shown separately from
+// their DomainEligibility. preferenceRank carries the bid's 1-based rank.
+// (ProjectRoleRequest is headcount display only; it never gates bids.)
 
 import { prisma } from "~/lib/db";
 
@@ -85,12 +84,13 @@ export async function validateBids(
   );
 
   // Biddability is driven by the project's DECLARED DOMAINS (ProjectDomain) —
-  // never by per-term ProjectRoleRequest rows. A bid expands to a row per
-  // domain the project declares that the member is ALSO eligible in (so a
-  // member's bid normally lands in their own domain columns). Eligibility no
-  // longer GATES the bid, though: when the project shares NO domain with the
-  // member's eligibility, the bid falls back to the project's declared domains
-  // so it still shows on the board instead of vanishing.
+  // never by per-term ProjectRoleRequest rows. Eligibility NEVER gates a bid:
+  // every ranked project produces exactly ONE preference row, even when the
+  // project declares several domains and even when the member is eligible in
+  // none of them. The board lists which domains the member is actually
+  // available for separately (DomainEligibility chips); the bid itself is one
+  // entry per project. We still pick a single domainId to satisfy the row's
+  // unique key + give the board a column to place it in.
   const projectDomains = await prisma.projectDomain.findMany({
     where: { projectId: { in: effectiveBids.map((b) => b.projectId) } },
     select: { projectId: true, domainId: true },
@@ -102,28 +102,69 @@ export async function validateBids(
     domainsByProject.set(d.projectId, list);
   }
 
-  // Level shown on a bid row: the member's eligibility level in that domain if
-  // they have one, else the baseline P1 (Learner). Level never blocks a bid.
+  // Level shown on a bid row: the member's eligibility level in the chosen
+  // domain if they have one, else the baseline P1 (Learner). Level never blocks
+  // a bid.
   const DEFAULT_LEVEL: BidLevel = "P1";
+
+  // The single domain a bid lands in, in priority order:
+  //   1. a project domain the member is eligible in (their level there); if
+  //      several, the one with the highest level — that's the strongest claim.
+  //   2. else the project's first declared domain (at P1) — keeps a multi-
+  //      domain project's bid in a real column even with no overlap.
+  //   3. else (project declares no domains, e.g. Deserto) the member's own
+  //      highest-level eligibility domain — so the bid still resolves to one
+  //      row instead of vanishing.
+  //   4. else null — no domain anywhere; the bid produces no row (only when the
+  //      member has zero eligibility AND the project declares zero domains).
+  const LEVEL_RANK: Record<BidLevel, number> = { P1: 1, P2: 2, P3: 3 };
+  const memberDomainsByLevelDesc = [...levelByDomain.entries()].sort(
+    (a, b) => LEVEL_RANK[b[1] as BidLevel] - LEVEL_RANK[a[1] as BidLevel],
+  );
+  // A bid ALWAYS resolves to a row — never dropped. The domainId is only there
+  // to satisfy the row's unique key and label the card; the board places a bid
+  // by its PROJECT, not its domain. So when no domain applies at all (the
+  // project declares none AND the member has none — e.g. a no-eligibility
+  // member bidding a no-domain project like Make101/Deserto), we fall back to
+  // the empty-string domain. The card still shows under the project column.
+  const NO_DOMAIN = "";
+  const pickDomain = (
+    projDomains: string[],
+  ): { domainId: string; level: BidLevel } => {
+    const eligibleProjDomains = projDomains
+      .filter((d) => levelByDomain.has(d))
+      .sort(
+        (a, b) =>
+          LEVEL_RANK[levelByDomain.get(b) as BidLevel] -
+          LEVEL_RANK[levelByDomain.get(a) as BidLevel],
+      );
+    if (eligibleProjDomains.length > 0) {
+      const domainId = eligibleProjDomains[0];
+      return { domainId, level: levelByDomain.get(domainId) as BidLevel };
+    }
+    if (projDomains.length > 0) {
+      return { domainId: projDomains[0], level: DEFAULT_LEVEL };
+    }
+    if (memberDomainsByLevelDesc.length > 0) {
+      const [domainId, level] = memberDomainsByLevelDesc[0];
+      return { domainId, level: level as BidLevel };
+    }
+    return { domainId: NO_DOMAIN, level: DEFAULT_LEVEL };
+  };
 
   const validated: ValidatedBid[] = [];
   for (let i = 0; i < effectiveBids.length; i++) {
     const b = effectiveBids[i];
     const rank = i + 1;
     const projDomains = domainsByProject.get(b.projectId) ?? [];
-    // Prefer the project domains the member is eligible in; if there's no
-    // overlap, fall back to all the project's domains so the bid still records.
-    const eligibleOverlap = projDomains.filter((d) => levelByDomain.has(d));
-    const targetDomains = eligibleOverlap.length > 0 ? eligibleOverlap : projDomains;
-    for (const domainId of targetDomains) {
-      validated.push({
-        projectId: b.projectId,
-        domainId,
-        level: (levelByDomain.get(domainId) ?? DEFAULT_LEVEL) as BidLevel,
-        preferenceRank: rank,
-        notes: null,
-      });
-    }
+    const picked = pickDomain(projDomains);
+    validated.push({
+      projectId: b.projectId,
+      domainId: picked.domainId,
+      level: picked.level,
+      preferenceRank: rank,
+      notes: null,
+    });
   }
 
   return { ok: true, bids: validated };

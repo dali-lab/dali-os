@@ -130,8 +130,16 @@ export async function loader({ request }: Route.LoaderArgs) {
       where: { staffingCycleId: cycle.id, status: "Proposed" },
       select: { userId: true, projectId: true, domainId: true, level: true },
     }),
+    // Columns are the projects that actually RUN in the selected term
+    // (ProjectTerm), not every non-archived project — otherwise the board lists
+    // projects from other terms with empty "0 assigned" columns. Projects with
+    // bids/assignments in this cycle are unioned in below so a project being
+    // staffed never vanishes for a missing ProjectTerm row.
     prisma.project.findMany({
-      where: { status: { not: "Archived" } },
+      where: {
+        status: { not: "Archived" },
+        projectTerms: { some: { termId: selectedTerm.id } },
+      },
       orderBy: [{ status: "asc" }, { name: "asc" }],
       select: { id: true, name: true, status: true },
     }),
@@ -145,6 +153,30 @@ export async function loader({ request }: Route.LoaderArgs) {
       select: { projectId: true, domainId: true, slots: true },
     }),
   ]);
+
+  // Union in any non-archived project that's actually being staffed this cycle
+  // (a bid, assignment, or role request) but lacks a ProjectTerm row for the
+  // term — without it that project would lose its column mid-cycle. Normal
+  // projects already came through the term-scoped query above; this only adds
+  // the strays, so the board still drops projects from other terms.
+  const columnProjectIds = new Set(projects.map((p) => p.id));
+  const stagedProjectIds = Array.from(
+    new Set([
+      ...preferences.map((p) => p.projectId),
+      ...assignmentRows.map((a) => a.projectId),
+      ...roleRequests.map((r) => r.projectId),
+    ]),
+  ).filter((id) => !columnProjectIds.has(id));
+  if (stagedProjectIds.length > 0) {
+    const strays = await prisma.project.findMany({
+      where: { id: { in: stagedProjectIds }, status: { not: "Archived" } },
+      select: { id: true, name: true, status: true },
+    });
+    projects.push(...strays);
+    projects.sort(
+      (a, b) => a.status.localeCompare(b.status) || a.name.localeCompare(b.name),
+    );
+  }
 
   const prefsByUser = new Map<string, Preference[]>();
   for (const p of preferences) {
