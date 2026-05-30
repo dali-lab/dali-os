@@ -3,6 +3,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
+import { syncIssueForTask } from "../lib/github-task-sync";
 
 // PATCH /api/tasks/:id
 //
@@ -90,7 +91,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const task = await prisma.task.findUnique({
     where: { id: params.id },
-    select: { id: true },
+    select: { id: true, githubIssueNumber: true },
   });
   if (!task) {
     return withCors(request, Response.json({ error: "Task not found" }, { status: 404 }));
@@ -150,6 +151,15 @@ export async function action({ request, params }: Route.ActionArgs) {
       }
     }
   });
+
+  // Mirror title/assignee changes to GitHub when this task is linked. Other
+  // edited fields (priority, dueAt, domainId) don't have a GH equivalent.
+  const syncableChanged = "title" in body || wantsAssignees;
+  if (task.githubIssueNumber !== null && syncableChanged) {
+    void syncIssueForTask(params.id).catch((err) =>
+      console.error(`task ${params.id}: github sync failed`, err),
+    );
+  }
 
   return withCors(request, Response.json({ ok: true }));
 }

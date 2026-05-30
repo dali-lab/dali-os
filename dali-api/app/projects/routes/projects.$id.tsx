@@ -154,6 +154,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           dueAt: true,
           epicId: true,
           sprintId: true,
+          githubIssueNumber: true,
+          githubIssueUrl: true,
           domain: { select: { id: true, displayName: true } },
           assignees: {
             select: {
@@ -311,6 +313,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     domain: t.domain
       ? { id: t.domain.id, name: t.domain.displayName }
       : null,
+    githubIssueUrl: t.githubIssueUrl,
+    githubIssueNumber: t.githubIssueNumber,
   }));
 
   // Board option lists for the TaskModal: members assignable on this project
@@ -334,6 +338,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         select: { id: true, displayName: true },
       })
     ).map((d) => ({ id: d.id, name: d.displayName })),
+    repoUrls: project.repoUrls,
   };
 
   // Team grouped by term, newest term first. Current = highest sortKey.

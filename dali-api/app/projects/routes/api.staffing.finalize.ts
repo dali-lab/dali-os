@@ -4,7 +4,7 @@ import { requireAuth } from "~/lib/auth";
 import { canManageStaffing } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { postMessage } from "~/slack/lib/slack-client";
-import { ensureTeam, addTeamMember } from "~/slack/lib/github-app";
+import { ensureTeam, addTeamMember } from "~/lib/github";
 import { logAuditEvent } from "~/lib/audit";
 
 // POST /api/staffing/finalize
