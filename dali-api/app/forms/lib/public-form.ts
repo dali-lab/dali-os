@@ -295,6 +295,23 @@ export async function submitMemberForm(args: {
     return { ok: true };
   }
 
+  if (slot === "level-up") {
+    await prisma.$transaction(async (tx) => {
+      await tx.formSubmission.create({
+        data: {
+          formId: form.id,
+          formVersionId: version.id,
+          userId: args.userId,
+          staffingCycleId: cycle.id,
+          slot: "level-up",
+          answers: args.answers as object,
+        },
+      });
+      await closeFormTodos(tx, args.userId, form.id);
+    });
+    return { ok: true };
+  }
+
   // slot === "intent-to-work": one IntentToWork row per mapped term, when the
   // intent-status columns are mapped. Otherwise the submission is still
   // recorded with no intent rows.
