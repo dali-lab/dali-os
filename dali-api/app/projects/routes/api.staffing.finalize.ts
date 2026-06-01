@@ -3,7 +3,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { canManageStaffing } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { postMessage } from "~/slack/lib/slack-client";
+import { postMessage, ensureChannel, inviteUsersToChannel } from "~/slack/lib/slack-client";
 import { ensureTeam, addTeamMember } from "~/slack/lib/github-app";
 import { logAuditEvent } from "~/lib/audit";
 
@@ -16,7 +16,10 @@ import { logAuditEvent } from "~/lib/audit";
 // Automations:
 //   - assignments: Proposed StaffingAssignment rows for this project+cycle →
 //     Confirmed, and upsert canonical ProjectAssignment + DomainEligibility.
-//   - slack:       post the confirmed roster to STAFFING_SLACK_CHANNEL.
+//   - slack:       get-or-create the project's own Slack channel (named after
+//                  the project, id cached on Project.slackChannelId), invite
+//                  the confirmed roster (by synced slackUserId), and post a team
+//                  announcement (members + domain/level, plus repos).
 //   - gmail:       STUB — no Google Admin SDK wired up yet.
 //   - github:      get-or-create the project's GITHUB_ORG team (from
 //                  Project.githubTeamSlug) and add the confirmed roster.
@@ -81,7 +84,7 @@ export async function action({ request }: Route.ActionArgs) {
   }
   const project = await prisma.project.findUnique({
     where: { id: body.projectId },
-    select: { id: true, name: true, githubTeamSlug: true },
+    select: { id: true, name: true, githubTeamSlug: true, slackChannelId: true, repoUrls: true },
   });
   if (!project) {
     return withCors(request, Response.json({ error: "Project not found" }, { status: 404 }));
@@ -157,33 +160,78 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   // ── slack ──────────────────────────────────────────────────────────────────
+  // Per-project channel: get-or-create one named after the project, invite the
+  // confirmed roster (by their synced slackUserId), and post a team
+  // announcement (each member's domain + level, plus the project's repos). The
+  // channel id is reused across runs (stored on Project.slackChannelId).
   if (selected.has("slack")) {
-    const channel = process.env.STAFFING_SLACK_CHANNEL;
-    if (!channel) {
-      results.slack = {
-        status: "skipped",
-        message: "STAFFING_SLACK_CHANNEL not set.",
-      };
+    if (!process.env.SLACK_BOT_TOKEN) {
+      results.slack = { status: "skipped", message: "SLACK_BOT_TOKEN not set." };
     } else {
       try {
-        // Roster reflects confirmed rows regardless of whether the
-        // assignments step ran this invocation.
+        // Confirmed roster with level + slack id, regardless of whether the
+        // assignments step ran this invocation. StaffingAssignment has no domain
+        // RELATION (only domainId), so resolve display names separately.
         const roster = await prisma.staffingAssignment.findMany({
-          where: {
-            staffingCycleId: cycle.id,
-            projectId: project.id,
-            status: "Confirmed",
+          where: { staffingCycleId: cycle.id, projectId: project.id, status: "Confirmed" },
+          select: {
+            level: true,
+            domainId: true,
+            user: { select: { firstName: true, lastName: true, slackUserId: true } },
           },
-          select: { user: { select: { firstName: true, lastName: true } }, level: true },
         });
-        const lines = roster
-          .map((r) => `• ${r.user.firstName} ${r.user.lastName} (${r.level})`)
-          .join("\n");
+        const domainNames = new Map(
+          (
+            await prisma.domain.findMany({
+              where: { id: { in: [...new Set(roster.map((r) => r.domainId))] } },
+              select: { id: true, displayName: true },
+            })
+          ).map((d) => [d.id, d.displayName]),
+        );
+
+        // 1. Resolve the channel: reuse the stored id, else create one from the
+        //    project name and backfill the id for next time.
+        let channelId = project.slackChannelId;
+        let channelNote = "reused channel";
+        if (!channelId) {
+          const ch = await ensureChannel(project.name);
+          channelId = ch.id;
+          channelNote = ch.created ? `created #${ch.name}` : `found #${ch.name}`;
+          await prisma.project.update({
+            where: { id: project.id },
+            data: { slackChannelId: channelId },
+          });
+        }
+
+        // 2. Invite confirmed members who have a synced Slack id.
+        const slackIds = roster
+          .map((r) => r.user.slackUserId)
+          .filter((id): id is string => !!id);
+        const missing = roster.length - slackIds.length;
+        const inv = await inviteUsersToChannel(channelId, slackIds);
+
+        // 3. Announce the team: name — domain (level), plus repos.
+        // Only call out mentors (P3); P1/P2 just show their role/domain without
+        // a level label.
+        const lines = roster.map((r) => {
+          const role = domainNames.get(r.domainId) ?? "?";
+          const suffix = r.level === "P3" ? " (Mentor)" : "";
+          return `• ${r.user.firstName} ${r.user.lastName} — ${role}${suffix}`;
+        });
+        const repoLines = (project.repoUrls ?? []).map((u) => `• ${u}`);
         const text =
-          `*${project.name}* staffed for ${cycle.name}\n` +
-          (roster.length > 0 ? lines : "_No confirmed members yet._");
-        await postMessage(channel, text);
-        results.slack = { status: "ok", message: `Posted roster (${roster.length}) to Slack.` };
+          `*${project.name}* is staffed for ${cycle.name}! :tada:\n\n` +
+          `*Team*\n${lines.length > 0 ? lines.join("\n") : "_No confirmed members yet._"}` +
+          (repoLines.length > 0 ? `\n\n*Repos*\n${repoLines.join("\n")}` : "");
+        await postMessage(channelId, text);
+
+        const parts = [
+          channelNote,
+          `invited ${inv.invited}`,
+          `announced ${roster.length} member(s)`,
+        ];
+        if (missing > 0) parts.push(`${missing} without a synced Slack id`);
+        results.slack = { status: "ok", message: `${parts.join("; ")}.` };
       } catch (err) {
         results.slack = { status: "error", message: errMsg(err) };
       }
