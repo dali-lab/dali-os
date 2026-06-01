@@ -24,11 +24,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     orderBy: { sortKey: "desc" },
     select: { id: true, code: true },
   });
-  // Return the user to the form's folder (or top level) on "Back".
   return {
     form,
     terms,
-    backTo: form.folderId ? `/forms/${form.folderId}` : "/forms",
   };
 }
 

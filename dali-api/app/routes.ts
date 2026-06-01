@@ -5,6 +5,7 @@ export default [
   layout("routes/layout.tsx", [
     index("routes/home.tsx"),
     route("profile", "routes/profile.tsx"),
+    route("onboarding", "routes/onboarding.tsx"),
     route("calendar", "calendar/routes/calendar.tsx"),
 
     // Hiring section
@@ -181,6 +182,7 @@ export default [
   // Groups (admin) and notifications (per-user + admin send)
   route("api/groups", "admin-console/routes/api.groups.ts"),
   route("api/groups/:groupId", "admin-console/routes/api.groups.$groupId.ts"),
+  route("api/tour/complete", "routes/api.tour.complete.ts"),
   route("api/notifications", "routes/api.notifications.ts"),
   route("api/notifications/send", "admin-console/routes/api.notifications.send.ts"),
   route("api/notifications/:id/read", "routes/api.notifications.$id.read.ts"),

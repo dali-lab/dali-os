@@ -4,6 +4,7 @@ import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { listOpenTasks } from "~/lib/tasks";
 import { listMyNotifications } from "~/lib/notifications";
+import { ONBOARDING_LINK } from "~/members/lib/welcome.server";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const preflight = handlePreflight(request);
@@ -38,14 +39,15 @@ export async function action({ request }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
 
-  // POST with no id = "mark all read". Meeting invites are excluded: they
-  // clear only when the recipient RSVPs (Accept/Maybe/Decline), never on a
-  // blanket read.
+  // POST with no id = "mark all read". Excluded: meeting invites (clear only on
+  // RSVP) and the onboarding task (clears only when onboarding is finished), so
+  // neither is dismissed by a blanket read.
   await prisma.notification.updateMany({
     where: {
       recipientUserId: auth.user.sub,
       readAt: null,
       scheduledMeetingId: null,
+      NOT: { kind: "SystemAnnouncement", link: ONBOARDING_LINK },
     },
     data: { readAt: new Date() },
   });

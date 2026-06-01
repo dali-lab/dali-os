@@ -1274,46 +1274,47 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
               {(() => {
                 const canBack = !!activeTab && activeTab.backStack.length > 0
                 const canFwd = !!activeTab && activeTab.forwardStack.length > 0
+                if (!canBack && !canFwd) return null
                 return (
                   <div className="flex items-stretch border-r border-border">
-                    <button
-                      type="button"
-                      disabled={!canBack}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        goBack(pane.id)
-                      }}
-                      onContextMenu={(e) => {
-                        if (!canBack) return
-                        e.preventDefault()
-                        e.stopPropagation()
-                        setHistoryMenu({ paneId: pane.id, side: 'back', x: e.clientX, y: e.clientY })
-                      }}
-                      title="Back (right-click for history)"
-                      aria-label="Back"
-                      className="px-2 text-muted-foreground/70 hover:text-foreground hover:bg-muted disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-default"
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      disabled={!canFwd}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        goForward(pane.id)
-                      }}
-                      onContextMenu={(e) => {
-                        if (!canFwd) return
-                        e.preventDefault()
-                        e.stopPropagation()
-                        setHistoryMenu({ paneId: pane.id, side: 'forward', x: e.clientX, y: e.clientY })
-                      }}
-                      title="Forward (right-click for history)"
-                      aria-label="Forward"
-                      className="px-2 text-muted-foreground/70 hover:text-foreground hover:bg-muted disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-default"
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
+                    {canBack && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          goBack(pane.id)
+                        }}
+                        onContextMenu={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          setHistoryMenu({ paneId: pane.id, side: 'back', x: e.clientX, y: e.clientY })
+                        }}
+                        title="Back (right-click for history)"
+                        aria-label="Back"
+                        className="px-2.5 text-muted-foreground hover:text-foreground hover:bg-muted"
+                      >
+                        <ChevronLeft className="w-[18px] h-[18px]" />
+                      </button>
+                    )}
+                    {canFwd && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          goForward(pane.id)
+                        }}
+                        onContextMenu={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          setHistoryMenu({ paneId: pane.id, side: 'forward', x: e.clientX, y: e.clientY })
+                        }}
+                        title="Forward (right-click for history)"
+                        aria-label="Forward"
+                        className="px-2.5 text-muted-foreground hover:text-foreground hover:bg-muted"
+                      >
+                        <ChevronRight className="w-[18px] h-[18px]" />
+                      </button>
+                    )}
                   </div>
                 )
               })()}

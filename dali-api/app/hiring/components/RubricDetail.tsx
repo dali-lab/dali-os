@@ -1,7 +1,6 @@
 import { useState } from 'react'
-import { Link, Form, useLoaderData } from 'react-router'
+import { Form, useLoaderData } from 'react-router'
 import {
-  ArrowLeft,
   Plus,
   Clock,
   UserIcon,
@@ -69,12 +68,6 @@ export function RubricDetail() {
   return (
     <div className="space-y-6">
       <div>
-        <Link
-          to="/hiring/library?tab=rubrics"
-          className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground/80 mb-4"
-        >
-          <ArrowLeft className="w-4 h-4 mr-1" /> Back to Library
-        </Link>
         <div className="flex justify-between items-start">
           <div>
             <h1 className="text-2xl font-bold text-foreground">{rubric.name}</h1>
