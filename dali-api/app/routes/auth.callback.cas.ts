@@ -5,6 +5,7 @@ import { setSessionCookie } from "~/lib/cookies";
 import { getClientIp } from "~/lib/request-meta";
 import { logAuditEvent } from "~/lib/audit";
 import { upsertUserFromCas } from "~/lib/user-provisioning";
+import { refreshDartmouthSignals } from "~/lib/dartmouth-refresh";
 
 export async function action() {
   return new Response("Method not allowed", { status: 405 });
@@ -44,6 +45,11 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   const { user } = await upsertUserFromCas(casUser);
+
+  // Fire-and-forget Dartmouth directory sync. Skipped internally when the
+  // cached signals are fresh; failures are swallowed and logged. Must not
+  // block login on Dartmouth API availability.
+  void refreshDartmouthSignals(user.id);
 
   const session = await issueSession({
     userId: user.id,

@@ -6,6 +6,7 @@ import {
   generateAuthorizationCode,
 } from "~/lib/oauth";
 import { upsertUserFromCas } from "~/lib/user-provisioning";
+import { refreshDartmouthSignals } from "~/lib/dartmouth-refresh";
 import { prisma } from "~/lib/db";
 import { issueSession } from "~/lib/session";
 import { setSessionCookie } from "~/lib/cookies";
@@ -60,6 +61,9 @@ export async function loader({ request }: Route.LoaderArgs) {
       linkUserId: session.linkUserId ?? undefined,
     });
     finalUser = result.user;
+    // Fire-and-forget Dartmouth directory sync. Skipped internally when
+    // cached signals are fresh; failures are swallowed and logged.
+    void refreshDartmouthSignals(finalUser.id);
   } catch {
     const params = new URLSearchParams({
       error: "server_error",

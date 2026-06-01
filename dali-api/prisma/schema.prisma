@@ -82,6 +82,19 @@ model User {
   workingHoursDays     WorkingHoursDay[]
   manualBlocks         ManualBlock[]
 
+  // ─── Dartmouth directory signals (cached) ────────────────────────────────
+  // From lookup.dartmouth.edu (public, unauthenticated). Currently-affiliated
+  // accounts only: "Student" | "Staff" | "Faculty" | null=absent-from-lookup.
+  // Refreshed lazily on CAS sign-in and during the annual Commencement sweep.
+  dartmouthLookupAffiliation String?
+  dartmouthLookupSyncedAt    DateTime?
+  // From api.dartmouth.edu/api/people/{netid} (JWT-authenticated).
+  // dartmouth_affiliation values: "ALUMNI" | "DART" | "E-FAC" | ... See
+  // alumni_plan.md for the full code table. ALUMNI is the canonical alumni
+  // signal once Dartmouth flips it post-grad.
+  dartmouthAffiliation       String?
+  dartmouthPeopleSyncedAt    DateTime?
+
   // ─── Phase 1: foundational role-model back-relations ──────────────────────
   domainEligibilities     DomainEligibility[]
   projectAssignments      ProjectAssignment[]
