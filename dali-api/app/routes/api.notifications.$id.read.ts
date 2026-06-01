@@ -2,6 +2,7 @@ import type { Route } from "./+types/api.notifications.$id.read";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
+import { ONBOARDING_LINK } from "~/members/lib/welcome.server";
 
 export async function action({ request, params }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
@@ -17,7 +18,13 @@ export async function action({ request, params }: Route.ActionArgs) {
   const id = params.id!;
   const existing = await prisma.notification.findUnique({
     where: { id },
-    select: { recipientUserId: true, readAt: true, scheduledMeetingId: true },
+    select: {
+      recipientUserId: true,
+      readAt: true,
+      scheduledMeetingId: true,
+      kind: true,
+      link: true,
+    },
   });
   if (!existing) {
     return withCors(request, Response.json({ error: "Not found" }, { status: 404 }));
@@ -31,6 +38,13 @@ export async function action({ request, params }: Route.ActionArgs) {
   // must not dismiss it, so it stays a todo until an Accept/Maybe/Decline.
   if (existing.scheduledMeetingId) {
     return withCors(request, Response.json({ ok: true, skipped: "meeting-invite" }));
+  }
+
+  // The onboarding task is the same: opening /onboarding must not dismiss it.
+  // It clears only when onboarding is actually finished (clearOnboardingTask,
+  // from the /onboarding "Finish" action), so it persists across visits.
+  if (existing.kind === "SystemAnnouncement" && existing.link === ONBOARDING_LINK) {
+    return withCors(request, Response.json({ ok: true, skipped: "onboarding" }));
   }
 
   if (existing.readAt) {

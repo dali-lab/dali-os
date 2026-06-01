@@ -167,6 +167,18 @@ model DALIMember {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Null until the member finishes the first-login onboarding flow
+  // (/onboarding). The layout loader redirects members with a null value into
+  // onboarding. Pre-existing members are backfilled to createdAt by the
+  // migration so they're never forced through it.
+  onboardedAt DateTime?
+
+  // Null until the member finishes (or dismisses) the launch tour. The tour is
+  // shown once per USER (server-driven, not browser localStorage) on the first
+  // home visit after onboarding. Pre-existing members are backfilled so they
+  // don't suddenly get the tour.
+  tourCompletedAt DateTime?
+
   userId String @unique
   user   User   @relation(fields: [userId], references: [id])
 }
@@ -1844,6 +1856,13 @@ model Project {
   // teams" finalize automation get-or-creates a team with this slug under
   // GITHUB_ORG and adds the confirmed roster. Null = automation skips.
   githubTeamSlug String?
+
+  // The project's Slack channel id (e.g. "C0123ABC"), used to invite members +
+  // post the team announcement on staffing finalize. The channel NAME is always
+  // derived from the project name (slugified); finalize get-or-creates that
+  // channel and backfills this id so it's reused on later runs. Null until the
+  // first finalize that runs the Slack channel step.
+  slackChannelId String?
 
   overviewPage Page? @relation("ProjectOverview", fields: [overviewPageId], references: [id])
   prdPage      Page? @relation("ProjectPRD", fields: [prdPageId], references: [id])

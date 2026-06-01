@@ -48,6 +48,7 @@ interface LayoutProps {
   canViewForms?: boolean
   canViewStaffing?: boolean
   isInterviewer?: boolean
+  hasHiringAccess?: boolean
 }
 
 const SIDEBAR_COLLAPSED_KEY = 'dali:sidebar:collapsed'
@@ -55,7 +56,7 @@ const EXPANDED_AREAS_KEY = 'dali:sidebar:expanded-areas'
 
 type AreaKey = 'hiring' | 'projects' | 'members' | 'partners' | 'education' | 'internal-processes' | 'admin-console'
 
-export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDomainLead = false, canViewForms = false, canViewStaffing = false, isInterviewer = false }: LayoutProps) {
+export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDomainLead = false, canViewForms = false, canViewStaffing = false, isInterviewer = false, hasHiringAccess = false }: LayoutProps) {
   const location = useLocation()
   const { revalidate } = useRevalidator()
   // Held in a ref so the message listener (mounted once) always calls the
@@ -261,19 +262,18 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
       label: 'Reviews',
       to: '/hiring/reviewer',
       icon: MessageSquare,
-      show: true,
+      show: hasHiringAccess,
       active: path.startsWith('/hiring/reviewer') || path.startsWith('/hiring/interviewer/interview'),
       sub: null,
     },
     {
-      // Database view of all submissions for a cycle. Core sees every
-      // domain; reviewers see only their assigned domains. The route
-      // itself handles users with no access (empty state), so the tab is
-      // shown to everyone like Reviews.
+      // Database view of all submissions for a cycle. Core sees every domain;
+      // reviewers see only their assigned domains. Gated with the rest of
+      // Hiring so non-hiring members never see it (or its empty reviewer state).
       label: 'Applications',
       to: '/hiring/applications',
       icon: FileText,
-      show: true,
+      show: hasHiringAccess,
       active: path.startsWith('/hiring/applications'),
       sub: null,
     },
@@ -477,7 +477,6 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
     },
   ].filter((s) => s.show)
 
-  const hasHiringAccess = true
   const areas = [
     {
       key: 'hiring' as AreaKey,
@@ -576,15 +575,26 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
           )}
         </button>
         {!collapsed && (
-          <button
-            type="button"
-            onClick={toggleCollapsed}
-            className="hidden md:flex p-1.5 text-white/40 hover:text-white/80 hover:bg-white/5 rounded-md transition flex-shrink-0"
-            aria-label="Collapse sidebar"
-            title="Collapse sidebar"
-          >
-            <ChevronLeft className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new Event('dali:start-tour'))}
+              className="hidden md:flex p-1.5 text-white/40 hover:text-white/80 hover:bg-white/5 rounded-md transition"
+              aria-label="Start tour"
+              title="Take the tour"
+            >
+              <HelpCircle className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={toggleCollapsed}
+              className="hidden md:flex p-1.5 text-white/40 hover:text-white/80 hover:bg-white/5 rounded-md transition"
+              aria-label="Collapse sidebar"
+              title="Collapse sidebar"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+          </div>
         )}
       </div>
       {collapsed && (
