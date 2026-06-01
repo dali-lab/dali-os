@@ -72,12 +72,43 @@ import {
   runUpdateTaskStatus,
   UpdateTaskStatusError,
 } from "~/mcp/tools/update-task-status";
+import { ME_RESOURCE, readMeResource } from "~/mcp/resources/me";
+import {
+  ANNOUNCEMENTS_ACTIVE_RESOURCE,
+  readAnnouncementsActiveResource,
+} from "~/mcp/resources/announcements-active";
+import {
+  FORMS_PENDING_RESOURCE,
+  readFormsPendingResource,
+} from "~/mcp/resources/forms-pending";
+import { WEEKLY_DIGEST_PROMPT } from "~/mcp/prompts/weekly-digest";
+import { MEETING_PREP_PROMPT } from "~/mcp/prompts/meeting-prep";
+import { PROJECT_STATUS_PROMPT } from "~/mcp/prompts/project-status";
+import type { PromptDefinition } from "~/mcp/prompts/types";
 
 const PROTOCOL_VERSION = "2024-11-05";
 const SERVER_INFO = { name: "dali-os", version: "1.0.0" };
 
 const RATE_LIMIT_MAX = 120;
 const RATE_LIMIT_WINDOW_MS = 60_000;
+
+const RESOURCES = [
+  ME_RESOURCE,
+  ANNOUNCEMENTS_ACTIVE_RESOURCE,
+  FORMS_PENDING_RESOURCE,
+] as const;
+
+const PROMPTS: PromptDefinition[] = [
+  WEEKLY_DIGEST_PROMPT,
+  MEETING_PREP_PROMPT,
+  PROJECT_STATUS_PROMPT,
+];
+
+const CAPABILITIES = {
+  tools: { listChanged: false },
+  resources: { listChanged: false, subscribe: false },
+  prompts: { listChanged: false },
+} as const;
 
 const TOOLS = [
   WHOAMI_TOOL,
@@ -127,11 +158,15 @@ export async function loader() {
     {
       protocolVersion: PROTOCOL_VERSION,
       serverInfo: SERVER_INFO,
-      capabilities: { tools: { listChanged: false } },
+      capabilities: CAPABILITIES,
     },
     { status: 200 },
   );
 }
+
+// Exported so tests / introspection can list resource + prompt catalogs
+// without spinning up the full action handler.
+export { RESOURCES, PROMPTS };
 
 export async function action({ request }: Route.ActionArgs) {
   const auth = await authenticateMcpRequest(request);
@@ -156,7 +191,7 @@ export async function action({ request }: Route.ActionArgs) {
       return rpcResult(body.id, {
         protocolVersion: PROTOCOL_VERSION,
         serverInfo: SERVER_INFO,
-        capabilities: { tools: { listChanged: false } },
+        capabilities: CAPABILITIES,
       });
 
     case "notifications/initialized":
@@ -332,6 +367,126 @@ export async function action({ request }: Route.ActionArgs) {
         const message = err instanceof Error ? err.message : "Tool execution failed";
         return rpcError(body.id, -32000, message);
       }
+    }
+
+    case "resources/list":
+      return rpcResult(body.id, {
+        resources: RESOURCES.map((r) => ({
+          uri: r.uri,
+          name: r.name,
+          description: r.description,
+          mimeType: r.mimeType,
+        })),
+      });
+
+    case "resources/read": {
+      const params = body.params as { uri?: string } | undefined;
+      const uri = params?.uri;
+      const resource = RESOURCES.find((r) => r.uri === uri);
+      if (!resource) {
+        return rpcError(body.id, -32602, `Unknown resource: ${uri}`);
+      }
+      if (!auth.scopes.includes(resource.requiredScope)) {
+        return rpcError(
+          body.id,
+          -32002,
+          `Missing required scope: ${resource.requiredScope}`,
+        );
+      }
+      try {
+        let text: string;
+        switch (resource.uri) {
+          case "dali://me":
+            text = await readMeResource(auth.user.id);
+            break;
+          case "dali://announcements/active":
+            text = await readAnnouncementsActiveResource(auth.user.id);
+            break;
+          case "dali://forms/pending":
+            text = await readFormsPendingResource(auth.user.id);
+            break;
+          default:
+            return rpcError(body.id, -32601, "Resource not implemented");
+        }
+
+        await logAuditEvent({
+          action: "mcp.resource_read",
+          userId: auth.user.id,
+          metadata: {
+            uri: resource.uri,
+            clientId: auth.clientId,
+            clientName: auth.clientName,
+            grantId: auth.grantId,
+          },
+          request,
+        });
+
+        return rpcResult(body.id, {
+          contents: [
+            {
+              uri: resource.uri,
+              mimeType: resource.mimeType,
+              text,
+            },
+          ],
+        });
+      } catch (err) {
+        if (err instanceof MemberNotFoundError) {
+          return rpcError(body.id, -32004, err.message);
+        }
+        const message = err instanceof Error ? err.message : "Resource read failed";
+        return rpcError(body.id, -32000, message);
+      }
+    }
+
+    case "prompts/list":
+      return rpcResult(body.id, {
+        prompts: PROMPTS.map((p) => ({
+          name: p.name,
+          description: p.description,
+          arguments: p.arguments,
+        })),
+      });
+
+    case "prompts/get": {
+      const params = body.params as
+        | { name?: string; arguments?: Record<string, string> }
+        | undefined;
+      const promptName = params?.name;
+      const prompt = PROMPTS.find((p) => p.name === promptName);
+      if (!prompt) {
+        return rpcError(body.id, -32602, `Unknown prompt: ${promptName}`);
+      }
+
+      const promptArgs = params?.arguments ?? {};
+      for (const spec of prompt.arguments) {
+        if (spec.required && !promptArgs[spec.name]) {
+          return rpcError(
+            body.id,
+            -32602,
+            `Missing required argument: ${spec.name}`,
+          );
+        }
+      }
+
+      const messages = prompt.build(promptArgs);
+
+      await logAuditEvent({
+        action: "mcp.prompt_rendered",
+        userId: auth.user.id,
+        metadata: {
+          promptName: prompt.name,
+          clientId: auth.clientId,
+          clientName: auth.clientName,
+          grantId: auth.grantId,
+        },
+        request,
+      });
+
+      return rpcResult(body.id, {
+        description: prompt.description,
+        messages,
+      });
     }
 
     default:
