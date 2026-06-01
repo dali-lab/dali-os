@@ -40,6 +40,38 @@ import {
   LIST_MY_CALENDAR_LINKS_TOOL,
   runListMyCalendarLinks,
 } from "~/mcp/tools/list-my-calendar-links";
+import {
+  MARK_NOTIFICATION_READ_TOOL,
+  runMarkNotificationRead,
+  NotificationNotFoundError,
+  NotificationForbiddenError,
+} from "~/mcp/tools/mark-notification-read";
+import {
+  RSVP_TO_NOTIFICATION_TOOL,
+  runRsvpToNotification,
+  RsvpError,
+} from "~/mcp/tools/rsvp-to-notification";
+import {
+  CANCEL_MEETING_TOOL,
+  runCancelMeeting,
+  CancelMeetingError,
+} from "~/mcp/tools/cancel-meeting";
+import { LIST_GROUPS_TOOL, runListGroups } from "~/mcp/tools/list-groups";
+import {
+  LIST_MY_PROJECTS_TOOL,
+  runListMyProjects,
+} from "~/mcp/tools/list-my-projects";
+import {
+  GET_PROJECT_OVERVIEW_TOOL,
+  runGetProjectOverview,
+  ProjectNotFoundError,
+} from "~/mcp/tools/get-project-overview";
+import { LIST_MY_TASKS_TOOL, runListMyTasks } from "~/mcp/tools/list-my-tasks";
+import {
+  UPDATE_TASK_STATUS_TOOL,
+  runUpdateTaskStatus,
+  UpdateTaskStatusError,
+} from "~/mcp/tools/update-task-status";
 
 const PROTOCOL_VERSION = "2024-11-05";
 const SERVER_INFO = { name: "dali-os", version: "1.0.0" };
@@ -56,6 +88,14 @@ const TOOLS = [
   GET_MEMBER_PROFILE_TOOL,
   SCHEDULE_MEETING_TOOL,
   LIST_MY_CALENDAR_LINKS_TOOL,
+  MARK_NOTIFICATION_READ_TOOL,
+  RSVP_TO_NOTIFICATION_TOOL,
+  CANCEL_MEETING_TOOL,
+  LIST_GROUPS_TOOL,
+  LIST_MY_PROJECTS_TOOL,
+  GET_PROJECT_OVERVIEW_TOOL,
+  LIST_MY_TASKS_TOOL,
+  UPDATE_TASK_STATUS_TOOL,
 ] as const;
 
 type JsonRpcRequest = {
@@ -195,6 +235,53 @@ export async function action({ request }: Route.ActionArgs) {
           case "list_my_calendar_links":
             payload = await runListMyCalendarLinks(auth.user.id);
             break;
+          case "mark_notification_read":
+            payload = await runMarkNotificationRead(
+              auth.user.id,
+              args as Parameters<typeof runMarkNotificationRead>[1],
+            );
+            break;
+          case "rsvp_to_notification":
+            payload = await runRsvpToNotification(
+              auth.user,
+              args as Parameters<typeof runRsvpToNotification>[1],
+            );
+            break;
+          case "cancel_meeting":
+            payload = await runCancelMeeting(
+              auth.user.id,
+              args as Parameters<typeof runCancelMeeting>[1],
+            );
+            break;
+          case "list_groups":
+            payload = await runListGroups(
+              auth.user.id,
+              args as Parameters<typeof runListGroups>[1],
+            );
+            break;
+          case "list_my_projects":
+            payload = await runListMyProjects(
+              auth.user.id,
+              args as Parameters<typeof runListMyProjects>[1],
+            );
+            break;
+          case "get_project_overview":
+            payload = await runGetProjectOverview(
+              args as Parameters<typeof runGetProjectOverview>[0],
+            );
+            break;
+          case "list_my_tasks":
+            payload = await runListMyTasks(
+              auth.user.id,
+              args as Parameters<typeof runListMyTasks>[1],
+            );
+            break;
+          case "update_task_status":
+            payload = await runUpdateTaskStatus(
+              auth.user.id,
+              args as Parameters<typeof runUpdateTaskStatus>[1],
+            );
+            break;
           default:
             return rpcError(body.id, -32601, "Tool not implemented");
         }
@@ -218,6 +305,26 @@ export async function action({ request }: Route.ActionArgs) {
       } catch (err) {
         if (err instanceof MemberNotFoundError) {
           return rpcError(body.id, -32004, err.message);
+        }
+        if (err instanceof ProjectNotFoundError) {
+          return rpcError(body.id, -32004, err.message);
+        }
+        if (err instanceof NotificationNotFoundError) {
+          return rpcError(body.id, -32004, err.message);
+        }
+        if (err instanceof NotificationForbiddenError) {
+          return rpcError(body.id, -32003, err.message);
+        }
+        if (err instanceof RsvpError) {
+          // 403 → forbidden code; everything else maps to invalid params.
+          return rpcError(body.id, err.status === 403 ? -32003 : -32602, err.message);
+        }
+        if (err instanceof CancelMeetingError) {
+          return rpcError(body.id, err.status === 403 ? -32003 : -32004, err.message);
+        }
+        if (err instanceof UpdateTaskStatusError) {
+          const code = err.status === 403 ? -32003 : err.status === 404 ? -32004 : -32602;
+          return rpcError(body.id, code, err.message);
         }
         if (err instanceof ScheduleMeetingError) {
           return rpcError(body.id, -32602, err.message);
