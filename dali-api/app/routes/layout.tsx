@@ -10,6 +10,29 @@ import { resolvePhotoUrl } from '~/lib/photo'
 import { recordPageView } from '~/lib/analytics'
 import type { Route } from './+types/layout'
 
+// Routes alumni cannot access. Path is matched as a prefix; alumni hitting
+// any of these get redirected home. Keep the home dashboard, /members
+// (directory + own profile editor), and any future /profile route reachable.
+const ALUMNI_DENIED_PREFIXES = [
+  '/projects',
+  '/calendar',
+  '/mentorship',
+  '/hiring',
+  '/core',
+  '/admin-console',
+  '/staffing',
+  '/forms',
+  '/internal-processes',
+  '/partners',
+  '/education',
+]
+
+function isAlumniDeniedPath(pathname: string): boolean {
+  return ALUMNI_DENIED_PREFIXES.some(
+    (p) => pathname === p || pathname.startsWith(`${p}/`),
+  )
+}
+
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request)
   if (!auth.ok) return redirect('/login')
@@ -19,9 +42,19 @@ export async function loader({ request }: Route.LoaderArgs) {
     isCore: core,
     isAdmin: admin,
     isDomainLead: domainLead,
+    isAlumni: alumni,
     canViewForms,
     canViewStaffing,
   } = await getUserRoles(auth.user.sub)
+
+  // Alumni route gate. Admins/Core resolve before isLabMember, so a former
+  // member who is also flagged Admin still passes — we only deny pure
+  // alumni. The sidebar is also gated in the Layout component; this loader
+  // check is the source of truth (defends against deep-linking past the UI).
+  if (alumni && !admin && !core) {
+    const url = new URL(request.url)
+    if (isAlumniDeniedPath(url.pathname)) return redirect('/')
+  }
 
   let isInterviewer = false
   if (isLabMember) {
@@ -55,11 +88,11 @@ export async function loader({ request }: Route.LoaderArgs) {
     sessionId: auth.sessionId,
   })
 
-  return { user: auth.user, photoUrl, isCore: core, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, isEmbedded }
+  return { user: auth.user, photoUrl, isCore: core, isAdmin: admin, isDomainLead: domainLead, isAlumni: alumni, canViewForms, canViewStaffing, isInterviewer, isEmbedded }
 }
 
 export default function AppLayoutRoute() {
-  const { user, photoUrl, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, isEmbedded } = useLoaderData<typeof loader>()
+  const { user, photoUrl, isCore, isAdmin, isDomainLead, isAlumni, canViewForms, canViewStaffing, isInterviewer, isEmbedded } = useLoaderData<typeof loader>()
   const [searchParams] = useSearchParams()
   const location = useLocation()
   const navigate = useNavigate()
@@ -199,7 +232,7 @@ export default function AppLayoutRoute() {
 
   return (
     <>
-      <Layout user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} />
+      <Layout user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} isAlumni={isAlumni} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} />
       <LaunchWelcome firstName={user.firstName || user.email.split('@')[0]} />
     </>
   )

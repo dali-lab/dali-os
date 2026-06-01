@@ -67,15 +67,28 @@ export async function getUserRoles(userId: string): Promise<UserRoles> {
   const isCoreVal = core !== null;
   const isInstructorVal = instructor !== null;
 
+  // Alumni lose lab-member access on derivation; the DALIMember row stays
+  // (we don't delete history) but `isLabMember` is the door used by route
+  // guards, and a pure alumnus should not pass it.
+  //
+  // Admin/Core resolve from independent tables, so a former member who is
+  // also flagged Admin (env-var or AdminMembership) or current-term Core
+  // keeps active authority — derivation only suppresses access for a "pure"
+  // alumnus with no current role. Domain-lead and instructor flags persist
+  // any-term and shouldn't grant authority post-grad; zero them out here.
+  const isAlumniVal = alumni;
+  const pureAlumni = isAlumniVal && !isAdminVal && !isCoreVal;
+
   return {
-    isLabMember: member !== null,
+    isLabMember: member !== null && !pureAlumni,
     // Admins are a superset of Core for access purposes.
     isCore: isAdminVal || isCoreVal,
     isAdmin: isAdminVal,
-    isDomainLead: domainLead !== null,
-    isInstructor: isInstructorVal,
-    isAlumni: alumni,
-    canViewForms: isAdminVal || isCoreVal || isInstructorVal,
+    isDomainLead: !pureAlumni && domainLead !== null,
+    isInstructor: !pureAlumni && isInstructorVal,
+    isAlumni: isAlumniVal,
+    canViewForms:
+      !pureAlumni && (isAdminVal || isCoreVal || isInstructorVal),
     canViewStaffing: isAdminVal || isCoreVal,
   };
 }

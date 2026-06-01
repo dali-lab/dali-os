@@ -45,6 +45,11 @@ interface LayoutProps {
   isCore?: boolean
   isAdmin?: boolean
   isDomainLead?: boolean
+  // Drives the alumni sidebar variant: Home + Members + Calendar are hidden
+  // and most areas (Hiring, Projects, Partners, Education, Internal
+  // Processes, Operations) collapse out of the nav. The loader also
+  // hard-redirects alumni who deep-link past the UI.
+  isAlumni?: boolean
   canViewForms?: boolean
   canViewStaffing?: boolean
   isInterviewer?: boolean
@@ -55,7 +60,11 @@ const EXPANDED_AREAS_KEY = 'dali:sidebar:expanded-areas'
 
 type AreaKey = 'hiring' | 'projects' | 'members' | 'partners' | 'education' | 'internal-processes' | 'admin-console'
 
-export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDomainLead = false, canViewForms = false, canViewStaffing = false, isInterviewer = false }: LayoutProps) {
+export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDomainLead = false, isAlumni = false, canViewForms = false, canViewStaffing = false, isInterviewer = false }: LayoutProps) {
+  // Admin / Core overlap with isAlumni is rare (former member rehired as
+  // staff, etc.) but if it happens we honor active authority — the alumni
+  // variant only fires for a "pure" alumnus with no current role.
+  const alumniOnly = isAlumni && !isAdmin && !isCore
   const location = useLocation()
   const { revalidate } = useRevalidator()
   // Held in a ref so the message listener (mounted once) always calls the
@@ -484,7 +493,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
       label: 'Hiring',
       to: '/hiring/reviewer',
       icon: Briefcase,
-      show: hasHiringAccess,
+      show: hasHiringAccess && !alumniOnly,
       active: activeAreaKey === 'hiring',
       sections: hiringSections,
     },
@@ -493,7 +502,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
       label: 'Projects',
       to: '/projects/list',
       icon: FolderKanban,
-      show: true,
+      show: !alumniOnly,
       active: activeAreaKey === 'projects',
       sections: projectsSections,
     },
@@ -511,7 +520,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
       label: 'Partners',
       to: '/partners',
       icon: Handshake,
-      show: true,
+      show: !alumniOnly,
       active: activeAreaKey === 'partners',
       sections: partnersSections,
     },
@@ -520,7 +529,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
       label: 'Education',
       to: '/education',
       icon: GraduationCap,
-      show: true,
+      show: !alumniOnly,
       active: activeAreaKey === 'education',
       sections: educationSections,
     },
@@ -529,7 +538,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
       label: 'Internal Processes',
       to: '/internal-processes/transfer',
       icon: Workflow,
-      show: true,
+      show: !alumniOnly,
       active: activeAreaKey === 'internal-processes',
       sections: internalProcessesSections,
     },
@@ -710,7 +719,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
             </>
           )
         })()}
-        {(() => {
+        {!alumniOnly && (() => {
           const calendarActive = path.startsWith('/calendar')
           return (
             <button
