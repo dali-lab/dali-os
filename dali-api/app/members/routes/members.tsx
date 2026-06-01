@@ -35,6 +35,36 @@ type MemberRow = {
   domainRoles: { domainName: string; level: string }[];
 };
 
+type MemberStatus = "active" | "alumni";
+
+function parseStatus(raw: string | null): MemberStatus {
+  return raw === "alumni" ? "alumni" : "active";
+}
+
+// SQL predicate for the alumni directory: anyone Dartmouth-IDM officially
+// marks ALUMNI, anyone with an explicit graduatedAt in the past, or anyone
+// whose classYear's standard grad date has passed. Mirrors the safe subset
+// of the per-user isAlumni() derivation that can be expressed in a single
+// Prisma `where` clause (skips the assignment-count fallback — directory
+// inclusion is forgiving by design).
+function alumniWhereClause(now: Date) {
+  // Dartmouth Commencement is mid-June. Class of 2026 starts appearing in
+  // the alumni list on 2026-06-15.
+  const month = now.getMonth(); // 0-indexed
+  const day = now.getDate();
+  const postCommencement = month > 5 || (month === 5 && day >= 15);
+  const cohortCutoff = postCommencement
+    ? now.getFullYear()
+    : now.getFullYear() - 1;
+  return {
+    OR: [
+      { dartmouthAffiliation: "ALUMNI" },
+      { graduatedAt: { lt: now } },
+      { classYear: { lte: cohortCutoff } },
+    ],
+  };
+}
+
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
@@ -42,10 +72,14 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const { terms, selected, termId, isAll } = await resolveTermFilter(request);
 
+  const url = new URL(request.url);
+  const status = parseStatus(url.searchParams.get("status"));
+
   // "Active in a term" = the member held a Core role OR a project assignment
   // that term. "All terms" drops the constraint and shows every member.
+  // Only applies to the Active view — Alumni ignores the term filter.
   const activeInTerm =
-    isAll || !termId
+    status === "alumni" || isAll || !termId
       ? {}
       : {
           OR: [
@@ -62,7 +96,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     orderBy: { displayName: "asc" },
     select: { id: true, displayName: true },
   });
-  const url = new URL(request.url);
   const domainParam = url.searchParams.get("domain") ?? "";
   const domainId = domains.some((d) => d.id === domainParam)
     ? domainParam
@@ -74,9 +107,23 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Lab members are Users with a DALIMember row attached. Roles derive from
   // AdminMembership + CoreAssignment per the Phase 2 identity model — see
   // app/admin-console/routes/api.members.ts for the canonical shape.
+  // Alumni view layers an additional predicate on top of the same base set:
+  // a DALIMember row is required (we don't surface non-members in the
+  // directory), but the term-active filter is dropped and the alumni
+  // predicate is applied.
+  const alumniCondition =
+    status === "alumni" ? alumniWhereClause(new Date()) : {};
   const users = await prisma.user.findMany({
-    where: { daliMember: { isNot: null }, ...activeInTerm, ...inDomain },
-    orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+    where: {
+      daliMember: { isNot: null },
+      ...activeInTerm,
+      ...inDomain,
+      ...alumniCondition,
+    },
+    orderBy:
+      status === "alumni"
+        ? [{ classYear: "desc" }, { lastName: "asc" }, { firstName: "asc" }]
+        : [{ lastName: "asc" }, { firstName: "asc" }],
     select: {
       id: true,
       firstName: true,
@@ -124,6 +171,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     domains,
     selectedDomain: domainId,
     canEdit,
+    status,
   };
 }
 
@@ -243,7 +291,7 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function MembersList() {
-  const { rows, terms, selectedTerm, domains, selectedDomain, canEdit } =
+  const { rows, terms, selectedTerm, domains, selectedDomain, canEdit, status } =
     useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const [creating, setCreating] = useState(false);
@@ -336,19 +384,30 @@ export default function MembersList() {
         </Form>
       )}
 
+      <StatusTabs status={status} />
+
       <div className="flex items-center gap-3 flex-wrap">
         <input
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search by name or email"
+          placeholder={status === "alumni" ? "Search alumni by name or email" : "Search by name or email"}
           className="flex-1 min-w-[200px] max-w-sm px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
         />
-        <TermFilter terms={terms} selected={selectedTerm} />
+        {status === "active" && (
+          <TermFilter terms={terms} selected={selectedTerm} />
+        )}
         <DomainFilter domains={domains} selected={selectedDomain} />
         <ViewToggle value={view} onChange={setView} />
         <span className="text-xs text-muted-foreground ml-auto">
-          {filtered.length} {filtered.length === 1 ? "member" : "members"}
+          {filtered.length}{" "}
+          {status === "alumni"
+            ? filtered.length === 1
+              ? "alum"
+              : "alumni"
+            : filtered.length === 1
+              ? "member"
+              : "members"}
           {query && filtered.length !== rows.length ? ` of ${rows.length}` : ""}
         </span>
       </div>
@@ -356,11 +415,15 @@ export default function MembersList() {
       {filtered.length === 0 ? (
         <div className="px-4 py-8 text-center text-sm text-muted-foreground">
           {query
-            ? "No members match this search."
-            : "No members match these filters."}
+            ? status === "alumni"
+              ? "No alumni match this search."
+              : "No members match this search."
+            : status === "alumni"
+              ? "No alumni match these filters."
+              : "No members match these filters."}
         </div>
       ) : view === "list" ? (
-        <MembersTable rows={filtered} />
+        <MembersTable rows={filtered} status={status} />
       ) : (
         <MembersCards rows={filtered} />
       )}
@@ -401,6 +464,46 @@ function CreateField({
   );
 }
 
+// Active ↔ Alumni segmented tab. Drives the loader via `?status=`. Switching
+// to Alumni drops the `?term=` filter (term doesn't apply post-grad) and
+// scopes the list to graduated members.
+function StatusTabs({ status }: { status: MemberStatus }) {
+  const [searchParams, setSearchParams] = useSearchParams();
+  function set(next: MemberStatus) {
+    const params = new URLSearchParams(searchParams);
+    if (next === "alumni") {
+      params.set("status", "alumni");
+      params.delete("term"); // term filter doesn't apply to alumni
+    } else {
+      params.delete("status");
+    }
+    setSearchParams(params);
+  }
+  const tabs: { key: MemberStatus; label: string }[] = [
+    { key: "active", label: "Active" },
+    { key: "alumni", label: "Alumni" },
+  ];
+  return (
+    <div className="inline-flex items-center gap-1 border border-border rounded-md p-1 bg-muted/30 w-fit">
+      {tabs.map((t) => (
+        <button
+          key={t.key}
+          type="button"
+          onClick={() => set(t.key)}
+          aria-pressed={status === t.key}
+          className={`px-3 py-1 text-xs font-medium rounded-sm transition-colors ${
+            status === t.key
+              ? "bg-background text-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // Domain dropdown for the members directory. Like TermFilter, it drives the
 // loader via a search param (`?domain=`) and preserves the other params so it
 // composes with the term filter. "" is the "All domains" choice.
@@ -434,8 +537,17 @@ function DomainFilter({
   );
 }
 
-function MembersTable({ rows }: { rows: MemberRow[] }) {
+function MembersTable({
+  rows,
+  status,
+}: {
+  rows: MemberRow[];
+  status: MemberStatus;
+}) {
   const navigate = useNavigate();
+  // Alumni view swaps the Roles column for a Class column — Roles are
+  // largely historical for alumni and class year is the more useful axis.
+  const showClass = status === "alumni";
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm min-w-[640px]">
@@ -443,7 +555,9 @@ function MembersTable({ rows }: { rows: MemberRow[] }) {
           <tr>
             <th className="text-left font-medium px-4 py-2">Name</th>
             <th className="text-left font-medium px-4 py-2">Email</th>
-            <th className="text-left font-medium px-4 py-2">Roles</th>
+            <th className="text-left font-medium px-4 py-2">
+              {showClass ? "Class" : "Roles"}
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -462,10 +576,20 @@ function MembersTable({ rows }: { rows: MemberRow[] }) {
               </td>
               <td className="px-4 py-2 text-muted-foreground">{m.email ?? "—"}</td>
               <td className="px-4 py-2">
-                <RolePills
-                  coreTitles={m.coreTitles}
-                  domainRoles={m.domainRoles}
-                />
+                {showClass ? (
+                  m.classYear ? (
+                    <span className="text-muted-foreground">
+                      Class of {m.classYear}
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )
+                ) : (
+                  <RolePills
+                    coreTitles={m.coreTitles}
+                    domainRoles={m.domainRoles}
+                  />
+                )}
               </td>
             </tr>
           ))}
