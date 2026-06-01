@@ -1,5 +1,4 @@
 import { Link } from "react-router";
-import { ArrowLeft } from "lucide-react";
 import type { Route } from "./+types/help.notifications";
 
 export const meta: Route.MetaFunction = () => [
@@ -9,13 +8,7 @@ export const meta: Route.MetaFunction = () => [
 export default function HelpNotificationsPage() {
   return (
     <main className="mx-auto max-w-3xl p-8">
-      <Link
-        to="/help"
-        className="inline-flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-900"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" /> Help
-      </Link>
-      <h1 className="mt-2 text-2xl font-semibold">Notifications</h1>
+      <h1 className="text-2xl font-semibold">Notifications</h1>
       <p className="mt-2 text-sm text-zinc-600">
         DALI OS tells you about things that need your attention in two
         places: the Tasks group in the sidebar and your Home inbox.

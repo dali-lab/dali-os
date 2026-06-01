@@ -1,5 +1,4 @@
 import { Link } from "react-router";
-import { ArrowLeft } from "lucide-react";
 import type { Route } from "./+types/help.staffing";
 
 export const meta: Route.MetaFunction = () => [
@@ -9,13 +8,7 @@ export const meta: Route.MetaFunction = () => [
 export default function HelpStaffingPage() {
   return (
     <main className="mx-auto max-w-3xl p-8">
-      <Link
-        to="/help"
-        className="inline-flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-900"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" /> Help
-      </Link>
-      <h1 className="mt-2 text-2xl font-semibold">Staffing</h1>
+      <h1 className="text-2xl font-semibold">Staffing</h1>
       <p className="mt-2 text-sm text-zinc-600">
         Each term the lab runs a staffing cycle that places members onto
         projects. Three forms drive what you tell us; the staffing board does

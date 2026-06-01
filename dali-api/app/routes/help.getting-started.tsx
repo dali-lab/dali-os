@@ -1,5 +1,4 @@
 import { Link } from "react-router";
-import { ArrowLeft } from "lucide-react";
 import type { Route } from "./+types/help.getting-started";
 
 export const meta: Route.MetaFunction = () => [
@@ -117,13 +116,7 @@ const SECTIONS: Array<{
 export default function GettingStartedPage() {
   return (
     <main className="mx-auto max-w-3xl p-8">
-      <Link
-        to="/help"
-        className="inline-flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-900"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" /> Help
-      </Link>
-      <h1 className="mt-2 text-2xl font-semibold">Getting started</h1>
+      <h1 className="text-2xl font-semibold">Getting started</h1>
       <p className="mt-2 text-sm text-zinc-600">
         DALI OS is organized by what you're trying to do, not by your role.
         The left sidebar groups the lab's work into a few sections — here's

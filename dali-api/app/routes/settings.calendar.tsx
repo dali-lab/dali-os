@@ -4,7 +4,7 @@
 // manual-blocks editors stay on /calendar where they sit next to the live grid.
 
 import { Link, redirect, useFetcher } from "react-router";
-import { ArrowLeft, CalendarDays, Plus, Trash2 } from "lucide-react";
+import { CalendarDays, Plus, Trash2 } from "lucide-react";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { listCalendarsForLink } from "~/lib/google-calendar";
@@ -130,13 +130,7 @@ export default function SettingsCalendarPage({ loaderData }: Route.ComponentProp
   const { calendarLinks } = loaderData;
   return (
     <main className="mx-auto max-w-3xl p-8">
-      <Link
-        to="/settings"
-        className="inline-flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-900"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" /> Settings
-      </Link>
-      <header className="mt-2 flex items-start justify-between gap-4">
+      <header className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Calendar</h1>
           <p className="mt-2 text-sm text-zinc-600">

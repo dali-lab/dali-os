@@ -3,8 +3,8 @@
 // all others. The current session is flagged but can still be revoked from a
 // "sign out everywhere" action (which then redirects to /login on next request).
 
-import { Form, Link, redirect, useNavigation } from "react-router";
-import { ArrowLeft, KeyRound } from "lucide-react";
+import { Form, redirect, useNavigation } from "react-router";
+import { KeyRound } from "lucide-react";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import type { Route } from "./+types/settings.sessions";
@@ -100,13 +100,7 @@ export default function SessionsPage({ loaderData }: Route.ComponentProps) {
 
   return (
     <main className="mx-auto max-w-2xl p-8">
-      <Link
-        to="/settings"
-        className="inline-flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-900"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" /> Settings
-      </Link>
-      <header className="mt-2 flex items-start justify-between gap-4">
+      <header className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Active sessions</h1>
           <p className="mt-2 text-sm text-zinc-600">

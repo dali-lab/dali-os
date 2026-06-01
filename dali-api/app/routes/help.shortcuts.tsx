@@ -1,5 +1,3 @@
-import { Link } from "react-router";
-import { ArrowLeft } from "lucide-react";
 import type { Route } from "./+types/help.shortcuts";
 
 export const meta: Route.MetaFunction = () => [
@@ -29,13 +27,7 @@ const NAV: Array<[string, string]> = [
 export default function HelpShortcutsPage() {
   return (
     <main className="mx-auto max-w-3xl p-8">
-      <Link
-        to="/help"
-        className="inline-flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-900"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" /> Help
-      </Link>
-      <h1 className="mt-2 text-2xl font-semibold">Keyboard shortcuts</h1>
+      <h1 className="text-2xl font-semibold">Keyboard shortcuts</h1>
       <p className="mt-2 text-sm text-zinc-600">
         On Windows and Linux, use <Kbd>Ctrl</Kbd> wherever <Kbd>⌘</Kbd> is
         shown. ⌘⌥-combinations avoid clashing with browser shortcuts your
