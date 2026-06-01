@@ -8,6 +8,10 @@ import {
   isInstructor,
   canViewForms,
   canViewStaffing,
+  isAlumni,
+  tier,
+  standardGradDate,
+  getUserRoles,
 } from "~/lib/roles";
 
 // Phase 2: roles helpers now query AdminMembership / CoreAssignment /
@@ -41,6 +45,16 @@ beforeEach(() => {
   (mockPrisma as any).term = {
     findFirst: vi.fn().mockResolvedValue({ id: "term-1" }),
   };
+  // Alumni derivation / tier resolver additions.
+  (mockPrisma as any).user = { findUnique: vi.fn() };
+  (mockPrisma as any).projectAssignment = { findFirst: vi.fn() };
+  (mockPrisma as any).partnerUser = { findUnique: vi.fn() };
+  // Default: no assignments anywhere. Individual tests override as needed.
+  (mockPrisma as any).projectAssignment.findFirst.mockResolvedValue(null);
+  (mockPrisma as any).coreAssignment.findFirst.mockResolvedValue(null);
+  (mockPrisma as any).instructorAssignment.findFirst.mockResolvedValue(null);
+  (mockPrisma as any).domainLeadAssignment.findFirst.mockResolvedValue(null);
+  (mockPrisma as any).partnerUser.findUnique.mockResolvedValue(null);
 });
 
 const CYCLE_ID = "cycle-1";
@@ -175,5 +189,209 @@ describe("canViewStaffing (Core or Admin only)", () => {
   it("false for a plain member", async () => {
     setRoleFlags({ member: true });
     expect(await canViewStaffing("u")).toBe(false);
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Alumni derivation
+// ───────────────────────────────────────────────────────────────────────────
+
+// Helper: simulate "has past assignments, none current" by inspecting the
+// where clause. Past queries pass `NOT: { termId }`; current queries pass
+// `termId` directly.
+function mockPastOnlyAssignment() {
+  (mockPrisma as any).projectAssignment.findFirst.mockImplementation(
+    (args: { where: Record<string, unknown> }) => {
+      const w = args.where as { NOT?: unknown; termId?: unknown };
+      return w.NOT !== undefined ? { id: "past-p" } : null;
+    },
+  );
+}
+
+type AlumniMockUser = {
+  classYear: number | null;
+  graduatedAt: Date | null;
+  dartmouthAffiliation: string | null;
+  dartmouthLookupAffiliation: string | null;
+  dartmouthLookupSyncedAt: Date | null;
+};
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function setUser(u: Partial<AlumniMockUser>) {
+  const base: AlumniMockUser = {
+    classYear: null,
+    graduatedAt: null,
+    dartmouthAffiliation: null,
+    dartmouthLookupAffiliation: null,
+    dartmouthLookupSyncedAt: null,
+  };
+  (mockPrisma as any).user.findUnique.mockResolvedValue({ ...base, ...u });
+}
+
+describe("standardGradDate", () => {
+  it("returns June 15 of the given class year", () => {
+    expect(standardGradDate(2026)).toEqual(new Date(2026, 5, 15));
+    expect(standardGradDate(2027)).toEqual(new Date(2027, 5, 15));
+  });
+});
+
+describe("isAlumni — Tier 1: People API ALUMNI", () => {
+  it("returns true regardless of other signals", async () => {
+    setUser({
+      dartmouthAffiliation: "ALUMNI",
+      // Even with a current assignment elsewhere, Tier 1 wins.
+      classYear: 2030,
+    });
+    (mockPrisma as any).projectAssignment.findFirst.mockResolvedValue({ id: "p1" });
+    expect(await isAlumni("u-alumni-1")).toBe(true);
+  });
+});
+
+describe("isAlumni — Tier 2: explicit graduatedAt", () => {
+  it("returns true when graduatedAt is in the past", async () => {
+    setUser({ graduatedAt: new Date(Date.now() - 30 * DAY_MS) });
+    expect(await isAlumni("u-grad")).toBe(true);
+  });
+
+  it("returns false when graduatedAt is in the future", async () => {
+    setUser({ graduatedAt: new Date(Date.now() + 30 * DAY_MS), classYear: null });
+    expect(await isAlumni("u-future-grad")).toBe(false);
+  });
+});
+
+describe("isAlumni — Tier 3: lookup-says-Student override", () => {
+  it("returns false when lookup says Student and sync is fresh, even with past classYear", async () => {
+    // 5th-year senior case: classYear is past, but Dartmouth still lists
+    // them as a Student in the public directory.
+    setUser({
+      classYear: 2025,
+      dartmouthLookupAffiliation: "Student",
+      dartmouthLookupSyncedAt: new Date(Date.now() - 1 * DAY_MS),
+    });
+    // Has past + would otherwise qualify under Tier 4.
+    (mockPrisma as any).projectAssignment.findFirst.mockResolvedValue({ id: "p1" });
+    expect(await isAlumni("u-5th-year")).toBe(false);
+  });
+
+  it("falls through to Tier 4 when lookup is stale (> 14 days old)", async () => {
+    setUser({
+      classYear: 2025,
+      dartmouthLookupAffiliation: "Student",
+      dartmouthLookupSyncedAt: new Date(Date.now() - 30 * DAY_MS),
+    });
+    mockPastOnlyAssignment();
+    expect(await isAlumni("u-stale")).toBe(true);
+  });
+});
+
+describe("isAlumni — Tier 4: classYear math + assignment history", () => {
+  it("returns true when classYear is past, has past assignment, no current", async () => {
+    setUser({ classYear: 2024 });
+    mockPastOnlyAssignment();
+    expect(await isAlumni("u-tier4")).toBe(true);
+  });
+
+  it("returns false when classYear is in the future (on-leave case)", async () => {
+    setUser({ classYear: 2030 });
+    mockPastOnlyAssignment();
+    expect(await isAlumni("u-on-leave")).toBe(false);
+  });
+
+  it("returns false when classYear is past but no assignment history exists", async () => {
+    setUser({ classYear: 2020 });
+    // All assignment lookups return null.
+    expect(await isAlumni("u-orphan-classyear")).toBe(false);
+  });
+
+  it("returns false when there is a current-term assignment (still active)", async () => {
+    setUser({ classYear: 2024 });
+    // First call (past) → null, second (current) → row. But our impl runs
+    // past+current in parallel — past query excludes current termId. We
+    // simulate a "has only current" member by returning null for the
+    // past query and a row for the current query.
+    let projectCall = 0;
+    (mockPrisma as any).projectAssignment.findFirst.mockImplementation(
+      (args: { where: Record<string, unknown> }) => {
+        projectCall++;
+        // The past query carries NOT.termId; the current query has termId
+        // set directly. Distinguish on that.
+        const w = args.where as { NOT?: unknown; termId?: unknown };
+        return w.NOT !== undefined ? null : { id: "current-p" };
+      },
+    );
+    expect(await isAlumni("u-still-current")).toBe(false);
+    expect(projectCall).toBeGreaterThan(0);
+  });
+
+  it("returns false when classYear is null and no other signals fired", async () => {
+    setUser({ classYear: null });
+    expect(await isAlumni("u-no-classyear")).toBe(false);
+  });
+
+  it("returns false when the User row does not exist", async () => {
+    (mockPrisma as any).user.findUnique.mockResolvedValue(null);
+    expect(await isAlumni("u-missing")).toBe(false);
+  });
+});
+
+describe("getUserRoles — isAlumni field", () => {
+  it("includes isAlumni: true when derivation returns true", async () => {
+    setRoleFlags({ member: true });
+    setUser({ dartmouthAffiliation: "ALUMNI" });
+    const roles = await getUserRoles("u");
+    expect(roles.isAlumni).toBe(true);
+  });
+
+  it("includes isAlumni: false when no signal fires", async () => {
+    setRoleFlags({ member: true });
+    setUser({ classYear: null });
+    const roles = await getUserRoles("u");
+    expect(roles.isAlumni).toBe(false);
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// tier resolver
+// ───────────────────────────────────────────────────────────────────────────
+
+describe("tier", () => {
+  it("returns Admin for an AdminMembership holder", async () => {
+    setRoleFlags({ admin: true });
+    setUser({});
+    expect(await tier("u")).toBe("Admin");
+  });
+
+  it("returns Core for a current-term Core assignment", async () => {
+    setRoleFlags({ core: true });
+    setUser({});
+    expect(await tier("u")).toBe("Core");
+  });
+
+  it("returns Member for a current-term project assignment", async () => {
+    setRoleFlags({ member: true });
+    setUser({});
+    (mockPrisma as any).projectAssignment.findFirst.mockResolvedValue({ id: "p1" });
+    expect(await tier("u")).toBe("Member");
+  });
+
+  it("returns Alumni when isAlumni is true and not Admin/Core/active", async () => {
+    setRoleFlags({ member: true });
+    setUser({ dartmouthAffiliation: "ALUMNI" });
+    // No current assignment, so we fall past Member into Alumni.
+    expect(await tier("u")).toBe("Alumni");
+  });
+
+  it("returns Partner for a PartnerUser with no other roles", async () => {
+    setRoleFlags({ member: false });
+    setUser({});
+    (mockPrisma as any).partnerUser.findUnique.mockResolvedValue({ id: "pu1" });
+    expect(await tier("u")).toBe("Partner");
+  });
+
+  it("returns Student as the catch-all", async () => {
+    setRoleFlags({ member: false });
+    setUser({});
+    expect(await tier("u")).toBe("Student");
   });
 });

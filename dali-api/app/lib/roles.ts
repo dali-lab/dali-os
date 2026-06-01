@@ -19,6 +19,12 @@ export interface UserRoles {
   isAdmin: boolean;
   isDomainLead: boolean;
   isInstructor: boolean;
+  /**
+   * Derived: this user has graduated and is no longer an active lab member.
+   * See `isAlumni()` for the layered derivation (People API → graduatedAt →
+   * lookup negative-override → classYear + assignment history).
+   */
+  isAlumni: boolean;
   /** Forms & Groups: Core, Admin, or Instructor. */
   canViewForms: boolean;
   /** Staffing, Intent to Work, Bids, Applications: Core or Admin. */
@@ -36,7 +42,7 @@ export async function getUserRoles(userId: string): Promise<UserRoles> {
 
   const term = await currentTerm();
 
-  const [member, admin, core, domainLead, instructor] = await Promise.all([
+  const [member, admin, core, domainLead, instructor, alumni] = await Promise.all([
     prisma.dALIMember.findUnique({ where: { userId }, select: { id: true } }),
     prisma.adminMembership.findUnique({ where: { userId }, select: { id: true } }),
     // Core access tracks the current term: a former Core member from a past
@@ -54,6 +60,7 @@ export async function getUserRoles(userId: string): Promise<UserRoles> {
     // Any InstructorAssignment (any term) signals instructor authority —
     // mirrors the domain-lead "any row" convention.
     prisma.instructorAssignment.findFirst({ where: { userId }, select: { id: true } }),
+    isAlumni(userId),
   ]);
 
   const isAdminVal = admin !== null || envIds.includes(userId);
@@ -67,6 +74,7 @@ export async function getUserRoles(userId: string): Promise<UserRoles> {
     isAdmin: isAdminVal,
     isDomainLead: domainLead !== null,
     isInstructor: isInstructorVal,
+    isAlumni: alumni,
     canViewForms: isAdminVal || isCoreVal || isInstructorVal,
     canViewStaffing: isAdminVal || isCoreVal,
   };
@@ -216,6 +224,186 @@ export async function canManageStaffing(userId: string): Promise<boolean> {
     select: { id: true },
   });
   return core !== null;
+}
+
+// ─── Alumni derivation ───────────────────────────────────────────────────────
+
+/** Dartmouth Commencement is mid-June each year. June 15 is the conservative
+ * cutoff used for derived alumni status — a member with `classYear = 2026`
+ * whose Dartmouth IDM record hasn't flipped yet is treated as alumni from
+ * 2026-06-15 onward, provided they have no current-term assignments. */
+export function standardGradDate(classYear: number): Date {
+  // Date constructor month is 0-indexed.
+  return new Date(classYear, 5, 15);
+}
+
+// Tier-3 lookup-Student override expires after this many days. If the lookup
+// sync is older, we don't trust "still a Student" to override classYear math —
+// the member may have graduated and we just haven't refreshed.
+const LOOKUP_FRESHNESS_DAYS = 14;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Whether the user is an alumnus — graduated and no longer active in the lab.
+ *
+ * Layered derivation, most-authoritative first (see alumni_plan.md):
+ *
+ *   Tier 1: People API says ALUMNI                       → true
+ *   Tier 2: explicit `graduatedAt` is in the past        → true
+ *   Tier 3: lookup says "still Student" (fresh sync)     → false (override)
+ *   Tier 4: classYear past Commencement
+ *           AND has past assignment(s)
+ *           AND no current-term assignment               → true
+ *
+ * Tier 3 is the critical 5th-year-senior guard: a member with
+ * `classYear = 2025` and an active 2026 spring assignment is *not* alumni
+ * regardless of what the classYear math would say.
+ */
+export async function isAlumni(userId: string): Promise<boolean> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      classYear: true,
+      graduatedAt: true,
+      dartmouthAffiliation: true,
+      dartmouthLookupAffiliation: true,
+      dartmouthLookupSyncedAt: true,
+    },
+  });
+  if (!user) return false;
+
+  // Tier 1: Dartmouth IDM has officially flipped the account to ALUMNI.
+  if (user.dartmouthAffiliation === "ALUMNI") return true;
+
+  const now = new Date();
+
+  // Tier 2: explicit graduation date set (off-cycle grads, or stamped by
+  // the People API the first time we observed ALUMNI).
+  if (user.graduatedAt && user.graduatedAt < now) return true;
+
+  // Tier 3: lookup-says-Student override. Protects 5th-year seniors whose
+  // classYear is past but who are demonstrably still students per Dartmouth's
+  // public directory. Sync must be fresh — a stale "Student" record may be
+  // months-old reality that has since flipped.
+  if (
+    user.dartmouthLookupAffiliation === "Student" &&
+    user.dartmouthLookupSyncedAt &&
+    now.getTime() - user.dartmouthLookupSyncedAt.getTime() <
+      LOOKUP_FRESHNESS_DAYS * DAY_MS
+  ) {
+    return false;
+  }
+
+  // Tier 4: classYear math + assignment history. Requires *both* a past
+  // assignment AND zero current-term assignments — protects on-leave members
+  // (no current assignment, but classYear still in the future) and
+  // recently-staffed members from being miscategorized.
+  if (!user.classYear) return false;
+  if (standardGradDate(user.classYear) > now) return false;
+
+  const term = await currentTerm();
+  const [past, current] = await Promise.all([
+    hasAnyPastAssignment(userId, term?.id ?? null),
+    term ? hasAnyCurrentAssignment(userId, term.id) : Promise.resolve(false),
+  ]);
+  return past && !current;
+}
+
+// Past = any ProjectAssignment / CoreAssignment / InstructorAssignment /
+// DomainLeadAssignment row outside the current term. If no current term is
+// known, every row counts as past — this is the safer assumption (we'd
+// rather correctly tier an alumnus when the Term table is empty than miss
+// the tier flip entirely).
+async function hasAnyPastAssignment(
+  userId: string,
+  currentTermId: string | null,
+): Promise<boolean> {
+  const excludeCurrent = currentTermId
+    ? { NOT: { termId: currentTermId } }
+    : {};
+  const [proj, core, instr, lead] = await Promise.all([
+    prisma.projectAssignment.findFirst({
+      where: { userId, ...excludeCurrent },
+      select: { id: true },
+    }),
+    prisma.coreAssignment.findFirst({
+      where: { userId, ...excludeCurrent },
+      select: { id: true },
+    }),
+    prisma.instructorAssignment.findFirst({
+      where: { userId, ...excludeCurrent },
+      select: { id: true },
+    }),
+    prisma.domainLeadAssignment.findFirst({
+      where: { userId, ...excludeCurrent },
+      select: { id: true },
+    }),
+  ]);
+  return proj !== null || core !== null || instr !== null || lead !== null;
+}
+
+async function hasAnyCurrentAssignment(
+  userId: string,
+  termId: string,
+): Promise<boolean> {
+  const [proj, core, instr, lead] = await Promise.all([
+    prisma.projectAssignment.findFirst({
+      where: { userId, termId },
+      select: { id: true },
+    }),
+    prisma.coreAssignment.findFirst({
+      where: { userId, termId },
+      select: { id: true },
+    }),
+    prisma.instructorAssignment.findFirst({
+      where: { userId, termId },
+      select: { id: true },
+    }),
+    prisma.domainLeadAssignment.findFirst({
+      where: { userId, termId },
+      select: { id: true },
+    }),
+  ]);
+  return proj !== null || core !== null || instr !== null || lead !== null;
+}
+
+// ─── Tier resolution ─────────────────────────────────────────────────────────
+
+export type Tier = "Admin" | "Core" | "Member" | "Alumni" | "Student" | "Partner";
+
+/**
+ * Resolve a user's single canonical tier. Order matches expansion_plan.md §347:
+ *
+ *   AdminMembership                      → Admin
+ *   CoreAssignment(current term)         → Core
+ *   any current-term assignment          → Member
+ *   past assignments, no current         → Alumni
+ *   PartnerUser                          → Partner
+ *   none of the above                    → Student
+ *
+ * The MemberPendingSetup sub-tier from the plan is deferred — when setup-gating
+ * lands, fold it in between the assignment and Alumni branches.
+ */
+export async function tier(userId: string): Promise<Tier> {
+  if (await isAdmin(userId)) return "Admin";
+  if (await isCore(userId)) return "Core";
+
+  const term = await currentTerm();
+  const hasCurrent = term
+    ? await hasAnyCurrentAssignment(userId, term.id)
+    : false;
+  if (hasCurrent) return "Member";
+
+  if (await isAlumni(userId)) return "Alumni";
+
+  const partner = await prisma.partnerUser.findUnique({
+    where: { userId },
+    select: { id: true },
+  });
+  if (partner !== null) return "Partner";
+
+  return "Student";
 }
 
 // ─── Cycle-scoped access ─────────────────────────────────────────────────────
