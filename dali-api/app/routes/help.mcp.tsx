@@ -1,7 +1,8 @@
 // Member-facing docs for connecting an AI assistant to DALI OS via MCP.
 
 import { useState } from "react";
-import { Check, Copy } from "lucide-react";
+import { Link } from "react-router";
+import { ArrowLeft, Check, Copy } from "lucide-react";
 import type { Route } from "./+types/help.mcp";
 
 export async function loader() {
@@ -41,7 +42,13 @@ export default function McpHelpPage({ loaderData }: Route.ComponentProps) {
   const { mcpUrl } = loaderData;
   return (
     <main className="mx-auto max-w-3xl p-8">
-      <h1 className="text-2xl font-semibold">Connect AI to DALI OS</h1>
+      <Link
+        to="/help"
+        className="inline-flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-900"
+      >
+        <ArrowLeft className="h-3.5 w-3.5" /> Help
+      </Link>
+      <h1 className="mt-2 text-2xl font-semibold">Connect AI to DALI OS</h1>
       <p className="mt-2 text-sm text-zinc-600">
         DALI OS exposes an MCP server so AI assistants can read your DALI data
         on your behalf.

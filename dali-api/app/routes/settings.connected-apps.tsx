@@ -2,7 +2,8 @@
 // lets them revoke any one (cascading to all sessions for that grant).
 
 import type { Route } from "./+types/settings.connected-apps";
-import { Form, redirect } from "react-router";
+import { Form, Link, redirect } from "react-router";
+import { ArrowLeft } from "lucide-react";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { revokeAllForGrant } from "~/lib/session";
@@ -57,7 +58,13 @@ export default function ConnectedAppsPage({ loaderData }: Route.ComponentProps) 
   const { grants } = loaderData;
   return (
     <main className="mx-auto max-w-2xl p-8">
-      <h1 className="text-2xl font-semibold">Connected apps</h1>
+      <Link
+        to="/settings"
+        className="inline-flex items-center gap-1 text-sm text-zinc-600 hover:text-zinc-900"
+      >
+        <ArrowLeft className="h-3.5 w-3.5" /> Settings
+      </Link>
+      <h1 className="mt-2 text-2xl font-semibold">Connected apps</h1>
       <p className="mt-2 text-sm text-zinc-600">
         Apps you've authorized to access DALI OS on your behalf.{" "}
         <a href="/help/mcp" className="text-blue-700 underline">
