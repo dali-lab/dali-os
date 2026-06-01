@@ -1,4 +1,4 @@
-import { Link, redirect, useLoaderData } from "react-router";
+import { redirect, useLoaderData } from "react-router";
 import { Download } from "lucide-react";
 import type { Route } from "./+types/documents.file.$fileId";
 import { prisma } from "~/lib/db";
@@ -28,7 +28,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       projectId: true,
       currentVersionId: true,
       archivedAt: true,
-      project: { select: { id: true, name: true } },
       tags: { select: { tag: { select: { id: true, label: true, slug: true, color: true } } } },
       versions: {
         orderBy: { createdAt: "desc" },
@@ -73,7 +72,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   return {
     fileId: file.id,
     title: file.title,
-    project: file.project,
     tags: file.tags.map((t) => t.tag).sort((a, b) => a.label.localeCompare(b.label)),
     allTags,
     versions,
@@ -83,18 +81,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 }
 
 export default function FilePage() {
-  const { fileId, title, project, tags, allTags, versions, canEdit, currentUserId } =
+  const { fileId, title, tags, allTags, versions, canEdit, currentUserId } =
     useLoaderData() as Exclude<Awaited<ReturnType<typeof loader>>, Response>;
 
   return (
     <div className="flex flex-col gap-4">
-      <Link
-        to={project ? `/projects/${project.id}` : "/projects/list"}
-        className="text-sm text-muted-foreground hover:text-foreground"
-      >
-        ← {project ? `Back to ${project.name}` : "Back to projects"}
-      </Link>
-
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
         <div className="min-w-0">
           <h1 className="font-heading text-3xl font-bold text-foreground">{title}</h1>

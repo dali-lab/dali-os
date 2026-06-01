@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Form, Link, redirect, useActionData, useFetcher, useLoaderData, useNavigation, useSubmit } from "react-router";
+import { Form, redirect, useActionData, useFetcher, useLoaderData, useNavigation, useSubmit } from "react-router";
 import type { Route } from "./+types/members.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
@@ -257,10 +257,7 @@ export default function MemberDetail() {
 
   const page = (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-3">
-        <Link to="/members" className="text-sm text-muted-foreground hover:text-foreground">
-          ← Back to members
-        </Link>
+      <div className="flex items-center justify-end gap-3">
         <PresenceBar />
       </div>
 

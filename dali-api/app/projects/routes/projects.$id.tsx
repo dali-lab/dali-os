@@ -721,13 +721,7 @@ export default function ProjectDetail() {
 
   const page = (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-3">
-        <Link
-          to="/projects/list"
-          className="text-sm text-muted-foreground hover:text-foreground"
-        >
-          ← Back to projects
-        </Link>
+      <div className="flex items-center justify-end gap-3">
         <PresenceBar />
       </div>
 
