@@ -349,6 +349,48 @@ describe("getUserRoles — isAlumni field", () => {
     const roles = await getUserRoles("u");
     expect(roles.isAlumni).toBe(false);
   });
+
+  it("flips isLabMember to false for an alumnus with a DALIMember row", async () => {
+    // Past member: DALIMember row still exists, but they've graduated.
+    // Route guards key off isLabMember, so this must go false.
+    setRoleFlags({ member: true });
+    setUser({ dartmouthAffiliation: "ALUMNI" });
+    const roles = await getUserRoles("u");
+    expect(roles.isAlumni).toBe(true);
+    expect(roles.isLabMember).toBe(false);
+  });
+
+  it("keeps isLabMember true for an active member who is not alumni", async () => {
+    setRoleFlags({ member: true });
+    setUser({ classYear: null });
+    const roles = await getUserRoles("u");
+    expect(roles.isLabMember).toBe(true);
+  });
+
+  it("zeros out lingering role flags for pure alumni", async () => {
+    // A member who was a past-term instructor + domain-lead has graduated.
+    // Those *Assignment rows persist (we don't delete history), but neither
+    // flag should still grant authority post-grad.
+    setRoleFlags({ member: true, instructor: true, domainLead: true });
+    setUser({ dartmouthAffiliation: "ALUMNI" });
+    const roles = await getUserRoles("u");
+    expect(roles.isAlumni).toBe(true);
+    expect(roles.isInstructor).toBe(false);
+    expect(roles.isDomainLead).toBe(false);
+    expect(roles.canViewForms).toBe(false);
+  });
+
+  it("preserves Admin authority for an alumnus who is also an Admin", async () => {
+    // A former member rehired as full-time staff: AdminMembership row exists,
+    // classYear math says alumni. Admin authority wins.
+    setRoleFlags({ member: true, admin: true });
+    setUser({ dartmouthAffiliation: "ALUMNI" });
+    const roles = await getUserRoles("u");
+    expect(roles.isAlumni).toBe(true);
+    expect(roles.isAdmin).toBe(true);
+    expect(roles.isCore).toBe(true); // Admin is a superset of Core
+    expect(roles.isLabMember).toBe(true); // not a "pure" alumnus
+  });
 });
 
 // ───────────────────────────────────────────────────────────────────────────
