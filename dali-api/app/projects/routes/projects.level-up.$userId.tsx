@@ -1,4 +1,4 @@
-import { Link, redirect, useLoaderData } from "react-router";
+import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/projects.level-up.$userId";
 import { requireAuth } from "~/lib/auth";
 import { canViewStaffing, currentTerm } from "~/lib/roles";
@@ -64,13 +64,7 @@ export default function LevelUpSubmissionDetail() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <Link
-          to="/projects/level-up"
-          className="text-sm text-accent-coral hover:underline"
-        >
-          ← Back to Level Up
-        </Link>
-        <h1 className="font-heading text-2xl font-bold text-foreground mt-2">
+        <h1 className="font-heading text-2xl font-bold text-foreground">
           {data.record.name}
         </h1>
         <p className="text-sm text-muted-foreground">{data.cycleName}</p>

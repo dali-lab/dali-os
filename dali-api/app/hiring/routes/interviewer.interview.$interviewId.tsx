@@ -1,8 +1,7 @@
 import React, { useState, useCallback } from 'react'
-import { Link, useLoaderData } from 'react-router'
+import { useLoaderData } from 'react-router'
 import { redirect } from 'react-router'
 import {
-  ArrowLeft,
   Clock,
   Check,
   Video,
@@ -329,15 +328,7 @@ export default function InterviewDetailPage() {
       subtitle={presenceSubtitle}
     >
     <div className="space-y-8 max-w-6xl mx-auto">
-      {/* Back button + presence avatars inline */}
-      <div className="flex items-center justify-between">
-        <Link
-          to="/hiring/reviewer"
-          className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground/80"
-        >
-          <ArrowLeft className="w-4 h-4 mr-1" />
-          Back to Dashboard
-        </Link>
+      <div className="flex items-center justify-end">
         <PresenceBar />
       </div>
 
