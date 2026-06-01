@@ -7,6 +7,10 @@ import { getApplicationsGmailRefreshToken } from "~/lib/gmail-integration";
 import { renderForSlot, decisionSlot } from "~/hiring/lib/email-variables";
 import { logAuditEvent } from "~/lib/audit";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
+import { promoteToMember } from "~/members/lib/membership.server";
+import { sendWelcome } from "~/members/lib/welcome.server";
+import { provisionNewMember, type ProvisionResult } from "~/members/lib/provisioning.server";
+import { resolveCandidateEmail, redirectBannerHtml } from "~/lib/candidate-email";
 
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
@@ -117,45 +121,72 @@ export async function action({ request, params }: Route.ActionArgs) {
     },
   });
 
-  // ── InternToFull conversion side-effect ──────────────────────────────────
-  // When an InternToFull applicant is accepted, grant them DomainEligibility
-  // in the target domain at P1 so subsequent staffing flows pick them up.
-  // Their intern DomainEligibility is left intact; it naturally lapses when
-  // their intern term ends. Idempotent: upserts on the (userId, domainId)
-  // unique constraint so a re-release doesn't change anything.
-  let internConversionApplied = false;
-  if (
-    decision.type === "Accepted" &&
-    domainApp.application.applicationCycle.cycleType === "InternToFull"
-  ) {
-    await prisma.domainEligibility.upsert({
-      where: {
-        userId_domainId: {
-          userId: domainApp.application.userId,
-          domainId: targetDomain.id,
-        },
-      },
-      update: {},
-      create: {
+  // ── Acceptance side-effect: promote to member + grant eligibility ─────────
+  // When ANY applicant is accepted (Standard or InternToFull), make them a lab
+  // member and grant DomainEligibility in the target domain at P1 so staffing
+  // flows pick them up. Previously only InternToFull granted eligibility and
+  // nobody was auto-promoted to a member. Idempotent: promoteToMember upserts
+  // the DALIMember row and eligibility, so a re-release changes nothing. A
+  // brand-new member's onboardedAt stays null → the layout gate routes them
+  // through /onboarding on first login.
+  let memberPromoted = false;
+  let welcomeNotified = false;
+  let provisionResult: ProvisionResult | null = null;
+  if (decision.type === "Accepted") {
+    const { created } = await promoteToMember({
+      userId: domainApp.application.userId,
+      domainId: targetDomain.id,
+      level: "P1",
+      actorId: auth.user.sub,
+    });
+    memberPromoted = created;
+
+    // Provision FIRST — this creates the @dali.dartmouth.edu account and the
+    // Slack invite. The welcome email then references the new DALI email.
+    // Best-effort: each step is isolated; failures are recorded, not thrown.
+    try {
+      provisionResult = await provisionNewMember({
         userId: domainApp.application.userId,
         domainId: targetDomain.id,
-        level: "P1",
-        promotedBy: auth.user.sub,
-      },
-    });
-    internConversionApplied = true;
+      });
+    } catch (err) {
+      console.error("Failed to provision new member:", err);
+    }
+
+    // Welcome the new member: a persistent "finish onboarding" todo + a welcome
+    // email that tells them to log into DALI OS with their new DALI email.
+    // Sent to a reachable address (their Dartmouth email). Best-effort.
+    try {
+      const u = domainApp.application.user;
+      const welcomeEmail =
+        u?.dartmouthEmail ?? (u?.netId ? `${u.netId}@dartmouth.edu` : null);
+      const { notified } = await sendWelcome({
+        userId: domainApp.application.userId,
+        actorId: auth.user.sub,
+        firstName: u?.firstName ?? "",
+        email: welcomeEmail,
+        daliEmail: provisionResult?.daliEmail ?? null,
+      });
+      welcomeNotified = notified;
+    } catch (err) {
+      console.error("Failed to send welcome:", err);
+    }
   }
 
   // ── Send notification email via per-cycle binding ────────────────────────────
   let emailSent = false;
   try {
     const user = domainApp.application.user;
-    const email =
+    const intendedEmail =
       user?.dartmouthEmail ??
       (user?.netId ? `${user.netId}@dartmouth.edu` : null);
     const domainName = targetDomain.displayName ?? targetDomain.name ?? "";
 
-    if (email && user) {
+    // dev/staging: redirect to the test inbox with a banner naming the real
+    // candidate; prod: send to the candidate.
+    const { to, redirectedFrom } = resolveCandidateEmail(intendedEmail);
+
+    if (to && user) {
       const refreshToken = await getApplicationsGmailRefreshToken();
 
       if (refreshToken) {
@@ -170,9 +201,9 @@ export async function action({ request, params }: Route.ActionArgs) {
 
         await sendEmail({
           refreshToken,
-          to: email,
+          to,
           subject,
-          html,
+          html: redirectBannerHtml(redirectedFrom) + html,
         });
         emailSent = true;
       }
@@ -192,7 +223,9 @@ export async function action({ request, params }: Route.ActionArgs) {
       domainApplicationId: decision.domainApplicationId,
       type: released.type,
       emailSent,
-      internConversionApplied,
+      memberPromoted,
+      welcomeNotified,
+      provisioning: provisionResult,
     },
     request,
   });

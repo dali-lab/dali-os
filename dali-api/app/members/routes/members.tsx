@@ -13,6 +13,7 @@ import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { prisma } from "~/lib/db";
+import { promoteToMember } from "~/members/lib/membership.server";
 import { initialsFromName } from "~/lib/display";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { ViewToggle, useViewPreference } from "~/components/ViewToggle";
@@ -214,9 +215,7 @@ export async function action({ request }: Route.ActionArgs) {
   if (existing) {
     // The User already exists — promote them to a lab member rather than
     // erroring out, then send the editor to their profile.
-    if (!existing.daliMember) {
-      await prisma.dALIMember.create({ data: { userId: existing.id } });
-    }
+    await promoteToMember({ userId: existing.id, actorId: auth.user.sub });
     return redirect(`/members/${existing.id}`);
   }
 

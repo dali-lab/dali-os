@@ -23,6 +23,15 @@ const LEVEL_LABEL: Record<Level, string> = {
   P3: "P3 · Mentor",
 };
 
+// One project's bid, collapsed across the StaffingPreference rows it expanded
+// into: best rank, the distinct domain·level combos, and the first note found.
+type ProjectBid = {
+  projectId: string;
+  rank: number;
+  notes: string | null;
+  combos: { domainId: string; level: Level }[];
+};
+
 export function BidModal({
   open,
   onClose,
@@ -33,7 +42,27 @@ export function BidModal({
   domainNames,
   currentProjectId,
 }: BidModalProps) {
-  const sorted = [...preferences].sort((a, b) => a.preferenceRank - b.preferenceRank);
+  // A single bid expands server-side into one StaffingPreference row per
+  // (domain, level) the project + member resolve to, so the same project can
+  // appear in several rows. Collapse to one row per project — best (lowest)
+  // rank wins the heading, and each domain·level combo shows as a chip.
+  const byProject = new Map<string, ProjectBid>();
+  for (const p of preferences) {
+    const existing = byProject.get(p.projectId);
+    if (existing) {
+      existing.rank = Math.min(existing.rank, p.preferenceRank);
+      existing.combos.push({ domainId: p.domainId, level: p.level });
+      if (!existing.notes && p.notes) existing.notes = p.notes;
+    } else {
+      byProject.set(p.projectId, {
+        projectId: p.projectId,
+        rank: p.preferenceRank,
+        notes: p.notes,
+        combos: [{ domainId: p.domainId, level: p.level }],
+      });
+    }
+  }
+  const sorted = [...byProject.values()].sort((a, b) => a.rank - b.rank);
   return (
     <Modal
       open={open}
@@ -76,7 +105,7 @@ export function BidModal({
                   const isCurrent = p.projectId === currentProjectId;
                   return (
                     <li
-                      key={`${p.projectId}:${p.domainId}`}
+                      key={p.projectId}
                       className={`border rounded-md p-3 ${
                         isCurrent
                           ? "border-accent-coral bg-accent-coral/5"
@@ -85,11 +114,18 @@ export function BidModal({
                     >
                       <div className="flex items-baseline justify-between gap-2 flex-wrap">
                         <span className="font-semibold text-foreground">
-                          #{p.preferenceRank} · {projectNames[p.projectId] ?? p.projectId}
+                          #{p.rank} · {projectNames[p.projectId] ?? p.projectId}
                         </span>
-                        <span className="text-xs text-muted-foreground">
-                          {domainNames[p.domainId] ?? p.domainId} · {LEVEL_LABEL[p.level]}
-                        </span>
+                      </div>
+                      <div className="flex flex-wrap gap-1 mt-2">
+                        {p.combos.map((c) => (
+                          <span
+                            key={`${c.domainId}:${c.level}`}
+                            className="inline-flex items-center px-1.5 py-0.5 text-[11px] font-medium rounded bg-muted text-foreground"
+                          >
+                            {domainNames[c.domainId] ?? c.domainId} · {LEVEL_LABEL[c.level]}
+                          </span>
+                        ))}
                       </div>
                       {p.notes && (
                         <p className="text-sm text-muted-foreground mt-2 whitespace-pre-wrap">

@@ -103,7 +103,12 @@ function findByExactText(text: string) {
   return findInSidebar((btn) => (btn.textContent || "").trim() === text);
 }
 
-const STEPS: TourStep[] = [
+// The tour steps. A member who hasn't linked a Google Calendar gets an extra
+// "connect your calendar" step (moved here out of the onboarding checklist);
+// once linked it drops off. Built as a function so the calendar step is
+// conditional on the current user.
+function buildSteps(opts: { hasCalendarLink: boolean }): TourStep[] {
+  const steps: TourStep[] = [
   {
     icon: <FolderKanban className="w-4 h-4" />,
     eyebrow: "Projects",
@@ -213,7 +218,30 @@ const STEPS: TourStep[] = [
       },
     },
   },
-];
+  ];
+
+  // Offer calendar connect only when the member hasn't linked one yet.
+  if (!opts.hasCalendarLink) {
+    steps.push({
+      icon: <CalendarPlus className="w-4 h-4" />,
+      eyebrow: "Connect your calendar",
+      cta: (
+        <>
+          Connect your <strong>Google Calendar</strong> so the lab can see your
+          availability for scheduling.
+        </>
+      ),
+      action: {
+        label: "Connect Google Calendar",
+        onClick: () => {
+          window.location.href = "/oauth/calendar/google/start";
+        },
+      },
+    });
+  }
+
+  return steps;
+}
 
 function readPhase(): Phase {
   try {
@@ -225,12 +253,12 @@ function readPhase(): Phase {
   return "modal";
 }
 
-function readStep(): number {
+function readStep(maxStep: number): number {
   try {
     const raw = window.localStorage.getItem(STEP_KEY);
     if (raw === null) return 0;
     const n = parseInt(raw, 10);
-    return Number.isFinite(n) ? Math.max(0, Math.min(STEPS.length, n)) : 0;
+    return Number.isFinite(n) ? Math.max(0, Math.min(maxStep, n)) : 0;
   } catch {
     return 0;
   }
@@ -316,7 +344,21 @@ function Spotlight({ target }: { target: HTMLElement }) {
   );
 }
 
-export function LaunchWelcome({ firstName }: { firstName: string }) {
+export function LaunchWelcome({
+  firstName,
+  hasCalendarLink = true,
+  // Server says this member just onboarded and hasn't done the tour yet — show
+  // it once, overriding any browser-localStorage "seen" flag (the tour is now
+  // tracked per USER on the server).
+  shouldShowTour = false,
+}: {
+  firstName: string;
+  hasCalendarLink?: boolean;
+  shouldShowTour?: boolean;
+}) {
+  // Steps are stable for a given user within a session; the calendar step is
+  // included only when they haven't linked a calendar yet.
+  const steps = useRef(buildSteps({ hasCalendarLink })).current;
   const [phase, setPhase] = useState<Phase>("done");
   const [step, setStep] = useState(0);
   const [arrived, setArrived] = useState(false);
@@ -326,8 +368,33 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
   const titleId = useId();
 
   useEffect(() => {
+    // Server-driven auto-show wins over the browser's localStorage flag: a
+    // freshly-onboarded member sees the tour even in a browser where someone
+    // else dismissed it before.
+    if (shouldShowTour) {
+      setPhase("modal");
+      setStep(0);
+      return;
+    }
     setPhase(readPhase());
-    setStep(readStep());
+    setStep(readStep(steps.length));
+  }, [steps.length, shouldShowTour]);
+
+  // Manual re-run: a "Start tour" button (next to the DALI OS logo) dispatches
+  // this event. Re-runs the tour regardless of past completion.
+  useEffect(() => {
+    function onStart() {
+      try {
+        window.localStorage.removeItem(DONE_KEY);
+      } catch {
+        // ignore
+      }
+      setStep(0);
+      setArrived(false);
+      setPhase("modal");
+    }
+    window.addEventListener("dali:start-tour", onStart);
+    return () => window.removeEventListener("dali:start-tour", onStart);
   }, []);
 
   // Re-resolve the highlight target whenever the active step changes.
@@ -341,8 +408,8 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
   // element flips the step to "arrived" the same way a URL change would.
   useEffect(() => {
     if (phase !== "card") return;
-    if (step >= STEPS.length) return;
-    const s = STEPS[step];
+    if (step >= steps.length) return;
+    const s = steps[step];
     const find = s.findTarget;
     if (!find || arrived) {
       setSidebarTarget(null);
@@ -380,11 +447,11 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
       setNextTarget(null);
       return;
     }
-    if (step >= STEPS.length) {
+    if (step >= steps.length) {
       setNextTarget(null);
       return;
     }
-    const s = STEPS[step];
+    const s = steps[step];
     const shouldPulse = s.findTarget ? arrived : true;
     setNextTarget(shouldPulse ? nextButtonRef.current : null);
   }, [phase, step, arrived]);
@@ -396,8 +463,8 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
     (url: string) => {
       if (phase !== "card") return;
       if (arrived) return;
-      if (step >= STEPS.length) return;
-      const match = STEPS[step].matches;
+      if (step >= steps.length) return;
+      const match = steps[step].matches;
       if (!match) return; // info-only step — URL changes don't advance it
       try {
         const path = new URL(url, window.location.origin).pathname;
@@ -446,6 +513,11 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
     } catch {
       // ignore
     }
+    // Persist completion per-user so the tour isn't auto-shown again (the
+    // localStorage flag above is just a same-browser fast path). Best-effort.
+    void fetch("/api/tour/complete", { method: "POST", credentials: "include" }).catch(
+      () => {},
+    );
     setPhase("done");
   }
 
@@ -503,8 +575,8 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
     );
   }
 
-  const isFinal = step >= STEPS.length;
-  const current = isFinal ? null : STEPS[step];
+  const isFinal = step >= steps.length;
+  const current = isFinal ? null : steps[step];
 
   return (
     <>
@@ -574,7 +646,7 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
           </div>
 
           <div className="flex items-center gap-1.5" aria-hidden="true">
-            {STEPS.map((_, i) => (
+            {steps.map((_, i) => (
               <span
                 key={i}
                 className={

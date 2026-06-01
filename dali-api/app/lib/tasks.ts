@@ -2,6 +2,7 @@ import type { Prisma } from "~/generated/prisma/client";
 import { prisma } from "~/lib/db";
 import { getActiveCycle } from "~/hiring/lib/cycles";
 import { isInternToFullEligible } from "~/hiring/lib/intern-eligibility";
+import { ONBOARDING_LINK } from "~/members/lib/welcome.server";
 
 // A "task" (todo) is any unread notification — every NotificationKind counts.
 // The Tasks sidebar, Home attention banner, and sidebar count all read this
@@ -166,10 +167,14 @@ export async function listOpenTasks(userId: string): Promise<Task[]> {
         ? `/forms/fill/${n.form.publicToken}`
         : null;
 
-    // A self-clearing action — RSVP (meeting invite) or an attached form —
-    // marks the task read on its own, so no Confirm button. A bare link
-    // doesn't count: opening it isn't the same as being done.
-    const hasAction = !!n.scheduledMeetingId || !!formLink;
+    // A self-clearing action — RSVP (meeting invite), an attached form, or the
+    // onboarding task — marks the task read on its own, so no Confirm button. A
+    // bare link doesn't count: opening it isn't the same as being done. The
+    // onboarding task clears only when the member completes the profile form
+    // (see submitMemberForm), so it must NOT offer a manual Confirm.
+    const isOnboarding =
+      n.kind === "SystemAnnouncement" && n.link === ONBOARDING_LINK;
+    const hasAction = !!n.scheduledMeetingId || !!formLink || isOnboarding;
 
     return {
       id: n.id,
