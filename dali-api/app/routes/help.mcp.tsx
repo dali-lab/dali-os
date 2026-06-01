@@ -116,6 +116,32 @@ export default function McpHelpPage({ loaderData }: Route.ComponentProps) {
       </section>
 
       <section className="mt-6">
+        <h2 className="text-lg font-semibold">Resources (auto-attachable context)</h2>
+        <p className="mt-2 text-sm text-zinc-600">
+          Clients can attach these as <em>resources</em>, separate from tool calls.
+          Some clients (Claude Desktop) let you pin them so they ride along on every message.
+        </p>
+        <ul className="mt-3 text-sm text-zinc-700 list-disc pl-5">
+          <li><code className="font-mono">dali://me</code> — your profile, roles, domain eligibilities</li>
+          <li><code className="font-mono">dali://announcements/active</code> — your unread lab announcements (markdown)</li>
+          <li><code className="font-mono">dali://forms/pending</code> — published forms you've been asked to fill</li>
+        </ul>
+      </section>
+
+      <section className="mt-6">
+        <h2 className="text-lg font-semibold">Prompts (templated workflows)</h2>
+        <p className="mt-2 text-sm text-zinc-600">
+          These appear as commands in the client (e.g. <code className="font-mono">/dali:weekly-digest</code> in
+          Claude Code). The model carries them out by calling the MCP tools above.
+        </p>
+        <ul className="mt-3 text-sm text-zinc-700 list-disc pl-5">
+          <li><code className="font-mono">weekly-digest</code> — focus, meetings, inbox, suggested next action</li>
+          <li><code className="font-mono">meeting-prep</code> — agenda + talking points for an upcoming meeting</li>
+          <li><code className="font-mono">project-status</code> — status report draft for a project you're on</li>
+        </ul>
+      </section>
+
+      <section className="mt-6">
         <h2 className="text-lg font-semibold">Managing connections</h2>
         <p className="mt-2 text-sm text-zinc-600">
           Visit{" "}
