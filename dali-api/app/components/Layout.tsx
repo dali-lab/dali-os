@@ -448,6 +448,14 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
 
   const internalProcessesSections = [
     {
+      label: 'Onboarding',
+      to: '/internal-processes/onboarding',
+      icon: UserPlus,
+      show: isCore,
+      active: path.startsWith('/internal-processes/onboarding'),
+      sub: null as { label: string; to: string; active: boolean }[] | null,
+    },
+    {
       label: 'Transfer',
       to: '/internal-processes/transfer',
       icon: ArrowRightLeft,
