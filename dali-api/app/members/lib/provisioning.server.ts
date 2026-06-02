@@ -26,6 +26,13 @@ export type ProvisionResult = {
   // The provisioned DALI email, when Workspace ran — so callers (welcome email)
   // can tell the member which address to log in with.
   daliEmail: string | null;
+  // The one-time temporary password Workspace generated for a NEWLY-created
+  // account (forced change at first login). Surfaced so the onboarding email can
+  // give the member their initial credential — null when the account already
+  // existed or Workspace didn't run. SECURITY: this is a live credential. It
+  // must reach ONLY the onboarding email; callers MUST exclude it from audit
+  // logs / console output (see api.decisions.$id.release).
+  daliTempPassword: string | null;
 };
 
 function errMsg(e: unknown): string {
@@ -70,6 +77,7 @@ export async function provisionNewMember(args: {
     slack: { status: "skipped", message: "" },
     github: { status: "skipped", message: "" },
     daliEmail: user?.daliEmail ?? null,
+    daliTempPassword: null,
   };
 
   // ── workspace: create the @dali.dartmouth.edu account ───────────────────
@@ -84,6 +92,8 @@ export async function provisionNewMember(args: {
     if (w.status === "ok") {
       daliEmail = w.email;
       result.daliEmail = w.email;
+      // Only present when the account was just created (not on "already exists").
+      result.daliTempPassword = w.tempPassword ?? null;
       // Persist the new DALI email onto the User so login + future flows use it.
       if (!user.daliEmail || user.daliEmail !== w.email) {
         try {

@@ -14,8 +14,8 @@ vi.mock("~/members/lib/membership.server", () => ({
 }));
 vi.mock("~/members/lib/welcome.server", () => ({
   sendWelcome: vi.fn().mockResolvedValue({ notified: true }),
-  onboardingEmailHtml: vi.fn((daliEmail: string | null) =>
-    `<onboarding dali="${daliEmail ?? ""}"/>`,
+  onboardingEmailHtml: vi.fn((daliEmail: string | null, tempPassword: string | null = null) =>
+    `<onboarding dali="${daliEmail ?? ""}" pw="${tempPassword ?? ""}"/>`,
   ),
 }));
 vi.mock("~/members/lib/provisioning.server", () => ({
@@ -23,7 +23,12 @@ vi.mock("~/members/lib/provisioning.server", () => ({
     github: { status: "skipped", message: "" },
     slack: { status: "skipped", message: "" },
     gmail: { status: "skipped", message: "" },
+    daliEmail: null,
+    daliTempPassword: null,
   }),
+}));
+vi.mock("~/lib/audit", () => ({
+  logAuditEvent: vi.fn().mockResolvedValue(undefined),
 }));
 
 import { prisma } from "~/lib/db";
@@ -33,6 +38,8 @@ import { sendEmail } from "~/lib/gmail";
 import { promoteToMember } from "~/members/lib/membership.server";
 import { sendWelcome } from "~/members/lib/welcome.server";
 import { provisionNewMember } from "~/members/lib/provisioning.server";
+import { onboardingEmailHtml } from "~/members/lib/welcome.server";
+import { logAuditEvent } from "~/lib/audit";
 import { action } from "~/hiring/routes/api.decisions.$id.release";
 
 const mockPrisma = prisma as unknown as {
@@ -385,6 +392,39 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     expect(vi.mocked(sendWelcome).mock.calls[0][0].daliEmail).toBe(
       "ada.lovelace@dali.dartmouth.edu",
     );
+  });
+
+  it("renders the temp password into the onboarding email but NEVER into the audit log", async () => {
+    setupAuth();
+    setupFinalDecision("Accepted");
+    setupApplicantContext();
+    vi.mocked(provisionNewMember).mockResolvedValueOnce({
+      daliEmail: "ada.lovelace@dali.dartmouth.edu",
+      daliTempPassword: "s3cr3t-temp-pw",
+      github: { status: "skipped", message: "" },
+      slack: { status: "skipped", message: "" },
+    } as any);
+    mockPrisma.cycleDecisionEmail.findUnique.mockResolvedValue({
+      applicationCycleId: CYCLE_ID,
+      decisionType: "Accepted",
+      emailTemplateVersionId: "etv-1",
+      emailTemplateVersion: { id: "etv-1", subject: "Welcome!", body: "Hi {{firstName}}" },
+    });
+
+    const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
+    expect(res.status).toBe(201);
+
+    // The temp password is passed to onboardingEmailHtml (→ into the email body).
+    expect(vi.mocked(onboardingEmailHtml)).toHaveBeenCalledWith(
+      "ada.lovelace@dali.dartmouth.edu",
+      "s3cr3t-temp-pw",
+    );
+
+    // …and it must NOT appear anywhere in the audit metadata.
+    const auditMeta = vi.mocked(logAuditEvent).mock.calls.at(-1)?.[0].metadata;
+    const serialized = JSON.stringify(auditMeta);
+    expect(serialized).not.toContain("s3cr3t-temp-pw");
+    expect(serialized).not.toContain("daliTempPassword");
   });
 
   it("does NOT promote / provision / welcome for non-Accepted decisions", async () => {
