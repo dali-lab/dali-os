@@ -647,9 +647,23 @@ function StatPill({ label, value, color = "text-foreground" }: { label: string; 
   );
 }
 
+// Find the most-recent Draft decision that hasn't been superseded by a Final
+// or Released sibling of the same type. Mirrors the per-row finalize lookup in
+// `ApplicationsTable` so the Interviews section uses the same definition of
+// "needs finalization".
+function findFinalizableDraft(decisions: any[]) {
+  return decisions.find((d: any) => {
+    if (d.stage !== "Draft") return false;
+    return !decisions.some(
+      (other: any) => other.type === d.type && (other.stage === "Final" || other.stage === "Released")
+    );
+  });
+}
+
 export default function DomainLeadDashboard() {
   const data = useLoaderData<typeof loader>() as any;
   const navigate = useNavigate();
+  const revalidator = useRevalidator();
   const domainData = data?.domainData ?? [];
 
   if (domainData.length === 0) {
@@ -1018,6 +1032,35 @@ export default function DomainLeadDashboard() {
                     const interviewersWithAvailability = (interviewers ?? []).filter((i: any) => i.availabilityHours > 0);
                     const noAvailability = invited.length > 0 && interviewersWithAvailability.length === 0;
 
+                    // Post-interview applicants whose Final-delibs Draft hasn't
+                    // been promoted to Final yet. Their `inferredStatus` is
+                    // still `PostInterviewPending` (which keys off the latest
+                    // *Released* decision), so they live in this section rather
+                    // than Reviews — but the finalize UI on `ApplicationsTable`
+                    // never reached them. Surface the action here instead.
+                    const finalizableByDaId = new Map<string, any>();
+                    for (const app of invited) {
+                      const da = app.domainApplications?.[0];
+                      if (!da) continue;
+                      const draft = findFinalizableDraft(da.decisions ?? []);
+                      if (draft) finalizableByDaId.set(da.id, draft);
+                    }
+                    const finalizableCount = finalizableByDaId.size;
+                    const canFinalize = currentStatus === "UnderReview";
+                    const finalizeOne = async (daId: string | undefined) => {
+                      if (!daId) return;
+                      const draft = finalizableByDaId.get(daId);
+                      if (!draft) return;
+                      await fetch(`/api/hiring/decisions/${draft.id}/finalize`, { method: "POST", credentials: "include" });
+                      revalidator.revalidate();
+                    };
+                    const finalizeAll = async () => {
+                      for (const draft of finalizableByDaId.values()) {
+                        await fetch(`/api/hiring/decisions/${draft.id}/finalize`, { method: "POST", credentials: "include" });
+                      }
+                      revalidator.revalidate();
+                    };
+
                     return hasAnyInterviewActivity ? (
                       <Section
                         title="Interviews"
@@ -1036,6 +1079,28 @@ export default function DomainLeadDashboard() {
                             <div className="flex items-center gap-2 text-sm text-yellow-800 bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-3">
                               <Clock className="w-4 h-4 flex-shrink-0" />
                               <span>No interviewers have set their availability yet. Applicants can't book interviews until interviewers submit availability blocks.</span>
+                            </div>
+                          )}
+
+                          {/* Post-interview finalize banner — appears once Final
+                              delibs have been closed and produced Draft decisions
+                              on these applicants. */}
+                          {canFinalize && finalizableCount > 0 && (
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-accent-coral/5 border border-accent-coral/30 rounded-lg px-4 py-3">
+                              <div className="text-sm flex-1">
+                                <span className="font-medium text-foreground">
+                                  {finalizableCount} post-interview decision{finalizableCount === 1 ? "" : "s"} ready to finalize
+                                </span>
+                                <span className="text-muted-foreground">
+                                  {" "}— drafts from final delibs. Finalizing locks them in for the hiring lead to release.
+                                </span>
+                              </div>
+                              <button
+                                onClick={finalizeAll}
+                                className="flex-shrink-0 px-3 py-1.5 text-xs font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition self-start sm:self-auto"
+                              >
+                                Finalize All ({finalizableCount})
+                              </button>
                             </div>
                           )}
 
@@ -1139,9 +1204,19 @@ export default function DomainLeadDashboard() {
                                             )}
                                           </td>
                                           <td className="px-6 py-4">
-                                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${statusPill(row)}`}>
-                                              {row.status}
-                                            </span>
+                                            <div className="flex items-center gap-2">
+                                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${statusPill(row)}`}>
+                                                {row.status}
+                                              </span>
+                                              {canFinalize && row.daId && finalizableByDaId.has(row.daId) && (
+                                                <button
+                                                  onClick={(e) => { e.stopPropagation(); finalizeOne(row.daId); }}
+                                                  className="px-2 py-0.5 text-xs font-medium rounded bg-accent-coral hover:bg-accent-coral/90 text-white transition"
+                                                >
+                                                  Finalize
+                                                </button>
+                                              )}
+                                            </div>
                                           </td>
                                           <td className="px-6 py-4 text-muted-foreground text-xs">{row.inDomain}</td>
                                           <td className="px-6 py-4 text-muted-foreground text-xs">{row.crossDomain}</td>
@@ -1159,9 +1234,19 @@ export default function DomainLeadDashboard() {
                                     >
                                       <div className="flex items-start justify-between gap-2">
                                         <div className="font-medium text-foreground min-w-0 truncate">{row.name}</div>
-                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold flex-shrink-0 ${statusPill(row)}`}>
-                                          {row.status}
-                                        </span>
+                                        <div className="flex items-center gap-2 flex-shrink-0">
+                                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${statusPill(row)}`}>
+                                            {row.status}
+                                          </span>
+                                          {canFinalize && row.daId && finalizableByDaId.has(row.daId) && (
+                                            <button
+                                              onClick={(e) => { e.stopPropagation(); finalizeOne(row.daId); }}
+                                              className="px-2 py-0.5 text-xs font-medium rounded bg-accent-coral hover:bg-accent-coral/90 text-white transition"
+                                            >
+                                              Finalize
+                                            </button>
+                                          )}
+                                        </div>
                                       </div>
                                       {row.booked && (
                                         <>
