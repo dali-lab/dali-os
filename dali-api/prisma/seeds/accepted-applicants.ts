@@ -41,6 +41,47 @@ const PROFILE_QUESTIONS = [
   { key: "profile.hometown", type: "text", required: false, data: { label: "Hometown" } },
   { key: "profile.githubUsername", type: "text", required: false, data: { label: "GitHub username" } },
   { key: "profile.linkedinUrl", type: "text", required: false, data: { label: "LinkedIn URL" } },
+  // College / personal info collected at onboarding. College email is omitted
+  // intentionally — it's already on file (dartmouthEmail) from the application.
+  {
+    key: "profile.nameOnFile",
+    type: "text",
+    required: false,
+    data: { label: "Name on file with the College (if different from above)" },
+  },
+  { key: "profile.collegeId", type: "text", required: true, data: { label: "College ID number" } },
+  { key: "profile.phoneNumber", type: "text", required: true, data: { label: "Phone number" } },
+  {
+    key: "profile.birthday",
+    type: "text",
+    required: true,
+    data: { label: "Birthday (YYYY-MM-DD)" },
+  },
+  {
+    key: "profile.ethnicity",
+    type: "select",
+    required: false,
+    data: {
+      label: "Ethnicity",
+      options: [
+        "American Indian or Alaska Native",
+        "Asian",
+        "Black or African American",
+        "Hispanic or Latino",
+        "Native Hawaiian or Other Pacific Islander",
+        "White",
+        "Two or more races",
+        "Prefer not to say",
+        "Other",
+      ],
+    },
+  },
+  {
+    key: "profile.dietaryRestrictions",
+    type: "text",
+    required: true,
+    data: { label: "Dietary restrictions (write \"none\" if none)" },
+  },
 ];
 
 // Welcoming subtitle shown under the form heading (stored as a ProseMirror doc

@@ -63,6 +63,19 @@ model User {
   githubUsername String?
   personalSite String?
 
+  // ─── Onboarding profile fields (collected on the New Member Profile form) ──
+  // Name as it appears on file with the College, when different from the
+  // first/last above (e.g. a legal name). Optional — blank means "same".
+  nameOnFile          String?
+  // The student's college ID number (the number on their ID card), not a FK.
+  collegeId           String?
+  phoneNumber         String?
+  birthday            DateTime?
+  // Free-text demographic; collected optionally (includes a "Prefer not to
+  // say" choice on the form). Stored as the selected label.
+  ethnicity           String?
+  dietaryRestrictions String?
+
   // ─── Relations: existing ──────────────────────────────────────────────────
   daliMember                    DALIMember?
   applicationCycleStatusUpdates ApplicationCycleStatusUpdate[]
