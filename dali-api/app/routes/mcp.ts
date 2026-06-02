@@ -40,12 +40,75 @@ import {
   LIST_MY_CALENDAR_LINKS_TOOL,
   runListMyCalendarLinks,
 } from "~/mcp/tools/list-my-calendar-links";
+import {
+  MARK_NOTIFICATION_READ_TOOL,
+  runMarkNotificationRead,
+  NotificationNotFoundError,
+  NotificationForbiddenError,
+} from "~/mcp/tools/mark-notification-read";
+import {
+  RSVP_TO_NOTIFICATION_TOOL,
+  runRsvpToNotification,
+  RsvpError,
+} from "~/mcp/tools/rsvp-to-notification";
+import {
+  CANCEL_MEETING_TOOL,
+  runCancelMeeting,
+  CancelMeetingError,
+} from "~/mcp/tools/cancel-meeting";
+import { LIST_GROUPS_TOOL, runListGroups } from "~/mcp/tools/list-groups";
+import {
+  LIST_MY_PROJECTS_TOOL,
+  runListMyProjects,
+} from "~/mcp/tools/list-my-projects";
+import {
+  GET_PROJECT_OVERVIEW_TOOL,
+  runGetProjectOverview,
+  ProjectNotFoundError,
+} from "~/mcp/tools/get-project-overview";
+import { LIST_MY_TASKS_TOOL, runListMyTasks } from "~/mcp/tools/list-my-tasks";
+import {
+  UPDATE_TASK_STATUS_TOOL,
+  runUpdateTaskStatus,
+  UpdateTaskStatusError,
+} from "~/mcp/tools/update-task-status";
+import { ME_RESOURCE, readMeResource } from "~/mcp/resources/me";
+import {
+  ANNOUNCEMENTS_ACTIVE_RESOURCE,
+  readAnnouncementsActiveResource,
+} from "~/mcp/resources/announcements-active";
+import {
+  FORMS_PENDING_RESOURCE,
+  readFormsPendingResource,
+} from "~/mcp/resources/forms-pending";
+import { WEEKLY_DIGEST_PROMPT } from "~/mcp/prompts/weekly-digest";
+import { MEETING_PREP_PROMPT } from "~/mcp/prompts/meeting-prep";
+import { PROJECT_STATUS_PROMPT } from "~/mcp/prompts/project-status";
+import type { PromptDefinition } from "~/mcp/prompts/types";
 
 const PROTOCOL_VERSION = "2024-11-05";
 const SERVER_INFO = { name: "dali-os", version: "1.0.0" };
 
 const RATE_LIMIT_MAX = 120;
 const RATE_LIMIT_WINDOW_MS = 60_000;
+
+const RESOURCES = [
+  ME_RESOURCE,
+  ANNOUNCEMENTS_ACTIVE_RESOURCE,
+  FORMS_PENDING_RESOURCE,
+] as const;
+
+const PROMPTS: PromptDefinition[] = [
+  WEEKLY_DIGEST_PROMPT,
+  MEETING_PREP_PROMPT,
+  PROJECT_STATUS_PROMPT,
+];
+
+const CAPABILITIES = {
+  tools: { listChanged: false },
+  resources: { listChanged: false, subscribe: false },
+  prompts: { listChanged: false },
+} as const;
 
 const TOOLS = [
   WHOAMI_TOOL,
@@ -56,6 +119,14 @@ const TOOLS = [
   GET_MEMBER_PROFILE_TOOL,
   SCHEDULE_MEETING_TOOL,
   LIST_MY_CALENDAR_LINKS_TOOL,
+  MARK_NOTIFICATION_READ_TOOL,
+  RSVP_TO_NOTIFICATION_TOOL,
+  CANCEL_MEETING_TOOL,
+  LIST_GROUPS_TOOL,
+  LIST_MY_PROJECTS_TOOL,
+  GET_PROJECT_OVERVIEW_TOOL,
+  LIST_MY_TASKS_TOOL,
+  UPDATE_TASK_STATUS_TOOL,
 ] as const;
 
 type JsonRpcRequest = {
@@ -87,11 +158,15 @@ export async function loader() {
     {
       protocolVersion: PROTOCOL_VERSION,
       serverInfo: SERVER_INFO,
-      capabilities: { tools: { listChanged: false } },
+      capabilities: CAPABILITIES,
     },
     { status: 200 },
   );
 }
+
+// Exported so tests / introspection can list resource + prompt catalogs
+// without spinning up the full action handler.
+export { RESOURCES, PROMPTS };
 
 export async function action({ request }: Route.ActionArgs) {
   const auth = await authenticateMcpRequest(request);
@@ -116,7 +191,7 @@ export async function action({ request }: Route.ActionArgs) {
       return rpcResult(body.id, {
         protocolVersion: PROTOCOL_VERSION,
         serverInfo: SERVER_INFO,
-        capabilities: { tools: { listChanged: false } },
+        capabilities: CAPABILITIES,
       });
 
     case "notifications/initialized":
@@ -195,6 +270,53 @@ export async function action({ request }: Route.ActionArgs) {
           case "list_my_calendar_links":
             payload = await runListMyCalendarLinks(auth.user.id);
             break;
+          case "mark_notification_read":
+            payload = await runMarkNotificationRead(
+              auth.user.id,
+              args as Parameters<typeof runMarkNotificationRead>[1],
+            );
+            break;
+          case "rsvp_to_notification":
+            payload = await runRsvpToNotification(
+              auth.user,
+              args as Parameters<typeof runRsvpToNotification>[1],
+            );
+            break;
+          case "cancel_meeting":
+            payload = await runCancelMeeting(
+              auth.user.id,
+              args as Parameters<typeof runCancelMeeting>[1],
+            );
+            break;
+          case "list_groups":
+            payload = await runListGroups(
+              auth.user.id,
+              args as Parameters<typeof runListGroups>[1],
+            );
+            break;
+          case "list_my_projects":
+            payload = await runListMyProjects(
+              auth.user.id,
+              args as Parameters<typeof runListMyProjects>[1],
+            );
+            break;
+          case "get_project_overview":
+            payload = await runGetProjectOverview(
+              args as Parameters<typeof runGetProjectOverview>[0],
+            );
+            break;
+          case "list_my_tasks":
+            payload = await runListMyTasks(
+              auth.user.id,
+              args as Parameters<typeof runListMyTasks>[1],
+            );
+            break;
+          case "update_task_status":
+            payload = await runUpdateTaskStatus(
+              auth.user.id,
+              args as Parameters<typeof runUpdateTaskStatus>[1],
+            );
+            break;
           default:
             return rpcError(body.id, -32601, "Tool not implemented");
         }
@@ -219,12 +341,152 @@ export async function action({ request }: Route.ActionArgs) {
         if (err instanceof MemberNotFoundError) {
           return rpcError(body.id, -32004, err.message);
         }
+        if (err instanceof ProjectNotFoundError) {
+          return rpcError(body.id, -32004, err.message);
+        }
+        if (err instanceof NotificationNotFoundError) {
+          return rpcError(body.id, -32004, err.message);
+        }
+        if (err instanceof NotificationForbiddenError) {
+          return rpcError(body.id, -32003, err.message);
+        }
+        if (err instanceof RsvpError) {
+          // 403 → forbidden code; everything else maps to invalid params.
+          return rpcError(body.id, err.status === 403 ? -32003 : -32602, err.message);
+        }
+        if (err instanceof CancelMeetingError) {
+          return rpcError(body.id, err.status === 403 ? -32003 : -32004, err.message);
+        }
+        if (err instanceof UpdateTaskStatusError) {
+          const code = err.status === 403 ? -32003 : err.status === 404 ? -32004 : -32602;
+          return rpcError(body.id, code, err.message);
+        }
         if (err instanceof ScheduleMeetingError) {
           return rpcError(body.id, -32602, err.message);
         }
         const message = err instanceof Error ? err.message : "Tool execution failed";
         return rpcError(body.id, -32000, message);
       }
+    }
+
+    case "resources/list":
+      return rpcResult(body.id, {
+        resources: RESOURCES.map((r) => ({
+          uri: r.uri,
+          name: r.name,
+          description: r.description,
+          mimeType: r.mimeType,
+        })),
+      });
+
+    case "resources/read": {
+      const params = body.params as { uri?: string } | undefined;
+      const uri = params?.uri;
+      const resource = RESOURCES.find((r) => r.uri === uri);
+      if (!resource) {
+        return rpcError(body.id, -32602, `Unknown resource: ${uri}`);
+      }
+      if (!auth.scopes.includes(resource.requiredScope)) {
+        return rpcError(
+          body.id,
+          -32002,
+          `Missing required scope: ${resource.requiredScope}`,
+        );
+      }
+      try {
+        let text: string;
+        switch (resource.uri) {
+          case "dali://me":
+            text = await readMeResource(auth.user.id);
+            break;
+          case "dali://announcements/active":
+            text = await readAnnouncementsActiveResource(auth.user.id);
+            break;
+          case "dali://forms/pending":
+            text = await readFormsPendingResource(auth.user.id);
+            break;
+          default:
+            return rpcError(body.id, -32601, "Resource not implemented");
+        }
+
+        await logAuditEvent({
+          action: "mcp.resource_read",
+          userId: auth.user.id,
+          metadata: {
+            uri: resource.uri,
+            clientId: auth.clientId,
+            clientName: auth.clientName,
+            grantId: auth.grantId,
+          },
+          request,
+        });
+
+        return rpcResult(body.id, {
+          contents: [
+            {
+              uri: resource.uri,
+              mimeType: resource.mimeType,
+              text,
+            },
+          ],
+        });
+      } catch (err) {
+        if (err instanceof MemberNotFoundError) {
+          return rpcError(body.id, -32004, err.message);
+        }
+        const message = err instanceof Error ? err.message : "Resource read failed";
+        return rpcError(body.id, -32000, message);
+      }
+    }
+
+    case "prompts/list":
+      return rpcResult(body.id, {
+        prompts: PROMPTS.map((p) => ({
+          name: p.name,
+          description: p.description,
+          arguments: p.arguments,
+        })),
+      });
+
+    case "prompts/get": {
+      const params = body.params as
+        | { name?: string; arguments?: Record<string, string> }
+        | undefined;
+      const promptName = params?.name;
+      const prompt = PROMPTS.find((p) => p.name === promptName);
+      if (!prompt) {
+        return rpcError(body.id, -32602, `Unknown prompt: ${promptName}`);
+      }
+
+      const promptArgs = params?.arguments ?? {};
+      for (const spec of prompt.arguments) {
+        if (spec.required && !promptArgs[spec.name]) {
+          return rpcError(
+            body.id,
+            -32602,
+            `Missing required argument: ${spec.name}`,
+          );
+        }
+      }
+
+      const messages = prompt.build(promptArgs);
+
+      await logAuditEvent({
+        action: "mcp.prompt_rendered",
+        userId: auth.user.id,
+        metadata: {
+          promptName: prompt.name,
+          clientId: auth.clientId,
+          clientName: auth.clientName,
+          grantId: auth.grantId,
+        },
+        request,
+      });
+
+      return rpcResult(body.id, {
+        description: prompt.description,
+        messages,
+      });
     }
 
     default:
