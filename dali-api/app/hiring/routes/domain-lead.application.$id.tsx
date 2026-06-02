@@ -1,11 +1,11 @@
 import { useState } from "react";
-import { Link, redirect, useLoaderData } from "react-router";
+import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/domain-lead.application.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
 import { presignAnswers } from "~/hiring/lib/presign";
-import { ArrowLeft, ChevronDown } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { ApplicationViewer } from "~/hiring/components/ApplicationViewer";
 import { ReviewSummary } from "~/hiring/components/ReviewSummary";
 import { buildCriteriaLabelMap } from "~/hiring/lib/rubric-criteria";
@@ -276,13 +276,7 @@ export default function DomainLeadApplicationView() {
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <Link
-            to="/hiring/domain-lead"
-            className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground/80"
-          >
-            <ArrowLeft className="w-4 h-4 mr-1" /> Back to Dashboard
-          </Link>
-          <h1 className="text-2xl font-bold text-foreground mt-2">
+          <h1 className="text-2xl font-bold text-foreground">
             {application.user.firstName} {application.user.lastName}
           </h1>
           <p className="mt-1 text-muted-foreground">

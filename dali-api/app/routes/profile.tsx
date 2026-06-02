@@ -12,6 +12,7 @@ import { prisma } from "~/lib/db";
 import { getUserRoles, currentTerm } from "~/lib/roles";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { userInitials } from "~/lib/display";
+import { NEW_MEMBER_PROFILE_FORM_NAME } from "~/members/lib/profile-form-interpreter";
 import type { Route } from "./+types/profile";
 
 export const meta: Route.MetaFunction = () => [{ title: "Profile · DALI OS" }];
@@ -22,6 +23,33 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (auth.user.type === "applicant") return redirect("/portal");
 
   const userId = auth.user.sub;
+
+  // A member still in onboarding (onboardedAt null) who hasn't filled out the
+  // "New Member Profile" form yet is sent to it before they can view their
+  // profile page. Established members (onboardedAt backfilled by the migration)
+  // are NOT redirected even if they predate this form. Once a member submits
+  // the form, this falls through to the normal read-only profile view.
+  const membership = await prisma.dALIMember.findUnique({
+    where: { userId },
+    select: { onboardedAt: true },
+  });
+  if (membership && membership.onboardedAt === null) {
+    const profileForm = await prisma.form.findFirst({
+      where: { name: NEW_MEMBER_PROFILE_FORM_NAME, published: true },
+      select: { publicToken: true },
+    });
+    if (profileForm?.publicToken) {
+      const submitted = await prisma.formSubmission.count({
+        where: {
+          userId,
+          form: { name: NEW_MEMBER_PROFILE_FORM_NAME },
+        },
+      });
+      if (submitted === 0) {
+        return redirect(`/forms/fill/${profileForm.publicToken}`);
+      }
+    }
+  }
   const [user, roles, term] = await Promise.all([
     prisma.user.findUnique({
       where: { id: userId },

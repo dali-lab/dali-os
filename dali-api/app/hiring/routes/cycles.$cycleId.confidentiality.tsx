@@ -129,7 +129,7 @@ export default function CycleConfidentialityPage() {
           to="/"
           className="inline-block text-sm font-medium text-blue-600 hover:text-blue-700"
         >
-          ← Back to home
+          Open home
         </Link>
       </div>
     );

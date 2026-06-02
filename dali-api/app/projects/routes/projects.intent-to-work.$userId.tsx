@@ -1,11 +1,11 @@
-import { Link, redirect, useLoaderData } from "react-router";
+import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/projects.intent-to-work.$userId";
 import { requireAuth } from "~/lib/auth";
 import { canViewStaffing, currentTerm } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { ensureStaffingCycle } from "../lib/staffing-cycle";
 import { getSlotBinding } from "../lib/form-slots";
-import { ALL_TERMS, resolveTermFilter } from "~/lib/terms";
+import { resolveTermFilter } from "~/lib/terms";
 import { buildSubmissionView } from "../lib/submission-view.server";
 
 const SLOT = "intent-to-work" as const;
@@ -61,11 +61,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     // can see they're not currently surfaced in the board table.
     fields: row.detailFields,
     cycleName: cycle.name,
-    // Preserve the viewed term on the way back, so the list reopens on the
-    // same term instead of resetting to the current one.
-    backTo: `/projects/intent-to-work?term=${encodeURIComponent(
-      isAll ? ALL_TERMS : term.id,
-    )}`,
   };
 }
 
@@ -74,13 +69,7 @@ export default function IntentSubmissionDetail() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <Link
-          to={data.backTo}
-          className="text-sm text-accent-coral hover:underline"
-        >
-          ← Back to Intent to Work
-        </Link>
-        <h1 className="font-heading text-2xl font-bold text-foreground mt-2">
+        <h1 className="font-heading text-2xl font-bold text-foreground">
           {data.record.name}
         </h1>
         <p className="text-sm text-muted-foreground">{data.cycleName}</p>

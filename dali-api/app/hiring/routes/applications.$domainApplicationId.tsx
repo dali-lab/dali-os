@@ -1,5 +1,5 @@
 import { Link, redirect, useLoaderData, useSearchParams } from "react-router";
-import { ArrowLeft, Calendar, MapPin, Users } from "lucide-react";
+import { Calendar, MapPin, Users } from "lucide-react";
 import type { Route } from "./+types/applications.$domainApplicationId";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
@@ -457,13 +457,7 @@ export default function ApplicationReadOnlyDetail() {
   return (
     <div className="space-y-6 pb-12">
       <div>
-        <Link
-          to="/hiring/applications"
-          className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground/80"
-        >
-          <ArrowLeft className="w-4 h-4 mr-1" /> Back to Applications
-        </Link>
-        <h1 className="text-2xl font-bold text-foreground mt-2">
+        <h1 className="text-2xl font-bold text-foreground">
           {data.applicantName}
         </h1>
         <p className="mt-1 text-muted-foreground">
