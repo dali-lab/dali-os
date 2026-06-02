@@ -109,11 +109,12 @@ export async function provisionNewMember(args: {
   }
 
   // ── slack: invite the new member to the workspace + sync slackUserId ─────
-  // On acceptance the member isn't staffed onto any project yet, so we just
-  // invite them into the workspace — they land in #general (resolved by name in
-  // inviteToWorkspace) — and sync their Slack id. The per-project welcome
-  // announcement happens later, on staffing finalize, in each project's own
-  // channel — there's no lab-wide announcement here.
+  // admin.users.invite (inviteToWorkspace) is Enterprise-Grid-only; DALI's
+  // workspace isn't, so this call returns "skipped" without an admin token and
+  // the member actually joins via the SLACK_INVITE_URL link in the onboarding
+  // email instead. We still attempt it (harmless no-op off-Enterprise; works if
+  // the workspace ever moves to Grid) and still sync the member's Slack id when
+  // possible so later per-project channel invites can add them by id.
   try {
     const parts: string[] = [];
     if (daliEmail) {

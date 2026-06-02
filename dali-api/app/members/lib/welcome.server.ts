@@ -100,6 +100,15 @@ export function onboardingEmailHtml(
 
   const loginLink = `<a href="${loginUrl}">DALI OS</a>`;
 
+  // Slack join link. DALI's workspace isn't Enterprise Grid, so we can't invite
+  // members programmatically (admin.users.invite is Enterprise-only) — instead we
+  // surface a shared invite URL when one is configured. Omitted entirely when
+  // SLACK_INVITE_URL is unset so we never render a broken/empty link.
+  const slackInviteUrl = (process.env.SLACK_INVITE_URL ?? "").trim();
+  const slackLine = slackInviteUrl
+    ? `<p>Join the DALI Slack: <a href="${slackInviteUrl}">${slackInviteUrl}</a></p>`
+    : "";
+
   let accountBlock: string;
   if (daliEmail && tempPassword) {
     accountBlock = `
@@ -118,6 +127,7 @@ export function onboardingEmailHtml(
     <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0;"/>
     ${accountBlock}
     <p>Once you're in, finish setting up by completing your member profile and onboarding steps.</p>
+    ${slackLine}
     <p>— The DALI Lab</p>
     <p><img src="${logoUrl}" alt="DALI Lab" width="96" style="display:block;border:0;"/></p>
   `;
