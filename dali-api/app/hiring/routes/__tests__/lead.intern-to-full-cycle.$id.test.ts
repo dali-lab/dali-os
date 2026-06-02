@@ -55,15 +55,17 @@ describe("lead.intern-to-full-cycle.$id action — set-close-date", () => {
   });
 
   it("stores the picked date as 11:59:59 PM ET (EDT) as a UTC instant", async () => {
-    await callAction({ intent: "set-close-date", closeDate: "2026-06-01" });
+    // Use a far-future date so the route's "past close date" guard doesn't trip
+    // and pull in prisma.applicationCycleStatusUpdate.findFirst.
+    await callAction({ intent: "set-close-date", closeDate: "2099-06-01" });
 
     expect(mockPrisma.applicationCycle.update).toHaveBeenCalledTimes(1);
     const updateArgs = mockPrisma.applicationCycle.update.mock.calls[0][0];
     expect(updateArgs.where).toEqual({ id: CYCLE_ID });
     const stored = updateArgs.data.closeDate as Date;
     expect(stored).toBeInstanceOf(Date);
-    // 2026-06-01 23:59:59 EDT (UTC-4) === 2026-06-02 03:59:59 UTC.
-    expect(stored.toISOString()).toBe("2026-06-02T03:59:59.000Z");
+    // 2099-06-01 23:59:59 EDT (UTC-4) === 2099-06-02 03:59:59 UTC.
+    expect(stored.toISOString()).toBe("2099-06-02T03:59:59.000Z");
   });
 
   it("clears the close date when the picker is empty", async () => {
