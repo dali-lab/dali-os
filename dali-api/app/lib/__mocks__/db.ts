@@ -46,6 +46,9 @@ export const prisma = {
   application: {
     findUnique: vi.fn(),
   },
+  applicationCycleStatusUpdate: {
+    findFirst: vi.fn(),
+  },
   auditLog: {
     create: vi.fn(),
   },
