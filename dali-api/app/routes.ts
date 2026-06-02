@@ -5,6 +5,7 @@ export default [
   layout("routes/layout.tsx", [
     index("routes/home.tsx"),
     route("profile", "routes/profile.tsx"),
+    route("onboarding", "routes/onboarding.tsx"),
     route("calendar", "calendar/routes/calendar.tsx"),
 
     // Hiring section
@@ -151,8 +152,22 @@ export default [
     { id: "well-known.oauth-protected-resource.mcp" },
   ),
   route("mcp", "routes/mcp.ts"),
-  route("help/mcp", "routes/help.mcp.tsx"),
+
+  // Settings pages (no layout — opened in a TabWorkspace iframe via the
+  // sidebar footer icons; their own <main> provides padding).
+  route("settings", "routes/settings._index.tsx"),
+  route("settings/calendar", "routes/settings.calendar.tsx"),
+  route("settings/sessions", "routes/settings.sessions.tsx"),
   route("settings/connected-apps", "routes/settings.connected-apps.tsx"),
+
+  // Help pages (same shell convention as Settings).
+  route("help", "routes/help._index.tsx"),
+  route("help/getting-started", "routes/help.getting-started.tsx"),
+  route("help/shortcuts", "routes/help.shortcuts.tsx"),
+  route("help/calendar", "routes/help.calendar.tsx"),
+  route("help/staffing", "routes/help.staffing.tsx"),
+  route("help/notifications", "routes/help.notifications.tsx"),
+  route("help/mcp", "routes/help.mcp.tsx"),
 
   // Authenticated API endpoints (no layout)
   route("users/:id", "members/routes/users.$id.ts"),
@@ -167,6 +182,7 @@ export default [
   // Groups (admin) and notifications (per-user + admin send)
   route("api/groups", "admin-console/routes/api.groups.ts"),
   route("api/groups/:groupId", "admin-console/routes/api.groups.$groupId.ts"),
+  route("api/tour/complete", "routes/api.tour.complete.ts"),
   route("api/notifications", "routes/api.notifications.ts"),
   route("api/notifications/send", "admin-console/routes/api.notifications.send.ts"),
   route("api/notifications/:id/read", "routes/api.notifications.$id.read.ts"),

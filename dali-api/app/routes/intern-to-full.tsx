@@ -307,7 +307,7 @@ function Message({ title, children }: { title: string; children: React.ReactNode
       <h2 className="font-heading text-xl font-bold text-dark-blue mb-2">{title}</h2>
       <p className="text-sm text-muted-foreground">{children}</p>
       <Link to="/" className="mt-6 inline-block text-sm text-accent-coral hover:underline">
-        ← Back to home
+        Open home
       </Link>
     </div>
   );

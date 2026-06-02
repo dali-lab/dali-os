@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
-import { Link, redirect, useLoaderData, useSubmit } from 'react-router'
-import { ArrowLeft, HelpCircle, X, Check } from 'lucide-react'
+import { redirect, useLoaderData, useSubmit } from 'react-router'
+import { HelpCircle, X, Check } from 'lucide-react'
 import { prisma } from '~/lib/db'
 import { requireAuth } from "~/lib/auth";
 import { hasCycleAccess } from '~/lib/roles'
@@ -376,10 +376,7 @@ export default function ReviewerApplicationReview() {
     >
     <div className="space-y-6 pb-12 relative">
       <div>
-        <div className="flex items-center justify-between mb-4">
-          <Link to="/hiring/reviewer" className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground/80">
-            <ArrowLeft className="w-4 h-4 mr-1" /> Back to Dashboard
-          </Link>
+        <div className="flex items-center justify-end mb-4">
           <PresenceBar />
         </div>
         <div className="flex justify-between items-end">

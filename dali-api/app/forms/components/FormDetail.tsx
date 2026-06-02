@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from "react";
-import { Link, useLoaderData, useFetcher } from "react-router";
+import { useLoaderData, useFetcher } from "react-router";
 import {
-  ArrowLeft,
   Plus,
   Pencil,
   FileText,
@@ -52,7 +51,7 @@ function formatDateShort(iso: string) {
 //                         (save-version) and clears the draft. Frozen versions
 //                         are read-only and are what publishing serves.
 export function FormDetail() {
-  const { form, terms, backTo } = useLoaderData<typeof loader>();
+  const { form, terms } = useLoaderData<typeof loader>();
   // A dedicated fetcher for saves so the builder's buttons can reflect
   // request state ("Saving…"/"Saved ✓"). The submitted intent tells us which
   // button is in flight; fetcher.state + a brief post-success window drive the
@@ -192,12 +191,6 @@ export function FormDetail() {
   return (
     <div className="space-y-6">
       <div>
-        <Link
-          to={backTo}
-          className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground/80 mb-4"
-        >
-          <ArrowLeft className="w-4 h-4 mr-1" /> Back to Forms
-        </Link>
         <div className="flex justify-between items-start">
           <div>
             <h1 className="text-2xl font-bold text-foreground">{form.name}</h1>

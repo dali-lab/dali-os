@@ -294,13 +294,7 @@ export default function PartnerApplicationDetail() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <Link
-          to="/partners/applications"
-          className="text-sm text-muted-foreground hover:text-foreground"
-        >
-          ← Back to applications
-        </Link>
+      <div className="flex items-center justify-end">
         <EditModeToggle
           canEdit={canEditPerm}
           editMode={editMode}
