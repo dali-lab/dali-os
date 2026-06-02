@@ -94,6 +94,7 @@ describe("internal-processes/onboarding loader", () => {
       {
         userId: "u1",
         name: "Ada Test",
+        domainKey: "fullstack",
         role: "Fullstack",
         daliEmail: "ada@dali.dartmouth.edu",
         emailCreated: true,
@@ -103,6 +104,7 @@ describe("internal-processes/onboarding loader", () => {
       {
         userId: "u2",
         name: "Bea Test",
+        domainKey: "design",
         role: "Design",
         daliEmail: null,
         emailCreated: false,
@@ -110,6 +112,13 @@ describe("internal-processes/onboarding loader", () => {
         profileSubmitted: false,
       },
     ]);
+
+    // Domain options derived from the cycle's accepted rows, sorted by label.
+    expect(data.domains).toEqual([
+      { key: "design", label: "Design" },
+      { key: "fullstack", label: "Fullstack" },
+    ]);
+    expect(data.selectedDomain).toBeNull();
   });
 
   it("honors a valid ?cycle= override", async () => {
@@ -144,5 +153,35 @@ describe("internal-processes/onboarding loader", () => {
     const data = (await call()) as any;
     expect(data.rows).toHaveLength(2);
     expect(data.rows.map((r: any) => r.role)).toEqual(["Fullstack", "Design"]);
+  });
+
+  it("filters rows by a valid ?domain=", async () => {
+    mockPrisma.applicationCycle.findMany.mockResolvedValue([
+      { id: "cyc-new", name: "Spring 2026", cycleType: "Standard" },
+    ]);
+    mockPrisma.decision.findMany.mockResolvedValue([
+      decisionRow({ userId: "u1", first: "Ada", domainCode: "fullstack", domainName: "Fullstack" }),
+      decisionRow({ userId: "u2", first: "Bea", domainCode: "design", domainName: "Design" }),
+    ]);
+
+    const data = (await call("http://localhost/internal-processes/onboarding?domain=design")) as any;
+    expect(data.selectedDomain).toBe("design");
+    // Dropdown still lists every domain in the cycle, not just the selected one.
+    expect(data.domains.map((d: any) => d.key)).toEqual(["design", "fullstack"]);
+    expect(data.rows.map((r: any) => r.userId)).toEqual(["u2"]);
+  });
+
+  it("ignores an unknown ?domain= and shows all rows", async () => {
+    mockPrisma.applicationCycle.findMany.mockResolvedValue([
+      { id: "cyc-new", name: "Spring 2026", cycleType: "Standard" },
+    ]);
+    mockPrisma.decision.findMany.mockResolvedValue([
+      decisionRow({ userId: "u1", first: "Ada", domainCode: "fullstack", domainName: "Fullstack" }),
+      decisionRow({ userId: "u2", first: "Bea", domainCode: "design", domainName: "Design" }),
+    ]);
+
+    const data = (await call("http://localhost/internal-processes/onboarding?domain=bogus")) as any;
+    expect(data.selectedDomain).toBeNull();
+    expect(data.rows).toHaveLength(2);
   });
 });
