@@ -7,7 +7,7 @@ vi.mock("~/lib/roles", () => ({ isCore: vi.fn() }));
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
-import { loader } from "~/internal-processes/routes/internal-processes.onboarding";
+import { loader, action } from "~/internal-processes/routes/internal-processes.onboarding";
 
 const mockPrisma = prisma as unknown as Record<string, any>;
 const CORE_ID = "core-1";
@@ -19,6 +19,7 @@ function decisionRow(over: {
   domainName: string;
   daliEmail?: string | null;
   slackUserId?: string | null;
+  figmaInvitedAt?: Date | null;
   onboardedAt?: Date | null;
 }) {
   return {
@@ -33,6 +34,7 @@ function decisionRow(over: {
           lastName: "Test",
           daliEmail: over.daliEmail ?? null,
           slackUserId: over.slackUserId ?? null,
+          figmaInvitedAt: over.figmaInvitedAt ?? null,
           daliMember: { onboardedAt: over.onboardedAt ?? null },
         },
       },
@@ -76,8 +78,8 @@ describe("internal-processes/onboarding loader", () => {
       { id: "cyc-old", name: "Fall 2025", cycleType: "Standard" },
     ]);
     mockPrisma.decision.findMany.mockResolvedValue([
-      decisionRow({ userId: "u1", first: "Ada", domainCode: "fullstack", domainName: "Fullstack", daliEmail: "ada@dali.dartmouth.edu", slackUserId: "U1", onboardedAt: new Date() }),
-      decisionRow({ userId: "u2", first: "Bea", domainCode: "design", domainName: "Design", daliEmail: null, slackUserId: null, onboardedAt: null }),
+      decisionRow({ userId: "u1", first: "Ada", domainCode: "fullstack", domainName: "Fullstack", daliEmail: "ada@dali.dartmouth.edu", slackUserId: "U1", figmaInvitedAt: new Date(), onboardedAt: new Date() }),
+      decisionRow({ userId: "u2", first: "Bea", domainCode: "design", domainName: "Design", daliEmail: null, slackUserId: null, figmaInvitedAt: null, onboardedAt: null }),
     ]);
 
     const data = (await call()) as any;
@@ -99,6 +101,7 @@ describe("internal-processes/onboarding loader", () => {
         daliEmail: "ada@dali.dartmouth.edu",
         emailCreated: true,
         inSlack: true,
+        figmaInvited: true,
         profileSubmitted: true,
       },
       {
@@ -109,6 +112,7 @@ describe("internal-processes/onboarding loader", () => {
         daliEmail: null,
         emailCreated: false,
         inSlack: false,
+        figmaInvited: false,
         profileSubmitted: false,
       },
     ]);
@@ -183,5 +187,51 @@ describe("internal-processes/onboarding loader", () => {
     const data = (await call("http://localhost/internal-processes/onboarding?domain=bogus")) as any;
     expect(data.selectedDomain).toBeNull();
     expect(data.rows).toHaveLength(2);
+  });
+});
+
+describe("internal-processes/onboarding action (toggle Figma)", () => {
+  function postForm(fields: Record<string, string>) {
+    const body = new URLSearchParams(fields);
+    return action({
+      request: new Request("http://localhost/internal-processes/onboarding", {
+        method: "POST",
+        body,
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+      }),
+      params: {},
+      context: {},
+    } as any);
+  }
+
+  beforeEach(() => {
+    mockPrisma.user = { update: vi.fn().mockResolvedValue({}) };
+  });
+
+  it("stamps figmaInvitedAt when checking", async () => {
+    const res = (await postForm({ intent: "toggleFigma", userId: "u1", invited: "true" })) as Response;
+    expect(res.status).toBe(200);
+    expect(mockPrisma.user.update).toHaveBeenCalledTimes(1);
+    const arg = mockPrisma.user.update.mock.calls[0][0];
+    expect(arg.where).toEqual({ id: "u1" });
+    expect(arg.data.figmaInvitedAt).toBeInstanceOf(Date);
+  });
+
+  it("clears figmaInvitedAt when unchecking", async () => {
+    await postForm({ intent: "toggleFigma", userId: "u1", invited: "false" });
+    expect(mockPrisma.user.update.mock.calls[0][0].data.figmaInvitedAt).toBeNull();
+  });
+
+  it("403s for non-core users", async () => {
+    vi.mocked(isCore).mockResolvedValueOnce(false);
+    const res = (await postForm({ intent: "toggleFigma", userId: "u1", invited: "true" })) as Response;
+    expect(res.status).toBe(403);
+    expect(mockPrisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects an unknown intent", async () => {
+    const res = (await postForm({ intent: "somethingElse", userId: "u1" })) as Response;
+    expect(res.status).toBe(400);
+    expect(mockPrisma.user.update).not.toHaveBeenCalled();
   });
 });

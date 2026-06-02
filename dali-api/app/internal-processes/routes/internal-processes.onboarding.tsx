@@ -1,4 +1,4 @@
-import { redirect, useLoaderData, useNavigate, useSearchParams } from "react-router";
+import { redirect, useFetcher, useLoaderData, useNavigate, useSearchParams } from "react-router";
 import type { Route } from "./+types/internal-processes.onboarding";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
@@ -60,6 +60,7 @@ export async function loader({ request }: Route.LoaderArgs) {
                   lastName: true,
                   daliEmail: true,
                   slackUserId: true,
+                  figmaInvitedAt: true,
                   daliMember: { select: { onboardedAt: true } },
                 },
               },
@@ -92,6 +93,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       daliEmail: u.daliEmail,
       emailCreated: !!u.daliEmail,
       inSlack: !!u.slackUserId,
+      figmaInvited: u.figmaInvitedAt != null,
       profileSubmitted: u.daliMember?.onboardedAt != null,
     });
   }
@@ -120,6 +122,31 @@ export async function loader({ request }: Route.LoaderArgs) {
   return { cycles, selectedCycleId, domains, selectedDomain, rows };
 }
 
+// Toggle a member's manual "invited to Figma" state from the onboarding board.
+// Core-only, mirroring the loader's access tier. Sets figmaInvitedAt to now when
+// checking, or null when unchecking.
+export async function action({ request }: Route.ActionArgs) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  if (!(await isCore(auth.user.sub))) {
+    return Response.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const form = await request.formData();
+  if (form.get("intent") !== "toggleFigma") {
+    return Response.json({ error: "Unknown intent" }, { status: 400 });
+  }
+  const userId = String(form.get("userId") ?? "");
+  const invited = form.get("invited") === "true";
+  if (!userId) return Response.json({ error: "Missing userId" }, { status: 400 });
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { figmaInvitedAt: invited ? new Date() : null },
+  });
+  return Response.json({ ok: true, figmaInvited: invited });
+}
+
 function StatusPill({ ok, label }: { ok: boolean; label: string }) {
   return (
     <span
@@ -130,6 +157,37 @@ function StatusPill({ ok, label }: { ok: boolean; label: string }) {
       <span className={`h-1.5 w-1.5 rounded-full ${ok ? "bg-green-500" : "bg-muted-foreground/40"}`} />
       {label}
     </span>
+  );
+}
+
+// Admin checkbox for the manual "invited to Figma" step. Submits to this route's
+// action via a fetcher; optimistic so it flips immediately. stopPropagation
+// keeps the click from triggering the row's navigate-to-profile.
+function FigmaCheckbox({ userId, invited }: { userId: string; invited: boolean }) {
+  const fetcher = useFetcher<{ figmaInvited?: boolean }>();
+  // Optimistic: while submitting, reflect the value we just sent.
+  const pending = fetcher.formData?.get("invited");
+  const checked = pending != null ? pending === "true" : invited;
+
+  return (
+    <label
+      className="inline-flex cursor-pointer items-center gap-2 text-xs text-muted-foreground"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={fetcher.state !== "idle"}
+        onChange={() =>
+          fetcher.submit(
+            { intent: "toggleFigma", userId, invited: String(!checked) },
+            { method: "post" },
+          )
+        }
+        className="h-4 w-4 rounded border-border accent-green-600"
+      />
+      {checked ? "Invited" : "Not invited"}
+    </label>
   );
 }
 
@@ -206,6 +264,7 @@ export default function InternalProcessesOnboarding() {
                 <th className="px-5 py-3 font-heading font-semibold text-dark-blue">Role</th>
                 <th className="px-5 py-3 font-heading font-semibold text-dark-blue">DALI email</th>
                 <th className="px-5 py-3 font-heading font-semibold text-dark-blue">Slack</th>
+                <th className="px-5 py-3 font-heading font-semibold text-dark-blue">Figma</th>
                 <th className="px-5 py-3 font-heading font-semibold text-dark-blue">Profile form</th>
               </tr>
             </thead>
@@ -227,6 +286,9 @@ export default function InternalProcessesOnboarding() {
                   </td>
                   <td className="px-5 py-3">
                     <StatusPill ok={r.inSlack} label={r.inSlack ? "Joined" : "Not joined"} />
+                  </td>
+                  <td className="px-5 py-3">
+                    <FigmaCheckbox userId={r.userId} invited={r.figmaInvited} />
                   </td>
                   <td className="px-5 py-3">
                     <StatusPill ok={r.profileSubmitted} label={r.profileSubmitted ? "Submitted" : "Pending"} />

@@ -76,6 +76,11 @@ model User {
   ethnicity           String?
   dietaryRestrictions String?
 
+  // Manual onboarding step tracking: Figma can't be invited via API, so an admin
+  // marks the member as invited to the DALI Figma from the onboarding board.
+  // Null = not yet invited; the timestamp records when it was checked off.
+  figmaInvitedAt DateTime?
+
   // ─── Relations: existing ──────────────────────────────────────────────────
   daliMember                    DALIMember?
   applicationCycleStatusUpdates ApplicationCycleStatusUpdate[]
