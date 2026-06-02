@@ -37,13 +37,18 @@ describe("onboardingEmailHtml", () => {
     expect(html).not.toContain("Password:");
   });
 
-  it("includes the Slack join link only when SLACK_INVITE_URL is set", () => {
-    const without = onboardingEmailHtml("a@dali.dartmouth.edu", "pw");
-    expect(without).not.toContain("Join the DALI Slack");
+  it("shows the workspace 'a teammate will add you' line when no invite URL is set", () => {
+    const html = onboardingEmailHtml("a@dali.dartmouth.edu", "pw");
+    expect(html).toContain("a teammate will add you");
+    expect(html).toContain("https://dali-lab.slack.com");
+    expect(html).not.toContain("Join the DALI Slack");
+  });
 
+  it("prefers a self-join invite URL when SLACK_INVITE_URL is set", () => {
     process.env.SLACK_INVITE_URL = "https://join.slack.com/t/dali-lab/shared_invite/zt-abc";
-    const withLink = onboardingEmailHtml("a@dali.dartmouth.edu", "pw");
-    expect(withLink).toContain("Join the DALI Slack");
-    expect(withLink).toContain("https://join.slack.com/t/dali-lab/shared_invite/zt-abc");
+    const html = onboardingEmailHtml("a@dali.dartmouth.edu", "pw");
+    expect(html).toContain("Join the DALI Slack");
+    expect(html).toContain("https://join.slack.com/t/dali-lab/shared_invite/zt-abc");
+    expect(html).not.toContain("a teammate will add you");
   });
 });
