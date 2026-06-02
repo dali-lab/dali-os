@@ -89,6 +89,59 @@ export default function McpHelpPage({ loaderData }: Route.ComponentProps) {
       </section>
 
       <section className="mt-6">
+        <h2 className="text-lg font-semibold">What can an assistant do?</h2>
+        <p className="mt-2 text-sm text-zinc-600">
+          DALI OS currently exposes these tools over MCP. Read tools need only{" "}
+          <code className="font-mono">mcp:read</code>; write tools need{" "}
+          <code className="font-mono">mcp:write</code>.
+        </p>
+        <ul className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-sm text-zinc-700 list-disc pl-5">
+          <li><code className="font-mono">whoami</code> — identity + role tier</li>
+          <li><code className="font-mono">search_directory</code> — find a member</li>
+          <li><code className="font-mono">get_member_profile</code> — single member</li>
+          <li><code className="font-mono">list_groups</code> — your lab groups</li>
+          <li><code className="font-mono">list_my_notifications</code> — inbox</li>
+          <li><code className="font-mono">mark_notification_read</code> — clear one</li>
+          <li><code className="font-mono">rsvp_to_notification</code> — accept/decline an invite</li>
+          <li><code className="font-mono">list_my_upcoming_meetings</code> — next N days</li>
+          <li><code className="font-mono">list_my_calendar_links</code> — Google calendars</li>
+          <li><code className="font-mono">find_mutual_freebusy</code> — group availability</li>
+          <li><code className="font-mono">schedule_meeting</code> — create one</li>
+          <li><code className="font-mono">cancel_meeting</code> — cancel one you organize</li>
+          <li><code className="font-mono">list_my_projects</code> — projects you're on</li>
+          <li><code className="font-mono">get_project_overview</code> — project detail</li>
+          <li><code className="font-mono">list_my_tasks</code> — your project tasks</li>
+          <li><code className="font-mono">update_task_status</code> — move a task</li>
+        </ul>
+      </section>
+
+      <section className="mt-6">
+        <h2 className="text-lg font-semibold">Resources (auto-attachable context)</h2>
+        <p className="mt-2 text-sm text-zinc-600">
+          Clients can attach these as <em>resources</em>, separate from tool calls.
+          Some clients (Claude Desktop) let you pin them so they ride along on every message.
+        </p>
+        <ul className="mt-3 text-sm text-zinc-700 list-disc pl-5">
+          <li><code className="font-mono">dali://me</code> — your profile, roles, domain eligibilities</li>
+          <li><code className="font-mono">dali://announcements/active</code> — your unread lab announcements (markdown)</li>
+          <li><code className="font-mono">dali://forms/pending</code> — published forms you've been asked to fill</li>
+        </ul>
+      </section>
+
+      <section className="mt-6">
+        <h2 className="text-lg font-semibold">Prompts (templated workflows)</h2>
+        <p className="mt-2 text-sm text-zinc-600">
+          These appear as commands in the client (e.g. <code className="font-mono">/dali:weekly-digest</code> in
+          Claude Code). The model carries them out by calling the MCP tools above.
+        </p>
+        <ul className="mt-3 text-sm text-zinc-700 list-disc pl-5">
+          <li><code className="font-mono">weekly-digest</code> — focus, meetings, inbox, suggested next action</li>
+          <li><code className="font-mono">meeting-prep</code> — agenda + talking points for an upcoming meeting</li>
+          <li><code className="font-mono">project-status</code> — status report draft for a project you're on</li>
+        </ul>
+      </section>
+
+      <section className="mt-6">
         <h2 className="text-lg font-semibold">Managing connections</h2>
         <p className="mt-2 text-sm text-zinc-600">
           Visit{" "}
