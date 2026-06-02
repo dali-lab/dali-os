@@ -73,8 +73,10 @@ export async function sendWelcome(args: {
 }
 
 // Onboarding block appended to the Accepted decision email so a new member gets
-// a single email: the lead-authored acceptance copy, followed by their account
-// details + the link into DALI OS. Includes the DALI logo.
+// a single email. The acceptance greeting ("Hi <name>, congratulations…") comes
+// from the lead-authored decision template; this block adds the first onboarding
+// step (log in to DALI OS with the new credentials), the profile nudge, the
+// sign-off, and the DALI logo.
 //
 // daliEmail is the newly-provisioned @dali.dartmouth.edu login address. It may
 // be null when Workspace provisioning hasn't completed yet (e.g. a transient
@@ -96,28 +98,27 @@ export function onboardingEmailHtml(
   const loginUrl = `${base}/login`;
   const logoUrl = `${base}/logo-blue.png`;
 
+  const loginLink = `<a href="${loginUrl}">DALI OS</a>`;
+
   let accountBlock: string;
   if (daliEmail && tempPassword) {
     accountBlock = `
-      <p>Your DALI account is ready. Log in to DALI OS with:</p>
+      <p>As your first onboarding step, log in to ${loginLink} with your new credentials:</p>
       <p style="margin:8px 0;padding:12px 16px;background:#f3f4f6;border-radius:6px;font-family:monospace;">
-        Email: <strong>${daliEmail}</strong><br/>
-        Temporary password: <strong>${tempPassword}</strong>
-      </p>
-      <p>You'll be required to change this temporary password the first time you log in. Don't share it.</p>`;
+        DALI email: <strong>${daliEmail}</strong><br/>
+        Password: <strong>${tempPassword}</strong> (you'll be asked to set a password on first login).
+      </p>`;
   } else if (daliEmail) {
-    accountBlock = `<p>Your DALI account is ready. <strong>Log in to DALI OS with your DALI email: ${daliEmail}</strong> using your existing password.</p>`;
+    accountBlock = `<p>As your first onboarding step, log in to ${loginLink} with your new DALI email: <strong>${daliEmail}</strong> and your existing password.</p>`;
   } else {
     accountBlock = `<p>Your DALI account is being set up — you'll receive your DALI login email shortly. In the meantime you can finish the rest of your onboarding below.</p>`;
   }
 
   return `
     <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0;"/>
-    <p><img src="${logoUrl}" alt="DALI Lab" width="96" style="display:block;border:0;"/></p>
-    <p>Welcome to the DALI Lab!</p>
     ${accountBlock}
     <p>Once you're in, finish setting up by completing your member profile and onboarding steps.</p>
-    <p><a href="${loginUrl}">Log in to DALI OS</a></p>
     <p>— The DALI Lab</p>
+    <p><img src="${logoUrl}" alt="DALI Lab" width="96" style="display:block;border:0;"/></p>
   `;
 }
