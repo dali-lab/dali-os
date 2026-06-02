@@ -13,7 +13,10 @@ vi.mock("~/members/lib/membership.server", () => ({
   promoteToMember: vi.fn().mockResolvedValue({ created: true }),
 }));
 vi.mock("~/members/lib/welcome.server", () => ({
-  sendWelcome: vi.fn().mockResolvedValue({ notified: true, emailSent: false }),
+  sendWelcome: vi.fn().mockResolvedValue({ notified: true }),
+  onboardingEmailHtml: vi.fn((daliEmail: string | null) =>
+    `<onboarding dali="${daliEmail ?? ""}"/>`,
+  ),
 }));
 vi.mock("~/members/lib/provisioning.server", () => ({
   provisionNewMember: vi.fn().mockResolvedValue({
@@ -150,6 +153,9 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     expect(args.to).toBe("ada@dartmouth.edu");
     expect(args.subject).toBe("Welcome, Ada!");
     expect(args.html).toContain("Hi Ada,");
+    // The onboarding block is appended to the Accepted decision email so the
+    // member gets a single email (no separate welcome message).
+    expect(args.html).toContain("<onboarding");
     expect(args.refreshToken).toBe("gmail-rt");
   });
 
@@ -397,8 +403,9 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     expect(promoteToMember).not.toHaveBeenCalled();
     expect(provisionNewMember).not.toHaveBeenCalled();
     expect(sendWelcome).not.toHaveBeenCalled();
-    // …but the decision email still goes out.
+    // …but the decision email still goes out — without the onboarding block.
     expect(sendEmail).toHaveBeenCalledOnce();
+    expect(vi.mocked(sendEmail).mock.calls[0][0].html).not.toContain("<onboarding");
   });
 
   it("still releases (201) when provisioning throws — failure is isolated", async () => {

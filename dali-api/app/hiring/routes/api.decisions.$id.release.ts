@@ -8,7 +8,7 @@ import { renderForSlot, decisionSlot } from "~/hiring/lib/email-variables";
 import { logAuditEvent } from "~/lib/audit";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
 import { promoteToMember } from "~/members/lib/membership.server";
-import { sendWelcome } from "~/members/lib/welcome.server";
+import { sendWelcome, onboardingEmailHtml } from "~/members/lib/welcome.server";
 import { provisionNewMember, type ProvisionResult } from "~/members/lib/provisioning.server";
 import { resolveCandidateEmail, redirectBannerHtml } from "~/lib/candidate-email";
 
@@ -153,9 +153,9 @@ export async function action({ request, params }: Route.ActionArgs) {
       console.error("Failed to provision new member:", err);
     }
 
-    // Welcome the new member: a persistent "finish onboarding" todo + a welcome
-    // email that tells them to log into DALI OS with their new DALI email.
-    // Sent to a reachable address (their Dartmouth email). Best-effort.
+    // Welcome the new member with a persistent "finish onboarding" todo. The
+    // welcome *email* is folded into the Accepted decision email below (single
+    // email per acceptance), so this no longer sends mail. Best-effort.
     try {
       const u = domainApp.application.user;
       const welcomeEmail =
@@ -199,11 +199,19 @@ export async function action({ request, params }: Route.ActionArgs) {
           },
         );
 
+        // For acceptances, append the onboarding block (account details + login
+        // link + logo) so the new member gets a single email instead of a
+        // separate welcome message.
+        const onboarding =
+          decision.type === "Accepted"
+            ? onboardingEmailHtml(provisionResult?.daliEmail ?? null)
+            : "";
+
         await sendEmail({
           refreshToken,
           to,
           subject,
-          html: redirectBannerHtml(redirectedFrom) + html,
+          html: redirectBannerHtml(redirectedFrom) + html + onboarding,
         });
         emailSent = true;
       }
