@@ -22,9 +22,16 @@ const STRING_FIELDS: Record<string, string> = {
   "profile.photoUrl": "photoUrl",
   "profile.githubUsername": "githubUsername",
   "profile.linkedinUrl": "linkedinUrl",
+  // Onboarding profile additions.
+  "profile.nameOnFile": "nameOnFile",
+  "profile.collegeId": "collegeId",
+  "profile.phoneNumber": "phoneNumber",
+  "profile.ethnicity": "ethnicity",
+  "profile.dietaryRestrictions": "dietaryRestrictions",
 };
 
 const CLASS_YEAR_KEY = "profile.classYear";
+const BIRTHDAY_KEY = "profile.birthday";
 
 export type ProfileUpdate = {
   pronouns?: string;
@@ -34,6 +41,12 @@ export type ProfileUpdate = {
   githubUsername?: string;
   linkedinUrl?: string;
   classYear?: number;
+  nameOnFile?: string;
+  collegeId?: string;
+  phoneNumber?: string;
+  ethnicity?: string;
+  dietaryRestrictions?: string;
+  birthday?: Date;
 };
 
 export type ProfileInterpretResult =
@@ -64,6 +77,27 @@ export function interpretProfileForm(
       return { ok: false, error: "Class year must be a 4-digit year." };
     }
     update.classYear = n;
+  }
+
+  // Birthday: accept a YYYY-MM-DD date string. Store at UTC midnight so there's
+  // no timezone drift on a date-only value. Round-trip the parsed components so
+  // impossible dates (e.g. 2004-02-31, which Date silently rolls to Mar 2) are
+  // rejected rather than quietly shifted.
+  const birthdayRaw = asTrimmed(answers[BIRTHDAY_KEY]);
+  if (birthdayRaw !== "") {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(birthdayRaw);
+    const d = m ? new Date(`${birthdayRaw}T00:00:00.000Z`) : null;
+    const valid =
+      m &&
+      d &&
+      !Number.isNaN(d.getTime()) &&
+      d.getUTCFullYear() === Number(m[1]) &&
+      d.getUTCMonth() + 1 === Number(m[2]) &&
+      d.getUTCDate() === Number(m[3]);
+    if (!valid) {
+      return { ok: false, error: "Birthday must be a valid date (YYYY-MM-DD)." };
+    }
+    update.birthday = d;
   }
 
   return { ok: true, update };
