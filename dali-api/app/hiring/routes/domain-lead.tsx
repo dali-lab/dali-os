@@ -1157,6 +1157,41 @@ export default function DomainLeadDashboard() {
                             }));
                             // Awaiting booking first (needs action), then booked.
                             const rows = [...pendingRows, ...bookedRows];
+                            // Decisions/pills for each row, looked up via the
+                            // domain application on `invited`. Mirrors the
+                            // Reviews table's Decisions column so the two
+                            // panels read consistently.
+                            const appByDaId = new Map<string, any>();
+                            for (const app of invited) {
+                              const da = app.domainApplications?.[0];
+                              if (da?.id) appByDaId.set(da.id, app);
+                            }
+                            const renderDecisionCell = (daId: string | undefined) => {
+                              if (!daId) return <span className="text-xs text-muted-foreground">—</span>;
+                              const app = appByDaId.get(daId);
+                              const da = app?.domainApplications?.[0];
+                              if (!da) return <span className="text-xs text-muted-foreground">—</span>;
+                              const decisions = da.decisions ?? [];
+                              const pills = summarizeDecisionPills({ decisions });
+                              const currentId = currentDecisionId(decisions);
+                              if (pills.length > 0) {
+                                return (
+                                  <div className="flex flex-wrap gap-1">
+                                    {pills.map((pill, i) => (
+                                      <DecisionPillBadge key={i} pill={pill} isCurrent={!!pill.id && pill.id === currentId} />
+                                    ))}
+                                  </div>
+                                );
+                              }
+                              const prePill = synthesizePrePipelinePill({
+                                application: { statusUpdates: app.statusUpdates ?? [] },
+                                interviews: da.interviews ?? [],
+                                decisions,
+                              });
+                              return prePill
+                                ? <PrePipelinePillBadge pill={prePill} />
+                                : <span className="text-xs text-muted-foreground">—</span>;
+                            };
                             const statusPill = (row: any) =>
                               !row.booked
                                 ? 'bg-yellow-100 text-yellow-700 border border-yellow-200'
@@ -1175,15 +1210,17 @@ export default function DomainLeadDashboard() {
                             return (
                               <div>
                                 <div className="hidden sm:block overflow-x-auto border border-border rounded-lg">
-                                  <table className="w-full text-sm min-w-[640px]">
+                                  <table className="w-full text-sm min-w-[900px]">
                                     <thead className="bg-muted/50 text-xs font-medium text-muted-foreground uppercase tracking-wide">
                                       <tr>
                                         <th className="px-6 py-3 text-left">Applicant</th>
                                         <th className="px-6 py-3 text-left">Time</th>
                                         <th className="px-6 py-3 text-left">Location</th>
                                         <th className="px-6 py-3 text-left">Status</th>
+                                        <th className="px-6 py-3 text-left">Decisions</th>
                                         <th className="px-6 py-3 text-left">In-Domain</th>
                                         <th className="px-6 py-3 text-left">Cross-Domain</th>
+                                        <th className="px-6 py-3 text-right">Actions</th>
                                       </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-100">
@@ -1204,22 +1241,25 @@ export default function DomainLeadDashboard() {
                                             )}
                                           </td>
                                           <td className="px-6 py-4">
-                                            <div className="flex items-center gap-2">
-                                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${statusPill(row)}`}>
-                                                {row.status}
-                                              </span>
-                                              {canFinalize && row.daId && finalizableByDaId.has(row.daId) && (
-                                                <button
-                                                  onClick={(e) => { e.stopPropagation(); finalizeOne(row.daId); }}
-                                                  className="px-2 py-0.5 text-xs font-medium rounded bg-accent-coral hover:bg-accent-coral/90 text-white transition"
-                                                >
-                                                  Finalize
-                                                </button>
-                                              )}
-                                            </div>
+                                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${statusPill(row)}`}>
+                                              {row.status}
+                                            </span>
                                           </td>
+                                          <td className="px-6 py-4">{renderDecisionCell(row.daId)}</td>
                                           <td className="px-6 py-4 text-muted-foreground text-xs">{row.inDomain}</td>
                                           <td className="px-6 py-4 text-muted-foreground text-xs">{row.crossDomain}</td>
+                                          <td className="px-6 py-4 text-right">
+                                            {canFinalize && row.daId && finalizableByDaId.has(row.daId) ? (
+                                              <button
+                                                onClick={(e) => { e.stopPropagation(); finalizeOne(row.daId); }}
+                                                className="px-2 py-1 text-xs font-medium rounded bg-accent-coral hover:bg-accent-coral/90 text-white transition"
+                                              >
+                                                Finalize
+                                              </button>
+                                            ) : (
+                                              <span className="text-xs text-muted-foreground/60">—</span>
+                                            )}
+                                          </td>
                                         </tr>
                                       ))}
                                     </tbody>
@@ -1230,23 +1270,13 @@ export default function DomainLeadDashboard() {
                                     <li
                                       key={row.key}
                                       onClick={() => openReview(row)}
-                                      className={`border border-border rounded-lg p-3 space-y-1.5 ${row.daId ? "cursor-pointer hover:bg-muted/50" : ""}`}
+                                      className={`border border-border rounded-lg p-3 space-y-2 ${row.daId ? "cursor-pointer hover:bg-muted/50" : ""}`}
                                     >
                                       <div className="flex items-start justify-between gap-2">
                                         <div className="font-medium text-foreground min-w-0 truncate">{row.name}</div>
-                                        <div className="flex items-center gap-2 flex-shrink-0">
-                                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${statusPill(row)}`}>
-                                            {row.status}
-                                          </span>
-                                          {canFinalize && row.daId && finalizableByDaId.has(row.daId) && (
-                                            <button
-                                              onClick={(e) => { e.stopPropagation(); finalizeOne(row.daId); }}
-                                              className="px-2 py-0.5 text-xs font-medium rounded bg-accent-coral hover:bg-accent-coral/90 text-white transition"
-                                            >
-                                              Finalize
-                                            </button>
-                                          )}
-                                        </div>
+                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold flex-shrink-0 ${statusPill(row)}`}>
+                                          {row.status}
+                                        </span>
                                       </div>
                                       {row.booked && (
                                         <>
@@ -1262,6 +1292,20 @@ export default function DomainLeadDashboard() {
                                           <div className="text-xs text-muted-foreground"><span className="font-medium">In-Domain:</span> {row.inDomain}</div>
                                           <div className="text-xs text-muted-foreground"><span className="font-medium">Cross-Domain:</span> {row.crossDomain}</div>
                                         </>
+                                      )}
+                                      <div>
+                                        <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Decisions</div>
+                                        {renderDecisionCell(row.daId)}
+                                      </div>
+                                      {canFinalize && row.daId && finalizableByDaId.has(row.daId) && (
+                                        <div className="flex flex-wrap items-center gap-2">
+                                          <button
+                                            onClick={(e) => { e.stopPropagation(); finalizeOne(row.daId); }}
+                                            className="px-2 py-1 text-xs font-medium rounded bg-accent-coral hover:bg-accent-coral/90 text-white transition"
+                                          >
+                                            Finalize
+                                          </button>
+                                        </div>
                                       )}
                                     </li>
                                   ))}
