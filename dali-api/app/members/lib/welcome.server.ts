@@ -1,16 +1,16 @@
 import { prisma } from "~/lib/db";
-import { sendEmail } from "~/lib/gmail";
-import { getApplicationsGmailRefreshToken } from "~/lib/gmail-integration";
-import { resolveCandidateEmail, redirectBannerHtml } from "~/lib/candidate-email";
 
 // The onboarding task points here; also used as the dedupe/clear key.
 export const ONBOARDING_LINK = "/onboarding";
 
-// Welcome a newly-promoted member: drop a persistent "finish onboarding" todo
-// notification (links to /onboarding) and send a welcome email. Both are
-// best-effort — a failure here must never block the acceptance/release that
-// triggered it, so callers wrap this in try/catch (and it swallows its own
-// email errors too).
+// Welcome a newly-promoted member by dropping a persistent "finish onboarding"
+// todo notification (links to /onboarding). Best-effort — a failure here must
+// never block the acceptance/release that triggered it, so callers wrap this in
+// try/catch.
+//
+// The onboarding *email* is no longer sent separately: its content is folded
+// into the Accepted decision email at the release call site via
+// `onboardingEmailHtml` below, so an accepted applicant receives a single email.
 //
 // Idempotent: re-running creates another notification only if the member has no
 // open onboarding todo, so a re-release won't spam them.
@@ -32,13 +32,13 @@ export async function clearOnboardingTask(userId: string): Promise<void> {
 export async function sendWelcome(args: {
   userId: string;
   actorId: string;
-  // For the email greeting + the address to send to. Email is skipped when null.
+  // For the email greeting + the address to send to. Kept for call-site parity;
+  // the email itself is now part of the Accepted decision email.
   firstName: string;
   email: string | null;
-  // The member's newly-provisioned @dali.dartmouth.edu login email, if any —
-  // folded into the welcome email so they know which account to log in with.
+  // The member's newly-provisioned @dali.dartmouth.edu login email, if any.
   daliEmail?: string | null;
-}): Promise<{ notified: boolean; emailSent: boolean }> {
+}): Promise<{ notified: boolean }> {
   // The onboarding task links to the /onboarding checklist (the profile form is
   // one step within it). It is a plain todo — NOT form-backed — so submitting
   // the profile form alone doesn't clear it; it stays until onboarding is fully
@@ -69,56 +69,34 @@ export async function sendWelcome(args: {
     notified = true;
   }
 
-  let emailSent = false;
-  try {
-    // In dev/staging this is redirected to a test inbox (with a banner naming
-    // the real intended recipient); in prod it goes to the member.
-    const { to, redirectedFrom } = resolveCandidateEmail(args.email);
-    if (to) {
-      const refreshToken = await getApplicationsGmailRefreshToken();
-      if (refreshToken) {
-        const base = (process.env.FRONTEND_URL ?? "").replace(/\/$/, "");
-        await sendEmail({
-          refreshToken,
-          to,
-          subject: "Welcome to the DALI Lab",
-          html: welcomeHtml(
-            args.firstName,
-            `${base}${ONBOARDING_LINK}`,
-            args.daliEmail ?? null,
-            redirectedFrom,
-          ),
-        });
-        emailSent = true;
-      }
-    }
-  } catch (err) {
-    // Best-effort: a welcome-email failure must not block release.
-    console.error("Failed to send welcome email:", err);
-  }
-
-  return { notified, emailSent };
+  return { notified };
 }
 
-function welcomeHtml(
-  firstName: string,
-  onboardingUrl: string,
-  daliEmail: string | null,
-  // Non-prod only: the real recipient this email was redirected away from.
-  redirectedFrom: string | null,
-): string {
-  const safeName = firstName || "there";
-  const banner = redirectBannerHtml(redirectedFrom);
-  const loginLine = daliEmail
+// Onboarding block appended to the Accepted decision email so a new member gets
+// a single email: the lead-authored acceptance copy, followed by their account
+// details + the link into DALI OS. Includes the DALI logo.
+//
+// daliEmail is the newly-provisioned @dali.dartmouth.edu login address. It may
+// be null when Workspace provisioning hasn't completed yet (e.g. a transient
+// failure) — in that case we say the account is still being set up rather than
+// showing a blank "ready" line, so the member isn't told to log in with an
+// address that doesn't exist.
+export function onboardingEmailHtml(daliEmail: string | null): string {
+  const base = (process.env.FRONTEND_URL ?? "").replace(/\/$/, "");
+  const loginUrl = `${base}/login`;
+  const logoUrl = `${base}/logo-blue.png`;
+
+  const accountLine = daliEmail
     ? `<p>Your DALI account is ready. <strong>Log in to DALI OS with your new DALI email: ${daliEmail}</strong> (you'll be asked to set a password on first login).</p>`
-    : `<p>Your DALI account is ready.</p>`;
+    : `<p>Your DALI account is being set up — you'll receive your DALI login email shortly. In the meantime you can finish the rest of your onboarding below.</p>`;
+
   return `
-    ${banner}
-    <p>Hi ${safeName},</p>
+    <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0;"/>
+    <p><img src="${logoUrl}" alt="DALI Lab" width="96" style="display:block;border:0;"/></p>
     <p>Welcome to the DALI Lab!</p>
-    ${loginLine}
+    ${accountLine}
     <p>Once you're in, finish setting up by completing your member profile and onboarding steps.</p>
-    <p><a href="${onboardingUrl}">Complete your onboarding</a></p>
+    <p><a href="${loginUrl}">Log in to DALI OS</a></p>
     <p>— The DALI Lab</p>
   `;
 }
