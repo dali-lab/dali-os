@@ -100,18 +100,14 @@ export function onboardingEmailHtml(
 
   const loginLink = `<a href="${loginUrl}">DALI OS</a>`;
 
-  // Slack onboarding line. DALI's workspace isn't Enterprise Grid (so the
-  // programmatic admin.users.invite is unavailable) and has no shared invite-link
-  // feature enabled. So we point new members at the workspace and tell them a
-  // teammate/admin will add them — any member can invite, so this is reliable.
-  // If a shared invite URL is ever configured (SLACK_INVITE_URL), we prefer it
-  // and let them self-join instead.
-  const slackInviteUrl = (process.env.SLACK_INVITE_URL ?? "").trim();
+  // Slack onboarding line. Our Slack is on Enterprise, which disallows the public
+  // shared invite-link feature, and the programmatic admin.users.invite isn't
+  // available to us either — so workspace invites are always done by hand. We
+  // point new members at the workspace and tell them a teammate/admin will add
+  // them; any member can invite, so this is reliable.
   const slackWorkspaceUrl =
     (process.env.SLACK_WORKSPACE_URL ?? "https://dali-lab.slack.com").replace(/\/$/, "");
-  const slackLine = slackInviteUrl
-    ? `<p>Join the DALI Slack: <a href="${slackInviteUrl}">${slackInviteUrl}</a></p>`
-    : `<p>We use Slack day-to-day at <a href="${slackWorkspaceUrl}">DALI Studios</a> — a teammate will add you to the workspace shortly.</p>`;
+  const slackLine = `<p>We use Slack day-to-day at <a href="${slackWorkspaceUrl}">DALI Studios</a> — a teammate will add you to the workspace shortly.</p>`;
 
   let accountBlock: string;
   if (daliEmail && tempPassword) {

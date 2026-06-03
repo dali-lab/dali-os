@@ -79,6 +79,11 @@ export async function loader({ request }: Route.LoaderArgs) {
   for (const d of decisions) {
     const u = d.domainApplication.application.user;
     const dom = d.domainApplication.domain;
+    // Skip people who've already finished onboarding (e.g. a Fellowship-cycle
+    // member re-accepted into a new domain). They keep their existing
+    // onboardedAt/daliEmail/slackUserId, so there's nothing to track here — they'd
+    // just be all-green clutter on a board meant for in-flight onboarding.
+    if (u.daliMember?.onboardedAt != null) continue;
     // Stable key for dedupe + the domain filter dropdown (code, falling back to
     // name); displayName is for display only and can change.
     const domainKey = dom.code ?? dom.name;

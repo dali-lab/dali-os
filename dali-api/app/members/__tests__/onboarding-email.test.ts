@@ -37,18 +37,18 @@ describe("onboardingEmailHtml", () => {
     expect(html).not.toContain("Password:");
   });
 
-  it("shows the workspace 'a teammate will add you' line when no invite URL is set", () => {
+  it("shows the workspace 'a teammate will add you' line", () => {
     const html = onboardingEmailHtml("a@dali.dartmouth.edu", "pw");
     expect(html).toContain("a teammate will add you");
     expect(html).toContain("https://dali-lab.slack.com");
     expect(html).not.toContain("Join the DALI Slack");
   });
 
-  it("prefers a self-join invite URL when SLACK_INVITE_URL is set", () => {
+  it("stays manual even if SLACK_INVITE_URL is set (Enterprise has no public links)", () => {
     process.env.SLACK_INVITE_URL = "https://join.slack.com/t/dali-lab/shared_invite/zt-abc";
     const html = onboardingEmailHtml("a@dali.dartmouth.edu", "pw");
-    expect(html).toContain("Join the DALI Slack");
-    expect(html).toContain("https://join.slack.com/t/dali-lab/shared_invite/zt-abc");
-    expect(html).not.toContain("a teammate will add you");
+    expect(html).toContain("a teammate will add you");
+    expect(html).not.toContain("Join the DALI Slack");
+    expect(html).not.toContain("https://join.slack.com/t/dali-lab/shared_invite/zt-abc");
   });
 });
