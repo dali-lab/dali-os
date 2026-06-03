@@ -78,7 +78,8 @@ describe("internal-processes/onboarding loader", () => {
       { id: "cyc-old", name: "Fall 2025", cycleType: "Standard" },
     ]);
     mockPrisma.decision.findMany.mockResolvedValue([
-      decisionRow({ userId: "u1", first: "Ada", domainCode: "fullstack", domainName: "Fullstack", daliEmail: "ada@dali.dartmouth.edu", slackUserId: "U1", figmaInvitedAt: new Date(), onboardedAt: new Date() }),
+      // Fully provisioned but not yet onboarded → still shows, all green except profile.
+      decisionRow({ userId: "u1", first: "Ada", domainCode: "fullstack", domainName: "Fullstack", daliEmail: "ada@dali.dartmouth.edu", slackUserId: "U1", figmaInvitedAt: new Date(), onboardedAt: null }),
       decisionRow({ userId: "u2", first: "Bea", domainCode: "design", domainName: "Design", daliEmail: null, slackUserId: null, figmaInvitedAt: null, onboardedAt: null }),
     ]);
 
@@ -102,7 +103,7 @@ describe("internal-processes/onboarding loader", () => {
         emailCreated: true,
         inSlack: true,
         figmaInvited: true,
-        profileSubmitted: true,
+        profileSubmitted: false,
       },
       {
         userId: "u2",
@@ -157,6 +158,22 @@ describe("internal-processes/onboarding loader", () => {
     const data = (await call()) as any;
     expect(data.rows).toHaveLength(2);
     expect(data.rows.map((r: any) => r.role)).toEqual(["Fullstack", "Design"]);
+  });
+
+  it("excludes already-onboarded members (e.g. re-accepted Fellowship members)", async () => {
+    mockPrisma.applicationCycle.findMany.mockResolvedValue([
+      { id: "cyc-new", name: "Spring 2026", cycleType: "Standard" },
+    ]);
+    mockPrisma.decision.findMany.mockResolvedValue([
+      // Already onboarded in a prior cycle, re-accepted here → keeps onboardedAt, hidden.
+      decisionRow({ userId: "u1", first: "Ada", domainCode: "fullstack", domainName: "Fullstack", daliEmail: "ada@dali.dartmouth.edu", slackUserId: "U1", onboardedAt: new Date() }),
+      decisionRow({ userId: "u2", first: "Bea", domainCode: "design", domainName: "Design", onboardedAt: null }),
+    ]);
+
+    const data = (await call()) as any;
+    expect(data.rows.map((r: any) => r.userId)).toEqual(["u2"]);
+    // The hidden member's domain also drops out of the filter dropdown.
+    expect(data.domains.map((d: any) => d.key)).toEqual(["design"]);
   });
 
   it("filters rows by a valid ?domain=", async () => {
