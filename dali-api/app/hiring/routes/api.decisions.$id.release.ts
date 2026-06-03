@@ -201,10 +201,15 @@ export async function action({ request, params }: Route.ActionArgs) {
 
         // For acceptances, append the onboarding block (account details + login
         // link + logo) so the new member gets a single email instead of a
-        // separate welcome message.
+        // separate welcome message. The temporary password is rendered ONLY into
+        // this email — never logged (see the audit metadata below, which omits
+        // it).
         const onboarding =
           decision.type === "Accepted"
-            ? onboardingEmailHtml(provisionResult?.daliEmail ?? null)
+            ? onboardingEmailHtml(
+                provisionResult?.daliEmail ?? null,
+                provisionResult?.daliTempPassword ?? null,
+              )
             : "";
 
         await sendEmail({
@@ -221,6 +226,15 @@ export async function action({ request, params }: Route.ActionArgs) {
     console.error("Failed to send release email:", err);
   }
 
+  // Strip the one-time temp password before it reaches the audit log — it's a
+  // live credential and must never be persisted in logs (see CLAUDE.md).
+  const provisioningForAudit = provisionResult
+    ? (() => {
+        const { daliTempPassword: _omit, ...rest } = provisionResult;
+        return rest;
+      })()
+    : null;
+
   await logAuditEvent({
     action: "decision.release",
     userId: auth.user.sub,
@@ -233,7 +247,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       emailSent,
       memberPromoted,
       welcomeNotified,
-      provisioning: provisionResult,
+      provisioning: provisioningForAudit,
     },
     request,
   });

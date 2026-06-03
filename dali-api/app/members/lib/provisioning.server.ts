@@ -26,6 +26,13 @@ export type ProvisionResult = {
   // The provisioned DALI email, when Workspace ran — so callers (welcome email)
   // can tell the member which address to log in with.
   daliEmail: string | null;
+  // The one-time temporary password Workspace generated for a NEWLY-created
+  // account (forced change at first login). Surfaced so the onboarding email can
+  // give the member their initial credential — null when the account already
+  // existed or Workspace didn't run. SECURITY: this is a live credential. It
+  // must reach ONLY the onboarding email; callers MUST exclude it from audit
+  // logs / console output (see api.decisions.$id.release).
+  daliTempPassword: string | null;
 };
 
 function errMsg(e: unknown): string {
@@ -70,6 +77,7 @@ export async function provisionNewMember(args: {
     slack: { status: "skipped", message: "" },
     github: { status: "skipped", message: "" },
     daliEmail: user?.daliEmail ?? null,
+    daliTempPassword: null,
   };
 
   // ── workspace: create the @dali.dartmouth.edu account ───────────────────
@@ -84,6 +92,8 @@ export async function provisionNewMember(args: {
     if (w.status === "ok") {
       daliEmail = w.email;
       result.daliEmail = w.email;
+      // Only present when the account was just created (not on "already exists").
+      result.daliTempPassword = w.tempPassword ?? null;
       // Persist the new DALI email onto the User so login + future flows use it.
       if (!user.daliEmail || user.daliEmail !== w.email) {
         try {
@@ -99,11 +109,11 @@ export async function provisionNewMember(args: {
   }
 
   // ── slack: invite the new member to the workspace + sync slackUserId ─────
-  // On acceptance the member isn't staffed onto any project yet, so we just
-  // invite them into the workspace — they land in #general (resolved by name in
-  // inviteToWorkspace) — and sync their Slack id. The per-project welcome
-  // announcement happens later, on staffing finalize, in each project's own
-  // channel — there's no lab-wide announcement here.
+  // admin.users.invite (inviteToWorkspace) needs an admin token we don't have,
+  // so this call returns "skipped"; a teammate adds the member to the workspace
+  // by hand (the onboarding email tells them to expect that). We still attempt it
+  // (harmless no-op when unconfigured) and still sync the member's Slack id when
+  // possible so later per-project channel invites can add them by id.
   try {
     const parts: string[] = [];
     if (daliEmail) {

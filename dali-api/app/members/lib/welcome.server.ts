@@ -73,30 +73,62 @@ export async function sendWelcome(args: {
 }
 
 // Onboarding block appended to the Accepted decision email so a new member gets
-// a single email: the lead-authored acceptance copy, followed by their account
-// details + the link into DALI OS. Includes the DALI logo.
+// a single email. The acceptance greeting ("Hi <name>, congratulations…") comes
+// from the lead-authored decision template; this block adds the first onboarding
+// step (log in to DALI OS with the new credentials), the profile nudge, the
+// sign-off, and the DALI logo.
 //
 // daliEmail is the newly-provisioned @dali.dartmouth.edu login address. It may
 // be null when Workspace provisioning hasn't completed yet (e.g. a transient
 // failure) — in that case we say the account is still being set up rather than
 // showing a blank "ready" line, so the member isn't told to log in with an
 // address that doesn't exist.
-export function onboardingEmailHtml(daliEmail: string | null): string {
+//
+// tempPassword is the one-time initial password for a freshly-created account
+// (the account forces a password change at first login). When present it's shown
+// alongside the email so the member can actually sign in. It is null when the
+// account already existed (re-release) — then we just tell them to use their
+// existing password. SECURITY: this is a live credential; it must only ever be
+// rendered into this email, never logged.
+export function onboardingEmailHtml(
+  daliEmail: string | null,
+  tempPassword: string | null = null,
+): string {
   const base = (process.env.FRONTEND_URL ?? "").replace(/\/$/, "");
   const loginUrl = `${base}/login`;
   const logoUrl = `${base}/logo-blue.png`;
 
-  const accountLine = daliEmail
-    ? `<p>Your DALI account is ready. <strong>Log in to DALI OS with your new DALI email: ${daliEmail}</strong> (you'll be asked to set a password on first login).</p>`
-    : `<p>Your DALI account is being set up — you'll receive your DALI login email shortly. In the meantime you can finish the rest of your onboarding below.</p>`;
+  const loginLink = `<a href="${loginUrl}">DALI OS</a>`;
+
+  // Slack onboarding line. Our Slack is on Enterprise, which disallows the public
+  // shared invite-link feature, and the programmatic admin.users.invite isn't
+  // available to us either — so workspace invites are always done by hand. We
+  // point new members at the workspace and tell them a teammate/admin will add
+  // them; any member can invite, so this is reliable.
+  const slackWorkspaceUrl =
+    (process.env.SLACK_WORKSPACE_URL ?? "https://dali-lab.slack.com").replace(/\/$/, "");
+  const slackLine = `<p>We use Slack day-to-day at <a href="${slackWorkspaceUrl}">DALI Studios</a> — a teammate will add you to the workspace shortly.</p>`;
+
+  let accountBlock: string;
+  if (daliEmail && tempPassword) {
+    accountBlock = `
+      <p>As your first onboarding step, log in to ${loginLink} with your new credentials:</p>
+      <p style="margin:8px 0;padding:12px 16px;background:#f3f4f6;border-radius:6px;font-family:monospace;">
+        DALI email: <strong>${daliEmail}</strong><br/>
+        Password: <strong>${tempPassword}</strong> (you'll be asked to set a password on first login).
+      </p>`;
+  } else if (daliEmail) {
+    accountBlock = `<p>As your first onboarding step, log in to ${loginLink} with your new DALI email: <strong>${daliEmail}</strong> and your existing password.</p>`;
+  } else {
+    accountBlock = `<p>Your DALI account is being set up — you'll receive your DALI login email shortly. In the meantime you can finish the rest of your onboarding below.</p>`;
+  }
 
   return `
     <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0;"/>
-    <p><img src="${logoUrl}" alt="DALI Lab" width="96" style="display:block;border:0;"/></p>
-    <p>Welcome to the DALI Lab!</p>
-    ${accountLine}
+    ${accountBlock}
     <p>Once you're in, finish setting up by completing your member profile and onboarding steps.</p>
-    <p><a href="${loginUrl}">Log in to DALI OS</a></p>
+    ${slackLine}
     <p>— The DALI Lab</p>
+    <p><img src="${logoUrl}" alt="DALI Lab" width="96" style="display:block;border:0;"/></p>
   `;
 }

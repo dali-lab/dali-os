@@ -23,16 +23,17 @@ export const meta: Route.MetaFunction = () => [{ title: "Welcome · DALI OS" }];
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
-  if (auth.user.type === "applicant") return redirect("/portal");
 
   const member = await prisma.dALIMember.findUnique({
     where: { userId: auth.user.sub },
     select: { onboardedAt: true },
   });
-  // Only un-onboarded members belong here; everyone else goes home.
-  if (!member || member.onboardedAt !== null) {
-    return redirect("/");
-  }
+  // Only un-onboarded members belong here. Non-members (applicants) go to the
+  // applicant portal; already-onboarded members go home. (deriveAuthType never
+  // returns "applicant" — the prior type check here was dead code; the
+  // DALIMember row is the real member/non-member signal.)
+  if (!member) return redirect("/portal");
+  if (member.onboardedAt !== null) return redirect("/");
 
   // Resolve the onboarding form's token, then load it the same way the fill
   // route does so we render an identical form inline (no redirect).

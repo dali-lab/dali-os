@@ -83,6 +83,7 @@ export default [
     route("education", "education/routes/education.tsx"),
 
     // Internal processes
+    route("internal-processes/onboarding", "internal-processes/routes/internal-processes.onboarding.tsx"),
     route("internal-processes/transfer", "internal-processes/routes/internal-processes.transfer.tsx"),
     route("internal-processes/level-up", "internal-processes/routes/internal-processes.level-up.tsx"),
     route("internal-processes/jobx", "internal-processes/routes/internal-processes.jobx.tsx"),
