@@ -124,7 +124,6 @@ export function onboardingEmailHtml(
   }
 
   return `
-    <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0;"/>
     ${accountBlock}
     <p>Once you're in, finish setting up by completing your member profile and onboarding steps.</p>
     ${slackLine}
