@@ -75,4 +75,59 @@ describe("interpretProfileForm", () => {
     if (!res.ok) return;
     expect(res.update).toEqual({});
   });
+
+  it("maps the new onboarding profile fields", () => {
+    const res = interpretProfileForm({
+      "profile.nameOnFile": "Jonathan Doe",
+      "profile.collegeId": "F00ABCD",
+      "profile.phoneNumber": "+1 555 010 1234",
+      "profile.ethnicity": "Asian",
+      "profile.dietaryRestrictions": "Vegetarian",
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.update).toEqual({
+      nameOnFile: "Jonathan Doe",
+      collegeId: "F00ABCD",
+      phoneNumber: "+1 555 010 1234",
+      ethnicity: "Asian",
+      dietaryRestrictions: "Vegetarian",
+    });
+  });
+
+  it("parses a valid birthday into a UTC-midnight Date", () => {
+    const res = interpretProfileForm({ "profile.birthday": "2004-09-15" });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.update.birthday).toBeInstanceOf(Date);
+    expect(res.update.birthday?.toISOString()).toBe("2004-09-15T00:00:00.000Z");
+  });
+
+  it("rejects a malformed birthday", () => {
+    const res = interpretProfileForm({ "profile.birthday": "Sept 15 2004" });
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error).toMatch(/valid date/);
+  });
+
+  it("rejects an impossible birthday date", () => {
+    const res = interpretProfileForm({ "profile.birthday": "2004-13-40" });
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error).toMatch(/valid date/);
+  });
+
+  it("rejects an impossible-but-shaped birthday (Feb 31)", () => {
+    const res = interpretProfileForm({ "profile.birthday": "2004-02-31" });
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error).toMatch(/valid date/);
+  });
+
+  it("skips a blank birthday without error", () => {
+    const res = interpretProfileForm({ "profile.birthday": "", "profile.major": "CS" });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.update).toEqual({ major: "CS" });
+  });
 });
