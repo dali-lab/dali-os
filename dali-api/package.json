@@ -23,6 +23,7 @@
     "@aws-sdk/s3-presigned-post": "^3.1038.0",
     "@aws-sdk/s3-request-presigner": "^3.1030.0",
     "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
     "@hocuspocus/extension-redis": "^3.4.4",
     "@hocuspocus/provider": "^3.4.4",
     "@hocuspocus/server": "^3.4.4",

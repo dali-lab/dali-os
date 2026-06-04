@@ -117,7 +117,8 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const memberUserIds = Array.from(new Set(preferences.map((p) => p.userId)));
 
-  const [users, rawAssignmentRows, projects, domains, roleRequests] = await Promise.all([
+  const [users, rawAssignmentRows, projects, domains, roleRequests, cardOrders] =
+    await Promise.all([
     prisma.user.findMany({
       where: { id: { in: memberUserIds } },
       select: {
@@ -165,6 +166,12 @@ export async function loader({ request }: Route.LoaderArgs) {
     prisma.projectRoleRequest.findMany({
       where: { termId: selectedTerm.id },
       select: { projectId: true, domainId: true, slots: true },
+    }),
+    // Manual within-column card order. columnKey is carried so a stale order
+    // from a card's previous column is ignored once it moves (see below).
+    prisma.staffingCardOrder.findMany({
+      where: { staffingCycleId: cycle.id },
+      select: { userId: true, sortKey: true, columnKey: true },
     }),
   ]);
 
@@ -440,6 +447,10 @@ export async function loader({ request }: Route.LoaderArgs) {
     projects,
     members,
     initialAssignments,
+    // Manual card order rows (userId, columnKey, sortKey). buildBoard applies a
+    // row only when its columnKey matches the card's current column, so a stale
+    // order from before a move is ignored. Sparse; unordered cards sort by name.
+    cardOrder: cardOrders,
     projectNames,
     domainNames,
     demandByProject,
@@ -495,6 +506,7 @@ export default function StaffingPage() {
         projects={data.projects}
         members={data.members}
         initialAssignments={data.initialAssignments}
+        cardOrder={data.cardOrder}
         projectNames={data.projectNames}
         domainNames={data.domainNames}
         demandByProject={data.demandByProject}

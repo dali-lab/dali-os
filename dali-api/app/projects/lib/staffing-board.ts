@@ -122,8 +122,24 @@ export function buildBoard(args: {
   projectIds: string[];
   members: MemberInput[];
   assignments: Assignment[];
+  // Manual card-order rows. A row applies only when its columnKey matches the
+  // card's resolved column, so a stale order from before a move is ignored.
+  // Cards with an applicable row sort first (ascending sortKey); the rest fall
+  // back to last-name.
+  cardOrder?: { userId: string; columnKey: string; sortKey: number }[];
 }): Record<string, MemberCardModel[]> {
-  const { projectIds, members, assignments } = args;
+  const { projectIds, members, assignments, cardOrder = [] } = args;
+
+  // (columnKey → (userId → sortKey)) for column-scoped lookup.
+  const orderByColumn = new Map<string, Map<string, number>>();
+  for (const o of cardOrder) {
+    let m = orderByColumn.get(o.columnKey);
+    if (!m) {
+      m = new Map();
+      orderByColumn.set(o.columnKey, m);
+    }
+    m.set(o.userId, o.sortKey);
+  }
 
   const byUser = new Map<string, Assignment>();
   for (const a of assignments) {
@@ -136,13 +152,7 @@ export function buildBoard(args: {
   const columns: Record<string, MemberCardModel[]> = { [UNASSIGNED]: [] };
   for (const pid of projectIds) columns[pid] = [];
 
-  const sortedMembers = [...members].sort((a, b) => {
-    const ln = a.lastName.localeCompare(b.lastName);
-    if (ln !== 0) return ln;
-    return a.firstName.localeCompare(b.firstName);
-  });
-
-  for (const m of sortedMembers) {
+  for (const m of members) {
     const assignment = byUser.get(m.userId) ?? null;
     const columnKey = assignment?.projectId && columns[assignment.projectId]
       ? assignment.projectId
@@ -150,6 +160,25 @@ export function buildBoard(args: {
 
     const card = toCard(m, columnKey, assignment);
     columns[columnKey].push(card);
+  }
+
+  // Order within each column: cards with a manual sortKey lead (ascending),
+  // then the rest alphabetically by last, first name. A card whose order was
+  // saved in a different column has no entry here (the loader keys order by
+  // user, not column), so it just falls into the alphabetical tail — correct,
+  // since its old position no longer applies.
+  const byName = (a: MemberCardModel, b: MemberCardModel) =>
+    a.lastName.localeCompare(b.lastName) || a.firstName.localeCompare(b.firstName);
+  for (const key of Object.keys(columns)) {
+    const order = orderByColumn.get(key);
+    columns[key].sort((a, b) => {
+      const oa = order?.get(a.userId);
+      const ob = order?.get(b.userId);
+      if (oa != null && ob != null) return oa - ob;
+      if (oa != null) return -1;
+      if (ob != null) return 1;
+      return byName(a, b);
+    });
   }
 
   return columns;
