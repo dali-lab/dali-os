@@ -88,8 +88,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       description: true,
       status: true,
       calendarEmail: true,
+      teamGroupEmail: true,
       imageUrl: true,
       repoUrls: true,
+      deploymentUrl: true,
       githubTeamSlug: true,
       overviewPageId: true,
       prdPageId: true,
@@ -444,8 +446,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       description: project.description,
       status: project.status,
       calendarEmail: project.calendarEmail,
+      teamGroupEmail: project.teamGroupEmail,
       imageUrl: project.imageUrl,
       repoUrls: project.repoUrls,
+      deploymentUrl: project.deploymentUrl,
       githubTeamSlug: project.githubTeamSlug,
       overviewPageId: project.overviewPageId,
       prdPageId: project.prdPageId,
@@ -634,11 +638,12 @@ export async function action({ request, params }: Route.ActionArgs) {
     return redirect(`/projects/${params.id}`);
   }
 
-  // Details form: calendar email, image, repos. (Description + name/status
-  // are saved by their own segments above.)
+  // Details form: calendar email, image, repos, deployment. (Description +
+  // name/status are saved by their own segments above.)
   const calendarEmailRaw = (form.get("calendarEmail") as string | null)?.trim() ?? "";
   const imageUrlRaw = (form.get("imageUrl") as string | null)?.trim() ?? "";
   const repoUrlsRaw = (form.get("repoUrls") as string | null) ?? "";
+  const deploymentUrlRaw = (form.get("deploymentUrl") as string | null)?.trim() ?? "";
   const termCountRaw = (form.get("termCount") as string | null) ?? "";
   const githubTeamRaw = (form.get("githubTeamSlug") as string | null)?.trim() ?? "";
 
@@ -669,6 +674,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       calendarEmail: calendarEmailRaw === "" ? null : calendarEmailRaw,
       imageUrl: imageUrlRaw === "" ? null : imageUrlRaw,
       repoUrls,
+      deploymentUrl: deploymentUrlRaw === "" ? null : deploymentUrlRaw,
       termCount,
       githubTeamSlug,
     },
@@ -1334,6 +1340,26 @@ function DetailsSegment({
               )}
             </label>
 
+            {/* Team email group — provisioned by the staffing "Create team email
+                group" automation; read-only here (not lead-editable). */}
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="text-muted-foreground">Team email group</span>
+              <span className="px-2 py-1.5 text-sm">
+                {project.teamGroupEmail ? (
+                  <a
+                    href={`mailto:${project.teamGroupEmail}`}
+                    className="text-accent-coral hover:underline break-all"
+                  >
+                    {project.teamGroupEmail}
+                  </a>
+                ) : (
+                  <span className="text-muted-foreground">
+                    Not created yet — run staffing finalize.
+                  </span>
+                )}
+              </span>
+            </label>
+
             <label className="flex flex-col gap-1 text-xs">
               <span className="text-muted-foreground">Image URL</span>
               {editing ? (
@@ -1420,6 +1446,30 @@ function DetailsSegment({
               <span className="px-2 py-1.5 text-sm text-muted-foreground">
                 —
               </span>
+            )}
+          </label>
+
+          <label className="flex flex-col gap-1 text-xs">
+            <span className="text-muted-foreground">Deployment</span>
+            {editing ? (
+              <input
+                name="deploymentUrl"
+                type="url"
+                defaultValue={project.deploymentUrl ?? ""}
+                placeholder="https://projectname.fly.dev"
+                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 font-mono"
+              />
+            ) : project.deploymentUrl ? (
+              <a
+                href={project.deploymentUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="px-2 py-1.5 text-sm text-accent-coral hover:underline break-all"
+              >
+                {project.deploymentUrl}
+              </a>
+            ) : (
+              <span className="px-2 py-1.5 text-sm text-muted-foreground">—</span>
             )}
           </label>
         </Form>
