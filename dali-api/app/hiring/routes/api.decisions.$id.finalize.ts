@@ -34,6 +34,9 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (decision.stage !== "Draft") {
     return Response.json({ error: "Only Draft decisions can be finalized" }, { status: 409 });
   }
+  if (decision.supersededAt !== null) {
+    return Response.json({ error: "This Draft has been superseded" }, { status: 409 });
+  }
 
   const gate = await requireApiSignedOrForbidden(
     auth.user.sub,
@@ -41,16 +44,47 @@ export async function action({ request, params }: Route.ActionArgs) {
   );
   if (gate) return gate;
 
-  const finalized = await prisma.decision.create({
-    data: {
-      domainApplicationId: decision.domainApplicationId,
-      type: decision.type,
-      stage: "Final",
-      madeById: auth.user.sub,
-      notes: decision.notes,
-      waitlistRank: decision.waitlistRank,
-      parentDecisionId: decision.id,
-    },
+  // Supersede any prior non-superseded Final for this applicant before
+  // creating the new one. The partial unique index requires the slot to be
+  // free before insert. See api.delibs.$id.ts close-delibs for the same
+  // pattern.
+  const finalized = await prisma.$transaction(async (tx) => {
+    const priorFinal = await tx.decision.findFirst({
+      where: {
+        domainApplicationId: decision.domainApplicationId,
+        stage: "Final",
+        supersededAt: null,
+      },
+      select: { id: true },
+    });
+
+    if (priorFinal) {
+      await tx.decision.update({
+        where: { id: priorFinal.id },
+        data: { supersededAt: new Date() },
+      });
+    }
+
+    const created = await tx.decision.create({
+      data: {
+        domainApplicationId: decision.domainApplicationId,
+        type: decision.type,
+        stage: "Final",
+        madeById: auth.user.sub,
+        notes: decision.notes,
+        waitlistRank: decision.waitlistRank,
+        parentDecisionId: decision.id,
+      },
+    });
+
+    if (priorFinal) {
+      await tx.decision.update({
+        where: { id: priorFinal.id },
+        data: { supersededById: created.id },
+      });
+    }
+
+    return created;
   });
 
   await logAuditEvent({

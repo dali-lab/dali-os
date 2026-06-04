@@ -109,7 +109,7 @@ export async function loader({ request }: Route.LoaderArgs) {
                       },
                     },
                   },
-                  decisions: { orderBy: { createdAt: "desc" } },
+                  decisions: { where: { supersededAt: null }, orderBy: { createdAt: "desc" } },
                   // Scheduled drives status inference; Completed feeds the
                   // pre-decision "Post-interview" pill in the table.
                   // Cancelled rows stay filtered out (audit-only).
@@ -268,7 +268,7 @@ export async function loader({ request }: Route.LoaderArgs) {
               ...daDomainMatch,
               application: { applicationCycleId: cycle.id, ...inReviewPipelineFilter },
               reviews: { every: { submittedAt: { not: null } }, some: {} },
-              decisions: { none: { stage: { in: ["Final", "Released"] } } },
+              decisions: { none: { stage: { in: ["Final", "Released"] }, supersededAt: null } },
             },
           })
         : 0;
@@ -284,7 +284,7 @@ export async function loader({ request }: Route.LoaderArgs) {
               ...(isInternToFull
                 ? {
                     reviews: { every: { submittedAt: { not: null } }, some: {} },
-                    decisions: { none: { stage: { in: ["Final", "Released"] } } },
+                    decisions: { none: { stage: { in: ["Final", "Released"] }, supersededAt: null } },
                   }
                 : {
                     interviews: { some: { status: "Completed" } },
@@ -310,6 +310,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         ? await prisma.decision.findMany({
             where: {
               stage: "Draft",
+              supersededAt: null,
               domainApplication: {
                 ...daDomainMatch,
                 application: { applicationCycleId: cycle.id },

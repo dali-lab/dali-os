@@ -25,8 +25,12 @@ export const domainApplicationStatusInclude = {
       statusUpdates: true,
     },
   },
-  // Ordered newest-first so the first Released entry we encounter is the latest.
+  // Only the active (non-superseded) decisions feed status inference.
+  // Superseded rows are kept for audit history but should never drive what
+  // the applicant sees. Ordered newest-first so the first Released entry we
+  // encounter is the latest.
   decisions: {
+    where: { supersededAt: null },
     orderBy: { createdAt: "desc" as const },
   },
   // A DomainApplication can accumulate historical Interview rows across

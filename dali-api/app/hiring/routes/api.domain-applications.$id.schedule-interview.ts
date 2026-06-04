@@ -46,7 +46,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   const latestDecision = await prisma.decision.findFirst({
-    where: { domainApplicationId: da.id, stage: "Released" },
+    where: { domainApplicationId: da.id, stage: "Released", supersededAt: null },
     orderBy: { createdAt: "desc" },
   });
   if (!latestDecision || latestDecision.type !== "InvitedToInterview") {

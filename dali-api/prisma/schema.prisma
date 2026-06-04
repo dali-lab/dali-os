@@ -714,11 +714,13 @@ enum DecisionStage {
   Released // visible to applicant; triggers notification hook (hiring lead releases)
 }
 
-// Append-only, immutable decision records. Never updated — only created.
-// Current decision = latest record by createdAt.
-// To change a Draft: create a new record (supersedes old by timestamp).
-// To finalize: create new record with stage=Final.
-// To release: create new record with stage=Released.
+// Decision records form an append-only history. New rows are never deleted;
+// when a decision is replaced (e.g. delibs reopened and reclosed with a
+// different column, or a Draft re-finalized) the older row is marked
+// superseded and the new row becomes the active one. At most one
+// non-superseded row may exist per (domainApplication, stage) — enforced by
+// a partial unique index (see migration). Reads that need the "current"
+// decision should filter `supersededAt: null`.
 model Decision {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
@@ -741,8 +743,17 @@ model Decision {
   parent           Decision?  @relation("DecisionLineage", fields: [parentDecisionId], references: [id])
   children         Decision[] @relation("DecisionLineage")
 
+  // Within-stage replacement. When a new Draft/Final/Released is created for
+  // a domainApplication that already has one at that stage, the older row's
+  // supersededAt/supersededById are set in the same transaction.
+  supersededAt   DateTime?
+  supersededById String?
+  supersededBy   Decision?  @relation("DecisionSupersession", fields: [supersededById], references: [id])
+  supersedes     Decision[] @relation("DecisionSupersession")
+
   @@index([domainApplicationId, createdAt])
   @@index([parentDecisionId])
+  @@index([supersededById])
 }
 
 // ─── Application Reviews ─────────────────────────────────────────────────────

@@ -70,12 +70,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const qualifyingFilter = session.type === "Initial"
     ? {
         reviews: { every: { submittedAt: { not: null } }, some: {} },
-        decisions: { none: { stage: { in: ["Final" as const, "Released" as const] } } },
+        decisions: { none: { stage: { in: ["Final" as const, "Released" as const] }, supersededAt: null } },
       }
     : isInternToFull
       ? {
           reviews: { every: { submittedAt: { not: null } }, some: {} },
-          decisions: { none: { stage: { in: ["Final" as const, "Released" as const] } } },
+          decisions: { none: { stage: { in: ["Final" as const, "Released" as const] }, supersededAt: null } },
         }
       : {
           interviews: { some: { status: "Completed" as const } },

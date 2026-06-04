@@ -90,15 +90,65 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
   }
 
-  const decision = await prisma.decision.create({
-    data: {
-      domainApplicationId: params.id,
-      type,
-      stage,
-      madeById: auth.user.sub,
-      notes: notes ?? null,
-      waitlistRank: waitlistRank ?? null,
-    },
+  // Block manual Released creation if one already exists for this applicant —
+  // releasing twice would send a conflicting notice. For Draft/Final we
+  // supersede the prior row in the same transaction so the partial unique
+  // index doesn't reject the insert.
+  if (stage === "Released") {
+    const existingReleased = await prisma.decision.findFirst({
+      where: {
+        domainApplicationId: params.id,
+        stage: "Released",
+        supersededAt: null,
+      },
+      select: { id: true, type: true },
+    });
+    if (existingReleased) {
+      return Response.json(
+        {
+          error: `This applicant already has a released ${existingReleased.type} decision.`,
+        },
+        { status: 409 },
+      );
+    }
+  }
+
+  const decision = await prisma.$transaction(async (tx) => {
+    const prior = await tx.decision.findFirst({
+      where: {
+        domainApplicationId: params.id,
+        stage,
+        supersededAt: null,
+      },
+      select: { id: true },
+    });
+
+    if (prior) {
+      await tx.decision.update({
+        where: { id: prior.id },
+        data: { supersededAt: new Date() },
+      });
+    }
+
+    const created = await tx.decision.create({
+      data: {
+        domainApplicationId: params.id,
+        type,
+        stage,
+        madeById: auth.user.sub,
+        notes: notes ?? null,
+        waitlistRank: waitlistRank ?? null,
+      },
+    });
+
+    if (prior) {
+      await tx.decision.update({
+        where: { id: prior.id },
+        data: { supersededById: created.id },
+      });
+    }
+
+    return created;
   });
 
   return Response.json(decision, { status: 201 });
