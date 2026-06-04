@@ -41,6 +41,7 @@ const TEXT_FIELDS = [
   "githubUsername",
   "personalSite",
   "timeZone",
+  "dietaryRestrictions",
 ] as const;
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -66,6 +67,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       personalSite: true,
       photoUrl: true,
       timeZone: true,
+      dietaryRestrictions: true,
       domainEligibilities: {
         select: {
           id: true,
@@ -231,6 +233,7 @@ const FIELD_LABELS: Record<string, string> = {
   githubUsername: "GitHub username",
   personalSite: "Personal site",
   timeZone: "Time zone (IANA, e.g. America/New_York)",
+  dietaryRestrictions: "Dietary restrictions",
 };
 
 export default function MemberDetail() {

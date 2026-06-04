@@ -75,6 +75,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         collegeId: true,
         phoneNumber: true,
         birthday: true,
+        dietaryRestrictions: true,
       },
     }),
     getUserRoles(userId),
@@ -230,6 +231,12 @@ export default function Profile() {
           <Detail label="Birthday" value={formatBirthday(user.birthday)} />
           <Detail label="Phone" value={user.phoneNumber} />
           <Detail label="College ID" value={user.collegeId} />
+          <div className="sm:col-span-2">
+            <dt className="text-xs text-muted-foreground">Dietary restrictions</dt>
+            <dd className="text-sm text-foreground whitespace-pre-wrap">
+              {user.dietaryRestrictions || "—"}
+            </dd>
+          </div>
           <div>
             <dt className="text-xs text-muted-foreground mb-0.5">GitHub</dt>
             <dd className="text-sm text-foreground">
