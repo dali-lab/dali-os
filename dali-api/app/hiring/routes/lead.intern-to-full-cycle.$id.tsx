@@ -478,10 +478,7 @@ export default function InternToFullCycleSetup() {
     <div className="max-w-4xl mx-auto py-8 px-6 space-y-8">
       <header className="flex items-center justify-between">
         <div>
-          <Link to="/hiring/lead" className="text-xs text-muted-foreground hover:underline">
-            ← All cycles
-          </Link>
-          <h1 className="font-heading text-2xl font-bold text-dark-blue mt-1">{cycle.name}</h1>
+          <h1 className="font-heading text-2xl font-bold text-dark-blue">{cycle.name}</h1>
           <p className="text-xs text-muted-foreground mt-1">
             Fellowship cycle · {cycle.status}
           </p>
