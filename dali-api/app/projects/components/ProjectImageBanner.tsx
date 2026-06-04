@@ -1,43 +1,45 @@
 import { useEffect, useRef, useState } from "react";
+import { useFetcher } from "react-router";
+import { Camera } from "lucide-react";
 import {
   MAX_UPLOAD_BYTES,
   MAX_UPLOAD_LABEL,
   fileMatchesAccept,
 } from "~/lib/file-validation";
-import { initialsFromName } from "~/lib/display";
-import { PhotoCropModal } from "./PhotoCropModal";
+import { PhotoCropModal } from "~/components/PhotoCropModal";
 
 const ACCEPT = "image/png,image/jpeg,image/webp,image/gif";
 
-// Profile-photo control: pick an image → crop/zoom modal → upload the cropped
-// result to S3 → store the returned key in a hidden `photoUrl` input. The
-// surrounding form persists that key exactly as the old free-text field did;
-// loaders presign it back to a URL for display (see resolvePhotoUrl).
-export function PhotoUploadField({
-  userId,
-  name,
-  initialKey,
+// Full-width project banner that doubles as the image-upload control. When the
+// project has no image, a default gradient (with the project initial) shows
+// instead. Clicking the banner (or its camera button) picks → crops → uploads
+// to S3 → saves immediately via the page action's update-image intent. No
+// "edit details → save" round-trip. Mirrors members' ProfilePhotoAvatar.
+export function ProjectImageBanner({
+  projectId,
+  projectName,
   initialPreviewUrl,
-  readOnly,
+  canEdit,
 }: {
-  userId: string;
-  name: string;
-  initialKey: string | null;
+  projectId: string;
+  projectName: string;
   initialPreviewUrl: string | null;
-  readOnly: boolean;
+  canEdit: boolean;
 }) {
+  const fetcher = useFetcher();
   const fileRef = useRef<HTMLInputElement>(null);
-  const [key, setKey] = useState(initialKey ?? "");
-  const [previewUrl, setPreviewUrl] = useState<string | null>(
-    initialPreviewUrl ?? null,
-  );
+  const [previewUrl, setPreviewUrl] = useState<string | null>(initialPreviewUrl ?? null);
   const [cropSrc, setCropSrc] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Object URLs we created and are responsible for revoking.
   const previewBlobUrl = useRef<string | null>(null);
   const cropBlobUrl = useRef<string | null>(null);
+
+  // Loader is source of truth after a save.
+  useEffect(() => {
+    setPreviewUrl(initialPreviewUrl ?? null);
+  }, [initialPreviewUrl]);
 
   useEffect(
     () => () => {
@@ -55,7 +57,6 @@ export function PhotoUploadField({
     const file = e.target.files?.[0];
     if (!file) return;
     setError(null);
-
     if (file.size > MAX_UPLOAD_BYTES) {
       setError(`Image too large (max ${MAX_UPLOAD_LABEL})`);
       clearFileInput();
@@ -66,7 +67,6 @@ export function PhotoUploadField({
       clearFileInput();
       return;
     }
-
     const url = URL.createObjectURL(file);
     if (cropBlobUrl.current) URL.revokeObjectURL(cropBlobUrl.current);
     cropBlobUrl.current = url;
@@ -93,7 +93,7 @@ export function PhotoUploadField({
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          key: `avatars/${userId}/${crypto.randomUUID()}.${ext}`,
+          key: `project-images/${projectId}/${crypto.randomUUID()}.${ext}`,
           contentType: blob.type || "image/webp",
           contentLength: blob.size,
           accept: ACCEPT,
@@ -113,7 +113,7 @@ export function PhotoUploadField({
       for (const [n, v] of Object.entries(fields as Record<string, string>)) {
         formData.append(n, v);
       }
-      formData.append("file", blob, `avatar.${ext}`);
+      formData.append("file", blob, `image.${ext}`);
       const uploadRes = await fetch(url, { method: "POST", body: formData });
       if (!uploadRes.ok) {
         const body = await uploadRes.text().catch(() => "");
@@ -127,7 +127,11 @@ export function PhotoUploadField({
       if (previewBlobUrl.current) URL.revokeObjectURL(previewBlobUrl.current);
       previewBlobUrl.current = newPreview;
       setPreviewUrl(newPreview);
-      setKey(uploadedKey);
+
+      fetcher.submit(
+        { intent: "update-image", imageUrl: uploadedKey },
+        { method: "post" },
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
     } finally {
@@ -135,67 +139,50 @@ export function PhotoUploadField({
     }
   }
 
-  function handleRemove() {
-    setKey("");
-    if (previewBlobUrl.current) {
-      URL.revokeObjectURL(previewBlobUrl.current);
-      previewBlobUrl.current = null;
-    }
-    setPreviewUrl(null);
-    setError(null);
-  }
+  const busy = uploading || fetcher.state !== "idle";
+  const initial = projectName.trim().charAt(0).toUpperCase() || "?";
+
+  const clickable = canEdit && !busy;
 
   return (
-    <div className="flex flex-col gap-1 text-xs">
-      <span className="text-muted-foreground">Profile photo</span>
-      <div className="flex items-center gap-4">
-        <div className="relative w-20 h-20 flex-shrink-0">
-          {previewUrl ? (
-            <img
-              src={previewUrl}
-              alt=""
-              className="w-20 h-20 rounded-lg object-cover border border-border"
-            />
-          ) : (
-            <div className="w-20 h-20 rounded-lg border border-border bg-accent-coral/15 text-accent-coral flex items-center justify-center font-bold text-xl">
-              {initialsFromName(name)}
-            </div>
-          )}
-          {uploading && (
-            <div className="absolute inset-0 rounded-lg bg-black/40 flex items-center justify-center">
-              <span className="inline-block w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-            </div>
-          )}
-        </div>
-
-        {!readOnly && (
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                disabled={uploading}
-                onClick={() => fileRef.current?.click()}
-                className="px-3 py-1.5 text-xs font-medium rounded-md border border-border text-foreground hover:bg-muted transition-colors disabled:opacity-60"
-              >
-                {previewUrl ? "Replace" : "Upload photo"}
-              </button>
-              {previewUrl && (
-                <button
-                  type="button"
-                  disabled={uploading}
-                  onClick={handleRemove}
-                  className="px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-red-500 transition-colors disabled:opacity-60"
-                >
-                  Remove
-                </button>
-              )}
-            </div>
-            <p className="text-[11px] text-muted-foreground">
-              PNG, JPEG, WebP, or GIF · max {MAX_UPLOAD_LABEL}
-            </p>
+    <div className="flex flex-col gap-1">
+      <button
+        type="button"
+        disabled={!clickable}
+        onClick={() => fileRef.current?.click()}
+        aria-label={previewUrl ? "Replace project image" : "Upload project image"}
+        className={`group relative block w-full h-48 rounded-lg overflow-hidden border border-border ${
+          clickable ? "cursor-pointer" : "cursor-default"
+        }`}
+      >
+        {previewUrl ? (
+          <img src={previewUrl} alt="" className="w-full h-full object-cover" />
+        ) : (
+          // Default banner: deterministic gradient + project initial.
+          <div className="w-full h-full bg-gradient-to-br from-accent-coral/30 via-accent-coral/15 to-accent-green/20 flex items-center justify-center">
+            <span className="font-heading font-bold text-5xl text-accent-coral/70">
+              {initial}
+            </span>
           </div>
         )}
-      </div>
+
+        {busy && (
+          <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+            <span className="inline-block w-7 h-7 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+          </div>
+        )}
+
+        {canEdit && !busy && (
+          <>
+            {/* Hover hint over the whole banner. */}
+            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors" />
+            <span className="absolute bottom-2 right-2 inline-flex items-center gap-1.5 rounded-md bg-black/55 text-white text-xs font-medium px-2.5 py-1.5 opacity-90">
+              <Camera className="w-4 h-4" />
+              {previewUrl ? "Replace image" : "Upload image"}
+            </span>
+          </>
+        )}
+      </button>
 
       <input
         ref={fileRef}
@@ -204,16 +191,8 @@ export function PhotoUploadField({
         onChange={handleInputChange}
         className="hidden"
       />
-      <input type="hidden" name="photoUrl" value={key} />
 
       {error && <p className="text-xs text-red-500">{error}</p>}
-
-      <PhotoCropModal
-        open={cropSrc !== null}
-        imageSrc={cropSrc}
-        onCancel={closeCrop}
-        onConfirm={handleConfirm}
-      />
     </div>
   );
 }

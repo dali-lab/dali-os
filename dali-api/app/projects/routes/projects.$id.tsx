@@ -21,7 +21,7 @@ import { prisma } from "~/lib/db";
 import { ensureProjectGroup } from "~/lib/groups";
 import { requireAuth } from "~/lib/auth";
 import { resolvePhotoUrl } from "~/lib/photo";
-import { PhotoUploadField } from "~/components/PhotoUploadField";
+import { ProjectImageBanner } from "../components/ProjectImageBanner";
 import { parseSessionCookie } from "~/lib/cookies";
 import { isCore, isProjectMember, canManageStaffing, currentTerm } from "~/lib/roles";
 import { getPresenceUser } from "~/lib/presence-user";
@@ -547,6 +547,17 @@ export async function action({ request, params }: Route.ActionArgs) {
     return redirect(`/projects/${params.id}`);
   }
 
+  // Image-only update: the banner saves immediately on upload (its own fetcher),
+  // independent of the details form. Same gate as above (already checked).
+  if (intent === "update-image") {
+    const imageUrlRaw = (form.get("imageUrl") as string | null)?.trim() ?? "";
+    await prisma.project.update({
+      where: { id: params.id },
+      data: { imageUrl: imageUrlRaw === "" ? null : imageUrlRaw },
+    });
+    return redirect(`/projects/${params.id}`);
+  }
+
   // Per-(domain, term) scope cells. Bulk write: the form names cells as
   // "scope:<domainId>:<termId>" so a single Save commits every cell at
   // once. Empty values delete the row to keep the table tidy. A stale
@@ -646,10 +657,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     return redirect(`/projects/${params.id}`);
   }
 
-  // Details form: calendar email, image, repos, deployment. (Description +
-  // name/status are saved by their own segments above.)
+  // Details form: calendar email, repos, deployment. (Description, name/status,
+  // and the image banner are saved by their own segments above.)
   const calendarEmailRaw = (form.get("calendarEmail") as string | null)?.trim() ?? "";
-  const imageUrlRaw = (form.get("imageUrl") as string | null)?.trim() ?? "";
   const repoUrlsRaw = (form.get("repoUrls") as string | null) ?? "";
   const deploymentUrlRaw = (form.get("deploymentUrl") as string | null)?.trim() ?? "";
   const termCountRaw = (form.get("termCount") as string | null) ?? "";
@@ -680,7 +690,6 @@ export async function action({ request, params }: Route.ActionArgs) {
     where: { id: params.id },
     data: {
       calendarEmail: calendarEmailRaw === "" ? null : calendarEmailRaw,
-      imageUrl: imageUrlRaw === "" ? null : imageUrlRaw,
       repoUrls,
       deploymentUrl: deploymentUrlRaw === "" ? null : deploymentUrlRaw,
       termCount,
@@ -913,13 +922,12 @@ function ProjectHeader({
 
   return (
     <header className="flex flex-col gap-4">
-      {project.imageUrlResolved && (
-        <img
-          src={project.imageUrlResolved}
-          alt=""
-          className="w-full h-48 rounded-lg object-cover border border-border"
-        />
-      )}
+      <ProjectImageBanner
+        projectId={project.id}
+        projectName={project.name}
+        initialPreviewUrl={project.imageUrlResolved}
+        canEdit={canEdit}
+      />
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-3">
           <div key={resetKey} className="flex items-center gap-2 flex-wrap">
@@ -1368,19 +1376,6 @@ function DetailsSegment({
               </span>
             </label>
 
-            <div className="sm:col-span-2">
-              <PhotoUploadField
-                userId={project.id}
-                name={project.name}
-                label="Project image"
-                fieldName="imageUrl"
-                keyPrefix="project-images"
-                shape="wide"
-                initialKey={project.imageUrl}
-                initialPreviewUrl={project.imageUrlResolved}
-                readOnly={!editing}
-              />
-            </div>
 
             <label className="flex flex-col gap-1 text-xs">
               <span className="text-muted-foreground">GitHub team</span>
