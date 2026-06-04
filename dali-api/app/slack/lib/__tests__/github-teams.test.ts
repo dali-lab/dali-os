@@ -3,7 +3,7 @@ import {
   ensureTeam,
   addTeamMember,
   __setGitHubClientForTests,
-} from "~/slack/lib/github-app";
+} from "~/lib/github";
 import type { Octokit } from "@octokit/rest";
 
 // Minimal fake of the Octokit surface the team helpers touch.

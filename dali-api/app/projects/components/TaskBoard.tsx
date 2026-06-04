@@ -109,6 +109,7 @@ export function TaskBoard({ projectId, initialTasks, options, canManage }: Props
         title: values.title,
         status: CREATE_STATUS,
         dueAt: values.dueAt,
+        ...(values.github ? { github: values.github } : {}),
       }),
     });
     if (!res.ok) {
@@ -140,6 +141,10 @@ export function TaskBoard({ projectId, initialTasks, options, canManage }: Props
         sprintId: null,
         assignees,
         domain,
+        // The GH issue is filed async after we ack; the link surfaces on the
+        // next loader refresh. Null here means no badge in the meantime.
+        githubIssueUrl: null,
+        githubIssueNumber: null,
       },
     ]);
     setIsCreating(false);

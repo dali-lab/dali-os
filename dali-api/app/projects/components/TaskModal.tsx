@@ -13,13 +13,16 @@ const PRIORITIES: Priority[] = ["Low", "Normal", "High", "Urgent"];
 type Patch = Partial<TaskCardModel>;
 
 // Field values collected by the modal in create mode. The board turns these
-// into a POST (title/dueAt) plus follow-up patches (priority/domain/assignees).
+// into a POST (title/dueAt/github) plus follow-up patches (priority/domain/assignees).
 export type NewTaskValues = {
   title: string;
   priority: Priority;
   dueAt: string | null;
   domainId: string | null;
   assigneeIds: string[];
+  // Present = mirror to GitHub on create. `repo` is one of project.repoUrls
+  // (normalized to "owner/repo" by the server).
+  github: { repo: string } | null;
 };
 
 export function TaskModal({
@@ -49,6 +52,14 @@ export function TaskModal({
   );
   const [domainId, setDomainId] = useState<string>(task?.domain?.id ?? "");
   const [saving, setSaving] = useState(false);
+
+  // GitHub mirror toggle (create mode only). Default to the first project repo
+  // when there are any; hidden entirely when the project has no repos.
+  const githubRepos = options.repoUrls
+    .map((u) => normalizeRepoForDisplay(u))
+    .filter((r): r is string => !!r);
+  const [githubEnabled, setGithubEnabled] = useState(false);
+  const [githubRepo, setGithubRepo] = useState<string>(githubRepos[0] ?? "");
 
   // Reset local state if the modal stays mounted across task changes (it
   // shouldn't today, but cheap insurance). Create mode has no task to track.
@@ -108,6 +119,7 @@ export function TaskModal({
         dueAt: dueDate ? endOfDayIso(dueDate) : null,
         domainId: domainId === "" ? null : domainId,
         assigneeIds,
+        github: githubEnabled && githubRepo ? { repo: githubRepo } : null,
       });
       onClose();
     } finally {
@@ -194,6 +206,45 @@ export function TaskModal({
             />
           </Field>
         </div>
+
+        {isCreate && canManage && githubRepos.length > 0 && (
+          <div className="flex flex-col gap-2 pt-2 border-t border-border">
+            <label className="flex items-center gap-2 text-sm text-foreground">
+              <input
+                type="checkbox"
+                checked={githubEnabled}
+                onChange={(e) => setGithubEnabled(e.target.checked)}
+              />
+              Create GitHub issue
+            </label>
+            {githubEnabled && (
+              <select
+                value={githubRepo}
+                onChange={(e) => setGithubRepo(e.target.value)}
+                className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
+              >
+                {githubRepos.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+        )}
+
+        {!isCreate && task?.githubIssueUrl && (
+          <div className="pt-2 border-t border-border text-xs">
+            <a
+              href={task.githubIssueUrl}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="text-accent-coral hover:underline"
+            >
+              GitHub issue #{task.githubIssueNumber} ↗
+            </a>
+          </div>
+        )}
 
         <div className="flex justify-end gap-2 pt-2 border-t border-border">
           <button
@@ -290,6 +341,18 @@ function AssigneePicker({
       ))}
     </div>
   );
+}
+
+// Strip scheme/host and `.git` from a project's repo URL so the dropdown
+// shows "owner/repo". Returns null when the value can't be reduced cleanly —
+// those entries are dropped from the picker rather than confusing the user.
+function normalizeRepoForDisplay(input: string): string | null {
+  let s = input.trim();
+  s = s.replace(/^https?:\/\/[^/]+\//, "");
+  s = s.replace(/^git@[^:]+:/, "");
+  s = s.replace(/\.git$/, "");
+  s = s.replace(/\/+$/, "");
+  return /^[^/\s]+\/[^/\s]+$/.test(s) ? s : null;
 }
 
 function dateInputValue(iso: string): string {
