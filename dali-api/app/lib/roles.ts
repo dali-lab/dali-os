@@ -198,24 +198,14 @@ export async function currentTerm() {
 // ─── Staffing-board access ───────────────────────────────────────────────────
 
 /**
- * Allowed to read + modify the staffing board: admins, or Core members whose
- * leadTitle implies staffing authority (we match the substring "staffing"
- * case-insensitively so titles like "Staffing Lead", "Staffing Coordinator",
- * "Co-Lead, Staffing" all qualify without us hardcoding strings).
+ * Allowed to read + modify the staffing board: any Core member (admins, or
+ * anyone with a current-term CoreAssignment). Previously this was narrowed to
+ * Core members whose leadTitle contained "staffing", but every Core member who
+ * can view the board should also be able to manage it — same membership set as
+ * `isCore`, so the board's view + mutate gates align.
  */
 export async function canManageStaffing(userId: string): Promise<boolean> {
-  if (await isAdmin(userId)) return true;
-  const term = await currentTerm();
-  if (!term) return false;
-  const core = await prisma.coreAssignment.findFirst({
-    where: {
-      userId,
-      termId: term.id,
-      leadTitle: { contains: "staffing", mode: "insensitive" },
-    },
-    select: { id: true },
-  });
-  return core !== null;
+  return isCore(userId);
 }
 
 // ─── Cycle-scoped access ─────────────────────────────────────────────────────
