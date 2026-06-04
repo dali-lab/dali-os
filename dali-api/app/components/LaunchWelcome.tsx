@@ -259,16 +259,25 @@ export function LaunchWelcome({
   const titleId = useId();
 
   useEffect(() => {
-    // Server-driven auto-show wins over the browser's localStorage flag: a
-    // freshly-onboarded member sees the tour even in a browser where someone
-    // else dismissed it before.
-    if (shouldShowTour) {
-      setPhase("modal");
-      setStep(0);
+    // Auto-show is purely server-driven: only a freshly-onboarded member
+    // (onboardedAt set, tourCompletedAt null) sees the tour automatically.
+    // localStorage no longer triggers it — clearing browser state or opening
+    // incognito won't re-pop the welcome modal for an established member.
+    // localStorage IS still consulted to *resume* a tour mid-flight on reload,
+    // so a freshly-onboarded user who started the tour and then reloaded
+    // continues where they were instead of jumping back to step 0.
+    if (!shouldShowTour) {
+      setPhase("done");
       return;
     }
-    setPhase(readPhase());
-    setStep(readStep(steps.length));
+    const resumed = readPhase();
+    if (resumed === "card") {
+      setPhase("card");
+      setStep(readStep(steps.length));
+    } else {
+      setPhase("modal");
+      setStep(0);
+    }
   }, [steps.length, shouldShowTour]);
 
   // Manual re-run: a "Start tour" button (next to the DALI OS logo) dispatches
@@ -446,9 +455,8 @@ export function LaunchWelcome({
               Welcome to DALI OS
             </h2>
             <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
-              Hi {firstName}. DALI OS is the home of everything DALI,
-              replacing Notion as the lab&apos;s internal site. Want a quick
-              tour?
+              Hi {firstName}. DALI OS is the home of everything DALI.
+              Want a quick tour?
             </p>
           </div>
           <div className="flex items-center justify-end gap-2 pt-2">
