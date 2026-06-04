@@ -127,8 +127,25 @@ export async function action({ request }: Route.ActionArgs) {
         select: { id: true, userId: true, projectId: true, domainId: true, level: true, status: true },
       });
       // Target roster = members whose live assignment points at THIS project.
-      const target = dedupeLiveAssignments(cycleRows).filter((r) => r.projectId === project.id);
-      const targetUserIds = new Set(target.map((r) => r.userId));
+      const liveTarget = dedupeLiveAssignments(cycleRows).filter((r) => r.projectId === project.id);
+      const targetUserIds = new Set(liveTarget.map((r) => r.userId));
+
+      // An assignment's domainId is unguarded (StaffingAssignment has no FK to
+      // Domain), so a blank/stale value can slip in — e.g. a bid whose domain
+      // reference resolved to "". ProjectAssignment.domainId DOES have that FK,
+      // so finalizing such a row throws an opaque FK violation and rolls back
+      // the whole project. Skip those rows and surface the members by name so a
+      // lead can fix the bid, instead of crashing the finalize.
+      const validDomainIds = new Set(
+        (await prisma.domain.findMany({ select: { id: true } })).map((d) => d.id),
+      );
+      const target = liveTarget.filter((r) => validDomainIds.has(r.domainId));
+      const skippedNames = (
+        await prisma.user.findMany({
+          where: { id: { in: liveTarget.filter((r) => !validDomainIds.has(r.domainId)).map((r) => r.userId) } },
+          select: { firstName: true, lastName: true },
+        })
+      ).map((u) => `${u.firstName} ${u.lastName}`.trim());
 
       // Members currently Confirmed on this project who are no longer in the
       // target roster (dragged off / to another project / unassigned). Decline
@@ -193,12 +210,19 @@ export async function action({ request }: Route.ActionArgs) {
       });
 
       const dropNote = droppedCount > 0 ? `, removed ${droppedCount}` : "";
+      const skipNote =
+        skippedNames.length > 0
+          ? ` Skipped ${skippedNames.length} with an invalid/blank domain (fix their bid): ${skippedNames.join(", ")}.`
+          : "";
       results.assignments = {
-        status: "ok",
+        // Flag as error when anyone was skipped so the lead sees the warning and
+        // follows up — the valid assignments still went through.
+        status: skippedNames.length > 0 ? "error" : "ok",
         message:
-          confirmedCount === 0 && droppedCount === 0
+          (confirmedCount === 0 && droppedCount === 0
             ? "No proposed assignments for this project."
-            : `Confirmed ${confirmedCount} assignment${confirmedCount === 1 ? "" : "s"}${dropNote} → ProjectAssignment.`,
+            : `Confirmed ${confirmedCount} assignment${confirmedCount === 1 ? "" : "s"}${dropNote} → ProjectAssignment.`) +
+          skipNote,
       };
     } catch (err) {
       results.assignments = { status: "error", message: errMsg(err) };
