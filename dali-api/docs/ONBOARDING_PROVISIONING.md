@@ -51,7 +51,9 @@ this exists yet — here's the one-time setup:
 2. Enable the **Admin SDK API** for that project.
 3. In the **Google Workspace Admin console** → Security → API controls →
    **Domain-wide delegation**, add the service account's **client ID** with the
-   scope: `https://www.googleapis.com/auth/admin.directory.user`.
+   scopes: `https://www.googleapis.com/auth/admin.directory.user`,
+   `https://www.googleapis.com/auth/admin.directory.group` (the group scope is
+   needed for the staffing "Create Gmail accounts" project automation below).
 4. Pick a **Workspace super-admin** account for the service account to
    impersonate (delegation requires acting *as* an admin).
 5. Set these env vars (Fly secrets in dev/staging/prod):
@@ -70,6 +72,28 @@ Until configured, this step reports `skipped`.
 
 Code: `app/lib/google-workspace.ts` (uses `google-auth-library`, already a
 dependency — no `googleapis` needed).
+
+---
+
+## Project Workspace identity (staffing "Create Gmail accounts")
+
+Separately from per-member provisioning, the staffing **Finalize** modal's
+**Create Gmail accounts** automation
+(`app/projects/routes/api.staffing.finalize.ts`) provisions a project's own
+Workspace identity for the confirmed roster:
+
+1. A **user** account `<slug>@dali.dartmouth.edu` (slug = the hyphenated project
+   name). Cached on `Project.calendarEmail` — if that's already set (the
+   project's calendar owner), that exact address is reused instead of deriving.
+2. A **group** `<slug>-team@dali.dartmouth.edu`. Cached on
+   `Project.teamGroupEmail`, with each confirmed roster member's
+   `User.daliEmail` added as a `MEMBER`.
+
+Uses the **same** service-account env as member provisioning above, plus the
+`admin.directory.group` delegation scope. Re-runnable: every Directory API call
+treats "already exists" (409) as success and members are never removed. Roster
+members without a `daliEmail` are skipped and named in the result. Until the env
+is configured, the step reports `skipped`.
 
 ---
 

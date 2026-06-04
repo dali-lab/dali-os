@@ -1842,8 +1842,16 @@ model Project {
   description   String?
   // Project-owned Google Workspace identity (e.g.,
   // "projectalpha@dali.dartmouth.edu"). Calendar events for this project
-  // are owned by this identity, not the organizer's personal calendar.
+  // are owned by this identity, not the organizer's personal calendar. Also
+  // the user account provisioned by the staffing "Create Gmail accounts"
+  // finalize automation (backfilled there if unset).
   calendarEmail String?
+
+  // Project-team Google Workspace GROUP address (e.g.,
+  // "projectalpha-team@dali.dartmouth.edu"). Get-or-created by the staffing
+  // "Create Gmail accounts" finalize automation, which also adds the confirmed
+  // roster as group members. Null until that automation first runs.
+  teamGroupEmail String?
   // Expected span length: how many terms the project is *planned* to run, as
   // a target. Independent of the actual ProjectTerm set — a project may have
   // fewer terms added than expected (still being scheduled) or more. Drives
