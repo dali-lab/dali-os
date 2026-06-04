@@ -22,6 +22,7 @@ import { MemberCard } from "./MemberCard";
 import { BidModal } from "./BidModal";
 import { FinalizeModal } from "./FinalizeModal";
 import { AddMemberControl } from "./AddMemberControl";
+import { DomainFilter } from "./DomainFilter";
 
 type ProjectMeta = { id: string; name: string; status: "Active" | "Paused" | "Archived" };
 
@@ -35,6 +36,11 @@ type Props = {
   cycleId: string;
   termId: string;
   terms: { id: string; code: string }[];
+  // Domain filter: all domains for the dropdown, plus the currently-selected id
+  // ("" = all). Selecting one narrows the board to members eligible in (or
+  // already bid/staffed in) that domain. Driven server-side via ?domain=.
+  domains: { id: string; name: string }[];
+  selectedDomainId: string;
   projects: ProjectMeta[];
   members: MemberInput[];
   initialAssignments: Assignment[];
@@ -51,6 +57,8 @@ export function StaffingBoard({
   cycleId,
   termId,
   terms,
+  domains,
+  selectedDomainId,
   projects,
   members,
   initialAssignments,
@@ -165,6 +173,20 @@ export function StaffingBoard({
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-end gap-3 flex-wrap">
         {canManage && <AddMemberControl cycleId={cycleId} />}
+        <DomainFilter
+          domains={domains}
+          value={selectedDomainId}
+          onChange={(id) => {
+            setSearchParams(
+              (prev) => {
+                if (id) prev.set("domain", id);
+                else prev.delete("domain");
+                return prev;
+              },
+              { replace: true },
+            );
+          }}
+        />
         <div className="flex items-center gap-2">
           <label className="sr-only" htmlFor="staffing-term">
             Term

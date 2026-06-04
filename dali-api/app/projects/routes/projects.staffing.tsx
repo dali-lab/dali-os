@@ -90,6 +90,16 @@ export async function loader({ request }: Route.LoaderArgs) {
   );
   const selectedTermId = selectedTerm.id;
 
+  // Optional domain filter (?domain=<id>). Narrows the member pool to people
+  // eligible in that domain. Validated against real domains so a stale id falls
+  // back to "all". Empty/absent = all domains. The filter is applied to the
+  // assembled `members` list below, after all pools are built.
+  const requestedDomainId = new URL(request.url).searchParams.get("domain");
+  const selectedDomainId =
+    requestedDomainId && requestedDomainId !== ""
+      ? requestedDomainId
+      : null;
+
   // The pool of members on the board is everyone who submitted at least one
   // StaffingPreference for this cycle. Members who didn't bid don't show up.
   const preferences = await prisma.staffingPreference.findMany({
@@ -121,7 +131,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         domainEligibilities: {
           select: {
             level: true,
-            domain: { select: { displayName: true } },
+            domain: { select: { id: true, displayName: true } },
           },
         },
       },
@@ -233,7 +243,11 @@ export async function loader({ request }: Route.LoaderArgs) {
       new Set(u.coreAssignments.map((a) => a.leadTitle).filter((t): t is string => !!t)),
     ),
     domainLevels: u.domainEligibilities
-      .map((e) => ({ domainName: e.domain.displayName, level: e.level as Level }))
+      .map((e) => ({
+        domainId: e.domain.id,
+        domainName: e.domain.displayName,
+        level: e.level as Level,
+      }))
       .sort((a, b) => a.domainName.localeCompare(b.domainName)),
     preferences,
     bidFields: bidFieldsByUser.get(u.id) ?? [],
@@ -272,7 +286,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         adminMembership: { select: { id: true } },
         coreAssignments: { select: { leadTitle: true } },
         domainEligibilities: {
-          select: { level: true, domain: { select: { displayName: true } } },
+          select: { level: true, domain: { select: { id: true, displayName: true } } },
         },
       },
     });
@@ -308,7 +322,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         adminMembership: { select: { id: true } },
         coreAssignments: { select: { leadTitle: true } },
         domainEligibilities: {
-          select: { level: true, domain: { select: { displayName: true } } },
+          select: { level: true, domain: { select: { id: true, displayName: true } } },
         },
       },
     });
@@ -319,6 +333,29 @@ export async function loader({ request }: Route.LoaderArgs) {
       })),
     );
     members.push(...manual);
+  }
+
+  // Apply the domain filter to the member pool. A member stays if they're
+  // eligible in the domain, OR already have a bid/assignment in it — filtering
+  // out a member who's proposed-staffed in that domain would make a real
+  // assignment silently vanish from the board. Ignore an unknown domain id
+  // (treat as "all") so a stale ?domain= link doesn't empty the board.
+  const domainFilterActive =
+    selectedDomainId !== null && domains.some((d) => d.id === selectedDomainId);
+  if (domainFilterActive) {
+    const assignedUserIds = new Set(
+      assignmentRows
+        .filter((a) => a.domainId === selectedDomainId)
+        .map((a) => a.userId),
+    );
+    const filtered = members.filter(
+      (m) =>
+        m.domainLevels.some((d) => d.domainId === selectedDomainId) ||
+        m.preferences.some((p) => p.domainId === selectedDomainId) ||
+        assignedUserIds.has(m.userId),
+    );
+    members.length = 0;
+    members.push(...filtered);
   }
 
   const initialAssignments: Assignment[] = assignmentRows.map((a) => ({
@@ -387,6 +424,10 @@ export async function loader({ request }: Route.LoaderArgs) {
       termId: selectedTermId,
     },
     terms: terms.map((t) => ({ id: t.id, code: t.code })),
+    domains: [...domains]
+      .sort((a, b) => a.displayName.localeCompare(b.displayName))
+      .map((d) => ({ id: d.id, name: d.displayName })),
+    selectedDomainId: domainFilterActive ? selectedDomainId : "",
     canManage,
     projects,
     members,
@@ -441,6 +482,8 @@ export default function StaffingPage() {
         cycleId={data.cycle.id}
         termId={data.cycle.termId}
         terms={data.terms}
+        domains={data.domains}
+        selectedDomainId={data.selectedDomainId}
         projects={data.projects}
         members={data.members}
         initialAssignments={data.initialAssignments}

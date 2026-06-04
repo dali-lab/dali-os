@@ -171,16 +171,16 @@ describe("buildBoard", () => {
       members: [
         member({
           domainLevels: [
-            { domainName: "Engineering", level: "P3" },
-            { domainName: "Design", level: "P1" },
+            { domainId: "eng", domainName: "Engineering", level: "P3" },
+            { domainId: "design", domainName: "Design", level: "P1" },
           ],
         }),
       ],
       assignments: [],
     });
     expect(board[UNASSIGNED][0].domainLevels).toEqual([
-      { domainName: "Engineering", level: "P3" },
-      { domainName: "Design", level: "P1" },
+      { domainId: "eng", domainName: "Engineering", level: "P3" },
+      { domainId: "design", domainName: "Design", level: "P1" },
     ]);
   });
 });
