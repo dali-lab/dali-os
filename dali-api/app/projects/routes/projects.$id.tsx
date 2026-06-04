@@ -22,6 +22,7 @@ import { ensureProjectGroup } from "~/lib/groups";
 import { requireAuth } from "~/lib/auth";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { ProjectImageBanner } from "../components/ProjectImageBanner";
+import { Markdown } from "~/components/Markdown";
 import { parseSessionCookie } from "~/lib/cookies";
 import { isCore, isProjectMember, canManageStaffing, currentTerm } from "~/lib/roles";
 import { getPresenceUser } from "~/lib/presence-user";
@@ -1045,21 +1046,22 @@ function DescriptionSegment({
     >
       {({ editing }) =>
         editing ? (
-          <Form method="post" ref={formRef} className="flex flex-col gap-2">
+          <Form method="post" ref={formRef} className="flex flex-col gap-1.5">
             <input type="hidden" name="intent" value="description" />
             <textarea
               name="description"
-              rows={4}
+              rows={6}
               defaultValue={description ?? ""}
-              placeholder="Add a short description…"
-              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+              placeholder="Add a short description… (Markdown supported)"
+              className="px-2 py-1.5 text-sm font-mono border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
               autoFocus
             />
+            <p className="text-[11px] text-muted-foreground">
+              Supports Markdown — **bold**, headings, lists, links, `code`.
+            </p>
           </Form>
         ) : description ? (
-          <p className="text-sm text-foreground whitespace-pre-wrap">
-            {description}
-          </p>
+          <Markdown>{description}</Markdown>
         ) : (
           <p className="text-sm text-muted-foreground italic">
             No description.
