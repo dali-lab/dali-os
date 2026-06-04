@@ -121,6 +121,7 @@ model User {
   essentialityRatings   EssentialityRating[]
   staffingAssignments   StaffingAssignment[]
   staffingBoardMembers  StaffingBoardMember[]
+  staffingCardOrders    StaffingCardOrder[]
   intentToWork          IntentToWork[]
   formsCreated          Form[]
   formFolders           FormFolder[]
@@ -2426,6 +2427,7 @@ model StaffingCycle {
   formBindings      StaffingCycleFormBinding[]
   formSubmissions   FormSubmission[]
   boardMembers      StaffingBoardMember[]
+  cardOrders        StaffingCardOrder[]
 }
 
 // A member a staffing lead manually placed on the board for a cycle WITHOUT a
@@ -2721,6 +2723,30 @@ model StaffingAssignment {
 
   @@index([userId, termId])
   @@index([projectId, termId])
+}
+
+// Manual position of a member's card within its staffing-board column. The
+// column itself is DERIVED (from the member's assignment, or its absence =
+// Unassigned); this row records only where the card sits in that column's
+// order. One row per (cycle, user); cards with no row fall back to last-name
+// sort. Decoupled from StaffingAssignment so Unassigned bidders — who have no
+// assignment — can still be ordered. `columnKey` is the project id, or
+// "__unassigned__", recorded so a stale order from a previous column is ignored
+// once a card moves.
+model StaffingCardOrder {
+  id              String @id @default(cuid())
+  staffingCycleId String
+  userId          String
+  columnKey       String
+  // Sparse fractional/spread integer key: cards sort ascending by this. Saved
+  // as the card's index in the column on each reorder, so it stays dense.
+  sortKey         Int
+
+  staffingCycle StaffingCycle @relation(fields: [staffingCycleId], references: [id], onDelete: Cascade)
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([staffingCycleId, userId])
+  @@index([staffingCycleId, columnKey])
 }
 
 // Distinct from the existing AssignmentStatus enum (which scopes

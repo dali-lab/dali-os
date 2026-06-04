@@ -4,12 +4,14 @@ import {
   DndContext,
   DragOverlay,
   PointerSensor,
+  closestCorners,
   useDroppable,
   useSensor,
   useSensors,
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
+import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import {
   buildBoard,
   resolveAssignmentInputs,
@@ -46,6 +48,10 @@ type Props = {
   projects: ProjectMeta[];
   members: MemberInput[];
   initialAssignments: Assignment[];
+  // Manual within-column card order rows from the server (userId, columnKey,
+  // sortKey). buildBoard applies one only when columnKey matches the card's
+  // current column. Cards without a row sort by last name.
+  cardOrder: { userId: string; columnKey: string; sortKey: number }[];
   // Project id → name for label resolution. Covers archived projects a member
   // ranked that aren't board columns, so cards/modal never show a raw id.
   projectNames: Record<string, string>;
@@ -64,6 +70,7 @@ export function StaffingBoard({
   projects,
   members,
   initialAssignments,
+  cardOrder,
   projectNames,
   domainNames,
   demandByProject,
@@ -72,6 +79,9 @@ export function StaffingBoard({
   const [searchParams, setSearchParams] = useSearchParams();
   const revalidator = useRevalidator();
   const [assignments, setAssignments] = useState<Assignment[]>(initialAssignments);
+  // Optimistic copy of the server card order; drag updates it immediately and
+  // the persist+revalidate reconciles. Same lifecycle as `assignments`.
+  const [order, setOrder] = useState(cardOrder);
   const [error, setError] = useState<string | null>(null);
   const [openBidUserId, setOpenBidUserId] = useState<string | null>(null);
   // Project id whose finalize modal is open, or null.
@@ -93,7 +103,8 @@ export function StaffingBoard({
   useEffect(() => {
     if (pendingSaves.current > 0) return;
     setAssignments(initialAssignments);
-  }, [initialAssignments]);
+    setOrder(cardOrder);
+  }, [initialAssignments, cardOrder]);
 
   // Live updates: subscribe to this cycle's SSE stream and revalidate on any
   // pushed change (assign / finalize / board-member by anyone) or periodic sync.
@@ -117,8 +128,8 @@ export function StaffingBoard({
   const projectIds = useMemo(() => projects.map((p) => p.id), [projects]);
 
   const board = useMemo(
-    () => buildBoard({ projectIds, members, assignments }),
-    [projectIds, members, assignments],
+    () => buildBoard({ projectIds, members, assignments, cardOrder: order }),
+    [projectIds, members, assignments, order],
   );
 
   const memberById = useMemo(
@@ -158,20 +169,42 @@ export function StaffingBoard({
     const userId = data?.userId;
     const fromColumn = data?.fromColumn ?? UNASSIGNED;
     if (!userId) return;
-    if (overId === fromColumn) return;
 
     const member = memberById.get(userId);
     if (!member) return;
 
-    // Optimistic: update local state immediately.
-    const targetProjectId = overId === UNASSIGNED ? null : overId;
-    const prevAssignments = assignments;
+    // Resolve the target column + insertion index. `over` is either a card
+    // (its userId — drop relative to it) or a column droppable (its id — drop
+    // at the end). Column ids are UNASSIGNED or a project id; everything else
+    // is a card userId.
+    const isColumnId = overId === UNASSIGNED || projectIds.includes(overId);
+    const toColumn = isColumnId
+      ? overId
+      : findColumnOf(board, overId) ?? fromColumn;
+    const targetIds = (board[toColumn] ?? []).map((c) => c.userId);
+    const overIndex = isColumnId ? targetIds.length : targetIds.indexOf(overId);
+    const movedWithinColumn = fromColumn === toColumn;
 
-    let nextAssignments: Assignment[];
+    // No-op: dropped on itself, or back where it already was.
+    if (movedWithinColumn) {
+      const fromIndex = targetIds.indexOf(userId);
+      if (fromIndex === overIndex || (overIndex === -1)) return;
+    }
+
+    // Build the new ordered userId list for the destination column.
+    const withoutMoved = targetIds.filter((id) => id !== userId);
+    const insertAt = overIndex < 0 ? withoutMoved.length : Math.min(overIndex, withoutMoved.length);
+    const nextDestIds = [
+      ...withoutMoved.slice(0, insertAt),
+      userId,
+      ...withoutMoved.slice(insertAt),
+    ];
+
+    // A cross-column move also needs the assignment updated. Resolve domain +
+    // level for a project column; UNASSIGNED clears the assignment.
+    const targetProjectId = toColumn === UNASSIGNED ? null : toColumn;
     let assignmentBody: { domainId: string; level: "P1" | "P2" | "P3" } | null = null;
-    if (targetProjectId === null) {
-      nextAssignments = assignments.filter((a) => a.userId !== userId);
-    } else {
+    if (!movedWithinColumn && targetProjectId !== null) {
       assignmentBody = resolveAssignmentInputs(member, targetProjectId);
       if (!assignmentBody) {
         setError(
@@ -183,31 +216,48 @@ export function StaffingBoard({
         );
         return;
       }
-      const withoutOld = assignments.filter((a) => a.userId !== userId);
-      nextAssignments = [
-        ...withoutOld,
-        { userId, projectId: targetProjectId, domainId: assignmentBody.domainId, level: assignmentBody.level },
-      ];
     }
-    setAssignments(nextAssignments);
+
+    const prevAssignments = assignments;
+    const prevOrder = order;
+
+    // Optimistic assignment update (only when the column changed).
+    if (!movedWithinColumn) {
+      const withoutOld = assignments.filter((a) => a.userId !== userId);
+      setAssignments(
+        targetProjectId === null
+          ? withoutOld
+          : [
+              ...withoutOld,
+              { userId, projectId: targetProjectId, domainId: assignmentBody!.domainId, level: assignmentBody!.level },
+            ],
+      );
+    }
+
+    // Optimistic order update for the destination column. Other users' rows are
+    // preserved; the moved card and its new neighbours get fresh indices.
+    setOrder((prev) => mergeColumnOrder(prev, toColumn, nextDestIds, userId));
     setError(null);
 
     pendingSaves.current += 1;
-    void persist({
-      cycleId,
-      userId,
-      projectId: targetProjectId,
-      domainId: assignmentBody?.domainId,
-      level: assignmentBody?.level,
-    })
-      .then(() => {
-        // Reconcile with server truth (also adopts any concurrent edits that
-        // arrived while this save was in flight).
-        revalidator.revalidate();
-      })
+    const save = async () => {
+      if (!movedWithinColumn) {
+        await persist({
+          cycleId,
+          userId,
+          projectId: targetProjectId,
+          domainId: assignmentBody?.domainId,
+          level: assignmentBody?.level,
+        });
+      }
+      await persistOrder({ cycleId, columnKey: toColumn, userIds: nextDestIds });
+    };
+    void save()
+      .then(() => revalidator.revalidate())
       .catch((err) => {
         setAssignments(prevAssignments);
-        setError(err instanceof Error ? err.message : "Failed to save assignment");
+        setOrder(prevOrder);
+        setError(err instanceof Error ? err.message : "Failed to save");
       })
       .finally(() => {
         pendingSaves.current = Math.max(0, pendingSaves.current - 1);
@@ -297,6 +347,7 @@ export function StaffingBoard({
       <DndContext
         id="staffing-board"
         sensors={sensors}
+        collisionDetection={closestCorners}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
         onDragCancel={() => setActiveCardUserId(null)}
@@ -410,6 +461,7 @@ function Column({
   onFinalize?: () => void;
 }) {
   const { isOver, setNodeRef } = useDroppable({ id });
+  const cardIds = cards.map((c) => c.userId);
   const toneClasses: Record<ColumnTone, string> = {
     muted: "border-border bg-muted/20",
     active: "border-accent-teal/40 bg-accent-teal/[0.04]",
@@ -459,25 +511,27 @@ function Column({
           min-h-0 lets it shrink within the column's max-height so overflow-y
           kicks in instead of stretching the page. */}
       <div className="flex flex-col gap-2 p-2 flex-1 min-h-0 overflow-y-auto">
-        {cards.length === 0 ? (
-          // min-h keeps an empty column a usable drop target.
-          <div className="text-xs text-muted-foreground italic text-center py-4 min-h-[12rem]">
-            Empty
-          </div>
-        ) : (
-          cards.map((card) => (
-            <MemberCard
-              key={card.userId}
-              card={card}
-              columnId={id}
-              projectNames={projectNames}
-              domainNames={domainNames}
-              onOpenBid={() => onOpenBid(card.userId)}
-              onRemove={onRemoveMember ? () => onRemoveMember(card.userId) : undefined}
-              draggable={draggable}
-            />
-          ))
-        )}
+        <SortableContext items={cardIds} strategy={verticalListSortingStrategy}>
+          {cards.length === 0 ? (
+            // min-h keeps an empty column a usable drop target.
+            <div className="text-xs text-muted-foreground italic text-center py-4 min-h-[12rem]">
+              Empty
+            </div>
+          ) : (
+            cards.map((card) => (
+              <MemberCard
+                key={card.userId}
+                card={card}
+                columnId={id}
+                projectNames={projectNames}
+                domainNames={domainNames}
+                onOpenBid={() => onOpenBid(card.userId)}
+                onRemove={onRemoveMember ? () => onRemoveMember(card.userId) : undefined}
+                draggable={draggable}
+              />
+            ))
+          )}
+        </SortableContext>
       </div>
     </div>
   );
@@ -500,4 +554,48 @@ async function persist(args: {
     const body = (await res.json().catch(() => ({}))) as { error?: string };
     throw new Error(body.error ?? `Request failed: ${res.status}`);
   }
+}
+
+async function persistOrder(args: {
+  cycleId: string;
+  columnKey: string;
+  userIds: string[];
+}): Promise<void> {
+  const res = await fetch("/api/staffing/reorder", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(args),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `Reorder failed: ${res.status}`);
+  }
+}
+
+// The column a userId currently sits in, per the built board, or null.
+function findColumnOf(
+  board: Record<string, MemberCardModel[]>,
+  userId: string,
+): string | null {
+  for (const [columnKey, cards] of Object.entries(board)) {
+    if (cards.some((c) => c.userId === userId)) return columnKey;
+  }
+  return null;
+}
+
+// Replace the order rows for one column with `userIds` (in their new order),
+// preserving every other column's rows. The moved user's any prior-column row
+// is dropped so a stale entry can't linger.
+function mergeColumnOrder(
+  prev: { userId: string; columnKey: string; sortKey: number }[],
+  columnKey: string,
+  userIds: string[],
+  movedUserId: string,
+): { userId: string; columnKey: string; sortKey: number }[] {
+  const kept = prev.filter(
+    (o) => o.columnKey !== columnKey && o.userId !== movedUserId,
+  );
+  const fresh = userIds.map((userId, sortKey) => ({ userId, columnKey, sortKey }));
+  return [...kept, ...fresh];
 }

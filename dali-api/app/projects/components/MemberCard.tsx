@@ -1,4 +1,5 @@
-import { useDraggable } from "@dnd-kit/core";
+import { useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { initialsFromName } from "~/lib/display";
 import type { MemberCardModel, Level } from "../lib/staffing-board";
 
@@ -21,12 +22,14 @@ type Props = {
 };
 
 export function MemberCard({ card, columnId, projectNames, domainNames, onOpenBid, onRemove, draggable }: Props) {
-  const dragId = `${columnId}::${card.userId}`;
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: dragId,
-    data: { userId: card.userId, fromColumn: columnId },
-    disabled: !draggable,
-  });
+  // The card's sortable id is its userId (unique per board). Column membership
+  // travels in `data` so the drag handler knows where the card came from.
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({
+      id: card.userId,
+      data: { userId: card.userId, fromColumn: columnId },
+      disabled: !draggable,
+    });
 
   const fullName = `${card.firstName} ${card.lastName}`.trim();
 
@@ -34,14 +37,18 @@ export function MemberCard({ card, columnId, projectNames, domainNames, onOpenBi
   // still see the card and can click it to open the bid modal.
   const dragProps = draggable ? { ...attributes, ...listeners } : {};
 
-  // The dragged card is rendered separately by DragOverlay (a portal that sits
-  // above every column), so the in-place node here just dims while dragging —
-  // no transform/zIndex, which would otherwise leave the card trapped inside
-  // its column's stacking context and slide UNDER adjacent columns.
+  // useSortable's transform/transition animate the SIBLINGS shifting to make
+  // room as a card is dragged over them. The dragged card itself is dimmed and
+  // its floating copy is rendered by DragOverlay (portaled above all columns),
+  // so it can never clip under an adjacent column's stacking context.
   //
   // Clicking anywhere on the card opens the member's bid. The DndContext uses
   // a small activation-distance constraint, so a pointer press that doesn't
   // move past the threshold lands here as a click rather than starting a drag.
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
   return (
     <div
       ref={setNodeRef}

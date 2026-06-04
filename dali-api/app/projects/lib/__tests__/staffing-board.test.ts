@@ -186,6 +186,72 @@ describe("buildBoard", () => {
   });
 });
 
+describe("buildBoard cardOrder", () => {
+  const m = (userId: string, lastName: string) =>
+    member({ userId, firstName: userId.toUpperCase(), lastName });
+
+  it("falls back to last-name sort when no order is given", () => {
+    const board = buildBoard({
+      projectIds: [],
+      members: [m("c", "Carter"), m("a", "Adams"), m("b", "Baker")],
+      assignments: [],
+    });
+    expect(board[UNASSIGNED].map((c) => c.userId)).toEqual(["a", "b", "c"]);
+  });
+
+  it("orders cards in a column by their sortKey when present", () => {
+    const board = buildBoard({
+      projectIds: [],
+      members: [m("a", "Adams"), m("b", "Baker"), m("c", "Carter")],
+      assignments: [],
+      cardOrder: [
+        { userId: "c", columnKey: UNASSIGNED, sortKey: 0 },
+        { userId: "a", columnKey: UNASSIGNED, sortKey: 1 },
+        { userId: "b", columnKey: UNASSIGNED, sortKey: 2 },
+      ],
+    });
+    expect(board[UNASSIGNED].map((c) => c.userId)).toEqual(["c", "a", "b"]);
+  });
+
+  it("places ordered cards ahead of unordered ones (which keep name order)", () => {
+    const board = buildBoard({
+      projectIds: [],
+      members: [m("a", "Adams"), m("b", "Baker"), m("c", "Carter")],
+      assignments: [],
+      // Only c has an explicit position.
+      cardOrder: [{ userId: "c", columnKey: UNASSIGNED, sortKey: 0 }],
+    });
+    expect(board[UNASSIGNED].map((c) => c.userId)).toEqual(["c", "a", "b"]);
+  });
+
+  it("ignores an order row whose columnKey doesn't match the card's column", () => {
+    // 'a' is assigned to p1, but its saved order is for Unassigned — stale, so
+    // it must NOT apply in p1; p1 falls back to name order.
+    const board = buildBoard({
+      projectIds: ["p1"],
+      members: [
+        member({
+          userId: "a",
+          lastName: "Zimmer",
+          preferences: [{ projectId: "p1", domainId: "d1", level: "P1", preferenceRank: 1, notes: null }],
+        }),
+        member({
+          userId: "b",
+          lastName: "Adams",
+          preferences: [{ projectId: "p1", domainId: "d1", level: "P1", preferenceRank: 1, notes: null }],
+        }),
+      ],
+      assignments: [
+        { userId: "a", projectId: "p1", domainId: "d1", level: "P1" },
+        { userId: "b", projectId: "p1", domainId: "d1", level: "P1" },
+      ],
+      cardOrder: [{ userId: "a", columnKey: UNASSIGNED, sortKey: 0 }],
+    });
+    // Name order (Adams before Zimmer) since the order row is for a stale column.
+    expect(board.p1.map((c) => c.userId)).toEqual(["b", "a"]);
+  });
+});
+
 describe("resolveAssignmentInputs", () => {
   it("returns the bid for the target project when present", () => {
     const out = resolveAssignmentInputs(
