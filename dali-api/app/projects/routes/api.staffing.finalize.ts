@@ -5,6 +5,13 @@ import { canManageStaffing } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { postMessage, ensureChannel, inviteUsersToChannel } from "~/slack/lib/slack-client";
 import { ensureTeam, addTeamMember } from "~/slack/lib/github-app";
+import {
+  workspaceConfigured,
+  deriveProjectEmails,
+  provisionProjectUser,
+  ensureWorkspaceGroup,
+  addGroupMember,
+} from "~/lib/google-workspace";
 import { logAuditEvent } from "~/lib/audit";
 
 // POST /api/staffing/finalize
@@ -20,7 +27,12 @@ import { logAuditEvent } from "~/lib/audit";
 //                  the project, id cached on Project.slackChannelId), invite
 //                  the confirmed roster (by synced slackUserId), and post a team
 //                  announcement (members + domain/level, plus repos).
-//   - gmail:       STUB — no Google Admin SDK wired up yet.
+//   - gmail:       provision the project's Google Workspace identity — a USER
+//                  account (<slug>@dali.dartmouth.edu, cached on
+//                  Project.calendarEmail) and a GROUP (<slug>-team@…, cached on
+//                  Project.teamGroupEmail) whose members are the confirmed
+//                  roster's DALI emails. Env-gated; reports "skipped" when the
+//                  Admin SDK isn't configured.
 //   - github:      get-or-create the project's GITHUB_ORG team (from
 //                  Project.githubTeamSlug) and add the confirmed roster.
 
@@ -84,7 +96,15 @@ export async function action({ request }: Route.ActionArgs) {
   }
   const project = await prisma.project.findUnique({
     where: { id: body.projectId },
-    select: { id: true, name: true, githubTeamSlug: true, slackChannelId: true, repoUrls: true },
+    select: {
+      id: true,
+      name: true,
+      githubTeamSlug: true,
+      slackChannelId: true,
+      repoUrls: true,
+      calendarEmail: true,
+      teamGroupEmail: true,
+    },
   });
   if (!project) {
     return withCors(request, Response.json({ error: "Project not found" }, { status: 404 }));
@@ -238,12 +258,121 @@ export async function action({ request }: Route.ActionArgs) {
     }
   }
 
-  // ── gmail (stub) ───────────────────────────────────────────────────────────
+  // ── gmail ──────────────────────────────────────────────────────────────────
+  // Provision the project's Google Workspace identity:
+  //   1. USER  <slug>@dali.dartmouth.edu  — get-or-created, cached on
+  //      Project.calendarEmail (reused as the project's calendar owner). If the
+  //      project already has a calendarEmail set, that exact address is used.
+  //   2. GROUP <slug>-team@dali.dartmouth.edu — get-or-created, cached on
+  //      Project.teamGroupEmail, with the confirmed roster's DALI emails added
+  //      as members. A roster member without a daliEmail is skipped + reported.
+  // Re-runnable: every Directory API call treats "already exists" (409) as
+  // success and we never remove members.
   if (selected.has("gmail")) {
-    results.gmail = {
-      status: "skipped",
-      message: "Google Workspace account provisioning is not configured.",
-    };
+    if (!workspaceConfigured()) {
+      results.gmail = {
+        status: "skipped",
+        message: "Google Workspace provisioning is not configured.",
+      };
+    } else {
+      try {
+        // Use the project's existing addresses when set; otherwise derive from
+        // the project name and backfill so later runs reuse the same identity.
+        const derived = deriveProjectEmails(project.name);
+        const userEmail = project.calendarEmail?.trim() || derived.userEmail;
+        const groupEmail = project.teamGroupEmail?.trim() || derived.groupEmail;
+
+        const parts: string[] = [];
+
+        // 1. User account.
+        const user = await provisionProjectUser({
+          email: userEmail,
+          projectName: project.name,
+        });
+        if (user.status === "error") {
+          results.gmail = { status: "error", message: `User: ${user.message}` };
+        } else {
+          parts.push(
+            user.status === "ok"
+              ? `${user.created ? "created" : "found"} user ${user.email}`
+              : `user ${user.message}`,
+          );
+          if (user.status === "ok" && !project.calendarEmail) {
+            await prisma.project.update({
+              where: { id: project.id },
+              data: { calendarEmail: user.email },
+            });
+          }
+
+          // 2. Group.
+          const group = await ensureWorkspaceGroup({
+            email: groupEmail,
+            name: `${project.name} Team`,
+          });
+          if (group.status === "error") {
+            results.gmail = { status: "error", message: `Group: ${group.message}` };
+          } else {
+            parts.push(
+              group.status === "ok"
+                ? `${group.created ? "created" : "found"} group ${group.email}`
+                : `group ${group.message}`,
+            );
+            if (group.status === "ok" && !project.teamGroupEmail) {
+              await prisma.project.update({
+                where: { id: project.id },
+                data: { teamGroupEmail: group.email },
+              });
+            }
+
+            // 3. Add the confirmed roster's DALI emails to the group.
+            if (group.status === "ok") {
+              const roster = await prisma.staffingAssignment.findMany({
+                where: {
+                  staffingCycleId: cycle.id,
+                  projectId: project.id,
+                  status: "Confirmed",
+                },
+                select: {
+                  user: { select: { firstName: true, lastName: true, daliEmail: true } },
+                },
+              });
+              const emails = new Set<string>();
+              const missing: string[] = [];
+              for (const r of roster) {
+                const e = r.user.daliEmail?.trim();
+                if (e) emails.add(e);
+                else missing.push(`${r.user.firstName} ${r.user.lastName}`);
+              }
+
+              let added = 0;
+              let already = 0;
+              const memberErrors: string[] = [];
+              for (const email of emails) {
+                const m = await addGroupMember({ groupEmail: group.email, memberEmail: email });
+                if (m.status === "error") memberErrors.push(`${email}: ${m.message}`);
+                else if (m.added) added++;
+                else already++;
+              }
+
+              parts.push(`added ${added} member${added === 1 ? "" : "s"}`);
+              if (already > 0) parts.push(`${already} already in group`);
+              if (missing.length > 0) {
+                parts.push(`skipped ${missing.length} with no DALI email (${missing.join(", ")})`);
+              }
+              results.gmail = {
+                status: memberErrors.length > 0 ? "error" : "ok",
+                message:
+                  memberErrors.length > 0
+                    ? `${parts.join("; ")}; errors: ${memberErrors.join("; ")}`
+                    : `${parts.join("; ")}.`,
+              };
+            }
+          }
+        }
+      } catch (err) {
+        results.gmail = { status: "error", message: errMsg(err) };
+      }
+    }
   }
 
   // ── github ───────────────────────────────────────────────────────────────
