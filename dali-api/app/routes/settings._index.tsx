@@ -1,5 +1,5 @@
 import { Link, redirect } from "react-router";
-import { CalendarDays, Cable, KeyRound, UserCircle2 } from "lucide-react";
+import { CalendarDays, Cable, KeyRound, Slack, UserCircle2 } from "lucide-react";
 import { requireAuth } from "~/lib/auth";
 import type { Route } from "./+types/settings._index";
 
@@ -24,6 +24,12 @@ const CARDS = [
     title: "Calendar",
     body: "Linked Google accounts and which sub-calendars block your availability.",
     icon: CalendarDays,
+  },
+  {
+    to: "/settings/slack",
+    title: "Slack",
+    body: "Connect your Slack account so you're added to project channels when staffed.",
+    icon: Slack,
   },
   {
     to: "/settings/sessions",
