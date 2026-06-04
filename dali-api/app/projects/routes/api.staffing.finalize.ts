@@ -4,7 +4,7 @@ import { requireAuth } from "~/lib/auth";
 import { canManageStaffing } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { postMessage, ensureChannel, inviteUsersToChannel } from "~/slack/lib/slack-client";
-import { ensureTeam, addTeamMember } from "~/slack/lib/github-app";
+import { ensureTeam, addTeamMember } from "~/lib/github";
 import {
   workspaceConfigured,
   deriveProjectEmails,

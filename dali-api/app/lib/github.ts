@@ -3,11 +3,15 @@ import { createAppAuth } from "@octokit/auth-app";
 
 type RepoRef = { owner: string; repo: string };
 
-function parseRepo(envVal: string | undefined, envName: string): RepoRef {
-  if (!envVal) throw new Error(`${envName} is not set`);
-  const [owner, repo] = envVal.split("/");
-  if (!owner || !repo) throw new Error(`${envName} must be "owner/repo"`);
+export function parseRepo(value: string, source: string): RepoRef {
+  const [owner, repo] = value.split("/");
+  if (!owner || !repo) throw new Error(`${source} must be "owner/repo"`);
   return { owner, repo };
+}
+
+function parseRepoEnv(envVal: string | undefined, envName: string): RepoRef {
+  if (!envVal) throw new Error(`${envName} is not set`);
+  return parseRepo(envVal, envName);
 }
 
 // PEM stored in env may have literal "\n" sequences (e.g. Fly secrets via CLI).
@@ -41,11 +45,16 @@ export function __setGitHubClientForTests(c: Octokit | null) {
   cached = c;
 }
 
-export async function createIssue(args: { title: string; body: string }): Promise<{
-  number: number;
-  htmlUrl: string;
-}> {
-  const target = parseRepo(process.env.GITHUB_ISSUES_REPO, "GITHUB_ISSUES_REPO");
+// Create an issue. Defaults to the bug-report repo (GITHUB_ISSUES_REPO) when
+// no `repo` is supplied so the existing Slack flow doesn't have to change.
+export async function createIssue(args: {
+  title: string;
+  body: string;
+  repo?: string;
+}): Promise<{ number: number; htmlUrl: string }> {
+  const target = args.repo
+    ? parseRepo(args.repo, "createIssue.repo")
+    : parseRepoEnv(process.env.GITHUB_ISSUES_REPO, "GITHUB_ISSUES_REPO");
   const res = await githubAppClient().rest.issues.create({
     owner: target.owner,
     repo: target.repo,
@@ -100,7 +109,7 @@ export async function addTeamMember(teamSlug: string, username: string): Promise
   });
 }
 
-function isNotFound(err: unknown): boolean {
+export function isNotFound(err: unknown): boolean {
   return (
     typeof err === "object" &&
     err !== null &&
@@ -108,4 +117,3 @@ function isNotFound(err: unknown): boolean {
     (err as { status?: number }).status === 404
   );
 }
-
