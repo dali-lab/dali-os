@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { redirect, useLoaderData, useFetcher, Link } from "react-router";
+import { Form, redirect, useLoaderData, useFetcher, Link } from "react-router";
 import type { Route } from "./+types/lead.intern-to-full-cycle.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
@@ -10,6 +10,15 @@ import { CycleSetupSection as Section } from "~/hiring/components/CycleSetupSect
 import { ChallengePreviewModal } from "~/hiring/components/ChallengePreviewModal";
 import { RichTextEditor } from "~/components/RichTextEditor";
 import { hasInfoBody } from "~/hiring/lib/info-body";
+import { renderEmail } from "~/lib/email";
+import {
+  TEMPLATE_VARIABLES,
+  decisionSlot,
+  lintTemplate,
+  type TemplateSlot,
+  type DecisionSlotType,
+} from "~/hiring/lib/email-variables";
+import { AlertTriangle, CheckCircle, Eye, Mail, X } from "lucide-react";
 
 import {
   zonedDayEndUtc,
@@ -54,7 +63,16 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     return redirect(`/hiring/lead/cycle/${cycle.id}`);
   }
 
-  const [allDomains, allFormVersions, allRubricVersions, members] = await Promise.all([
+  const [
+    allDomains,
+    allFormVersions,
+    allRubricVersions,
+    members,
+    pendingDecisions,
+    emailTemplates,
+    currentDecisionEmails,
+    releasedDecisions,
+  ] = await Promise.all([
     prisma.domain.findMany({
       where: { active: true, isInternProgram: false },
       orderBy: { displayName: "asc" },
@@ -73,7 +91,61 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       },
       orderBy: { createdAt: "asc" },
     }),
+    // Draft + Final decisions awaiting hiring-lead action. Exclude Finals that
+    // already have a Released child (Decision is append-only). For InternToFull
+    // the Domain on DomainApplication is set directly (no challengeVersion).
+    prisma.decision.findMany({
+      where: {
+        stage: { in: ["Draft", "Final"] },
+        children: { none: { stage: "Released" } },
+        domainApplication: {
+          application: { applicationCycleId: params.id },
+        },
+      },
+      include: {
+        domainApplication: {
+          include: {
+            application: {
+              include: {
+                user: {
+                  select: {
+                    firstName: true,
+                    lastName: true,
+                    dartmouthEmail: true,
+                    netId: true,
+                  },
+                },
+              },
+            },
+            domain: { select: { name: true, displayName: true } },
+          },
+        },
+        madeBy: { select: { firstName: true, lastName: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.emailTemplate.findMany({
+      include: { versions: { orderBy: { versionNumber: "desc" } } },
+      orderBy: { name: "asc" },
+    }),
+    prisma.cycleDecisionEmail.findMany({
+      where: { applicationCycleId: params.id },
+      include: {
+        emailTemplateVersion: { include: { template: { select: { name: true } } } },
+      },
+    }),
+    prisma.decision.findMany({
+      where: {
+        stage: "Released",
+        domainApplication: {
+          application: { applicationCycleId: params.id },
+        },
+      },
+      select: { type: true },
+      distinct: ["type"],
+    }),
   ]);
+  const releasedDecisionTypes = releasedDecisions.map((d) => d.type);
 
   return {
     cycle: {
@@ -131,6 +203,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       userId: m.userId,
       displayName: [m.user.firstName, m.user.lastName].filter(Boolean).join(" ") || m.user.daliEmail || m.userId,
     })),
+    pendingDecisions,
+    emailTemplates,
+    currentDecisionEmails,
+    releasedDecisionTypes,
   };
 }
 
@@ -334,6 +410,50 @@ export async function action({ request, params }: Route.ActionArgs) {
     return { ok: true };
   }
 
+  if (intent === "set-decision-email") {
+    const decisionType = formData.get("decisionType") as string;
+    const emailTemplateVersionId = (formData.get("emailTemplateVersionId") as string) || null;
+    const validTypes = ["Rejected", "InvitedToInterview", "Accepted", "Waitlisted"] as const;
+    if (!validTypes.includes(decisionType as (typeof validTypes)[number])) {
+      return Response.json({ error: "Invalid decision type" }, { status: 400 });
+    }
+    // Lock once a Released decision of this type exists for this cycle.
+    const alreadyReleased = await prisma.decision.count({
+      where: {
+        stage: "Released",
+        type: decisionType as (typeof validTypes)[number],
+        domainApplication: { application: { applicationCycleId: cycleId } },
+      },
+    });
+    if (alreadyReleased > 0) {
+      return { ok: true };
+    }
+    if (emailTemplateVersionId) {
+      await prisma.cycleDecisionEmail.upsert({
+        where: {
+          applicationCycleId_decisionType: {
+            applicationCycleId: cycleId,
+            decisionType: decisionType as (typeof validTypes)[number],
+          },
+        },
+        update: { emailTemplateVersionId },
+        create: {
+          applicationCycleId: cycleId,
+          decisionType: decisionType as (typeof validTypes)[number],
+          emailTemplateVersionId,
+        },
+      });
+    } else {
+      await prisma.cycleDecisionEmail.deleteMany({
+        where: {
+          applicationCycleId: cycleId,
+          decisionType: decisionType as (typeof validTypes)[number],
+        },
+      });
+    }
+    return { ok: true };
+  }
+
   return Response.json({ error: "Unknown intent" }, { status: 400 });
 }
 
@@ -341,7 +461,17 @@ export async function action({ request, params }: Route.ActionArgs) {
 
 export default function InternToFullCycleSetup() {
   const data = useLoaderData<typeof loader>();
-  const { cycle, allDomains, allFormVersions, allRubricVersions, members } = data;
+  const {
+    cycle,
+    allDomains,
+    allFormVersions,
+    allRubricVersions,
+    members,
+    pendingDecisions,
+    emailTemplates,
+    currentDecisionEmails,
+    releasedDecisionTypes,
+  } = data;
   const isOpen = cycle.status === "Open" || cycle.status === "UnderReview";
 
   return (
@@ -391,6 +521,17 @@ export default function InternToFullCycleSetup() {
         reviewers={cycle.reviewers}
         targetDomains={cycle.targetDomains}
         members={members}
+      />
+
+      <DecisionEmailsSection
+        emailTemplates={emailTemplates}
+        currentDecisionEmails={currentDecisionEmails}
+        releasedDecisionTypes={releasedDecisionTypes}
+      />
+
+      <DecisionsSection
+        initialDecisions={pendingDecisions}
+        currentDecisionEmails={currentDecisionEmails}
       />
     </div>
   );
@@ -982,6 +1123,609 @@ function ReviewersSection({
         </div>
       )}
     </Section>
+  );
+}
+
+// ─── Decision Emails (template bindings) ────────────────────────────────────
+
+const DECISION_EMAIL_SLOTS: ReadonlyArray<{
+  type: DecisionSlotType;
+  label: string;
+  description: string;
+}> = [
+  { type: "Rejected", label: "Rejected", description: "Sent when a Rejected decision is released to the applicant." },
+  { type: "Waitlisted", label: "Waitlisted", description: "Sent when an applicant is placed on the waitlist." },
+  { type: "Accepted", label: "Accepted", description: "Sent when an applicant is offered a spot." },
+];
+
+function DecisionEmailsSection({
+  emailTemplates,
+  currentDecisionEmails,
+  releasedDecisionTypes,
+}: {
+  emailTemplates: any[];
+  currentDecisionEmails: any[];
+  releasedDecisionTypes: string[];
+}) {
+  return (
+    <Section
+      title="Decision emails"
+      description="Pick which template fires when each decision type is released. Slots without a binding will not send an email. Once a decision of a given type has been released, its slot locks for this cycle."
+    >
+      <div className="space-y-3">
+        {DECISION_EMAIL_SLOTS.map((slot) => {
+          const binding = currentDecisionEmails.find((b: any) => b.decisionType === slot.type);
+          const locked = releasedDecisionTypes.includes(slot.type);
+          return (
+            <DecisionEmailPicker
+              key={slot.type}
+              slot={slot}
+              binding={binding ?? null}
+              emailTemplates={emailTemplates}
+              locked={locked}
+            />
+          );
+        })}
+      </div>
+    </Section>
+  );
+}
+
+function SlotVariableHint({ slot }: { slot: TemplateSlot }) {
+  const vars = TEMPLATE_VARIABLES[slot];
+  return (
+    <p className="text-xs text-muted-foreground/80">
+      Supports{" "}
+      {vars.map((v, i) => (
+        <span key={v}>
+          {i > 0 && ", "}
+          <code className="font-mono bg-muted px-1 rounded">{`{{${v}}}`}</code>
+        </span>
+      ))}
+      .
+    </p>
+  );
+}
+
+function DecisionEmailPicker({
+  slot,
+  binding,
+  emailTemplates,
+  locked,
+}: {
+  slot: { type: DecisionSlotType; label: string; description: string };
+  binding: any | null;
+  emailTemplates: any[];
+  locked: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const currentVersionId: string | null = binding?.emailTemplateVersionId ?? null;
+  const currentLabel = binding
+    ? `${binding.emailTemplateVersion.template.name} — v${binding.emailTemplateVersion.versionNumber}`
+    : null;
+
+  return (
+    <div className="border border-border rounded-lg p-4 space-y-2">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h4 className="text-sm font-bold text-foreground">{slot.label}</h4>
+          <p className="text-xs text-muted-foreground">{slot.description}</p>
+          <SlotVariableHint slot={decisionSlot(slot.type)} />
+        </div>
+        {!editing && !locked && (
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="text-xs text-blue-600 hover:text-blue-800 font-medium shrink-0"
+          >
+            {currentLabel ? "Change" : "Assign"}
+          </button>
+        )}
+      </div>
+
+      {locked ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <CheckCircle className="w-4 h-4 text-green-600" />
+          <span>{currentLabel ?? "No template assigned"}</span>
+          <span className="text-xs text-muted-foreground/70 ml-2">
+            (locked — decisions of this type already released)
+          </span>
+        </div>
+      ) : !editing ? (
+        currentLabel ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <CheckCircle className="w-4 h-4 text-green-600" />
+            <span>{currentLabel}</span>
+          </div>
+        ) : (
+          <div className="text-sm text-orange-700 bg-orange-50 border border-orange-200 rounded px-2 py-1">
+            No template assigned — releasing a {slot.label} decision will not send an email.
+          </div>
+        )
+      ) : (
+        <Form
+          method="post"
+          preventScrollReset
+          className="flex items-end gap-2 flex-wrap"
+          onSubmit={() => setEditing(false)}
+        >
+          <input type="hidden" name="intent" value="set-decision-email" />
+          <input type="hidden" name="decisionType" value={slot.type} />
+          <div className="flex-1 min-w-[14rem]">
+            <select
+              name="emailTemplateVersionId"
+              defaultValue={currentVersionId ?? ""}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            >
+              <option value="">No template (skip email)</option>
+              {emailTemplates
+                .filter((t: any) => t.versions.length > 0)
+                .flatMap((t: any) =>
+                  t.versions.map((v: any) => (
+                    <option key={v.id} value={v.id}>
+                      {t.name} — v{v.versionNumber}
+                    </option>
+                  )),
+                )}
+            </select>
+          </div>
+          <button
+            type="submit"
+            className="px-3 py-2 text-sm font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition"
+          >
+            Save
+          </button>
+          <button
+            type="button"
+            onClick={() => setEditing(false)}
+            className="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground"
+          >
+            Cancel
+          </button>
+        </Form>
+      )}
+    </div>
+  );
+}
+
+// ─── Decisions ready for finalize / release ─────────────────────────────────
+
+function DecisionsSection({
+  initialDecisions,
+  currentDecisionEmails,
+}: {
+  initialDecisions: any[];
+  currentDecisionEmails: any[];
+}) {
+  const [decisions, setDecisions] = useState<any[]>(initialDecisions);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [previewDecisionId, setPreviewDecisionId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const boundTypes = new Set(currentDecisionEmails.map((b: any) => b.decisionType));
+  const drafts = decisions.filter((d) => d.stage === "Draft");
+  const finals = decisions.filter((d) => d.stage === "Final");
+  const releasableFinals = finals.filter((d) => boundTypes.has(d.type));
+  const skipped = finals.length - releasableFinals.length;
+
+  async function finalizeOne(id: string) {
+    setBusyId(id);
+    setError(null);
+    try {
+      const res = await fetch(`/api/hiring/decisions/${id}/finalize`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setError(body.error ?? `Finalize failed (HTTP ${res.status}).`);
+        return;
+      }
+      const newFinal = await res.json();
+      // Replace the Draft row with the new Final row so the UI flips its action.
+      setDecisions((prev) => {
+        const dropped = prev.filter((d) => d.id !== id);
+        const oldDraft = prev.find((d) => d.id === id);
+        if (!oldDraft) return dropped;
+        return [
+          {
+            ...oldDraft,
+            id: newFinal.id,
+            stage: "Final",
+          },
+          ...dropped,
+        ];
+      });
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function releaseOne(id: string) {
+    setBusyId(id);
+    setError(null);
+    try {
+      const res = await fetch(`/api/hiring/decisions/${id}/release`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setError(body.error ?? `Release failed (HTTP ${res.status}).`);
+        return;
+      }
+      setDecisions((prev) => prev.filter((d) => d.id !== id));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function finalizeAllDrafts() {
+    if (drafts.length === 0) return;
+    setBulkBusy(true);
+    setError(null);
+    try {
+      for (const d of drafts) {
+        const res = await fetch(`/api/hiring/decisions/${d.id}/finalize`, {
+          method: "POST",
+          credentials: "include",
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          setError(body.error ?? `Finalize failed for one or more decisions (HTTP ${res.status}).`);
+          break;
+        }
+        const newFinal = await res.json();
+        setDecisions((prev) => {
+          const dropped = prev.filter((x) => x.id !== d.id);
+          return [{ ...d, id: newFinal.id, stage: "Final" }, ...dropped];
+        });
+      }
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  async function releaseAllFinals() {
+    if (releasableFinals.length === 0) return;
+    setBulkBusy(true);
+    setError(null);
+    try {
+      for (const d of releasableFinals) {
+        const res = await fetch(`/api/hiring/decisions/${d.id}/release`, {
+          method: "POST",
+          credentials: "include",
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          setError(body.error ?? `Release failed for one or more decisions (HTTP ${res.status}).`);
+          break;
+        }
+        setDecisions((prev) => prev.filter((x) => x.id !== d.id));
+      }
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  const previewing = previewDecisionId
+    ? decisions.find((d) => d.id === previewDecisionId)
+    : null;
+  const previewBinding = previewing
+    ? currentDecisionEmails.find((b: any) => b.decisionType === previewing.type)
+    : null;
+
+  return (
+    <Section
+      title="Decisions"
+      description="Finalize Draft decisions, then release Final decisions to send the applicant their result email. Release is irreversible."
+    >
+      <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900 inline-flex items-center gap-2 mb-4">
+        <Mail className="w-3.5 h-3.5 flex-shrink-0" aria-hidden />
+        <span>
+          <span className="font-semibold">Release</span> emails the applicant using the bound template and cannot be undone.
+        </span>
+      </div>
+
+      {error && (
+        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800 mb-3 flex items-start gap-2">
+          <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          <div className="flex-1">{error}</div>
+          <button
+            type="button"
+            onClick={() => setError(null)}
+            className="text-red-700 hover:text-red-900 text-xs font-medium"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        <button
+          type="button"
+          onClick={finalizeAllDrafts}
+          disabled={bulkBusy || drafts.length === 0}
+          className="px-3 py-1.5 text-sm font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Finalize all drafts ({drafts.length})
+        </button>
+        <button
+          type="button"
+          onClick={releaseAllFinals}
+          disabled={bulkBusy || releasableFinals.length === 0}
+          title={
+            skipped > 0
+              ? `${skipped} decision${skipped === 1 ? "" : "s"} skipped — no email template bound on Decision emails above`
+              : undefined
+          }
+          className="px-3 py-1.5 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1"
+        >
+          <Mail className="w-3.5 h-3.5" aria-hidden />
+          Release all finals ({releasableFinals.length})
+          {skipped > 0 && ` — ${skipped} skipped`}
+        </button>
+      </div>
+
+      <div className="border border-border rounded-lg overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-muted/50 border-b border-border">
+            <tr>
+              <th className="text-left px-3 py-2 font-semibold text-foreground/80">Applicant</th>
+              <th className="text-left px-3 py-2 font-semibold text-foreground/80">Domain</th>
+              <th className="text-left px-3 py-2 font-semibold text-foreground/80">Decision</th>
+              <th className="text-left px-3 py-2 font-semibold text-foreground/80">Stage</th>
+              <th className="text-right px-3 py-2 font-semibold text-foreground/80">Action</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {decisions.map((d) => {
+              const hasBinding = boundTypes.has(d.type);
+              const applicantName = `${d.domainApplication.application.user.firstName ?? ""} ${d.domainApplication.application.user.lastName ?? ""}`.trim();
+              const domainLabel = d.domainApplication.domain?.displayName ?? d.domainApplication.domain?.name ?? "—";
+              return (
+                <tr key={d.id} className="hover:bg-muted/30 transition">
+                  <td className="px-3 py-2 font-medium text-foreground">{applicantName}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{domainLabel}</td>
+                  <td className="px-3 py-2">
+                    <span
+                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${
+                        d.type === "Accepted"
+                          ? "bg-green-100 text-green-700"
+                          : d.type === "Rejected"
+                            ? "bg-red-100 text-red-700"
+                            : d.type === "Waitlisted"
+                              ? "bg-yellow-100 text-yellow-700"
+                              : "bg-blue-100 text-blue-700"
+                      }`}
+                    >
+                      {d.type}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2">
+                    <span
+                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                        d.stage === "Draft" ? "bg-gray-100 text-gray-700" : "bg-purple-100 text-purple-700"
+                      }`}
+                    >
+                      {d.stage}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <div className="inline-flex flex-wrap items-center justify-end gap-2">
+                      {d.stage === "Final" && (
+                        <button
+                          type="button"
+                          onClick={() => setPreviewDecisionId(d.id)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg border border-border bg-card hover:bg-muted/40 text-foreground transition"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          Preview
+                        </button>
+                      )}
+                      {d.stage === "Draft" ? (
+                        <button
+                          type="button"
+                          onClick={() => finalizeOne(d.id)}
+                          disabled={busyId === d.id || bulkBusy}
+                          className="px-2.5 py-1 text-xs font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {busyId === d.id ? "Finalizing…" : "Finalize"}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => releaseOne(d.id)}
+                          disabled={busyId === d.id || bulkBusy || !hasBinding}
+                          title={
+                            !hasBinding
+                              ? `No email template bound to ${d.type} in this cycle. Bind one in Decision emails above.`
+                              : undefined
+                          }
+                          className="px-2.5 py-1 text-xs font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1"
+                        >
+                          <Mail className="w-3.5 h-3.5" aria-hidden />
+                          {busyId === d.id ? "Releasing…" : "Release"}
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+            {decisions.length === 0 && (
+              <tr>
+                <td colSpan={5} className="px-3 py-6 text-center text-muted-foreground/70">
+                  No decisions awaiting action. Run deliberations to create Draft decisions.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {previewing && (
+        <DecisionEmailPreviewModal
+          decision={previewing}
+          binding={previewBinding ?? null}
+          onClose={() => setPreviewDecisionId(null)}
+        />
+      )}
+    </Section>
+  );
+}
+
+function PreviewLintWarning({ unknown, unfilled }: { unknown: string[]; unfilled: string[] }) {
+  return (
+    <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 space-y-1">
+      <div className="flex items-center gap-1.5 font-semibold">
+        <AlertTriangle className="w-3.5 h-3.5" />
+        Template warnings
+      </div>
+      {unknown.length > 0 && (
+        <p>
+          Unknown placeholder{unknown.length > 1 ? "s" : ""}:{" "}
+          {unknown.map((t, i) => (
+            <span key={t}>
+              {i > 0 && ", "}
+              <code className="font-mono bg-amber-100 px-1 rounded">{`{{${t}}}`}</code>
+            </span>
+          ))}
+          . Will ship as literal text.
+        </p>
+      )}
+      {unfilled.length > 0 && (
+        <p>
+          Not populated for this slot:{" "}
+          {unfilled.map((t, i) => (
+            <span key={t}>
+              {i > 0 && ", "}
+              <code className="font-mono bg-amber-100 px-1 rounded">{`{{${t}}}`}</code>
+            </span>
+          ))}
+          . Will render as empty.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function DecisionEmailPreviewModal({
+  decision,
+  binding,
+  onClose,
+}: {
+  decision: any;
+  binding: any | null;
+  onClose: () => void;
+}) {
+  const firstName = decision.domainApplication.application.user.firstName ?? "";
+  const domain =
+    decision.domainApplication.domain?.displayName ??
+    decision.domainApplication.domain?.name ??
+    "";
+  const tmpl = binding?.emailTemplateVersion ?? null;
+  const rendered = tmpl ? renderEmail(tmpl, { firstName, domain }) : null;
+  const slot: TemplateSlot | undefined = decision.type
+    ? decisionSlot(decision.type as DecisionSlotType)
+    : undefined;
+  const lint = tmpl
+    ? (() => {
+        const subj = lintTemplate(tmpl.subject, slot);
+        const body = lintTemplate(tmpl.body, slot);
+        return {
+          unknown: Array.from(new Set([...subj.unknown, ...body.unknown])),
+          unfilled: Array.from(new Set([...subj.unfilled, ...body.unfilled])),
+        };
+      })()
+    : null;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-card rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-3 px-4 sm:px-6 py-3 sm:py-4 border-b border-border">
+          <div className="min-w-0">
+            <h2 className="text-lg font-bold text-foreground">Email preview</h2>
+            <p className="text-xs text-muted-foreground break-words">
+              {decision.domainApplication.application.user.firstName}{" "}
+              {decision.domainApplication.application.user.lastName}
+              {" · "}
+              {domain}
+              {" · "}
+              <span className="font-medium">{decision.type}</span>
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-muted-foreground/70 hover:text-foreground flex-shrink-0"
+            aria-label="Close preview"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="px-4 sm:px-6 py-4 space-y-4">
+          {tmpl ? (
+            <>
+              {lint && (lint.unknown.length > 0 || lint.unfilled.length > 0) && (
+                <PreviewLintWarning unknown={lint.unknown} unfilled={lint.unfilled} />
+              )}
+              <div>
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">From</h3>
+                <p className="mt-1 text-sm text-foreground">applications@dali.dartmouth.edu</p>
+              </div>
+              <div>
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">To</h3>
+                <p className="mt-1 text-sm text-foreground">
+                  {decision.domainApplication.application.user.dartmouthEmail ??
+                    (decision.domainApplication.application.user.netId
+                      ? `${decision.domainApplication.application.user.netId}@dartmouth.edu`
+                      : "(no address on file)")}
+                </p>
+              </div>
+              <div>
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Subject</h3>
+                <p className="mt-1 text-sm text-foreground">{rendered?.subject ?? ""}</p>
+              </div>
+              <div>
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Body</h3>
+                <div
+                  className="mt-1 prose prose-sm max-w-none text-foreground"
+                  dangerouslySetInnerHTML={{ __html: rendered?.html ?? "" }}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Template: <span className="font-medium">{binding?.emailTemplateVersion?.template?.name}</span>
+                {" "}— v{binding?.emailTemplateVersion?.versionNumber}
+              </p>
+            </>
+          ) : (
+            <div className="rounded-lg bg-orange-50 border border-orange-200 p-4 text-sm text-orange-800">
+              <p className="font-medium">No template assigned for {decision.type} in this cycle.</p>
+              <p className="mt-1">
+                Releasing this decision will not send an email. Bind a template in the Decision emails section above.
+              </p>
+            </div>
+          )}
+        </div>
+        <div className="px-4 sm:px-6 py-3 border-t border-border bg-muted/30 flex justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-gray-300 rounded-md hover:bg-muted/50"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
