@@ -1,16 +1,11 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import {
   PartyPopper,
-  FolderKanban,
   CalendarDays,
-  CalendarPlus,
   UserCircle2,
-  Users,
   ArrowRight,
   X as XIcon,
   Check,
-  Bot,
-  MonitorDown,
 } from "lucide-react";
 import { Modal } from "./Modal";
 
@@ -33,9 +28,10 @@ type TourStep = {
   matches?: (pathname: string) => boolean;
   /** Locates the sidebar element to highlight. Omitted for info-only steps. */
   findTarget?: () => HTMLElement | null;
-  /** Optional primary action for info-only steps. Click runs onClick AND
-   *  advances the tour. */
-  action?: { label: string; onClick: () => void };
+  /** Optional primary action shown alongside Next once the user has arrived
+   *  on the matched page (e.g. "Connect Google Calendar"). Click runs onClick
+   *  but does NOT advance — the user still hits Next to move on. */
+  arrivedAction?: { label: string; onClick: () => void };
 };
 
 /** Walks up through any iframe ancestors so the rect is in the parent
@@ -56,27 +52,6 @@ function getRectInParent(el: HTMLElement): DOMRect {
     doc = frame.ownerDocument;
   }
   return rect;
-}
-
-/** Search any same-origin iframe for a button matching the predicate. Used
- *  to target in-iframe tab pills (e.g. "Schedule Meeting" on the calendar). */
-function findInIframes(
-  predicate: (el: HTMLButtonElement) => boolean,
-): HTMLElement | null {
-  const iframes = document.querySelectorAll<HTMLIFrameElement>("iframe");
-  for (const iframe of iframes) {
-    try {
-      const doc = iframe.contentDocument;
-      if (!doc) continue;
-      const buttons = doc.querySelectorAll<HTMLButtonElement>("button");
-      for (const btn of buttons) {
-        if (predicate(btn)) return btn;
-      }
-    } catch {
-      // cross-origin iframe or detached — skip
-    }
-  }
-  return null;
 }
 
 function findInSidebar(predicate: (el: HTMLButtonElement) => boolean): HTMLElement | null {
@@ -103,135 +78,32 @@ function findByExactText(text: string) {
   return findInSidebar((btn) => (btn.textContent || "").trim() === text);
 }
 
-// The tour steps. A member who hasn't linked a Google Calendar gets an extra
-// "connect your calendar" step (moved here out of the onboarding checklist);
-// once linked it drops off. Built as a function so the calendar step is
-// conditional on the current user.
+// Two-step post-onboarding tour: walk a freshly-onboarded member through
+// (1) linking their Google Calendar so the lab can see their availability,
+// and (2) their profile page so they know where to update their details.
+// Step 1 is omitted if the member already has a Google calendar linked, so
+// a returning user who linked elsewhere only sees the profile step.
 function buildSteps(opts: { hasCalendarLink: boolean }): TourStep[] {
-  const steps: TourStep[] = [
-  {
-    icon: <FolderKanban className="w-4 h-4" />,
-    eyebrow: "Projects",
-    cta: (
-      <>
-        Open <strong>Projects</strong> from the sidebar.
-      </>
-    ),
-    arrived: <>All active projects live here.</>,
-    matches: (p) => p.startsWith("/projects"),
-    findTarget: () => findByExactText("Projects"),
-  },
-  {
-    icon: <CalendarDays className="w-4 h-4" />,
-    eyebrow: "Calendar",
-    cta: (
-      <>
-        Open <strong>Calendar</strong> from the sidebar.
-      </>
-    ),
-    arrived: <>Lab meetings and events.</>,
-    matches: (p) => p.startsWith("/calendar"),
-    findTarget: () => findByExactText("Calendar"),
-  },
-  {
-    icon: <CalendarPlus className="w-4 h-4" />,
-    eyebrow: "Schedule Meeting",
-    cta: (
-      <>
-        At the top of the Calendar, switch to{" "}
-        <strong>Schedule Meeting</strong>.
-      </>
-    ),
-    arrived: (
-      <>
-        See everyone&apos;s availability and create a meeting. No more
-        when2meets.
-      </>
-    ),
-    // No URL change happens when the pill is clicked (tab state lives in
-    // React state on the calendar page), so this step advances via a DOM
-    // click listener attached to the spotlit element instead of via
-    // dali:tabNavigated. See the find-target effect below.
-    findTarget: () =>
-      findInIframes(
-        (btn) => (btn.textContent || "").trim() === "Schedule Meeting",
-      ),
-  },
-  {
-    icon: <UserCircle2 className="w-4 h-4" />,
-    eyebrow: "Profile",
-    cta: (
-      <>
-        Open your <strong>profile</strong> from the bottom of the sidebar.
-      </>
-    ),
-    arrived: <>Add a photo and your details here.</>,
-    matches: (p) => p.startsWith("/profile"),
-    findTarget: () =>
-      findInSidebar((btn) => btn.getAttribute("aria-label") === "Open profile"),
-  },
-  {
-    icon: <Users className="w-4 h-4" />,
-    eyebrow: "Members",
-    cta: (
-      <>
-        Open <strong>Members</strong> from the sidebar.
-      </>
-    ),
-    arrived: <>Everyone in the lab.</>,
-    matches: (p) => p.startsWith("/members"),
-    findTarget: () => findByExactText("Members"),
-  },
-  {
-    icon: <MonitorDown className="w-4 h-4" />,
-    eyebrow: "Install the app",
-    cta: (
-      <>
-        Pin <strong>DALI OS</strong> to your taskbar. In Chrome, click the
-        install icon at the right of the address bar (or <strong>⋮ →
-        Install DALI OS</strong>).
-      </>
-    ),
-  },
-  {
-    icon: <Bot className="w-4 h-4" />,
-    eyebrow: "Connect any AI",
-    cta: (
-      <>
-        Connect any AI assistant to the <strong>DALI OS MCP</strong> and let
-        it read your DALI data for you.
-      </>
-    ),
-    action: {
-      label: "Open docs",
-      onClick: () => {
-        // Layout listens for dali:openTab on the parent window and opens it
-        // in the workspace iframe rather than navigating the top frame.
-        window.postMessage(
-          {
-            type: "dali:openTab",
-            url: "/help/mcp",
-            label: "Connect AI to DALI OS",
-          },
-          window.location.origin,
-        );
-      },
-    },
-  },
-  ];
+  const steps: TourStep[] = [];
 
-  // Offer calendar connect only when the member hasn't linked one yet.
   if (!opts.hasCalendarLink) {
     steps.push({
-      icon: <CalendarPlus className="w-4 h-4" />,
-      eyebrow: "Connect your calendar",
+      icon: <CalendarDays className="w-4 h-4" />,
+      eyebrow: "Calendar",
       cta: (
         <>
-          Connect your <strong>Google Calendar</strong> so the lab can see your
-          availability for scheduling.
+          Open <strong>Calendar</strong> from the sidebar.
         </>
       ),
-      action: {
+      arrived: (
+        <>
+          Connect your <strong>Google Calendar</strong> so the lab can see
+          your availability for scheduling.
+        </>
+      ),
+      matches: (p) => p.startsWith("/calendar"),
+      findTarget: () => findByExactText("Calendar"),
+      arrivedAction: {
         label: "Connect Google Calendar",
         onClick: () => {
           window.location.href = "/oauth/calendar/google/start";
@@ -239,6 +111,25 @@ function buildSteps(opts: { hasCalendarLink: boolean }): TourStep[] {
       },
     });
   }
+
+  steps.push({
+    icon: <UserCircle2 className="w-4 h-4" />,
+    eyebrow: "Profile",
+    cta: (
+      <>
+        Open your <strong>profile</strong> from the bottom of the sidebar.
+      </>
+    ),
+    arrived: (
+      <>
+        Review your details and add anything that&apos;s missing — you can
+        come back here anytime to edit.
+      </>
+    ),
+    matches: (p) => p.startsWith("/profile"),
+    findTarget: () =>
+      findInSidebar((btn) => btn.getAttribute("aria-label") === "Open profile"),
+  });
 
   return steps;
 }
@@ -669,34 +560,23 @@ export function LaunchWelcome({
                 Back to home
               </button>
             ) : arrived ? (
-              <button
-                ref={nextButtonRef}
-                type="button"
-                onClick={advance}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-accent-coral px-3 py-1.5 text-sm font-semibold text-white hover:bg-accent-coral/90"
-              >
-                Next
-                <ArrowRight className="w-4 h-4" />
-              </button>
-            ) : current && !current.findTarget ? (
               <>
-                <button
-                  type="button"
-                  onClick={advance}
-                  className="text-xs text-muted-foreground hover:text-foreground"
-                >
-                  Skip
-                </button>
+                {current?.arrivedAction && (
+                  <button
+                    type="button"
+                    onClick={current.arrivedAction.onClick}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-accent-coral px-3 py-1.5 text-sm font-semibold text-accent-coral hover:bg-accent-coral/10"
+                  >
+                    {current.arrivedAction.label}
+                  </button>
+                )}
                 <button
                   ref={nextButtonRef}
                   type="button"
-                  onClick={() => {
-                    current.action?.onClick();
-                    advance();
-                  }}
+                  onClick={advance}
                   className="inline-flex items-center gap-1.5 rounded-lg bg-accent-coral px-3 py-1.5 text-sm font-semibold text-white hover:bg-accent-coral/90"
                 >
-                  {current.action?.label ?? "Next"}
+                  Next
                   <ArrowRight className="w-4 h-4" />
                 </button>
               </>

@@ -6,6 +6,10 @@ import {
   FolderKanban,
   MessageSquare,
   Pencil,
+  User as UserIcon,
+  Github,
+  Linkedin,
+  Globe,
 } from "lucide-react";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
@@ -64,6 +68,13 @@ export async function loader({ request }: Route.LoaderArgs) {
         classYear: true,
         major: true,
         photoUrl: true,
+        hometown: true,
+        githubUsername: true,
+        linkedinUrl: true,
+        personalSite: true,
+        collegeId: true,
+        phoneNumber: true,
+        birthday: true,
       },
     }),
     getUserRoles(userId),
@@ -211,6 +222,73 @@ export default function Profile() {
 
       <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
         <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
+          <UserIcon className="w-4 h-4 text-accent-coral" />
+          Personal
+        </h2>
+        <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
+          <Detail label="Hometown" value={user.hometown} />
+          <Detail label="Birthday" value={formatBirthday(user.birthday)} />
+          <Detail label="Phone" value={user.phoneNumber} />
+          <Detail label="College ID" value={user.collegeId} />
+          <div>
+            <dt className="text-xs text-muted-foreground mb-0.5">GitHub</dt>
+            <dd className="text-sm text-foreground">
+              {user.githubUsername ? (
+                <a
+                  href={`https://github.com/${user.githubUsername}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 text-accent-coral hover:underline"
+                >
+                  <Github className="w-3.5 h-3.5" />
+                  {user.githubUsername}
+                </a>
+              ) : (
+                "—"
+              )}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted-foreground mb-0.5">LinkedIn</dt>
+            <dd className="text-sm text-foreground">
+              {user.linkedinUrl ? (
+                <a
+                  href={user.linkedinUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 text-accent-coral hover:underline"
+                >
+                  <Linkedin className="w-3.5 h-3.5" />
+                  Profile
+                </a>
+              ) : (
+                "—"
+              )}
+            </dd>
+          </div>
+          <div className="sm:col-span-2">
+            <dt className="text-xs text-muted-foreground mb-0.5">Personal site</dt>
+            <dd className="text-sm text-foreground">
+              {user.personalSite ? (
+                <a
+                  href={user.personalSite}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 text-accent-coral hover:underline break-all"
+                >
+                  <Globe className="w-3.5 h-3.5 flex-shrink-0" />
+                  {user.personalSite}
+                </a>
+              ) : (
+                "—"
+              )}
+            </dd>
+          </div>
+        </dl>
+      </section>
+
+      <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
+        <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
           <FolderKanban className="w-4 h-4 text-accent-coral" />
           My activity
           {termCode && (
@@ -268,6 +346,20 @@ export default function Profile() {
       </section>
     </div>
   );
+}
+
+// Birthday is stored at UTC midnight; format from UTC components so a viewer in
+// a negative-offset timezone doesn't see the previous day.
+function formatBirthday(value: string | Date | null | undefined): string | null {
+  if (!value) return null;
+  const d = typeof value === "string" ? new Date(value) : value;
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString(undefined, {
+    timeZone: "UTC",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
 function Detail({ label, value }: { label: string; value: string | null }) {
