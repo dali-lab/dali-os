@@ -170,12 +170,14 @@ function appendWithLruCap(tabs: Tab[], protectedTabId: string): Tab[] {
   return [...tabs.slice(0, victimIdx), ...tabs.slice(victimIdx + 1)]
 }
 
-// Locate an open tab for `url`, matching on either its origin (so re-clicking
-// a sidebar section focuses a tab that has since drifted to a sub-page) or its
-// current url (so re-opening the exact deep link focuses it too).
+// Locate an open tab whose current url matches `url`. Re-clicking a sidebar
+// section while a tab opened from that section has drifted to a sub-page
+// (e.g. a cycle detail under Cycles) intentionally does NOT match — the user
+// gets a fresh tab on the section page rather than being snapped to the
+// drifted child, which lets them keep both views side-by-side.
 function findTabPane(state: WorkspaceState, url: string): { paneId: string; tabId: string } | null {
   for (const pane of state.panes) {
-    const tab = pane.tabs.find((t) => t.origin === url || t.url === url)
+    const tab = pane.tabs.find((t) => t.url === url)
     if (tab) return { paneId: pane.id, tabId: tab.id }
   }
   return null
