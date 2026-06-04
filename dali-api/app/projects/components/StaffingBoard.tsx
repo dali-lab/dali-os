@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useSearchParams } from "react-router";
+import { useSearchParams, useRevalidator } from "react-router";
 import {
   DndContext,
   PointerSensor,
@@ -21,6 +21,7 @@ import { CheckCircle2 } from "lucide-react";
 import { MemberCard } from "./MemberCard";
 import { BidModal } from "./BidModal";
 import { FinalizeModal } from "./FinalizeModal";
+import { AddMemberControl } from "./AddMemberControl";
 
 type ProjectMeta = { id: string; name: string; status: "Active" | "Paused" | "Archived" };
 
@@ -59,6 +60,7 @@ export function StaffingBoard({
   canManage,
 }: Props) {
   const [searchParams, setSearchParams] = useSearchParams();
+  const revalidator = useRevalidator();
   const [assignments, setAssignments] = useState<Assignment[]>(initialAssignments);
   const [error, setError] = useState<string | null>(null);
   const [openBidUserId, setOpenBidUserId] = useState<string | null>(null);
@@ -134,6 +136,26 @@ export function StaffingBoard({
     });
   }
 
+  async function handleRemoveMember(userId: string) {
+    setError(null);
+    try {
+      const res = await fetch("/api/staffing/board-member", {
+        method: "DELETE",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cycleId, userId }),
+      });
+      if (!res.ok) {
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        setError(json.error ?? `Failed to remove member: ${res.status}`);
+        return;
+      }
+      revalidator.revalidate();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to remove member");
+    }
+  }
+
   const openBidMember = openBidUserId ? memberById.get(openBidUserId) ?? null : null;
   const openBidColumnId = openBidUserId
     ? assignments.find((a) => a.userId === openBidUserId)?.projectId ?? null
@@ -142,6 +164,7 @@ export function StaffingBoard({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-end gap-3 flex-wrap">
+        {canManage && <AddMemberControl cycleId={cycleId} />}
         <div className="flex items-center gap-2">
           <label className="sr-only" htmlFor="staffing-term">
             Term
@@ -191,7 +214,9 @@ export function StaffingBoard({
             tone="muted"
             cards={board[UNASSIGNED] ?? []}
             projectNames={projectNames}
+            domainNames={domainNames}
             onOpenBid={setOpenBidUserId}
+            onRemoveMember={canManage ? handleRemoveMember : undefined}
             draggable={canManage}
           />
           {projects.map((p) => (
@@ -203,6 +228,7 @@ export function StaffingBoard({
               tone={p.status === "Active" ? "active" : "dim"}
               cards={board[p.id] ?? []}
               projectNames={projectNames}
+              domainNames={domainNames}
               demand={demandByProject[p.id]}
               onOpenBid={setOpenBidUserId}
               draggable={canManage}
@@ -247,8 +273,10 @@ function Column({
   tone,
   cards,
   projectNames,
+  domainNames,
   demand,
   onOpenBid,
+  onRemoveMember,
   draggable,
   onFinalize,
 }: {
@@ -258,11 +286,14 @@ function Column({
   tone: ColumnTone;
   cards: MemberCardModel[];
   projectNames: Record<string, string>;
+  domainNames: Record<string, string>;
   // Per-domain expected headcount for this project this term. Absent for
   // the Unassigned column and for projects with no ProjectRoleRequest rows;
   // rendered as small chips under the assigned count.
   demand?: DomainDemand[];
   onOpenBid: (userId: string) => void;
+  // Remove a manually-added member from the board. Only set for managers.
+  onRemoveMember?: (userId: string) => void;
   draggable: boolean;
   // Only set for project columns the user can manage; renders the finalize
   // icon button in the header.
@@ -330,7 +361,9 @@ function Column({
               card={card}
               columnId={id}
               projectNames={projectNames}
+              domainNames={domainNames}
               onOpenBid={() => onOpenBid(card.userId)}
+              onRemove={onRemoveMember ? () => onRemoveMember(card.userId) : undefined}
               draggable={draggable}
             />
           ))

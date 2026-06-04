@@ -282,6 +282,45 @@ export async function loader({ request }: Route.LoaderArgs) {
     members.push(...flagged);
   }
 
+  // Members a staffing lead manually placed on the board (no bid) — surfaced as
+  // ordinary Unassigned cards (no unresolved-bid flag). Skip anyone already in
+  // the pool above (they bid, or were flagged), so their real bid takes over.
+  const placedUserIds = new Set(members.map((m) => m.userId));
+  const boardMemberIds = (
+    await prisma.staffingBoardMember.findMany({
+      where: { staffingCycleId: cycle.id },
+      select: { userId: true },
+    })
+  )
+    .map((b) => b.userId)
+    .filter((id) => !placedUserIds.has(id));
+
+  if (boardMemberIds.length > 0) {
+    const manualUsers = await prisma.user.findMany({
+      where: { id: { in: boardMemberIds } },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        daliEmail: true,
+        dartmouthEmail: true,
+        photoUrl: true,
+        adminMembership: { select: { id: true } },
+        coreAssignments: { select: { leadTitle: true } },
+        domainEligibilities: {
+          select: { level: true, domain: { select: { displayName: true } } },
+        },
+      },
+    });
+    const manual = await Promise.all(
+      manualUsers.map(async (u) => ({
+        ...(await toMemberInput(u, [], false)),
+        manuallyAdded: true,
+      })),
+    );
+    members.push(...manual);
+  }
+
   const initialAssignments: Assignment[] = assignmentRows.map((a) => ({
     userId: a.userId,
     projectId: a.projectId,

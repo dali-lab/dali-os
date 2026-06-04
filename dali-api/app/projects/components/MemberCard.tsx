@@ -12,12 +12,15 @@ type Props = {
   card: MemberCardModel;
   columnId: string;
   projectNames: Record<string, string>;
+  domainNames: Record<string, string>;
   onOpenBid: () => void;
+  /** Remove a manually-added member from the board. Only passed for managers. */
+  onRemove?: () => void;
   /** When false the card is static (read-only viewers). */
   draggable: boolean;
 };
 
-export function MemberCard({ card, columnId, projectNames, onOpenBid, draggable }: Props) {
+export function MemberCard({ card, columnId, projectNames, domainNames, onOpenBid, onRemove, draggable }: Props) {
   const dragId = `${columnId}::${card.userId}`;
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: dragId,
@@ -73,13 +76,37 @@ export function MemberCard({ card, columnId, projectNames, onOpenBid, draggable 
                 Bid unresolved
               </span>
             )}
+            {card.manuallyAdded && (
+              <span
+                className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded bg-muted text-muted-foreground"
+                title="Manually added to the board (no bid submitted)."
+              >
+                Added
+              </span>
+            )}
           </div>
           <RoleStrip card={card} />
         </div>
+        {onRemove && card.manuallyAdded && (
+          <button
+            type="button"
+            // Stop the press from starting a drag or opening the bid modal.
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemove();
+            }}
+            title="Remove from board"
+            aria-label={`Remove ${fullName} from board`}
+            className="flex-shrink-0 text-muted-foreground hover:text-destructive text-sm leading-none px-1 rounded hover:bg-muted"
+          >
+            ×
+          </button>
+        )}
       </div>
 
       <DomainLevelStrip card={card} />
-      <BidStrip card={card} projectNames={projectNames} />
+      <BidStrip card={card} projectNames={projectNames} domainNames={domainNames} />
     </div>
   );
 }
@@ -141,9 +168,11 @@ function RoleStrip({ card }: { card: MemberCardModel }) {
 function BidStrip({
   card,
   projectNames,
+  domainNames,
 }: {
   card: MemberCardModel;
   projectNames: Record<string, string>;
+  domainNames: Record<string, string>;
 }) {
   // Always show the member's top 3 project preferences in rank order,
   // regardless of which column the card is in.
@@ -160,12 +189,23 @@ function BidStrip({
   }
   return (
     <ol className="text-[11px] text-muted-foreground flex flex-col gap-0.5">
-      {card.topPreferences.map((p) => (
-        <li key={p.projectId} className="truncate">
-          <span className="font-semibold">#{p.rank}</span>{" "}
-          {projectNames[p.projectId] ?? p.projectId}
-        </li>
-      ))}
+      {card.topPreferences.map((p) => {
+        // A project bid at this rank in multiple domains shows the project once
+        // with its domains appended (e.g. "Evergreen — Fullstack, UI/UX"),
+        // rather than repeating the project line per domain.
+        const domains = p.domainIds
+          .map((id) => domainNames[id])
+          .filter((n): n is string => !!n);
+        return (
+          <li key={`${p.projectId}-${p.rank}`} className="truncate">
+            <span className="font-semibold">#{p.rank}</span>{" "}
+            {projectNames[p.projectId] ?? p.projectId}
+            {domains.length > 0 && (
+              <span className="text-muted-foreground/70"> — {domains.join(", ")}</span>
+            )}
+          </li>
+        );
+      })}
     </ol>
   );
 }

@@ -126,6 +126,7 @@ export function onboardingEmailHtml(
   return `
     ${accountBlock}
     <p>Once you're in, finish setting up by completing your member profile and onboarding steps.</p>
+    <p><strong>The deadline to accept your offer and complete onboarding is June 8th, 2026.</strong></p>
     ${slackLine}
     <p>We also have a special event planned for all day Sunday, September 13th. This is a required event. If there is any concern with this requirement, please reach out.</p>
     <p>We are very excited to welcome you to DALI soon and look forward to an incredible 26F together. Please reach out with any questions.</p>

@@ -53,6 +53,53 @@ describe("buildBoard", () => {
     expect(card.topPreferences.map((p) => p.projectId)).toEqual(["p9", "p1"]);
   });
 
+  it("dedupes same-project same-rank bids into one entry listing each domain", () => {
+    // Gaelle's case: rank-1 bid on "Evergreen" in two domains. The card should
+    // show one #1 Evergreen entry whose domainIds carry both, not two lines.
+    const board = buildBoard({
+      projectIds: [],
+      members: [
+        member({
+          preferences: [
+            { projectId: "evergreen", domainId: "fullstack", level: "P1", preferenceRank: 1, notes: null },
+            { projectId: "evergreen", domainId: "uiux", level: "P1", preferenceRank: 1, notes: null },
+            { projectId: "p2", domainId: "fullstack", level: "P1", preferenceRank: 2, notes: null },
+          ],
+        }),
+      ],
+      assignments: [],
+    });
+    const { topPreferences } = board[UNASSIGNED][0];
+    expect(topPreferences).toEqual([
+      { projectId: "evergreen", rank: 1, domainIds: ["fullstack", "uiux"] },
+      { projectId: "p2", rank: 2, domainIds: ["fullstack"] },
+    ]);
+  });
+
+  it("caps topPreferences at 3 distinct (project, rank) entries, not raw rows", () => {
+    const board = buildBoard({
+      projectIds: [],
+      members: [
+        member({
+          preferences: [
+            // Two rows for rank 1 collapse to one entry, leaving room for 2,3,4.
+            { projectId: "p1", domainId: "d1", level: "P1", preferenceRank: 1, notes: null },
+            { projectId: "p1", domainId: "d2", level: "P1", preferenceRank: 1, notes: null },
+            { projectId: "p2", domainId: "d1", level: "P1", preferenceRank: 2, notes: null },
+            { projectId: "p3", domainId: "d1", level: "P1", preferenceRank: 3, notes: null },
+            { projectId: "p4", domainId: "d1", level: "P1", preferenceRank: 4, notes: null },
+          ],
+        }),
+      ],
+      assignments: [],
+    });
+    expect(board[UNASSIGNED][0].topPreferences.map((p) => p.projectId)).toEqual([
+      "p1",
+      "p2",
+      "p3",
+    ]);
+  });
+
   it("puts an assigned member in the project column and uses the assignment's level", () => {
     const board = buildBoard({
       projectIds: ["p1"],

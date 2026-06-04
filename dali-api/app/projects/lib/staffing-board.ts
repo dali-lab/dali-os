@@ -45,6 +45,10 @@ export type MemberInput = {
   // staffing lead notices, rather than vanishing. Derived in the loader; never
   // set for members whose preferences resolved normally.
   unresolvedBid?: boolean;
+  // True when a staffing lead manually placed this member on the board (no bid)
+  // via StaffingBoardMember. Drives the card's remove (×) affordance. A member
+  // who also bid is sourced from their preferences instead, so this stays false.
+  manuallyAdded?: boolean;
 };
 
 export type Assignment = {
@@ -69,10 +73,16 @@ export type MemberCardModel = {
   // For an assigned column, the level recorded on the assignment row.
   level: Level | null;
   // Member's top 3 project preferences in rank order. Always shown on the card.
-  topPreferences: { projectId: string; rank: number }[];
+  // Deduped by (projectId, rank): a member can bid the same project at one rank
+  // in multiple domains (e.g. Evergreen #1 as both Fullstack and UI/UX) — those
+  // collapse to one entry whose `domainIds` lists each bid domain, so the card
+  // shows the project once with its domains rather than repeating the line.
+  topPreferences: { projectId: string; rank: number; domainIds: string[] }[];
   // Mirrors MemberInput.unresolvedBid — the card renders a badge so the member
   // is visibly distinguished from one who simply hasn't been placed yet.
   unresolvedBid: boolean;
+  // Mirrors MemberInput.manuallyAdded — drives the card's remove (×) button.
+  manuallyAdded: boolean;
 };
 
 export const UNASSIGNED = "__unassigned__";
@@ -144,12 +154,34 @@ function toCard(
     coreTitles: member.coreTitles,
     domainLevels: member.domainLevels,
     level,
-    topPreferences: [...member.preferences]
-      .sort((a, b) => a.preferenceRank - b.preferenceRank)
-      .slice(0, 3)
-      .map((p) => ({ projectId: p.projectId, rank: p.preferenceRank })),
+    topPreferences: topPreferences(member.preferences),
     unresolvedBid: member.unresolvedBid ?? false,
+    manuallyAdded: member.manuallyAdded ?? false,
   };
+}
+
+// Top 3 project picks in rank order, deduped by (projectId, rank). When a member
+// bids the same project at the same rank in several domains, the entry's
+// `domainIds` lists each (in first-seen order). The 3-item cap counts distinct
+// (project, rank) entries, not raw preference rows.
+function topPreferences(
+  prefs: Preference[],
+): { projectId: string; rank: number; domainIds: string[] }[] {
+  const byKey = new Map<string, { projectId: string; rank: number; domainIds: string[] }>();
+  for (const p of [...prefs].sort((a, b) => a.preferenceRank - b.preferenceRank)) {
+    const key = `${p.projectId}::${p.preferenceRank}`;
+    const entry = byKey.get(key);
+    if (entry) {
+      if (!entry.domainIds.includes(p.domainId)) entry.domainIds.push(p.domainId);
+    } else {
+      byKey.set(key, {
+        projectId: p.projectId,
+        rank: p.preferenceRank,
+        domainIds: [p.domainId],
+      });
+    }
+  }
+  return Array.from(byKey.values()).slice(0, 3);
 }
 
 function topPreference(prefs: Preference[]): Preference | null {
