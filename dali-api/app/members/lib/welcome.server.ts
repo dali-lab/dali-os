@@ -127,6 +127,7 @@ export function onboardingEmailHtml(
     <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0;"/>
     ${accountBlock}
     <p>Once you're in, finish setting up by completing your member profile and onboarding steps.</p>
+    <p><strong>The deadline to accept your offer and complete onboarding is June 8th, 2026.</strong></p>
     ${slackLine}
     <p>— The DALI Lab</p>
     <p><img src="${logoUrl}" alt="DALI Lab" width="96" style="display:block;border:0;"/></p>
