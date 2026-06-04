@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   buildBoard,
+  dedupeLiveAssignments,
   resolveAssignmentInputs,
   UNASSIGNED,
   type MemberInput,
@@ -240,5 +241,47 @@ describe("resolveAssignmentInputs", () => {
       "p1",
     );
     expect(out).toBeNull();
+  });
+});
+
+describe("dedupeLiveAssignments", () => {
+  const row = (userId: string, status: "Proposed" | "Confirmed", projectId: string) => ({
+    userId,
+    status,
+    projectId,
+  });
+
+  it("keeps a lone Confirmed row so a finalized roster stays on the board", () => {
+    const out = dedupeLiveAssignments([row("u1", "Confirmed", "p1")]);
+    expect(out).toEqual([row("u1", "Confirmed", "p1")]);
+  });
+
+  it("prefers Proposed over Confirmed for the same user (in-progress re-edit wins)", () => {
+    // User was confirmed on p1, then dragged to p2 (fresh Proposed row).
+    const out = dedupeLiveAssignments([
+      row("u1", "Confirmed", "p1"),
+      row("u1", "Proposed", "p2"),
+    ]);
+    expect(out).toEqual([row("u1", "Proposed", "p2")]);
+  });
+
+  it("prefers Proposed regardless of input order", () => {
+    const out = dedupeLiveAssignments([
+      row("u1", "Proposed", "p2"),
+      row("u1", "Confirmed", "p1"),
+    ]);
+    expect(out).toEqual([row("u1", "Proposed", "p2")]);
+  });
+
+  it("returns one row per user across a mixed set", () => {
+    const out = dedupeLiveAssignments([
+      row("u1", "Confirmed", "p1"),
+      row("u2", "Proposed", "p1"),
+      row("u2", "Confirmed", "p1"),
+      row("u3", "Proposed", "p2"),
+    ]);
+    expect(out).toHaveLength(3);
+    expect(out.map((r) => r.userId).sort()).toEqual(["u1", "u2", "u3"]);
+    expect(out.find((r) => r.userId === "u2")?.status).toBe("Proposed");
   });
 });

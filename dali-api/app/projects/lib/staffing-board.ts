@@ -90,6 +90,29 @@ export type MemberCardModel = {
 export const UNASSIGNED = "__unassigned__";
 
 /**
+ * A member can hold both a Proposed and a Confirmed StaffingAssignment in the
+ * same cycle: dragging after finalize writes a fresh Proposed row without
+ * touching the audit-trail Confirmed one. The board (and finalize) treat a
+ * member's LIVE assignment as their Proposed row if present, else Confirmed —
+ * so an in-progress re-edit wins over the already-finalized position. Declined
+ * rows are audit only and must be filtered out before calling this.
+ *
+ * Returns one row per userId. Input order is otherwise preserved.
+ */
+export function dedupeLiveAssignments<T extends { userId: string; status: string }>(
+  rows: T[],
+): T[] {
+  const byUser = new Map<string, T>();
+  for (const r of rows) {
+    const existing = byUser.get(r.userId);
+    if (!existing || (existing.status === "Confirmed" && r.status === "Proposed")) {
+      byUser.set(r.userId, r);
+    }
+  }
+  return Array.from(byUser.values());
+}
+
+/**
  * Build the board's column→cards index from raw data. The output is stable
  * across re-renders: members sort by lastName, firstName; columns are not
  * pre-keyed here (the renderer iterates `projectIds` in display order and
