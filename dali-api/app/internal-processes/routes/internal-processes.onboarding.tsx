@@ -79,11 +79,10 @@ export async function loader({ request }: Route.LoaderArgs) {
   for (const d of decisions) {
     const u = d.domainApplication.application.user;
     const dom = d.domainApplication.domain;
-    // Skip people who've already finished onboarding (e.g. a Fellowship-cycle
-    // member re-accepted into a new domain). They keep their existing
-    // onboardedAt/daliEmail/slackUserId, so there's nothing to track here — they'd
-    // just be all-green clutter on a board meant for in-flight onboarding.
-    if (u.daliMember?.onboardedAt != null) continue;
+    // Everyone accepted for the cycle is listed, including members who've already
+    // finished onboarding — their progress pills just read all-green
+    // (profileSubmitted derives from onboardedAt). The board is a full roster of
+    // accepted members and their onboarding state, not only in-flight ones.
     // Stable key for dedupe + the domain filter dropdown (code, falling back to
     // name); displayName is for display only and can change.
     const domainKey = dom.code ?? dom.name;
