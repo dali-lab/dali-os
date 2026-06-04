@@ -120,6 +120,7 @@ model User {
   essentialityFormsAsPm EssentialityForm[]         @relation("EssentialityFormPm")
   essentialityRatings   EssentialityRating[]
   staffingAssignments   StaffingAssignment[]
+  staffingBoardMembers  StaffingBoardMember[]
   intentToWork          IntentToWork[]
   formsCreated          Form[]
   formFolders           FormFolder[]
@@ -2402,6 +2403,27 @@ model StaffingCycle {
   intentToWork      IntentToWork[]
   formBindings      StaffingCycleFormBinding[]
   formSubmissions   FormSubmission[]
+  boardMembers      StaffingBoardMember[]
+}
+
+// A member a staffing lead manually placed on the board for a cycle WITHOUT a
+// bid. The board pool is otherwise derived from StaffingPreference / bid
+// submissions, so a non-bidder would never appear; this row makes them show up
+// as an ordinary Unassigned card the lead can then drag into a project. It is
+// not a preference and not an assignment — purely "present on the board".
+// Removed when the lead removes the card. A member who later bids still has
+// their preferences take over the card; this row is harmless either way.
+model StaffingBoardMember {
+  id              String   @id @default(cuid())
+  userId          String
+  staffingCycleId String
+  addedById       String? // actor; free-form userId, nullable for safety
+  createdAt       DateTime @default(now())
+
+  user          User          @relation(fields: [userId], references: [id])
+  staffingCycle StaffingCycle @relation(fields: [staffingCycleId], references: [id])
+
+  @@unique([userId, staffingCycleId])
 }
 
 model StaffingPreference {

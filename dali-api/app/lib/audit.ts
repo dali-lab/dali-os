@@ -29,6 +29,8 @@ export const AUDIT_ACTIONS = [
   "group.delete",
   "staffing.assign",
   "staffing.finalize",
+  "staffing.board-member.add",
+  "staffing.board-member.remove",
   "document.delete",
   "projectFile.create",
   "projectFile.version",

@@ -204,6 +204,7 @@ export default [
   // Staffing board (always open; one cycle per term, auto-created on view)
   route("api/staffing/assign", "projects/routes/api.staffing.assign.ts"),
   route("api/staffing/finalize", "projects/routes/api.staffing.finalize.ts"),
+  route("api/staffing/board-member", "projects/routes/api.staffing.board-member.ts"),
 
   // Project task board
   route("api/projects/:id/tasks", "projects/routes/api.projects.$id.tasks.ts"),
