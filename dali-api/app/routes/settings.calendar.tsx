@@ -129,7 +129,7 @@ export async function action({ request }: Route.ActionArgs) {
 export default function SettingsCalendarPage({ loaderData }: Route.ComponentProps) {
   const { calendarLinks } = loaderData;
   return (
-    <main className="mx-auto max-w-3xl p-8">
+    <main className="max-w-3xl p-8">
       <header className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Calendar</h1>

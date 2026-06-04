@@ -60,7 +60,7 @@ const CARDS = [
 
 export default function HelpIndex() {
   return (
-    <main className="mx-auto max-w-3xl p-8">
+    <main className="max-w-3xl p-8">
       <h1 className="text-2xl font-semibold">Help</h1>
       <p className="mt-2 text-sm text-zinc-600">
         Short articles on how the pieces of DALI OS fit together.

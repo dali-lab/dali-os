@@ -134,23 +134,23 @@ export default function Profile() {
 
   return (
     <div className="flex flex-col gap-6 max-w-3xl">
-      <header className="flex items-center gap-4">
+      <header className="flex flex-col items-center gap-4 text-center">
         {user.photoUrl ? (
           <img
             src={user.photoUrl}
             alt=""
-            className="w-20 h-20 rounded-lg object-cover border border-border"
+            className="w-32 h-32 rounded-lg object-cover border border-border"
           />
         ) : (
-          <div className="w-20 h-20 rounded-lg border border-border bg-accent-coral/15 text-accent-coral flex items-center justify-center font-bold text-2xl">
+          <div className="w-32 h-32 rounded-lg border border-border bg-accent-coral/15 text-accent-coral flex items-center justify-center font-bold text-3xl">
             {userInitials({ ...user, email })}
           </div>
         )}
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0">
           <h1 className="font-heading text-2xl font-bold text-foreground">
             {user.firstName} {user.lastName}
           </h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
+          <p className="text-sm text-muted-foreground mt-1">
             {user.pronouns ? `${user.pronouns} · ` : ""}
             {email}
             {user.classYear ? ` · '${String(user.classYear).slice(-2)}` : ""}
