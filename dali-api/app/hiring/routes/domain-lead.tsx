@@ -2141,6 +2141,27 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
   const isUnderReview = currentStatus === "UnderReview";
   const [searchParams, setSearchParams] = useSearchParams();
   const revalidator = useRevalidator();
+  // Which draft is currently being finalized — disables its Finalize button so a
+  // double-click can't POST twice (the append-only Decision model would otherwise
+  // create duplicate Final rows before the revalidate lands).
+  const [finalizingId, setFinalizingId] = useState<string | null>(null);
+  const handleFinalize = async (draftId: string) => {
+    if (finalizingId) return;
+    setFinalizingId(draftId);
+    try {
+      const res = await fetch(`/api/hiring/decisions/${draftId}/finalize`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok && res.status !== 409) {
+        const body = await res.json().catch(() => null);
+        alert(body?.error ?? "Failed to finalize. Please try again.");
+      }
+    } finally {
+      setFinalizingId(null);
+      revalidator.revalidate();
+    }
+  };
   const filter: "all" | "finalize" = searchParams.get("app_filter") === "finalize" ? "finalize" : "all";
   const query = searchParams.get("q") ?? "";
   // Default sort is "none" — preserves the loader's order (newest application
@@ -2447,13 +2468,11 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                   <div className="flex flex-wrap items-center justify-end gap-2">
                   {isUnderReview && draftToFinalize ? (
                     <button
-                      onClick={async () => {
-                        await fetch(`/api/hiring/decisions/${draftToFinalize.id}/finalize`, { method: "POST", credentials: "include" });
-                        revalidator.revalidate();
-                      }}
-                      className="px-2 py-1 text-xs font-medium rounded bg-accent-coral hover:bg-accent-coral/90 text-white transition"
+                      onClick={() => handleFinalize(draftToFinalize.id)}
+                      disabled={finalizingId === draftToFinalize.id}
+                      className="px-2 py-1 text-xs font-medium rounded bg-accent-coral hover:bg-accent-coral/90 text-white transition disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      Finalize
+                      {finalizingId === draftToFinalize.id ? "Finalizing…" : "Finalize"}
                     </button>
                   ) : (
                     <span className="text-xs text-muted-foreground/60">—</span>
@@ -2542,13 +2561,11 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
               {isUnderReview && draftToFinalize && (
                 <div className="flex flex-wrap items-center gap-2">
                   <button
-                    onClick={async () => {
-                      await fetch(`/api/hiring/decisions/${draftToFinalize.id}/finalize`, { method: "POST", credentials: "include" });
-                      revalidator.revalidate();
-                    }}
-                    className="px-2 py-1 text-xs font-medium rounded bg-accent-coral hover:bg-accent-coral/90 text-white transition"
+                    onClick={() => handleFinalize(draftToFinalize.id)}
+                    disabled={finalizingId === draftToFinalize.id}
+                    className="px-2 py-1 text-xs font-medium rounded bg-accent-coral hover:bg-accent-coral/90 text-white transition disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    Finalize
+                    {finalizingId === draftToFinalize.id ? "Finalizing…" : "Finalize"}
                   </button>
                 </div>
               )}
