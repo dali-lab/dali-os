@@ -4,12 +4,11 @@ import type { Route } from "./+types/members.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isAdmin, isCore } from "~/lib/roles";
-import { initialsFromName } from "~/lib/display";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { parseSessionCookie } from "~/lib/cookies";
 import { getPresenceUser } from "~/lib/presence-user";
 import { EditableSection } from "~/components/EditableSection";
-import { PhotoUploadField } from "~/components/PhotoUploadField";
+import { ProfilePhotoAvatar } from "~/components/ProfilePhotoAvatar";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { PresenceBar } from "~/components/collab/PresenceBar";
 import {
@@ -42,6 +41,7 @@ const TEXT_FIELDS = [
   "githubUsername",
   "personalSite",
   "timeZone",
+  "dietaryRestrictions",
 ] as const;
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -67,6 +67,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       personalSite: true,
       photoUrl: true,
       timeZone: true,
+      dietaryRestrictions: true,
       domainEligibilities: {
         select: {
           id: true,
@@ -95,8 +96,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     orderBy: { displayName: "asc" },
   });
 
-  // Resolve for the header <img>. The raw key stays on `member.photoUrl` so
-  // the upload field's hidden input round-trips it unchanged on save.
+  // Presigned URL for the header avatar. The header's ProfilePhotoAvatar saves
+  // a new key directly via its update-photo fetcher; on revalidation this
+  // resolves the stored key back to a displayable URL.
   const photoUrlResolved = await resolvePhotoUrl(member.photoUrl);
 
   const collabToken = parseSessionCookie(request);
@@ -162,6 +164,21 @@ export async function action({ request, params }: Route.ActionArgs) {
     return null;
   }
 
+  // Photo-only update: the avatar control in the header saves immediately on
+  // upload (its own fetcher), independent of the Profile section's name-required
+  // form. Same admin-or-self gate; no other field is touched.
+  if (intent === "update-photo") {
+    if (!(await isAdmin(auth.user.sub)) && auth.user.sub !== params.id) {
+      return { error: "You don't have permission to edit this member." };
+    }
+    const photoUrlRaw = (form.get("photoUrl") as string | null)?.trim() ?? "";
+    await prisma.user.update({
+      where: { id: params.id },
+      data: { photoUrl: photoUrlRaw === "" ? null : photoUrlRaw },
+    });
+    return redirect(`/members/${params.id}`);
+  }
+
   // Default: profile field update. Editable by admins or the member themself.
   const admin = await isAdmin(auth.user.sub);
   if (!admin && auth.user.sub !== params.id) {
@@ -186,10 +203,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
   }
 
-  // photoUrl carries an S3 key (or a legacy URL) from the upload control;
-  // blank means "no photo".
-  const photoUrlRaw = (form.get("photoUrl") as string | null)?.trim() ?? "";
-  data.photoUrl = photoUrlRaw === "" ? null : photoUrlRaw;
+  // photoUrl is no longer part of this form — the header avatar saves it via
+  // its own update-photo intent. Leaving it out here means a Profile save never
+  // clears the photo.
 
   const classYearRaw = (form.get("classYear") as string | null)?.trim() ?? "";
   if (classYearRaw === "") {
@@ -217,6 +233,7 @@ const FIELD_LABELS: Record<string, string> = {
   githubUsername: "GitHub username",
   personalSite: "Personal site",
   timeZone: "Time zone (IANA, e.g. America/New_York)",
+  dietaryRestrictions: "Dietary restrictions",
 };
 
 export default function MemberDetail() {
@@ -262,17 +279,12 @@ export default function MemberDetail() {
       </div>
 
       <header className="flex flex-col items-center gap-4 text-center">
-        {photoUrlResolved ? (
-          <img
-            src={photoUrlResolved}
-            alt=""
-            className="w-32 h-32 rounded-lg object-cover border border-border"
-          />
-        ) : (
-          <div className="w-32 h-32 rounded-lg border border-border bg-accent-coral/15 text-accent-coral flex items-center justify-center font-bold text-3xl">
-            {initialsFromName(`${member.firstName} ${member.lastName}`)}
-          </div>
-        )}
+        <ProfilePhotoAvatar
+          userId={member.id}
+          name={`${member.firstName} ${member.lastName}`}
+          initialPreviewUrl={photoUrlResolved}
+          canEdit={canEdit}
+        />
         <div className="min-w-0">
           <h1 className="font-heading text-2xl font-bold text-foreground">
             {member.firstName} {member.lastName}
@@ -303,13 +315,6 @@ export default function MemberDetail() {
             ref={formRef}
             className="flex flex-col gap-3 w-full"
           >
-            <PhotoUploadField
-              userId={member.id}
-              name={`${member.firstName} ${member.lastName}`}
-              initialKey={member.photoUrl}
-              initialPreviewUrl={photoUrlResolved}
-              readOnly={!editing}
-            />
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {TEXT_FIELDS.map((field) => (
                 <Field

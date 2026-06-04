@@ -119,7 +119,11 @@ export function StaffingBoard({
       assignmentBody = resolveAssignmentInputs(member, targetProjectId);
       if (!assignmentBody) {
         setError(
-          `${member.firstName} ${member.lastName} has no preferences on file; can't infer a domain + level.`,
+          `Can't infer a domain + level for ${member.firstName} ${member.lastName}: they have no bid and ${
+            member.domainLevels.length === 0
+              ? "no domain eligibility"
+              : "are eligible in multiple domains"
+          }. Add a bid, or set their eligibility to a single domain.`,
         );
         return;
       }

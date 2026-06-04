@@ -20,6 +20,9 @@ import type { Route } from "./+types/projects.$id";
 import { prisma } from "~/lib/db";
 import { ensureProjectGroup } from "~/lib/groups";
 import { requireAuth } from "~/lib/auth";
+import { resolvePhotoUrl } from "~/lib/photo";
+import { ProjectImageBanner } from "../components/ProjectImageBanner";
+import { Markdown } from "~/components/Markdown";
 import { parseSessionCookie } from "~/lib/cookies";
 import { isCore, isProjectMember, canManageStaffing, currentTerm } from "~/lib/roles";
 import { getPresenceUser } from "~/lib/presence-user";
@@ -88,8 +91,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       description: true,
       status: true,
       calendarEmail: true,
+      teamGroupEmail: true,
       imageUrl: true,
       repoUrls: true,
+      deploymentUrl: true,
       githubTeamSlug: true,
       overviewPageId: true,
       prdPageId: true,
@@ -437,6 +442,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     .map((id) => ({ id, name: idToName.get(id) ?? "(unknown)" }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
+  // imageUrl may be an S3 key (uploaded via the project image control) or a
+  // legacy pasted URL; resolve to a displayable src. The raw value stays on
+  // project.imageUrl so the upload field round-trips the key on save.
+  const imageUrlResolved = await resolvePhotoUrl(project.imageUrl);
+
   return {
     project: {
       id: project.id,
@@ -444,8 +454,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       description: project.description,
       status: project.status,
       calendarEmail: project.calendarEmail,
+      teamGroupEmail: project.teamGroupEmail,
       imageUrl: project.imageUrl,
+      imageUrlResolved,
       repoUrls: project.repoUrls,
+      deploymentUrl: project.deploymentUrl,
       githubTeamSlug: project.githubTeamSlug,
       overviewPageId: project.overviewPageId,
       prdPageId: project.prdPageId,
@@ -531,6 +544,17 @@ export async function action({ request, params }: Route.ActionArgs) {
     await prisma.project.update({
       where: { id: params.id },
       data: { description: descriptionRaw === "" ? null : descriptionRaw },
+    });
+    return redirect(`/projects/${params.id}`);
+  }
+
+  // Image-only update: the banner saves immediately on upload (its own fetcher),
+  // independent of the details form. Same gate as above (already checked).
+  if (intent === "update-image") {
+    const imageUrlRaw = (form.get("imageUrl") as string | null)?.trim() ?? "";
+    await prisma.project.update({
+      where: { id: params.id },
+      data: { imageUrl: imageUrlRaw === "" ? null : imageUrlRaw },
     });
     return redirect(`/projects/${params.id}`);
   }
@@ -634,11 +658,11 @@ export async function action({ request, params }: Route.ActionArgs) {
     return redirect(`/projects/${params.id}`);
   }
 
-  // Details form: calendar email, image, repos. (Description + name/status
-  // are saved by their own segments above.)
+  // Details form: calendar email, repos, deployment. (Description, name/status,
+  // and the image banner are saved by their own segments above.)
   const calendarEmailRaw = (form.get("calendarEmail") as string | null)?.trim() ?? "";
-  const imageUrlRaw = (form.get("imageUrl") as string | null)?.trim() ?? "";
   const repoUrlsRaw = (form.get("repoUrls") as string | null) ?? "";
+  const deploymentUrlRaw = (form.get("deploymentUrl") as string | null)?.trim() ?? "";
   const termCountRaw = (form.get("termCount") as string | null) ?? "";
   const githubTeamRaw = (form.get("githubTeamSlug") as string | null)?.trim() ?? "";
 
@@ -667,8 +691,8 @@ export async function action({ request, params }: Route.ActionArgs) {
     where: { id: params.id },
     data: {
       calendarEmail: calendarEmailRaw === "" ? null : calendarEmailRaw,
-      imageUrl: imageUrlRaw === "" ? null : imageUrlRaw,
       repoUrls,
+      deploymentUrl: deploymentUrlRaw === "" ? null : deploymentUrlRaw,
       termCount,
       githubTeamSlug,
     },
@@ -899,13 +923,12 @@ function ProjectHeader({
 
   return (
     <header className="flex flex-col gap-4">
-      {project.imageUrl && (
-        <img
-          src={project.imageUrl}
-          alt=""
-          className="w-full h-48 rounded-lg object-cover border border-border"
-        />
-      )}
+      <ProjectImageBanner
+        projectId={project.id}
+        projectName={project.name}
+        initialPreviewUrl={project.imageUrlResolved}
+        canEdit={canEdit}
+      />
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-3">
           <div key={resetKey} className="flex items-center gap-2 flex-wrap">
@@ -1023,21 +1046,22 @@ function DescriptionSegment({
     >
       {({ editing }) =>
         editing ? (
-          <Form method="post" ref={formRef} className="flex flex-col gap-2">
+          <Form method="post" ref={formRef} className="flex flex-col gap-1.5">
             <input type="hidden" name="intent" value="description" />
             <textarea
               name="description"
-              rows={4}
+              rows={6}
               defaultValue={description ?? ""}
-              placeholder="Add a short description…"
-              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+              placeholder="Add a short description… (Markdown supported)"
+              className="px-2 py-1.5 text-sm font-mono border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
               autoFocus
             />
+            <p className="text-[11px] text-muted-foreground">
+              Supports Markdown — **bold**, headings, lists, links, `code`.
+            </p>
           </Form>
         ) : description ? (
-          <p className="text-sm text-foreground whitespace-pre-wrap">
-            {description}
-          </p>
+          <Markdown>{description}</Markdown>
         ) : (
           <p className="text-sm text-muted-foreground italic">
             No description.
@@ -1334,22 +1358,26 @@ function DetailsSegment({
               )}
             </label>
 
+            {/* Team email group — provisioned by the staffing "Create team email
+                group" automation; read-only here (not lead-editable). */}
             <label className="flex flex-col gap-1 text-xs">
-              <span className="text-muted-foreground">Image URL</span>
-              {editing ? (
-                <input
-                  name="imageUrl"
-                  type="url"
-                  defaultValue={project.imageUrl ?? ""}
-                  placeholder="https://…"
-                  className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-                />
-              ) : (
-                <span className="px-2 py-1.5 text-sm text-foreground">
-                  {project.imageUrl ?? "—"}
-                </span>
-              )}
+              <span className="text-muted-foreground">Team email group</span>
+              <span className="px-2 py-1.5 text-sm">
+                {project.teamGroupEmail ? (
+                  <a
+                    href={`mailto:${project.teamGroupEmail}`}
+                    className="text-accent-coral hover:underline break-all"
+                  >
+                    {project.teamGroupEmail}
+                  </a>
+                ) : (
+                  <span className="text-muted-foreground">
+                    Not created yet — run staffing finalize.
+                  </span>
+                )}
+              </span>
             </label>
+
 
             <label className="flex flex-col gap-1 text-xs">
               <span className="text-muted-foreground">GitHub team</span>
@@ -1420,6 +1448,30 @@ function DetailsSegment({
               <span className="px-2 py-1.5 text-sm text-muted-foreground">
                 —
               </span>
+            )}
+          </label>
+
+          <label className="flex flex-col gap-1 text-xs">
+            <span className="text-muted-foreground">Deployment</span>
+            {editing ? (
+              <input
+                name="deploymentUrl"
+                type="url"
+                defaultValue={project.deploymentUrl ?? ""}
+                placeholder="https://projectname.fly.dev"
+                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 font-mono"
+              />
+            ) : project.deploymentUrl ? (
+              <a
+                href={project.deploymentUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="px-2 py-1.5 text-sm text-accent-coral hover:underline break-all"
+              >
+                {project.deploymentUrl}
+              </a>
+            ) : (
+              <span className="px-2 py-1.5 text-sm text-muted-foreground">—</span>
             )}
           </label>
         </Form>

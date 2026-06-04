@@ -1878,6 +1878,11 @@ model Project {
   // Git repositories for this project (URLs). Empty by default.
   repoUrls String[] @default([])
 
+  // Live deployment / hosted URL for the project (e.g. a Fly/Vercel app).
+  // Single link, shown on the project detail page next to the repos. Null
+  // until a lead sets it.
+  deploymentUrl String?
+
   // GitHub team slug for this project's org team, persistent across terms.
   // Set on the project detail page. When present, the staffing "Set up GitHub
   // teams" finalize automation get-or-creates a team with this slug under

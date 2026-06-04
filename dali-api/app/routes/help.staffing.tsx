@@ -7,7 +7,7 @@ export const meta: Route.MetaFunction = () => [
 
 export default function HelpStaffingPage() {
   return (
-    <main className="mx-auto max-w-3xl p-8">
+    <main className="max-w-3xl p-8">
       <h1 className="text-2xl font-semibold">Staffing</h1>
       <p className="mt-2 text-sm text-zinc-600">
         Each term the lab runs a staffing cycle that places members onto

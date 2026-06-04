@@ -37,9 +37,9 @@ const AUTOMATIONS: {
   },
   {
     id: "gmail",
-    label: "Create Gmail accounts",
+    label: "Create team email group",
     description:
-      "Provision the project's Google Workspace account and -team group, and add the confirmed roster to the group.",
+      "Get-or-create the project's -team Google Group and add the confirmed roster to it.",
     configured: true,
   },
 ];
