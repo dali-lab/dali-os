@@ -21,7 +21,7 @@ const ALL_STATUS_LABELS = [
 ];
 
 function appBaseUrl(): string {
-  return process.env.APP_BASE_URL ?? "https://os.dali.dartmouth.edu";
+  return process.env.API_BASE_URL ?? "https://os.dali.dartmouth.edu";
 }
 
 // Normalize a Project.repoUrls entry into "owner/repo". Strips scheme/host,
