@@ -106,11 +106,11 @@ describe("GET /login loader routing", () => {
     expect(res.headers.get("Location")).toBe("/onboarding");
   });
 
-  it("sends an onboarded member to the member app", async () => {
+  it("sends an onboarded member to the home dashboard", async () => {
     authedAs("member-done");
     mockMemberFind.mockResolvedValue({ onboardedAt: new Date() } as any);
     const res = (await loader({ request: loaderRequest() } as any)) as Response;
     expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe("/hiring/reviewer");
+    expect(res.headers.get("Location")).toBe("/");
   });
 });
