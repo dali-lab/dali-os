@@ -22,15 +22,11 @@ type Props = {
 
 export function MemberCard({ card, columnId, projectNames, domainNames, onOpenBid, onRemove, draggable }: Props) {
   const dragId = `${columnId}::${card.userId}`;
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: dragId,
     data: { userId: card.userId, fromColumn: columnId },
     disabled: !draggable,
   });
-
-  const style: React.CSSProperties = transform
-    ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 50 }
-    : {};
 
   const fullName = `${card.firstName} ${card.lastName}`.trim();
 
@@ -38,13 +34,17 @@ export function MemberCard({ card, columnId, projectNames, domainNames, onOpenBi
   // still see the card and can click it to open the bid modal.
   const dragProps = draggable ? { ...attributes, ...listeners } : {};
 
+  // The dragged card is rendered separately by DragOverlay (a portal that sits
+  // above every column), so the in-place node here just dims while dragging —
+  // no transform/zIndex, which would otherwise leave the card trapped inside
+  // its column's stacking context and slide UNDER adjacent columns.
+  //
   // Clicking anywhere on the card opens the member's bid. The DndContext uses
   // a small activation-distance constraint, so a pointer press that doesn't
   // move past the threshold lands here as a click rather than starting a drag.
   return (
     <div
       ref={setNodeRef}
-      style={style}
       {...dragProps}
       onClick={onOpenBid}
       role="button"
@@ -59,8 +59,37 @@ export function MemberCard({ card, columnId, projectNames, domainNames, onOpenBi
       title="View bid"
       className={`bg-card border border-border rounded-md p-2.5 flex flex-col gap-1.5 select-none ${
         draggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"
-      } ${isDragging ? "opacity-60 shadow-lg" : "hover:bg-muted/20"}`}
+      } ${isDragging ? "opacity-40" : "hover:bg-muted/20"}`}
     >
+      <MemberCardBody
+        card={card}
+        fullName={fullName}
+        projectNames={projectNames}
+        domainNames={domainNames}
+        onRemove={onRemove}
+      />
+    </div>
+  );
+}
+
+// The card's visual content, shared by the in-column MemberCard and the
+// DragOverlay's floating copy so the dragged card looks identical to its
+// resting state.
+function MemberCardBody({
+  card,
+  fullName,
+  projectNames,
+  domainNames,
+  onRemove,
+}: {
+  card: MemberCardModel;
+  fullName: string;
+  projectNames: Record<string, string>;
+  domainNames: Record<string, string>;
+  onRemove?: () => void;
+}) {
+  return (
+    <>
       <div className="flex items-start gap-2">
         <Avatar photoUrl={card.photoUrl} name={fullName} />
         <div className="min-w-0 flex-1">
@@ -107,6 +136,30 @@ export function MemberCard({ card, columnId, projectNames, domainNames, onOpenBi
 
       <DomainLevelStrip card={card} />
       <BidStrip card={card} projectNames={projectNames} domainNames={domainNames} />
+    </>
+  );
+}
+
+// A static, non-draggable copy of the card for DragOverlay to float above the
+// columns. Same body as MemberCard, with the resting card styling.
+export function MemberCardPreview({
+  card,
+  projectNames,
+  domainNames,
+}: {
+  card: MemberCardModel;
+  projectNames: Record<string, string>;
+  domainNames: Record<string, string>;
+}) {
+  const fullName = `${card.firstName} ${card.lastName}`.trim();
+  return (
+    <div className="bg-card border border-border rounded-md p-2.5 flex flex-col gap-1.5 select-none shadow-lg cursor-grabbing">
+      <MemberCardBody
+        card={card}
+        fullName={fullName}
+        projectNames={projectNames}
+        domainNames={domainNames}
+      />
     </div>
   );
 }
