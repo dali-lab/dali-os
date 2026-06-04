@@ -13,8 +13,10 @@ export type Preference = {
 };
 
 // A domain the member is eligible in, with their level there. Sourced from
-// DomainEligibility (one row per user+domain). Shown on every card.
+// DomainEligibility (one row per user+domain). Shown on every card; domainId
+// also lets the board infer a non-bidding member's assignment domain.
 export type DomainLevel = {
+  domainId: string;
   domainName: string;
   level: Level;
 };
@@ -197,7 +199,11 @@ function topPreference(prefs: Preference[]): Preference | null {
  *   1. The member's existing preference for that project (the bid).
  *   2. The member's top-ranked preference overall (fallback when they didn't
  *      bid on this project but a lead is staffing them anyway).
- *   3. null → caller must reject (no preferences at all).
+ *   3. The member's DomainEligibility when they have exactly one — lets a lead
+ *      place a manually-added, non-bidding member (their eligibility is the
+ *      only domain+level they could be staffed at).
+ *   4. null → caller must reject (no bid and no single eligibility to infer
+ *      from; a member eligible in multiple domains is ambiguous here).
  */
 export function resolveAssignmentInputs(
   member: MemberInput,
@@ -207,5 +213,9 @@ export function resolveAssignmentInputs(
   if (matching) return { domainId: matching.domainId, level: matching.level };
   const top = topPreference(member.preferences);
   if (top) return { domainId: top.domainId, level: top.level };
+  if (member.domainLevels.length === 1) {
+    const only = member.domainLevels[0];
+    return { domainId: only.domainId, level: only.level };
+  }
   return null;
 }

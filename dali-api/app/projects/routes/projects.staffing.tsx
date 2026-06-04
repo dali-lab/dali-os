@@ -121,7 +121,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         domainEligibilities: {
           select: {
             level: true,
-            domain: { select: { displayName: true } },
+            domain: { select: { id: true, displayName: true } },
           },
         },
       },
@@ -233,7 +233,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       new Set(u.coreAssignments.map((a) => a.leadTitle).filter((t): t is string => !!t)),
     ),
     domainLevels: u.domainEligibilities
-      .map((e) => ({ domainName: e.domain.displayName, level: e.level as Level }))
+      .map((e) => ({ domainId: e.domain.id, domainName: e.domain.displayName, level: e.level as Level }))
       .sort((a, b) => a.domainName.localeCompare(b.domainName)),
     preferences,
     bidFields: bidFieldsByUser.get(u.id) ?? [],
@@ -272,7 +272,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         adminMembership: { select: { id: true } },
         coreAssignments: { select: { leadTitle: true } },
         domainEligibilities: {
-          select: { level: true, domain: { select: { displayName: true } } },
+          select: { level: true, domain: { select: { id: true, displayName: true } } },
         },
       },
     });
@@ -308,7 +308,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         adminMembership: { select: { id: true } },
         coreAssignments: { select: { leadTitle: true } },
         domainEligibilities: {
-          select: { level: true, domain: { select: { displayName: true } } },
+          select: { level: true, domain: { select: { id: true, displayName: true } } },
         },
       },
     });

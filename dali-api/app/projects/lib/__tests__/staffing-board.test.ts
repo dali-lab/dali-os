@@ -171,16 +171,16 @@ describe("buildBoard", () => {
       members: [
         member({
           domainLevels: [
-            { domainName: "Engineering", level: "P3" },
-            { domainName: "Design", level: "P1" },
+            { domainId: "eng", domainName: "Engineering", level: "P3" },
+            { domainId: "design", domainName: "Design", level: "P1" },
           ],
         }),
       ],
       assignments: [],
     });
     expect(board[UNASSIGNED][0].domainLevels).toEqual([
-      { domainName: "Engineering", level: "P3" },
-      { domainName: "Design", level: "P1" },
+      { domainId: "eng", domainName: "Engineering", level: "P3" },
+      { domainId: "design", domainName: "Design", level: "P1" },
     ]);
   });
 });
@@ -212,8 +212,33 @@ describe("resolveAssignmentInputs", () => {
     expect(out).toEqual({ domainId: "d2", level: "P1" });
   });
 
-  it("returns null when the member has no preferences at all", () => {
-    const out = resolveAssignmentInputs(member({ preferences: [] }), "p1");
+  it("falls back to a single domain eligibility when the member has no bid", () => {
+    const out = resolveAssignmentInputs(
+      member({
+        preferences: [],
+        domainLevels: [{ domainId: "d-fs", domainName: "Fullstack", level: "P3" }],
+      }),
+      "p1",
+    );
+    expect(out).toEqual({ domainId: "d-fs", level: "P3" });
+  });
+
+  it("returns null when the member has no bid and no eligibility", () => {
+    const out = resolveAssignmentInputs(member({ preferences: [], domainLevels: [] }), "p1");
+    expect(out).toBeNull();
+  });
+
+  it("returns null when the member has no bid and multiple eligibilities (ambiguous)", () => {
+    const out = resolveAssignmentInputs(
+      member({
+        preferences: [],
+        domainLevels: [
+          { domainId: "d1", domainName: "Eng", level: "P2" },
+          { domainId: "d2", domainName: "Design", level: "P1" },
+        ],
+      }),
+      "p1",
+    );
     expect(out).toBeNull();
   });
 });
