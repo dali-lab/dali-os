@@ -63,6 +63,24 @@ model User {
   githubUsername String?
   personalSite String?
 
+  // ─── Onboarding profile fields (collected on the New Member Profile form) ──
+  // Name as it appears on file with the College, when different from the
+  // first/last above (e.g. a legal name). Optional — blank means "same".
+  nameOnFile          String?
+  // The student's college ID number (the number on their ID card), not a FK.
+  collegeId           String?
+  phoneNumber         String?
+  birthday            DateTime?
+  // Free-text demographic; collected optionally (includes a "Prefer not to
+  // say" choice on the form). Stored as the selected label.
+  ethnicity           String?
+  dietaryRestrictions String?
+
+  // Manual onboarding step tracking: Figma can't be invited via API, so an admin
+  // marks the member as invited to the DALI Figma from the onboarding board.
+  // Null = not yet invited; the timestamp records when it was checked off.
+  figmaInvitedAt DateTime?
+
   // ─── Relations: existing ──────────────────────────────────────────────────
   daliMember                    DALIMember?
   applicationCycleStatusUpdates ApplicationCycleStatusUpdate[]
@@ -102,6 +120,7 @@ model User {
   essentialityFormsAsPm EssentialityForm[]         @relation("EssentialityFormPm")
   essentialityRatings   EssentialityRating[]
   staffingAssignments   StaffingAssignment[]
+  staffingBoardMembers  StaffingBoardMember[]
   intentToWork          IntentToWork[]
   formsCreated          Form[]
   formFolders           FormFolder[]
@@ -166,6 +185,18 @@ model DALIMember {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  // Null until the member finishes the first-login onboarding flow
+  // (/onboarding). The layout loader redirects members with a null value into
+  // onboarding. Pre-existing members are backfilled to createdAt by the
+  // migration so they're never forced through it.
+  onboardedAt DateTime?
+
+  // Null until the member finishes (or dismisses) the launch tour. The tour is
+  // shown once per USER (server-driven, not browser localStorage) on the first
+  // home visit after onboarding. Pre-existing members are backfilled so they
+  // don't suddenly get the tour.
+  tourCompletedAt DateTime?
 
   userId String @unique
   user   User   @relation(fields: [userId], references: [id])
@@ -1812,8 +1843,16 @@ model Project {
   description   String?
   // Project-owned Google Workspace identity (e.g.,
   // "projectalpha@dali.dartmouth.edu"). Calendar events for this project
-  // are owned by this identity, not the organizer's personal calendar.
+  // are owned by this identity, not the organizer's personal calendar. Also
+  // the user account provisioned by the staffing "Create Gmail accounts"
+  // finalize automation (backfilled there if unset).
   calendarEmail String?
+
+  // Project-team Google Workspace GROUP address (e.g.,
+  // "projectalpha-team@dali.dartmouth.edu"). Get-or-created by the staffing
+  // "Create Gmail accounts" finalize automation, which also adds the confirmed
+  // roster as group members. Null until that automation first runs.
+  teamGroupEmail String?
   // Expected span length: how many terms the project is *planned* to run, as
   // a target. Independent of the actual ProjectTerm set — a project may have
   // fewer terms added than expected (still being scheduled) or more. Drives
@@ -1839,11 +1878,23 @@ model Project {
   // Git repositories for this project (URLs). Empty by default.
   repoUrls String[] @default([])
 
+  // Live deployment / hosted URL for the project (e.g. a Fly/Vercel app).
+  // Single link, shown on the project detail page next to the repos. Null
+  // until a lead sets it.
+  deploymentUrl String?
+
   // GitHub team slug for this project's org team, persistent across terms.
   // Set on the project detail page. When present, the staffing "Set up GitHub
   // teams" finalize automation get-or-creates a team with this slug under
   // GITHUB_ORG and adds the confirmed roster. Null = automation skips.
   githubTeamSlug String?
+
+  // The project's Slack channel id (e.g. "C0123ABC"), used to invite members +
+  // post the team announcement on staffing finalize. The channel NAME is always
+  // derived from the project name (slugified); finalize get-or-creates that
+  // channel and backfills this id so it's reused on later runs. Null until the
+  // first finalize that runs the Slack channel step.
+  slackChannelId String?
 
   overviewPage Page? @relation("ProjectOverview", fields: [overviewPageId], references: [id])
   prdPage      Page? @relation("ProjectPRD", fields: [prdPageId], references: [id])
@@ -2374,6 +2425,27 @@ model StaffingCycle {
   intentToWork      IntentToWork[]
   formBindings      StaffingCycleFormBinding[]
   formSubmissions   FormSubmission[]
+  boardMembers      StaffingBoardMember[]
+}
+
+// A member a staffing lead manually placed on the board for a cycle WITHOUT a
+// bid. The board pool is otherwise derived from StaffingPreference / bid
+// submissions, so a non-bidder would never appear; this row makes them show up
+// as an ordinary Unassigned card the lead can then drag into a project. It is
+// not a preference and not an assignment — purely "present on the board".
+// Removed when the lead removes the card. A member who later bids still has
+// their preferences take over the card; this row is harmless either way.
+model StaffingBoardMember {
+  id              String   @id @default(cuid())
+  userId          String
+  staffingCycleId String
+  addedById       String? // actor; free-form userId, nullable for safety
+  createdAt       DateTime @default(now())
+
+  user          User          @relation(fields: [userId], references: [id])
+  staffingCycle StaffingCycle @relation(fields: [staffingCycleId], references: [id])
+
+  @@unique([userId, staffingCycleId])
 }
 
 model StaffingPreference {

@@ -134,7 +134,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const headers = new Headers();
   headers.append("Set-Cookie", clearStateCookie);
   setSessionCookie(headers, session.rawId);
-  headers.set("Location", "/hiring/reviewer");
+  headers.set("Location", "/");
 
   return new Response(null, { status: 302, headers });
 }

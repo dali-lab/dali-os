@@ -1,12 +1,14 @@
-import { useMemo, useState } from "react";
-import { useSearchParams } from "react-router";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams, useRevalidator } from "react-router";
 import {
   DndContext,
+  DragOverlay,
   PointerSensor,
   useDroppable,
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragStartEvent,
 } from "@dnd-kit/core";
 import {
   buildBoard,
@@ -18,9 +20,11 @@ import {
   type Preference,
 } from "../lib/staffing-board";
 import { CheckCircle2 } from "lucide-react";
-import { MemberCard } from "./MemberCard";
+import { MemberCard, MemberCardPreview } from "./MemberCard";
 import { BidModal } from "./BidModal";
 import { FinalizeModal } from "./FinalizeModal";
+import { AddMemberControl } from "./AddMemberControl";
+import { DomainFilter } from "./DomainFilter";
 
 type ProjectMeta = { id: string; name: string; status: "Active" | "Paused" | "Archived" };
 
@@ -34,6 +38,11 @@ type Props = {
   cycleId: string;
   termId: string;
   terms: { id: string; code: string }[];
+  // Domain filter: all domains for the dropdown, plus the currently-selected id
+  // ("" = all). Selecting one narrows the board to members eligible in (or
+  // already bid/staffed in) that domain. Driven server-side via ?domain=.
+  domains: { id: string; name: string }[];
+  selectedDomainId: string;
   projects: ProjectMeta[];
   members: MemberInput[];
   initialAssignments: Assignment[];
@@ -50,6 +59,8 @@ export function StaffingBoard({
   cycleId,
   termId,
   terms,
+  domains,
+  selectedDomainId,
   projects,
   members,
   initialAssignments,
@@ -59,11 +70,49 @@ export function StaffingBoard({
   canManage,
 }: Props) {
   const [searchParams, setSearchParams] = useSearchParams();
+  const revalidator = useRevalidator();
   const [assignments, setAssignments] = useState<Assignment[]>(initialAssignments);
   const [error, setError] = useState<string | null>(null);
   const [openBidUserId, setOpenBidUserId] = useState<string | null>(null);
   // Project id whose finalize modal is open, or null.
   const [finalizeProjectId, setFinalizeProjectId] = useState<string | null>(null);
+  // userId of the card being dragged, or null. Drives the DragOverlay so the
+  // dragged card floats above every column instead of clipping under them.
+  const [activeCardUserId, setActiveCardUserId] = useState<string | null>(null);
+
+  // Number of drag saves currently in flight. While > 0 we hold off adopting
+  // server data so a live push from someone else can't revert our own unsaved
+  // optimistic move mid-drag. Once our save lands it revalidates and this clears.
+  const pendingSaves = useRef(0);
+
+  // Local `assignments` is the optimistic source of truth during a drag. When a
+  // revalidation lands (our own save, or a live push from another lead), the
+  // loader hands back fresh `initialAssignments` — adopt it so other people's
+  // edits actually appear. Keyed off the prop's identity: React Router gives a
+  // new array each loader run, so this only fires when server data changes.
+  useEffect(() => {
+    if (pendingSaves.current > 0) return;
+    setAssignments(initialAssignments);
+  }, [initialAssignments]);
+
+  // Live updates: subscribe to this cycle's SSE stream and revalidate on any
+  // pushed change (assign / finalize / board-member by anyone) or periodic sync.
+  // EventSource auto-reconnects, so a dropped connection self-heals. The bus is
+  // per-instance (see staffing-events.server.ts); the `sync` heartbeat is the
+  // cross-instance backstop.
+  const revalidate = revalidator.revalidate;
+  const revalidateRef = useRef(revalidate);
+  revalidateRef.current = revalidate;
+  useEffect(() => {
+    const es = new EventSource(
+      `/api/staffing/events?cycleId=${encodeURIComponent(cycleId)}`,
+      { withCredentials: true },
+    );
+    const onPush = () => revalidateRef.current();
+    es.addEventListener("change", onPush);
+    es.addEventListener("sync", onPush);
+    return () => es.close();
+  }, [cycleId]);
 
   const projectIds = useMemo(() => projects.map((p) => p.id), [projects]);
 
@@ -77,6 +126,17 @@ export function StaffingBoard({
     [members],
   );
 
+  // Flat userId → card lookup so DragOverlay can render the active card without
+  // knowing which column it came from.
+  const cardByUserId = useMemo(() => {
+    const map = new Map<string, MemberCardModel>();
+    for (const cards of Object.values(board)) {
+      for (const c of cards) map.set(c.userId, c);
+    }
+    return map;
+  }, [board]);
+  const activeCard = activeCardUserId ? cardByUserId.get(activeCardUserId) ?? null : null;
+
   // The whole member card is both draggable and clickable. A small activation
   // distance disambiguates the two: a press that moves <6px fires the card's
   // onClick (open bid); past that it starts a drag, suppressing the click.
@@ -84,7 +144,13 @@ export function StaffingBoard({
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
   );
 
+  function handleDragStart(event: DragStartEvent) {
+    const data = event.active.data.current as { userId?: string } | undefined;
+    setActiveCardUserId(data?.userId ?? null);
+  }
+
   function handleDragEnd(event: DragEndEvent) {
+    setActiveCardUserId(null);
     if (!canManage) return;
     const overId = event.over?.id;
     if (!overId || typeof overId !== "string") return;
@@ -109,7 +175,11 @@ export function StaffingBoard({
       assignmentBody = resolveAssignmentInputs(member, targetProjectId);
       if (!assignmentBody) {
         setError(
-          `${member.firstName} ${member.lastName} has no preferences on file; can't infer a domain + level.`,
+          `Can't infer a domain + level for ${member.firstName} ${member.lastName}: they have no bid and ${
+            member.domainLevels.length === 0
+              ? "no domain eligibility"
+              : "are eligible in multiple domains"
+          }. Add a bid, or set their eligibility to a single domain.`,
         );
         return;
       }
@@ -122,16 +192,46 @@ export function StaffingBoard({
     setAssignments(nextAssignments);
     setError(null);
 
+    pendingSaves.current += 1;
     void persist({
       cycleId,
       userId,
       projectId: targetProjectId,
       domainId: assignmentBody?.domainId,
       level: assignmentBody?.level,
-    }).catch((err) => {
-      setAssignments(prevAssignments);
-      setError(err instanceof Error ? err.message : "Failed to save assignment");
-    });
+    })
+      .then(() => {
+        // Reconcile with server truth (also adopts any concurrent edits that
+        // arrived while this save was in flight).
+        revalidator.revalidate();
+      })
+      .catch((err) => {
+        setAssignments(prevAssignments);
+        setError(err instanceof Error ? err.message : "Failed to save assignment");
+      })
+      .finally(() => {
+        pendingSaves.current = Math.max(0, pendingSaves.current - 1);
+      });
+  }
+
+  async function handleRemoveMember(userId: string) {
+    setError(null);
+    try {
+      const res = await fetch("/api/staffing/board-member", {
+        method: "DELETE",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cycleId, userId }),
+      });
+      if (!res.ok) {
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        setError(json.error ?? `Failed to remove member: ${res.status}`);
+        return;
+      }
+      revalidator.revalidate();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to remove member");
+    }
   }
 
   const openBidMember = openBidUserId ? memberById.get(openBidUserId) ?? null : null;
@@ -142,6 +242,21 @@ export function StaffingBoard({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-end gap-3 flex-wrap">
+        {canManage && <AddMemberControl cycleId={cycleId} />}
+        <DomainFilter
+          domains={domains}
+          value={selectedDomainId}
+          onChange={(id) => {
+            setSearchParams(
+              (prev) => {
+                if (id) prev.set("domain", id);
+                else prev.delete("domain");
+                return prev;
+              },
+              { replace: true },
+            );
+          }}
+        />
         <div className="flex items-center gap-2">
           <label className="sr-only" htmlFor="staffing-term">
             Term
@@ -179,7 +294,13 @@ export function StaffingBoard({
           iframe + other boards) the default useId differs between SSR and
           client, hydration-mismatches dnd-kit's internal ids, and drag never
           activates. A fixed id keeps server/client deterministic. */}
-      <DndContext id="staffing-board" sensors={sensors} onDragEnd={handleDragEnd}>
+      <DndContext
+        id="staffing-board"
+        sensors={sensors}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        onDragCancel={() => setActiveCardUserId(null)}
+      >
         {/* pt-1 keeps each column's top border off the scroll-clip edge so it
             stays visible; px on the row prevents the first/last column border
             being shaved by overflow-x. */}
@@ -191,7 +312,9 @@ export function StaffingBoard({
             tone="muted"
             cards={board[UNASSIGNED] ?? []}
             projectNames={projectNames}
+            domainNames={domainNames}
             onOpenBid={setOpenBidUserId}
+            onRemoveMember={canManage ? handleRemoveMember : undefined}
             draggable={canManage}
           />
           {projects.map((p) => (
@@ -203,6 +326,7 @@ export function StaffingBoard({
               tone={p.status === "Active" ? "active" : "dim"}
               cards={board[p.id] ?? []}
               projectNames={projectNames}
+              domainNames={domainNames}
               demand={demandByProject[p.id]}
               onOpenBid={setOpenBidUserId}
               draggable={canManage}
@@ -210,6 +334,18 @@ export function StaffingBoard({
             />
           ))}
         </div>
+
+        {/* The dragged card, portaled above every column so it can never clip
+            under an adjacent column's stacking context. */}
+        <DragOverlay>
+          {activeCard ? (
+            <MemberCardPreview
+              card={activeCard}
+              projectNames={projectNames}
+              domainNames={domainNames}
+            />
+          ) : null}
+        </DragOverlay>
       </DndContext>
 
       {openBidMember && (
@@ -247,8 +383,10 @@ function Column({
   tone,
   cards,
   projectNames,
+  domainNames,
   demand,
   onOpenBid,
+  onRemoveMember,
   draggable,
   onFinalize,
 }: {
@@ -258,11 +396,14 @@ function Column({
   tone: ColumnTone;
   cards: MemberCardModel[];
   projectNames: Record<string, string>;
+  domainNames: Record<string, string>;
   // Per-domain expected headcount for this project this term. Absent for
   // the Unassigned column and for projects with no ProjectRoleRequest rows;
   // rendered as small chips under the assigned count.
   demand?: DomainDemand[];
   onOpenBid: (userId: string) => void;
+  // Remove a manually-added member from the board. Only set for managers.
+  onRemoveMember?: (userId: string) => void;
   draggable: boolean;
   // Only set for project columns the user can manage; renders the finalize
   // icon button in the header.
@@ -280,9 +421,9 @@ function Column({
       ref={setNodeRef}
       className={`flex-shrink-0 w-64 border rounded-lg ${toneClasses[tone]} ${
         isOver ? "ring-2 ring-accent-coral/40" : ""
-      } flex flex-col`}
+      } flex flex-col max-h-[calc(100vh-12rem)]`}
     >
-      <div className="px-3 py-2 border-b border-border">
+      <div className="px-3 py-2 border-b border-border flex-shrink-0">
         <div className="flex items-center gap-1.5">
           <div className="text-sm font-semibold text-foreground truncate flex-1" title={title}>
             {title}
@@ -314,9 +455,15 @@ function Column({
           </div>
         )}
       </div>
-      <div className="flex flex-col gap-2 p-2 min-h-[28rem]">
+      {/* Only the card list scrolls; the header above stays pinned. flex-1 +
+          min-h-0 lets it shrink within the column's max-height so overflow-y
+          kicks in instead of stretching the page. */}
+      <div className="flex flex-col gap-2 p-2 flex-1 min-h-0 overflow-y-auto">
         {cards.length === 0 ? (
-          <div className="text-xs text-muted-foreground italic text-center py-4">Empty</div>
+          // min-h keeps an empty column a usable drop target.
+          <div className="text-xs text-muted-foreground italic text-center py-4 min-h-[12rem]">
+            Empty
+          </div>
         ) : (
           cards.map((card) => (
             <MemberCard
@@ -324,7 +471,9 @@ function Column({
               card={card}
               columnId={id}
               projectNames={projectNames}
+              domainNames={domainNames}
               onOpenBid={() => onOpenBid(card.userId)}
+              onRemove={onRemoveMember ? () => onRemoveMember(card.userId) : undefined}
               draggable={draggable}
             />
           ))

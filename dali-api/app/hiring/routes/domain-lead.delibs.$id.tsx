@@ -6,7 +6,7 @@ import { requireAuth } from "~/lib/auth";
 import { parseSessionCookie } from "~/lib/cookies";
 import { isDomainLead } from "~/lib/roles";
 import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
-import { ArrowLeft, GripVertical, X, Check } from "lucide-react";
+import { GripVertical, X, Check } from "lucide-react";
 import { INITIAL_COLUMNS, FINAL_COLUMNS, buildColumnOrder } from "~/hiring/lib/delibs";
 import { inReviewPipelineFilter } from "~/hiring/lib/application-pipeline-filter";
 import { ApplicantContextModal } from "~/hiring/components/delibs/ApplicantContextModal";
@@ -296,12 +296,6 @@ export default function DelibsKanban() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <button
-            onClick={() => navigate("/hiring/domain-lead")}
-            className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground/80 mb-2"
-          >
-            <ArrowLeft className="w-4 h-4 mr-1" /> Back to Dashboard
-          </button>
           <h1 className="text-2xl font-bold text-foreground">
             {session.type === "Initial" ? "Initial" : "Final"} Deliberations —{" "}
             {session.domain.name}

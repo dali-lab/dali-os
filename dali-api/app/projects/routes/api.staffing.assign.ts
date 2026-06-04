@@ -4,6 +4,7 @@ import { requireAuth } from "~/lib/auth";
 import { canManageStaffing } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { logAuditEvent } from "~/lib/audit";
+import { publishCycleChange } from "../lib/staffing-events.server";
 
 // POST /api/staffing/assign
 //
@@ -114,6 +115,8 @@ export async function action({ request }: Route.ActionArgs) {
     },
     request,
   });
+
+  publishCycleChange(body.cycleId);
 
   return withCors(request, Response.json({ ok: true }));
 }

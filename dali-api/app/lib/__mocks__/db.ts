@@ -46,6 +46,9 @@ export const prisma = {
   application: {
     findUnique: vi.fn(),
   },
+  applicationCycleStatusUpdate: {
+    findFirst: vi.fn(),
+  },
   auditLog: {
     create: vi.fn(),
   },
@@ -72,11 +75,34 @@ export const prisma = {
   },
   notification: {
     findMany: vi.fn().mockResolvedValue([]),
+    findUnique: vi.fn(),
     count: vi.fn().mockResolvedValue(0),
     create: vi.fn(),
     createMany: vi.fn(),
     update: vi.fn(),
     updateMany: vi.fn(),
+  },
+  projectAssignment: {
+    findMany: vi.fn().mockResolvedValue([]),
+    findFirst: vi.fn(),
+  },
+  project: {
+    findUnique: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+  },
+  sprint: {
+    findMany: vi.fn().mockResolvedValue([]),
+    findFirst: vi.fn(),
+  },
+  epic: {
+    findFirst: vi.fn(),
+  },
+  task: {
+    findMany: vi.fn().mockResolvedValue([]),
+    findUnique: vi.fn(),
+    update: vi.fn(),
+    aggregate: vi.fn(),
+    groupBy: vi.fn().mockResolvedValue([]),
   },
   scheduledMeeting: {
     findMany: vi.fn().mockResolvedValue([]),

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   buildBoard,
+  dedupeLiveAssignments,
   resolveAssignmentInputs,
   UNASSIGNED,
   type MemberInput,
@@ -51,6 +52,53 @@ describe("buildBoard", () => {
     const card = board[UNASSIGNED][0];
     expect(card.level).toBe("P3");
     expect(card.topPreferences.map((p) => p.projectId)).toEqual(["p9", "p1"]);
+  });
+
+  it("dedupes same-project same-rank bids into one entry listing each domain", () => {
+    // Gaelle's case: rank-1 bid on "Evergreen" in two domains. The card should
+    // show one #1 Evergreen entry whose domainIds carry both, not two lines.
+    const board = buildBoard({
+      projectIds: [],
+      members: [
+        member({
+          preferences: [
+            { projectId: "evergreen", domainId: "fullstack", level: "P1", preferenceRank: 1, notes: null },
+            { projectId: "evergreen", domainId: "uiux", level: "P1", preferenceRank: 1, notes: null },
+            { projectId: "p2", domainId: "fullstack", level: "P1", preferenceRank: 2, notes: null },
+          ],
+        }),
+      ],
+      assignments: [],
+    });
+    const { topPreferences } = board[UNASSIGNED][0];
+    expect(topPreferences).toEqual([
+      { projectId: "evergreen", rank: 1, domainIds: ["fullstack", "uiux"] },
+      { projectId: "p2", rank: 2, domainIds: ["fullstack"] },
+    ]);
+  });
+
+  it("caps topPreferences at 3 distinct (project, rank) entries, not raw rows", () => {
+    const board = buildBoard({
+      projectIds: [],
+      members: [
+        member({
+          preferences: [
+            // Two rows for rank 1 collapse to one entry, leaving room for 2,3,4.
+            { projectId: "p1", domainId: "d1", level: "P1", preferenceRank: 1, notes: null },
+            { projectId: "p1", domainId: "d2", level: "P1", preferenceRank: 1, notes: null },
+            { projectId: "p2", domainId: "d1", level: "P1", preferenceRank: 2, notes: null },
+            { projectId: "p3", domainId: "d1", level: "P1", preferenceRank: 3, notes: null },
+            { projectId: "p4", domainId: "d1", level: "P1", preferenceRank: 4, notes: null },
+          ],
+        }),
+      ],
+      assignments: [],
+    });
+    expect(board[UNASSIGNED][0].topPreferences.map((p) => p.projectId)).toEqual([
+      "p1",
+      "p2",
+      "p3",
+    ]);
   });
 
   it("puts an assigned member in the project column and uses the assignment's level", () => {
@@ -124,16 +172,16 @@ describe("buildBoard", () => {
       members: [
         member({
           domainLevels: [
-            { domainName: "Engineering", level: "P3" },
-            { domainName: "Design", level: "P1" },
+            { domainId: "eng", domainName: "Engineering", level: "P3" },
+            { domainId: "design", domainName: "Design", level: "P1" },
           ],
         }),
       ],
       assignments: [],
     });
     expect(board[UNASSIGNED][0].domainLevels).toEqual([
-      { domainName: "Engineering", level: "P3" },
-      { domainName: "Design", level: "P1" },
+      { domainId: "eng", domainName: "Engineering", level: "P3" },
+      { domainId: "design", domainName: "Design", level: "P1" },
     ]);
   });
 });
@@ -165,8 +213,75 @@ describe("resolveAssignmentInputs", () => {
     expect(out).toEqual({ domainId: "d2", level: "P1" });
   });
 
-  it("returns null when the member has no preferences at all", () => {
-    const out = resolveAssignmentInputs(member({ preferences: [] }), "p1");
+  it("falls back to a single domain eligibility when the member has no bid", () => {
+    const out = resolveAssignmentInputs(
+      member({
+        preferences: [],
+        domainLevels: [{ domainId: "d-fs", domainName: "Fullstack", level: "P3" }],
+      }),
+      "p1",
+    );
+    expect(out).toEqual({ domainId: "d-fs", level: "P3" });
+  });
+
+  it("returns null when the member has no bid and no eligibility", () => {
+    const out = resolveAssignmentInputs(member({ preferences: [], domainLevels: [] }), "p1");
     expect(out).toBeNull();
+  });
+
+  it("returns null when the member has no bid and multiple eligibilities (ambiguous)", () => {
+    const out = resolveAssignmentInputs(
+      member({
+        preferences: [],
+        domainLevels: [
+          { domainId: "d1", domainName: "Eng", level: "P2" },
+          { domainId: "d2", domainName: "Design", level: "P1" },
+        ],
+      }),
+      "p1",
+    );
+    expect(out).toBeNull();
+  });
+});
+
+describe("dedupeLiveAssignments", () => {
+  const row = (userId: string, status: "Proposed" | "Confirmed", projectId: string) => ({
+    userId,
+    status,
+    projectId,
+  });
+
+  it("keeps a lone Confirmed row so a finalized roster stays on the board", () => {
+    const out = dedupeLiveAssignments([row("u1", "Confirmed", "p1")]);
+    expect(out).toEqual([row("u1", "Confirmed", "p1")]);
+  });
+
+  it("prefers Proposed over Confirmed for the same user (in-progress re-edit wins)", () => {
+    // User was confirmed on p1, then dragged to p2 (fresh Proposed row).
+    const out = dedupeLiveAssignments([
+      row("u1", "Confirmed", "p1"),
+      row("u1", "Proposed", "p2"),
+    ]);
+    expect(out).toEqual([row("u1", "Proposed", "p2")]);
+  });
+
+  it("prefers Proposed regardless of input order", () => {
+    const out = dedupeLiveAssignments([
+      row("u1", "Proposed", "p2"),
+      row("u1", "Confirmed", "p1"),
+    ]);
+    expect(out).toEqual([row("u1", "Proposed", "p2")]);
+  });
+
+  it("returns one row per user across a mixed set", () => {
+    const out = dedupeLiveAssignments([
+      row("u1", "Confirmed", "p1"),
+      row("u2", "Proposed", "p1"),
+      row("u2", "Confirmed", "p1"),
+      row("u3", "Proposed", "p2"),
+    ]);
+    expect(out).toHaveLength(3);
+    expect(out.map((r) => r.userId).sort()).toEqual(["u1", "u2", "u3"]);
+    expect(out.find((r) => r.userId === "u2")?.status).toBe("Proposed");
   });
 });

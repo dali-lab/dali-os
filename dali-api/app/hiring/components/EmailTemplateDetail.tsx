@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
-import { Link, Form, useLoaderData } from 'react-router'
-import { ArrowLeft, Plus, Clock, UserIcon, Pencil, AlertTriangle } from 'lucide-react'
+import { Form, useLoaderData } from 'react-router'
+import { Plus, Clock, UserIcon, Pencil, AlertTriangle } from 'lucide-react'
 import type { loader } from '~/hiring/routes/email-templates.$id'
 import {
   ALL_TEMPLATE_VARIABLES,
@@ -87,13 +87,6 @@ export function EmailTemplateDetail() {
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
-      <div>
-        <Link to="/hiring/emails" className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="w-4 h-4 mr-1" />
-          Back to email templates
-        </Link>
-      </div>
-
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           {isRenaming ? (

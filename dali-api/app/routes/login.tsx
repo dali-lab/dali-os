@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { Form, redirect, useSearchParams } from "react-router";
 import type { Route } from "./+types/login";
 import { requireAuth } from "~/lib/auth";
+import { prisma } from "~/lib/db";
 import { checkRateLimit } from "~/lib/rate-limit";
 
 const OAUTH_STATE_COOKIE = "__dali_oauth_state";
@@ -14,8 +15,21 @@ export const meta: Route.MetaFunction = () => [{ title: "DALI OS · Sign in" }];
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (auth.ok) {
-    // Route based on user type: members go to admin, others to portal
-    if (auth.user.type === "member") return redirect("/hiring/reviewer");
+    // Route by membership, not by auth.user.type. type is derived from
+    // daliEmail alone (auth.ts deriveAuthType), but an accepted member's
+    // Workspace provisioning is best-effort — daliEmail can still be null
+    // (Workspace unconfigured or the Directory call failed) while they ARE a
+    // member. Routing on type in that window would send a member back to the
+    // applicant /portal. The DALIMember row is the authoritative signal, so
+    // key off it: un-onboarded members go to /onboarding, others to the
+    // member app; only genuine non-members fall through to /portal.
+    const member = await prisma.dALIMember.findUnique({
+      where: { userId: auth.user.sub },
+      select: { onboardedAt: true },
+    });
+    if (member) {
+      return redirect(member.onboardedAt ? "/" : "/onboarding");
+    }
     return redirect("/portal");
   }
   return {};

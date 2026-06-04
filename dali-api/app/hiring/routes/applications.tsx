@@ -21,7 +21,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!auth.ok) return redirect("/login");
   if (auth.user.type === "applicant") return redirect("/portal");
 
-  const { isCore } = await getUserRoles(auth.user.sub);
+  const { isCore, isAdmin, isDomainLead } = await getUserRoles(auth.user.sub);
 
   // Reviewer assignments across all cycles — used both to decide which cycles
   // a reviewer can see and to scope domains within the selected cycle.
@@ -29,6 +29,18 @@ export async function loader({ request }: Route.LoaderArgs) {
     where: { userId: auth.user.sub },
     select: { applicationCycleId: true, domainId: true },
   });
+
+  // Hard gate: a user with no hiring role at all (not Core/Admin/DomainLead and
+  // a reviewer/interviewer on no cycle) has no business here — send them home
+  // rather than showing the "you aren't a reviewer" empty state. (The sidebar
+  // already hides Hiring for them; this stops direct navigation too.)
+  if (!isCore && !isAdmin && !isDomainLead && reviewerRows.length === 0) {
+    const interviewer = await prisma.cycleInterviewer.findFirst({
+      where: { userId: auth.user.sub },
+      select: { id: true },
+    });
+    if (!interviewer) return redirect("/");
+  }
 
   // Cycle dropdown: Core sees every cycle; a reviewer sees only the cycles
   // they're assigned on.

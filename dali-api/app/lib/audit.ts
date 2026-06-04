@@ -29,6 +29,8 @@ export const AUDIT_ACTIONS = [
   "group.delete",
   "staffing.assign",
   "staffing.finalize",
+  "staffing.board-member.add",
+  "staffing.board-member.remove",
   "document.delete",
   "projectFile.create",
   "projectFile.version",
@@ -38,6 +40,8 @@ export const AUDIT_ACTIONS = [
   "email.extension_notice",
   "confidentiality.sign",
   "mcp.tool_called",
+  "mcp.resource_read",
+  "mcp.prompt_rendered",
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

@@ -6,12 +6,17 @@ import {
   FolderKanban,
   MessageSquare,
   Pencil,
+  User as UserIcon,
+  Github,
+  Linkedin,
+  Globe,
 } from "lucide-react";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { getUserRoles, currentTerm } from "~/lib/roles";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { userInitials } from "~/lib/display";
+import { NEW_MEMBER_PROFILE_FORM_NAME } from "~/members/lib/profile-form-interpreter";
 import type { Route } from "./+types/profile";
 
 export const meta: Route.MetaFunction = () => [{ title: "Profile · DALI OS" }];
@@ -22,6 +27,33 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (auth.user.type === "applicant") return redirect("/portal");
 
   const userId = auth.user.sub;
+
+  // A member still in onboarding (onboardedAt null) who hasn't filled out the
+  // "New Member Profile" form yet is sent to it before they can view their
+  // profile page. Established members (onboardedAt backfilled by the migration)
+  // are NOT redirected even if they predate this form. Once a member submits
+  // the form, this falls through to the normal read-only profile view.
+  const membership = await prisma.dALIMember.findUnique({
+    where: { userId },
+    select: { onboardedAt: true },
+  });
+  if (membership && membership.onboardedAt === null) {
+    const profileForm = await prisma.form.findFirst({
+      where: { name: NEW_MEMBER_PROFILE_FORM_NAME, published: true },
+      select: { publicToken: true },
+    });
+    if (profileForm?.publicToken) {
+      const submitted = await prisma.formSubmission.count({
+        where: {
+          userId,
+          form: { name: NEW_MEMBER_PROFILE_FORM_NAME },
+        },
+      });
+      if (submitted === 0) {
+        return redirect(`/forms/fill/${profileForm.publicToken}`);
+      }
+    }
+  }
   const [user, roles, term] = await Promise.all([
     prisma.user.findUnique({
       where: { id: userId },
@@ -36,6 +68,14 @@ export async function loader({ request }: Route.LoaderArgs) {
         classYear: true,
         major: true,
         photoUrl: true,
+        hometown: true,
+        githubUsername: true,
+        linkedinUrl: true,
+        personalSite: true,
+        collegeId: true,
+        phoneNumber: true,
+        birthday: true,
+        dietaryRestrictions: true,
       },
     }),
     getUserRoles(userId),
@@ -95,23 +135,23 @@ export default function Profile() {
 
   return (
     <div className="flex flex-col gap-6 max-w-3xl">
-      <header className="flex items-center gap-4">
+      <header className="flex flex-col items-center gap-4 text-center">
         {user.photoUrl ? (
           <img
             src={user.photoUrl}
             alt=""
-            className="w-20 h-20 rounded-lg object-cover border border-border"
+            className="w-32 h-32 rounded-lg object-cover border border-border"
           />
         ) : (
-          <div className="w-20 h-20 rounded-lg border border-border bg-accent-coral/15 text-accent-coral flex items-center justify-center font-bold text-2xl">
+          <div className="w-32 h-32 rounded-lg border border-border bg-accent-coral/15 text-accent-coral flex items-center justify-center font-bold text-3xl">
             {userInitials({ ...user, email })}
           </div>
         )}
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0">
           <h1 className="font-heading text-2xl font-bold text-foreground">
             {user.firstName} {user.lastName}
           </h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
+          <p className="text-sm text-muted-foreground mt-1">
             {user.pronouns ? `${user.pronouns} · ` : ""}
             {email}
             {user.classYear ? ` · '${String(user.classYear).slice(-2)}` : ""}
@@ -183,6 +223,79 @@ export default function Profile() {
 
       <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
         <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
+          <UserIcon className="w-4 h-4 text-accent-coral" />
+          Personal
+        </h2>
+        <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
+          <Detail label="Hometown" value={user.hometown} />
+          <Detail label="Birthday" value={formatBirthday(user.birthday)} />
+          <Detail label="Phone" value={user.phoneNumber} />
+          <Detail label="College ID" value={user.collegeId} />
+          <div className="sm:col-span-2">
+            <dt className="text-xs text-muted-foreground">Dietary restrictions</dt>
+            <dd className="text-sm text-foreground whitespace-pre-wrap">
+              {user.dietaryRestrictions || "—"}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted-foreground mb-0.5">GitHub</dt>
+            <dd className="text-sm text-foreground">
+              {user.githubUsername ? (
+                <a
+                  href={`https://github.com/${user.githubUsername}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 text-accent-coral hover:underline"
+                >
+                  <Github className="w-3.5 h-3.5" />
+                  {user.githubUsername}
+                </a>
+              ) : (
+                "—"
+              )}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted-foreground mb-0.5">LinkedIn</dt>
+            <dd className="text-sm text-foreground">
+              {user.linkedinUrl ? (
+                <a
+                  href={user.linkedinUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 text-accent-coral hover:underline"
+                >
+                  <Linkedin className="w-3.5 h-3.5" />
+                  Profile
+                </a>
+              ) : (
+                "—"
+              )}
+            </dd>
+          </div>
+          <div className="sm:col-span-2">
+            <dt className="text-xs text-muted-foreground mb-0.5">Personal site</dt>
+            <dd className="text-sm text-foreground">
+              {user.personalSite ? (
+                <a
+                  href={user.personalSite}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 text-accent-coral hover:underline break-all"
+                >
+                  <Globe className="w-3.5 h-3.5 flex-shrink-0" />
+                  {user.personalSite}
+                </a>
+              ) : (
+                "—"
+              )}
+            </dd>
+          </div>
+        </dl>
+      </section>
+
+      <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
+        <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
           <FolderKanban className="w-4 h-4 text-accent-coral" />
           My activity
           {termCode && (
@@ -240,6 +353,20 @@ export default function Profile() {
       </section>
     </div>
   );
+}
+
+// Birthday is stored at UTC midnight; format from UTC components so a viewer in
+// a negative-offset timezone doesn't see the previous day.
+function formatBirthday(value: string | Date | null | undefined): string | null {
+  if (!value) return null;
+  const d = typeof value === "string" ? new Date(value) : value;
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString(undefined, {
+    timeZone: "UTC",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
 function Detail({ label, value }: { label: string; value: string | null }) {
