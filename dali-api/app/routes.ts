@@ -159,6 +159,7 @@ export default [
   route("settings", "routes/settings._index.tsx"),
   route("settings/calendar", "routes/settings.calendar.tsx"),
   route("settings/sessions", "routes/settings.sessions.tsx"),
+  route("settings/slack", "routes/settings.slack.tsx"),
   route("settings/connected-apps", "routes/settings.connected-apps.tsx"),
 
   // Help pages (same shell convention as Settings).
