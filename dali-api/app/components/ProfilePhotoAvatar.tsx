@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { useFetcher } from "react-router";
+import { Camera } from "lucide-react";
 import {
   MAX_UPLOAD_BYTES,
   MAX_UPLOAD_LABEL,
@@ -9,47 +11,38 @@ import { PhotoCropModal } from "./PhotoCropModal";
 
 const ACCEPT = "image/png,image/jpeg,image/webp,image/gif";
 
-// Profile-photo control: pick an image → crop/zoom modal → upload the cropped
-// result to S3 → store the returned key in a hidden `photoUrl` input. The
-// surrounding form persists that key exactly as the old free-text field did;
-// loaders presign it back to a URL for display (see resolvePhotoUrl).
-export function PhotoUploadField({
+// Large profile avatar with an overlaid camera-icon upload button. Unlike
+// PhotoUploadField (a row inside the Profile form), this stands alone in the
+// page header: clicking the icon opens the file picker → crop modal → S3
+// upload, then immediately persists the new key via a fetcher POST
+// (intent=update-photo) — no "edit Profile → save" round-trip. The same key
+// shape round-trips as the old field; loaders presign it for display.
+export function ProfilePhotoAvatar({
   userId,
   name,
-  initialKey,
   initialPreviewUrl,
-  readOnly,
-  label = "Profile photo",
-  fieldName = "photoUrl",
-  keyPrefix = "avatars",
-  shape = "square",
+  canEdit,
 }: {
   userId: string;
   name: string;
-  initialKey: string | null;
   initialPreviewUrl: string | null;
-  readOnly: boolean;
-  /** Section label above the control. */
-  label?: string;
-  /** Hidden input name the surrounding form reads (e.g. "imageUrl"). */
-  fieldName?: string;
-  /** S3 key prefix for uploads (e.g. "project-images"). */
-  keyPrefix?: string;
-  /** "square" = avatar; "wide" = a 16:9-ish banner preview. */
-  shape?: "square" | "wide";
+  canEdit: boolean;
 }) {
+  const fetcher = useFetcher();
   const fileRef = useRef<HTMLInputElement>(null);
-  const [key, setKey] = useState(initialKey ?? "");
-  const [previewUrl, setPreviewUrl] = useState<string | null>(
-    initialPreviewUrl ?? null,
-  );
+  const [previewUrl, setPreviewUrl] = useState<string | null>(initialPreviewUrl ?? null);
   const [cropSrc, setCropSrc] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Object URLs we created and are responsible for revoking.
   const previewBlobUrl = useRef<string | null>(null);
   const cropBlobUrl = useRef<string | null>(null);
+
+  // Loader is the source of truth: when it returns a fresh presigned URL after
+  // a save, adopt it (and drop any local blob preview).
+  useEffect(() => {
+    setPreviewUrl(initialPreviewUrl ?? null);
+  }, [initialPreviewUrl]);
 
   useEffect(
     () => () => {
@@ -67,7 +60,6 @@ export function PhotoUploadField({
     const file = e.target.files?.[0];
     if (!file) return;
     setError(null);
-
     if (file.size > MAX_UPLOAD_BYTES) {
       setError(`Image too large (max ${MAX_UPLOAD_LABEL})`);
       clearFileInput();
@@ -78,7 +70,6 @@ export function PhotoUploadField({
       clearFileInput();
       return;
     }
-
     const url = URL.createObjectURL(file);
     if (cropBlobUrl.current) URL.revokeObjectURL(cropBlobUrl.current);
     cropBlobUrl.current = url;
@@ -105,7 +96,7 @@ export function PhotoUploadField({
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          key: `${keyPrefix}/${userId}/${crypto.randomUUID()}.${ext}`,
+          key: `avatars/${userId}/${crypto.randomUUID()}.${ext}`,
           contentType: blob.type || "image/webp",
           contentLength: blob.size,
           accept: ACCEPT,
@@ -135,11 +126,17 @@ export function PhotoUploadField({
         throw new Error("Upload failed");
       }
 
+      // Optimistic local preview while the fetcher saves + loader revalidates.
       const newPreview = URL.createObjectURL(blob);
       if (previewBlobUrl.current) URL.revokeObjectURL(previewBlobUrl.current);
       previewBlobUrl.current = newPreview;
       setPreviewUrl(newPreview);
-      setKey(uploadedKey);
+
+      // Persist immediately — the page action's update-photo intent stores the key.
+      fetcher.submit(
+        { intent: "update-photo", photoUrl: uploadedKey },
+        { method: "post" },
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
     } finally {
@@ -147,67 +144,40 @@ export function PhotoUploadField({
     }
   }
 
-  function handleRemove() {
-    setKey("");
-    if (previewBlobUrl.current) {
-      URL.revokeObjectURL(previewBlobUrl.current);
-      previewBlobUrl.current = null;
-    }
-    setPreviewUrl(null);
-    setError(null);
-  }
-
-  const boxSize = shape === "wide" ? "w-36 h-20" : "w-20 h-20";
+  const busy = uploading || fetcher.state !== "idle";
 
   return (
-    <div className="flex flex-col gap-1 text-xs">
-      <span className="text-muted-foreground">{label}</span>
-      <div className="flex items-center gap-4">
-        <div className={`relative ${boxSize} flex-shrink-0`}>
-          {previewUrl ? (
-            <img
-              src={previewUrl}
-              alt=""
-              className={`${boxSize} rounded-lg object-cover border border-border`}
-            />
-          ) : (
-            <div className={`${boxSize} rounded-lg border border-border bg-accent-coral/15 text-accent-coral flex items-center justify-center font-bold text-xl`}>
-              {initialsFromName(name)}
-            </div>
-          )}
-          {uploading && (
-            <div className="absolute inset-0 rounded-lg bg-black/40 flex items-center justify-center">
-              <span className="inline-block w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-            </div>
-          )}
-        </div>
-
-        {!readOnly && (
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                disabled={uploading}
-                onClick={() => fileRef.current?.click()}
-                className="px-3 py-1.5 text-xs font-medium rounded-md border border-border text-foreground hover:bg-muted transition-colors disabled:opacity-60"
-              >
-                {previewUrl ? "Replace" : "Upload photo"}
-              </button>
-              {previewUrl && (
-                <button
-                  type="button"
-                  disabled={uploading}
-                  onClick={handleRemove}
-                  className="px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-red-500 transition-colors disabled:opacity-60"
-                >
-                  Remove
-                </button>
-              )}
-            </div>
-            <p className="text-[11px] text-muted-foreground">
-              PNG, JPEG, WebP, or GIF · max {MAX_UPLOAD_LABEL}
-            </p>
+    <div className="flex flex-col items-center gap-1">
+      <div className="relative w-32 h-32">
+        {previewUrl ? (
+          <img
+            src={previewUrl}
+            alt=""
+            className="w-32 h-32 rounded-lg object-cover border border-border"
+          />
+        ) : (
+          <div className="w-32 h-32 rounded-lg border border-border bg-accent-coral/15 text-accent-coral flex items-center justify-center font-bold text-3xl">
+            {initialsFromName(name)}
           </div>
+        )}
+
+        {busy && (
+          <div className="absolute inset-0 rounded-lg bg-black/40 flex items-center justify-center">
+            <span className="inline-block w-6 h-6 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+          </div>
+        )}
+
+        {canEdit && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => fileRef.current?.click()}
+            aria-label={previewUrl ? "Replace profile photo" : "Upload profile photo"}
+            title={previewUrl ? "Replace photo" : "Upload photo"}
+            className="absolute -bottom-1.5 -right-1.5 w-9 h-9 rounded-full bg-accent-coral text-white border-2 border-card shadow-sm flex items-center justify-center hover:bg-accent-coral/90 transition-colors disabled:opacity-60"
+          >
+            <Camera className="w-4 h-4" />
+          </button>
         )}
       </div>
 
@@ -218,9 +188,8 @@ export function PhotoUploadField({
         onChange={handleInputChange}
         className="hidden"
       />
-      <input type="hidden" name={fieldName} value={key} />
 
-      {error && <p className="text-xs text-red-500">{error}</p>}
+      {error && <p className="text-xs text-red-500 max-w-[12rem] text-center">{error}</p>}
 
       <PhotoCropModal
         open={cropSrc !== null}

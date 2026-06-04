@@ -20,6 +20,8 @@ import type { Route } from "./+types/projects.$id";
 import { prisma } from "~/lib/db";
 import { ensureProjectGroup } from "~/lib/groups";
 import { requireAuth } from "~/lib/auth";
+import { resolvePhotoUrl } from "~/lib/photo";
+import { PhotoUploadField } from "~/components/PhotoUploadField";
 import { parseSessionCookie } from "~/lib/cookies";
 import { isCore, isProjectMember, canManageStaffing, currentTerm } from "~/lib/roles";
 import { getPresenceUser } from "~/lib/presence-user";
@@ -439,6 +441,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     .map((id) => ({ id, name: idToName.get(id) ?? "(unknown)" }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
+  // imageUrl may be an S3 key (uploaded via the project image control) or a
+  // legacy pasted URL; resolve to a displayable src. The raw value stays on
+  // project.imageUrl so the upload field round-trips the key on save.
+  const imageUrlResolved = await resolvePhotoUrl(project.imageUrl);
+
   return {
     project: {
       id: project.id,
@@ -448,6 +455,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       calendarEmail: project.calendarEmail,
       teamGroupEmail: project.teamGroupEmail,
       imageUrl: project.imageUrl,
+      imageUrlResolved,
       repoUrls: project.repoUrls,
       deploymentUrl: project.deploymentUrl,
       githubTeamSlug: project.githubTeamSlug,
@@ -905,9 +913,9 @@ function ProjectHeader({
 
   return (
     <header className="flex flex-col gap-4">
-      {project.imageUrl && (
+      {project.imageUrlResolved && (
         <img
-          src={project.imageUrl}
+          src={project.imageUrlResolved}
           alt=""
           className="w-full h-48 rounded-lg object-cover border border-border"
         />
@@ -1360,22 +1368,19 @@ function DetailsSegment({
               </span>
             </label>
 
-            <label className="flex flex-col gap-1 text-xs">
-              <span className="text-muted-foreground">Image URL</span>
-              {editing ? (
-                <input
-                  name="imageUrl"
-                  type="url"
-                  defaultValue={project.imageUrl ?? ""}
-                  placeholder="https://…"
-                  className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-                />
-              ) : (
-                <span className="px-2 py-1.5 text-sm text-foreground">
-                  {project.imageUrl ?? "—"}
-                </span>
-              )}
-            </label>
+            <div className="sm:col-span-2">
+              <PhotoUploadField
+                userId={project.id}
+                name={project.name}
+                label="Project image"
+                fieldName="imageUrl"
+                keyPrefix="project-images"
+                shape="wide"
+                initialKey={project.imageUrl}
+                initialPreviewUrl={project.imageUrlResolved}
+                readOnly={!editing}
+              />
+            </div>
 
             <label className="flex flex-col gap-1 text-xs">
               <span className="text-muted-foreground">GitHub team</span>
