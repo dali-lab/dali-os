@@ -15,6 +15,7 @@ export type Preference = {
 // A domain the member is eligible in, with their level there. Sourced from
 // DomainEligibility (one row per user+domain). Shown on every card.
 export type DomainLevel = {
+  domainId: string;
   domainName: string;
   level: Level;
 };
