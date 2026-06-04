@@ -160,20 +160,23 @@ describe("internal-processes/onboarding loader", () => {
     expect(data.rows.map((r: any) => r.role)).toEqual(["Fullstack", "Design"]);
   });
 
-  it("excludes already-onboarded members (e.g. re-accepted Fellowship members)", async () => {
+  it("includes already-onboarded members (full accepted roster)", async () => {
     mockPrisma.applicationCycle.findMany.mockResolvedValue([
       { id: "cyc-new", name: "Spring 2026", cycleType: "Standard" },
     ]);
     mockPrisma.decision.findMany.mockResolvedValue([
-      // Already onboarded in a prior cycle, re-accepted here → keeps onboardedAt, hidden.
+      // Already onboarded → still listed; profileSubmitted reads true (all-green).
       decisionRow({ userId: "u1", first: "Ada", domainCode: "fullstack", domainName: "Fullstack", daliEmail: "ada@dali.dartmouth.edu", slackUserId: "U1", onboardedAt: new Date() }),
       decisionRow({ userId: "u2", first: "Bea", domainCode: "design", domainName: "Design", onboardedAt: null }),
     ]);
 
     const data = (await call()) as any;
-    expect(data.rows.map((r: any) => r.userId)).toEqual(["u2"]);
-    // The hidden member's domain also drops out of the filter dropdown.
-    expect(data.domains.map((d: any) => d.key)).toEqual(["design"]);
+    expect(data.rows.map((r: any) => r.userId)).toEqual(["u1", "u2"]);
+    // The onboarded member shows as profile-submitted; the other is still pending.
+    expect(data.rows.find((r: any) => r.userId === "u1").profileSubmitted).toBe(true);
+    expect(data.rows.find((r: any) => r.userId === "u2").profileSubmitted).toBe(false);
+    // Both domains appear in the filter dropdown now.
+    expect(data.domains.map((d: any) => d.key)).toEqual(["design", "fullstack"]);
   });
 
   it("filters rows by a valid ?domain=", async () => {
