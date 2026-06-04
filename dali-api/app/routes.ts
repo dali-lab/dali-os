@@ -198,6 +198,10 @@ export default [
   route("api/slack/events", "slack/routes/api.slack.events.ts"),
   route("api/slack/interactivity", "slack/routes/api.slack.interactivity.ts"),
 
+  // GitHub webhook (signature-verified). Mirrors issue events back into linked
+  // tasks (close → Done, reopen → InProgress, assignee + comment sync).
+  route("api/webhooks/github", "projects/routes/api.webhooks.github.ts"),
+
   // Staffing input (bids / intent to work) is collected exclusively through
   // bound forms at /forms/fill/:token — there are no direct submit endpoints.
 

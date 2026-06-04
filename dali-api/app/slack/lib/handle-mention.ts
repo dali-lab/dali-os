@@ -2,7 +2,7 @@ import { prisma } from "~/lib/db";
 import { fetchThread, getPermalink, postReply } from "./slack-client";
 import type { SlackThreadMessage } from "./slack-client";
 import { formatIssue } from "./format-issue";
-import { createIssue } from "./github-app";
+import { createIssue } from "~/lib/github";
 
 // Slack `app_mention` event payload (subset we need).
 export type AppMentionEvent = {

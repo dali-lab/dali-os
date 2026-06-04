@@ -52,7 +52,6 @@ export function MemberCard({ card, columnId, projectNames, domainNames, onOpenBi
   return (
     <div
       ref={setNodeRef}
-      style={style}
       {...dragProps}
       onClick={onOpenBid}
       role="button"

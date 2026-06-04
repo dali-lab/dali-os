@@ -28,7 +28,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       select: { onboardedAt: true },
     });
     if (member) {
-      return redirect(member.onboardedAt ? "/hiring/reviewer" : "/onboarding");
+      return redirect(member.onboardedAt ? "/" : "/onboarding");
     }
     return redirect("/portal");
   }

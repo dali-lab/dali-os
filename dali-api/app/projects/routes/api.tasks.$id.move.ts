@@ -4,6 +4,7 @@ import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { isTaskStatus } from "../lib/task-board";
+import { closeIssueForTask, syncIssueForTask } from "../lib/github-task-sync";
 
 // POST /api/tasks/:id/move
 //
@@ -51,7 +52,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const task = await prisma.task.findUnique({
     where: { id: params.id },
-    select: { id: true },
+    select: { id: true, githubIssueNumber: true },
   });
   if (!task) {
     return withCors(request, Response.json({ error: "Task not found" }, { status: 404 }));
@@ -61,6 +62,24 @@ export async function action({ request, params }: Route.ActionArgs) {
     where: { id: params.id },
     data: { status: body.status, position: body.position },
   });
+
+  // Mirror to GitHub: Done/Cancelled close the issue, anything else relabels
+  // (and reopens if it was previously closed). Fire-and-forget.
+  if (task.githubIssueNumber !== null) {
+    if (body.status === "Done") {
+      void closeIssueForTask(params.id, "completed").catch((err) =>
+        console.error(`task ${params.id}: github close failed`, err),
+      );
+    } else if (body.status === "Cancelled") {
+      void closeIssueForTask(params.id, "not_planned").catch((err) =>
+        console.error(`task ${params.id}: github close failed`, err),
+      );
+    } else {
+      void syncIssueForTask(params.id).catch((err) =>
+        console.error(`task ${params.id}: github sync failed`, err),
+      );
+    }
+  }
 
   return withCors(request, Response.json({ ok: true }));
 }
