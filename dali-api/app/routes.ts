@@ -205,6 +205,7 @@ export default [
   route("api/staffing/assign", "projects/routes/api.staffing.assign.ts"),
   route("api/staffing/finalize", "projects/routes/api.staffing.finalize.ts"),
   route("api/staffing/board-member", "projects/routes/api.staffing.board-member.ts"),
+  route("api/staffing/events", "projects/routes/api.staffing.events.ts"),
 
   // Project task board
   route("api/projects/:id/tasks", "projects/routes/api.projects.$id.tasks.ts"),

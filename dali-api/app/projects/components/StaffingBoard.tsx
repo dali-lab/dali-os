@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useRevalidator } from "react-router";
 import {
   DndContext,
@@ -75,6 +75,40 @@ export function StaffingBoard({
   // Project id whose finalize modal is open, or null.
   const [finalizeProjectId, setFinalizeProjectId] = useState<string | null>(null);
 
+  // Number of drag saves currently in flight. While > 0 we hold off adopting
+  // server data so a live push from someone else can't revert our own unsaved
+  // optimistic move mid-drag. Once our save lands it revalidates and this clears.
+  const pendingSaves = useRef(0);
+
+  // Local `assignments` is the optimistic source of truth during a drag. When a
+  // revalidation lands (our own save, or a live push from another lead), the
+  // loader hands back fresh `initialAssignments` — adopt it so other people's
+  // edits actually appear. Keyed off the prop's identity: React Router gives a
+  // new array each loader run, so this only fires when server data changes.
+  useEffect(() => {
+    if (pendingSaves.current > 0) return;
+    setAssignments(initialAssignments);
+  }, [initialAssignments]);
+
+  // Live updates: subscribe to this cycle's SSE stream and revalidate on any
+  // pushed change (assign / finalize / board-member by anyone) or periodic sync.
+  // EventSource auto-reconnects, so a dropped connection self-heals. The bus is
+  // per-instance (see staffing-events.server.ts); the `sync` heartbeat is the
+  // cross-instance backstop.
+  const revalidate = revalidator.revalidate;
+  const revalidateRef = useRef(revalidate);
+  revalidateRef.current = revalidate;
+  useEffect(() => {
+    const es = new EventSource(
+      `/api/staffing/events?cycleId=${encodeURIComponent(cycleId)}`,
+      { withCredentials: true },
+    );
+    const onPush = () => revalidateRef.current();
+    es.addEventListener("change", onPush);
+    es.addEventListener("sync", onPush);
+    return () => es.close();
+  }, [cycleId]);
+
   const projectIds = useMemo(() => projects.map((p) => p.id), [projects]);
 
   const board = useMemo(
@@ -136,16 +170,26 @@ export function StaffingBoard({
     setAssignments(nextAssignments);
     setError(null);
 
+    pendingSaves.current += 1;
     void persist({
       cycleId,
       userId,
       projectId: targetProjectId,
       domainId: assignmentBody?.domainId,
       level: assignmentBody?.level,
-    }).catch((err) => {
-      setAssignments(prevAssignments);
-      setError(err instanceof Error ? err.message : "Failed to save assignment");
-    });
+    })
+      .then(() => {
+        // Reconcile with server truth (also adopts any concurrent edits that
+        // arrived while this save was in flight).
+        revalidator.revalidate();
+      })
+      .catch((err) => {
+        setAssignments(prevAssignments);
+        setError(err instanceof Error ? err.message : "Failed to save assignment");
+      })
+      .finally(() => {
+        pendingSaves.current = Math.max(0, pendingSaves.current - 1);
+      });
   }
 
   async function handleRemoveMember(userId: string) {

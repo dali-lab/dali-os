@@ -12,6 +12,7 @@ import { ensureStaffingCycle } from "../lib/staffing-cycle";
 import { getSlotBinding } from "../lib/form-slots";
 import { buildSubmissionView } from "../lib/submission-view.server";
 import { StaffingBoard } from "../components/StaffingBoard";
+import { dedupeLiveAssignments } from "../lib/staffing-board";
 import type {
   Assignment,
   BidField,
@@ -26,9 +27,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
   if (auth.user.type === "applicant") return redirect("/portal");
-  // Viewing the board is now Core/Admin only. Mutations are further gated
-  // by canManageStaffing (staffing leads); the UI hides drag affordances
-  // when canManage is false.
+  // Viewing and managing the board are both Core/Admin (canViewStaffing and
+  // canManageStaffing are the same membership set); the UI still hides drag
+  // affordances when canManage is false (e.g. a future read-only tier).
   if (!(await canViewStaffing(auth.user.sub))) return redirect("/");
 
   const canManage = await canManageStaffing(auth.user.sub);
@@ -116,7 +117,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const memberUserIds = Array.from(new Set(preferences.map((p) => p.userId)));
 
-  const [users, assignmentRows, projects, domains, roleRequests] = await Promise.all([
+  const [users, rawAssignmentRows, projects, domains, roleRequests] = await Promise.all([
     prisma.user.findMany({
       where: { id: { in: memberUserIds } },
       select: {
@@ -136,9 +137,12 @@ export async function loader({ request }: Route.LoaderArgs) {
         },
       },
     }),
+    // Both in-progress (Proposed) and finalized (Confirmed) assignments — a
+    // confirmed roster must stay on the board after finalize, not vanish.
+    // Declined rows are audit only. Deduped to one card per (user, cycle) below.
     prisma.staffingAssignment.findMany({
-      where: { staffingCycleId: cycle.id, status: "Proposed" },
-      select: { userId: true, projectId: true, domainId: true, level: true },
+      where: { staffingCycleId: cycle.id, status: { in: ["Proposed", "Confirmed"] } },
+      select: { userId: true, projectId: true, domainId: true, level: true, status: true },
     }),
     // Columns are the projects that actually RUN in the selected term
     // (ProjectTerm), not every non-archived project — otherwise the board lists
@@ -163,6 +167,10 @@ export async function loader({ request }: Route.LoaderArgs) {
       select: { projectId: true, domainId: true, slots: true },
     }),
   ]);
+
+  // Collapse a member's Proposed + Confirmed rows to one live card (see
+  // dedupeLiveAssignments) so a finalized roster stays on the board.
+  const assignmentRows = dedupeLiveAssignments(rawAssignmentRows);
 
   // Union in any non-archived project that's actually being staffed this cycle
   // (a bid, assignment, or role request) but lacks a ProjectTerm row for the

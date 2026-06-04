@@ -12,6 +12,8 @@ import {
   addGroupMember,
 } from "~/lib/google-workspace";
 import { logAuditEvent } from "~/lib/audit";
+import { dedupeLiveAssignments } from "../lib/staffing-board";
+import { publishCycleChange } from "../lib/staffing-events.server";
 
 // POST /api/staffing/finalize
 //
@@ -115,22 +117,33 @@ export async function action({ request }: Route.ActionArgs) {
   let confirmedCount = 0;
   if (selected.has("assignments")) {
     try {
-      const proposed = await prisma.staffingAssignment.findMany({
-        where: {
-          staffingCycleId: cycle.id,
-          projectId: project.id,
-          status: { in: ["Proposed", "Confirmed"] },
-        },
-        select: { id: true, userId: true, domainId: true, level: true, status: true },
+      // Finalize REPLACES the confirmed roster: the project's Confirmed set
+      // becomes exactly the board's current assignments for it. A member's
+      // live card is their Proposed row if present, else their Confirmed row
+      // (same dedupe the board does) — so someone dragged onto another project
+      // has a Proposed row elsewhere and must NOT stay confirmed here.
+      const cycleRows = await prisma.staffingAssignment.findMany({
+        where: { staffingCycleId: cycle.id, status: { in: ["Proposed", "Confirmed"] } },
+        select: { id: true, userId: true, projectId: true, domainId: true, level: true, status: true },
       });
+      // Target roster = members whose live assignment points at THIS project.
+      const target = dedupeLiveAssignments(cycleRows).filter((r) => r.projectId === project.id);
+      const targetUserIds = new Set(target.map((r) => r.userId));
 
-      for (const a of proposed) {
-        await prisma.$transaction(async (tx) => {
+      // Members currently Confirmed on this project who are no longer in the
+      // target roster (dragged off / to another project / unassigned). Decline
+      // their stale Confirmed rows and drop the ProjectAssignment for this
+      // project+cycle. DomainEligibility is left intact — it's monotonic and a
+      // promotion already granted isn't revoked by re-staffing.
+      const droppedRows = cycleRows.filter(
+        (r) => r.status === "Confirmed" && r.projectId === project.id && !targetUserIds.has(r.userId),
+      );
+
+      let droppedCount = 0;
+      await prisma.$transaction(async (tx) => {
+        for (const a of target) {
           if (a.status !== "Confirmed") {
-            await tx.staffingAssignment.update({
-              where: { id: a.id },
-              data: { status: "Confirmed" },
-            });
+            await tx.staffingAssignment.update({ where: { id: a.id }, data: { status: "Confirmed" } });
           }
           await tx.projectAssignment.upsert({
             where: {
@@ -162,15 +175,30 @@ export async function action({ request }: Route.ActionArgs) {
               promotedBy: auth.user.sub,
             },
           });
-        });
-        confirmedCount++;
-      }
+          confirmedCount++;
+        }
+
+        for (const d of droppedRows) {
+          await tx.staffingAssignment.update({ where: { id: d.id }, data: { status: "Declined" } });
+          await tx.projectAssignment.deleteMany({
+            where: {
+              userId: d.userId,
+              projectId: project.id,
+              termId: cycle.termId,
+              domainId: d.domainId,
+            },
+          });
+          droppedCount++;
+        }
+      });
+
+      const dropNote = droppedCount > 0 ? `, removed ${droppedCount}` : "";
       results.assignments = {
         status: "ok",
         message:
-          confirmedCount === 0
+          confirmedCount === 0 && droppedCount === 0
             ? "No proposed assignments for this project."
-            : `Confirmed ${confirmedCount} assignment${confirmedCount === 1 ? "" : "s"} → ProjectAssignment.`,
+            : `Confirmed ${confirmedCount} assignment${confirmedCount === 1 ? "" : "s"}${dropNote} → ProjectAssignment.`,
       };
     } catch (err) {
       results.assignments = { status: "error", message: errMsg(err) };
@@ -414,6 +442,10 @@ export async function action({ request }: Route.ActionArgs) {
     },
     request,
   });
+
+  // Finalize confirms/removes assignments — push so every open board reflects
+  // the new roster (cards moving from Proposed to finalized, drops disappearing).
+  publishCycleChange(cycle.id);
 
   return withCors(request, Response.json({ results }));
 }

@@ -4,6 +4,7 @@ import { requireAuth } from "~/lib/auth";
 import { canManageStaffing } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { logAuditEvent } from "~/lib/audit";
+import { publishCycleChange } from "../lib/staffing-events.server";
 
 // Staffing board membership for non-bidders.
 //
@@ -154,6 +155,7 @@ export async function action({ request }: Route.ActionArgs) {
       metadata: { cycleId: body.cycleId },
       request,
     });
+    publishCycleChange(body.cycleId);
     return withCors(request, Response.json({ ok: true }));
   }
 
@@ -185,5 +187,6 @@ export async function action({ request }: Route.ActionArgs) {
     metadata: { cycleId: body.cycleId },
     request,
   });
+  publishCycleChange(body.cycleId);
   return withCors(request, Response.json({ ok: true }));
 }
