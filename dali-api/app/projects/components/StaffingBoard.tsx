@@ -2,11 +2,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useRevalidator } from "react-router";
 import {
   DndContext,
+  DragOverlay,
   PointerSensor,
   useDroppable,
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragStartEvent,
 } from "@dnd-kit/core";
 import {
   buildBoard,
@@ -18,7 +20,7 @@ import {
   type Preference,
 } from "../lib/staffing-board";
 import { CheckCircle2 } from "lucide-react";
-import { MemberCard } from "./MemberCard";
+import { MemberCard, MemberCardPreview } from "./MemberCard";
 import { BidModal } from "./BidModal";
 import { FinalizeModal } from "./FinalizeModal";
 import { AddMemberControl } from "./AddMemberControl";
@@ -74,6 +76,9 @@ export function StaffingBoard({
   const [openBidUserId, setOpenBidUserId] = useState<string | null>(null);
   // Project id whose finalize modal is open, or null.
   const [finalizeProjectId, setFinalizeProjectId] = useState<string | null>(null);
+  // userId of the card being dragged, or null. Drives the DragOverlay so the
+  // dragged card floats above every column instead of clipping under them.
+  const [activeCardUserId, setActiveCardUserId] = useState<string | null>(null);
 
   // Number of drag saves currently in flight. While > 0 we hold off adopting
   // server data so a live push from someone else can't revert our own unsaved
@@ -121,6 +126,17 @@ export function StaffingBoard({
     [members],
   );
 
+  // Flat userId → card lookup so DragOverlay can render the active card without
+  // knowing which column it came from.
+  const cardByUserId = useMemo(() => {
+    const map = new Map<string, MemberCardModel>();
+    for (const cards of Object.values(board)) {
+      for (const c of cards) map.set(c.userId, c);
+    }
+    return map;
+  }, [board]);
+  const activeCard = activeCardUserId ? cardByUserId.get(activeCardUserId) ?? null : null;
+
   // The whole member card is both draggable and clickable. A small activation
   // distance disambiguates the two: a press that moves <6px fires the card's
   // onClick (open bid); past that it starts a drag, suppressing the click.
@@ -128,7 +144,13 @@ export function StaffingBoard({
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
   );
 
+  function handleDragStart(event: DragStartEvent) {
+    const data = event.active.data.current as { userId?: string } | undefined;
+    setActiveCardUserId(data?.userId ?? null);
+  }
+
   function handleDragEnd(event: DragEndEvent) {
+    setActiveCardUserId(null);
     if (!canManage) return;
     const overId = event.over?.id;
     if (!overId || typeof overId !== "string") return;
@@ -272,7 +294,13 @@ export function StaffingBoard({
           iframe + other boards) the default useId differs between SSR and
           client, hydration-mismatches dnd-kit's internal ids, and drag never
           activates. A fixed id keeps server/client deterministic. */}
-      <DndContext id="staffing-board" sensors={sensors} onDragEnd={handleDragEnd}>
+      <DndContext
+        id="staffing-board"
+        sensors={sensors}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        onDragCancel={() => setActiveCardUserId(null)}
+      >
         {/* pt-1 keeps each column's top border off the scroll-clip edge so it
             stays visible; px on the row prevents the first/last column border
             being shaved by overflow-x. */}
@@ -306,6 +334,18 @@ export function StaffingBoard({
             />
           ))}
         </div>
+
+        {/* The dragged card, portaled above every column so it can never clip
+            under an adjacent column's stacking context. */}
+        <DragOverlay>
+          {activeCard ? (
+            <MemberCardPreview
+              card={activeCard}
+              projectNames={projectNames}
+              domainNames={domainNames}
+            />
+          ) : null}
+        </DragOverlay>
       </DndContext>
 
       {openBidMember && (
