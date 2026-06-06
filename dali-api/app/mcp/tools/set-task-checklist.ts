@@ -2,8 +2,7 @@
 // task. Stored as JSON `[{text, done}]`. Allowed for task assignees + Core,
 // same as `add_task_comment` and `update_task_status`.
 
-import { Prisma } from "~/generated/prisma/client";
-import { prisma } from "~/lib/db";
+import { prisma, Prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";
 
 export const SET_TASK_CHECKLIST_TOOL = {
