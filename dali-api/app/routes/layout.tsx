@@ -10,6 +10,8 @@ import { resolvePhotoUrl } from '~/lib/photo'
 import { recordPageView } from '~/lib/analytics'
 import type { Route } from './+types/layout'
 
+const ONBOARDING_LINK = "/onboarding"
+
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request)
   if (!auth.ok) return redirect('/login')
@@ -74,8 +76,55 @@ export async function loader({ request }: Route.LoaderArgs) {
   // the tour. Established members were backfilled (tourCompletedAt set), so only
   // the just-onboarded get it. A manual "start tour" button can re-run it later
   // regardless of this flag.
-  const shouldShowTour =
+  let shouldShowTour =
     !!me?.daliMember?.onboardedAt && me.daliMember.tourCompletedAt === null
+
+  // Self-heal users who are already onboarded but still have the new-member
+  // onboarding task. /onboarding redirects them home, so clear the stale task;
+  // if they were also marked tour-complete, let the existing launch tour show
+  // once.
+  if (me?.daliMember?.onboardedAt) {
+    const staleOnboardingTask = await prisma.notification.findFirst({
+      where: {
+        recipientUserId: auth.user.sub,
+        kind: "SystemAnnouncement",
+        link: ONBOARDING_LINK,
+        readAt: null,
+      },
+      select: { id: true },
+    })
+
+    if (staleOnboardingTask) {
+      if (me.daliMember.tourCompletedAt !== null) {
+        await prisma.$transaction([
+          prisma.notification.updateMany({
+            where: {
+              recipientUserId: auth.user.sub,
+              kind: "SystemAnnouncement",
+              link: ONBOARDING_LINK,
+              readAt: null,
+            },
+            data: { readAt: new Date() },
+          }),
+          prisma.dALIMember.updateMany({
+            where: { userId: auth.user.sub },
+            data: { tourCompletedAt: null },
+          }),
+        ])
+        shouldShowTour = true
+      } else {
+        await prisma.notification.updateMany({
+          where: {
+            recipientUserId: auth.user.sub,
+            kind: "SystemAnnouncement",
+            link: ONBOARDING_LINK,
+            readAt: null,
+          },
+          data: { readAt: new Date() },
+        })
+      }
+    }
+  }
 
   // Detect iframe context from Sec-Fetch-Dest. Modern browsers (Chrome, Firefox,
   // Safari 16+) set this automatically and it survives server-side redirects,

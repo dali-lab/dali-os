@@ -43,6 +43,15 @@ export async function sendWelcome(args: {
   // one step within it). It is a plain todo — NOT form-backed — so submitting
   // the profile form alone doesn't clear it; it stays until onboarding is fully
   // finished (clearOnboardingTask, called when onboardedAt is set).
+  const member = await prisma.dALIMember.findUnique({
+    where: { userId: args.userId },
+    select: { onboardedAt: true },
+  });
+  if (!member || member.onboardedAt) {
+    await clearOnboardingTask(args.userId);
+    return { notified: false };
+  }
+
   let notified = false;
   // Don't re-notify on a re-release: only create if there's no existing
   // onboarding todo for this member.
@@ -51,6 +60,7 @@ export async function sendWelcome(args: {
       recipientUserId: args.userId,
       kind: "SystemAnnouncement",
       link: ONBOARDING_LINK,
+      readAt: null,
     },
     select: { id: true },
   });
