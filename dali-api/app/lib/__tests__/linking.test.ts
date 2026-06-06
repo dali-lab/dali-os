@@ -13,6 +13,11 @@ const mockPrisma = prisma as unknown as {
   };
   session: { updateMany: ReturnType<typeof vi.fn> };
   oAuthSession: { updateMany: ReturnType<typeof vi.fn> };
+  dALIMember: {
+    findUnique: ReturnType<typeof vi.fn>;
+    updateMany: ReturnType<typeof vi.fn>;
+    deleteMany: ReturnType<typeof vi.fn>;
+  };
   $transaction: ReturnType<typeof vi.fn>;
 };
 
@@ -39,18 +44,62 @@ describe("linkCasToGoogleUser", () => {
     lastName: "User",
   };
 
-  it("merges separate users via transaction", async () => {
+  it("merges separate users via transaction (re-parents DALIMember when CAS user has none)", async () => {
     // first call: findUnique by id (googleUser), second: findUnique by netId (casUser)
     mockPrisma.user.findUnique
       .mockResolvedValueOnce(googleUser)
       .mockResolvedValueOnce(casUser);
 
     const mergedUser = { ...casUser, daliEmail: googleUser.daliEmail };
+    const memberUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const memberDeleteMany = vi.fn().mockResolvedValue({ count: 0 });
+    const userDelete = vi.fn().mockResolvedValue({});
+
     mockPrisma.$transaction.mockImplementation(async (fn: any) => {
-      // provide a mock tx with the same methods
       const tx = {
         session: { updateMany: vi.fn().mockResolvedValue({}) },
         oAuthSession: { updateMany: vi.fn().mockResolvedValue({}) },
+        dALIMember: {
+          findUnique: vi.fn().mockResolvedValue(null), // CAS user has no DALIMember
+          updateMany: memberUpdateMany,
+          deleteMany: memberDeleteMany,
+        },
+        user: {
+          delete: userDelete,
+          update: vi.fn().mockResolvedValue(mergedUser),
+        },
+      };
+      return fn(tx);
+    });
+
+    const result = await linkCasToGoogleUser("g1", "d12345a");
+    expect(result).toEqual(mergedUser);
+    expect(memberUpdateMany).toHaveBeenCalledWith({
+      where: { userId: googleUser.id },
+      data: { userId: casUser.id },
+    });
+    expect(memberDeleteMany).not.toHaveBeenCalled();
+    expect(userDelete).toHaveBeenCalledWith({ where: { id: googleUser.id } });
+  });
+
+  it("merges separate users (drops Google DALIMember when CAS user already has one)", async () => {
+    mockPrisma.user.findUnique
+      .mockResolvedValueOnce(googleUser)
+      .mockResolvedValueOnce(casUser);
+
+    const mergedUser = { ...casUser, daliEmail: googleUser.daliEmail };
+    const memberUpdateMany = vi.fn().mockResolvedValue({ count: 0 });
+    const memberDeleteMany = vi.fn().mockResolvedValue({ count: 1 });
+
+    mockPrisma.$transaction.mockImplementation(async (fn: any) => {
+      const tx = {
+        session: { updateMany: vi.fn().mockResolvedValue({}) },
+        oAuthSession: { updateMany: vi.fn().mockResolvedValue({}) },
+        dALIMember: {
+          findUnique: vi.fn().mockResolvedValue({ id: "existing-member" }),
+          updateMany: memberUpdateMany,
+          deleteMany: memberDeleteMany,
+        },
         user: {
           delete: vi.fn().mockResolvedValue({}),
           update: vi.fn().mockResolvedValue(mergedUser),
@@ -61,7 +110,10 @@ describe("linkCasToGoogleUser", () => {
 
     const result = await linkCasToGoogleUser("g1", "d12345a");
     expect(result).toEqual(mergedUser);
-    expect(mockPrisma.$transaction).toHaveBeenCalled();
+    expect(memberDeleteMany).toHaveBeenCalledWith({
+      where: { userId: googleUser.id },
+    });
+    expect(memberUpdateMany).not.toHaveBeenCalled();
   });
 
   it("returns same user when CAS user is the same record (no-op)", async () => {

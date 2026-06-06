@@ -115,7 +115,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   // callback `/oauth/callback/google` which gates on a different signal.
   const { user } = await upsertUserFromGoogle(googleUser);
 
-  // Issue session and set cookie
   const session = await issueSession({
     userId: user.id,
     userAgent: request.headers.get("user-agent") ?? undefined,
@@ -131,10 +130,28 @@ export async function loader({ request }: Route.LoaderArgs) {
     },
     request,
   });
+
   const headers = new Headers();
   headers.append("Set-Cookie", clearStateCookie);
   setSessionCookie(headers, session.rawId);
-  headers.set("Location", "/");
 
+  // First Google login for a brand-new member (or an accepted applicant whose
+  // CAS-side User row hasn't been linked yet) → chain through CAS so we can
+  // merge with any existing applicant record. The session cookie identifies
+  // which User to attach the netId to on return; linkCasToGoogleUser handles
+  // the merge / no-op / attach cases. Mirrors the MCP-provider flow in
+  // oauth.callback.google.ts.
+  if (!user.netId) {
+    const casBase =
+      process.env.CAS_BASE_URL ?? "https://login.dartmouth.edu/cas";
+    const serviceUrl = `${apiBase}/auth/callback/cas?link=1`;
+    headers.set(
+      "Location",
+      `${casBase}/login?service=${encodeURIComponent(serviceUrl)}`,
+    );
+    return new Response(null, { status: 302, headers });
+  }
+
+  headers.set("Location", "/");
   return new Response(null, { status: 302, headers });
 }
