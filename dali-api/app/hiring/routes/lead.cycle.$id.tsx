@@ -1297,7 +1297,9 @@ export default function HiringLeadCycleDetails() {
 
   const loadMembers = useCallback(async () => {
     try {
-      const r = await fetch('/api/members', { credentials: 'include' })
+      // Reviewer assignment is current-cycle work — exclude alumni so a stale
+      // suggestion can't pick someone who's no longer on the lab roster.
+      const r = await fetch('/api/members?scope=current', { credentials: 'include' })
       setAllMembers(r.ok ? await r.json() : [])
     } catch {}
   }, [])

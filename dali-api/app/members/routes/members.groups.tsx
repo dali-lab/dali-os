@@ -4,7 +4,7 @@ import type { Route } from "./+types/members.groups";
 import { prisma } from "~/lib/db";
 import { listAllGroups } from "~/lib/groups";
 import { requireAuth } from "~/lib/auth";
-import { canViewForms } from "~/lib/roles";
+import { canViewForms, currentTermMemberWhere } from "~/lib/roles";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { initialsFromName } from "~/lib/display";
 import { Modal } from "~/components/Modal";
@@ -34,7 +34,9 @@ type GroupRow = {
 };
 
 // A member as shown on an expanded group card: enough to render a profile-style
-// card (photo, name, role pills) and link to the member's page.
+// card (photo, name, role pills) and link to the member's page. `isCurrentMember`
+// distinguishes pickable users (current-term lab members) from alumni who only
+// appear here because they're still listed in an existing group.
 type MemberCardData = {
   id: string;
   firstName: string;
@@ -43,6 +45,7 @@ type MemberCardData = {
   photoUrl: string | null;
   coreTitles: string[];
   domainRoles: { domainName: string; level: string }[];
+  isCurrentMember: boolean;
 };
 
 type TermOption = { id: string; code: string };
@@ -52,27 +55,39 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!auth.ok) return redirect("/login");
   if (!(await canViewForms(auth.user.sub))) return redirect("/members");
 
-  const [visible, users, terms] = await Promise.all([
+  // Picker pool is current-term lab members only (no applicants, no alumni).
+  // We still need to render alumni who already exist in a group's memberIds,
+  // so the display pool is (current-term ∪ users referenced by any group).
+  const memberWhere = await currentTermMemberWhere();
+  const [visible, currentMemberRows, terms] = await Promise.all([
     listAllGroups(),
-    prisma.user.findMany({
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        daliEmail: true,
-        photoUrl: true,
-        coreAssignments: { select: { leadTitle: true } },
-        domainEligibilities: {
-          select: { level: true, domain: { select: { displayName: true } } },
-        },
-      },
-      orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
-    }),
+    prisma.user.findMany({ where: memberWhere, select: { id: true } }),
     prisma.term.findMany({
       orderBy: { sortKey: "desc" },
       select: { id: true, code: true },
     }),
   ]);
+
+  const currentIds = new Set(currentMemberRows.map((u) => u.id));
+  const referencedIds = new Set<string>();
+  for (const g of visible) for (const id of g.memberIds) referencedIds.add(id);
+  const displayIds = Array.from(new Set([...currentIds, ...referencedIds]));
+
+  const users = await prisma.user.findMany({
+    where: { id: { in: displayIds } },
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      daliEmail: true,
+      photoUrl: true,
+      coreAssignments: { select: { leadTitle: true } },
+      domainEligibilities: {
+        select: { level: true, domain: { select: { displayName: true } } },
+      },
+    },
+    orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+  });
 
   const termCodeById = new Map(terms.map((t) => [t.id, t.code]));
 
@@ -88,6 +103,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         domainName: e.domain.displayName,
         level: e.level,
       })),
+      isCurrentMember: currentIds.has(u.id),
     })),
   );
 
@@ -369,6 +385,7 @@ function CreateGroupForm({
   const [boundTerms, setBoundTerms] = useState<string[]>([]);
 
   const filtered = members.filter((m) => {
+    if (!m.isCurrentMember) return false;
     if (!query) return true;
     const ql = query.toLowerCase();
     return (
@@ -599,7 +616,9 @@ function GroupCard({
   const [query, setQuery] = useState("");
 
   const isSystem = group.systemKey !== null;
-  const available = members.filter((m) => !group.memberIds.includes(m.id));
+  const available = members.filter(
+    (m) => m.isCurrentMember && !group.memberIds.includes(m.id),
+  );
   const filtered = available.filter((m) => {
     if (!query) return true;
     const q = query.toLowerCase();
