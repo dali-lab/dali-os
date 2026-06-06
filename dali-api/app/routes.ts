@@ -21,6 +21,7 @@ export default [
     route("hiring/lead", "hiring/routes/lead.tsx"),
     route("hiring/lead/cycle/:id", "hiring/routes/lead.cycle.$id.tsx"),
     route("hiring/lead/intern-to-full-cycle/:id", "hiring/routes/lead.intern-to-full-cycle.$id.tsx"),
+    route("hiring/lead/waitlists", "hiring/routes/lead.waitlists.tsx"),
     // Library — challenges, rubrics, and confidentiality agreements behind one
     // page with pills. The list views are consolidated here; the detail pages
     // keep their original paths.
@@ -288,6 +289,10 @@ export default [
 
   route("api/hiring/decisions/:id/finalize", "hiring/routes/api.decisions.$id.finalize.ts"),
   route("api/hiring/decisions/:id/release", "hiring/routes/api.decisions.$id.release.ts"),
+
+  route("api/hiring/waitlist", "hiring/routes/api.waitlist.ts"),
+  route("api/hiring/waitlist/:domainApplicationId/accept", "hiring/routes/api.waitlist.$domainApplicationId.accept.ts"),
+  route("api/hiring/waitlist/:domainApplicationId/remove", "hiring/routes/api.waitlist.$domainApplicationId.remove.ts"),
 
   route("api/hiring/interviews/:id/complete", "hiring/routes/api.interviews.$id.complete.ts"),
   route("api/hiring/interviews/:id/reassign", "hiring/routes/api.interviews.$id.reassign.ts"),
