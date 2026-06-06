@@ -1,10 +1,11 @@
 import { prisma } from "~/lib/db";
+import { getActiveCoreCycleTermIds } from "~/lib/roles";
 
 // Single source of truth for resolving a GroupDefinition to its member userIds.
 // Notification fan-out and meeting participant resolution both go through this.
 // Static groups return their explicit member list; Dynamic groups dispatch on
 // dynamicQuery and resolve against the underlying entity (term/project/domain
-// assignments, or current-term Core).
+// assignments, or the current Core cycle).
 export async function resolveGroupMembers(groupId: string): Promise<string[]> {
   const group = await prisma.groupDefinition.findUnique({
     where: { id: groupId },
@@ -73,10 +74,10 @@ async function resolveDomainMembers(domainId: string): Promise<string[]> {
 }
 
 async function resolveCoreMembers(): Promise<string[]> {
-  const termId = await getCurrentTermId();
-  if (!termId) return [];
+  const cycleTermIds = await getActiveCoreCycleTermIds();
+  if (cycleTermIds.length === 0) return [];
   const rows = await prisma.coreAssignment.findMany({
-    where: { termId },
+    where: { termId: { in: cycleTermIds } },
     select: { userId: true },
     distinct: ["userId"],
   });
