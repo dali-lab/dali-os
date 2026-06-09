@@ -2,6 +2,9 @@ import { securityHeaders } from "~/lib/security-headers";
 
 const ALLOWED_ORIGINS = [
   "http://localhost:5173",
+  // The JobX → DALI timesheet-export extension fetches DALI from the JobX origin;
+  // allow it so the cross-origin response is readable by the content script.
+  "https://dartmouth.studentemployment.ngwebsolutions.com",
   process.env.FRONTEND_URL,
 ].filter(Boolean) as string[];
 

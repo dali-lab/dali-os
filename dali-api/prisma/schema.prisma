@@ -45,23 +45,23 @@ model User {
   // ─── Profile fields (Phase 1 additions; all nullable) ─────────────────────
   // Dartmouth class year (e.g., 2026). Solves the "took a term off"
   // ambiguity. Used for alumni derivation + display.
-  classYear    Int?
+  classYear      Int?
   // Optional explicit graduation override for off-cycle graduations.
-  graduatedAt  DateTime?
-  pronouns     String?
-  photoUrl     String?
+  graduatedAt    DateTime?
+  pronouns       String?
+  photoUrl       String?
   // Bio stored as a collab doc reference for rich formatting + @mentions.
-  bioDocId     String?
-  major        String?
-  hometown     String?
-  linkedinUrl  String?
-  githubUrl    String?
+  bioDocId       String?
+  major          String?
+  hometown       String?
+  linkedinUrl    String?
+  githubUrl      String?
   // Bare GitHub login (e.g. "octocat"), distinct from githubUrl (a display
   // link). Used to add the member to their project's GitHub team during
   // staffing finalize. Editable in member details; nullable — a member with no
   // username is silently skipped (and reported) by that automation.
   githubUsername String?
-  personalSite String?
+  personalSite   String?
 
   // ─── Onboarding profile fields (collected on the New Member Profile form) ──
   // Name as it appears on file with the College, when different from the
@@ -99,6 +99,7 @@ model User {
   availabilitySettings UserAvailabilitySettings?
   workingHoursDays     WorkingHoursDay[]
   manualBlocks         ManualBlock[]
+  timesheetSections    TimesheetSection[]
 
   // ─── Phase 1: foundational role-model back-relations ──────────────────────
   domainEligibilities     DomainEligibility[]
@@ -1635,6 +1636,33 @@ model ManualBlock {
   @@index([userId, startTime])
 }
 
+// A timesheet entry: a worked block tagged to one of the member's hires (a
+// derived paid role — Core, a Project role at a level/domain, Instructor, etc.).
+// hireKey is a stable string identifying the hire (see lib/timesheet-hires.ts),
+// NOT an FK, because hires are derived across several assignment tables. A null
+// hireKey is an "unassigned" block — typically a freshly imported Google Calendar
+// event awaiting a hire. The grid renders all of a user's sections at once,
+// colored by hire.
+model TimesheetSection {
+  id             String   @id @default(cuid())
+  userId         String
+  hireKey        String?
+  startTime      DateTime
+  endTime        DateTime
+  note           String?
+  // Set when created by importing a Google Calendar event; dedupes re-imports.
+  sourceEventKey String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  // NULLs are distinct in Postgres, so manual (non-imported) sections with a
+  // null sourceEventKey are unaffected by this unique.
+  @@unique([userId, sourceEventKey])
+  @@index([userId, startTime])
+}
+
 // ═══ V0 Phase 1 ═════════════════════════════════════════════════════════════
 //
 // The models below land in `v0-phase1-additive`. They are purely additive
@@ -1837,7 +1865,7 @@ enum AssignmentType {
 // ─── Project workspace ───────────────────────────────────────────────────────
 
 model Project {
-  id            String        @id @default(cuid())
+  id            String  @id @default(cuid())
   name          String
   // Short plain-text blurb shown at the top of the project detail page.
   // Rich/long-form content lives in the collab overview page instead.
@@ -1859,8 +1887,8 @@ model Project {
   // fewer terms added than expected (still being scheduled) or more. Drives
   // the "N of M terms added" projection. The start term is derived as the
   // earliest term in `projectTerms` (by Term.sortKey), not stored.
-  termCount     Int           @default(1)
-  status        ProjectStatus @default(Active)
+  termCount      Int           @default(1)
+  status         ProjectStatus @default(Active)
 
   // Auto-created on Project creation: a top-level FreeForm Page in the
   // Project workspace, seeded from the "Project Brief" PageTemplate. The
@@ -3211,13 +3239,13 @@ model PartnerApplicationTargetTerm {
 // domain; `expectedMembers` is the headcount used to project expected lab
 // numbers per term.
 model PartnerApplicationDomain {
-  id                 String  @id @default(cuid())
+  id                 String @id @default(cuid())
   applicationId      String
   domainId           String
   // Rich-text ProseMirror JSON doc (Tiptap StarterKit + Link). Pre-migration
   // rows were free text and have been wrapped into a single-paragraph doc.
   expectedChallenges Json?
-  expectedMembers    Int     @default(0)
+  expectedMembers    Int    @default(0)
 
   application PartnerApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   domain      Domain             @relation(fields: [domainId], references: [id])

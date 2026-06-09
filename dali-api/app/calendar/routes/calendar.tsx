@@ -22,6 +22,9 @@ import { prisma } from "~/lib/db";
 import { listVisibleGroupsForUser } from "~/lib/groups";
 import { CalendarActionSchema } from "~/lib/calendar-schemas";
 import { fetchBusyEvents, listCalendarsForLink } from "~/lib/google-calendar";
+import { deriveHires } from "~/lib/timesheet-hires";
+import { UNASSIGNED_COLOR, type Hire } from "~/lib/timesheet-hires.shared";
+import { timesheetEventKey } from "~/lib/timesheet-key";
 import { getZonedHourFraction, getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
 import type { Route } from "./+types/calendar";
 
@@ -70,6 +73,25 @@ type CalendarLinkDTO = {
   subCalendars: SubCalendarDTO[] | null;
 };
 
+type TimesheetSectionDTO = {
+  id: string;
+  hireKey: string | null;
+  startTime: string;
+  endTime: string;
+  note: string | null;
+  sourceEventKey: string | null;
+};
+
+// A linked-calendar event not yet imported into the timesheet, offered as an
+// import candidate. sourceEventKey dedupes against existing sections.
+type ImportCandidateDTO = {
+  sourceEventKey: string;
+  title: string;
+  startTime: string;
+  endTime: string;
+  color: string | null;
+};
+
 type GroupOption = {
   id: string;
   name: string;
@@ -110,6 +132,13 @@ type LoaderData = {
   groups: GroupOption[];
   users: UserOption[];
   currentUserId: string;
+  // ─── Timesheet tab ───────────────────────────────────────────────────────
+  // The member's hires for the current term (each a color-coded timesheet),
+  // their saved sections for the visible week, and linked-calendar events not
+  // yet imported (offered as import candidates).
+  hires: Hire[];
+  timesheetSections: TimesheetSectionDTO[];
+  importCandidates: ImportCandidateDTO[];
 };
 
 function defaultWorkingHours(): WhDay[] {
@@ -240,6 +269,29 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
   const { start: weekStart, end: weekEnd } = weekWindow(timezone, anchor);
 
+  // Timesheet data: the member's hires (color-coded timesheets) and their saved
+  // sections in the visible week. Fetched here so the Timesheet tab renders with
+  // the same week window as the calendar.
+  const [hires, sectionRows] = await Promise.all([
+    deriveHires(userId),
+    prisma.timesheetSection.findMany({
+      where: { userId, startTime: { gte: weekStart, lt: weekEnd } },
+      orderBy: { startTime: "asc" },
+      take: 500,
+    }),
+  ]);
+  const timesheetSections: TimesheetSectionDTO[] = sectionRows.map((s) => ({
+    id: s.id,
+    hireKey: s.hireKey,
+    startTime: s.startTime.toISOString(),
+    endTime: s.endTime.toISOString(),
+    note: s.note,
+    sourceEventKey: s.sourceEventKey,
+  }));
+  const importedKeys = new Set(
+    sectionRows.map((s) => s.sourceEventKey).filter((k): k is string => k != null),
+  );
+
   // Fetch external busy + sub-calendar lists in parallel. Don't fail the page
   // if a single link errors — surface the error on the link card.
   let ingestionError: string | null = null;
@@ -282,6 +334,25 @@ export async function loader({ request }: Route.LoaderArgs) {
     ),
   ]);
 
+  // Import candidates: external (enabled-sub-calendar) events in this week not
+  // already imported as a section. fetchBusyEvents already honors the user's
+  // enabled sub-calendars. De-dup by sourceEventKey both against existing
+  // sections and within the candidate list itself.
+  const candidateSeen = new Set<string>();
+  const importCandidates: ImportCandidateDTO[] = [];
+  for (const e of externalBusyRaw) {
+    const key = timesheetEventKey({ title: e.title, startIso: e.start, endIso: e.end });
+    if (importedKeys.has(key) || candidateSeen.has(key)) continue;
+    candidateSeen.add(key);
+    importCandidates.push({
+      sourceEventKey: key,
+      title: e.title ?? "Busy",
+      startTime: e.start,
+      endTime: e.end,
+      color: e.color ?? null,
+    });
+  }
+
   const data: LoaderData = {
     timezone,
     defaultEventBufferMin: bufferMin,
@@ -307,6 +378,9 @@ export async function loader({ request }: Route.LoaderArgs) {
     groups,
     users,
     currentUserId: userId,
+    hires,
+    timesheetSections,
+    importCandidates,
   };
   return data;
 }
@@ -531,6 +605,81 @@ export async function action({ request }: Route.ActionArgs) {
       });
       return null;
     }
+
+    case "add-timesheet-section": {
+      const startTime = new Date(input.startTime);
+      const endTime = new Date(input.endTime);
+      if (endTime <= startTime) {
+        return Response.json({ error: "endTime must be after startTime" }, { status: 400 });
+      }
+      await prisma.timesheetSection.create({
+        data: {
+          userId,
+          hireKey: input.hireKey ?? null,
+          startTime,
+          endTime,
+          note: input.note ?? null,
+        },
+      });
+      return null;
+    }
+
+    case "update-timesheet-section": {
+      const existing = await prisma.timesheetSection.findUnique({ where: { id: input.id } });
+      if (!existing || existing.userId !== userId) {
+        return Response.json({ error: "Not found" }, { status: 404 });
+      }
+      const startTime = input.startTime ? new Date(input.startTime) : existing.startTime;
+      const endTime = input.endTime ? new Date(input.endTime) : existing.endTime;
+      if (endTime <= startTime) {
+        return Response.json({ error: "endTime must be after startTime" }, { status: 400 });
+      }
+      await prisma.timesheetSection.update({
+        where: { id: input.id },
+        data: {
+          // undefined → unchanged; null → clear hire (back to unassigned).
+          hireKey: input.hireKey === undefined ? existing.hireKey : input.hireKey,
+          startTime,
+          endTime,
+          note: input.note === undefined ? existing.note : input.note,
+        },
+      });
+      return null;
+    }
+
+    case "remove-timesheet-section": {
+      const existing = await prisma.timesheetSection.findUnique({ where: { id: input.id } });
+      if (!existing || existing.userId !== userId) {
+        return Response.json({ error: "Not found" }, { status: 404 });
+      }
+      await prisma.timesheetSection.delete({ where: { id: input.id } });
+      return null;
+    }
+
+    case "import-calendar-events": {
+      // Bulk-create unassigned sections, skipping any whose key already exists
+      // (idempotent re-import). createMany + skipDuplicates leans on the
+      // (userId, sourceEventKey) unique.
+      const rows = input.events
+        .map((e) => {
+          const startTime = new Date(e.startTime);
+          const endTime = new Date(e.endTime);
+          if (endTime <= startTime) return null;
+          return {
+            userId,
+            hireKey: null,
+            startTime,
+            endTime,
+            note: e.title ?? null,
+            sourceEventKey: e.sourceEventKey,
+          };
+        })
+        .filter((r): r is NonNullable<typeof r> => r !== null);
+      if (rows.length > 0) {
+        await prisma.timesheetSection.createMany({ data: rows, skipDuplicates: true });
+      }
+      return null;
+    }
   }
 }
 
@@ -606,12 +755,45 @@ function coerceFormToAction(raw: Record<string, FormDataEntryValue>): unknown {
         calendarId: get("calendarId"),
         enabled: asBool(get("enabled")),
       };
+    case "add-timesheet-section":
+      return {
+        intent,
+        hireKey: get("hireKey") || null,
+        startTime: get("startTime"),
+        endTime: get("endTime"),
+        note: get("note") || null,
+      };
+    case "update-timesheet-section":
+      return {
+        intent,
+        id: get("id"),
+        // "hireKey" present-but-empty means clear → null; absent means unchanged.
+        hireKey:
+          get("hireKey") === undefined ? undefined : get("hireKey") || null,
+        startTime: get("startTime"),
+        endTime: get("endTime"),
+        note: get("note") === undefined ? undefined : get("note") || null,
+      };
+    case "remove-timesheet-section":
+      return { intent, id: get("id") };
+    case "import-calendar-events": {
+      const eventsRaw = get("events");
+      let events: unknown = [];
+      if (eventsRaw) {
+        try {
+          events = JSON.parse(eventsRaw);
+        } catch {
+          // Leave empty; zod surfaces the validation error.
+        }
+      }
+      return { intent, events };
+    }
     default:
       return raw;
   }
 }
 
-type Tab = "availability" | "schedule";
+type Tab = "availability" | "schedule" | "timesheet";
 
 const CALENDAR_TAB_STORAGE_KEY = "dali:calendar:tab";
 const AVAILABILITY_SIDEBAR_COLLAPSED_KEY = "dali:calendar:availability:sidebar-collapsed";
@@ -625,7 +807,8 @@ export default function CalendarPage() {
     if (typeof window === "undefined") return "availability";
     try {
       const stored = window.sessionStorage.getItem(CALENDAR_TAB_STORAGE_KEY);
-      return stored === "schedule" ? "schedule" : "availability";
+      if (stored === "schedule" || stored === "timesheet") return stored;
+      return "availability";
     } catch {
       return "availability";
     }
@@ -647,9 +830,18 @@ export default function CalendarPage() {
         <PillButton active={tab === "schedule"} onClick={() => setTab("schedule")}>
           Schedule Meeting
         </PillButton>
+        <PillButton active={tab === "timesheet"} onClick={() => setTab("timesheet")}>
+          Timesheet
+        </PillButton>
       </div>
 
-      {tab === "availability" ? <AvailabilityView data={data} /> : <ScheduleView data={data} />}
+      {tab === "availability" ? (
+        <AvailabilityView data={data} />
+      ) : tab === "schedule" ? (
+        <ScheduleView data={data} />
+      ) : (
+        <TimesheetView data={data} />
+      )}
     </div>
   );
 }
@@ -1760,6 +1952,555 @@ function AvailabilityWeekGrid({
 // Hard-coded dark text that doesn't flip in dark mode (the dark-blue token does).
 const EVENT_TEXT = "text-[hsl(203_38%_18%)]";
 const EVENT_CORAL = `bg-accent-coral-light ${EVENT_TEXT}`;
+
+/* ------------------------------------------------------------------ */
+/* Timesheet view                                                       */
+/*                                                                       */
+/* One combined week grid showing all of the member's hires at once,     */
+/* color-coded by hire. Drag to create a section (popover picks the      */
+/* hire); imported Google events arrive as gray "unassigned" blocks the  */
+/* user then tags with a hire.                                           */
+/* ------------------------------------------------------------------ */
+
+async function postCalendar(body: FormData): Promise<string | null> {
+  const res = await fetch("/calendar", { method: "POST", credentials: "include", body });
+  if (res.ok) return null;
+  const j = await res.json().catch(() => null);
+  return j?.error ?? "Request failed";
+}
+
+function TimesheetView({ data }: { data: LoaderData }) {
+  const revalidator = useRevalidator();
+  const refresh = () => revalidator.revalidate();
+  useRefreshOnFocus(refresh);
+
+  const { hires } = data;
+  const weekStart = new Date(data.weekStartIso);
+  const days = Array.from({ length: 7 }).map((_, i) => {
+    const d = new Date(weekStart.getTime() + i * 86_400_000);
+    return { dayOfWeek: d.getUTCDay(), num: d.getUTCDate(), dateUtc: d };
+  });
+
+  // Committed drag selection → opens the create popover (with a hire picker).
+  const [selection, setSelection] = useState<
+    | { dayIdx: number; startHour: number; endHour: number; startLocal: string; endLocal: string }
+    | null
+  >(null);
+  // Which existing section is being edited (its popover open). null = none.
+  const [editing, setEditing] = useState<TimesheetSectionDTO | null>(null);
+
+  const colorByKey = new Map(hires.map((h) => [h.key, h.color]));
+  const labelByKey = new Map(hires.map((h) => [h.key, h.label]));
+
+  const placeBlock = (
+    startIso: string,
+    endIso: string,
+    block: Omit<EventBlock, "startHour" | "duration">,
+    into: Record<number, EventBlock[]>,
+  ) => {
+    const start = new Date(startIso);
+    const end = new Date(endIso);
+    const ymd = getZonedYMD(start, data.timezone);
+    const dayMidnight = zonedDayStartUtc(ymd.year, ymd.month, ymd.day, data.timezone);
+    const startHour = (start.getTime() - dayMidnight.getTime()) / 3_600_000;
+    const duration = (end.getTime() - start.getTime()) / 3_600_000;
+    const dayIdx = days.findIndex(
+      (d) =>
+        d.dateUtc.getUTCFullYear() === ymd.year &&
+        d.dateUtc.getUTCMonth() + 1 === ymd.month &&
+        d.dateUtc.getUTCDate() === ymd.day,
+    );
+    if (dayIdx < 0) return;
+    if (!into[dayIdx]) into[dayIdx] = [];
+    into[dayIdx].push({ startHour, duration, ...block });
+  };
+
+  // Render every section, colored by its hire (gray when unassigned).
+  const eventsByDay: Record<number, EventBlock[]> = {};
+  for (const s of data.timesheetSections) {
+    const color = s.hireKey ? colorByKey.get(s.hireKey) ?? UNASSIGNED_COLOR : UNASSIGNED_COLOR;
+    const hireLabel = s.hireKey ? labelByKey.get(s.hireKey) ?? "Unknown hire" : "Unassigned";
+    placeBlock(
+      s.startTime,
+      s.endTime,
+      {
+        label: s.note ? `${s.note}` : hireLabel,
+        className: EVENT_TEXT,
+        bgColor: color,
+      },
+      eventsByDay,
+    );
+  }
+
+  const monthLabel = new Intl.DateTimeFormat("en-US", {
+    timeZone: data.timezone,
+    month: "long",
+    year: "numeric",
+  }).format(weekStart);
+
+  // Map a section back to its grid position so clicking it can open its popover.
+  const sectionAtGrid = (dayIdx: number, startHour: number): TimesheetSectionDTO | null => {
+    for (const s of data.timesheetSections) {
+      const start = new Date(s.startTime);
+      const ymd = getZonedYMD(start, data.timezone);
+      const dayMidnight = zonedDayStartUtc(ymd.year, ymd.month, ymd.day, data.timezone);
+      const sh = (start.getTime() - dayMidnight.getTime()) / 3_600_000;
+      const di = days.findIndex(
+        (d) =>
+          d.dateUtc.getUTCFullYear() === ymd.year &&
+          d.dateUtc.getUTCMonth() + 1 === ymd.month &&
+          d.dateUtc.getUTCDate() === ymd.day,
+      );
+      if (di === dayIdx && Math.abs(sh - startHour) < 0.001) return s;
+    }
+    return null;
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* Hire legend */}
+      <section className="bg-card border border-border rounded-lg p-3">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="font-heading font-semibold text-sm text-foreground">Your timesheets</h3>
+          <ImportPanel data={data} onImported={refresh} />
+        </div>
+        {hires.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            No hires found for the current term. You can still drag to add unassigned blocks; assign
+            a hire once your staffing is set.
+          </p>
+        ) : (
+          <div className="flex flex-wrap items-center gap-3">
+            {hires.map((h) => (
+              <span key={h.key} className="inline-flex items-center gap-1.5 text-xs text-foreground">
+                <span
+                  className="inline-block w-3 h-3 rounded-sm border border-border"
+                  style={{ backgroundColor: h.color }}
+                />
+                {h.label}
+              </span>
+            ))}
+            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span
+                className="inline-block w-3 h-3 rounded-sm border border-border"
+                style={{ backgroundColor: UNASSIGNED_COLOR }}
+              />
+              Unassigned
+            </span>
+          </div>
+        )}
+      </section>
+
+      <section className="bg-card border border-border rounded-lg p-4 flex flex-col">
+        <WeekToolbar
+          monthLabel={monthLabel}
+          weekStartIso={data.weekStartIso}
+          onRefresh={refresh}
+          refreshing={revalidator.state !== "idle"}
+          legend={[]}
+        />
+        <p className="px-1 pb-2 text-[11px] text-muted-foreground">
+          Drag a range to add a timesheet section, or click a section to edit its hire. Use
+          “Import calendar events” above to pull from your linked Google calendars.
+        </p>
+        <WeekGrid
+          days={days}
+          showProviderRow
+          showSubHourGrid
+          timezone={data.timezone}
+          eventsByDay={eventsByDay}
+          onDayPointerSelect={(dayIdx, startHour, endHour) => {
+            // If the drag landed on an existing section, edit it; else create.
+            const hit = sectionAtGrid(dayIdx, startHour);
+            if (hit) {
+              setEditing(hit);
+              return;
+            }
+            const day = days[dayIdx];
+            if (!day) return;
+            setSelection({
+              dayIdx,
+              startHour,
+              endHour,
+              startLocal: dayHourToLocal(day.dateUtc, startHour),
+              endLocal: dayHourToLocal(day.dateUtc, endHour),
+            });
+          }}
+          selection={
+            selection
+              ? { dayIdx: selection.dayIdx, startHour: selection.startHour, endHour: selection.endHour }
+              : null
+          }
+          selectionPopover={
+            selection
+              ? () => (
+                  <TimesheetSectionPopover
+                    mode="create"
+                    hires={hires}
+                    startLocal={selection.startLocal}
+                    endLocal={selection.endLocal}
+                    onClose={() => setSelection(null)}
+                  />
+                )
+              : undefined
+          }
+          onSelectionDismiss={() => setSelection(null)}
+          onSelectionResize={(startHour, endHour) =>
+            setSelection((prev) => {
+              if (!prev) return prev;
+              const day = days[prev.dayIdx];
+              if (!day) return prev;
+              return {
+                ...prev,
+                startHour,
+                endHour,
+                startLocal: dayHourToLocal(day.dateUtc, startHour),
+                endLocal: dayHourToLocal(day.dateUtc, endHour),
+              };
+            })
+          }
+        />
+      </section>
+
+      {/* Edit popover for an existing section (rendered as a centered modal). */}
+      {editing && (
+        <CenteredModal onClose={() => setEditing(null)}>
+          <TimesheetSectionPopover
+            mode="edit"
+            hires={hires}
+            section={editing}
+            startLocal={toDatetimeLocal(new Date(editing.startTime))}
+            endLocal={toDatetimeLocal(new Date(editing.endTime))}
+            onClose={() => setEditing(null)}
+          />
+        </CenteredModal>
+      )}
+    </div>
+  );
+}
+
+function CenteredModal({
+  children,
+  onClose,
+}: {
+  children: React.ReactNode;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/30 p-4"
+      onClick={onClose}
+    >
+      <div onClick={(e) => e.stopPropagation()}>{children}</div>
+    </div>,
+    document.body,
+  );
+}
+
+// Create or edit a timesheet section. Shares the visual shape of the
+// availability drag popover but swaps the recurrence field for a hire picker
+// and (in edit mode) a delete button.
+function TimesheetSectionPopover({
+  mode,
+  hires,
+  section,
+  startLocal,
+  endLocal,
+  onClose,
+}: {
+  mode: "create" | "edit";
+  hires: Hire[];
+  section?: TimesheetSectionDTO;
+  startLocal: string;
+  endLocal: string;
+  onClose: () => void;
+}) {
+  const revalidator = useRevalidator();
+  const [hireKey, setHireKey] = useState<string>(
+    section?.hireKey ?? hires[0]?.key ?? "",
+  );
+  const [note, setNote] = useState(section?.note ?? "");
+  const [start, setStart] = useState(startLocal);
+  const [end, setEnd] = useState(endLocal);
+  useEffect(() => {
+    setStart(startLocal);
+    setEnd(endLocal);
+  }, [startLocal, endLocal]);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const startEndValid =
+    !!start && !!end && new Date(end).getTime() > new Date(start).getTime();
+  const canSubmit = startEndValid && !submitting;
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!canSubmit) return;
+    setSubmitting(true);
+    setError(null);
+    const body = new FormData();
+    if (mode === "create") {
+      body.set("intent", "add-timesheet-section");
+    } else {
+      body.set("intent", "update-timesheet-section");
+      body.set("id", section!.id);
+    }
+    // Empty hireKey = unassigned. We always send the field so update can clear it.
+    body.set("hireKey", hireKey);
+    body.set("note", note.trim());
+    body.set("startTime", new Date(start).toISOString());
+    body.set("endTime", new Date(end).toISOString());
+    const err = await postCalendar(body);
+    setSubmitting(false);
+    if (err) {
+      setError(err);
+      return;
+    }
+    revalidator.revalidate();
+    onClose();
+  }
+
+  async function remove() {
+    if (!section) return;
+    setSubmitting(true);
+    const body = new FormData();
+    body.set("intent", "remove-timesheet-section");
+    body.set("id", section.id);
+    const err = await postCalendar(body);
+    setSubmitting(false);
+    if (err) {
+      setError(err);
+      return;
+    }
+    revalidator.revalidate();
+    onClose();
+  }
+
+  return (
+    <div
+      className="w-80 max-h-[26rem] overflow-y-auto rounded-lg border border-border bg-card shadow-xl"
+      role="dialog"
+      aria-label={mode === "create" ? "New timesheet section" : "Edit timesheet section"}
+    >
+      <div className="flex items-center justify-between px-3 py-2 border-b border-border sticky top-0 bg-card z-10">
+        <h2 className="font-heading font-semibold text-sm text-foreground">
+          {mode === "create" ? "New timesheet section" : "Edit section"}
+        </h2>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className="p-1 text-muted-foreground hover:text-foreground rounded-md hover:bg-muted"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+
+      <form onSubmit={submit} className="p-3 space-y-3">
+        <div>
+          <label htmlFor="ts-hire" className="block text-sm font-medium text-foreground mb-1">
+            Hire
+          </label>
+          <select
+            id="ts-hire"
+            value={hireKey}
+            onChange={(e) => setHireKey(e.target.value)}
+            className="w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground"
+          >
+            <option value="">Unassigned</option>
+            {hires.map((h) => (
+              <option key={h.key} value={h.key}>
+                {h.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label htmlFor="ts-note" className="block text-sm font-medium text-foreground mb-1">
+            Note
+          </label>
+          <input
+            id="ts-note"
+            type="text"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="What did you work on?"
+            className="w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground"
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label htmlFor="ts-start" className="block text-sm font-medium text-foreground mb-1">
+              Starts
+            </label>
+            <input
+              id="ts-start"
+              type="datetime-local"
+              value={start}
+              onChange={(e) => setStart(e.target.value)}
+              className="w-full px-2 py-2 text-sm border border-border rounded-md bg-background text-foreground"
+            />
+          </div>
+          <div>
+            <label htmlFor="ts-end" className="block text-sm font-medium text-foreground mb-1">
+              Ends
+            </label>
+            <input
+              id="ts-end"
+              type="datetime-local"
+              value={end}
+              min={start || undefined}
+              onChange={(e) => setEnd(e.target.value)}
+              className={`w-full px-2 py-2 text-sm border rounded-md bg-background text-foreground ${
+                startEndValid ? "border-border" : "border-red-500"
+              }`}
+            />
+          </div>
+        </div>
+        {!startEndValid && <p className="text-xs text-red-600">End must be after start.</p>}
+
+        {error && <p className="text-xs text-red-600">{error}</p>}
+
+        <div className="flex items-center justify-between pt-1">
+          {mode === "edit" ? (
+            <button
+              type="button"
+              onClick={remove}
+              disabled={submitting}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md border border-border text-red-600 hover:bg-red-50 disabled:opacity-50"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Delete
+            </button>
+          ) : (
+            <span />
+          )}
+          <button
+            type="submit"
+            disabled={!canSubmit}
+            className="px-3 py-1.5 text-sm font-semibold rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 disabled:opacity-50"
+          >
+            {submitting ? "Saving…" : mode === "create" ? "Add section" : "Save"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+// "Import calendar events" — pulls the loader's import candidates (enabled
+// sub-calendar events not yet imported) into the timesheet as unassigned blocks.
+function ImportPanel({ data, onImported }: { data: LoaderData; onImported: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const candidates = data.importCandidates;
+
+  async function importAll() {
+    if (candidates.length === 0) return;
+    setSubmitting(true);
+    setError(null);
+    const body = new FormData();
+    body.set("intent", "import-calendar-events");
+    body.set(
+      "events",
+      JSON.stringify(
+        candidates.map((c) => ({
+          sourceEventKey: c.sourceEventKey,
+          title: c.title,
+          startTime: c.startTime,
+          endTime: c.endTime,
+        })),
+      ),
+    );
+    const err = await postCalendar(body);
+    setSubmitting(false);
+    if (err) {
+      setError(err);
+      return;
+    }
+    setOpen(false);
+    onImported();
+  }
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-md border border-border text-foreground hover:bg-muted"
+      >
+        <CalendarDays className="w-3.5 h-3.5" />
+        Import calendar events
+        {candidates.length > 0 && (
+          <span className="ml-1 inline-flex items-center justify-center min-w-4 h-4 px-1 rounded-full bg-accent-coral text-white text-[10px]">
+            {candidates.length}
+          </span>
+        )}
+      </button>
+      {open && (
+        <div className="absolute right-0 mt-1 w-80 max-h-80 overflow-y-auto rounded-lg border border-border bg-card shadow-xl z-50 p-3">
+          <div className="flex items-center justify-between mb-2">
+            <h4 className="font-heading font-semibold text-sm text-foreground">
+              From your linked calendars
+            </h4>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              aria-label="Close"
+              className="p-1 text-muted-foreground hover:text-foreground rounded-md hover:bg-muted"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          {candidates.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              No new events to import this week. Events come from the sub-calendars you’ve enabled in
+              the <strong>My Availability</strong> tab; already-imported events aren’t shown again.
+            </p>
+          ) : (
+            <>
+              <ul className="space-y-1.5 mb-3">
+                {candidates.slice(0, 50).map((c) => (
+                  <li key={c.sourceEventKey} className="flex items-center gap-2 text-xs">
+                    <span
+                      className="inline-block w-2.5 h-2.5 rounded-sm border border-border flex-shrink-0"
+                      style={{ backgroundColor: c.color ?? UNASSIGNED_COLOR }}
+                    />
+                    <span className="truncate flex-1 text-foreground">{c.title}</span>
+                    <span className="text-muted-foreground flex-shrink-0">
+                      {formatBlockRange(c.startTime, c.endTime, data.timezone).split(" · ")[1]}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {error && <p className="text-xs text-red-600 mb-2">{error}</p>}
+              <button
+                type="button"
+                onClick={importAll}
+                disabled={submitting}
+                className="w-full px-3 py-1.5 text-sm font-semibold rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 disabled:opacity-50"
+              >
+                {submitting
+                  ? "Importing…"
+                  : `Import ${candidates.length} event${candidates.length === 1 ? "" : "s"} (unassigned)`}
+              </button>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // Schedule-preview availability tint: interpolate from white (no one free) to a
 // deep green (everyone free) by `frac` (0..1). Lerping the color itself — not

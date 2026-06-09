@@ -106,6 +106,50 @@ export const ToggleSubCalendarSchema = z.object({
   enabled: z.boolean(),
 });
 
+// ─── Timesheet sections ──────────────────────────────────────────────────────
+// A timesheet section is a worked block tagged to a hire (hireKey). hireKey is
+// nullable: a freshly imported calendar event is "unassigned" until tagged.
+
+export const AddTimesheetSectionSchema = z.object({
+  intent: z.literal("add-timesheet-section"),
+  hireKey: z.string().min(1).max(200).nullish(),
+  startTime: isoString,
+  endTime: isoString,
+  note: z.string().max(500).nullish(),
+});
+
+export const UpdateTimesheetSectionSchema = z.object({
+  intent: z.literal("update-timesheet-section"),
+  id: z.string().min(1),
+  // null clears the hire (back to unassigned); undefined leaves it unchanged.
+  hireKey: z.string().min(1).max(200).nullish(),
+  startTime: isoString.optional(),
+  endTime: isoString.optional(),
+  note: z.string().max(500).nullish(),
+});
+
+export const RemoveTimesheetSectionSchema = z.object({
+  intent: z.literal("remove-timesheet-section"),
+  id: z.string().min(1),
+});
+
+// Bulk-import Google Calendar events as unassigned sections. Idempotent via the
+// (userId, sourceEventKey) unique — re-importing the same event is a no-op.
+export const ImportCalendarEventsSchema = z.object({
+  intent: z.literal("import-calendar-events"),
+  events: z
+    .array(
+      z.object({
+        sourceEventKey: z.string().min(1).max(128),
+        title: z.string().max(300).nullish(),
+        startTime: isoString,
+        endTime: isoString,
+      }),
+    )
+    .min(1)
+    .max(250),
+});
+
 export const CalendarActionSchema = z.discriminatedUnion("intent", [
   SetWorkingSegmentsSchema,
   SeedWorkingHoursSchema,
@@ -117,6 +161,10 @@ export const CalendarActionSchema = z.discriminatedUnion("intent", [
   RemoveManualBlockSchema,
   RemoveCalendarLinkSchema,
   ToggleSubCalendarSchema,
+  AddTimesheetSectionSchema,
+  UpdateTimesheetSectionSchema,
+  RemoveTimesheetSectionSchema,
+  ImportCalendarEventsSchema,
 ]);
 
 export type CalendarAction = z.infer<typeof CalendarActionSchema>;
