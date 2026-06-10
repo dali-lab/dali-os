@@ -75,9 +75,37 @@ const SEASONS: { code: Season; sortIndex: 1 | 2 | 3 | 4 }[] = [
   { code: "F", sortIndex: 4 },
 ];
 
-// Approximate Dartmouth quarter windows. Dates are illustrative; Admin
-// Console > Terms can edit any of these post-seed if real boundaries shift.
+// Real Dartmouth registrar dates for published academic years (start = first
+// day of CLASSES, end = last day of the Final Examination period). Source:
+//   https://registrar.dartmouth.edu/calendars/academic-institutional-calendars
+//
+// Keep in sync with the migration that backfills these onto existing rows
+// (prisma/migrations/20260609130000_term_dates_real_registrar). Whenever the
+// registrar publishes a new academic year, add its four entries here AND ship
+// a follow-up UPDATE migration so existing prod rows get corrected too.
+const REGISTRAR_DATES: Record<string, { start: string; end: string }> = {
+  "25F": { start: "2025-09-15", end: "2025-11-26" },
+  "26W": { start: "2026-01-05", end: "2026-03-17" },
+  "26S": { start: "2026-03-30", end: "2026-06-09" },
+  "26X": { start: "2026-06-25", end: "2026-09-01" },
+  "26F": { start: "2026-09-14", end: "2026-11-25" },
+  "27W": { start: "2027-01-05", end: "2027-03-16" },
+  "27S": { start: "2027-03-29", end: "2027-06-08" },
+  "27X": { start: "2027-06-24", end: "2027-08-31" },
+  "27F": { start: "2027-09-13", end: "2027-11-24" },
+  "28W": { start: "2028-01-04", end: "2028-03-14" },
+  "28S": { start: "2028-03-27", end: "2028-06-06" },
+};
+
+// Approximate Dartmouth quarter windows for years the registrar hasn't yet
+// published. Used only as a fallback; published years come from
+// REGISTRAR_DATES above.
 function quarterDates(year: number, season: Season): { start: Date; end: Date } {
+  const code = `${year % 100}${season}`;
+  const real = REGISTRAR_DATES[code];
+  if (real) {
+    return { start: new Date(real.start), end: new Date(real.end) };
+  }
   switch (season) {
     case "W": return { start: new Date(`${year}-01-04`), end: new Date(`${year}-03-13`) };
     case "S": return { start: new Date(`${year}-03-28`), end: new Date(`${year}-06-05`) };
