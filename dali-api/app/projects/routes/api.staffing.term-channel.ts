@@ -4,6 +4,7 @@ import { requireAuth } from "~/lib/auth";
 import { canManageStaffing } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { ensureChannel, inviteUsersToChannel } from "~/slack/lib/slack-client";
+import { resolveSlackIdsForInvite } from "~/members/lib/slack-sync.server";
 import { logAuditEvent } from "~/lib/audit";
 
 // POST /api/staffing/term-channel
@@ -66,39 +67,47 @@ export async function action({ request }: Route.ActionArgs) {
 
   try {
     // Invite set: current-term Core + all Admin/staff + everyone with a
-    // ProjectAssignment this term. Resolve to synced slackUserIds; nulls dropped
-    // and counted per group so the lead sees who's missing a Slack account.
+    // ProjectAssignment this term. resolveSlackIdsForInvite uses each user's
+    // stored slackUserId, OR looks it up by email and persists it for next time —
+    // so members who never linked Slack still get invited.
+    const userSelect = {
+      id: true,
+      slackUserId: true,
+      daliEmail: true,
+      dartmouthEmail: true,
+      personalEmail: true,
+    } as const;
     const [coreRows, adminRows, assignmentRows] = await Promise.all([
       prisma.coreAssignment.findMany({
         where: { termId: term.id },
-        select: { user: { select: { slackUserId: true } } },
+        select: { user: { select: userSelect } },
       }),
       prisma.adminMembership.findMany({
-        select: { user: { select: { slackUserId: true } } },
+        select: { user: { select: userSelect } },
       }),
       prisma.projectAssignment.findMany({
         where: { termId: term.id },
-        select: { user: { select: { slackUserId: true } } },
+        select: { user: { select: userSelect } },
       }),
     ]);
-    const coreIds = coreRows.map((r) => r.user.slackUserId).filter((id): id is string => !!id);
-    const adminIds = adminRows.map((r) => r.user.slackUserId).filter((id): id is string => !!id);
-    const memberIds = assignmentRows
-      .map((r) => r.user.slackUserId)
-      .filter((id): id is string => !!id);
-    const slackIds = [...new Set([...coreIds, ...adminIds, ...memberIds])];
+    const candidates = [
+      ...coreRows.map((r) => r.user),
+      ...adminRows.map((r) => r.user),
+      ...assignmentRows.map((r) => r.user),
+    ];
+    const { slackIds, unresolvedUserIds } = await resolveSlackIdsForInvite(candidates);
 
     const desiredName = body.channel?.trim() || term.code;
     const ch = await ensureChannel(desiredName);
     const inv = await inviteUsersToChannel(ch.id, slackIds);
 
-    const missingTotal =
-      coreRows.length + adminRows.length + assignmentRows.length - slackIds.length;
     const parts = [
       ch.created ? `created #${ch.name}` : `found #${ch.name}`,
-      `invited ${inv.invited} (core ${coreIds.length}, admin ${adminIds.length}, project members ${memberIds.length})`,
+      `invited ${inv.invited} (core + admin + project members)`,
     ];
-    if (missingTotal > 0) parts.push(`some without a synced Slack id`);
+    if (unresolvedUserIds.length > 0) {
+      parts.push(`${unresolvedUserIds.length} without a Slack account (no email match)`);
+    }
 
     await logAuditEvent({
       action: "staffing.term_channel",
