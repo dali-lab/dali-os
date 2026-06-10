@@ -20,7 +20,7 @@ concurrency:
 jobs:
   prep-neon-db:
     name: Prepare Neon database (${{ github.ref_name }})
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     if: github.ref_name == 'dev' || github.ref_name == 'staging'
     steps:
       - name: Wipe dev database
@@ -50,7 +50,7 @@ jobs:
     name: Deploy API (${{ github.ref_name }})
     needs: [prep-neon-db]
     if: always() && (needs.prep-neon-db.result == 'success' || needs.prep-neon-db.result == 'skipped')
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
       - uses: superfly/flyctl-actions/setup-flyctl@master

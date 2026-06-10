@@ -7,7 +7,7 @@ on:
 
 jobs:
   test-api:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     defaults:
       run:
         working-directory: dali-api
@@ -22,7 +22,7 @@ jobs:
       - run: npm test
 
   e2e-api:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     defaults:
       run:
         working-directory: dali-api

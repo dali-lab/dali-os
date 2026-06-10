@@ -19,7 +19,7 @@ jobs:
   prep-neon-db:
     name: Prepare Neon branch (preview-pr-${{ github.event.pull_request.number }})
     if: github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     outputs:
       branch_id: ${{ steps.connect.outputs.branch_id }}
     steps:
@@ -99,7 +99,7 @@ jobs:
     name: Deploy API (dali-api-pr-${{ github.event.pull_request.number }})
     needs: [prep-neon-db]
     if: github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     outputs:
       url: ${{ steps.urls.outputs.url }}
     steps:
@@ -260,7 +260,7 @@ jobs:
     name: Comment preview URL on PR
     needs: [deploy-api]
     if: github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     permissions:
       pull-requests: write
     steps:

@@ -46,7 +46,7 @@ jobs:
       github.event_name == 'issues' &&
       github.event.action == 'labeled' &&
       github.event.label.name == 'claude'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v6
         with:
@@ -92,7 +92,7 @@ jobs:
       contains(github.event.comment.body, '@claude') &&
       !startsWith(github.event.comment.body, '/implement') &&
       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v6
         with:
@@ -137,7 +137,7 @@ jobs:
       !github.event.issue.pull_request &&
       startsWith(github.event.comment.body, '/implement') &&
       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v6
         with:
@@ -233,7 +233,7 @@ jobs:
       github.event.review.state == 'changes_requested' &&
       startsWith(github.event.pull_request.head.ref, 'claude/issue-') &&
       github.event.sender.type != 'Bot'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - name: Mint App token (so pushes trigger downstream workflows)
         id: app-token
