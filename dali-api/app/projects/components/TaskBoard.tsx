@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { useSearchParams } from "react-router";
 import { DndContext, useDraggable, useDroppable, type DragEndEvent } from "@dnd-kit/core";
 import { GripVertical } from "lucide-react";
 import {
@@ -36,7 +37,25 @@ export function TaskBoard({ projectId, initialTasks, options, canManage }: Props
   const [tasks, setTasks] = useState<TaskCardModel[]>(initialTasks);
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
-  const [openTaskId, setOpenTaskId] = useState<string | null>(null);
+
+  // The open task is tracked in the URL (`?task=<id>`) so GitHub issue mirrors
+  // and other external links can deep-link straight to a task.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const openTaskId = searchParams.get("task");
+  const setOpenTaskId = useCallback(
+    (id: string | null) => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          if (id) next.set("task", id);
+          else next.delete("task");
+          return next;
+        },
+        { replace: true, preventScrollReset: true },
+      );
+    },
+    [setSearchParams],
+  );
 
   const board = useMemo(() => buildTaskBoard(tasks), [tasks]);
   const openTask = openTaskId ? tasks.find((t) => t.id === openTaskId) ?? null : null;
