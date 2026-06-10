@@ -18,7 +18,7 @@ jobs:
     if: |
       github.event.issue.pull_request != null &&
       startsWith(github.event.comment.body, '/push')
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     permissions:
       contents: read
       pull-requests: write
@@ -107,7 +107,7 @@ jobs:
 
   promote:
     needs: check
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     permissions:
       contents: read
       pull-requests: write
