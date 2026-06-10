@@ -42,7 +42,20 @@ type Automation = (typeof AUTOMATIONS)[number];
 
 type StepResult = { status: "ok" | "skipped" | "error"; message: string };
 
-type Body = { cycleId: string; projectId: string; automations: string[] };
+type Body = {
+  cycleId: string;
+  projectId: string;
+  automations: string[];
+  // Optional editable overrides from the Finalize modal. Empty/absent = use the
+  // project's stored/derived value. When supplied, they are also persisted to the
+  // Project (slackChannel → the get-or-created channel's id; githubTeamSlug → the
+  // slug field).
+  slackChannel?: string;
+  githubTeamSlug?: string;
+  // When true, persist the channel/slug fields to the Project and skip all
+  // automations (the modal's "Save").
+  saveFieldsOnly?: boolean;
+};
 
 function isBody(x: unknown): x is Body {
   if (!x || typeof x !== "object") return false;
@@ -51,7 +64,10 @@ function isBody(x: unknown): x is Body {
     typeof o.cycleId === "string" &&
     typeof o.projectId === "string" &&
     Array.isArray(o.automations) &&
-    o.automations.every((a) => typeof a === "string")
+    o.automations.every((a) => typeof a === "string") &&
+    (o.slackChannel === undefined || typeof o.slackChannel === "string") &&
+    (o.githubTeamSlug === undefined || typeof o.githubTeamSlug === "string") &&
+    (o.saveFieldsOnly === undefined || typeof o.saveFieldsOnly === "boolean")
   );
 }
 
@@ -84,7 +100,9 @@ export async function action({ request }: Route.ActionArgs) {
       (AUTOMATIONS as readonly string[]).includes(a),
     ),
   );
-  if (selected.size === 0) {
+  // saveFieldsOnly persists fields with no automations selected, so the empty
+  // check only applies to a real automation run.
+  if (!body.saveFieldsOnly && selected.size === 0) {
     return withCors(request, Response.json({ error: "No automations selected" }, { status: 400 }));
   }
 
@@ -102,12 +120,34 @@ export async function action({ request }: Route.ActionArgs) {
       name: true,
       githubTeamSlug: true,
       slackChannelId: true,
+      slackChannelName: true,
       repoUrls: true,
       teamGroupEmail: true,
     },
   });
   if (!project) {
     return withCors(request, Response.json({ error: "Project not found" }, { status: 404 }));
+  }
+
+  // ── saveFieldsOnly ───────────────────────────────────────────────────────────
+  // The Finalize modal's "Save" persists the editable channel name + GitHub slug
+  // to the Project WITHOUT running any automations, so the project details page and
+  // the modal stay in sync. No Slack/GitHub API calls here — the channel is
+  // materialized when an automation actually runs.
+  if (body.saveFieldsOnly) {
+    const data: { slackChannelName?: string | null; githubTeamSlug?: string | null } = {};
+    if (body.slackChannel !== undefined) {
+      const v = body.slackChannel.trim();
+      data.slackChannelName = v === "" ? null : v;
+    }
+    if (body.githubTeamSlug !== undefined) {
+      const v = body.githubTeamSlug.trim();
+      data.githubTeamSlug = v === "" ? null : v;
+    }
+    if (Object.keys(data).length > 0) {
+      await prisma.project.update({ where: { id: project.id }, data });
+    }
+    return withCors(request, Response.json({ saved: true }));
   }
 
   const results: Record<Automation, StepResult> = {} as Record<Automation, StepResult>;
@@ -259,25 +299,43 @@ export async function action({ request }: Route.ActionArgs) {
           ).map((d) => [d.id, d.displayName]),
         );
 
-        // 1. Resolve the channel: reuse the stored id, else create one from the
-        //    project name and backfill the id for next time.
+        // 1. Resolve the channel. The desired name is the modal edit, else the
+        //    stored shared name, else the project name. Reuse the stored id unless
+        //    there's none yet or the desired name differs — then get-or-create and
+        //    persist BOTH the resulting id and the name (shared with project
+        //    details).
+        const desiredName =
+          body.slackChannel?.trim() || project.slackChannelName || project.name;
         let channelId = project.slackChannelId;
         let channelNote = "reused channel";
-        if (!channelId) {
-          const ch = await ensureChannel(project.name);
+        const nameChanged = desiredName !== project.slackChannelName;
+        if (!channelId || nameChanged) {
+          const ch = await ensureChannel(desiredName);
           channelId = ch.id;
           channelNote = ch.created ? `created #${ch.name}` : `found #${ch.name}`;
           await prisma.project.update({
             where: { id: project.id },
-            data: { slackChannelId: channelId },
+            data: { slackChannelId: channelId, slackChannelName: desiredName },
           });
         }
 
-        // 2. Invite confirmed members who have a synced Slack id.
-        const slackIds = roster
-          .map((r) => r.user.slackUserId)
-          .filter((id): id is string => !!id);
-        const missing = roster.length - slackIds.length;
+        // 2. Build the invite set: confirmed roster + all current-term Core + all
+        //    Admin/staff. Each resolved to a synced slackUserId; nulls dropped and
+        //    counted per group so the lead sees who's missing a Slack account.
+        const [coreRows, adminRows] = await Promise.all([
+          prisma.coreAssignment.findMany({
+            where: { termId: cycle.termId },
+            select: { user: { select: { slackUserId: true } } },
+          }),
+          prisma.adminMembership.findMany({
+            select: { user: { select: { slackUserId: true } } },
+          }),
+        ]);
+        const memberIds = roster.map((r) => r.user.slackUserId).filter((id): id is string => !!id);
+        const coreIds = coreRows.map((r) => r.user.slackUserId).filter((id): id is string => !!id);
+        const adminIds = adminRows.map((r) => r.user.slackUserId).filter((id): id is string => !!id);
+        const slackIds = [...new Set([...memberIds, ...coreIds, ...adminIds])];
+        const missingMembers = roster.length - memberIds.length;
         const inv = await inviteUsersToChannel(channelId, slackIds);
 
         // 3. Announce the team: name — domain (level), plus repos.
@@ -297,10 +355,10 @@ export async function action({ request }: Route.ActionArgs) {
 
         const parts = [
           channelNote,
-          `invited ${inv.invited}`,
+          `invited ${inv.invited} (members ${memberIds.length}, core ${coreIds.length}, admin ${adminIds.length})`,
           `announced ${roster.length} member(s)`,
         ];
-        if (missing > 0) parts.push(`${missing} without a synced Slack id`);
+        if (missingMembers > 0) parts.push(`${missingMembers} member(s) without a synced Slack id`);
         results.slack = { status: "ok", message: `${parts.join("; ")}.` };
       } catch (err) {
         results.slack = { status: "error", message: errMsg(err) };
@@ -408,12 +466,16 @@ export async function action({ request }: Route.ActionArgs) {
   // membership PUT are both idempotent, and we never remove anyone. Roster
   // members without a stored githubUsername are skipped and reported.
   if (selected.has("github")) {
+    // The slug is editable in the Finalize modal; an edit overrides (and is
+    // persisted to) Project.githubTeamSlug, so it no longer has to be pre-set on
+    // the project page.
+    const slug = body.githubTeamSlug?.trim() || project.githubTeamSlug;
     if (!process.env.GITHUB_ORG) {
       results.github = { status: "skipped", message: "GITHUB_ORG not set." };
-    } else if (!project.githubTeamSlug) {
+    } else if (!slug) {
       results.github = {
         status: "skipped",
-        message: "No GitHub team configured for this project — set one on the project page.",
+        message: "No GitHub team slug provided — enter one in the Finalize modal.",
       };
     } else {
       try {
@@ -435,9 +497,16 @@ export async function action({ request }: Route.ActionArgs) {
           else missing.push(`${r.user.firstName} ${r.user.lastName}`);
         }
 
-        const team = await ensureTeam(project.githubTeamSlug);
+        const team = await ensureTeam(slug);
         for (const username of withHandle) {
           await addTeamMember(team.slug, username);
+        }
+        // Persist the slug if the lead changed it (so future runs reuse it).
+        if (slug !== project.githubTeamSlug) {
+          await prisma.project.update({
+            where: { id: project.id },
+            data: { githubTeamSlug: slug },
+          });
         }
 
         const parts = [
