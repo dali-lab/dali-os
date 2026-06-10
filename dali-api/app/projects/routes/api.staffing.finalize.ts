@@ -569,5 +569,17 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 function errMsg(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+  const raw = err instanceof Error ? err.message : String(err);
+  // Append an actionable hint for the common integration-config failures so a
+  // lead can self-diagnose without reading API docs.
+  if (/missing_scope/i.test(raw)) {
+    return `${raw} — the Slack bot token is missing a scope. Needs channels:manage + channels:read (create/invite), chat:write (announce), and users:read.email (resolve members). Add them in the Slack app config and reinstall.`;
+  }
+  if (/not_in_channel|channel_not_found/i.test(raw)) {
+    return `${raw} — the Slack bot isn't a member of that channel. Invite the bot to it, or let finalize create the channel.`;
+  }
+  if (/\bNot Found\b/.test(raw) && /teams\/members/.test(raw)) {
+    return `${raw} — couldn't add a GitHub team member. Check that the GitHub App is installed on GITHUB_ORG with the "Members: read & write" org permission, and that each member's githubUsername is a real GitHub login.`;
+  }
+  return raw;
 }

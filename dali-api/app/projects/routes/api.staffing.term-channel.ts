@@ -27,7 +27,14 @@ function isBody(x: unknown): x is Body {
 }
 
 function errMsg(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+  const raw = err instanceof Error ? err.message : String(err);
+  if (/missing_scope/i.test(raw)) {
+    return `${raw} — the Slack bot token is missing a scope. Needs channels:manage + channels:read (create/invite), chat:write, and users:read.email. Add them in the Slack app config and reinstall.`;
+  }
+  if (/not_in_channel|channel_not_found/i.test(raw)) {
+    return `${raw} — the Slack bot isn't a member of that channel.`;
+  }
+  return raw;
 }
 
 export async function action({ request }: Route.ActionArgs) {
