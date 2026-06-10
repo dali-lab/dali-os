@@ -1,14 +1,18 @@
--- Replace the seed's approximate quarterDates() values with the real Dartmouth
--- registrar dates for published academic years. Source:
+-- Backfill the real Dartmouth registrar dates onto existing Term rows. Source:
 --   https://registrar.dartmouth.edu/calendars/academic-institutional-calendars
 --
 -- "startDate" = first day of CLASSES. "endDate" = last day of the Final
 -- Examination period. UTC midnight is used so the stored timestamps match the
 -- bare calendar day regardless of server tz.
 --
--- 28X (Summer 2028) and 28F (Fall 2028) are NOT updated here — the 2028-2029
--- calendar is not yet published. Their rows retain the v0-reference seed's
--- approximation until a follow-up migration lands when the registrar publishes.
+-- Mirrors the REGISTRAR_DATES table in prisma/seeds/v0-reference.ts. Whenever
+-- the registrar publishes a new academic year, add four entries to that table
+-- AND ship a follow-up UPDATE migration so existing prod rows correct too.
+--
+-- 28X (Summer 2028) and 28F (Fall 2028) are NOT touched here — the 2028-2029
+-- registrar calendar is not yet published. If existing rows for those terms
+-- were created by an earlier seed run, they retain whatever dates they have
+-- until the follow-up migration lands.
 --
 -- Idempotent: each UPDATE matches by unique `code`, so re-running is a no-op.
 -- WHERE clause guard means a fresh DB without the row simply doesn't update.
