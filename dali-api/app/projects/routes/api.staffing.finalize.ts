@@ -4,6 +4,7 @@ import { requireAuth } from "~/lib/auth";
 import { canManageStaffing } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { postMessage, ensureChannel, inviteUsersToChannel } from "~/slack/lib/slack-client";
+import { resolveSlackIdsForInvite } from "~/members/lib/slack-sync.server";
 import { ensureTeam, addTeamMember } from "~/lib/github";
 import {
   workspaceConfigured,
@@ -36,6 +37,15 @@ import { publishCycleChange } from "../lib/staffing-events.server";
 //                  "skipped" when the Admin SDK isn't configured.
 //   - github:      get-or-create the project's GITHUB_ORG team (from
 //                  Project.githubTeamSlug) and add the confirmed roster.
+
+// The User fields resolveSlackIdsForInvite needs: stored id + emails to look up.
+const SLACK_INVITE_USER_SELECT = {
+  id: true,
+  slackUserId: true,
+  daliEmail: true,
+  dartmouthEmail: true,
+  personalEmail: true,
+} as const;
 
 const AUTOMATIONS = ["assignments", "slack", "gmail", "github"] as const;
 type Automation = (typeof AUTOMATIONS)[number];
@@ -287,7 +297,17 @@ export async function action({ request }: Route.ActionArgs) {
           select: {
             level: true,
             domainId: true,
-            user: { select: { firstName: true, lastName: true, slackUserId: true } },
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                slackUserId: true,
+                daliEmail: true,
+                dartmouthEmail: true,
+                personalEmail: true,
+              },
+            },
           },
         });
         const domainNames = new Map(
@@ -320,22 +340,25 @@ export async function action({ request }: Route.ActionArgs) {
         }
 
         // 2. Build the invite set: confirmed roster + all current-term Core + all
-        //    Admin/staff. Each resolved to a synced slackUserId; nulls dropped and
-        //    counted per group so the lead sees who's missing a Slack account.
+        //    Admin/staff. resolveSlackIdsForInvite uses each user's stored
+        //    slackUserId, OR looks it up by email and persists it for next time —
+        //    so members who never visited Settings → Slack still get invited.
         const [coreRows, adminRows] = await Promise.all([
           prisma.coreAssignment.findMany({
             where: { termId: cycle.termId },
-            select: { user: { select: { slackUserId: true } } },
+            select: { user: { select: SLACK_INVITE_USER_SELECT } },
           }),
           prisma.adminMembership.findMany({
-            select: { user: { select: { slackUserId: true } } },
+            select: { user: { select: SLACK_INVITE_USER_SELECT } },
           }),
         ]);
-        const memberIds = roster.map((r) => r.user.slackUserId).filter((id): id is string => !!id);
-        const coreIds = coreRows.map((r) => r.user.slackUserId).filter((id): id is string => !!id);
-        const adminIds = adminRows.map((r) => r.user.slackUserId).filter((id): id is string => !!id);
-        const slackIds = [...new Set([...memberIds, ...coreIds, ...adminIds])];
-        const missingMembers = roster.length - memberIds.length;
+        const candidates = [
+          ...roster.map((r) => r.user),
+          ...coreRows.map((r) => r.user),
+          ...adminRows.map((r) => r.user),
+        ];
+        const { slackIds, unresolvedUserIds } = await resolveSlackIdsForInvite(candidates);
+        const missingMembers = unresolvedUserIds.length;
         const inv = await inviteUsersToChannel(channelId, slackIds);
 
         // 3. Announce the team: name — domain (level), plus repos.
@@ -355,10 +378,12 @@ export async function action({ request }: Route.ActionArgs) {
 
         const parts = [
           channelNote,
-          `invited ${inv.invited} (members ${memberIds.length}, core ${coreIds.length}, admin ${adminIds.length})`,
+          `invited ${inv.invited} (members + core + admin)`,
           `announced ${roster.length} member(s)`,
         ];
-        if (missingMembers > 0) parts.push(`${missingMembers} member(s) without a synced Slack id`);
+        if (missingMembers > 0) {
+          parts.push(`${missingMembers} without a Slack account (no email match)`);
+        }
         results.slack = { status: "ok", message: `${parts.join("; ")}.` };
       } catch (err) {
         results.slack = { status: "error", message: errMsg(err) };
