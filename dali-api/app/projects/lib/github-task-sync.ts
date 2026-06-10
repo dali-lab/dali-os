@@ -82,7 +82,7 @@ export async function createIssueForTask(taskId: string, repoInput: string): Pro
     const gh = githubAppClient();
 
     const { assignees, missing } = resolveAssignees(task.assignees);
-    const body = `Tracked in dalios: ${appBaseUrl()}/projects/${task.projectId}/tasks/${task.id}`;
+    const body = `Tracked in dalios: ${appBaseUrl()}/projects/${task.projectId}?tab=work&task=${task.id}`;
 
     const res = await gh.rest.issues.create({
       owner,
