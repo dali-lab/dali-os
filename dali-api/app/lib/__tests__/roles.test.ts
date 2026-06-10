@@ -8,6 +8,7 @@ import {
   isInstructor,
   canViewForms,
   canViewStaffing,
+  getActiveCoreCycleTermIds,
 } from "~/lib/roles";
 
 // Phase 2: roles helpers now query AdminMembership / CoreAssignment /
@@ -22,7 +23,10 @@ const mockPrisma = prisma as unknown as {
   instructorAssignment: { findFirst: ReturnType<typeof vi.fn> };
   cycleReviewer: { findFirst: ReturnType<typeof vi.fn> };
   cycleInterviewer: { findFirst: ReturnType<typeof vi.fn> };
-  term: { findFirst: ReturnType<typeof vi.fn> };
+  term: {
+    findFirst: ReturnType<typeof vi.fn>;
+    findMany: ReturnType<typeof vi.fn>;
+  };
 };
 
 beforeEach(() => {
@@ -36,10 +40,12 @@ beforeEach(() => {
   (mockPrisma as any).instructorAssignment = { findFirst: vi.fn() };
   (mockPrisma as any).cycleReviewer = { findFirst: vi.fn() };
   (mockPrisma as any).cycleInterviewer = { findFirst: vi.fn() };
-  // Core access scopes to the current Term; default to one being present so
-  // a Core assignment in setRoleFlags is treated as current-term Core.
+  // Core access scopes to the active election cycle, looked up via
+  // currentTerm (findFirst) → cycle window (findMany). Default to a Spring
+  // term so Core checks resolve a non-empty cycle.
   (mockPrisma as any).term = {
-    findFirst: vi.fn().mockResolvedValue({ id: "term-1" }),
+    findFirst: vi.fn().mockResolvedValue({ id: "term-1", sortKey: 262 }),
+    findMany: vi.fn().mockResolvedValue([{ id: "term-1" }]),
   };
 });
 
@@ -153,6 +159,61 @@ describe("canViewForms (Core, Admin, or Instructor)", () => {
   it("false for a plain member", async () => {
     setRoleFlags({ member: true });
     expect(await canViewForms("u")).toBe(false);
+  });
+});
+
+describe("getActiveCoreCycleTermIds (Spring-anchored Core cycle)", () => {
+  // sortKey = year*10 + (W=1, S=2, X=3, F=4). A cycle window spans
+  // [Spring N, Spring N+1) — i.e. [Y*10+2, (Y+1)*10+2). During Spring,
+  // the prior cycle [(Y-1)*10+2, Y*10+2) is also active for the handoff.
+
+  function expectWindow(
+    currentSortKey: number,
+    expected: { gte: number; lt: number },
+  ) {
+    mockPrisma.term.findFirst.mockResolvedValue({
+      id: "current",
+      sortKey: currentSortKey,
+    });
+    mockPrisma.term.findMany.mockResolvedValue([]);
+    return getActiveCoreCycleTermIds().then(() => {
+      expect(mockPrisma.term.findMany).toHaveBeenCalledWith({
+        where: { sortKey: { gte: expected.gte, lt: expected.lt } },
+        select: { id: true },
+      });
+    });
+  }
+
+  it("Summer 26X → cycle is [26S, 27S)", async () => {
+    await expectWindow(263, { gte: 262, lt: 272 });
+  });
+
+  it("Fall 26F → cycle is [26S, 27S)", async () => {
+    await expectWindow(264, { gte: 262, lt: 272 });
+  });
+
+  it("Winter 27W rolls back to the prior Spring → cycle is [26S, 27S)", async () => {
+    await expectWindow(271, { gte: 262, lt: 272 });
+  });
+
+  it("Spring 27S includes prior cycle for election handoff → [26S, 28S)", async () => {
+    await expectWindow(272, { gte: 262, lt: 282 });
+  });
+
+  it("returns [] when there is no current term", async () => {
+    mockPrisma.term.findFirst.mockResolvedValue(null);
+    const ids = await getActiveCoreCycleTermIds();
+    expect(ids).toEqual([]);
+    expect(mockPrisma.term.findMany).not.toHaveBeenCalled();
+  });
+
+  it("returns the matched term IDs from findMany", async () => {
+    mockPrisma.term.findFirst.mockResolvedValue({ id: "x", sortKey: 263 });
+    mockPrisma.term.findMany.mockResolvedValue([
+      { id: "t-26s" },
+      { id: "t-26x" },
+    ]);
+    expect(await getActiveCoreCycleTermIds()).toEqual(["t-26s", "t-26x"]);
   });
 });
 
