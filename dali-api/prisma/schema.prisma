@@ -1891,11 +1891,15 @@ model Project {
   githubTeamSlug String?
 
   // The project's Slack channel id (e.g. "C0123ABC"), used to invite members +
-  // post the team announcement on staffing finalize. The channel NAME is always
-  // derived from the project name (slugified); finalize get-or-creates that
-  // channel and backfills this id so it's reused on later runs. Null until the
-  // first finalize that runs the Slack channel step.
+  // post the team announcement on staffing finalize. Backfilled by finalize/modal
+  // Save when the channel (named by slackChannelName) is get-or-created. Null
+  // until the first sync runs the Slack channel step.
   slackChannelId String?
+  // Human channel name (e.g. "project-alpha") — the SHARED source of truth edited
+  // on the project details page AND the staffing Finalize modal. Defaults to the
+  // slugified project name until set. Finalize/modal-Save get-or-creates this
+  // channel and backfills slackChannelId.
+  slackChannelName String?
 
   overviewPage Page? @relation("ProjectOverview", fields: [overviewPageId], references: [id])
   prdPage      Page? @relation("ProjectPRD", fields: [prdPageId], references: [id])

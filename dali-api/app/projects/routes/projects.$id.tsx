@@ -96,6 +96,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       repoUrls: true,
       deploymentUrl: true,
       githubTeamSlug: true,
+      slackChannelName: true,
       overviewPageId: true,
       prdPageId: true,
       projectTerms: {
@@ -465,6 +466,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       repoUrls: project.repoUrls,
       deploymentUrl: project.deploymentUrl,
       githubTeamSlug: project.githubTeamSlug,
+      slackChannelName: project.slackChannelName,
       overviewPageId: project.overviewPageId,
       prdPageId: project.prdPageId,
       startTerm,
@@ -670,6 +672,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   const deploymentUrlRaw = (form.get("deploymentUrl") as string | null)?.trim() ?? "";
   const termCountRaw = (form.get("termCount") as string | null) ?? "";
   const githubTeamRaw = (form.get("githubTeamSlug") as string | null)?.trim() ?? "";
+  const slackChannelRaw = (form.get("slackChannelName") as string | null)?.trim() ?? "";
 
   // Normalize to a GitHub-safe team slug: lowercase, non-alphanumerics → single
   // hyphens, trimmed. Empty clears the field (automation then skips).
@@ -680,6 +683,19 @@ export async function action({ request, params }: Route.ActionArgs) {
           .toLowerCase()
           .replace(/[^a-z0-9]+/g, "-")
           .replace(/^-+|-+$/g, "");
+
+  // Slack channel name: lowercase, hyphens, ≤80 (Slack's channel-name rules), to
+  // match what the finalize step would derive. Empty clears it. Editing here is
+  // metadata-only — the channel is get-or-created when an automation runs.
+  const slackChannelName =
+    slackChannelRaw === ""
+      ? null
+      : slackChannelRaw
+          .toLowerCase()
+          .replace(/[^a-z0-9-_\s]/g, "")
+          .trim()
+          .replace(/\s+/g, "-")
+          .slice(0, 80);
 
   // repoUrls textarea: one URL per line, blanks dropped.
   const repoUrls = repoUrlsRaw
@@ -700,6 +716,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       deploymentUrl: deploymentUrlRaw === "" ? null : deploymentUrlRaw,
       termCount,
       githubTeamSlug,
+      slackChannelName,
     },
   });
   return redirect(`/projects/${params.id}`);
@@ -1397,6 +1414,23 @@ function DetailsSegment({
               ) : (
                 <span className="px-2 py-1.5 text-sm text-foreground">
                   {project.githubTeamSlug ?? "—"}
+                </span>
+              )}
+            </label>
+
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="text-muted-foreground">Slack channel</span>
+              {editing ? (
+                <input
+                  name="slackChannelName"
+                  type="text"
+                  defaultValue={project.slackChannelName ?? ""}
+                  placeholder="project-name"
+                  className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                />
+              ) : (
+                <span className="px-2 py-1.5 text-sm text-foreground">
+                  {project.slackChannelName ?? "—"}
                 </span>
               )}
             </label>
