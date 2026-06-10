@@ -50,12 +50,18 @@ export function FinalizeModal({
   cycleId,
   projectId,
   projectName,
+  defaultSlackChannel,
+  defaultGithubSlug,
 }: {
   open: boolean;
   onClose: () => void;
   cycleId: string;
   projectId: string;
   projectName: string;
+  // Pre-fill for the editable channel/team fields. Slack defaults to the
+  // project-name-derived channel; GitHub to the project's stored slug (or "").
+  defaultSlackChannel?: string;
+  defaultGithubSlug?: string;
 }) {
   const revalidator = useRevalidator();
   const [selected, setSelected] = useState<Set<Automation>>(
@@ -64,6 +70,57 @@ export function FinalizeModal({
   const [running, setRunning] = useState(false);
   const [results, setResults] = useState<Partial<Record<Automation, StepResult>> | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Editable identifiers, shared with the project details page. Slack defaults to
+  // the project's stored channel name (else derived); GitHub to its stored slug.
+  const initialSlack = defaultSlackChannel ?? "";
+  const initialGithub = defaultGithubSlug ?? "";
+  const [slackChannel, setSlackChannel] = useState(initialSlack);
+  const [githubSlug, setGithubSlug] = useState(initialGithub);
+  const [savingFields, setSavingFields] = useState(false);
+  const [savedNote, setSavedNote] = useState<string | null>(null);
+  const fieldsDirty = slackChannel !== initialSlack || githubSlug !== initialGithub;
+
+  // Persist the channel name + GitHub slug to the Project WITHOUT running
+  // automations (keeps the project details page in sync). Cancel reverts edits.
+  async function saveFields() {
+    setSavingFields(true);
+    setError(null);
+    setSavedNote(null);
+    try {
+      const res = await fetch("/api/staffing/finalize", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cycleId,
+          projectId,
+          automations: [],
+          saveFieldsOnly: true,
+          slackChannel: slackChannel.trim(),
+          githubTeamSlug: githubSlug.trim(),
+        }),
+      });
+      if (!res.ok) {
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        setError(json.error ?? `Save failed: ${res.status}`);
+        return;
+      }
+      setSavedNote("Saved.");
+      // Reflect the new values on the project details page if it's open.
+      revalidator.revalidate();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Network error");
+    } finally {
+      setSavingFields(false);
+    }
+  }
+
+  function cancelFields() {
+    setSlackChannel(initialSlack);
+    setGithubSlug(initialGithub);
+    setSavedNote(null);
+    setError(null);
+  }
 
   function toggle(id: Automation) {
     setSelected((prev) => {
@@ -87,7 +144,13 @@ export function FinalizeModal({
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cycleId, projectId, automations: ids }),
+        body: JSON.stringify({
+          cycleId,
+          projectId,
+          automations: ids,
+          slackChannel: slackChannel.trim() || undefined,
+          githubTeamSlug: githubSlug.trim() || undefined,
+        }),
       });
       const json = (await res.json().catch(() => ({}))) as {
         results?: Partial<Record<Automation, StepResult>>;
@@ -166,6 +229,52 @@ export function FinalizeModal({
                   )}
                 </div>
                 <p className="text-xs text-muted-foreground mt-0.5">{a.description}</p>
+                {a.id === "slack" && (
+                  <div className="mt-2">
+                    <label
+                      htmlFor="finalize-slack-channel"
+                      className="block text-[11px] font-medium text-foreground"
+                    >
+                      Channel name
+                    </label>
+                    <input
+                      id="finalize-slack-channel"
+                      type="text"
+                      value={slackChannel}
+                      disabled={running || savingFields}
+                      onChange={(e) => setSlackChannel(e.target.value)}
+                      placeholder="project-name"
+                      className="mt-1 w-full px-2 py-1 text-xs border border-border rounded-md bg-background text-foreground disabled:opacity-60"
+                    />
+                    <p className="text-[10px] text-muted-foreground mt-0.5">
+                      Lowercase + hyphens. Shared with the project page. Save to sync; the
+                      channel is get-or-created when this automation runs.
+                    </p>
+                  </div>
+                )}
+                {a.id === "github" && (
+                  <div className="mt-2">
+                    <label
+                      htmlFor="finalize-github-slug"
+                      className="block text-[11px] font-medium text-foreground"
+                    >
+                      Team slug
+                    </label>
+                    <input
+                      id="finalize-github-slug"
+                      type="text"
+                      value={githubSlug}
+                      disabled={running || savingFields}
+                      onChange={(e) => setGithubSlug(e.target.value)}
+                      placeholder="project-team"
+                      className="mt-1 w-full px-2 py-1 text-xs border border-border rounded-md bg-background text-foreground disabled:opacity-60"
+                    />
+                    <p className="text-[10px] text-muted-foreground mt-0.5">
+                      Shared with the project page. Save to sync; the team is get-or-created
+                      when this automation runs.
+                    </p>
+                  </div>
+                )}
                 {r && (
                   <p
                     className={`text-xs mt-1.5 ${
@@ -186,23 +295,53 @@ export function FinalizeModal({
         })}
       </ul>
 
-      <div className="flex justify-end gap-2 mt-4">
-        <button
-          type="button"
-          disabled={running}
-          onClick={() => run([...selected])}
-          className="px-3 py-1.5 text-sm font-medium rounded-md border border-border hover:bg-muted disabled:opacity-60 transition-colors"
-        >
-          {running ? "Running…" : "Run selected"}
-        </button>
-        <button
-          type="button"
-          disabled={running}
-          onClick={() => run(AUTOMATIONS.filter((a) => a.configured).map((a) => a.id))}
-          className="px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 disabled:opacity-60 transition-colors"
-        >
-          {running ? "Running…" : "Run all"}
-        </button>
+      {/* Save/Cancel persist the channel + slug fields (synced to the project
+          details page) without running automations. Shown only when edited. */}
+      <div className="flex items-center justify-between gap-2 mt-4">
+        <div className="flex items-center gap-2 min-h-[1.75rem]">
+          {fieldsDirty && (
+            <>
+              <button
+                type="button"
+                disabled={savingFields || running}
+                onClick={saveFields}
+                className="px-3 py-1.5 text-sm font-medium rounded-md bg-accent-teal text-white hover:bg-accent-teal/90 disabled:opacity-60 transition-colors"
+              >
+                {savingFields ? "Saving…" : "Save fields"}
+              </button>
+              <button
+                type="button"
+                disabled={savingFields || running}
+                onClick={cancelFields}
+                className="px-3 py-1.5 text-sm font-medium rounded-md border border-border hover:bg-muted disabled:opacity-60 transition-colors"
+              >
+                Cancel
+              </button>
+            </>
+          )}
+          {savedNote && !fieldsDirty && (
+            <span className="text-xs text-accent-teal">{savedNote}</span>
+          )}
+        </div>
+
+        <div className="flex gap-2">
+          <button
+            type="button"
+            disabled={running || savingFields}
+            onClick={() => run([...selected])}
+            className="px-3 py-1.5 text-sm font-medium rounded-md border border-border hover:bg-muted disabled:opacity-60 transition-colors"
+          >
+            {running ? "Running…" : "Run selected"}
+          </button>
+          <button
+            type="button"
+            disabled={running || savingFields}
+            onClick={() => run(AUTOMATIONS.filter((a) => a.configured).map((a) => a.id))}
+            className="px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 disabled:opacity-60 transition-colors"
+          >
+            {running ? "Running…" : "Run all"}
+          </button>
+        </div>
       </div>
     </Modal>
   );
