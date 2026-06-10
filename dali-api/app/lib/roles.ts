@@ -14,7 +14,7 @@ import { prisma } from "~/lib/db";
 
 export interface UserRoles {
   isLabMember: boolean;
-  /** Core (current term) or Admin. */
+  /** Core (current Spring-anchored cycle) or Admin. */
   isCore: boolean;
   isAdmin: boolean;
   isDomainLead: boolean;
@@ -34,17 +34,17 @@ export async function getUserRoles(userId: string): Promise<UserRoles> {
     .split(",")
     .filter(Boolean);
 
-  const term = await currentTerm();
+  const cycleTermIds = await getActiveCoreCycleTermIds();
 
   const [member, admin, core, domainLead, instructor] = await Promise.all([
     prisma.dALIMember.findUnique({ where: { userId }, select: { id: true } }),
     prisma.adminMembership.findUnique({ where: { userId }, select: { id: true } }),
-    // Core access tracks the current term: a former Core member from a past
-    // term shouldn't keep broad authority. If the Term table isn't seeded
-    // (term === null), no row can match — treat that as no Core access.
-    term
+    // Core access tracks the active election cycle (Spring N → Winter N+1,
+    // with the prior cycle overlapping during Spring elections). An empty
+    // Term table → no rows can match → treated as no Core access.
+    cycleTermIds.length > 0
       ? prisma.coreAssignment.findFirst({
-          where: { userId, termId: term.id },
+          where: { userId, termId: { in: cycleTermIds } },
           select: { id: true },
         })
       : Promise.resolve(null),
@@ -75,8 +75,9 @@ export async function getUserRoles(userId: string): Promise<UserRoles> {
 // ─── Individual checks (for route-level guards) ──────────────────────────────
 
 /**
- * Core (current term) or Admin. Past-term Core assignments do not count —
- * Core access is tied to the current Term. If the Term table is empty
+ * Core (active Spring-anchored cycle) or Admin. Cycle = the most recent
+ * Spring through the following Winter; during Spring elections, the prior
+ * cycle remains active for the handoff. If the Term table is empty
  * (e.g. seed hasn't run), Admin is the only path that passes.
  */
 export async function isCore(userId: string): Promise<boolean> {
@@ -89,10 +90,10 @@ export async function isCore(userId: string): Promise<boolean> {
     select: { id: true },
   });
   if (admin !== null) return true;
-  const term = await currentTerm();
-  if (!term) return false;
+  const cycleTermIds = await getActiveCoreCycleTermIds();
+  if (cycleTermIds.length === 0) return false;
   const core = await prisma.coreAssignment.findFirst({
-    where: { userId, termId: term.id },
+    where: { userId, termId: { in: cycleTermIds } },
     select: { id: true },
   });
   return core !== null;
@@ -216,6 +217,38 @@ export async function currentTermMemberWhere() {
       { projectAssignments: { some: { termId: term.id } } },
     ],
   };
+ * Spring sortKey at or before `sk`. A Core "cycle" runs from one Spring
+ * election (W=1, S=2, X=3, F=4) through the following Winter, so the
+ * cycle that contains a term is anchored by its preceding Spring. Winter
+ * (digit 1) belongs to the previous calendar year's Spring cycle.
+ */
+function cycleStartSortKey(sk: number): number {
+  const seasonDigit = sk % 10;
+  return seasonDigit === 1 ? sk - 9 : sk - seasonDigit + 2;
+}
+
+/**
+ * Term IDs that constitute the active Core cycle. Core is elected in
+ * Spring and auto-rolls over through the following Winter; the cycle
+ * window spans `[Spring N, Spring N+1)` in sortKey space.
+ *
+ * During a Spring term, the previous cycle is also active so an outgoing
+ * Core keeps access through the election handoff (until they're either
+ * re-elected, or replaced — at which point the new cycle's assignments
+ * become the active set the following Summer).
+ */
+export async function getActiveCoreCycleTermIds(): Promise<string[]> {
+  const term = await currentTerm();
+  if (!term) return [];
+  const cycleStart = cycleStartSortKey(term.sortKey);
+  // Spring (digit 2) extends the window back one cycle for the handoff.
+  const lowerBound = term.sortKey % 10 === 2 ? cycleStart - 10 : cycleStart;
+  const upperBound = cycleStart + 10;
+  const terms = await prisma.term.findMany({
+    where: { sortKey: { gte: lowerBound, lt: upperBound } },
+    select: { id: true },
+  });
+  return terms.map((t) => t.id);
 }
 
 // ─── Staffing-board access ───────────────────────────────────────────────────
