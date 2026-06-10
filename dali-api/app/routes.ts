@@ -252,6 +252,10 @@ export default [
   // Document export (server-rendered PDF / Word)
   route("documents/:pageId/export", "routes/documents.$pageId.export.ts"),
 
+  // Payroll CSV export (resource route — registered OUTSIDE the app layout so
+  // the Response streams as a bare CSV body, not wrapped in an HTML shell).
+  route("admin-console/payroll-export.csv", "admin-console/routes/admin-console.payroll-export.csv.ts"),
+
   // Partner application status (board drag-and-drop) + domain scope
   route("api/partner-applications/:id/status", "partners/routes/api.partner-applications.$id.status.ts"),
   route("api/partner-applications/:id/domains", "partners/routes/api.partner-applications.$id.domains.ts"),
