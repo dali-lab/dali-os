@@ -97,6 +97,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       deploymentUrl: true,
       githubTeamSlug: true,
       slackChannelName: true,
+      chartStringType: true,
+      chartString: true,
       overviewPageId: true,
       prdPageId: true,
       projectTerms: {
@@ -467,6 +469,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       deploymentUrl: project.deploymentUrl,
       githubTeamSlug: project.githubTeamSlug,
       slackChannelName: project.slackChannelName,
+      chartStringType: project.chartStringType,
+      chartString: project.chartString,
       overviewPageId: project.overviewPageId,
       prdPageId: project.prdPageId,
       startTerm,
@@ -708,6 +712,16 @@ export async function action({ request, params }: Route.ActionArgs) {
   // falls back to 1 rather than erroring the whole form.
   const termCount = Math.max(1, Math.floor(Number(termCountRaw)) || 1);
 
+  // Payroll chart string — Core-only. Project members posting these fields
+  // are silently ignored rather than 403'd to keep the form forgiving.
+  const chartStringFields: { chartStringType?: string | null; chartString?: string | null } = {};
+  if (core) {
+    const chartStringTypeRaw = (form.get("chartStringType") as string | null)?.trim() ?? "";
+    const chartStringRaw = (form.get("chartString") as string | null)?.trim() ?? "";
+    chartStringFields.chartStringType = chartStringTypeRaw === "" ? null : chartStringTypeRaw;
+    chartStringFields.chartString = chartStringRaw === "" ? null : chartStringRaw;
+  }
+
   await prisma.project.update({
     where: { id: params.id },
     data: {
@@ -717,6 +731,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       termCount,
       githubTeamSlug,
       slackChannelName,
+      ...chartStringFields,
     },
   });
   return redirect(`/projects/${params.id}`);
@@ -818,6 +833,7 @@ export default function ProjectDetail() {
           files={files}
           allTags={allTags}
           canEdit={canEdit}
+          canEditFinance={canEditScope}
           domainScopeGrid={domainScopeGrid}
           currentTerm={currentTerm}
           actionError={actionData?.error}
@@ -1346,9 +1362,11 @@ function TermsChipsEditor({
 function DetailsSegment({
   project,
   canEdit,
+  canEditFinance,
 }: {
   project: LoaderData["project"];
   canEdit: boolean;
+  canEditFinance: boolean;
 }) {
   const submit = useSubmit();
   const formRef = useRef<HTMLFormElement | null>(null);
@@ -1513,6 +1531,50 @@ function DetailsSegment({
               <span className="px-2 py-1.5 text-sm text-muted-foreground">—</span>
             )}
           </label>
+
+          {/* Payroll chart string — surfaced and editable only to Core (action
+              handler enforces the same gate). Read-only to project members. */}
+          {canEditFinance && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-border">
+              <label className="flex flex-col gap-1 text-xs sm:col-span-2">
+                <span className="text-muted-foreground font-medium">
+                  Payroll · used for payroll export
+                </span>
+              </label>
+              <label className="flex flex-col gap-1 text-xs">
+                <span className="text-muted-foreground">Chart string type</span>
+                {editing ? (
+                  <input
+                    name="chartStringType"
+                    type="text"
+                    defaultValue={project.chartStringType ?? ""}
+                    placeholder="e.g. Grant, Department"
+                    className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                  />
+                ) : (
+                  <span className="px-2 py-1.5 text-sm text-foreground">
+                    {project.chartStringType ?? "—"}
+                  </span>
+                )}
+              </label>
+              <label className="flex flex-col gap-1 text-xs">
+                <span className="text-muted-foreground">Full chart string</span>
+                {editing ? (
+                  <input
+                    name="chartString"
+                    type="text"
+                    defaultValue={project.chartString ?? ""}
+                    placeholder="full GL chart string"
+                    className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 font-mono"
+                  />
+                ) : (
+                  <span className="px-2 py-1.5 text-sm text-foreground font-mono break-all">
+                    {project.chartString ?? "—"}
+                  </span>
+                )}
+              </label>
+            </div>
+          )}
         </Form>
       )}
     </EditableSection>
@@ -1685,6 +1747,7 @@ function OverviewTab({
   files,
   allTags,
   canEdit,
+  canEditFinance,
   domainScopeGrid,
   currentTerm,
   actionError,
@@ -1695,6 +1758,7 @@ function OverviewTab({
   files: LoaderData["files"];
   allTags: LoaderData["allTags"];
   canEdit: boolean;
+  canEditFinance: boolean;
   domainScopeGrid: LoaderData["domainScopeGrid"];
   currentTerm: LoaderData["currentTerm"];
   actionError?: string;
@@ -1746,7 +1810,11 @@ function OverviewTab({
           which expects the full field set. Section-level Save submits and
           closes; Cancel reverts (the wrapper remounts the body which resets
           defaultValue inputs). */}
-      <DetailsSegment project={project} canEdit={canEdit} />
+      <DetailsSegment
+        project={project}
+        canEdit={canEdit}
+        canEditFinance={canEditFinance}
+      />
 
       {/* Team — read-only summary, separate from the editable details. */}
       <section className="bg-card border border-border rounded-lg p-4">

@@ -42,6 +42,7 @@ export default [
     route("admin-console/announcements", "admin-console/routes/admin-console.announcements.tsx"),
     route("admin-console/activity", "admin-console/routes/admin-console.activity.tsx"),
     route("admin-console/analytics", "admin-console/routes/admin-console.analytics.tsx"),
+    route("admin-console/payroll-export", "admin-console/routes/admin-console.payroll-export.tsx"),
 
     // Projects
     route("projects/list", "projects/routes/projects.list.tsx"),
