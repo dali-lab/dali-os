@@ -39,22 +39,28 @@ async function main() {
   // local seed below references this term for the test hiring lead +
   // domain leads. Prod seeds a full 12-term window via
   // prisma/seeds/v0-reference.ts; locally one term is enough.
-  // endDate is intentionally far-future: the local seed has only one Term, and
-  // `currentTerm()` returns null once `now > endDate AND no upcoming term`,
-  // which flips `isCore` false for every seeded lead and redirects them out of
-  // every Core-gated route — quietly breaking every hiring/admin e2e the day
-  // the term ends. Prod uses the v0-reference seed's rolling 12-term window,
-  // so this evergreen endDate is local-only.
+  //
+  // The window is anchored to "now" (start 30 days ago, end 60 days out) so the
+  // seeded term is ALWAYS the active term — `currentTerm()` resolves by date, and
+  // a fixed calendar window would expire and lock every Core member out of the
+  // hiring/admin pages once the date passed (the e2e suite is date-independent
+  // this way). Prod is unaffected: it seeds the full 12-term calendar, so
+  // `currentTerm()` there falls back to the next upcoming term between terms.
+  const now = new Date();
+  const seedTermStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const seedTermEnd = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000);
   await prisma.term.upsert({
     where: { code: "26S" },
-    update: { endDate: new Date("2099-12-31") },
+    // Update dates too, so an existing seed DB created before this fix (with the
+    // old fixed 2026-03-28 → 2026-06-05 window) is corrected on re-seed.
+    update: { startDate: seedTermStart, endDate: seedTermEnd },
     create: {
       code: "26S",
       year: 2026,
       season: "S",
       sortKey: 20262,
-      startDate: new Date("2026-03-28"),
-      endDate: new Date("2099-12-31"),
+      startDate: seedTermStart,
+      endDate: seedTermEnd,
     },
   });
 

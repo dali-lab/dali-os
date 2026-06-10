@@ -28,7 +28,26 @@ import { FinalizeModal } from "./FinalizeModal";
 import { AddMemberControl } from "./AddMemberControl";
 import { DomainFilter } from "./DomainFilter";
 
-type ProjectMeta = { id: string; name: string; status: "Active" | "Paused" | "Archived" };
+type ProjectMeta = {
+  id: string;
+  name: string;
+  status: "Active" | "Paused" | "Archived";
+  // Pre-fill the Finalize modal's editable fields (shared with the project page).
+  githubTeamSlug?: string | null;
+  slackChannelName?: string | null;
+};
+
+// Slack channel names: lowercase, hyphens for spaces, no other punctuation, ≤80.
+// Mirrors the server's sanitizeChannelName so the modal's default matches what
+// ensureChannel would derive from the project name.
+function deriveChannelName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9-_\s]/g, "")
+    .trim()
+    .replace(/\s+/g, "-")
+    .slice(0, 80);
+}
 
 // Expected headcount per (project, domain) for this term — already summed
 // across levels and sorted by domain name in the loader. Keyed by projectId.
@@ -289,8 +308,11 @@ export function StaffingBoard({
     ? assignments.find((a) => a.userId === openBidUserId)?.projectId ?? null
     : null;
 
+  const termCode = terms.find((t) => t.id === termId)?.code ?? "";
+
   return (
     <div className="flex flex-col gap-3">
+      {canManage && <TermChannelBanner termId={termId} termCode={termCode} />}
       <div className="flex items-center justify-end gap-3 flex-wrap">
         {canManage && <AddMemberControl cycleId={cycleId} />}
         <DomainFilter
@@ -419,8 +441,102 @@ export function StaffingBoard({
           cycleId={cycleId}
           projectId={finalizeProjectId}
           projectName={projectNames[finalizeProjectId] ?? "project"}
+          defaultSlackChannel={
+            projects.find((p) => p.id === finalizeProjectId)?.slackChannelName ??
+            deriveChannelName(projectNames[finalizeProjectId] ?? "")
+          }
+          defaultGithubSlug={
+            projects.find((p) => p.id === finalizeProjectId)?.githubTeamSlug ?? ""
+          }
         />
       )}
+    </div>
+  );
+}
+
+// Full-width banner: get-or-create a term-wide Slack channel (e.g. #26x) and
+// invite all current-term Core + Admin/staff + everyone assigned to a project
+// this term. The channel name is editable, defaulting to the term code.
+function TermChannelBanner({ termId, termCode }: { termId: string; termCode: string }) {
+  const deriveTermChannel = (code: string) =>
+    code
+      .toLowerCase()
+      .replace(/[^a-z0-9-_\s]/g, "")
+      .trim()
+      .replace(/\s+/g, "-")
+      .slice(0, 80);
+
+  const [channel, setChannel] = useState(deriveTermChannel(termCode));
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  // Keep the field in sync when the selected term changes.
+  useEffect(() => {
+    setChannel(deriveTermChannel(termCode));
+    setResult(null);
+  }, [termCode]);
+
+  async function run() {
+    if (!channel.trim()) return;
+    setRunning(true);
+    setResult(null);
+    try {
+      const res = await fetch("/api/staffing/term-channel", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ termId, channel: channel.trim() }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { message?: string; error?: string };
+      if (!res.ok) {
+        setResult({ ok: false, message: json.error ?? `Failed: ${res.status}` });
+        return;
+      }
+      setResult({ ok: true, message: json.message ?? "Done." });
+    } catch (err) {
+      setResult({ ok: false, message: err instanceof Error ? err.message : "Network error" });
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return (
+    <div className="w-full rounded-lg border border-accent-coral/30 bg-accent-coral/10 px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="min-w-0">
+        <p className="text-sm font-heading font-semibold text-foreground">
+          Term Slack channel{termCode ? ` for ${termCode}` : ""}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Get-or-create a channel and invite all Core, staff, and everyone assigned to a project
+          this term.
+        </p>
+        {result && (
+          <p className={`text-xs mt-1 ${result.ok ? "text-accent-teal" : "text-destructive"}`}>
+            {result.ok ? "✓ " : "✗ "}
+            {result.message}
+          </p>
+        )}
+      </div>
+      <div className="flex items-center gap-2 flex-shrink-0">
+        <span className="text-sm text-muted-foreground">#</span>
+        <input
+          type="text"
+          value={channel}
+          disabled={running}
+          onChange={(e) => setChannel(e.target.value)}
+          placeholder="26x"
+          aria-label="Term channel name"
+          className="w-32 px-2 py-1 text-sm border border-border rounded-md bg-background text-foreground disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+        />
+        <button
+          type="button"
+          disabled={running || !channel.trim()}
+          onClick={run}
+          className="px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 disabled:opacity-60 transition-colors whitespace-nowrap"
+        >
+          {running ? "Creating…" : "Create + invite"}
+        </button>
+      </div>
     </div>
   );
 }
