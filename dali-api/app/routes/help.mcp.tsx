@@ -112,6 +112,20 @@ export default function McpHelpPage({ loaderData }: Route.ComponentProps) {
           <li><code className="font-mono">get_project_overview</code> — project detail</li>
           <li><code className="font-mono">list_my_tasks</code> — your project tasks</li>
           <li><code className="font-mono">update_task_status</code> — move a task</li>
+          <li><code className="font-mono">create_task</code> / <code className="font-mono">update_task</code> / <code className="font-mono">delete_task</code> — Core-only</li>
+          <li><code className="font-mono">add_task_comment</code> — comment on a task (assignees + Core)</li>
+          <li><code className="font-mono">set_task_checklist</code> — subtasks (assignees + Core)</li>
+          <li><code className="font-mono">list_sprints</code> — sprints on a project</li>
+          <li><code className="font-mono">create_sprint</code> / <code className="font-mono">update_sprint</code> / <code className="font-mono">delete_sprint</code> — Core-only</li>
+          <li><code className="font-mono">set_sprint_status</code> — Planned / Active / Closed</li>
+          <li><code className="font-mono">list_epics</code> — epics + their user stories</li>
+          <li><code className="font-mono">create_epic</code> / <code className="font-mono">update_epic</code> / <code className="font-mono">delete_epic</code> — Core-only</li>
+          <li><code className="font-mono">create_story</code> / <code className="font-mono">update_story</code> / <code className="font-mono">delete_story</code> — Core-only</li>
+          <li><code className="font-mono">list_project_pages</code> — workspace page tree</li>
+          <li><code className="font-mono">read_page</code> — page body as Markdown</li>
+          <li><code className="font-mono">create_page</code> — new free-form page (Core-only)</li>
+          <li><code className="font-mono">list_project_files</code> — uploaded files (current version)</li>
+          <li><code className="font-mono">link_task_to_github</code> / <code className="font-mono">unlink_task_from_github</code> — Core-only</li>
         </ul>
       </section>
 
@@ -125,6 +139,8 @@ export default function McpHelpPage({ loaderData }: Route.ComponentProps) {
           <li><code className="font-mono">dali://me</code> — your profile, roles, domain eligibilities</li>
           <li><code className="font-mono">dali://announcements/active</code> — your unread lab announcements (markdown)</li>
           <li><code className="font-mono">dali://forms/pending</code> — published forms you've been asked to fill</li>
+          <li><code className="font-mono">dali://projects/{"{projectId}"}/board</code> — full sprint board for a project</li>
+          <li><code className="font-mono">dali://projects/{"{projectId}"}/backlog</code> — unscheduled tasks for a project</li>
         </ul>
       </section>
 
@@ -138,6 +154,9 @@ export default function McpHelpPage({ loaderData }: Route.ComponentProps) {
           <li><code className="font-mono">weekly-digest</code> — focus, meetings, inbox, suggested next action</li>
           <li><code className="font-mono">meeting-prep</code> — agenda + talking points for an upcoming meeting</li>
           <li><code className="font-mono">project-status</code> — status report draft for a project you're on</li>
+          <li><code className="font-mono">sprint-planning</code> — draft a candidate next sprint for a project</li>
+          <li><code className="font-mono">standup</code> — short standup summary from the current board</li>
+          <li><code className="font-mono">retro</code> — retrospective notes for a recent sprint</li>
         </ul>
       </section>
 

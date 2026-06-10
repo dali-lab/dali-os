@@ -37,6 +37,7 @@ export const AUDIT_ACTIONS = [
   "staffing.reorder",
   "slack.connect",
   "slack.disconnect",
+  "account.linked",
   "document.delete",
   "projectFile.create",
   "projectFile.version",
