@@ -1622,7 +1622,9 @@ function ReviewerSection({ cycleId, domainId, initialReviewers }: {
   useEffect(() => { setReviewers(initialReviewers); }, [initialReviewers]);
 
   useEffect(() => {
-    fetch('/api/members', { credentials: 'include' })
+    // Reviewer assignment targets current-term members only — alumni shouldn't
+    // surface as options for an active cycle's reviewer pool.
+    fetch('/api/members?scope=current', { credentials: 'include' })
       .then(r => r.ok ? r.json() : [])
       .then(setMembers)
       .catch(() => {});
@@ -1812,7 +1814,9 @@ function InterviewerSection({ cycleId, domainId, initialInterviewers }: {
   useEffect(() => { setInterviewers(initialInterviewers); }, [initialInterviewers]);
 
   useEffect(() => {
-    fetch("/api/members", { credentials: "include" })
+    // Interviewer assignment targets current-term members only — alumni
+    // shouldn't surface as options for an active cycle's interviewer pool.
+    fetch("/api/members?scope=current", { credentials: "include" })
       .then(r => r.ok ? r.json() : [])
       .then(setMembers)
       .catch(() => {});

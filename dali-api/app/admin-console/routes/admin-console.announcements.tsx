@@ -4,7 +4,7 @@ import type { Route } from "./+types/admin-console.announcements";
 import { prisma } from "~/lib/db";
 import { listVisibleGroupsForUser } from "~/lib/groups";
 import { requireAuth } from "~/lib/auth";
-import { isCore } from "~/lib/roles";
+import { isCore, currentTermMemberWhere } from "~/lib/roles";
 import {
   Megaphone,
   Search,
@@ -29,9 +29,13 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!auth.ok) return redirect("/login");
   if (!(await isCore(auth.user.sub))) return redirect("/");
 
+  // Recipient picker is for sending to current lab members — alumni and
+  // applicants are excluded so a stale autocomplete suggestion can't
+  // accidentally notify someone who's no longer on the lab roster.
+  const memberWhere = await currentTermMemberWhere();
   const [users, visibleGroups, forms] = await Promise.all([
     prisma.user.findMany({
-      where: { daliMember: { isNot: null } },
+      where: memberWhere,
       orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
       select: { id: true, firstName: true, lastName: true, daliEmail: true },
     }),
