@@ -217,6 +217,9 @@ export async function currentTermMemberWhere() {
       { projectAssignments: { some: { termId: term.id } } },
     ],
   };
+}
+
+/**
  * Spring sortKey at or before `sk`. A Core "cycle" runs from one Spring
  * election (W=1, S=2, X=3, F=4) through the following Winter, so the
  * cycle that contains a term is anchored by its preceding Spring. Winter
