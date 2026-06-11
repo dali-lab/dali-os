@@ -3,7 +3,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { canManageStaffing } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { ensureChannel, inviteUsersToChannel } from "~/slack/lib/slack-client";
+import { ensureChannel, inviteUsersToChannel, slackMissingScopeMsg } from "~/slack/lib/slack-client";
 import { resolveSlackIdsForInvite } from "~/members/lib/slack-sync.server";
 import { logAuditEvent } from "~/lib/audit";
 
@@ -29,7 +29,7 @@ function isBody(x: unknown): x is Body {
 function errMsg(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err);
   if (/missing_scope/i.test(raw)) {
-    return `${raw} — the Slack bot token is missing a scope. Needs channels:manage + channels:read (create/invite), chat:write, and users:read.email. Add them in the Slack app config and reinstall.`;
+    return slackMissingScopeMsg(err, raw);
   }
   if (/not_in_channel|channel_not_found/i.test(raw)) {
     return `${raw} — the Slack bot isn't a member of that channel.`;
