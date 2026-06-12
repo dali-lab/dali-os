@@ -3,7 +3,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { canManageStaffing } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { ensureChannel, inviteUsersToChannel } from "~/slack/lib/slack-client";
+import { ensureChannel, inviteUsersToChannel, slackMissingScopeMsg } from "~/slack/lib/slack-client";
 import { resolveSlackIdsForInvite } from "~/members/lib/slack-sync.server";
 import { logAuditEvent } from "~/lib/audit";
 
@@ -27,7 +27,14 @@ function isBody(x: unknown): x is Body {
 }
 
 function errMsg(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+  const raw = err instanceof Error ? err.message : String(err);
+  if (/missing_scope/i.test(raw)) {
+    return slackMissingScopeMsg(err, raw);
+  }
+  if (/not_in_channel|channel_not_found/i.test(raw)) {
+    return `${raw} — the Slack bot isn't a member of that channel.`;
+  }
+  return raw;
 }
 
 export async function action({ request }: Route.ActionArgs) {

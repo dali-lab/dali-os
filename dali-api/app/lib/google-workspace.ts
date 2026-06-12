@@ -235,33 +235,52 @@ export type GroupMemberResult =
   | { status: "error"; message: string };
 
 // Add a member (by email) to a group. Idempotent: a 409 (already a member) is
-// reported as { added: false } success. A 404 surfaces as an error (the group
-// or member email doesn't resolve) so the caller can report it.
+// reported as { added: false } success.
+//
+// A freshly-created group isn't immediately addressable by its email
+// (groupKey) — Google Directory propagates it over a few seconds, so the FIRST
+// finalize (which created the group) would 404 ("Resource Not Found: groupKey")
+// when adding members. We retry the 404 a few times with backoff to ride out
+// that propagation lag; a persistent 404 (or any other error) is returned so the
+// caller can report it.
 export async function addGroupMember(args: {
   groupEmail: string;
   memberEmail: string;
 }): Promise<GroupMemberResult> {
+  // ~0.5 + 1 + 2 + 4 + 8 = 15.5s of total backoff across the retries — enough to
+  // cover typical group-propagation lag without hanging the finalize for long.
+  const backoffsMs = [500, 1000, 2000, 4000, 8000];
   try {
     const token = await getAccessToken();
-    const res = await fetch(
-      `${DIRECTORY_GROUPS_URL}/${encodeURIComponent(args.groupEmail)}/members`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
+    for (let attempt = 0; ; attempt++) {
+      const res = await fetch(
+        `${DIRECTORY_GROUPS_URL}/${encodeURIComponent(args.groupEmail)}/members`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ email: args.memberEmail, role: "MEMBER" }),
         },
-        body: JSON.stringify({ email: args.memberEmail, role: "MEMBER" }),
-      },
-    );
-    if (res.status === 409) {
-      return { status: "ok", added: false };
-    }
-    if (!res.ok) {
+      );
+      if (res.status === 409) {
+        return { status: "ok", added: false };
+      }
+      if (res.ok) {
+        return { status: "ok", added: true };
+      }
       const body = await res.text();
+      // Retry only the group-not-yet-propagated 404 (groupKey), and only while
+      // we have backoff budget left.
+      const isGroupKeyNotFound =
+        res.status === 404 && /groupKey/i.test(body);
+      if (isGroupKeyNotFound && attempt < backoffsMs.length) {
+        await new Promise((r) => setTimeout(r, backoffsMs[attempt]));
+        continue;
+      }
       return { status: "error", message: `Directory API ${res.status}: ${body.slice(0, 200)}` };
     }
-    return { status: "ok", added: true };
   } catch (err) {
     return {
       status: "error",

@@ -1,11 +1,17 @@
 import type { Route } from "./+types/api.members";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isAdmin, isCore, isDomainLead } from "~/lib/roles";
+import { isAdmin, isCore, isDomainLead, currentTermMemberWhere } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 
 // Phase 2: returns lab members rooted at User. Role shape derives from
 // AdminMembership / CoreAssignment / DomainLeadAssignment rows.
+//
+// ?scope=current restricts to current-term lab members (active CoreAssignment
+// or ProjectAssignment for the current term), for pickers that should not
+// surface alumni — e.g. hiring reviewer/interviewer assignment. The default
+// (no scope param) preserves the all-time member list used by Admin Console
+// role management, where alumni still need to appear.
 
 export async function loader({ request }: Route.LoaderArgs) {
   const preflight = handlePreflight(request);
@@ -20,8 +26,15 @@ export async function loader({ request }: Route.LoaderArgs) {
   ]);
   if (!admin && !hiringLead && !domainLead) return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
 
+  const url = new URL(request.url);
+  const scope = url.searchParams.get("scope");
+  const where =
+    scope === "current"
+      ? await currentTermMemberWhere()
+      : { daliMember: { isNot: null } };
+
   const users = await prisma.user.findMany({
-    where: { daliMember: { isNot: null } },
+    where,
     orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
     select: {
       id: true,

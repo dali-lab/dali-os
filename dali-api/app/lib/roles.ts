@@ -197,6 +197,29 @@ export async function currentTerm() {
 }
 
 /**
+ * Prisma `where` predicate for "current lab members" — Users with a DALIMember
+ * row who are active in the current term. Use this in directory / picker
+ * endpoints that should exclude alumni and applicants (e.g. calendar attendee
+ * picker, announcements recipient picker, hiring reviewer/interviewer picker).
+ *
+ * "Active this term" matches the canonical Members page (`members.tsx`): a
+ * CoreAssignment OR a project assignment for the current term. If there is no
+ * current term at all (empty Term table), the predicate degrades to "any lab
+ * member" rather than returning nothing.
+ */
+export async function currentTermMemberWhere() {
+  const term = await currentTerm();
+  if (!term) return { daliMember: { isNot: null } };
+  return {
+    daliMember: { isNot: null },
+    OR: [
+      { coreAssignments: { some: { termId: term.id } } },
+      { projectAssignments: { some: { termId: term.id } } },
+    ],
+  };
+}
+
+/**
  * Spring sortKey at or before `sk`. A Core "cycle" runs from one Spring
  * election (W=1, S=2, X=3, F=4) through the following Winter, so the
  * cycle that contains a term is anchored by its preceding Spring. Winter

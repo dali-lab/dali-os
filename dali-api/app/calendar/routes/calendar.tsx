@@ -20,6 +20,7 @@ import {
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { listVisibleGroupsForUser } from "~/lib/groups";
+import { currentTermMemberWhere } from "~/lib/roles";
 import { CalendarActionSchema } from "~/lib/calendar-schemas";
 import { fetchBusyEvents, listCalendarsForLink } from "~/lib/google-calendar";
 import { getZonedHourFraction, getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
@@ -163,6 +164,10 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const userId = auth.user.sub;
 
+  // Participant picker is for scheduling with current lab members — exclude
+  // applicants, partners, and alumni who happen to still have a User row.
+  const memberWhere = await currentTermMemberWhere();
+
   const [settings, whRows, blocks, links, groups, users] = await Promise.all([
     prisma.userAvailabilitySettings.findUnique({ where: { userId } }),
     prisma.workingHoursDay.findMany({ where: { userId } }),
@@ -179,6 +184,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       rows.map((r) => ({ id: r.id, name: r.name, memberIds: r.memberIds })),
     ),
     prisma.user.findMany({
+      where: memberWhere,
       select: { id: true, firstName: true, lastName: true, daliEmail: true },
       orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
     }),
