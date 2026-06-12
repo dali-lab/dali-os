@@ -360,6 +360,14 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
       active: path.startsWith('/admin-console/analytics'),
       sub: null,
     },
+    {
+      label: 'Payroll export',
+      to: '/admin-console/payroll-export',
+      icon: FileText,
+      show: isAdmin,
+      active: path.startsWith('/admin-console/payroll-export'),
+      sub: null,
+    },
   ].filter((s) => s.show)
 
   const projectsSections = [

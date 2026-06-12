@@ -1901,6 +1901,13 @@ model Project {
   // channel and backfills slackChannelId.
   slackChannelName String?
 
+  // Dartmouth payroll chart string for this project. `chartStringType` is the
+  // GL account category (e.g. "Grant", "Department"); `chartString` is the
+  // full concatenated GL string. Both are admin-edited and surfaced in the
+  // payroll export. Null until an admin sets them.
+  chartStringType String?
+  chartString     String?
+
   overviewPage Page? @relation("ProjectOverview", fields: [overviewPageId], references: [id])
   prdPage      Page? @relation("ProjectPRD", fields: [prdPageId], references: [id])
 

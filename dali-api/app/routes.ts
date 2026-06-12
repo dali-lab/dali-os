@@ -42,6 +42,7 @@ export default [
     route("admin-console/announcements", "admin-console/routes/admin-console.announcements.tsx"),
     route("admin-console/activity", "admin-console/routes/admin-console.activity.tsx"),
     route("admin-console/analytics", "admin-console/routes/admin-console.analytics.tsx"),
+    route("admin-console/payroll-export", "admin-console/routes/admin-console.payroll-export.tsx"),
 
     // Projects
     route("projects/list", "projects/routes/projects.list.tsx"),
@@ -250,6 +251,10 @@ export default [
 
   // Document export (server-rendered PDF / Word)
   route("documents/:pageId/export", "routes/documents.$pageId.export.ts"),
+
+  // Payroll CSV export (resource route — registered OUTSIDE the app layout so
+  // the Response streams as a bare CSV body, not wrapped in an HTML shell).
+  route("admin-console/payroll-export.csv", "admin-console/routes/admin-console.payroll-export.csv.ts"),
 
   // Partner application status (board drag-and-drop) + domain scope
   route("api/partner-applications/:id/status", "partners/routes/api.partner-applications.$id.status.ts"),
