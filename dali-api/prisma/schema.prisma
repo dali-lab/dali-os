@@ -55,10 +55,9 @@ model User {
   major        String?
   hometown     String?
   linkedinUrl  String?
-  githubUrl    String?
-  // Bare GitHub login (e.g. "octocat"), distinct from githubUrl (a display
-  // link). Used to add the member to their project's GitHub team during
-  // staffing finalize. Editable in member details; nullable — a member with no
+  // Bare GitHub login (e.g. "octocat"). Used to add the member to their
+  // project's GitHub team during staffing finalize, and to derive a profile
+  // link in the UI. Editable in member details; nullable — a member with no
   // username is silently skipped (and reported) by that automation.
   githubUsername String?
   personalSite String?
