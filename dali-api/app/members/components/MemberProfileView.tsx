@@ -95,6 +95,11 @@ export function MemberProfileView({
 
   const page = (
     <div className="flex flex-col gap-6 max-w-3xl">
+      {/* Self-hides when nobody else is here, so no empty row is left over
+          in the common solo case. `self-end` pushes it to the right of the
+          column when it does render. */}
+      <PresenceBar className="self-end" />
+
       <header className="flex flex-col items-center gap-4 text-center">
         <ProfilePhotoAvatar
           userId={member.id}
@@ -130,8 +135,6 @@ export function MemberProfileView({
           {actionError}
         </div>
       )}
-
-      <PresenceBar />
 
       <AccountSection member={member} roleLabels={roleLabels} canEdit={canEdit} />
       <PersonalSection member={member} canEdit={canEdit} />
