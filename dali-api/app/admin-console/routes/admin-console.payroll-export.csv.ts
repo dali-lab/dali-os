@@ -4,11 +4,19 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
 import {
+  buildCoreRows,
+  buildInstructorRows,
   buildPayrollRows,
   formatDate,
   pickDefaultTermId,
   rowsToCsv,
 } from "~/admin-console/lib/payroll-export";
+
+// Comma-separated user-id list → Set. Empty/null → empty set (= no rows).
+function parseIdList(raw: string | null): Set<string> {
+  if (!raw) return new Set();
+  return new Set(raw.split(",").map((s) => s.trim()).filter(Boolean));
+}
 
 // Resource route — no default export, no layout wrapping. Returning a Response
 // from a route that's nested under the app layout would have the layout shell
@@ -40,8 +48,17 @@ export async function loader({ request }: Route.LoaderArgs) {
     return new Response("No terms available", { status: 404 });
   }
 
-  const rows = await buildPayrollRows(selectedTerm.id);
-  const csv = rowsToCsv(rows);
+  // Project rows always included; Core + Instructor rows only for the
+  // user-ids the admin checked on the page (passed via ?core= / ?instructor=).
+  const coreIds = parseIdList(url.searchParams.get("core"));
+  const instructorIds = parseIdList(url.searchParams.get("instructor"));
+
+  const [projectRows, coreRows, instructorRows] = await Promise.all([
+    buildPayrollRows(selectedTerm.id),
+    buildCoreRows(selectedTerm.id, coreIds),
+    buildInstructorRows(selectedTerm.id, instructorIds),
+  ]);
+  const csv = rowsToCsv([...projectRows, ...coreRows, ...instructorRows]);
   const filename = `payroll-${selectedTerm.code}-${formatDate(new Date())}.csv`;
 
   return new Response(csv, {
