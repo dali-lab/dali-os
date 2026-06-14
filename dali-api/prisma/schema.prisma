@@ -2863,11 +2863,12 @@ model MentorNote {
   projectId    String
   termId       String
   domainId     String
-  // Start-of-week date (Monday) the note covers. App enforces one row
+  // Start-of-week date (Monday, UTC) the note covers. App enforces one row
   // per (mentor, mentee, project, term, domain, week).
   weekOf       DateTime
-  // Note body as collab doc — template seeded on create.
-  contentDocId String
+  // Tiptap/ProseMirror JSON document. Seeded from the current default
+  // MentorNoteTemplate on create. Single-author — no Yjs/Hocuspocus.
+  contentJson  Json     @default("{}")
 
   mentor User @relation("MentorNoteMentor", fields: [mentorId], references: [id])
   mentee User @relation("MentorNoteMentee", fields: [menteeId], references: [id])
@@ -2883,9 +2884,9 @@ model MentorNote {
 model MentorNoteTemplate {
   id            String   @id @default(cuid())
   name          String
-  // Template body as collab doc; new MentorNote contentDocs are seeded
-  // from this on create.
-  contentDocId  String
+  // Tiptap/ProseMirror JSON document; new MentorNotes seed contentJson
+  // from the current isDefault template on create.
+  contentJson   Json     @default("{}")
   isDefault     Boolean  @default(false)
   // Free-form last-updated userId.
   lastUpdatedBy String?

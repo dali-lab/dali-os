@@ -34,6 +34,7 @@ import {
   SplitSquareHorizontal,
   ExternalLink,
   HelpCircle,
+  Heart,
 } from 'lucide-react'
 import { userInitials } from '~/lib/display'
 import { TabWorkspace, type TabWorkspaceHandle, type OpenTabRequest } from '~/components/TabWorkspace'
@@ -49,14 +50,15 @@ interface LayoutProps {
   canViewStaffing?: boolean
   isInterviewer?: boolean
   hasHiringAccess?: boolean
+  isLabMentor?: boolean
 }
 
 const SIDEBAR_COLLAPSED_KEY = 'dali:sidebar:collapsed'
 const EXPANDED_AREAS_KEY = 'dali:sidebar:expanded-areas'
 
-type AreaKey = 'hiring' | 'projects' | 'members' | 'partners' | 'education' | 'internal-processes' | 'admin-console'
+type AreaKey = 'hiring' | 'projects' | 'mentorship' | 'members' | 'partners' | 'education' | 'internal-processes' | 'admin-console'
 
-export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDomainLead = false, canViewForms = false, canViewStaffing = false, isInterviewer = false, hasHiringAccess = false }: LayoutProps) {
+export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDomainLead = false, canViewForms = false, canViewStaffing = false, isInterviewer = false, hasHiringAccess = false, isLabMentor = false }: LayoutProps) {
   const location = useLocation()
   const { revalidate } = useRevalidator()
   // Held in a ref so the message listener (mounted once) always calls the
@@ -72,6 +74,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
   const [userExpanded, setUserExpanded] = useState<Record<AreaKey, boolean | undefined>>({
     hiring: undefined,
     projects: undefined,
+    mentorship: undefined,
     members: undefined,
     partners: undefined,
     education: undefined,
@@ -85,6 +88,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
   const [lastSubtabUrl, setLastSubtabUrl] = useState<Record<AreaKey, string | undefined>>({
     hiring: undefined,
     projects: undefined,
+    mentorship: undefined,
     members: undefined,
     partners: undefined,
     education: undefined,
@@ -152,6 +156,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
       // Processes — resolve it there before the generic /projects branch.
       : path.startsWith('/projects/level-up') ? 'internal-processes'
       : path.startsWith('/projects') ? 'projects'
+      : path.startsWith('/mentorship') ? 'mentorship'
       : path.startsWith('/members') ? 'members'
       : path.startsWith('/partners') ? 'partners'
       : path.startsWith('/education') ? 'education'
@@ -243,6 +248,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
     // Processes — resolve it there before the generic /projects branch.
     : path.startsWith('/projects/level-up') ? 'internal-processes'
     : path.startsWith('/projects') ? 'projects'
+    : path.startsWith('/mentorship') ? 'mentorship'
     : path.startsWith('/members') ? 'members'
     : path.startsWith('/partners') ? 'partners'
     : path.startsWith('/education') ? 'education'
@@ -405,6 +411,33 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
     },
   ].filter((s) => s.show)
 
+  const mentorshipSections = [
+    {
+      label: 'Hub',
+      to: '/mentorship',
+      icon: Heart,
+      show: isLabMentor || isCore,
+      active: path === '/mentorship',
+      sub: null as { label: string; to: string; active: boolean }[] | null,
+    },
+    {
+      label: 'Browse notes',
+      to: '/mentorship/browse',
+      icon: FileText,
+      show: isLabMentor || isCore,
+      active: path.startsWith('/mentorship/browse') || path.startsWith('/mentorship/notes'),
+      sub: null,
+    },
+    {
+      label: 'Templates',
+      to: '/mentorship/templates',
+      icon: FileText,
+      show: isCore,
+      active: path.startsWith('/mentorship/templates'),
+      sub: null,
+    },
+  ].filter((s) => s.show)
+
   const membersSections = [
     {
       label: 'Database',
@@ -511,6 +544,15 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
       show: true,
       active: activeAreaKey === 'projects',
       sections: projectsSections,
+    },
+    {
+      key: 'mentorship' as AreaKey,
+      label: 'Mentorship',
+      to: '/mentorship',
+      icon: Heart,
+      show: isLabMentor || isCore,
+      active: activeAreaKey === 'mentorship',
+      sections: mentorshipSections,
     },
     {
       key: 'members' as AreaKey,

@@ -224,7 +224,29 @@ async function seedMentorNoteTemplate() {
   await prisma.mentorNoteTemplate.create({
     data: {
       name: "Weekly Mentor Note (default)",
-      contentDocId: "mentor-note-template:default",
+      contentJson: {
+        type: "doc",
+        content: [
+          {
+            type: "heading",
+            attrs: { level: 3 },
+            content: [{ type: "text", text: "Wins" }],
+          },
+          { type: "paragraph" },
+          {
+            type: "heading",
+            attrs: { level: 3 },
+            content: [{ type: "text", text: "Blockers" }],
+          },
+          { type: "paragraph" },
+          {
+            type: "heading",
+            attrs: { level: 3 },
+            content: [{ type: "text", text: "Follow-ups" }],
+          },
+          { type: "paragraph" },
+        ],
+      },
       isDefault: true,
     },
   });

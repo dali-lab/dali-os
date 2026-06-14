@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { Form, redirect, useActionData, useFetcher, useLoaderData, useNavigation, useSubmit } from "react-router";
+import { Form, Link, redirect, useActionData, useFetcher, useLoaderData, useNavigation, useSubmit } from "react-router";
 import type { Route } from "./+types/members.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isAdmin, isCore } from "~/lib/roles";
+import { isAdmin, isCore, isLabMentor } from "~/lib/roles";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { parseSessionCookie } from "~/lib/cookies";
 import { getPresenceUser } from "~/lib/presence-user";
@@ -104,6 +104,76 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const collabToken = parseSessionCookie(request);
   const presenceUser = await getPresenceUser(auth.user.sub);
 
+  // Mentorship panel: visible when the viewer is a lab mentor (or Core) AND
+  // they are NOT looking at their own profile. Mentees never see anything about
+  // notes written about them.
+  const isOwnProfile = auth.user.sub === member.id;
+  const viewerCanSeeMentorshipPanel = !isOwnProfile
+    ? canManageEligibility || (await isLabMentor(auth.user.sub))
+    : false;
+
+  let mentorshipPanel:
+    | null
+    | {
+        pairs: {
+          id: string;
+          role: "mentor" | "mentee";
+          counterpart: { id: string; firstName: string; lastName: string };
+          projectName: string;
+          domainCode: string;
+          termCode: string;
+        }[];
+        recentNoteCount: number;
+      } = null;
+  if (viewerCanSeeMentorshipPanel) {
+    const [asMentor, asMentee, noteCount] = await Promise.all([
+      prisma.mentorshipPair.findMany({
+        where: { mentorUserId: member.id },
+        select: {
+          id: true,
+          mentee: { select: { id: true, firstName: true, lastName: true } },
+          project: { select: { name: true } },
+          domain: { select: { code: true } },
+          term: { select: { code: true } },
+        },
+      }),
+      prisma.mentorshipPair.findMany({
+        where: { menteeUserId: member.id },
+        select: {
+          id: true,
+          mentor: { select: { id: true, firstName: true, lastName: true } },
+          project: { select: { name: true } },
+          domain: { select: { code: true } },
+          term: { select: { code: true } },
+        },
+      }),
+      prisma.mentorNote.count({
+        where: { OR: [{ mentorId: member.id }, { menteeId: member.id }] },
+      }),
+    ]);
+    mentorshipPanel = {
+      pairs: [
+        ...asMentor.map((p) => ({
+          id: p.id,
+          role: "mentor" as const,
+          counterpart: p.mentee,
+          projectName: p.project.name,
+          domainCode: p.domain.code,
+          termCode: p.term.code,
+        })),
+        ...asMentee.map((p) => ({
+          id: p.id,
+          role: "mentee" as const,
+          counterpart: p.mentor,
+          projectName: p.project.name,
+          domainCode: p.domain.code,
+          termCode: p.term.code,
+        })),
+      ],
+      recentNoteCount: noteCount,
+    };
+  }
+
   return {
     member: {
       ...member,
@@ -124,6 +194,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     presenceUserName: presenceUser?.name ?? auth.user.email,
     presencePhotoUrl: presenceUser?.photoUrl ?? null,
     presenceSubtitle: presenceUser?.subtitle ?? null,
+    mentorshipPanel,
   };
 }
 
@@ -248,6 +319,7 @@ export default function MemberDetail() {
     presenceUserName,
     presencePhotoUrl,
     presenceSubtitle,
+    mentorshipPanel,
   } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const submit = useSubmit();
@@ -342,6 +414,8 @@ export default function MemberDetail() {
         allDomains={allDomains}
         canManage={canManageEligibility}
       />
+
+      {mentorshipPanel && <MentorshipPanel data={mentorshipPanel} memberId={member.id} />}
     </div>
   );
 
@@ -578,5 +652,64 @@ function Field({
         />
       )}
     </label>
+  );
+}
+
+// Mentorship pairings + notes link for a viewed-other user. Server-side
+// gating in the loader ensures this only appears for lab mentors + Core
+// looking at someone else's profile, never on their own.
+function MentorshipPanel({
+  data,
+  memberId,
+}: {
+  data: {
+    pairs: {
+      id: string;
+      role: "mentor" | "mentee";
+      counterpart: { id: string; firstName: string; lastName: string };
+      projectName: string;
+      domainCode: string;
+      termCode: string;
+    }[];
+    recentNoteCount: number;
+  };
+  memberId: string;
+}) {
+  return (
+    <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <h2 className="font-heading font-semibold text-foreground">
+          Mentorship
+        </h2>
+        {data.recentNoteCount > 0 && (
+          <Link
+            to={`/mentorship/browse?menteeId=${memberId}`}
+            className="text-sm text-accent-coral hover:underline"
+          >
+            View notes ({data.recentNoteCount})
+          </Link>
+        )}
+      </div>
+      {data.pairs.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          No mentorship pairings on record.
+        </p>
+      ) : (
+        <ul className="divide-y divide-border">
+          {data.pairs.map((p) => (
+            <li key={p.id} className="py-2 text-sm flex flex-col">
+              <span className="font-medium text-foreground">
+                {p.role === "mentor"
+                  ? `Mentoring ${p.counterpart.firstName} ${p.counterpart.lastName}`
+                  : `Mentee of ${p.counterpart.firstName} ${p.counterpart.lastName}`}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {p.projectName} · {p.domainCode} · {p.termCode}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }

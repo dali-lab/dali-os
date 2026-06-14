@@ -20,6 +20,7 @@ import {
 import { logAuditEvent } from "~/lib/audit";
 import { dedupeLiveAssignments } from "../lib/staffing-board";
 import { publishCycleChange } from "../lib/staffing-events.server";
+import { derivePairings } from "../lib/mentorship-pairings";
 
 // POST /api/staffing/finalize
 //
@@ -212,6 +213,7 @@ export async function action({ request }: Route.ActionArgs) {
       );
 
       let droppedCount = 0;
+      let pairsCreated = 0;
       await prisma.$transaction(async (tx) => {
         for (const a of target) {
           if (a.status !== "Confirmed") {
@@ -262,9 +264,14 @@ export async function action({ request }: Route.ActionArgs) {
           });
           droppedCount++;
         }
+
+        // Auto-pair mentees to mentors based on the confirmed roster. Additive
+        // only — preserves any Core overrides made via /mentorship/pairs.
+        pairsCreated = await derivePairings(tx, project.id, cycle.termId);
       });
 
       const dropNote = droppedCount > 0 ? `, removed ${droppedCount}` : "";
+      const pairNote = pairsCreated > 0 ? `, paired ${pairsCreated} mentor link${pairsCreated === 1 ? "" : "s"}` : "";
       const skipNote =
         skippedNames.length > 0
           ? ` Skipped ${skippedNames.length} with an invalid/blank domain (fix their bid): ${skippedNames.join(", ")}.`
@@ -276,7 +283,7 @@ export async function action({ request }: Route.ActionArgs) {
         message:
           (confirmedCount === 0 && droppedCount === 0
             ? "No proposed assignments for this project."
-            : `Confirmed ${confirmedCount} assignment${confirmedCount === 1 ? "" : "s"}${dropNote} → ProjectAssignment.`) +
+            : `Confirmed ${confirmedCount} assignment${confirmedCount === 1 ? "" : "s"}${dropNote}${pairNote} → ProjectAssignment.`) +
           skipNote,
       };
     } catch (err) {

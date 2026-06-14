@@ -1,0 +1,112 @@
+import type { Route } from "./+types/api.mentorship.notes.$id";
+import { prisma } from "~/lib/db";
+import { requireAuth } from "~/lib/auth";
+import { isCore } from "~/lib/roles";
+import { withCors, handlePreflight } from "~/lib/cors";
+import { canViewMentorship } from "../lib/visibility";
+
+// GET    /api/mentorship/notes/:id  — read one (any lab mentor or Core)
+// PATCH  /api/mentorship/notes/:id  — update contentJson. Author or Core only.
+// DELETE /api/mentorship/notes/:id  — delete. Author or Core only.
+
+type PatchBody = { contentJson: unknown };
+
+function isPatchBody(x: unknown): x is PatchBody {
+  if (!x || typeof x !== "object") return false;
+  return Object.prototype.hasOwnProperty.call(x, "contentJson");
+}
+
+export async function loader({ request, params }: Route.LoaderArgs) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return withCors(request, auth.response);
+  if (!(await canViewMentorship(auth.user.sub))) {
+    return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+  }
+  const note = await prisma.mentorNote.findUnique({
+    where: { id: params.id! },
+    select: {
+      id: true,
+      mentorId: true,
+      menteeId: true,
+      projectId: true,
+      termId: true,
+      domainId: true,
+      weekOf: true,
+      contentJson: true,
+      updatedAt: true,
+      mentor: { select: { id: true, firstName: true, lastName: true } },
+      mentee: { select: { id: true, firstName: true, lastName: true } },
+    },
+  });
+  if (!note) {
+    return withCors(request, Response.json({ error: "Not found" }, { status: 404 }));
+  }
+  const [project, term, domain] = await Promise.all([
+    prisma.project.findUnique({
+      where: { id: note.projectId },
+      select: { id: true, name: true },
+    }),
+    prisma.term.findUnique({
+      where: { id: note.termId },
+      select: { id: true, code: true },
+    }),
+    prisma.domain.findUnique({
+      where: { id: note.domainId },
+      select: { id: true, code: true, displayName: true },
+    }),
+  ]);
+  return withCors(
+    request,
+    Response.json({
+      ...note,
+      weekOf: note.weekOf.toISOString(),
+      updatedAt: note.updatedAt.toISOString(),
+      project,
+      term,
+      domain,
+    }),
+  );
+}
+
+export async function action({ request, params }: Route.ActionArgs) {
+  const preflight = handlePreflight(request);
+  if (preflight) return preflight;
+
+  const auth = await requireAuth(request);
+  if (!auth.ok) return withCors(request, auth.response);
+  if (request.method !== "PATCH" && request.method !== "DELETE") {
+    return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
+  }
+
+  const note = await prisma.mentorNote.findUnique({
+    where: { id: params.id! },
+    select: { id: true, mentorId: true },
+  });
+  if (!note) {
+    return withCors(request, Response.json({ error: "Not found" }, { status: 404 }));
+  }
+  const core = await isCore(auth.user.sub);
+  if (note.mentorId !== auth.user.sub && !core) {
+    return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+  }
+
+  if (request.method === "DELETE") {
+    await prisma.mentorNote.delete({ where: { id: note.id } });
+    return withCors(request, Response.json({ ok: true }));
+  }
+
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return withCors(request, Response.json({ error: "Invalid JSON" }, { status: 400 }));
+  }
+  if (!isPatchBody(body)) {
+    return withCors(request, Response.json({ error: "Invalid body" }, { status: 400 }));
+  }
+  await prisma.mentorNote.update({
+    where: { id: note.id },
+    data: { contentJson: (body.contentJson ?? {}) as object },
+  });
+  return withCors(request, Response.json({ ok: true }));
+}

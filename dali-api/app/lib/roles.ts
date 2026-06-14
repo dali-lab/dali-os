@@ -267,6 +267,79 @@ export async function canManageStaffing(userId: string): Promise<boolean> {
   return isCore(userId);
 }
 
+// ─── Mentor-collective access ────────────────────────────────────────────────
+
+/**
+ * Lab-mentor gate: true if the user is an active mentor anywhere in the lab
+ * for the given term. Used to gate mentor-collective surfaces — `/mentorship`
+ * hub, MentorNote visibility, notes browser. The check is broad on purpose
+ * (not scoped to "mentor of this specific mentee"); the lab's mentors are
+ * treated as a collective.
+ *
+ * Returns true if the user has, for the given term, ANY of:
+ *   - a P3-level ProjectAssignment
+ *   - a DomainLeadAssignment
+ *   - a CoreAssignment (Core members are mentor-shaped by definition)
+ *   - PM-domain DomainEligibility at level P3, AND any current-term role
+ *     (DomainEligibility is monotonic / term-independent, so PM Mentors must
+ *     have *some* current-term activity to count as actively mentoring)
+ *
+ * If `termId` is omitted, resolves to the current term. If there is no
+ * current term (empty Term table), returns false.
+ */
+export async function isLabMentor(
+  userId: string,
+  termId?: string,
+): Promise<boolean> {
+  let resolvedTermId = termId;
+  if (!resolvedTermId) {
+    const term = await currentTerm();
+    if (!term) return false;
+    resolvedTermId = term.id;
+  }
+
+  const [p3Project, domainLead, core, pmEligibility] = await Promise.all([
+    prisma.projectAssignment.findFirst({
+      where: { userId, termId: resolvedTermId, level: "P3" },
+      select: { id: true },
+    }),
+    prisma.domainLeadAssignment.findFirst({
+      where: { userId, termId: resolvedTermId },
+      select: { id: true },
+    }),
+    prisma.coreAssignment.findFirst({
+      where: { userId, termId: resolvedTermId },
+      select: { id: true },
+    }),
+    prisma.domainEligibility.findFirst({
+      where: { userId, level: "P3", domain: { code: "PM" } },
+      select: { id: true },
+    }),
+  ]);
+
+  if (p3Project || domainLead || core) return true;
+
+  if (pmEligibility) {
+    // PM Mentor: DomainEligibility is monotonic, so confirm any current-term
+    // role assignment before counting them as actively mentoring.
+    const anyTermRole = await prisma.user.findFirst({
+      where: {
+        id: userId,
+        OR: [
+          { projectAssignments: { some: { termId: resolvedTermId } } },
+          { coreAssignments: { some: { termId: resolvedTermId } } },
+          { domainLeadAssignmentsAsUser: { some: { termId: resolvedTermId } } },
+          { instructorAssignments: { some: { termId: resolvedTermId } } },
+        ],
+      },
+      select: { id: true },
+    });
+    if (anyTermRole) return true;
+  }
+
+  return false;
+}
+
 // ─── Cycle-scoped access ─────────────────────────────────────────────────────
 
 /**

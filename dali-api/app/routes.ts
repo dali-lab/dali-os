@@ -84,6 +84,13 @@ export default [
     // Education
     route("education", "education/routes/education.tsx"),
 
+    // Mentorship — weekly notes hub + browser + templates (Core).
+    // Hidden from mentees entirely; gated server-side by canViewMentorship.
+    route("mentorship", "mentorship/routes/mentorship.tsx"),
+    route("mentorship/browse", "mentorship/routes/mentorship.browse.tsx"),
+    route("mentorship/templates", "mentorship/routes/mentorship.templates.tsx"),
+    route("mentorship/notes/:id", "mentorship/routes/mentorship.notes.$id.tsx"),
+
     // Internal processes
     route("internal-processes/onboarding", "internal-processes/routes/internal-processes.onboarding.tsx"),
     route("internal-processes/transfer", "internal-processes/routes/internal-processes.transfer.tsx"),
@@ -336,4 +343,11 @@ export default [
   // Collaborative editing version history
   route("api/collab/versions", "routes/api.collab.versions.ts"),
   route("api/collab/versions/:id", "routes/api.collab.versions.$id.ts"),
+
+  // Mentorship API — weekly notes, templates, mentor↔mentee pairs.
+  route("api/mentorship/notes", "mentorship/routes/api.mentorship.notes.ts"),
+  route("api/mentorship/notes/:id", "mentorship/routes/api.mentorship.notes.$id.ts"),
+  route("api/mentorship/templates", "mentorship/routes/api.mentorship.templates.ts"),
+  route("api/mentorship/templates/:id", "mentorship/routes/api.mentorship.templates.$id.ts"),
+  route("api/mentorship/pairs", "mentorship/routes/api.mentorship.pairs.ts"),
 ] satisfies RouteConfig;
