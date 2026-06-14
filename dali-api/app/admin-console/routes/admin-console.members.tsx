@@ -4,6 +4,7 @@ import type { Route } from "./+types/admin-console.members";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isAdmin, isCore, currentTerm } from "~/lib/roles";
+import { coreCycleTermIds } from "~/lib/core-cycle";
 import { Users, Check } from "lucide-react";
 import {
   AdminToggle,
@@ -102,9 +103,15 @@ export async function action({ request }: Route.ActionArgs) {
     return null;
   }
 
-  // Free-text Core title for the current term. A member can hold multiple
-  // titles in the same term (schema-side: no unique on (userId, termId)).
-  // App-level guard: ignore exact-title duplicates rather than 409.
+  // Free-text Core title for the current Core cycle. A member can hold
+  // multiple titles in the same term (schema-side: no unique on
+  // (userId, termId, leadTitle)). App-level guard: ignore exact-title
+  // duplicates rather than 409.
+  //
+  // The Core "cycle" runs Spring → following Winter (4 terms). We materialize
+  // one CoreAssignment row per term in the cycle so every reader (payroll,
+  // search, isCore) can query by termId and get the same answer without
+  // re-deriving cycle math. See lib/core-cycle.ts.
   if (intent === "add-core-title") {
     const userId = formData.get("userId") as string;
     const rawTitle = String(formData.get("leadTitle") ?? "").trim();
@@ -116,21 +123,40 @@ export async function action({ request }: Route.ActionArgs) {
         { status: 500 },
       );
     }
-    const existing = await prisma.coreAssignment.findFirst({
-      where: { userId, termId: term.id, leadTitle },
-      select: { id: true },
+    const cycleTermIds = await coreCycleTermIds(term.id);
+    const existing = await prisma.coreAssignment.findMany({
+      where: { userId, termId: { in: cycleTermIds }, leadTitle },
+      select: { termId: true },
     });
-    if (!existing) {
-      await prisma.coreAssignment.create({
-        data: { userId, termId: term.id, leadTitle },
+    const alreadyCovered = new Set(existing.map((e) => e.termId));
+    const missing = cycleTermIds.filter((tid) => !alreadyCovered.has(tid));
+    if (missing.length > 0) {
+      await prisma.coreAssignment.createMany({
+        data: missing.map((termId) => ({ userId, termId, leadTitle })),
       });
     }
     return null;
   }
 
+  // Remove this Core title for the entire cycle the assignment belongs to —
+  // not just the single term the row was indexed by. (Multiple CoreAssignment
+  // rows fan out across the cycle on add; clearing all of them keeps the
+  // data consistent across surfaces.)
   if (intent === "remove-core-title") {
     const assignmentId = formData.get("assignmentId") as string;
-    await prisma.coreAssignment.deleteMany({ where: { id: assignmentId } });
+    const target = await prisma.coreAssignment.findUnique({
+      where: { id: assignmentId },
+      select: { userId: true, termId: true, leadTitle: true },
+    });
+    if (!target) return null;
+    const cycleTermIds = await coreCycleTermIds(target.termId);
+    await prisma.coreAssignment.deleteMany({
+      where: {
+        userId: target.userId,
+        leadTitle: target.leadTitle,
+        termId: { in: cycleTermIds },
+      },
+    });
     return null;
   }
 

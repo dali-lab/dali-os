@@ -1,4 +1,5 @@
 import { prisma } from "~/lib/db";
+import { cycleSortKeyRange } from "~/lib/core-cycle";
 
 // Phase 2 rewrite: role flags derived from the new typed assignment tables
 // (AdminMembership, CoreAssignment, DomainLeadAssignment) rather than the
@@ -220,35 +221,27 @@ export async function currentTermMemberWhere() {
 }
 
 /**
- * Spring sortKey at or before `sk`. A Core "cycle" runs from one Spring
- * election (W=1, S=2, X=3, F=4) through the following Winter, so the
- * cycle that contains a term is anchored by its preceding Spring. Winter
- * (digit 1) belongs to the previous calendar year's Spring cycle.
- */
-function cycleStartSortKey(sk: number): number {
-  const seasonDigit = sk % 10;
-  return seasonDigit === 1 ? sk - 9 : sk - seasonDigit + 2;
-}
-
-/**
  * Term IDs that constitute the active Core cycle. Core is elected in
- * Spring and auto-rolls over through the following Winter; the cycle
- * window spans `[Spring N, Spring N+1)` in sortKey space.
+ * Spring and the cycle window spans `[Spring N, Spring N+1)` in sortKey
+ * space.
  *
  * During a Spring term, the previous cycle is also active so an outgoing
- * Core keeps access through the election handoff (until they're either
- * re-elected, or replaced — at which point the new cycle's assignments
- * become the active set the following Summer).
+ * Core keeps access through the election handoff (until the new cycle's
+ * assignments take over the following Summer). Outside of Spring, the
+ * helper just returns the current cycle's term ids — same set the
+ * cycle-aware fan-out writes to CoreAssignment.
+ *
+ * Cycle math lives in `~/lib/core-cycle.ts` and is shared with the
+ * add/remove writers so reads + writes can't drift.
  */
 export async function getActiveCoreCycleTermIds(): Promise<string[]> {
   const term = await currentTerm();
   if (!term) return [];
-  const cycleStart = cycleStartSortKey(term.sortKey);
+  const currentRange = cycleSortKeyRange(term.sortKey);
   // Spring (digit 2) extends the window back one cycle for the handoff.
-  const lowerBound = term.sortKey % 10 === 2 ? cycleStart - 10 : cycleStart;
-  const upperBound = cycleStart + 10;
+  const lowerBound = term.sortKey % 10 === 2 ? currentRange.gte - 10 : currentRange.gte;
   const terms = await prisma.term.findMany({
-    where: { sortKey: { gte: lowerBound, lt: upperBound } },
+    where: { sortKey: { gte: lowerBound, lt: currentRange.lt } },
     select: { id: true },
   });
   return terms.map((t) => t.id);

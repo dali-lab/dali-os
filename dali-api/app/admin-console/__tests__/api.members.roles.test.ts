@@ -5,6 +5,12 @@ vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
 }));
 vi.mock("~/lib/roles");
+vi.mock("~/lib/core-cycle", () => ({
+  // Tests only care that the action runs and validates the request body —
+  // not the cycle math — so stub to "current term only".
+  coreCycleTermIds: vi.fn().mockResolvedValue(["term-1"]),
+  cycleSortKeyRange: vi.fn(),
+}));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/cors", () => ({
   handlePreflight: () => null,
@@ -32,7 +38,9 @@ const mockPrisma = prisma as unknown as {
   };
   coreAssignment: {
     findFirst: ReturnType<typeof vi.fn>;
+    findMany: ReturnType<typeof vi.fn>;
     create: ReturnType<typeof vi.fn>;
+    createMany: ReturnType<typeof vi.fn>;
     deleteMany: ReturnType<typeof vi.fn>;
   };
   user: {
@@ -50,7 +58,9 @@ beforeEach(() => {
   };
   (mockPrisma as any).coreAssignment = {
     findFirst: vi.fn().mockResolvedValue(null),
+    findMany: vi.fn().mockResolvedValue([]),
     create: vi.fn(),
+    createMany: vi.fn(),
     deleteMany: vi.fn(),
   };
   (mockPrisma as any).user = {
