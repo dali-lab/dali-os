@@ -4,6 +4,7 @@ import {
   Link,
   redirect,
   useActionData,
+  useFetcher,
   useLoaderData,
   useRevalidator,
   useSearchParams,
@@ -118,7 +119,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       },
       assignments: {
         select: {
+          id: true,
           level: true,
+          userId: true,
+          termId: true,
+          domainId: true,
           user: { select: { id: true, firstName: true, lastName: true } },
           term: { select: { code: true, sortKey: true } },
           domain: { select: { id: true, name: true } },
@@ -350,9 +355,57 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   };
 
   // Team grouped by term, newest term first. Current = highest sortKey.
+  //
+  // For Core viewers we also surface per-assignment editing context:
+  //   - eligibilityLevel: ceiling enforced by /api/projects/assignments/:id/level
+  //   - activeMenteeCount: a P3→lower demotion is blocked while this > 0
+  // Both lookups are skipped for non-Core viewers (they see read-only badges).
+  const eligibilityCeilings = new Map<string, string>();
+  const menteeCounts = new Map<string, number>();
+  if (core && project.assignments.length > 0) {
+    const eligibilityPairs = new Map<string, { userId: string; domainId: string }>();
+    for (const a of project.assignments) {
+      eligibilityPairs.set(`${a.userId}:${a.domainId}`, {
+        userId: a.userId,
+        domainId: a.domainId,
+      });
+    }
+    const mentorUserIds = [...new Set(project.assignments.map((a) => a.userId))];
+    const [eligibilityRows, mentorRows] = await Promise.all([
+      prisma.domainEligibility.findMany({
+        where: { OR: [...eligibilityPairs.values()] },
+        select: { userId: true, domainId: true, level: true },
+      }),
+      // Over-fetch: any MentorshipPair on this project where any of our
+      // assignees is the mentor. We bucket client-side by the exact
+      // (mentorUserId, termId, domainId) tuple the endpoint checks.
+      prisma.mentorshipPair.findMany({
+        where: { projectId: project.id, mentorUserId: { in: mentorUserIds } },
+        select: { mentorUserId: true, termId: true, domainId: true },
+      }),
+    ]);
+    for (const e of eligibilityRows) {
+      eligibilityCeilings.set(`${e.userId}:${e.domainId}`, e.level);
+    }
+    for (const m of mentorRows) {
+      const key = `${m.mentorUserId}:${m.termId}:${m.domainId}`;
+      menteeCounts.set(key, (menteeCounts.get(key) ?? 0) + 1);
+    }
+  }
+
+  type TeamMember = {
+    assignmentId: string;
+    userId: string;
+    name: string;
+    domain: string;
+    domainId: string;
+    level: string;
+    eligibilityLevel: string | null;
+    activeMenteeCount: number;
+  };
   const teamByTerm = new Map<
     string,
-    { code: string; sortKey: number; members: { name: string; domain: string; level: string }[] }
+    { code: string; sortKey: number; members: TeamMember[] }
   >();
   for (const a of project.assignments) {
     const key = a.term.code;
@@ -360,9 +413,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       teamByTerm.set(key, { code: a.term.code, sortKey: a.term.sortKey, members: [] });
     }
     teamByTerm.get(key)!.members.push({
+      assignmentId: a.id,
+      userId: a.userId,
       name: `${a.user.firstName} ${a.user.lastName}`.trim(),
       domain: a.domain.name,
+      domainId: a.domainId,
       level: a.level,
+      eligibilityLevel: eligibilityCeilings.get(`${a.userId}:${a.domainId}`) ?? null,
+      activeMenteeCount:
+        menteeCounts.get(`${a.userId}:${a.termId}:${a.domainId}`) ?? 0,
     });
   }
   const teams = [...teamByTerm.values()].sort((a, b) => b.sortKey - a.sortKey);
@@ -502,6 +561,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     boardOptions,
     canEdit,
     canEditScope,
+    canEditAssignmentLevel: core,
     canViewScope,
     currentTerm: current ? { id: current.id, code: current.code } : null,
     collabToken,
@@ -755,6 +815,7 @@ export default function ProjectDetail() {
     domainScopeGrid,
     canEdit,
     canEditScope,
+    canEditAssignmentLevel,
     canViewScope,
     currentTerm,
     collabToken,
@@ -834,6 +895,7 @@ export default function ProjectDetail() {
           allTags={allTags}
           canEdit={canEdit}
           canEditFinance={canEditScope}
+          canEditAssignmentLevel={canEditAssignmentLevel}
           domainScopeGrid={domainScopeGrid}
           currentTerm={currentTerm}
           actionError={actionData?.error}
@@ -1685,7 +1747,13 @@ function DomainChips({
   );
 }
 
-function TeamSection({ teams }: { teams: LoaderData["teams"] }) {
+function TeamSection({
+  teams,
+  canEdit,
+}: {
+  teams: LoaderData["teams"];
+  canEdit: boolean;
+}) {
   const [showAll, setShowAll] = useState(false);
   // teams is pre-sorted newest term first by the loader.
   const visible = showAll ? teams : teams.slice(0, 1);
@@ -1719,16 +1787,18 @@ function TeamSection({ teams }: { teams: LoaderData["teams"] }) {
                 )}
               </div>
               <div className="flex flex-wrap gap-2">
-                {team.members.map((m, j) => (
+                {team.members.map((m) => (
                   <span
-                    key={j}
-                    className="text-xs px-2 py-1 rounded-md border border-border text-foreground"
+                    key={m.assignmentId}
+                    className="text-xs px-2 py-1 rounded-md border border-border text-foreground inline-flex items-center gap-1"
                   >
                     {m.name}
-                    <span className="text-muted-foreground">
-                      {" "}
-                      · {m.domain} {m.level}
-                    </span>
+                    <span className="text-muted-foreground">· {m.domain}</span>
+                    {canEdit ? (
+                      <TeamLevelEditor member={m} />
+                    ) : (
+                      <span className="text-muted-foreground">{m.level}</span>
+                    )}
                   </span>
                 ))}
               </div>
@@ -1740,6 +1810,77 @@ function TeamSection({ teams }: { teams: LoaderData["teams"] }) {
   );
 }
 
+const LEVEL_OPTIONS: ("P1" | "P2" | "P3")[] = ["P1", "P2", "P3"];
+const LEVEL_RANK: Record<"P1" | "P2" | "P3", number> = { P1: 1, P2: 2, P3: 3 };
+
+function TeamLevelEditor({
+  member,
+}: {
+  member: LoaderData["teams"][number]["members"][number];
+}) {
+  const fetcher = useFetcher<{ ok?: boolean; error?: string }>();
+  const ceilingRank = member.eligibilityLevel
+    ? LEVEL_RANK[member.eligibilityLevel as "P1" | "P2" | "P3"]
+    : 0;
+  const currentRank = LEVEL_RANK[member.level as "P1" | "P2" | "P3"];
+  const blockedByMentees = member.activeMenteeCount > 0;
+
+  const value = (fetcher.formData?.get("level") as string | null) ?? member.level;
+  const busy = fetcher.state !== "idle";
+  const error = fetcher.data?.error;
+
+  function disabledReason(opt: "P1" | "P2" | "P3"): string | null {
+    if (opt === member.level) return null;
+    if (LEVEL_RANK[opt] > ceilingRank) {
+      return member.eligibilityLevel
+        ? `Eligible only up to ${member.eligibilityLevel} in ${member.domain}. Promote first.`
+        : `No ${member.domain} eligibility. Promote first.`;
+    }
+    if (blockedByMentees && LEVEL_RANK[opt] < currentRank) {
+      return `Mentoring ${member.activeMenteeCount} mentee${member.activeMenteeCount === 1 ? "" : "s"}. Reassign first.`;
+    }
+    return null;
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1">
+      <select
+        aria-label={`Level for ${member.name} in ${member.domain}`}
+        className="text-xs bg-transparent text-muted-foreground rounded border border-transparent hover:border-border focus:border-border focus:outline-none px-0.5"
+        value={value}
+        disabled={busy}
+        onChange={(e) => {
+          const next = e.target.value;
+          if (next === member.level) return;
+          fetcher.submit(
+            { level: next },
+            {
+              method: "post",
+              action: `/api/projects/assignments/${member.assignmentId}/level`,
+              encType: "application/json",
+            },
+          );
+        }}
+      >
+        {LEVEL_OPTIONS.map((opt) => {
+          const reason = disabledReason(opt);
+          return (
+            <option key={opt} value={opt} disabled={reason !== null} title={reason ?? undefined}>
+              {opt}
+              {reason ? " (locked)" : ""}
+            </option>
+          );
+        })}
+      </select>
+      {error && (
+        <span className="text-[10px] text-destructive" title={error}>
+          !
+        </span>
+      )}
+    </span>
+  );
+}
+
 function OverviewTab({
   project,
   teams,
@@ -1748,6 +1889,7 @@ function OverviewTab({
   allTags,
   canEdit,
   canEditFinance,
+  canEditAssignmentLevel,
   domainScopeGrid,
   currentTerm,
   actionError,
@@ -1759,6 +1901,7 @@ function OverviewTab({
   allTags: LoaderData["allTags"];
   canEdit: boolean;
   canEditFinance: boolean;
+  canEditAssignmentLevel: boolean;
   domainScopeGrid: LoaderData["domainScopeGrid"];
   currentTerm: LoaderData["currentTerm"];
   actionError?: string;
@@ -1818,7 +1961,7 @@ function OverviewTab({
 
       {/* Team — read-only summary, separate from the editable details. */}
       <section className="bg-card border border-border rounded-lg p-4">
-        <TeamSection teams={teams} />
+        <TeamSection teams={teams} canEdit={canEditAssignmentLevel} />
       </section>
 
       {/* Documents — collab-doc pages; rows + Add open the doc as a split-screen
