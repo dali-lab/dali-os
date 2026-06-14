@@ -35,6 +35,7 @@ export const AUDIT_ACTIONS = [
   "staffing.board-member.add",
   "staffing.board-member.remove",
   "staffing.reorder",
+  "project.assignment.level",
   "slack.connect",
   "slack.disconnect",
   "account.linked",
