@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRevalidator } from "react-router";
 import { Modal } from "~/components/Modal";
+import { Button } from "~/components/ui/Button";
 import { CollaborativeEditor } from "~/components/CollaborativeEditor";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { EpicsTimeline, type TimelineEpic } from "./EpicsTimeline";
@@ -842,13 +843,14 @@ function EpicForm({
       </div>
 
       <div className="flex gap-1.5">
-        <button
+        <Button
           type="submit"
+          variant="primary"
+          size="sm"
           disabled={busy}
-          className="px-3 py-1.5 text-xs font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 disabled:opacity-60 transition-colors"
         >
           Save
-        </button>
+        </Button>
         <button
           type="button"
           onClick={onCancel}
@@ -945,13 +947,14 @@ function SprintForm({
         </select>
       </label>
       <div className="flex gap-1.5">
-        <button
+        <Button
           type="submit"
+          variant="primary"
+          size="sm"
           disabled={busy}
-          className="px-3 py-1.5 text-xs font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 disabled:opacity-60 transition-colors"
         >
           Save
-        </button>
+        </Button>
         <button
           type="button"
           onClick={onCancel}
@@ -1035,13 +1038,14 @@ function StoryForm({
         />
       </label>
       <div className="flex gap-1.5">
-        <button
+        <Button
           type="submit"
+          variant="primary"
+          size="sm"
           disabled={busy}
-          className="px-3 py-1.5 text-xs font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 disabled:opacity-60 transition-colors"
         >
           Save
-        </button>
+        </Button>
         <button
           type="button"
           onClick={onCancel}

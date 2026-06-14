@@ -24,7 +24,7 @@ import {
 } from "../lib/slot-roles";
 import { buildSubmissionView } from "../lib/submission-view.server";
 import type { Question } from "~/types";
-import type { Level } from "~/generated/prisma/enums";
+import { isLevel, type Level } from "~/lib/level";
 
 const SLOT = "level-up" as const;
 
@@ -355,8 +355,8 @@ export async function action({ request }: Route.ActionArgs) {
       return Response.json({ error: "Forbidden" }, { status: 403 });
     const targetUserId = String(form.get("userId") ?? "");
     const domainId = String(form.get("domainId") ?? "");
-    const targetLevel = String(form.get("targetLevel") ?? "") as Level;
-    if (!targetUserId || !domainId || !["P1", "P2", "P3"].includes(targetLevel))
+    const targetLevel = String(form.get("targetLevel") ?? "");
+    if (!targetUserId || !domainId || !isLevel(targetLevel))
       return Response.json({ error: "Invalid parameters." }, { status: 400 });
 
     await prisma.domainEligibility.upsert({

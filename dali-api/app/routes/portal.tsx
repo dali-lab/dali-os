@@ -16,6 +16,7 @@ import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 import { Confetti } from "~/components/Confetti";
 import { formatInterviewDate, formatInterviewTimeRange } from "~/hiring/lib/interview-time";
 import { APPLICATIONS_FROM_EMAIL } from "~/lib/app-env";
+import { Button } from "~/components/ui/Button";
 
 export const meta: Route.MetaFunction = () => [{ title: "Applicant portal · DALI OS" }];
 
@@ -552,13 +553,14 @@ function InvitedToInterviewView({
             />
           </div>
 
-          <button
+          <Button
+            variant="primary"
+            size="md"
             onClick={handleConfirm}
             disabled={!selectedSlot || booking}
-            className="px-6 py-2.5 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition disabled:opacity-50"
           >
             {booking ? "Booking..." : "Confirm Time"}
-          </button>
+          </Button>
         </>
       )}
 
@@ -708,13 +710,15 @@ function InterviewScheduledView({
               />
             </div>
 
-            <button
+            <Button
+              variant="primary"
+              size="md"
               onClick={handleConfirmReschedule}
               disabled={!selectedRescheduleSlotId || confirmingReschedule}
-              className="px-6 py-2.5 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition disabled:opacity-50 mr-3"
+              className="mr-3"
             >
               {confirmingReschedule ? "Rescheduling..." : "Confirm Reschedule"}
-            </button>
+            </Button>
           </>
         )}
         <button onClick={exitRescheduling} className="text-sm font-semibold text-muted-foreground hover:underline">

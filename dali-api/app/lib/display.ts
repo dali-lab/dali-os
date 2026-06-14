@@ -20,6 +20,9 @@ export function userInitials(user: {
   return initialsFromName(localPart);
 }
 
+// Sentinel-string policy:
+//   UNKNOWN_LABEL ("Unknown") → human prose ("Created by Unknown")
+//   EMPTY_DISPLAY ("—")       → table cells / structured data
 export const UNKNOWN_LABEL = "Unknown";
 export const EMPTY_DISPLAY = "—";
 

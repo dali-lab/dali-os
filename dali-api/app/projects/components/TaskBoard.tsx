@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
+import { Button } from "~/components/ui/Button";
 import { DndContext, useDraggable, useDroppable, type DragEndEvent } from "@dnd-kit/core";
 import { GripVertical } from "lucide-react";
 import {
@@ -189,13 +190,13 @@ export function TaskBoard({ projectId, initialTasks, options, canManage }: Props
 
       {canManage && (
         <div>
-          <button
-            type="button"
+          <Button
+            variant="primary"
+            size="sm"
             onClick={() => setIsCreating(true)}
-            className="px-3 py-1.5 text-xs font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
           >
             + Add task
-          </button>
+          </Button>
         </div>
       )}
 

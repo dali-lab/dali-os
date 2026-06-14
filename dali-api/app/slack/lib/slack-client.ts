@@ -16,6 +16,12 @@ export type SlackFile = {
   urlPrivate: string;
 };
 
+export const SLACK_NOT_CONFIGURED_MESSAGE = "SLACK_BOT_TOKEN not set.";
+
+export function slackConfigured(): boolean {
+  return Boolean(process.env.SLACK_BOT_TOKEN);
+}
+
 let cached: WebClient | null = null;
 function client(): WebClient {
   if (cached) return cached;

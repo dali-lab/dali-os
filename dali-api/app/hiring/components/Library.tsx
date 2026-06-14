@@ -6,9 +6,10 @@ import {
   ListOrdered,
   ShieldCheck,
   ChevronRight,
-  X,
   Trash2,
 } from "lucide-react";
+import { Button } from "~/components/ui/Button";
+import { Modal } from "~/components/Modal";
 import type { loader } from "~/hiring/routes/library";
 
 type Tab = "challenges" | "rubrics" | "agreements";
@@ -124,13 +125,10 @@ function ChallengesPanel({
               </option>
             ))}
           </select>
-          <button
-            onClick={() => setShowModal(true)}
-            className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-accent-coral hover:bg-accent-coral/90 shadow-sm"
-          >
-            <Plus className="w-4 h-4 mr-2" />
+          <Button variant="primary" size="sm" onClick={() => setShowModal(true)}>
+            <Plus className="w-4 h-4" />
             New Challenge
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -189,78 +187,68 @@ function ChallengesPanel({
         )}
       </div>
 
-      {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div
-            className="absolute inset-0 bg-black/10 backdrop-blur-[1px]"
-            onClick={() => setShowModal(false)}
-          />
-          <div
-            className="relative bg-card rounded-xl shadow-xl w-full max-w-md p-6 space-y-6"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl font-bold text-foreground">New Challenge</h2>
-              <button
-                onClick={() => setShowModal(false)}
-                className="text-muted-foreground/70 hover:text-muted-foreground p-1 rounded-md hover:bg-muted"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+      <Modal
+        open={showModal}
+        onClose={() => setShowModal(false)}
+        labelledBy="new-challenge-title"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/10 backdrop-blur-[1px] p-4 sm:p-6 overflow-y-auto"
+        containerClassName="bg-card rounded-xl shadow-xl max-w-md w-full p-6 my-auto space-y-6"
+      >
+        <h2 id="new-challenge-title" className="text-xl font-bold text-foreground">
+          New Challenge
+        </h2>
 
-            <Form
-              method="post"
-              onSubmit={() => {
-                setNewChallengeName("");
-                setShowModal(false);
-              }}
-              className="space-y-4"
-            >
-              <input type="hidden" name="entity" value="challenge" />
-              <input type="hidden" name="intent" value="create" />
-              {isGeneral ? (
-                <input type="hidden" name="general" value="1" />
-              ) : (
-                <input type="hidden" name="domainId" value={activeDomain} />
-              )}
-              <div>
-                <label className="block text-sm font-medium text-foreground/80 mb-1">
-                  Challenge Name <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  name="name"
-                  value={newChallengeName}
-                  onChange={(e) => setNewChallengeName(e.target.value)}
-                  placeholder="e.g. Engineering Challenge Fall 2026"
-                  required
-                  autoFocus
-                  autoComplete="off"
-                  className="block w-full rounded-lg border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2.5 text-foreground bg-card placeholder-gray-400"
-                />
-              </div>
-
-              <div className="flex justify-end gap-3 pt-2 border-t border-border">
-                <button
-                  type="button"
-                  onClick={() => setShowModal(false)}
-                  className="px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-lg text-foreground/80 bg-card hover:bg-muted/50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={!newChallengeName.trim()}
-                  className="px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-accent-coral hover:bg-accent-coral/90 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Create Challenge
-                </button>
-              </div>
-            </Form>
+        <Form
+          method="post"
+          onSubmit={() => {
+            setNewChallengeName("");
+            setShowModal(false);
+          }}
+          className="space-y-4"
+        >
+          <input type="hidden" name="entity" value="challenge" />
+          <input type="hidden" name="intent" value="create" />
+          {isGeneral ? (
+            <input type="hidden" name="general" value="1" />
+          ) : (
+            <input type="hidden" name="domainId" value={activeDomain} />
+          )}
+          <div>
+            <label className="block text-sm font-medium text-foreground/80 mb-1">
+              Challenge Name <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              name="name"
+              value={newChallengeName}
+              onChange={(e) => setNewChallengeName(e.target.value)}
+              placeholder="e.g. Engineering Challenge Fall 2026"
+              required
+              autoFocus
+              autoComplete="off"
+              className="block w-full rounded-lg border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2.5 text-foreground bg-card placeholder-gray-400"
+            />
           </div>
-        </div>
-      )}
+
+          <div className="flex justify-end gap-3 pt-2 border-t border-border">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setShowModal(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              size="sm"
+              disabled={!newChallengeName.trim()}
+            >
+              Create Challenge
+            </Button>
+          </div>
+        </Form>
+      </Modal>
     </div>
   );
 }
@@ -278,13 +266,10 @@ function RubricsPanel({ rubrics }: { rubrics: any[] }) {
             Manage rubrics and their versions independently of hiring cycles.
           </p>
         </div>
-        <button
-          onClick={() => setShowModal(true)}
-          className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-accent-coral hover:bg-accent-coral/90 shadow-sm"
-        >
-          <Plus className="w-4 h-4 mr-2" />
+        <Button variant="primary" size="sm" onClick={() => setShowModal(true)}>
+          <Plus className="w-4 h-4" />
           New Rubric
-        </button>
+        </Button>
       </div>
 
       <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-6">
@@ -322,66 +307,57 @@ function RubricsPanel({ rubrics }: { rubrics: any[] }) {
         )}
       </div>
 
-      {showModal && (
-        <div
-          className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
-          onClick={() => setShowModal(false)}
-        >
-          <div
-            className="bg-card rounded-lg shadow-xl w-full max-w-sm p-6 space-y-4"
-            onClick={(e) => e.stopPropagation()}
+      <Modal
+        open={showModal}
+        onClose={() => setShowModal(false)}
+        labelledBy="new-rubric-title"
+      >
+        <div className="space-y-4">
+          <h2 id="new-rubric-title" className="text-lg font-semibold text-foreground">
+            New Rubric
+          </h2>
+          <Form
+            method="post"
+            onSubmit={() => setShowModal(false)}
+            className="space-y-4"
           >
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-foreground">New Rubric</h2>
-              <button
-                onClick={() => setShowModal(false)}
-                className="text-muted-foreground/70 hover:text-muted-foreground"
-              >
-                <X className="w-5 h-5" />
-              </button>
+            <input type="hidden" name="entity" value="rubric" />
+            <input type="hidden" name="intent" value="create" />
+            <div>
+              <label className="block text-sm font-medium text-foreground/80 mb-1">
+                Rubric name
+              </label>
+              <input
+                type="text"
+                name="name"
+                value={newRubricName}
+                onChange={(e) => setNewRubricName(e.target.value)}
+                placeholder="e.g. Design Challenge Rubric"
+                className="w-full px-3 py-2 text-sm text-foreground border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                autoFocus
+                autoComplete="off"
+              />
             </div>
-            <Form
-              method="post"
-              onSubmit={() => setShowModal(false)}
-              className="space-y-4"
-            >
-              <input type="hidden" name="entity" value="rubric" />
-              <input type="hidden" name="intent" value="create" />
-              <div>
-                <label className="block text-sm font-medium text-foreground/80 mb-1">
-                  Rubric name
-                </label>
-                <input
-                  type="text"
-                  name="name"
-                  value={newRubricName}
-                  onChange={(e) => setNewRubricName(e.target.value)}
-                  placeholder="e.g. Design Challenge Rubric"
-                  className="w-full px-3 py-2 text-sm text-foreground border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  autoFocus
-                  autoComplete="off"
-                />
-              </div>
-              <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowModal(false)}
-                  className="px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-gray-300 rounded-md hover:bg-muted/50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={!newRubricName.trim()}
-                  className="px-3 py-2 text-sm font-medium text-white bg-accent-coral rounded-md hover:bg-accent-coral/90 disabled:opacity-50"
-                >
-                  Create
-                </button>
-              </div>
-            </Form>
-          </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setShowModal(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                size="sm"
+                disabled={!newRubricName.trim()}
+              >
+                Create
+              </Button>
+            </div>
+          </Form>
         </div>
-      )}
+      </Modal>
     </div>
   );
 }
@@ -410,13 +386,10 @@ function AgreementsPanel({
           </p>
         </div>
         {canEdit && (
-          <button
-            onClick={() => setShowModal(true)}
-            className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-accent-coral hover:bg-accent-coral/90 shadow-sm"
-          >
-            <Plus className="w-4 h-4 mr-2" />
+          <Button variant="primary" size="sm" onClick={() => setShowModal(true)}>
+            <Plus className="w-4 h-4" />
             New Agreement
-          </button>
+          </Button>
         )}
       </div>
 
@@ -463,69 +436,57 @@ function AgreementsPanel({
         )}
       </div>
 
-      {showModal && (
-        <div
-          className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
-          onClick={() => setShowModal(false)}
-        >
-          <div
-            className="bg-card rounded-lg shadow-xl w-full max-w-sm p-6 space-y-4"
-            onClick={(e) => e.stopPropagation()}
+      <Modal
+        open={showModal}
+        onClose={() => setShowModal(false)}
+        labelledBy="new-agreement-title"
+      >
+        <div className="space-y-4">
+          <h2 id="new-agreement-title" className="text-lg font-semibold text-foreground">
+            New Confidentiality Agreement
+          </h2>
+          <Form
+            method="post"
+            onSubmit={() => setShowModal(false)}
+            className="space-y-4"
           >
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-foreground">
-                New Confidentiality Agreement
-              </h2>
-              <button
-                onClick={() => setShowModal(false)}
-                className="text-muted-foreground/70 hover:text-muted-foreground"
-                aria-label="Close"
-              >
-                <X className="w-5 h-5" />
-              </button>
+            <input type="hidden" name="entity" value="agreement" />
+            <input type="hidden" name="intent" value="create" />
+            <div>
+              <label className="block text-sm font-medium text-foreground/80 mb-1">
+                Agreement name
+              </label>
+              <input
+                type="text"
+                name="name"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="e.g. Hiring Confidentiality — 2026"
+                className="w-full px-3 py-2 text-sm text-foreground border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                autoFocus
+                autoComplete="off"
+              />
             </div>
-            <Form
-              method="post"
-              onSubmit={() => setShowModal(false)}
-              className="space-y-4"
-            >
-              <input type="hidden" name="entity" value="agreement" />
-              <input type="hidden" name="intent" value="create" />
-              <div>
-                <label className="block text-sm font-medium text-foreground/80 mb-1">
-                  Agreement name
-                </label>
-                <input
-                  type="text"
-                  name="name"
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  placeholder="e.g. Hiring Confidentiality — 2026"
-                  className="w-full px-3 py-2 text-sm text-foreground border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  autoFocus
-                  autoComplete="off"
-                />
-              </div>
-              <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowModal(false)}
-                  className="px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-gray-300 rounded-md hover:bg-muted/50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={!newName.trim()}
-                  className="px-3 py-2 text-sm font-medium text-white bg-accent-coral rounded-md hover:bg-accent-coral/90 disabled:opacity-50"
-                >
-                  Create
-                </button>
-              </div>
-            </Form>
-          </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setShowModal(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                size="sm"
+                disabled={!newName.trim()}
+              >
+                Create
+              </Button>
+            </div>
+          </Form>
         </div>
-      )}
+      </Modal>
     </div>
   );
 }

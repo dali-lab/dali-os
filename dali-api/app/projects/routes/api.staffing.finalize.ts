@@ -8,6 +8,8 @@ import {
   ensureChannel,
   inviteUsersToChannel,
   slackErrorMessage,
+  slackConfigured,
+  SLACK_NOT_CONFIGURED_MESSAGE,
 } from "~/slack/lib/slack-client";
 import { resolveSlackIdsForInvite } from "~/members/lib/slack-sync.server";
 import { ensureTeam, addTeamMember } from "~/lib/github";
@@ -290,8 +292,8 @@ export async function action({ request }: Route.ActionArgs) {
   // announcement (each member's domain + level, plus the project's repos). The
   // channel id is reused across runs (stored on Project.slackChannelId).
   if (selected.has("slack")) {
-    if (!process.env.SLACK_BOT_TOKEN) {
-      results.slack = { status: "skipped", message: "SLACK_BOT_TOKEN not set." };
+    if (!slackConfigured()) {
+      results.slack = { status: "skipped" as const, message: SLACK_NOT_CONFIGURED_MESSAGE };
     } else {
       try {
         // Confirmed roster with level + slack id, regardless of whether the

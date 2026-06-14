@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Form, redirect, useLoaderData, useFetcher, Link } from "react-router";
 import type { Route } from "./+types/lead.intern-to-full-cycle.$id";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, forbidden } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import type { Question } from "~/types";
 import type { Prisma } from "~/generated/prisma/client";
@@ -213,7 +213,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
-  if (!(await isCore(auth.user.sub))) return new Response("Forbidden", { status: 403 });
+  if (!(await isCore(auth.user.sub))) return forbidden(request);
 
   const cycleId = params.id!;
   const formData = await request.formData();

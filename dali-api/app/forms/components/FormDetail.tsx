@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { FormBuilderTab } from "~/hiring/components/ChallengeBuilder";
 import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
+import { Button } from "~/components/ui/Button";
 import type { Question } from "~/types";
 import type { loader } from "~/forms/routes/forms.edit.$formId";
 
@@ -199,13 +200,14 @@ export function FormDetail() {
             </p>
           </div>
           {!isEditing && (
-            <button
+            <Button
+              variant="primary"
+              size="sm"
               onClick={() => startEditing()}
-              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-accent-coral hover:bg-accent-coral/90 shadow-sm"
             >
-              <Plus className="w-4 h-4 mr-2" />
+              <Plus className="w-4 h-4" />
               {hasDraft ? "Continue editing draft" : "New version"}
-            </button>
+            </Button>
           )}
         </div>
 
@@ -435,13 +437,14 @@ export function FormDetail() {
                 Get started by building this form.
               </p>
               <div className="mt-6">
-                <button
+                <Button
+                  variant="primary"
+                  size="sm"
                   onClick={() => startEditing()}
-                  className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-accent-coral hover:bg-accent-coral/90"
                 >
-                  <Plus className="w-4 h-4 mr-2" />
+                  <Plus className="w-4 h-4" />
                   Build form
-                </button>
+                </Button>
               </div>
             </div>
           )}

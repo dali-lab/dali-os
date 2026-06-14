@@ -1,4 +1,5 @@
 import { isRouteErrorResponse, Link, useRevalidator } from "react-router";
+import { Button } from "~/components/ui/Button";
 
 type SecondaryAction =
   | { kind: "back-to-portal" }
@@ -59,14 +60,14 @@ export function ApplicantErrorBoundary({
           {description}
         </p>
         <div className="flex flex-wrap items-center justify-center gap-3">
-          <button
-            type="button"
+          <Button
+            variant="primary"
+            size="md"
             onClick={() => revalidator.revalidate()}
             disabled={trying}
-            className="px-6 py-2.5 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition disabled:opacity-50"
           >
             {trying ? "Trying..." : "Try again"}
-          </button>
+          </Button>
           {secondaryAction.kind === "back-to-portal" && (
             <Link
               to="/portal"

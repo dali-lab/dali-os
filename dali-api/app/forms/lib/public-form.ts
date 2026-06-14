@@ -7,6 +7,7 @@
 import { prisma } from "~/lib/db";
 import type { Question } from "~/types";
 import { resolveReferenceOptions } from "./reference-sources";
+import { safeParseJsonString } from "./forms-data";
 import { currentTerm } from "~/lib/roles";
 import { interpretBidForm } from "~/projects/lib/bid-form-interpreter";
 import { validateBids, replaceBidSet } from "~/projects/lib/bid-validation";
@@ -37,15 +38,6 @@ export type PublicForm = {
   // surface "this form can't be completed publicly" rather than silently drop.
   questions: Question[];
 };
-
-function safeParse(s: string | null): unknown {
-  if (!s) return null;
-  try {
-    return JSON.parse(s);
-  } catch {
-    return null;
-  }
-}
 
 // Resolve a public token to its form's latest version. Returns null when the
 // token is unknown, the form is unpublished, or it has no versions yet —
@@ -96,7 +88,7 @@ export async function loadPublicForm(
     formId: form.id,
     name: form.name,
     versionId: version.id,
-    description: safeParse(version.intro),
+    description: safeParseJsonString(version.intro),
     questions: resolved,
   };
 }

@@ -14,7 +14,9 @@ import { isCore } from "~/lib/roles";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { prisma } from "~/lib/db";
 import { promoteToMember } from "~/members/lib/membership.server";
-import { initialsFromName, fullName, primaryEmail } from "~/lib/display";
+import { fullName, primaryEmail } from "~/lib/display";
+import { Avatar } from "~/components/ui/Avatar";
+import { RolePills } from "~/components/ui/RolePills";
 import { LAB_MEMBER_WHERE, MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { ViewToggle, useViewPreference } from "~/components/ViewToggle";
@@ -448,10 +450,15 @@ function MembersTable({ rows }: { rows: MemberRow[] }) {
               </td>
               <td className="px-4 py-2 text-muted-foreground">{m.email ?? "—"}</td>
               <td className="px-4 py-2">
-                <RolePills
-                  coreTitles={m.coreTitles}
-                  domainRoles={m.domainRoles}
-                />
+                {m.coreTitles.length === 0 && m.domainRoles.length === 0 ? (
+                  <span className="text-muted-foreground text-xs">—</span>
+                ) : (
+                  <RolePills
+                    coreTitles={m.coreTitles}
+                    domainRoles={m.domainRoles}
+                    size="md"
+                  />
+                )}
               </td>
             </tr>
           ))}
@@ -478,7 +485,7 @@ function MemberCard({ member }: { member: MemberRow }) {
       to={`/members/${member.id}`}
       className="border border-border rounded-md p-3 bg-background flex items-start gap-3 hover:bg-muted/10 transition-colors"
     >
-      <Avatar photoUrl={member.photoUrl} name={fullName} />
+      <Avatar photoUrl={member.photoUrl} name={fullName} size="md" className="flex-shrink-0" />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2 flex-wrap">
           <span className="font-semibold text-foreground truncate">{fullName}</span>
@@ -493,61 +500,18 @@ function MemberCard({ member }: { member: MemberRow }) {
           <div className="text-xs text-muted-foreground truncate mt-0.5">{member.email}</div>
         )}
         <div className="mt-2">
-          <RolePills
-            coreTitles={member.coreTitles}
-            domainRoles={member.domainRoles}
-          />
+          {member.coreTitles.length === 0 && member.domainRoles.length === 0 ? (
+            <span className="text-muted-foreground text-xs">—</span>
+          ) : (
+            <RolePills
+              coreTitles={member.coreTitles}
+              domainRoles={member.domainRoles}
+              size="md"
+            />
+          )}
         </div>
       </div>
     </Link>
   );
 }
 
-function Avatar({ photoUrl, name }: { photoUrl: string | null; name: string }) {
-  if (photoUrl) {
-    return (
-      <img
-        src={photoUrl}
-        alt=""
-        className="w-10 h-10 rounded-full object-cover flex-shrink-0"
-      />
-    );
-  }
-  return (
-    <div className="w-10 h-10 rounded-full bg-accent-coral/15 text-accent-coral flex items-center justify-center font-bold text-sm flex-shrink-0">
-      {initialsFromName(name)}
-    </div>
-  );
-}
-
-function RolePills({
-  coreTitles,
-  domainRoles,
-}: {
-  coreTitles: string[];
-  domainRoles: { domainName: string; level: string }[];
-}) {
-  if (coreTitles.length === 0 && domainRoles.length === 0) {
-    return <span className="text-muted-foreground text-xs">—</span>;
-  }
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      {coreTitles.map((title) => (
-        <span
-          key={title}
-          className="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded bg-muted text-foreground"
-        >
-          {title}
-        </span>
-      ))}
-      {domainRoles.map((d) => (
-        <span
-          key={d.domainName}
-          className="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded bg-blue-50 text-blue-700 border border-blue-100"
-        >
-          {d.domainName}
-        </span>
-      ))}
-    </div>
-  );
-}

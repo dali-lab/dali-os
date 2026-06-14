@@ -7,7 +7,7 @@ import { requireAuth, forbidden } from "~/lib/auth";
 import { isAdmin, isCore, isAdminViaEnv, currentTerm } from "~/lib/roles";
 import { LAB_MEMBER_WHERE, MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { describeDomainUsage, DOMAIN_USAGE_COUNT_SELECT } from "./api.domains.$domainId";
-import { ALLOWED_LEVELS, parseLevel } from "~/admin-console/lib/eligibility";
+import { ALLOWED_LEVELS, parseLevel, type Level } from "~/admin-console/lib/eligibility";
 import {
   addOrUpdateEligibility,
   removeEligibility,
@@ -102,7 +102,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     })),
     eligibilities: d.eligibilities.map((e) => ({
       id: e.id,
-      level: e.level as "P1" | "P2" | "P3",
+      level: e.level as Level,
       user: {
         id: e.user.id,
         firstName: e.user.firstName,
@@ -312,7 +312,7 @@ function DomainLeadsForDomain({ domain, members }: { domain: DomainWithCounts; m
 // the level menu, while the styled badge underneath renders the current value.
 // Transparent background — distinguished by text color only (P1 muted, P2 teal,
 // P3 coral).
-const LEVEL_BADGE: Record<"P1" | "P2" | "P3", string> = {
+const LEVEL_BADGE: Record<Level, string> = {
   P1: "text-muted-foreground",
   P2: "text-accent-teal",
   P3: "text-accent-coral",
@@ -325,12 +325,12 @@ function EligibilityLevelSelect({
 }: {
   domainId: string;
   userId: string;
-  level: "P1" | "P2" | "P3";
+  level: Level;
 }) {
   const fetcher = useFetcher();
   // Optimistic: reflect the just-submitted level while the request is in flight.
   const pending = fetcher.formData?.get("level");
-  const shown = (typeof pending === "string" ? pending : level) as "P1" | "P2" | "P3";
+  const shown = (typeof pending === "string" ? pending : level) as Level;
   return (
     <fetcher.Form method="post" className="relative inline-flex">
       <input type="hidden" name="intent" value="set-eligibility-level" />

@@ -6,6 +6,7 @@
 
 import { useEffect, useState } from "react";
 import { Modal } from "~/components/Modal";
+import { Button } from "~/components/ui/Button";
 import type { TaskBoardOptions, TaskCardModel, Priority } from "../lib/task-board";
 
 const PRIORITIES: Priority[] = ["Low", "Normal", "High", "Urgent"];
@@ -256,22 +257,22 @@ export function TaskModal({
           </button>
           {canManage &&
             (isCreate ? (
-              <button
-                type="button"
+              <Button
+                variant="primary"
+                size="sm"
                 onClick={() => void handleCreate()}
                 disabled={!title.trim() || saving}
-                className="px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 disabled:opacity-50 transition-colors"
               >
                 {saving ? "Creating…" : "Create task"}
-              </button>
+              </Button>
             ) : (
-              <button
-                type="button"
+              <Button
+                variant="primary"
+                size="sm"
                 onClick={() => void handleSave()}
-                className="px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
               >
                 Save
-              </button>
+              </Button>
             ))}
         </div>
       </div>
