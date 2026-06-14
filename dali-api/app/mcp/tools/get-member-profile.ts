@@ -55,7 +55,6 @@ export async function runGetMemberProfile(callerId: string, input: Input) {
       major: true,
       hometown: true,
       linkedinUrl: true,
-      githubUrl: true,
       personalSite: true,
       daliMember: { select: { id: true, createdAt: true } },
       adminMembership: { select: { id: true } },
@@ -146,7 +145,6 @@ export async function runGetMemberProfile(callerId: string, input: Input) {
     major: user.major,
     hometown: user.hometown,
     linkedinUrl: user.linkedinUrl,
-    githubUrl: user.githubUrl,
     personalSite: user.personalSite,
     joinedAt: user.daliMember.createdAt.toISOString(),
   };

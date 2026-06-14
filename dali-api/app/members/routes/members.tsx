@@ -151,7 +151,6 @@ const PROFILE_TEXT_FIELDS = [
   "major",
   "hometown",
   "linkedinUrl",
-  "githubUrl",
   "personalSite",
 ] as const;
 
@@ -314,7 +313,6 @@ export default function MembersList() {
             <CreateField name="major" label="Major" />
             <CreateField name="hometown" label="Hometown" />
             <CreateField name="linkedinUrl" label="LinkedIn URL" />
-            <CreateField name="githubUrl" label="GitHub URL" />
             <CreateField name="personalSite" label="Personal site" />
           </div>
           <div className="flex justify-end gap-2">

@@ -18,6 +18,7 @@ import { Check, Pencil, X } from "lucide-react";
 
 export function EditableSection({
   title,
+  icon,
   description,
   canEdit,
   children,
@@ -25,6 +26,9 @@ export function EditableSection({
   className = "bg-card border border-border rounded-lg p-4 flex flex-col gap-3",
 }: {
   title: string;
+  /** Optional icon rendered before the title. Use a Lucide icon node sized
+   *  to match the other section headers (`w-4 h-4`). */
+  icon?: ReactNode;
   description?: string;
   /** Loader-determined permission. When false, no Edit button appears. */
   canEdit: boolean;
@@ -68,7 +72,16 @@ export function EditableSection({
     <section className={className}>
       <div className="flex items-start justify-between gap-2">
         <div>
-          <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+          <h2
+            className={
+              icon
+                ? "inline-flex items-center gap-2 font-heading font-semibold text-foreground"
+                : "text-sm font-semibold text-foreground"
+            }
+          >
+            {icon}
+            {title}
+          </h2>
           {description && (
             <p className="text-xs text-muted-foreground mt-0.5">
               {description}

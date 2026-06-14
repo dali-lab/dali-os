@@ -52,9 +52,11 @@ export function PresenceBar({ className, max = 4 }: PresenceBarProps) {
   }, [peers]);
 
   if (!ctx) return null;
-  // Hide entirely when nobody else is here.
+  // Hide entirely when nobody else is here, even while still connecting —
+  // showing a yellow "connecting" dot beside your own avatar is just visual
+  // noise on every page that has nobody to be present with.
   const remoteCount = visiblePeers.filter((p) => !p.isMe).length;
-  if (remoteCount === 0 && ctx.connected) return null;
+  if (remoteCount === 0) return null;
 
   const shown = visiblePeers.slice(0, max);
   const overflow = Math.max(0, visiblePeers.length - shown.length);
