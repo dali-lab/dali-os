@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.projects.$id.documents";
 import { prisma } from "~/lib/db";
-import { requireCore } from "~/lib/auth";
+import { requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 
 // POST /api/projects/:id/documents
@@ -26,7 +26,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (request.method !== "POST") {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
-  const gate = await requireCore(request);
+  const gate = await requireProjectEditAccess(request, params.id!);
   if (!gate.ok) return gate.response;
   const auth = gate.auth;
 

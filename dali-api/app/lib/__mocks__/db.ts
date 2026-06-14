@@ -185,6 +185,7 @@ export const prisma = {
   },
   term: {
     findFirst: vi.fn().mockResolvedValue(null),
+    findMany: vi.fn().mockResolvedValue([]),
   },
   adminMembership: {
     findUnique: vi.fn(),
@@ -193,6 +194,9 @@ export const prisma = {
     findFirst: vi.fn(),
   },
   domainLeadAssignment: {
+    findFirst: vi.fn(),
+  },
+  instructorAssignment: {
     findFirst: vi.fn(),
   },
   $transaction: vi.fn(),

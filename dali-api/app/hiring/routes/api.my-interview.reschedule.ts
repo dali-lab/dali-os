@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { parseJson } from "~/lib/validate";
+import { parseJson, idSchema } from "~/lib/validate";
 import { assignInterviewers } from "~/hiring/lib/scheduling";
 // import { provisionZoomMeeting, deprovisionZoomMeeting } from "~/lib/zoom"; // S2S Zoom not configured yet
 import { sendInterviewCancelEmails, sendInterviewInviteEmails } from "~/hiring/lib/interview-emails";
@@ -13,7 +13,7 @@ const RescheduleSchema = z
   .object({
     newStart: z.string().datetime({ offset: true }),
     newEnd: z.string().datetime({ offset: true }),
-    domainApplicationId: z.string().min(1).max(100),
+    domainApplicationId: idSchema,
     mode: z.enum(["in-person", "online"]).optional(),
   })
   .refine((v) => new Date(v.newEnd) > new Date(v.newStart), {

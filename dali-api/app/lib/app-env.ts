@@ -17,8 +17,11 @@ export function getAppEnv(): AppEnv {
 
 export const DARTMOUTH_EMAIL_DOMAIN = 'dartmouth.edu'
 
-// NOTE: google-workspace.ts duplicate; new canonical home, adoption later
-export const WORKSPACE_DOMAIN = process.env.GOOGLE_WORKSPACE_DOMAIN ?? 'dali.dartmouth.edu'
+// NOTE: google-workspace.ts duplicate; new canonical home, adoption later.
+// Hardcoded (no env override) so this module stays safe to import from client
+// components — top-level `process.env` reads crash the browser bundle. If we
+// ever need the env override, move it into a function or a server-only file.
+export const WORKSPACE_DOMAIN = 'dali.dartmouth.edu'
 
 export const APPLICATIONS_FROM_EMAIL = 'applications@dali.dartmouth.edu'
 

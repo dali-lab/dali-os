@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.epics.$id";
 import { prisma } from "~/lib/db";
-import { requireCore } from "~/lib/auth";
+import { requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 
 // POST   /api/epics/:id  — edit. Body: { title?, status?, targetTermId? }
@@ -48,17 +48,16 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (request.method !== "POST" && request.method !== "DELETE") {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
-  const gate = await requireCore(request);
-  if (!gate.ok) return gate.response;
-
   const epicId = params.id!;
   const epic = await prisma.epic.findUnique({
     where: { id: epicId },
-    select: { id: true, startsAt: true, endsAt: true },
+    select: { id: true, startsAt: true, endsAt: true, projectId: true },
   });
   if (!epic) {
     return withCors(request, Response.json({ error: "Epic not found" }, { status: 404 }));
   }
+  const gate = await requireProjectEditAccess(request, epic.projectId);
+  if (!gate.ok) return gate.response;
 
   if (request.method === "DELETE") {
     await prisma.$transaction([

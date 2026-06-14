@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.tasks.$id";
 import { prisma } from "~/lib/db";
-import { requireCore } from "~/lib/auth";
+import { requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { syncIssueForTask } from "../lib/github-task-sync";
 
@@ -71,7 +71,14 @@ export async function action({ request, params }: Route.ActionArgs) {
       Response.json({ error: "Method not allowed" }, { status: 405 }),
     );
   }
-  const gate = await requireCore(request);
+  const task = await prisma.task.findUnique({
+    where: { id: params.id },
+    select: { id: true, githubIssueNumber: true, projectId: true },
+  });
+  if (!task) {
+    return withCors(request, Response.json({ error: "Task not found" }, { status: 404 }));
+  }
+  const gate = await requireProjectEditAccess(request, task.projectId);
   if (!gate.ok) return gate.response;
 
   let body: unknown;
@@ -82,14 +89,6 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
   if (!isBody(body)) {
     return withCors(request, Response.json({ error: "Invalid body" }, { status: 400 }));
-  }
-
-  const task = await prisma.task.findUnique({
-    where: { id: params.id },
-    select: { id: true, githubIssueNumber: true },
-  });
-  if (!task) {
-    return withCors(request, Response.json({ error: "Task not found" }, { status: 404 }));
   }
 
   // Build a partial update: a key being present (even null) is a write; an

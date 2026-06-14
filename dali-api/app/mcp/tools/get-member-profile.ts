@@ -4,7 +4,7 @@
 // own profile. Requires the `mcp:read` scope.
 
 import { prisma } from "~/lib/db";
-import { currentTerm } from "~/lib/roles";
+import { currentTerm, isAdminViaEnv } from "~/lib/roles";
 
 export const GET_MEMBER_PROFILE_TOOL = {
   name: "get_member_profile",
@@ -88,8 +88,8 @@ export async function runGetMemberProfile(callerId: string, input: Input) {
     throw new MemberNotFoundError(input.memberId);
   }
 
-  const isAdminUser = user.adminMembership !== null;
-  const isCoreUser = user.coreAssignments.length > 0;
+  const isAdminUser = user.adminMembership !== null || isAdminViaEnv(user.id);
+  const isCoreUser = isAdminUser || user.coreAssignments.length > 0;
   const isDomainLeadUser = user.domainLeadAssignmentsAsUser.length > 0;
   const tier: "admin" | "core" | "domain-lead" | "member" = isAdminUser
     ? "admin"

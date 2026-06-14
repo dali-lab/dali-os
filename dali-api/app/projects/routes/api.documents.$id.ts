@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.documents.$id";
 import { prisma } from "~/lib/db";
-import { requireCore } from "~/lib/auth";
+import { requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { logAuditEvent } from "~/lib/audit";
 
@@ -25,18 +25,17 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (request.method !== "POST" && request.method !== "DELETE") {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
-  const gate = await requireCore(request);
-  if (!gate.ok) return gate.response;
-  const auth = gate.auth;
-
   const pageId = params.id!;
   const page = await prisma.page.findUnique({
     where: { id: pageId },
-    select: { id: true, workspaceType: true },
+    select: { id: true, workspaceType: true, workspaceId: true },
   });
-  if (!page || page.workspaceType !== "Project") {
+  if (!page || page.workspaceType !== "Project" || !page.workspaceId) {
     return withCors(request, Response.json({ error: "Document not found" }, { status: 404 }));
   }
+  const gate = await requireProjectEditAccess(request, page.workspaceId);
+  if (!gate.ok) return gate.response;
+  const auth = gate.auth;
 
   if (request.method === "DELETE") {
     await prisma.page.update({
