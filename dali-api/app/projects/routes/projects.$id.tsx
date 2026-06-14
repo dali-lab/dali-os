@@ -20,7 +20,9 @@ import { uploadFileToS3, formatBytes } from "~/lib/upload-client";
 import type { Route } from "./+types/projects.$id";
 import { prisma } from "~/lib/db";
 import { ensureProjectGroup } from "~/lib/groups";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
+import { fullName } from "~/lib/display";
+import { USER_NAME_SELECT } from "~/lib/prisma-shapes";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { ProjectImageBanner } from "../components/ProjectImageBanner";
 import { Markdown } from "~/components/Markdown";
@@ -82,7 +84,8 @@ const TAB_LABELS: Record<Tab, string> = {
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
-  if (auth.user.type === "applicant") return redirect("/portal");
+  const portalRedirect = redirectApplicantToPortal(auth);
+  if (portalRedirect) return portalRedirect;
 
   const project = await prisma.project.findUnique({
     where: { id: params.id },
@@ -124,7 +127,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           userId: true,
           termId: true,
           domainId: true,
-          user: { select: { id: true, firstName: true, lastName: true } },
+          user: { select: USER_NAME_SELECT },
           term: { select: { code: true, sortKey: true } },
           domain: { select: { id: true, name: true } },
         },
@@ -172,7 +175,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           domain: { select: { id: true, displayName: true } },
           assignees: {
             select: {
-              user: { select: { id: true, firstName: true, lastName: true } },
+              user: { select: USER_NAME_SELECT },
             },
           },
         },
@@ -321,7 +324,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     sprintId: t.sprintId,
     assignees: t.assignees.map((a) => ({
       id: a.user.id,
-      name: `${a.user.firstName} ${a.user.lastName}`.trim(),
+      name: fullName(a.user),
     })),
     domain: t.domain
       ? { id: t.domain.id, name: t.domain.displayName }
@@ -337,7 +340,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   for (const a of project.assignments) {
     const id = a.user.id;
     if (!memberMap.has(id)) {
-      memberMap.set(id, `${a.user.firstName} ${a.user.lastName}`.trim());
+      memberMap.set(id, fullName(a.user));
     }
   }
   const boardOptions: TaskBoardOptions = {
@@ -415,7 +418,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     teamByTerm.get(key)!.members.push({
       assignmentId: a.id,
       userId: a.userId,
-      name: `${a.user.firstName} ${a.user.lastName}`.trim(),
+      name: fullName(a.user),
       domain: a.domain.name,
       domainId: a.domainId,
       level: a.level,
@@ -575,7 +578,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
-  if (auth.user.type === "applicant") return redirect("/portal");
+  const portalRedirect = redirectApplicantToPortal(auth);
+  if (portalRedirect) return portalRedirect;
 
   // Content edits are open to Core/Admin or anyone staffed on the project;
   // scope/domain settings (scopesBulk, domains, terms) stay Core/Admin only.

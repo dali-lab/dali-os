@@ -3,6 +3,7 @@ import type { Route } from "./+types/admin-console.activity";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
+import { fullName } from "~/lib/display";
 import { AUDIT_ACTIONS } from "~/lib/audit";
 import {
   parseAuditFilters,
@@ -90,7 +91,7 @@ type PersonRow = { firstName: string; lastName: string; daliEmail: string | null
 
 function displayPerson(u: PersonRow | null, fallbackId: string | null) {
   if (u) {
-    const name = `${u.firstName} ${u.lastName}`.trim();
+    const name = fullName(u);
     return <span>{name || u.daliEmail || "—"}</span>;
   }
   // Has an id but couldn't resolve it (User row missing, or targetId points

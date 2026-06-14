@@ -1,6 +1,10 @@
 import { prisma } from "~/lib/db";
 import { cycleSortKeyRange } from "~/lib/core-cycle";
 
+function getAdminUserIdsFromEnv(): string[] {
+  return (process.env.ADMIN_USER_IDS ?? "").split(",").filter(Boolean);
+}
+
 // Phase 2 rewrite: role flags derived from the new typed assignment tables
 // (AdminMembership, CoreAssignment, DomainLeadAssignment) rather than the
 // dropped DALIMember.roles[] enum. See V0_PLAN.md §"Identity model".
@@ -31,9 +35,7 @@ export interface UserRoles {
  * Use this in layout loaders instead of calling individual checks separately.
  */
 export async function getUserRoles(userId: string): Promise<UserRoles> {
-  const envIds = (process.env.ADMIN_USER_IDS ?? "")
-    .split(",")
-    .filter(Boolean);
+  const envIds = getAdminUserIdsFromEnv();
 
   const cycleTermIds = await getActiveCoreCycleTermIds();
 
@@ -82,9 +84,7 @@ export async function getUserRoles(userId: string): Promise<UserRoles> {
  * (e.g. seed hasn't run), Admin is the only path that passes.
  */
 export async function isCore(userId: string): Promise<boolean> {
-  const envIds = (process.env.ADMIN_USER_IDS ?? "")
-    .split(",")
-    .filter(Boolean);
+  const envIds = getAdminUserIdsFromEnv();
   if (envIds.includes(userId)) return true;
   const admin = await prisma.adminMembership.findUnique({
     where: { userId },
@@ -102,9 +102,7 @@ export async function isCore(userId: string): Promise<boolean> {
 
 /** Admin: full-time staff. */
 export async function isAdmin(userId: string): Promise<boolean> {
-  const envIds = (process.env.ADMIN_USER_IDS ?? "")
-    .split(",")
-    .filter(Boolean);
+  const envIds = getAdminUserIdsFromEnv();
   if (envIds.includes(userId)) return true;
   const row = await prisma.adminMembership.findUnique({
     where: { userId },

@@ -10,6 +10,7 @@ import { upsertUserFromGoogle } from "~/lib/user-provisioning";
 import { issueSession } from "~/lib/session";
 import { setSessionCookie } from "~/lib/cookies";
 import { getClientIp } from "~/lib/request-meta";
+import { getApiBaseUrl, getCasBaseUrl, getFrontendUrl } from "~/lib/app-env";
 
 export async function action() {
   return new Response("Method not allowed", { status: 405 });
@@ -17,8 +18,8 @@ export async function action() {
 
 export async function loader({ request }: Route.LoaderArgs) {
   const url = new URL(request.url);
-  const frontendUrl = process.env.FRONTEND_URL ?? "http://localhost:5173";
-  const apiBase = process.env.API_BASE_URL ?? "http://localhost:3001";
+  const frontendUrl = getFrontendUrl();
+  const apiBase = getApiBaseUrl();
 
   const googleCode = url.searchParams.get("code");
   const sessionId = url.searchParams.get("state"); // passed session.id as Google's state
@@ -103,8 +104,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       data: { linkUserId: user.id },
     });
 
-    const casBase =
-      process.env.CAS_BASE_URL ?? "https://login.dartmouth.edu/cas";
+    const casBase = getCasBaseUrl();
     const serviceUrl = `${apiBase}/oauth/callback/cas?session_id=${session.id}`;
     return new Response(null, {
       status: 302,

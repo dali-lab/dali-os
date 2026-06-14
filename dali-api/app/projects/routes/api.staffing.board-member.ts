@@ -1,6 +1,7 @@
 import type { Route } from "./+types/api.staffing.board-member";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, forbidden } from "~/lib/auth";
+import { primaryEmail } from "~/lib/display";
 import { canManageStaffing } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { logAuditEvent } from "~/lib/audit";
@@ -30,7 +31,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return withCors(request, auth.response);
   if (!(await canManageStaffing(auth.user.sub))) {
-    return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+    return forbidden(request);
   }
 
   const url = new URL(request.url);
@@ -99,7 +100,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     .map((u) => ({
       userId: u.id,
       name: `${u.firstName} ${u.lastName}`.trim(),
-      email: u.daliEmail ?? u.dartmouthEmail,
+      email: primaryEmail(u) ?? null,
     }));
 
   return withCors(request, Response.json({ results }));
@@ -120,7 +121,7 @@ export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return withCors(request, auth.response);
   if (!(await canManageStaffing(auth.user.sub))) {
-    return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+    return forbidden(request);
   }
   if (request.method !== "POST" && request.method !== "DELETE") {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));

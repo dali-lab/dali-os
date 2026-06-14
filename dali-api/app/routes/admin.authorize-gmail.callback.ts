@@ -5,6 +5,8 @@
 import { requireAuth } from "~/lib/auth";
 import { isCore } from '~/lib/roles'
 import { prisma } from '~/lib/db'
+import { getApiBaseUrl } from '~/lib/app-env'
+import { exchangeGoogleCode, GoogleOAuthError } from '~/lib/google-oauth'
 
 const GMAIL_STATE_COOKIE = '__dali_gmail_oauth_state'
 const GMAIL_USER = 'applications@dali.dartmouth.edu'
@@ -30,7 +32,7 @@ export async function loader({ request }: { request: Request }) {
   }
 
   const url = new URL(request.url)
-  const apiBase = process.env.API_BASE_URL ?? 'http://localhost:3001'
+  const apiBase = getApiBaseUrl()
   const clientId = process.env.GMAIL_CLIENT_ID ?? process.env.GOOGLE_CLIENT_ID!
   const clientSecret = process.env.GMAIL_CLIENT_SECRET ?? process.env.GOOGLE_CLIENT_SECRET!
 
@@ -57,27 +59,25 @@ export async function loader({ request }: { request: Request }) {
   }
 
   // Exchange code for tokens
-  const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
+  let tokens
+  try {
+    tokens = await exchangeGoogleCode({
       code,
-      client_id: clientId,
-      client_secret: clientSecret,
-      redirect_uri: `${apiBase}/admin/authorize-gmail/callback`,
-      grant_type: 'authorization_code',
-    }),
-  })
-
-  if (!tokenRes.ok) {
-    console.error('Gmail token exchange failed:', await tokenRes.text())
-    return new Response(null, {
-          status: 302,
-          headers: { 'Set-Cookie': clearCookie, Location: '/hiring/emails?gmail_error=token_exchange_failed' },
-        })
+      redirectUri: `${apiBase}/admin/authorize-gmail/callback`,
+      clientId,
+      clientSecret,
+    })
+  } catch (err) {
+    if (err instanceof GoogleOAuthError) {
+      console.error('Gmail token exchange failed:', err.upstreamBody ?? err.message)
+      return new Response(null, {
+            status: 302,
+            headers: { 'Set-Cookie': clearCookie, Location: '/hiring/emails?gmail_error=token_exchange_failed' },
+          })
+    }
+    throw err
   }
 
-  const tokens = await tokenRes.json()
   const refreshToken = tokens.refresh_token as string | undefined
 
   if (!refreshToken) {

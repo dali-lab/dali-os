@@ -5,7 +5,7 @@
 
 import { redirect } from "react-router";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { parseSessionCookie } from "~/lib/cookies";
 import { getPresenceUser } from "~/lib/presence-user";
@@ -107,7 +107,8 @@ export async function loadProfilePage({
 }): Promise<ProfilePageData> {
   const auth = await requireAuth(request);
   if (!auth.ok) throw redirect("/login");
-  if (auth.user.type === "applicant") throw redirect("/portal");
+  const portalRedirect = redirectApplicantToPortal(auth);
+  if (portalRedirect) throw portalRedirect;
 
   const isSelf = auth.user.sub === targetId;
 
@@ -257,7 +258,8 @@ export async function runProfileAction({
 }): Promise<ProfileActionResult | Response> {
   const auth = await requireAuth(request);
   if (!auth.ok) throw redirect("/login");
-  if (auth.user.type === "applicant") throw redirect("/portal");
+  const portalRedirect = redirectApplicantToPortal(auth);
+  if (portalRedirect) throw portalRedirect;
 
   const form = await request.formData();
   const intent = String(form.get("intent") ?? "profile");

@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/projects.project-bids";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
+import { parseFormDataJson } from "~/lib/safe-json";
 import { canManageStaffing, canViewStaffing, currentTerm } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { ensureStaffingCycle } from "../lib/staffing-cycle";
@@ -37,7 +38,8 @@ export const meta: Route.MetaFunction = () => [
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
-  if (auth.user.type === "applicant") return redirect("/portal");
+  const portalRedirect = redirectApplicantToPortal(auth);
+  if (portalRedirect) return portalRedirect;
   if (!(await canViewStaffing(auth.user.sub))) return redirect("/");
 
   const {
@@ -206,7 +208,7 @@ export async function action({ request }: Route.ActionArgs) {
         { error: "Bind a form before mapping its columns." },
         { status: 400 },
       );
-    const mapping = parseColumnMapping(safeJsonParse(form.get("mapping")));
+    const mapping = parseColumnMapping(parseFormDataJson(form.get("mapping")));
     if (!mapping)
       return Response.json({ error: "Invalid mapping." }, { status: 400 });
     // Validate against the bound form's current questions before saving.
@@ -231,15 +233,6 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   return Response.json({ error: "Unknown intent" }, { status: 400 });
-}
-
-function safeJsonParse(v: FormDataEntryValue | null): unknown {
-  if (typeof v !== "string") return null;
-  try {
-    return JSON.parse(v);
-  } catch {
-    return null;
-  }
 }
 
 export default function ProjectBidsDatabase() {

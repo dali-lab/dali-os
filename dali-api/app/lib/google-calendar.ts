@@ -1,5 +1,6 @@
 import { prisma } from "~/lib/db";
 import { decrypt, encrypt } from "~/lib/calendar-crypto";
+import { GoogleOAuthError, refreshGoogleToken } from "~/lib/google-oauth";
 
 interface BusyEvent {
   start: string; // ISO
@@ -43,20 +44,19 @@ function serializeStoredTokens(t: StoredTokens): string {
 }
 
 async function refreshAndPersist(linkId: string, refreshToken: string): Promise<string> {
-  const res = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      client_id: process.env.GOOGLE_CLIENT_ID!,
-      client_secret: process.env.GOOGLE_CLIENT_SECRET!,
-      refresh_token: refreshToken,
-      grant_type: "refresh_token",
-    }),
-  });
-  if (!res.ok) {
-    throw new Error(`Google token refresh failed (${res.status})`);
+  let data;
+  try {
+    data = await refreshGoogleToken({
+      refreshToken,
+      clientId: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+    });
+  } catch (err) {
+    if (err instanceof GoogleOAuthError) {
+      throw new Error(`Google token refresh failed (${err.upstreamStatus ?? "?"})`);
+    }
+    throw err;
   }
-  const data = (await res.json()) as { access_token: string; expires_in: number };
   const expiresAt = new Date(Date.now() + data.expires_in * 1000).toISOString();
   const stored: StoredTokens = {
     accessToken: data.access_token,

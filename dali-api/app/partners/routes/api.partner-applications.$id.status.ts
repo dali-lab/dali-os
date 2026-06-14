@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.partner-applications.$id.status";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, forbidden } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { isPartnerApplicationStatus } from "../lib/partner-application";
@@ -25,10 +25,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     );
   }
   if (!(await isCore(auth.user.sub))) {
-    return withCors(
-      request,
-      Response.json({ error: "Forbidden" }, { status: 403 }),
-    );
+    return forbidden(request);
   }
 
   let body: unknown;

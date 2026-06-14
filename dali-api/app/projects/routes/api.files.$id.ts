@@ -1,8 +1,8 @@
 import type { Route } from "./+types/api.files.$id";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
-import { isCore } from "~/lib/roles";
+import { requireAuth, requireCore } from "~/lib/auth";
+import { UNKNOWN_LABEL } from "~/lib/display";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { logAuditEvent } from "~/lib/audit";
 import { getDownloadUrl } from "~/lib/s3";
@@ -75,7 +75,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       fileName: v.fileName,
       contentType: v.contentType,
       sizeBytes: v.sizeBytes,
-      uploadedBy: nameById.get(v.uploadedById) ?? "Unknown",
+      uploadedBy: nameById.get(v.uploadedById) ?? UNKNOWN_LABEL,
       createdAt: v.createdAt.toISOString(),
       isCurrent: v.id === file.currentVersionId,
       downloadUrl: await getDownloadUrl(v.s3Key),
@@ -89,14 +89,12 @@ export async function action({ request, params }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
   if (preflight) return preflight;
 
-  const auth = await requireAuth(request);
-  if (!auth.ok) return withCors(request, auth.response);
   if (request.method !== "POST" && request.method !== "DELETE") {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
-  if (!(await isCore(auth.user.sub))) {
-    return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
-  }
+  const gate = await requireCore(request);
+  if (!gate.ok) return gate.response;
+  const auth = gate.auth;
 
   const file = await prisma.projectFile.findUnique({
     where: { id: params.id },

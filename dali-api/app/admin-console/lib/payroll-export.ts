@@ -1,4 +1,5 @@
 import { prisma } from "~/lib/db";
+import { rowsToCsv as rowsToCsvShared } from "~/lib/csv";
 
 // ─── Constants per payroll spec ──────────────────────────────────────────────
 // Single hardcoded primary/secondary supervisor for the whole lab. Per spec,
@@ -50,14 +51,6 @@ export type PayrollRow = {
   // a missing value is just an empty string.
   warnings: string[];
 };
-
-// RFC 4180 quoting: wrap in quotes if value contains a comma, quote, or newline;
-// double up internal quotes.
-function csvCell(raw: string): string {
-  if (raw === "") return "";
-  if (/[",\n\r]/.test(raw)) return `"${raw.replace(/"/g, '""')}"`;
-  return raw;
-}
 
 export function formatDate(d: Date): string {
   // ISO YYYY-MM-DD; Dartmouth payroll accepts this format.
@@ -294,35 +287,28 @@ export async function buildPayrollRows(termId: string): Promise<PayrollRow[]> {
 }
 
 export function rowsToCsv(rows: PayrollRow[]): string {
-  const lines: string[] = [];
-  lines.push(CSV_HEADERS.map(csvCell).join(","));
+  const allRows: unknown[][] = [CSV_HEADERS.slice()];
   for (const r of rows) {
-    lines.push(
-      [
-        r.netId,
-        r.firstName,
-        r.lastName,
-        r.jobId,
-        PRIMARY_SUPERVISOR_NETID,
-        SECONDARY_SUPERVISOR_NETID,
-        r.hourlyWage,
-        ANTICIPATED_HOURS_PER_WEEK,
-        r.hireStart,
-        r.hireEnd,
-        r.chartStringType,
-        r.chartString,
-        "", // Student Phone Number — blank per spec
-        "", // Term — blank per spec
-        "", // Max Hours – PTO — blank per spec
-        "", // Max Hours – Mental Health — blank per spec
-      ]
-        .map(csvCell)
-        .join(","),
-    );
+    allRows.push([
+      r.netId,
+      r.firstName,
+      r.lastName,
+      r.jobId,
+      PRIMARY_SUPERVISOR_NETID,
+      SECONDARY_SUPERVISOR_NETID,
+      r.hourlyWage,
+      ANTICIPATED_HOURS_PER_WEEK,
+      r.hireStart,
+      r.hireEnd,
+      r.chartStringType,
+      r.chartString,
+      "", // Student Phone Number — blank per spec
+      "", // Term — blank per spec
+      "", // Max Hours – PTO — blank per spec
+      "", // Max Hours – Mental Health — blank per spec
+    ]);
   }
-  // RFC 4180 uses CRLF; payroll importers handle either, CRLF is safer for
-  // Excel on Windows.
-  return lines.join("\r\n") + "\r\n";
+  return rowsToCsvShared(allRows);
 }
 
 // Picks the term that contains today, falling back to the most recent term.

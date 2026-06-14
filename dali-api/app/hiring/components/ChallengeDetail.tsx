@@ -6,15 +6,7 @@ import { RichTextViewer, isEmptyDoc } from '~/components/RichTextViewer'
 import { ChallengePreviewModal } from '~/hiring/components/ChallengePreviewModal'
 import type { Question } from '~/types'
 import type { loader } from '~/hiring/routes/challenges.$id'
-
-function formatDateTime(iso: string | Date) {
-  const d = new Date(iso)
-  return (
-    d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) +
-    ' at ' +
-    d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
-  )
-}
+import { formatDateTime } from '~/lib/display'
 
 export function resolveDuplicateDomainId(version: { domainId: string | null }): string {
   // A general version's domainId is null; coerce to '' so the form's selected

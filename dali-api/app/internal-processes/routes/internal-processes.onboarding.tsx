@@ -1,6 +1,6 @@
 import { redirect, useFetcher, useLoaderData, useNavigate, useSearchParams } from "react-router";
 import type { Route } from "./+types/internal-processes.onboarding";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, unauthorized, forbidden } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 
@@ -131,9 +131,9 @@ export async function loader({ request }: Route.LoaderArgs) {
 // checking, or null when unchecking.
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  if (!auth.ok) return unauthorized(request);
   if (!(await isCore(auth.user.sub))) {
-    return Response.json({ error: "Forbidden" }, { status: 403 });
+    return forbidden(request);
   }
 
   const form = await request.formData();

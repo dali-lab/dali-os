@@ -9,16 +9,18 @@ import {
   useSearchParams,
 } from "react-router";
 import type { Route } from "./+types/members";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { prisma } from "~/lib/db";
 import { promoteToMember } from "~/members/lib/membership.server";
-import { initialsFromName } from "~/lib/display";
+import { initialsFromName, fullName, primaryEmail } from "~/lib/display";
+import { LAB_MEMBER_WHERE, MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { ViewToggle, useViewPreference } from "~/components/ViewToggle";
 import { TermFilter } from "~/components/TermFilter";
 import { resolveTermFilter } from "~/lib/terms";
+import { deriveCoreTitles } from "~/lib/core-titles";
 
 export const meta: Route.MetaFunction = () => [{ title: "Members · DALI OS" }];
 
@@ -39,7 +41,8 @@ type MemberRow = {
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
-  if (auth.user.type === "applicant") return redirect("/portal");
+  const portalRedirect = redirectApplicantToPortal(auth);
+  if (portalRedirect) return portalRedirect;
 
   const { terms, selected, termId, isAll } = await resolveTermFilter(request);
 
@@ -76,8 +79,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   // AdminMembership + CoreAssignment per the Phase 2 identity model — see
   // app/admin-console/routes/api.members.ts for the canonical shape.
   const users = await prisma.user.findMany({
-    where: { daliMember: { isNot: null }, ...activeInTerm, ...inDomain },
-    orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+    where: { ...LAB_MEMBER_WHERE, ...activeInTerm, ...inDomain },
+    orderBy: MEMBER_LIST_ORDER_BY,
     select: {
       id: true,
       firstName: true,
@@ -101,7 +104,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     id: u.id,
     firstName: u.firstName,
     lastName: u.lastName,
-    email: u.daliEmail ?? u.dartmouthEmail,
+    email: primaryEmail(u),
     pronouns: u.pronouns,
     classYear: u.classYear,
     photoUrl: await resolvePhotoUrl(u.photoUrl),
@@ -128,21 +131,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   };
 }
 
-// Distinct Core lead titles for a member's Roles column. Title-less Core
-// assignments collapse to a single "Core" pill so a Core member without a
-// specific title still shows up (rather than contributing no pill at all).
-function deriveCoreTitles(
-  assignments: { leadTitle: string | null }[],
-): string[] {
-  if (assignments.length === 0) return [];
-  const titles = new Set(
-    assignments.map((a) => a.leadTitle).filter((t): t is string => !!t),
-  );
-  const hasUntitled = assignments.some((a) => !a.leadTitle);
-  if (hasUntitled) titles.add("Core");
-  return Array.from(titles);
-}
-
 // Profile fields offered on the create form. Mirrors the editable text fields
 // on members/$id so a member can be filled in fully at creation time; all are
 // optional except first/last name. classYear is handled separately (numeric).
@@ -157,7 +145,8 @@ const PROFILE_TEXT_FIELDS = [
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
-  if (auth.user.type === "applicant") return redirect("/portal");
+  const portalRedirect = redirectApplicantToPortal(auth);
+  if (portalRedirect) return portalRedirect;
   if (!(await isCore(auth.user.sub))) {
     return { error: "You don't have permission to add members." };
   }
@@ -449,7 +438,7 @@ function MembersTable({ rows }: { rows: MemberRow[] }) {
               key={m.id}
               onClick={() => {
                 const url = `/members/${m.id}`;
-                const label = `${m.firstName ?? ""} ${m.lastName ?? ""}`.trim() || "Member";
+                const label = fullName(m) || "Member";
                 if (!requestOpenTabIfEmbedded(url, label)) navigate(url);
               }}
               className="border-t border-border hover:bg-muted/20 cursor-pointer"

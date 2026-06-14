@@ -15,6 +15,7 @@ import { InterviewSlotPicker } from "~/hiring/components/InterviewSlotPicker";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 import { Confetti } from "~/components/Confetti";
 import { formatInterviewDate, formatInterviewTimeRange } from "~/hiring/lib/interview-time";
+import { APPLICATIONS_FROM_EMAIL } from "~/lib/app-env";
 
 export const meta: Route.MetaFunction = () => [{ title: "Applicant portal · DALI OS" }];
 
@@ -563,8 +564,8 @@ function InvitedToInterviewView({
 
       <p className="text-sm text-muted-foreground mt-6">
         Can't attend in-person?{" "}
-        <a href="mailto:applications@dali.dartmouth.edu" className="underline text-dark-blue hover:text-accent-coral">
-          Email applications@dali.dartmouth.edu
+        <a href={`mailto:${APPLICATIONS_FROM_EMAIL}`} className="underline text-dark-blue hover:text-accent-coral">
+          Email {APPLICATIONS_FROM_EMAIL}
         </a>{" "}
         to request an online interview.
       </p>

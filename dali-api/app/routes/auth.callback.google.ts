@@ -5,6 +5,7 @@ import { setSessionCookie } from "~/lib/cookies";
 import { getClientIp } from "~/lib/request-meta";
 import { logAuditEvent } from "~/lib/audit";
 import { upsertUserFromGoogle } from "~/lib/user-provisioning";
+import { getApiBaseUrl, getCasBaseUrl } from "~/lib/app-env";
 
 const OAUTH_STATE_COOKIE = "__dali_oauth_state";
 
@@ -24,7 +25,7 @@ export async function action() {
 
 export async function loader({ request }: Route.LoaderArgs) {
   const url = new URL(request.url);
-  const apiBase = process.env.API_BASE_URL ?? "http://localhost:3001";
+  const apiBase = getApiBaseUrl();
 
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
@@ -142,8 +143,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   // the merge / no-op / attach cases. Mirrors the MCP-provider flow in
   // oauth.callback.google.ts.
   if (!user.netId) {
-    const casBase =
-      process.env.CAS_BASE_URL ?? "https://login.dartmouth.edu/cas";
+    const casBase = getCasBaseUrl();
     const serviceUrl = `${apiBase}/auth/callback/cas?link=1`;
     headers.set(
       "Location",

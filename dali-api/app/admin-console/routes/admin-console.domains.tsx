@@ -3,8 +3,9 @@ import { redirect, useLoaderData, useFetcher } from "react-router";
 import type { Route } from "./+types/admin-console.domains";
 import { prisma } from "~/lib/db";
 import { ensureDomainGroup } from "~/lib/groups";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, forbidden } from "~/lib/auth";
 import { isAdmin, isCore, currentTerm } from "~/lib/roles";
+import { LAB_MEMBER_WHERE, MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { describeDomainUsage, DOMAIN_USAGE_COUNT_SELECT } from "./api.domains.$domainId";
 import { ALLOWED_LEVELS, parseLevel } from "~/admin-console/lib/eligibility";
 import {
@@ -33,13 +34,13 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const [users, domains, term] = await Promise.all([
     prisma.user.findMany({
-      where: { daliMember: { isNot: null } },
+      where: { ...LAB_MEMBER_WHERE },
       include: {
         adminMembership: { select: { id: true } },
         coreAssignments: { select: { id: true, termId: true, leadTitle: true } },
         domainLeadAssignmentsAsUser: { include: { domain: true } },
       },
-      orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+      orderBy: MEMBER_LIST_ORDER_BY,
     }),
     prisma.domain.findMany({
       orderBy: { displayName: "asc" },
@@ -118,7 +119,7 @@ export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
   if (!(await isCore(auth.user.sub)))
-    return Response.json({ error: "Forbidden" }, { status: 403 });
+    return forbidden(request);
 
   const formData = await request.formData();
   const intent = formData.get("intent") as string;
@@ -127,7 +128,7 @@ export async function action({ request }: Route.ActionArgs) {
   // hiring-cycle state. Lead/eligibility assignments are open to Core.
   const adminOnly = intent === "create-domain" || intent === "delete-domain";
   if (adminOnly && !(await isAdmin(auth.user.sub)))
-    return Response.json({ error: "Forbidden" }, { status: 403 });
+    return forbidden(request);
 
   if (intent === "create-domain") {
     const name = String(formData.get("name") ?? "").trim();

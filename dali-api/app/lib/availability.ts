@@ -2,7 +2,7 @@ import rrulePkg from "rrule";
 import type { RRule as RRuleType } from "rrule";
 import { prisma } from "~/lib/db";
 import { fetchBusyEvents } from "~/lib/google-calendar";
-import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
+import { APPLICATION_TZ as DEFAULT_TIMEZONE, getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
 
 const { RRule, rrulestr } = rrulePkg as unknown as {
   RRule: typeof import("rrule").RRule;
@@ -241,7 +241,6 @@ function formatDtstart(d: Date): string {
 // per-day grid bucketing; this module owns the cross-user math.
 
 const DEFAULT_BUFFER_MIN = 15;
-const DEFAULT_TIMEZONE = "America/New_York";
 
 /**
  * Load + compute free/busy for a single user across the given window.

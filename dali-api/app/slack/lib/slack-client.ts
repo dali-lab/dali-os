@@ -1,4 +1,6 @@
 import { WebClient } from "@slack/web-api";
+import { sanitizeChannelName } from "./channel-name";
+export { sanitizeChannelName };
 
 export type SlackThreadMessage = {
   ts: string;
@@ -215,13 +217,22 @@ export function slackMissingScopeMsg(err: unknown, raw: string): string {
   return `${raw} — the Slack bot token is missing a required scope. Check the call's needed scope in the Slack app config (Bot Token Scopes) and reinstall.`;
 }
 
-function sanitizeChannelName(name: string): string {
-  // Slack channel names: lowercase, no spaces/periods, ≤80 chars, hyphens ok.
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 80);
+
+// Shared Slack/integration error formatter: maps common Slack API error codes
+// (and the GitHub teams "Not Found" variant) to actionable hints so leads can
+// self-diagnose without reading API docs. Falls back to the raw message.
+export function slackErrorMessage(err: unknown, raw?: string): string {
+  const message = raw ?? (err instanceof Error ? err.message : String(err));
+  if (/missing_scope/i.test(message)) {
+    return slackMissingScopeMsg(err, message);
+  }
+  if (/not_in_channel|channel_not_found/i.test(message)) {
+    return `${message} — the Slack bot isn't a member of that channel. Invite the bot to it, or let finalize create the channel.`;
+  }
+  if (/\bNot Found\b/.test(message) && /teams\/members/.test(message)) {
+    return `${message} — couldn't add a GitHub team member. Check that the GitHub App is installed on GITHUB_ORG with the "Members: read & write" org permission, and that each member's githubUsername is a real GitHub login.`;
+  }
+  return message;
 }
 
 async function findChannelByName(

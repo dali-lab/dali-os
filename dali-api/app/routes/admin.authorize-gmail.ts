@@ -5,6 +5,8 @@
 
 import { requireAuth } from "~/lib/auth";
 import { isCore } from '~/lib/roles'
+import { getApiBaseUrl, APPLICATIONS_FROM_EMAIL } from '~/lib/app-env'
+import { buildGoogleAuthUrl } from '~/lib/google-oauth'
 import { randomBytes } from 'node:crypto'
 
 const GMAIL_STATE_COOKIE = '__dali_gmail_oauth_state'
@@ -14,7 +16,7 @@ const SCOPES = [
   'https://www.googleapis.com/auth/calendar',
   'openid',
   'email',
-].join(' ')
+]
 
 export async function loader({ request }: { request: Request }) {
   const auth = await requireAuth(request)
@@ -26,19 +28,18 @@ export async function loader({ request }: { request: Request }) {
     return new Response(null, { status: 302, headers: { Location: '/' } })
   }
 
-  const apiBase = process.env.API_BASE_URL ?? 'http://localhost:3001'
+  const apiBase = getApiBaseUrl()
   const clientId = process.env.GMAIL_CLIENT_ID ?? process.env.GOOGLE_CLIENT_ID!
 
   const state = randomBytes(16).toString('hex')
-  const params = new URLSearchParams({
-    client_id: clientId,
-    redirect_uri: `${apiBase}/admin/authorize-gmail/callback`,
-    response_type: 'code',
-    scope: SCOPES,
-    access_type: 'offline',
-    prompt: 'consent',
+  const authUrl = buildGoogleAuthUrl({
+    clientId,
+    redirectUri: `${apiBase}/admin/authorize-gmail/callback`,
+    scopes: SCOPES,
     state,
-    login_hint: 'applications@dali.dartmouth.edu',
+    accessType: 'offline',
+    prompt: 'consent',
+    loginHint: APPLICATIONS_FROM_EMAIL,
   })
 
   const stateCookie = `${GMAIL_STATE_COOKIE}=${state}; Path=/admin/authorize-gmail; Max-Age=600; HttpOnly; SameSite=Lax`
@@ -47,7 +48,7 @@ export async function loader({ request }: { request: Request }) {
       status: 302,
       headers: {
         'Set-Cookie': stateCookie,
-        Location: `https://accounts.google.com/o/oauth2/v2/auth?${params}`,
+        Location: authUrl,
       },
     })
 }

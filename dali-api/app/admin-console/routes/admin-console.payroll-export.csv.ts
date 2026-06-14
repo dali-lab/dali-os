@@ -2,6 +2,7 @@ import type { Route } from "./+types/admin-console.payroll-export.csv";
 import { redirect } from "react-router";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
+import { csvResponse } from "~/lib/csv";
 import { isAdmin } from "~/lib/roles";
 import {
   buildCoreRows,
@@ -61,12 +62,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   const csv = rowsToCsv([...projectRows, ...coreRows, ...instructorRows]);
   const filename = `payroll-${selectedTerm.code}-${formatDate(new Date())}.csv`;
 
-  return new Response(csv, {
+  return csvResponse(csv, filename, {
     status: 200,
-    headers: {
-      "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="${filename}"`,
-      "Cache-Control": "no-store",
-    },
+    headers: { "Cache-Control": "no-store" },
   });
 }

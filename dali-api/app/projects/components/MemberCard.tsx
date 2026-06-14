@@ -1,6 +1,6 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { initialsFromName } from "~/lib/display";
+import { initialsFromName, fullName as buildFullName } from "~/lib/display";
 import type { MemberCardModel, Level } from "../lib/staffing-board";
 
 const LEVEL_BADGE: Record<Level, { label: string; cls: string }> = {
@@ -31,7 +31,7 @@ export function MemberCard({ card, columnId, projectNames, domainNames, onOpenBi
       disabled: !draggable,
     });
 
-  const fullName = `${card.firstName} ${card.lastName}`.trim();
+  const fullName = buildFullName(card);
 
   // Only wire dnd listeners + grab cursor when draggable. Read-only viewers
   // still see the card and can click it to open the bid modal.
@@ -158,7 +158,7 @@ export function MemberCardPreview({
   projectNames: Record<string, string>;
   domainNames: Record<string, string>;
 }) {
-  const fullName = `${card.firstName} ${card.lastName}`.trim();
+  const fullName = buildFullName(card);
   return (
     <div className="bg-card border border-border rounded-md p-2.5 flex flex-col gap-1.5 select-none shadow-lg cursor-grabbing">
       <MemberCardBody

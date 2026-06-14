@@ -1,8 +1,9 @@
 import type { Route } from "./+types/api.members";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, forbidden } from "~/lib/auth";
 import { isAdmin, isCore, isDomainLead, currentTermMemberWhere } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
+import { LAB_MEMBER_WHERE, MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 
 // Phase 2: returns lab members rooted at User. Role shape derives from
 // AdminMembership / CoreAssignment / DomainLeadAssignment rows.
@@ -24,18 +25,18 @@ export async function loader({ request }: Route.LoaderArgs) {
     isCore(auth.user.sub),
     isDomainLead(auth.user.sub),
   ]);
-  if (!admin && !hiringLead && !domainLead) return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+  if (!admin && !hiringLead && !domainLead) return forbidden(request);
 
   const url = new URL(request.url);
   const scope = url.searchParams.get("scope");
   const where =
     scope === "current"
       ? await currentTermMemberWhere()
-      : { daliMember: { isNot: null } };
+      : { ...LAB_MEMBER_WHERE };
 
   const users = await prisma.user.findMany({
     where,
-    orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+    orderBy: MEMBER_LIST_ORDER_BY,
     select: {
       id: true,
       firstName: true,

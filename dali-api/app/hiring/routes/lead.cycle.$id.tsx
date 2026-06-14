@@ -1178,7 +1178,7 @@ export default function HiringLeadCycleDetails() {
     rescheduleNoticeHours: 12,
     cancelNoticeHours: 0,
     bookingNoticeHours: 12,
-    timezone: 'America/New_York',
+    timezone: APPLICATION_TZ,
   })
   const [configSaved, setConfigSaved] = useState(false)
   const [configSaving, setConfigSaving] = useState(false)

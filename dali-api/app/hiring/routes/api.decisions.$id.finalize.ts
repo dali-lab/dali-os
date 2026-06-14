@@ -1,7 +1,6 @@
 import type { Route } from "./+types/api.decisions.$id.finalize";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
-import { isCore, isDomainLead } from "~/lib/roles";
+import { requireCoreOrDomainLead, requireMemberSession } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
 
@@ -10,23 +9,16 @@ import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
 class AlreadyFinalizedError extends Error {}
 
 export async function action({ request, params }: Route.ActionArgs) {
-  const auth = await requireAuth(request);
-  if (!auth.ok) return auth.response;
+  const roleGate = await requireCoreOrDomainLead(request);
+  if (!roleGate.ok) return roleGate.response;
 
   if (request.method !== "POST") {
     return Response.json({ error: "Method not allowed" }, { status: 405 });
   }
 
-  const hiringLead = await isCore(auth.user.sub);
-  const domainLead = await isDomainLead(auth.user.sub);
-  if (!hiringLead && !domainLead) {
-    return Response.json({ error: "Forbidden" }, { status: 403 });
-  }
-
-  const member = await prisma.dALIMember.findUnique({ where: { userId: auth.user.sub } });
-  if (!member) {
-    return Response.json({ error: "Not a DALI member" }, { status: 403 });
-  }
+  const memberGate = await requireMemberSession(request);
+  if (!memberGate.ok) return memberGate.response;
+  const auth = memberGate.auth;
 
   const decision = await prisma.decision.findUnique({
     where: { id: params.id },

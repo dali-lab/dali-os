@@ -17,16 +17,16 @@ import {
   RefreshCw,
   RotateCcw,
 } from "lucide-react";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, forbidden, redirectApplicantToPortal } from "~/lib/auth";
+import { fullName } from "~/lib/display";
 import { prisma } from "~/lib/db";
 import { listVisibleGroupsForUser } from "~/lib/groups";
 import { currentTermMemberWhere } from "~/lib/roles";
 import { CalendarActionSchema } from "~/lib/calendar-schemas";
 import { fetchBusyEvents, listCalendarsForLink } from "~/lib/google-calendar";
-import { getZonedHourFraction, getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
+import { APPLICATION_TZ as DEFAULT_TIMEZONE, getZonedHourFraction, getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
 import type { Route } from "./+types/calendar";
 
-const DEFAULT_TIMEZONE = "America/New_York";
 const DEFAULT_BUFFER_MIN = 15;
 const DEFAULT_WORK_START_MIN = 9 * 60;
 const DEFAULT_WORK_END_MIN = 17 * 60;
@@ -160,7 +160,8 @@ function weekWindow(timezone: string, anchor?: Date): { start: Date; end: Date }
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
-  if (auth.user.type === "applicant") return redirect("/portal");
+  const portalRedirect = redirectApplicantToPortal(auth);
+  if (portalRedirect) return portalRedirect;
 
   const userId = auth.user.sub;
 
@@ -321,7 +322,7 @@ export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
   if (auth.user.type === "applicant")
-    return Response.json({ error: "Forbidden" }, { status: 403 });
+    return forbidden(request);
 
   const userId = auth.user.sub;
   const form = await request.formData();
@@ -2089,7 +2090,7 @@ function ScheduleView({ data }: { data: LoaderData }) {
 }
 
 function userLabel(u: UserOption) {
-  const name = `${u.firstName} ${u.lastName}`.trim();
+  const name = fullName(u);
   return name || u.daliEmail || u.id;
 }
 
