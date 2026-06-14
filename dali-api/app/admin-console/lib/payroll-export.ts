@@ -100,6 +100,9 @@ export type RoleCandidate = {
 };
 
 export async function listCoreCandidates(termId: string): Promise<RoleCandidate[]> {
+  // CoreAssignment rows are materialized per-term across the election cycle
+  // (writers in admin-console fan out across [Spring N, Spring N+1)), so a
+  // direct lookup by termId surfaces the full cohort.
   const rows = await prisma.coreAssignment.findMany({
     where: { termId },
     select: {

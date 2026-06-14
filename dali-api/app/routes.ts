@@ -216,6 +216,12 @@ export default [
   route("api/staffing/events", "projects/routes/api.staffing.events.ts"),
   route("api/staffing/reorder", "projects/routes/api.staffing.reorder.ts"),
 
+  // Core-only level correction for an already-finalized ProjectAssignment.
+  route(
+    "api/projects/assignments/:id/level",
+    "projects/routes/api.assignment-level.ts",
+  ),
+
   // Project task board
   route("api/projects/:id/tasks", "projects/routes/api.projects.$id.tasks.ts"),
   route("api/tasks/:id/move", "projects/routes/api.tasks.$id.move.ts"),
