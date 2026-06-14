@@ -1,8 +1,8 @@
 import type { Route } from "./+types/api.delibs.$id";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
-import { isCore, isDomainLead, hasCycleAccess } from "~/lib/roles";
+import { requireAuth, requireCoreOrDomainLead, requireMemberSession, forbidden } from "~/lib/auth";
+import { hasCycleAccess } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
 
@@ -23,7 +23,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
 
   if (!(await hasCycleAccess(auth.user.sub, session.applicationCycleId)))
-    return Response.json({ error: "Forbidden" }, { status: 403 });
+    return forbidden(request);
 
   const gate = await requireApiSignedOrForbidden(
     auth.user.sub,
@@ -35,14 +35,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
-  const auth = await requireAuth(request);
-  if (!auth.ok) return auth.response;
-
-  const hiringLead = await isCore(auth.user.sub);
-  const domainLead = await isDomainLead(auth.user.sub);
-  if (!hiringLead && !domainLead) {
-    return Response.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const roleGate = await requireCoreOrDomainLead(request);
+  if (!roleGate.ok) return roleGate.response;
+  const auth = roleGate.auth;
 
   const sessionForGate = await prisma.delibsSession.findUnique({
     where: { id: params.id },

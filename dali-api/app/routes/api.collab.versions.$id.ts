@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.collab.versions.$id";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, forbidden } from "~/lib/auth";
 import { authorizeCollabDoc, hydrateAuthors } from "~/lib/collabAuth";
 import { getCollabServer } from "~/collab/server";
 import { restoreVersion } from "~/collab/persistence";
@@ -30,7 +30,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!version) return Response.json({ error: "Not found" }, { status: 404 });
 
   const allowed = await authorizeCollabDoc(auth.user.sub, version.name);
-  if (!allowed) return Response.json({ error: "Forbidden" }, { status: 403 });
+  if (!allowed) return forbidden(request);
 
   return Response.json({
       id: version.id,
@@ -61,7 +61,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!version) return Response.json({ error: "Not found" }, { status: 404 });
 
   const allowed = await authorizeCollabDoc(auth.user.sub, version.name);
-  if (!allowed) return Response.json({ error: "Forbidden" }, { status: 403 });
+  if (!allowed) return forbidden(request);
 
   const server = getCollabServer();
   if (!server) {

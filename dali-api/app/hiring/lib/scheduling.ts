@@ -2,6 +2,7 @@ import type { Prisma } from "~/generated/prisma/client";
 import { prisma } from "~/lib/db";
 import { notifyInterviewAssigned } from "~/hiring/lib/interview-notifications";
 import { sendReassignmentEmails } from "~/hiring/lib/interview-emails";
+import { zonedWallTimeUtc } from "~/lib/timezone";
 
 // New-assignee notifications fire outside transactions (best-effort), so
 // scheduling.ts hands callers the cycleInterviewerIds that need notifying
@@ -543,7 +544,8 @@ export function generateCandidateSlots(
 
     for (let hour = dayStartHour; hour < dayEndHour; hour++) {
       for (let minute = 0; minute < 60; minute += 15) {
-        const slotStart = parseTzDateTime(dayStr, hour, minute, timezone);
+        const [y, mo, d] = dayStr.split("-").map(Number);
+        const slotStart = zonedWallTimeUtc(y, mo, d, hour, minute, timezone);
         const slotEnd = new Date(slotStart.getTime() + slotDurationMinutes * 60_000);
 
         const slotEndLocal = new Date(slotEnd.toLocaleString("en-US", { timeZone: timezone }));
@@ -566,29 +568,3 @@ export function generateCandidateSlots(
   return slots;
 }
 
-/** Parse a date + hour + minute in a specific timezone into a UTC Date */
-function parseTzDateTime(dateStr: string, hour: number, minute: number, timezone: string): Date {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const fakeLocal = `${dateStr}T${pad(hour)}:${pad(minute)}:00`;
-
-  const formatter = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  });
-
-  const utcGuess = new Date(fakeLocal + "Z");
-  const parts = formatter.formatToParts(utcGuess);
-  const get = (type: string) => parseInt(parts.find((p) => p.type === type)?.value ?? "0");
-  // Use Date.UTC so the comparison is timezone-independent (new Date(y,m,d,...)
-  // uses the system timezone, which breaks when it matches the target timezone).
-  const localAtUtcMs = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"), get("second"));
-  const offsetMs = localAtUtcMs - utcGuess.getTime();
-
-  return new Date(utcGuess.getTime() - offsetMs);
-}

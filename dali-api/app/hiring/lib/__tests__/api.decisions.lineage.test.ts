@@ -3,12 +3,26 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db");
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
+  requireCore: vi.fn(),
+  requireCoreOrDomainLead: vi.fn(),
+  requireMemberSession: vi.fn(),
+  forbidden: vi.fn((_req: Request) =>
+    Response.json({ error: "Forbidden" }, { status: 403 }),
+  ),
+  unauthorized: vi.fn((_req: Request) =>
+    Response.json({ error: "Unauthorized" }, { status: 401 }),
+  ),
+  redirectApplicantToPortal: vi.fn(() => null),
 }));
 vi.mock("~/lib/roles");
 vi.mock("~/lib/gmail");
 
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import {
+  requireAuth,
+  requireCoreOrDomainLead,
+  requireMemberSession,
+} from "~/lib/auth";
 import { isCore, isDomainLead, hasCycleAccess } from "~/lib/roles";
 import { sendEmail } from "~/lib/gmail";
 import { action as finalizeAction } from "~/hiring/routes/api.decisions.$id.finalize";
@@ -52,6 +66,16 @@ beforeEach(() => {
   (mockPrisma as any).$transaction = vi.fn(async (fn: any) => fn(mockPrisma));
   vi.mocked(sendEmail).mockResolvedValue(undefined as any);
   vi.mocked(requireAuth).mockResolvedValue({ ok: true, user: { sub: USER_ID } } as any);
+  const okGate = {
+    ok: true as const,
+    auth: {
+      ok: true as const,
+      user: { sub: USER_ID, email: "u@x.com", type: "member" },
+      sessionId: "sid",
+    },
+  };
+  vi.mocked(requireCoreOrDomainLead).mockResolvedValue(okGate as any);
+  vi.mocked(requireMemberSession).mockResolvedValue(okGate as any);
   mockPrisma.dALIMember.findUnique.mockResolvedValue({ id: MEMBER_ID, userId: USER_ID });
 });
 

@@ -9,15 +9,7 @@ import {
 } from 'lucide-react'
 import type { loader } from '~/hiring/routes/rubrics.$id'
 import type { RubricCriterion } from '~/types'
-
-function formatDateTime(iso: string | Date) {
-  const d = new Date(iso)
-  return (
-    d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) +
-    ' at ' +
-    d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
-  )
-}
+import { formatDateTime } from '~/lib/display'
 
 export function RubricDetail() {
   const { rubric } = useLoaderData<typeof loader>()

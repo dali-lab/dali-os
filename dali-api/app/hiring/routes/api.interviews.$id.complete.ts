@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.interviews.$id.complete";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireMemberSession } from "~/lib/auth";
 import { parseJson } from "~/lib/validate";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
 import { isCore } from "~/lib/roles";
@@ -15,16 +15,12 @@ const CompleteSchema = z.object({
 });
 
 export async function action({ request, params }: Route.ActionArgs) {
-  const auth = await requireAuth(request);
-  if (!auth.ok) return auth.response;
+  const memberGate = await requireMemberSession(request);
+  if (!memberGate.ok) return memberGate.response;
+  const auth = memberGate.auth;
 
   if (request.method !== "POST" && request.method !== "DELETE") {
     return Response.json({ error: "Method not allowed" }, { status: 405 });
-  }
-
-  const member = await prisma.dALIMember.findUnique({ where: { userId: auth.user.sub } });
-  if (!member) {
-    return Response.json({ error: "Not a DALI member" }, { status: 403 });
   }
 
   // Verify the caller is an active interviewer on this interview

@@ -3,10 +3,12 @@ import { Link, redirect, useLoaderData, useFetcher } from "react-router";
 import type { Route } from "./+types/members.groups";
 import { prisma } from "~/lib/db";
 import { listAllGroups } from "~/lib/groups";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, forbidden } from "~/lib/auth";
 import { canViewForms, currentTermMemberWhere } from "~/lib/roles";
+import { MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { initialsFromName } from "~/lib/display";
+import { deriveCoreTitles } from "~/lib/core-titles";
 import { Modal } from "~/components/Modal";
 import {
   Users,
@@ -86,7 +88,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         select: { level: true, domain: { select: { displayName: true } } },
       },
     },
-    orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+    orderBy: MEMBER_LIST_ORDER_BY,
   });
 
   const termCodeById = new Map(terms.map((t) => [t.id, t.code]));
@@ -123,22 +125,11 @@ export async function loader({ request }: Route.LoaderArgs) {
   return { groups, members, terms };
 }
 
-// Distinct Core lead titles, with title-less Core assignments collapsing to a
-// single "Core" pill. Mirrors the Members directory derivation.
-function deriveCoreTitles(assignments: { leadTitle: string | null }[]): string[] {
-  if (assignments.length === 0) return [];
-  const titles = new Set(
-    assignments.map((a) => a.leadTitle).filter((t): t is string => !!t),
-  );
-  if (assignments.some((a) => !a.leadTitle)) titles.add("Core");
-  return Array.from(titles);
-}
-
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
   if (!(await canViewForms(auth.user.sub)))
-    return Response.json({ error: "Forbidden" }, { status: 403 });
+    return forbidden(request);
 
   const formData = await request.formData();
   const intent = String(formData.get("intent") ?? "");

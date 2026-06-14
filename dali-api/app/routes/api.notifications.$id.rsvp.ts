@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.notifications.$id.rsvp";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, forbidden } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import { updateGoogleAttendeeRsvp } from "~/lib/google-calendar";
@@ -49,7 +49,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Not found" }, { status: 404 }));
   }
   if (notif.recipientUserId !== auth.user.sub) {
-    return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+    return forbidden(request);
   }
   if (!notif.scheduledMeetingId) {
     return withCors(request, Response.json({ error: "Notification has no associated meeting" }, { status: 400 }));

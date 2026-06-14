@@ -27,6 +27,7 @@ import { BidModal } from "./BidModal";
 import { FinalizeModal } from "./FinalizeModal";
 import { AddMemberControl } from "./AddMemberControl";
 import { DomainFilter } from "./DomainFilter";
+import { sanitizeChannelName } from "~/slack/lib/channel-name";
 
 type ProjectMeta = {
   id: string;
@@ -36,18 +37,6 @@ type ProjectMeta = {
   githubTeamSlug?: string | null;
   slackChannelName?: string | null;
 };
-
-// Slack channel names: lowercase, hyphens for spaces, no other punctuation, ≤80.
-// Mirrors the server's sanitizeChannelName so the modal's default matches what
-// ensureChannel would derive from the project name.
-function deriveChannelName(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9-_\s]/g, "")
-    .trim()
-    .replace(/\s+/g, "-")
-    .slice(0, 80);
-}
 
 // Expected headcount per (project, domain) for this term — already summed
 // across levels and sorted by domain name in the loader. Keyed by projectId.
@@ -443,7 +432,7 @@ export function StaffingBoard({
           projectName={projectNames[finalizeProjectId] ?? "project"}
           defaultSlackChannel={
             projects.find((p) => p.id === finalizeProjectId)?.slackChannelName ??
-            deriveChannelName(projectNames[finalizeProjectId] ?? "")
+            sanitizeChannelName(projectNames[finalizeProjectId] ?? "")
           }
           defaultGithubSlug={
             projects.find((p) => p.id === finalizeProjectId)?.githubTeamSlug ?? ""
@@ -458,21 +447,13 @@ export function StaffingBoard({
 // invite all current-term Core + Admin/staff + everyone assigned to a project
 // this term. The channel name is editable, defaulting to the term code.
 function TermChannelBanner({ termId, termCode }: { termId: string; termCode: string }) {
-  const deriveTermChannel = (code: string) =>
-    code
-      .toLowerCase()
-      .replace(/[^a-z0-9-_\s]/g, "")
-      .trim()
-      .replace(/\s+/g, "-")
-      .slice(0, 80);
-
-  const [channel, setChannel] = useState(deriveTermChannel(termCode));
+  const [channel, setChannel] = useState(sanitizeChannelName(termCode));
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   // Keep the field in sync when the selected term changes.
   useEffect(() => {
-    setChannel(deriveTermChannel(termCode));
+    setChannel(sanitizeChannelName(termCode));
     setResult(null);
   }, [termCode]);
 

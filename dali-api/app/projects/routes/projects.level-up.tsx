@@ -1,7 +1,8 @@
 import { useMemo, useState, useEffect } from "react";
 import { redirect, useLoaderData, useFetcher } from "react-router";
 import type { Route } from "./+types/projects.level-up";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
+import { parseFormDataJson } from "~/lib/safe-json";
 import { canManageStaffing, canViewStaffing, currentTerm } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { ensureStaffingCycle } from "../lib/staffing-cycle";
@@ -44,7 +45,8 @@ function parseLevel(raw: string): Level | null {
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
-  if (auth.user.type === "applicant") return redirect("/portal");
+  const portalRedirect = redirectApplicantToPortal(auth);
+  if (portalRedirect) return portalRedirect;
   if (!(await canViewStaffing(auth.user.sub))) return redirect("/");
 
   const {
@@ -322,7 +324,7 @@ export async function action({ request }: Route.ActionArgs) {
           { error: "Bind a form before mapping its columns." },
           { status: 400 },
         );
-      const mapping = parseColumnMapping(safeJsonParse(form.get("mapping")));
+      const mapping = parseColumnMapping(parseFormDataJson(form.get("mapping")));
       if (!mapping)
         return Response.json({ error: "Invalid mapping." }, { status: 400 });
       const latest = await prisma.formVersion.findFirst({
@@ -376,15 +378,6 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   return Response.json({ error: "Unknown intent" }, { status: 400 });
-}
-
-function safeJsonParse(v: FormDataEntryValue | null): unknown {
-  if (typeof v !== "string") return null;
-  try {
-    return JSON.parse(v);
-  } catch {
-    return null;
-  }
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────

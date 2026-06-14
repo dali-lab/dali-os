@@ -5,6 +5,7 @@
 
 import { prisma } from "~/lib/db";
 import { TASK_STATUSES, type TaskStatus } from "~/projects/lib/task-board";
+import { fullName } from "~/lib/display";
 
 export const PROJECT_BOARD_RESOURCE = {
   uriTemplate: "dali://projects/{projectId}/board",
@@ -102,7 +103,7 @@ export async function readProjectBoardResource(projectId: string): Promise<strin
       dueAt: t.dueAt?.toISOString() ?? null,
       assignees: t.assignees.map((a) => ({
         id: a.user.id,
-        name: `${a.user.firstName} ${a.user.lastName}`.trim(),
+        name: fullName(a.user),
       })),
     };
     if (t.sprintId) {

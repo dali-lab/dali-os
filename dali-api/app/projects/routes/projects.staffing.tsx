@@ -1,6 +1,8 @@
 import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/projects.staffing";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
+import { STAFFING_MEMBER_SELECT } from "~/lib/prisma-shapes";
+import { primaryEmail } from "~/lib/display";
 import { canManageStaffing, canViewStaffing } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { resolvePhotoUrl } from "~/lib/photo";
@@ -26,7 +28,8 @@ export const meta: Route.MetaFunction = () => [{ title: "Staffing · DALI OS" }]
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
-  if (auth.user.type === "applicant") return redirect("/portal");
+  const portalRedirect = redirectApplicantToPortal(auth);
+  if (portalRedirect) return portalRedirect;
   // Viewing and managing the board are both Core/Admin (canViewStaffing and
   // canManageStaffing are the same membership set); the UI still hides drag
   // affordances when canManage is false (e.g. a future read-only tier).
@@ -121,22 +124,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     await Promise.all([
     prisma.user.findMany({
       where: { id: { in: memberUserIds } },
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        daliEmail: true,
-        dartmouthEmail: true,
-        photoUrl: true,
-        adminMembership: { select: { id: true } },
-        coreAssignments: { select: { leadTitle: true } },
-        domainEligibilities: {
-          select: {
-            level: true,
-            domain: { select: { id: true, displayName: true } },
-          },
-        },
-      },
+      select: STAFFING_MEMBER_SELECT,
     }),
     // Both in-progress (Proposed) and finalized (Confirmed) assignments — a
     // confirmed roster must stay on the board after finalize, not vanish.
@@ -252,7 +240,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     userId: u.id,
     firstName: u.firstName,
     lastName: u.lastName,
-    email: u.daliEmail ?? u.dartmouthEmail,
+    email: primaryEmail(u) ?? null,
     photoUrl: await resolvePhotoUrl(u.photoUrl),
     isAdmin: u.adminMembership !== null,
     coreTitles: Array.from(
@@ -292,19 +280,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (bidSubmitterIds.length > 0) {
     const flaggedUsers = await prisma.user.findMany({
       where: { id: { in: bidSubmitterIds } },
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        daliEmail: true,
-        dartmouthEmail: true,
-        photoUrl: true,
-        adminMembership: { select: { id: true } },
-        coreAssignments: { select: { leadTitle: true } },
-        domainEligibilities: {
-          select: { level: true, domain: { select: { id: true, displayName: true } } },
-        },
-      },
+      select: STAFFING_MEMBER_SELECT,
     });
     const flagged = await Promise.all(
       flaggedUsers.map((u) => toMemberInput(u, [], true)),
@@ -328,19 +304,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (boardMemberIds.length > 0) {
     const manualUsers = await prisma.user.findMany({
       where: { id: { in: boardMemberIds } },
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        daliEmail: true,
-        dartmouthEmail: true,
-        photoUrl: true,
-        adminMembership: { select: { id: true } },
-        coreAssignments: { select: { leadTitle: true } },
-        domainEligibilities: {
-          select: { level: true, domain: { select: { id: true, displayName: true } } },
-        },
-      },
+      select: STAFFING_MEMBER_SELECT,
     });
     const manual = await Promise.all(
       manualUsers.map(async (u) => ({

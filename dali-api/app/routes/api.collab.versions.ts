@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.collab.versions";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, forbidden } from "~/lib/auth";
 import { authorizeCollabDoc, hydrateAuthors } from "~/lib/collabAuth";
 
 const PREVIEW_CHARS = 200;
@@ -19,7 +19,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   const allowed = await authorizeCollabDoc(auth.user.sub, name);
-  if (!allowed) return Response.json({ error: "Forbidden" }, { status: 403 });
+  if (!allowed) return forbidden(request);
 
   const versions = await prisma.collabDocumentVersion.findMany({
     where: { name },

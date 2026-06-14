@@ -1,11 +1,12 @@
 import { createHash, randomBytes } from "node:crypto";
 import { prisma } from "~/lib/db";
+import { SESSION_TTL_SECONDS } from "./cookies";
 
 // 30 days rolling expiry; same value as the absolute cap so a session
 // can be extended for up to 30 days from creation. Matches the prior
 // `RefreshToken.familyCreatedAt + SESSION_MAX_AGE_MS` behavior.
-export const ROLLING_TTL_MS = 30 * 24 * 60 * 60 * 1000;
-export const ABSOLUTE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+export const ROLLING_TTL_MS = SESSION_TTL_SECONDS * 1000;
+export const ABSOLUTE_TTL_MS = SESSION_TTL_SECONDS * 1000;
 
 export function hashSessionId(raw: string): string {
   return createHash("sha256").update(raw).digest("base64url");

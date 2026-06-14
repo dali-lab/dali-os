@@ -5,6 +5,7 @@ import { setSessionCookie } from "~/lib/cookies";
 import { getClientIp } from "~/lib/request-meta";
 import { logAuditEvent } from "~/lib/audit";
 import { upsertUserFromCas } from "~/lib/user-provisioning";
+import { getApiBaseUrl } from "~/lib/app-env";
 
 export async function action() {
   return new Response("Method not allowed", { status: 405 });
@@ -12,7 +13,7 @@ export async function action() {
 
 export async function loader({ request }: Route.LoaderArgs) {
   const url = new URL(request.url);
-  const apiBase = process.env.API_BASE_URL ?? "http://localhost:3001";
+  const apiBase = getApiBaseUrl();
 
   const ticket = url.searchParams.get("ticket");
   const isLink = url.searchParams.get("link") === "1";

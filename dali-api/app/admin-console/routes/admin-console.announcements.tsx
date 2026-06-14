@@ -5,6 +5,8 @@ import { prisma } from "~/lib/db";
 import { listVisibleGroupsForUser } from "~/lib/groups";
 import { requireAuth } from "~/lib/auth";
 import { isCore, currentTermMemberWhere } from "~/lib/roles";
+import { MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
+import { fullName } from "~/lib/display";
 import {
   Megaphone,
   Search,
@@ -36,7 +38,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const [users, visibleGroups, forms] = await Promise.all([
     prisma.user.findMany({
       where: memberWhere,
-      orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+      orderBy: MEMBER_LIST_ORDER_BY,
       select: { id: true, firstName: true, lastName: true, daliEmail: true },
     }),
     listVisibleGroupsForUser(auth.user.sub),
@@ -50,7 +52,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   return {
     members: users.map((u) => ({
       id: u.id,
-      name: `${u.firstName} ${u.lastName}`.trim(),
+      name: fullName(u),
       email: u.daliEmail,
     })),
     groups: visibleGroups.map((g) => ({ id: g.id, name: g.name })),

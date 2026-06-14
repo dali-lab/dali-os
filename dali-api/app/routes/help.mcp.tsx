@@ -3,9 +3,10 @@
 import { useState } from "react";
 import { Check, Copy } from "lucide-react";
 import type { Route } from "./+types/help.mcp";
+import { getApiBaseUrl } from "~/lib/app-env";
 
 export async function loader() {
-  const base = process.env.API_BASE_URL ?? "https://os.dali.dartmouth.edu";
+  const base = getApiBaseUrl();
   return { mcpUrl: `${base}/mcp` };
 }
 

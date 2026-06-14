@@ -1,7 +1,6 @@
 import type { Route } from "./+types/api.tasks.$id";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
-import { isCore } from "~/lib/roles";
+import { requireCore } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { syncIssueForTask } from "../lib/github-task-sync";
 
@@ -66,18 +65,14 @@ export async function action({ request, params }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
   if (preflight) return preflight;
 
-  const auth = await requireAuth(request);
-  if (!auth.ok) return withCors(request, auth.response);
-
   if (request.method !== "PATCH") {
     return withCors(
       request,
       Response.json({ error: "Method not allowed" }, { status: 405 }),
     );
   }
-  if (!(await isCore(auth.user.sub))) {
-    return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
-  }
+  const gate = await requireCore(request);
+  if (!gate.ok) return gate.response;
 
   let body: unknown;
   try {

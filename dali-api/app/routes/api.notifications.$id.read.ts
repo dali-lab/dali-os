@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.notifications.$id.read";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, forbidden } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { ONBOARDING_LINK } from "~/members/lib/welcome.server";
 
@@ -30,7 +30,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Not found" }, { status: 404 }));
   }
   if (existing.recipientUserId !== auth.user.sub) {
-    return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+    return forbidden(request);
   }
 
   // A meeting invite only clears once the recipient RSVPs (via the rsvp

@@ -3,11 +3,21 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db");
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
+  requireCore: vi.fn(),
+  requireCoreOrDomainLead: vi.fn(),
+  requireMemberSession: vi.fn(),
+  forbidden: vi.fn((_req: Request) =>
+    Response.json({ error: "Forbidden" }, { status: 403 }),
+  ),
+  unauthorized: vi.fn((_req: Request) =>
+    Response.json({ error: "Unauthorized" }, { status: 401 }),
+  ),
+  redirectApplicantToPortal: vi.fn(() => null),
 }));
 vi.mock("~/lib/roles");
 
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, requireCoreOrDomainLead } from "~/lib/auth";
 import { isCore, isDomainLead, hasCycleAccess } from "~/lib/roles";
 import { action } from "~/hiring/routes/api.delibs.$id.moves";
 
@@ -49,6 +59,14 @@ beforeEach(() => {
   vi.mocked(requireAuth).mockResolvedValue({
     ok: true,
     user: { sub: USER_ID },
+  } as any);
+  vi.mocked(requireCoreOrDomainLead).mockResolvedValue({
+    ok: true,
+    auth: {
+      ok: true,
+      user: { sub: USER_ID, email: "u@x.com", type: "member" },
+      sessionId: "sid",
+    },
   } as any);
   vi.mocked(isCore).mockResolvedValue(false);
   vi.mocked(isDomainLead).mockResolvedValue(true);
@@ -168,6 +186,10 @@ describe("POST /api/hiring/delibs/:id/moves", () => {
   it("returns 403 when caller is neither hiring lead nor domain lead", async () => {
     vi.mocked(isCore).mockResolvedValue(false);
     vi.mocked(isDomainLead).mockResolvedValue(false);
+    vi.mocked(requireCoreOrDomainLead).mockResolvedValueOnce({
+      ok: false,
+      response: Response.json({ error: "Forbidden" }, { status: 403 }),
+    });
 
     const res = await action({
       request: makeRequest({ cardId: "card-a", toColumn: "Interview" }),

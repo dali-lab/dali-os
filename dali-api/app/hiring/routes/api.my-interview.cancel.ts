@@ -3,12 +3,12 @@ import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { parseJson } from "~/lib/validate";
+import { idSchema, parseJson } from "~/lib/validate";
 // import { deprovisionZoomMeeting } from "~/lib/zoom"; // S2S Zoom not configured yet
 import { sendInterviewCancelEmails } from "~/hiring/lib/interview-emails";
 
 const CancelSchema = z.object({
-  domainApplicationId: z.string().min(1).max(100),
+  domainApplicationId: idSchema,
 });
 
 export async function action({ request }: Route.ActionArgs) {

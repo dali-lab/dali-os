@@ -6,6 +6,7 @@
 // app/lib/gmail.ts — if those change, update this page in the same PR.
 
 import type { Route } from "./+types/privacy";
+import { APPLICATIONS_FROM_EMAIL } from "~/lib/app-env";
 
 export const meta: Route.MetaFunction = () => [
   { title: "Privacy Policy · DALI OS" },
@@ -101,7 +102,7 @@ export default function PrivacyPolicy() {
         <p>
           A single shared lab account (
           <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
-            applications@dali.dartmouth.edu
+            {APPLICATIONS_FROM_EMAIL}
           </code>
           ) is authorized with the scope{" "}
           <code className="rounded bg-muted px-1.5 py-0.5 text-xs">

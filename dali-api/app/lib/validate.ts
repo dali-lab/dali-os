@@ -1,5 +1,12 @@
-import type { ZodType } from "zod";
+import { z, type ZodType } from "zod";
 import { safeJson } from "~/lib/safe-json";
+
+export const idSchema = z.string().min(1).max(100);
+
+export const nullableTrimmed = z.preprocess(
+  (v) => (typeof v === "string" ? (v.trim() === "" ? null : v.trim()) : v),
+  z.string().nullable(),
+);
 
 /**
  * Read and validate a JSON request body against a Zod schema.
@@ -22,6 +29,41 @@ export async function parseJson<T>(
   if (!result.success) {
     return Response.json(
       { error: "Invalid request body", details: result.error.flatten() },
+      { status: 400 },
+    );
+  }
+  return result.data;
+}
+
+export async function parseForm<T extends z.ZodType>(
+  request: Request,
+  schema: T,
+): Promise<z.infer<T> | Response> {
+  const contentType = request.headers.get("content-type") ?? "";
+  if (
+    !contentType.includes("application/x-www-form-urlencoded") &&
+    !contentType.includes("multipart/form-data")
+  ) {
+    return Response.json(
+      { error: "Invalid form data", details: "Unsupported content type" },
+      { status: 400 },
+    );
+  }
+
+  let form: FormData;
+  try {
+    form = await request.formData();
+  } catch {
+    return Response.json(
+      { error: "Invalid form data", details: "Malformed form body" },
+      { status: 400 },
+    );
+  }
+
+  const result = schema.safeParse(Object.fromEntries(form));
+  if (!result.success) {
+    return Response.json(
+      { error: "Invalid form data", details: result.error.flatten() },
       { status: 400 },
     );
   }

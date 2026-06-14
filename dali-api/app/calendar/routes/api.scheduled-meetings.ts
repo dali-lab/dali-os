@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.scheduled-meetings";
 import { z } from "zod";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, forbidden } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import {
@@ -33,7 +33,7 @@ export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return withCors(request, auth.response);
   if (auth.user.type === "applicant")
-    return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+    return forbidden(request);
 
   if (request.method !== "POST") {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));

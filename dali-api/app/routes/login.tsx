@@ -4,6 +4,8 @@ import type { Route } from "./+types/login";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { checkRateLimit } from "~/lib/rate-limit";
+import { getApiBaseUrl, getCasBaseUrl } from "~/lib/app-env";
+import { buildGoogleAuthUrl } from "~/lib/google-oauth";
 
 const OAUTH_STATE_COOKIE = "__dali_oauth_state";
 
@@ -46,8 +48,8 @@ export async function action({ request }: Route.ActionArgs) {
   const provider = formData.get("provider") as string;
 
   const state = randomBytes(32).toString("base64url");
-  const apiBase = process.env.API_BASE_URL ?? "http://localhost:3001";
-  const casBase = process.env.CAS_BASE_URL ?? "https://login.dartmouth.edu/cas";
+  const apiBase = getApiBaseUrl();
+  const casBase = getCasBaseUrl();
 
   const headers = new Headers();
 
@@ -86,19 +88,14 @@ export async function action({ request }: Route.ActionArgs) {
   // Enforcement of the domain still happens server-side in
   // /auth/callback/google; `hd` is purely a UX hint and not a security
   // boundary.
-  const googleParams = new URLSearchParams({
-    client_id: process.env.GOOGLE_CLIENT_ID!,
-    redirect_uri: `${apiBase}/auth/callback/google`,
-    response_type: "code",
-    scope: "openid email profile",
+  const googleAuthUrl = buildGoogleAuthUrl({
+    clientId: process.env.GOOGLE_CLIENT_ID!,
+    redirectUri: `${apiBase}/auth/callback/google`,
+    scopes: ["openid", "email", "profile"],
     state,
-    hd: "dali.dartmouth.edu",
   });
 
-  headers.set(
-    "Location",
-    `https://accounts.google.com/o/oauth2/v2/auth?${googleParams}`,
-  );
+  headers.set("Location", `${googleAuthUrl}&hd=dali.dartmouth.edu`);
   return new Response(null, { status: 302, headers });
 }
 

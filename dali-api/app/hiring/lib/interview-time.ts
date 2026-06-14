@@ -3,7 +3,8 @@
 // at Dartmouth. Centralizing the formatter (and the timezone label) here keeps
 // every applicant view consistent and protects against host-TZ regressions.
 
-const EASTERN_TZ = "America/New_York";
+import { APPLICATION_TZ as EASTERN_TZ } from "~/lib/timezone";
+
 export const INTERVIEW_TIMEZONE_LABEL = "ET";
 
 function formatTime(iso: string | Date): string {

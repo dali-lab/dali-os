@@ -2,8 +2,9 @@ import { useState } from "react";
 import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/admin-console.members";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, forbidden } from "~/lib/auth";
 import { isAdmin, isCore, currentTerm } from "~/lib/roles";
+import { LAB_MEMBER_WHERE, MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { Users, Check } from "lucide-react";
 import {
   AdminToggle,
@@ -31,14 +32,14 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const [users, domains, term] = await Promise.all([
     prisma.user.findMany({
-      where: { daliMember: { isNot: null } },
+      where: { ...LAB_MEMBER_WHERE },
       include: {
         daliMember: { select: { id: true } },
         adminMembership: { select: { id: true } },
         coreAssignments: { select: { id: true, termId: true, leadTitle: true } },
         domainLeadAssignmentsAsUser: { include: { domain: true } },
       },
-      orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+      orderBy: MEMBER_LIST_ORDER_BY,
     }),
     prisma.domain.findMany({
       where: { active: true },
@@ -79,7 +80,7 @@ export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
   if (!(await isCore(auth.user.sub)))
-    return Response.json({ error: "Forbidden" }, { status: 403 });
+    return forbidden(request);
 
   const formData = await request.formData();
   const intent = formData.get("intent") as string;
@@ -87,7 +88,7 @@ export async function action({ request }: Route.ActionArgs) {
   // Admin-promotion is the only Admin-gated mutation on this page.
   if (intent === "set-admin") {
     if (!(await isAdmin(auth.user.sub)))
-      return Response.json({ error: "Forbidden" }, { status: 403 });
+      return forbidden(request);
     const userId = formData.get("userId") as string;
     const value = formData.get("value") === "true";
     if (value) {

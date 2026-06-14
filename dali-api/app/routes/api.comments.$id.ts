@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.comments.$id";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, forbidden } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 
@@ -20,7 +20,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
   if (!(await isCore(auth.user.sub))) {
-    return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+    return forbidden(request);
   }
 
   const comment = await prisma.docComment.findUnique({
