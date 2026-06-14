@@ -7,7 +7,7 @@ import {
 import { logAuditEvent } from "~/lib/audit";
 import { lookupSession, rollSession, hashSessionId } from "~/lib/session";
 import { withCors } from "~/lib/cors";
-import { isCore, isDomainLead } from "~/lib/roles";
+import { isCore, isDomainLead, isProjectMember } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { displayEmail } from "~/lib/display";
 
@@ -211,6 +211,23 @@ export async function requireMemberSession(
       ),
     };
   }
+  return { ok: true, auth };
+}
+
+// Matches the loader's canEdit predicate at projects.$id.tsx — Core OR
+// a current/historical assignee of the project may edit project content
+// (tasks, epics, stories, sprints, documents, files).
+export async function requireProjectEditAccess(
+  request: Request,
+  projectId: string,
+): Promise<{ ok: true; auth: AuthSuccess } | { ok: false; response: Response }> {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return { ok: false, response: auth.response };
+  const [core, member] = await Promise.all([
+    isCore(auth.user.sub),
+    isProjectMember(auth.user.sub, projectId),
+  ]);
+  if (!core && !member) return { ok: false, response: forbidden(request) };
   return { ok: true, auth };
 }
 

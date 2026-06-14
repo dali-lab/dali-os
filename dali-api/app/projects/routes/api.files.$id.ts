@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.files.$id";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
-import { requireAuth, requireCore } from "~/lib/auth";
+import { requireAuth, requireProjectEditAccess } from "~/lib/auth";
 import { UNKNOWN_LABEL } from "~/lib/display";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { logAuditEvent } from "~/lib/audit";
@@ -92,17 +92,16 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (request.method !== "POST" && request.method !== "DELETE") {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
-  const gate = await requireCore(request);
-  if (!gate.ok) return gate.response;
-  const auth = gate.auth;
-
   const file = await prisma.projectFile.findUnique({
     where: { id: params.id },
-    select: { id: true, archivedAt: true },
+    select: { id: true, archivedAt: true, projectId: true },
   });
   if (!file || file.archivedAt !== null) {
     return withCors(request, Response.json({ error: "File not found" }, { status: 404 }));
   }
+  const gate = await requireProjectEditAccess(request, file.projectId);
+  if (!gate.ok) return gate.response;
+  const auth = gate.auth;
 
   if (request.method === "DELETE") {
     await prisma.projectFile.update({

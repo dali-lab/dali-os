@@ -3,7 +3,7 @@ import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/admin-console.members";
 import { prisma } from "~/lib/db";
 import { requireAuth, forbidden } from "~/lib/auth";
-import { isAdmin, isCore, currentTerm } from "~/lib/roles";
+import { isAdmin, isCore, isAdminViaEnv, currentTerm } from "~/lib/roles";
 import { LAB_MEMBER_WHERE, MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { coreCycleTermIds } from "~/lib/core-cycle";
 import { Users, Check } from "lucide-react";
@@ -54,14 +54,15 @@ export async function loader({ request }: Route.LoaderArgs) {
     const currentCore = term !== null
       ? u.coreAssignments.filter((a) => a.termId === term.id)
       : [];
+    const isAdminUser = u.adminMembership !== null || isAdminViaEnv(u.id);
     return {
       id: u.id,
       firstName: u.firstName,
       lastName: u.lastName,
       daliEmail: u.daliEmail,
       isLabMember: u.daliMember !== null,
-      isAdmin: u.adminMembership !== null,
-      isCore: currentCore.length > 0,
+      isAdmin: isAdminUser,
+      isCore: isAdminUser || currentCore.length > 0,
       coreAssignments: currentCore.map((a) => ({ id: a.id, leadTitle: a.leadTitle })),
       domainLeadAssignments: u.domainLeadAssignmentsAsUser.map((a) => ({
         id: a.id,

@@ -5,6 +5,13 @@ function getAdminUserIdsFromEnv(): string[] {
   return (process.env.ADMIN_USER_IDS ?? "").split(",").filter(Boolean);
 }
 
+// True if the userId is in ADMIN_USER_IDS env. Exported so list-view loaders
+// can OR this into their per-row isAdmin/isCore derivation without paying
+// per-row getUserRoles() round-trips.
+export function isAdminViaEnv(userId: string): boolean {
+  return getAdminUserIdsFromEnv().includes(userId);
+}
+
 // Phase 2 rewrite: role flags derived from the new typed assignment tables
 // (AdminMembership, CoreAssignment, DomainLeadAssignment) rather than the
 // dropped DALIMember.roles[] enum. See V0_PLAN.md §"Identity model".
@@ -192,6 +199,20 @@ export async function currentTerm() {
   return prisma.term.findFirst({
     where: { startDate: { gt: now } },
     orderBy: { sortKey: "asc" },
+  });
+}
+
+/**
+ * Strict variant of `currentTerm()`: returns the Term whose
+ * [startDate, endDate] window contains now, or null if now falls in the
+ * inter-term gap. No roll-forward to the next upcoming term. Use this when
+ * the call site must fail closed between terms (e.g. intern eligibility).
+ */
+export async function currentTermStrict() {
+  const now = new Date();
+  return prisma.term.findFirst({
+    where: { startDate: { lte: now }, endDate: { gte: now } },
+    orderBy: { sortKey: "desc" },
   });
 }
 

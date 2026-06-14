@@ -84,19 +84,6 @@ async function resolveCoreMembers(): Promise<string[]> {
   return rows.map((r) => r.userId);
 }
 
-// Current term = the Term whose [startDate, endDate] window contains now.
-// If multiple windows overlap (rare seed edge case), prefer the largest
-// sortKey. Returns null if no term covers today.
-export async function getCurrentTermId(): Promise<string | null> {
-  const now = new Date();
-  const term = await prisma.term.findFirst({
-    where: { startDate: { lte: now }, endDate: { gte: now } },
-    orderBy: { sortKey: "desc" },
-    select: { id: true },
-  });
-  return term?.id ?? null;
-}
-
 // Every current lab member's userId. "Lab member" = a User with a DALIMember
 // marker row who is also placed in at least one domain (has a DomainEligibility
 // row). Members not yet assigned to any domain are excluded from the "whole

@@ -1,8 +1,7 @@
 import { redirect } from "react-router";
 import type { Route } from "./+types/library";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
-import { isCore, isDomainLead, isAdmin } from "~/lib/roles";
+import { requireCoreOrDomainLead } from "~/lib/auth";
 import Library from "~/hiring/components/Library";
 
 export const meta: Route.MetaFunction = () => [{ title: "Library · Hiring · DALI OS" }];
@@ -12,15 +11,8 @@ export const meta: Route.MetaFunction = () => [{ title: "Library · Hiring · DA
 // they share the same audience and CRUD shape, so they live behind one route
 // and one loader/action keyed by an `entity` discriminator.
 export async function loader({ request }: Route.LoaderArgs) {
-  const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
-
-  const [hiringLead, domainLead, admin] = await Promise.all([
-    isCore(auth.user.sub),
-    isDomainLead(auth.user.sub),
-    isAdmin(auth.user.sub),
-  ]);
-  if (!hiringLead && !domainLead && !admin) return redirect("/");
+  const gate = await requireCoreOrDomainLead(request);
+  if (!gate.ok) return gate.response;
 
   const [domains, challenges, rubrics, agreements] = await Promise.all([
     prisma.domain.findMany({ orderBy: { name: "asc" } }),
@@ -58,19 +50,13 @@ export async function loader({ request }: Route.LoaderArgs) {
     challenges,
     rubrics,
     agreements,
-    canEdit: hiringLead || domainLead || admin,
+    canEdit: true,
   };
 }
 
 export async function action({ request }: Route.ActionArgs) {
-  const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
-  const [hiringLead, domainLead, admin] = await Promise.all([
-    isCore(auth.user.sub),
-    isDomainLead(auth.user.sub),
-    isAdmin(auth.user.sub),
-  ]);
-  if (!hiringLead && !domainLead && !admin) return redirect("/");
+  const gate = await requireCoreOrDomainLead(request);
+  if (!gate.ok) return gate.response;
 
   const formData = await request.formData();
   const entity = formData.get("entity") as string;

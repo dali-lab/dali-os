@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.epics.$id.stories";
 import { prisma } from "~/lib/db";
-import { requireCore } from "~/lib/auth";
+import { requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 
 // POST /api/epics/:id/stories
@@ -37,7 +37,15 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (request.method !== "POST") {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
-  const gate = await requireCore(request);
+  const epicId = params.id!;
+  const epic = await prisma.epic.findUnique({
+    where: { id: epicId },
+    select: { id: true, projectId: true },
+  });
+  if (!epic) {
+    return withCors(request, Response.json({ error: "Epic not found" }, { status: 404 }));
+  }
+  const gate = await requireProjectEditAccess(request, epic.projectId);
   if (!gate.ok) return gate.response;
 
   let body: unknown;
@@ -58,15 +66,6 @@ export async function action({ request, params }: Route.ActionArgs) {
   const status = body.status ?? "Todo";
   if (!isStoryStatus(status)) {
     return withCors(request, Response.json({ error: "Invalid status" }, { status: 400 }));
-  }
-
-  const epicId = params.id!;
-  const epic = await prisma.epic.findUnique({
-    where: { id: epicId },
-    select: { id: true },
-  });
-  if (!epic) {
-    return withCors(request, Response.json({ error: "Epic not found" }, { status: 404 }));
   }
 
   const last = await prisma.userStory.findFirst({

@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.epics.$id.description-doc";
 import { randomUUID } from "node:crypto";
 import { prisma } from "~/lib/db";
-import { requireCore } from "~/lib/auth";
+import { requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 
 // POST /api/epics/:id/description-doc
@@ -28,17 +28,16 @@ export async function action({ request, params }: Route.ActionArgs) {
       Response.json({ error: "Method not allowed" }, { status: 405 }),
     );
   }
-  const gate = await requireCore(request);
-  if (!gate.ok) return gate.response;
-
   const epicId = params.id!;
   const epic = await prisma.epic.findUnique({
     where: { id: epicId },
-    select: { descriptionDocId: true },
+    select: { descriptionDocId: true, projectId: true },
   });
   if (!epic) {
     return withCors(request, Response.json({ error: "Epic not found" }, { status: 404 }));
   }
+  const gate = await requireProjectEditAccess(request, epic.projectId);
+  if (!gate.ok) return gate.response;
 
   if (epic.descriptionDocId) {
     return withCors(

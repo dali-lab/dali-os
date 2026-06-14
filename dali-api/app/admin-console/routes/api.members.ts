@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.members";
 import { prisma } from "~/lib/db";
 import { requireAuth, forbidden } from "~/lib/auth";
-import { isAdmin, isCore, isDomainLead, currentTermMemberWhere } from "~/lib/roles";
+import { isAdmin, isCore, isDomainLead, isAdminViaEnv, currentTermMemberWhere } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { LAB_MEMBER_WHERE, MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 
@@ -43,7 +43,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       lastName: true,
       daliEmail: true,
       adminMembership: { select: { id: true } },
-      coreAssignments: { select: { id: true, termId: true, leadTitle: true } },
+      coreAssignments: { select: { leadTitle: true } },
       domainLeadAssignmentsAsUser: {
         select: {
           id: true,
@@ -54,21 +54,24 @@ export async function loader({ request }: Route.LoaderArgs) {
     },
   });
 
-  const members = users.map((u) => ({
-    id: u.id,
-    firstName: u.firstName,
-    lastName: u.lastName,
-    daliEmail: u.daliEmail,
-    isAdmin: u.adminMembership !== null,
-    isCore: u.coreAssignments.length > 0,
-    coreTitles: u.coreAssignments
-      .map((a) => a.leadTitle)
-      .filter((t): t is string => !!t),
-    domainLeadAssignments: u.domainLeadAssignmentsAsUser.map((a) => ({
-      id: a.id,
-      domain: { id: a.domain.id, name: a.domain.displayName },
-    })),
-  }));
+  const members = users.map((u) => {
+    const isAdminUser = u.adminMembership !== null || isAdminViaEnv(u.id);
+    return {
+      id: u.id,
+      firstName: u.firstName,
+      lastName: u.lastName,
+      daliEmail: u.daliEmail,
+      isAdmin: isAdminUser,
+      isCore: isAdminUser || u.coreAssignments.length > 0,
+      coreTitles: u.coreAssignments
+        .map((a) => a.leadTitle)
+        .filter((t): t is string => !!t),
+      domainLeadAssignments: u.domainLeadAssignmentsAsUser.map((a) => ({
+        id: a.id,
+        domain: { id: a.domain.id, name: a.domain.displayName },
+      })),
+    };
+  });
 
   return withCors(request, Response.json(members));
 }
