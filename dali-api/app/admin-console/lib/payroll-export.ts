@@ -8,6 +8,13 @@ export const PRIMARY_SUPERVISOR_NETID = "f0077bn";
 export const SECONDARY_SUPERVISOR_NETID = "d1207c2";
 export const ANTICIPATED_HOURS_PER_WEEK = "15";
 
+// Lab-wide chart string for non-project payroll (Core + Instructor). Project
+// rows pull their chart string from Project.chartString; these rows share one
+// internal funding line. Type left blank — payroll didn't specify one for
+// internal lines.
+export const CORE_INSTRUCTOR_CHART_STRING_TYPE = "";
+export const CORE_INSTRUCTOR_CHART_STRING = "18.722.161028.128512.3000";
+
 // 16-column header, order matters — Dartmouth payroll imports column-by-column.
 export const CSV_HEADERS = [
   "Student NetID",
@@ -85,6 +92,153 @@ function resolveJobCode(
     jobCode: best.jobCode,
     hourlyWage: best.payRateUsdHour ? best.payRateUsdHour.toString() : "",
   };
+}
+
+// Member candidate for the Core / Instructor checkbox sections on the export
+// page. One row per user per term (deduped across multiple Core titles or
+// multiple instructor offerings). `subtitle` is just for the UI — the lead
+// titles or offering names so admins can recognize who they're including.
+export type RoleCandidate = {
+  userId: string;
+  netId: string | null;
+  firstName: string;
+  lastName: string;
+  subtitle: string;
+};
+
+export async function listCoreCandidates(termId: string): Promise<RoleCandidate[]> {
+  const rows = await prisma.coreAssignment.findMany({
+    where: { termId },
+    select: {
+      userId: true,
+      leadTitle: true,
+      user: { select: { netId: true, firstName: true, lastName: true } },
+    },
+  });
+
+  const byUser = new Map<string, RoleCandidate & { titles: string[] }>();
+  for (const r of rows) {
+    const existing = byUser.get(r.userId);
+    if (existing) {
+      if (r.leadTitle) existing.titles.push(r.leadTitle);
+    } else {
+      byUser.set(r.userId, {
+        userId: r.userId,
+        netId: r.user.netId,
+        firstName: r.user.firstName,
+        lastName: r.user.lastName,
+        subtitle: "",
+        titles: r.leadTitle ? [r.leadTitle] : [],
+      });
+    }
+  }
+
+  return [...byUser.values()]
+    .map(({ titles, ...c }) => ({ ...c, subtitle: titles.join(", ") }))
+    .sort((a, b) =>
+      (a.lastName + a.firstName).localeCompare(b.lastName + b.firstName),
+    );
+}
+
+export async function listInstructorCandidates(termId: string): Promise<RoleCandidate[]> {
+  const rows = await prisma.instructorAssignment.findMany({
+    where: { termId },
+    select: {
+      userId: true,
+      user: { select: { netId: true, firstName: true, lastName: true } },
+      offering: { select: { title: true } },
+    },
+  });
+
+  const byUser = new Map<string, RoleCandidate & { offerings: string[] }>();
+  for (const r of rows) {
+    const existing = byUser.get(r.userId);
+    if (existing) {
+      existing.offerings.push(r.offering.title);
+    } else {
+      byUser.set(r.userId, {
+        userId: r.userId,
+        netId: r.user.netId,
+        firstName: r.user.firstName,
+        lastName: r.user.lastName,
+        subtitle: "",
+        offerings: [r.offering.title],
+      });
+    }
+  }
+
+  return [...byUser.values()]
+    .map(({ offerings, ...c }) => ({ ...c, subtitle: offerings.join(", ") }))
+    .sort((a, b) =>
+      (a.lastName + a.firstName).localeCompare(b.lastName + b.firstName),
+    );
+}
+
+// Shared helper for Core/Instructor row generation. Same shape as project
+// rows, but the chart string is the lab-wide internal line and the job code
+// comes from the (assignmentType, NULL level, NULL domain) wildcard row.
+async function buildNonProjectRows(
+  termId: string,
+  selectedUserIds: Set<string>,
+  candidates: RoleCandidate[],
+  assignmentType: "Core" | "Instructor",
+): Promise<PayrollRow[]> {
+  if (selectedUserIds.size === 0) return [];
+
+  const [jobLookups, term] = await Promise.all([
+    prisma.jobCodeLookup.findMany({
+      where: { assignmentType },
+      select: { level: true, domainId: true, jobCode: true, payRateUsdHour: true },
+    }),
+    prisma.term.findUnique({
+      where: { id: termId },
+      select: { startDate: true, endDate: true },
+    }),
+  ]);
+  if (!term) return [];
+
+  const hireStart = formatDate(term.startDate);
+  const hireEnd = formatDate(term.endDate);
+  // Core/Instructor lookups don't carry level or domain — pass empty strings
+  // and let the wildcard rows match.
+  const job = resolveJobCode(jobLookups, "", "");
+
+  return candidates
+    .filter((c) => selectedUserIds.has(c.userId))
+    .map((c) => {
+      const warnings: string[] = [];
+      if (!job) warnings.push(`No JobCodeLookup for ${assignmentType}`);
+      if (!c.netId) warnings.push("User missing NetID");
+
+      return {
+        netId: c.netId ?? "",
+        firstName: c.firstName,
+        lastName: c.lastName,
+        jobId: job?.jobCode ?? "",
+        hourlyWage: job?.hourlyWage ?? "",
+        hireStart,
+        hireEnd,
+        chartStringType: CORE_INSTRUCTOR_CHART_STRING_TYPE,
+        chartString: CORE_INSTRUCTOR_CHART_STRING,
+        warnings,
+      };
+    });
+}
+
+export async function buildCoreRows(
+  termId: string,
+  selectedUserIds: Set<string>,
+): Promise<PayrollRow[]> {
+  const candidates = await listCoreCandidates(termId);
+  return buildNonProjectRows(termId, selectedUserIds, candidates, "Core");
+}
+
+export async function buildInstructorRows(
+  termId: string,
+  selectedUserIds: Set<string>,
+): Promise<PayrollRow[]> {
+  const candidates = await listInstructorCandidates(termId);
+  return buildNonProjectRows(termId, selectedUserIds, candidates, "Instructor");
 }
 
 export async function buildPayrollRows(termId: string): Promise<PayrollRow[]> {
