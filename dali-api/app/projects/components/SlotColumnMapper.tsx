@@ -15,6 +15,7 @@
 // not a component change.
 import { useMemo, useRef, useState } from "react";
 import { useFetcher } from "react-router";
+import { Button } from "~/components/ui/Button";
 import {
   SLOT_ROLES,
   BUILTIN_SOURCES,
@@ -591,14 +592,15 @@ export function SlotColumnMapper({
           >
             + Extra column
           </button>
-          <button
-            type="button"
+          <Button
+            variant="primary"
+            size="sm"
             onClick={save}
             disabled={saving || !dirty || missing.length > 0}
-            className="ml-auto px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors disabled:opacity-60"
+            className="ml-auto"
           >
             {saving ? "Saving…" : "Save columns"}
-          </button>
+          </Button>
         </div>
       )}
     </div>

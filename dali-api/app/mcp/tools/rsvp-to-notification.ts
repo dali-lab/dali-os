@@ -5,6 +5,7 @@
 
 import { prisma } from "~/lib/db";
 import { updateGoogleAttendeeRsvp } from "~/lib/google-calendar";
+import { primaryEmail } from "~/lib/display";
 
 export const RSVP_TO_NOTIFICATION_TOOL = {
   name: "rsvp_to_notification",
@@ -66,7 +67,7 @@ export async function runRsvpToNotification(
     throw new RsvpError("Notification has no associated meeting", 400);
   }
 
-  const attendeeEmail = caller.daliEmail ?? caller.dartmouthEmail;
+  const attendeeEmail = primaryEmail(caller);
 
   let gcalError: string | null = null;
   if (

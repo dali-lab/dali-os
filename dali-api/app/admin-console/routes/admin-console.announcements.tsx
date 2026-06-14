@@ -16,6 +16,7 @@ import {
   Paperclip,
   CheckCircle2,
 } from "lucide-react";
+import { SearchInput } from "~/components/ui/SearchInput";
 
 export const meta: Route.MetaFunction = () => [
   { title: "Announcements · Operations · DALI OS" },
@@ -373,16 +374,11 @@ export default function AnnouncementsPage() {
                 </span>
               ) : (
                 <>
-                  <div className="relative">
-                    <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-                    <input
-                      type="text"
-                      placeholder="Search groups…"
-                      value={groupSearch}
-                      onChange={(e) => setGroupSearch(e.target.value)}
-                      className="w-full pl-7 pr-2 py-1.5 text-sm border border-border rounded-md bg-card text-foreground"
-                    />
-                  </div>
+                  <SearchInput
+                    value={groupSearch}
+                    onChange={(e) => setGroupSearch(e.target.value)}
+                    placeholder="Search groups…"
+                  />
                   {filteredGroups.length === 0 ? (
                     <span className="text-xs text-muted-foreground">
                       No matching groups.
@@ -425,16 +421,11 @@ export default function AnnouncementsPage() {
                   </span>
                 )}
               </div>
-              <div className="relative">
-                <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-                <input
-                  type="text"
-                  placeholder="Search people…"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="w-full pl-7 pr-2 py-1.5 text-sm border border-border rounded-md bg-card text-foreground"
-                />
-              </div>
+              <SearchInput
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search people…"
+              />
               <div className="max-h-64 overflow-y-auto border border-border rounded-md divide-y divide-border bg-card">
                 {filteredMembers.map((m) => (
                   <label

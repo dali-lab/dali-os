@@ -12,6 +12,8 @@ const OAUTH_STATE_COOKIE = "__dali_oauth_state";
 const RATE_LIMIT_MAX = 5;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 
+const isProduction = process.env.NODE_ENV === "production";
+
 export const meta: Route.MetaFunction = () => [{ title: "DALI OS · Sign in" }];
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -62,7 +64,7 @@ export async function action({ request }: Route.ActionArgs) {
       "Max-Age=600",
       "HttpOnly",
       "SameSite=Lax",
-      ...(process.env.NODE_ENV === "production" ? ["Secure"] : []),
+      ...(isProduction ? ["Secure"] : []),
     ].join("; ");
     headers.append("Set-Cookie", stateCookie);
     headers.set(
@@ -79,7 +81,7 @@ export async function action({ request }: Route.ActionArgs) {
     "Max-Age=600",
     "HttpOnly",
     "SameSite=Lax",
-    ...(process.env.NODE_ENV === "production" ? ["Secure"] : []),
+    ...(isProduction ? ["Secure"] : []),
   ].join("; ");
   headers.append("Set-Cookie", stateCookie);
 

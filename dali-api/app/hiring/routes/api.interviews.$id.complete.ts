@@ -6,8 +6,7 @@ import { parseJson } from "~/lib/validate";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
 import { isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
-
-const VALID_RECOMMENDATIONS = ["Strong Hire", "Hire", "Lean Hire", "Lean No Hire", "No Hire"] as const;
+import { VALID_RECOMMENDATIONS } from "~/hiring/lib/review";
 
 const CompleteSchema = z.object({
   recommendation: z.enum(VALID_RECOMMENDATIONS),

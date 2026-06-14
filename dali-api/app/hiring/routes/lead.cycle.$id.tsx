@@ -26,6 +26,7 @@ import { formatVersionLabel, buildVersionNumberMap } from "~/lib/formatVersion";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { sendExtensionNoticeIfDue, resendExtensionNotice } from "~/hiring/lib/extension-notice";
 import { ConfidentialityGate } from "~/hiring/components/ConfidentialityGate";
+import { STATUS_COLORS, STATUS_LABELS } from "~/hiring/lib/labels";
 import {
   zonedDayStartUtc,
   zonedDayEndUtc,
@@ -1232,13 +1233,6 @@ export default function HiringLeadCycleDetails() {
   const [showOpenConfirm, setShowOpenConfirm] = useState(false)
 
   const STATUS_FLOW = ['Draft', 'Open', 'UnderReview', 'Completed'] as const
-  const STATUS_LABELS: Record<string, string> = {
-    Draft: 'Draft', Open: 'Open', UnderReview: 'Under Review', Completed: 'Completed',
-  }
-  const STATUS_COLORS: Record<string, string> = {
-    Draft: 'bg-muted text-muted-foreground', Open: 'bg-green-100 text-green-700',
-    UnderReview: 'bg-yellow-100 text-yellow-700', Completed: 'bg-blue-100 text-blue-700',
-  }
 
   // ── Active tab (URL-synced: deep-links, reload, and back/forward all work) ──
   const [searchParams, setSearchParams] = useSearchParams()

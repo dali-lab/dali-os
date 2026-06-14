@@ -22,6 +22,7 @@ import {
   type Preference,
 } from "../lib/staffing-board";
 import { CheckCircle2 } from "lucide-react";
+import { Button } from "~/components/ui/Button";
 import { MemberCard, MemberCardPreview } from "./MemberCard";
 import { BidModal } from "./BidModal";
 import { FinalizeModal } from "./FinalizeModal";
@@ -509,14 +510,15 @@ function TermChannelBanner({ termId, termCode }: { termId: string; termCode: str
           aria-label="Term channel name"
           className="w-32 px-2 py-1 text-sm border border-border rounded-md bg-background text-foreground disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
         />
-        <button
-          type="button"
+        <Button
+          variant="primary"
+          size="sm"
           disabled={running || !channel.trim()}
           onClick={run}
-          className="px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 disabled:opacity-60 transition-colors whitespace-nowrap"
+          className="whitespace-nowrap"
         >
           {running ? "Creating…" : "Create + invite"}
-        </button>
+        </Button>
       </div>
     </div>
   );

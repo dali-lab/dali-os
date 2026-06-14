@@ -3,7 +3,13 @@ import { prisma } from "~/lib/db";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { canManageStaffing } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { ensureChannel, inviteUsersToChannel, slackErrorMessage } from "~/slack/lib/slack-client";
+import {
+  ensureChannel,
+  inviteUsersToChannel,
+  slackErrorMessage,
+  slackConfigured,
+  SLACK_NOT_CONFIGURED_MESSAGE,
+} from "~/slack/lib/slack-client";
 import { resolveSlackIdsForInvite } from "~/members/lib/slack-sync.server";
 import { logAuditEvent } from "~/lib/audit";
 
@@ -49,8 +55,8 @@ export async function action({ request }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Invalid body" }, { status: 400 }));
   }
 
-  if (!process.env.SLACK_BOT_TOKEN) {
-    return withCors(request, Response.json({ error: "SLACK_BOT_TOKEN not set." }, { status: 400 }));
+  if (!slackConfigured()) {
+    return withCors(request, Response.json({ error: SLACK_NOT_CONFIGURED_MESSAGE }, { status: 400 }));
   }
 
   const term = await prisma.term.findUnique({

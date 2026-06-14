@@ -5,6 +5,7 @@
 // — this only controls which form is surfaced to members.
 import { useState } from "react";
 import { useFetcher } from "react-router";
+import { Button } from "~/components/ui/Button";
 
 type SelectableForm = { id: string; name: string; published: boolean };
 
@@ -73,13 +74,14 @@ export function SlotFormPicker({
                 </option>
               ))}
             </select>
-            <button
+            <Button
               type="submit"
+              variant="primary"
+              size="sm"
               disabled={saving || !dirty}
-              className="px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors disabled:opacity-60"
             >
               {saving ? "Saving…" : "Save"}
-            </button>
+            </Button>
           </fetcher.Form>
         ) : (
           <div className="flex-1 text-sm text-foreground">

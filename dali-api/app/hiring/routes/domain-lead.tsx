@@ -27,13 +27,7 @@ import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
 import type { DecisionType } from "~/types";
 import { formatVersionLabel, buildVersionNumberMap } from "~/lib/formatVersion";
 import { selectActiveCycleForDomainLead } from "~/hiring/lib/cycle-picker";
-
-const STATUS_LABELS: Record<string, string> = {
-  Draft: "Draft",
-  Open: "Open",
-  UnderReview: "Under Review",
-  Completed: "Completed",
-};
+import { STATUS_LABELS, DECISION_LABELS } from "~/hiring/lib/labels";
 
 // Every status/decision pill carries a border in its OWN hue (never a neutral
 // black/gray line on a colored pill) so the whole page reads consistently.
@@ -2044,13 +2038,6 @@ const DECISION_COLORS: Record<string, string> = {
   InvitedToInterview: "bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-700",
   Accepted: "bg-green-100 text-green-700 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700",
   Waitlisted: "bg-yellow-100 text-yellow-700 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-700",
-};
-
-const DECISION_LABELS: Record<string, string> = {
-  Rejected: "Reject",
-  InvitedToInterview: "Interview",
-  Accepted: "Accept",
-  Waitlisted: "Waitlist",
 };
 
 // Stage treatment composes on top of the `border border-current/40` the badge

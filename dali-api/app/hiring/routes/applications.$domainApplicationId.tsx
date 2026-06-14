@@ -9,31 +9,12 @@ import { presignAnswers } from "~/hiring/lib/presign";
 import { ApplicationViewer } from "~/hiring/components/ApplicationViewer";
 import { ReviewSummary } from "~/hiring/components/ReviewSummary";
 import type { Question, RubricCriterion } from "~/types";
-
-const INTERVIEW_STATUS_COLORS: Record<string, string> = {
-  Scheduled: "bg-blue-100 text-blue-700",
-  Completed: "bg-green-100 text-green-700",
-  CancelledByApplicant: "bg-red-100 text-red-700",
-  CancelledByAdmin: "bg-muted text-foreground/80",
-};
-
-const INTERVIEW_STATUS_LABELS: Record<string, string> = {
-  CancelledByApplicant: "Cancelled (applicant)",
-  CancelledByAdmin: "Cancelled (admin)",
-};
-
-const DECISION_COLORS: Record<string, string> = {
-  Rejected: "bg-red-100 text-red-700",
-  InvitedToInterview: "bg-blue-100 text-blue-700",
-  Accepted: "bg-green-100 text-green-700",
-  Waitlisted: "bg-yellow-100 text-yellow-700",
-};
-
-const STAGE_LABELS: Record<string, string> = {
-  Draft: "Draft",
-  Final: "Finalized",
-  Released: "Released",
-};
+import {
+  INTERVIEW_STATUS_COLORS,
+  INTERVIEW_STATUS_LABELS,
+  DECISION_COLORS,
+  STAGE_LABELS,
+} from "~/hiring/lib/labels";
 
 const LOCATION_LABELS: Record<string, string> = {
   PodAppa: "Pod Appa",

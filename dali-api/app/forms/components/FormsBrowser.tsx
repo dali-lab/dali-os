@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useFetcher } from "react-router";
 import { Folder, FileText, MoreVertical } from "lucide-react";
+import { Button } from "~/components/ui/Button";
 import type { FormCard, FolderCard } from "~/forms/lib/forms-data";
 
 function errorOf(data: unknown): string | null {
@@ -153,14 +154,15 @@ export function FormsBrowser({
         >
           + New folder
         </button>
-        <button
+        <Button
           type="button"
+          variant="primary"
+          size="sm"
           disabled={busy}
           onClick={createForm}
-          className="px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors disabled:opacity-60"
         >
           + New form
-        </button>
+        </Button>
         </div>
       </div>
 

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useRevalidator } from "react-router";
 import { Modal } from "~/components/Modal";
+import { Button } from "~/components/ui/Button";
 
 type Automation = "assignments" | "slack" | "gmail" | "github";
 
@@ -333,14 +334,14 @@ export function FinalizeModal({
           >
             {running ? "Running…" : "Run selected"}
           </button>
-          <button
-            type="button"
+          <Button
+            variant="primary"
+            size="sm"
             disabled={running || savingFields}
             onClick={() => run(AUTOMATIONS.filter((a) => a.configured).map((a) => a.id))}
-            className="px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 disabled:opacity-60 transition-colors"
           >
             {running ? "Running…" : "Run all"}
-          </button>
+          </Button>
         </div>
       </div>
     </Modal>

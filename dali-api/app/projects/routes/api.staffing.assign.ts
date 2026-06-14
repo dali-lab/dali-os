@@ -4,6 +4,7 @@ import { requireAuth, forbidden } from "~/lib/auth";
 import { canManageStaffing } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { logAuditEvent } from "~/lib/audit";
+import { isLevel, type Level } from "~/lib/level";
 import { publishCycleChange } from "../lib/staffing-events.server";
 
 // POST /api/staffing/assign
@@ -25,7 +26,7 @@ type Body = {
   cycleId: string;
   projectId: string | null;
   domainId?: string;
-  level?: "P1" | "P2" | "P3";
+  level?: Level;
 };
 
 function isBody(x: unknown): x is Body {
@@ -36,7 +37,7 @@ function isBody(x: unknown): x is Body {
   if (o.projectId !== null && typeof o.projectId !== "string") return false;
   if (o.projectId !== null) {
     if (typeof o.domainId !== "string") return false;
-    if (o.level !== "P1" && o.level !== "P2" && o.level !== "P3") return false;
+    if (!isLevel(o.level)) return false;
   }
   return true;
 }

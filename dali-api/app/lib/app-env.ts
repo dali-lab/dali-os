@@ -1,5 +1,9 @@
 export type AppEnv = 'dev' | 'staging' | 'prod'
 
+// Two parallel "environment" axes exist on purpose:
+//  - NODE_ENV === "production" → Node/runtime gate (cookie Secure, CSP, dev routes).
+//  - getAppEnv() → app-level intent (Fly app name → 'dev'|'staging'|'prod').
+// On Fly.io, staging is NODE_ENV=production AND getAppEnv()==='staging'.
 export function getAppEnv(): AppEnv {
   const override = process.env.DALI_APP_ENV
   if (override === 'dev' || override === 'staging' || override === 'prod') {

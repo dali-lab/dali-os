@@ -15,14 +15,11 @@ import {
 } from "~/hiring/lib/domain-application-status";
 import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
 import type { Question } from "~/types";
-
-const RECOMMENDATION_COLORS: Record<string, string> = {
-  "Strong Hire": "bg-green-100 text-green-800",
-  Hire: "bg-green-50 text-green-700",
-  "Lean Hire": "bg-yellow-50 text-yellow-700",
-  "Lean No Hire": "bg-orange-50 text-orange-700",
-  "No Hire": "bg-red-100 text-red-700",
-};
+import {
+  RECOMMENDATION_COLORS,
+  DECISION_COLORS,
+  STAGE_LABELS,
+} from "~/hiring/lib/labels";
 
 // bg + text + an explicit same-hue border (e.g. red pill → red border), so the
 // outline always matches the pill and never falls back to the neutral gray
@@ -37,19 +34,6 @@ const STATUS_BADGE: Record<string, { bg: string; label: string }> = {
   PostInterviewPending: { bg: "bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-700", label: "Post-Interview" },
   Accepted: { bg: "bg-green-100 text-green-700 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700", label: "Accepted" },
   Waitlisted: { bg: "bg-yellow-100 text-yellow-700 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-700", label: "Waitlisted" },
-};
-
-const DECISION_COLORS: Record<string, string> = {
-  Rejected: "bg-red-100 text-red-700 border-red-300 dark:bg-red-900/30 dark:text-red-400 dark:border-red-700",
-  InvitedToInterview: "bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-700",
-  Accepted: "bg-green-100 text-green-700 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700",
-  Waitlisted: "bg-yellow-100 text-yellow-700 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-700",
-};
-
-const STAGE_LABELS: Record<string, string> = {
-  Draft: "Draft",
-  Final: "Finalized",
-  Released: "Released",
 };
 
 export const meta: Route.MetaFunction = ({ data }) => {

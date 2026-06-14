@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ChallengeQuestionField } from "~/hiring/components/ChallengeQuestionField";
 import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
+import { Button } from "~/components/ui/Button";
 import type { Question } from "~/types";
 
 // The shared authenticated form-fill UI. Rendered both by /forms/fill/:token
@@ -125,13 +126,15 @@ export function MemberFormFillView({
           </div>
         ))}
 
-        <button
+        <Button
           type="submit"
+          variant="primary"
+          size="sm"
           disabled={state === "submitting"}
-          className="self-start px-4 py-2 text-sm font-medium rounded-lg bg-accent-coral text-white hover:bg-accent-coral/90 disabled:opacity-60 transition-colors"
+          className="self-start"
         >
           {state === "submitting" ? "Submitting…" : "Submit"}
-        </button>
+        </Button>
       </form>
     </>
   );

@@ -5,20 +5,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { ChevronRight, ChevronDown, Plus, X } from "lucide-react";
-
-const STATUS_LABELS: Record<string, string> = {
-  Draft: "Draft",
-  Open: "Open",
-  UnderReview: "Under Review",
-  Completed: "Completed",
-};
-
-const STATUS_COLORS: Record<string, string> = {
-  Draft: "bg-muted text-foreground/80",
-  Open: "bg-green-100 text-green-700",
-  UnderReview: "bg-yellow-100 text-yellow-700",
-  Completed: "bg-blue-100 text-blue-700",
-};
+import { STATUS_COLORS, STATUS_LABELS } from "~/hiring/lib/labels";
 
 export const meta: Route.MetaFunction = () => [{ title: "Hiring lead · DALI OS" }];
 

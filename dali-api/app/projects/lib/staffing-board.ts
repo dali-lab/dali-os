@@ -2,7 +2,8 @@
 // means the route loader/action stay thin and we can iterate on board shape
 // without dragging Prisma + React in.
 
-export type Level = "P1" | "P2" | "P3";
+import type { Level } from "~/lib/level";
+export type { Level };
 
 export type Preference = {
   projectId: string;

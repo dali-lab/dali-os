@@ -1,4 +1,5 @@
 import { JWT } from "google-auth-library";
+import { retry } from "./retry";
 
 // Google Workspace account provisioning via the Admin SDK Directory API. Used
 // to create a member's @dali.dartmouth.edu account when they're accepted.
@@ -249,42 +250,52 @@ export async function addGroupMember(args: {
 }): Promise<GroupMemberResult> {
   // ~0.5 + 1 + 2 + 4 + 8 = 15.5s of total backoff across the retries — enough to
   // cover typical group-propagation lag without hanging the finalize for long.
-  const backoffsMs = [500, 1000, 2000, 4000, 8000];
   try {
     const token = await getAccessToken();
-    for (let attempt = 0; ; attempt++) {
-      const res = await fetch(
-        `${DIRECTORY_GROUPS_URL}/${encodeURIComponent(args.groupEmail)}/members`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
+    return await retry(
+      async (): Promise<GroupMemberResult> => {
+        const res = await fetch(
+          `${DIRECTORY_GROUPS_URL}/${encodeURIComponent(args.groupEmail)}/members`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ email: args.memberEmail, role: "MEMBER" }),
           },
-          body: JSON.stringify({ email: args.memberEmail, role: "MEMBER" }),
-        },
-      );
-      if (res.status === 409) {
-        return { status: "ok", added: false };
-      }
-      if (res.ok) {
-        return { status: "ok", added: true };
-      }
-      const body = await res.text();
-      // Retry only the group-not-yet-propagated 404 (groupKey), and only while
-      // we have backoff budget left.
-      const isGroupKeyNotFound =
-        res.status === 404 && /groupKey/i.test(body);
-      if (isGroupKeyNotFound && attempt < backoffsMs.length) {
-        await new Promise((r) => setTimeout(r, backoffsMs[attempt]));
-        continue;
-      }
-      return { status: "error", message: `Directory API ${res.status}: ${body.slice(0, 200)}` };
-    }
+        );
+        if (res.status === 409) {
+          return { status: "ok", added: false };
+        }
+        if (res.ok) {
+          return { status: "ok", added: true };
+        }
+        const body = await res.text();
+        // Throw the group-not-yet-propagated 404 so retry() can ride out propagation lag.
+        if (res.status === 404 && /groupKey/i.test(body)) {
+          throw new GroupPropagation404(body);
+        }
+        return { status: "error", message: `Directory API ${res.status}: ${body.slice(0, 200)}` };
+      },
+      {
+        backoffsMs: [500, 1000, 2000, 4000, 8000],
+        shouldRetry: (err) => err instanceof GroupPropagation404,
+      },
+    );
   } catch (err) {
+    if (err instanceof GroupPropagation404) {
+      return { status: "error", message: `Directory API 404: ${err.body.slice(0, 200)}` };
+    }
     return {
       status: "error",
       message: err instanceof Error ? err.message : String(err),
     };
+  }
+}
+
+class GroupPropagation404 extends Error {
+  constructor(public body: string) {
+    super("group propagation 404");
   }
 }

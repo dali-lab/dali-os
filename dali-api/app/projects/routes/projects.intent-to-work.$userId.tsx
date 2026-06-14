@@ -7,6 +7,7 @@ import { ensureStaffingCycle } from "../lib/staffing-cycle";
 import { getSlotBinding } from "../lib/form-slots";
 import { resolveTermFilter } from "~/lib/terms";
 import { buildSubmissionView } from "../lib/submission-view.server";
+import { UserSubmissionShell } from "../components/UserSubmissionShell";
 
 const SLOT = "intent-to-work" as const;
 
@@ -68,44 +69,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 export default function IntentSubmissionDetail() {
   const data = useLoaderData<typeof loader>();
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="font-heading text-2xl font-bold text-foreground">
-          {data.record.name}
-        </h1>
-        <p className="text-sm text-muted-foreground">{data.cycleName}</p>
-      </div>
-
-      {data.fields.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          This submission is empty.
-        </p>
-      ) : (
-        <dl className="bg-card border border-border rounded-lg divide-y divide-border">
-          {data.fields.map((f) => (
-            <div
-              key={f.key}
-              className="px-4 py-3 flex flex-col sm:flex-row sm:gap-4"
-            >
-              <dt className="sm:w-56 shrink-0 text-sm font-medium text-foreground">
-                {f.label}
-                {!f.mapped && (
-                  <span className="ml-2 text-[11px] text-muted-foreground">
-                    (not in table)
-                  </span>
-                )}
-              </dt>
-              <dd className="text-sm text-foreground mt-1 sm:mt-0 whitespace-pre-wrap break-words">
-                {f.value === "" ? (
-                  <span className="text-muted-foreground">—</span>
-                ) : (
-                  f.value
-                )}
-              </dd>
-            </div>
-          ))}
-        </dl>
-      )}
-    </div>
+    <UserSubmissionShell
+      title={data.record.name}
+      subtitle={data.cycleName}
+      rows={data.fields.map((f) => ({
+        key: f.key,
+        label: f.label,
+        value: f.value,
+        mapped: f.mapped,
+      }))}
+    />
   );
 }

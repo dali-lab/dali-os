@@ -4,6 +4,7 @@ import { prisma } from "~/lib/db";
 import { getOAuthClient, generateAuthorizationCode } from "~/lib/oauth";
 import { parseSessionId } from "~/lib/cookies";
 import { lookupSession } from "~/lib/session";
+import { displayEmail } from "~/lib/display";
 
 const SCOPE_DESCRIPTIONS: Record<string, string> = {
   "mcp:read": "Read your DALI OS data on your behalf",
@@ -58,10 +59,7 @@ export async function loader({ request }: Route.LoaderArgs): Promise<LoaderData>
     where: { id: oauthSession.userId },
     select: { daliEmail: true, dartmouthEmail: true, netId: true },
   });
-  const userEmail =
-    user?.daliEmail ??
-    user?.dartmouthEmail ??
-    (user?.netId ? `${user.netId}@dartmouth.edu` : "(unknown)");
+  const userEmail = (user ? displayEmail(user) : "") || "(unknown)";
 
   return {
     ok: true,

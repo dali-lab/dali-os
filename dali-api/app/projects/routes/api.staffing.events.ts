@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.staffing.events";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, forbidden } from "~/lib/auth";
 import { canViewStaffing } from "~/lib/roles";
 import { subscribeToCycle } from "../lib/staffing-events.server";
 
@@ -22,7 +22,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   // the client's onerror handles by backing off.
   if (!auth.ok) return new Response("Unauthorized", { status: 401 });
   if (!(await canViewStaffing(auth.user.sub))) {
-    return new Response("Forbidden", { status: 403 });
+    return forbidden(request);
   }
 
   const cycleId = new URL(request.url).searchParams.get("cycleId");
