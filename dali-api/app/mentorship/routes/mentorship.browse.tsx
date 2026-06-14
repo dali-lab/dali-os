@@ -1,5 +1,4 @@
 import { Form, Link, redirect, useLoaderData, useSearchParams } from "react-router";
-import { ArrowLeft } from "lucide-react";
 import type { Route } from "./+types/mentorship.browse";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
@@ -285,14 +284,6 @@ export default function MentorshipBrowse() {
 
   return (
     <main className="px-4 md:px-8 py-6 max-w-6xl mx-auto flex flex-col gap-6">
-      <Link
-        to="/mentorship"
-        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="w-4 h-4" />
-        Back to mentorship
-      </Link>
-
       <header>
         <h1 className="font-heading text-2xl font-bold text-foreground">
           Browse notes

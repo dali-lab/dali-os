@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, redirect, useLoaderData } from "react-router";
-import { ArrowLeft, Trash2 } from "lucide-react";
+import { redirect, useLoaderData } from "react-router";
+import { Trash2 } from "lucide-react";
 import type { Route } from "./+types/mentorship.notes.$id";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
@@ -135,14 +135,6 @@ export default function MentorNoteEditor() {
 
   return (
     <main className="px-4 md:px-8 py-6 max-w-3xl mx-auto flex flex-col gap-4">
-      <Link
-        to="/mentorship"
-        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="w-4 h-4" />
-        Back to mentorship
-      </Link>
-
       <header className="flex flex-col gap-1">
         <h1 className="font-heading text-xl font-bold text-foreground">
           Notes on {fullName(data.mentee)}

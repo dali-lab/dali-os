@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, redirect, useFetcher, useLoaderData, useRevalidator } from "react-router";
-import { ArrowLeft, Plus, Star, Trash2 } from "lucide-react";
+import { redirect, useFetcher, useLoaderData, useRevalidator } from "react-router";
+import { Plus, Star, Trash2 } from "lucide-react";
 import type { Route } from "./+types/mentorship.templates";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
@@ -72,14 +72,6 @@ export default function MentorshipTemplates() {
 
   return (
     <main className="px-4 md:px-8 py-6 max-w-5xl mx-auto flex flex-col gap-6">
-      <Link
-        to="/mentorship"
-        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="w-4 h-4" />
-        Back to mentorship
-      </Link>
-
       <header className="flex items-center justify-between">
         <div>
           <h1 className="font-heading text-2xl font-bold text-foreground">
