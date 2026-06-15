@@ -66,8 +66,6 @@ model User {
   // Name as it appears on file with the College, when different from the
   // first/last above (e.g. a legal name). Optional — blank means "same".
   nameOnFile          String?
-  // The student's college ID number (the number on their ID card), not a FK.
-  collegeId           String?
   phoneNumber         String?
   birthday            DateTime?
   // Free-text demographic; collected optionally (includes a "Prefer not to

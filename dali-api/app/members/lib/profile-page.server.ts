@@ -41,7 +41,7 @@ export type ProfileMember = {
   githubUsername: string | null;
   personalSite: string | null;
   timeZone: string | null;
-  collegeId: string | null;
+  netId: string | null;
   phoneNumber: string | null;
   birthday: string | null;
   dietaryRestrictions: string | null;
@@ -94,7 +94,7 @@ const TEXT_FIELDS = [
   "timeZone",
   "dietaryRestrictions",
   "phoneNumber",
-  "collegeId",
+  "netId",
   "personalEmail",
 ] as const;
 
@@ -157,7 +157,7 @@ export async function loadProfilePage({
       personalSite: true,
       timeZone: true,
       photoUrl: true,
-      collegeId: true,
+      netId: true,
       phoneNumber: true,
       birthday: true,
       dietaryRestrictions: true,
@@ -321,6 +321,11 @@ export async function runProfileAction({
     const raw = (form.get(field) as string | null)?.trim() ?? "";
     if (field === "firstName" || field === "lastName") {
       data[field] = raw;
+    } else if (field === "netId") {
+      // NetID is case-normalized to lowercase — the CAS handler writes it the
+      // same way, and the column has a unique index. Storing mixed case would
+      // produce false "duplicates" against CAS-written rows.
+      data[field] = raw === "" ? null : raw.toLowerCase();
     } else {
       data[field] = raw === "" ? null : raw;
     }
@@ -355,7 +360,20 @@ export async function runProfileAction({
     data.birthday = d;
   }
 
-  await prisma.user.update({ where: { id: targetId }, data });
+  try {
+    await prisma.user.update({ where: { id: targetId }, data });
+  } catch (e) {
+    // P2002 = Prisma unique-constraint violation. The only unique text field
+    // saved here is netId; surface a friendly error instead of a 500.
+    const code = (e as { code?: string } | null)?.code;
+    if (code === "P2002") {
+      return {
+        error:
+          "That NetID is already on another account — contact ops to merge or correct the duplicate.",
+      };
+    }
+    throw e;
+  }
   return redirect(redirectPathFor(request, targetId));
 }
 
