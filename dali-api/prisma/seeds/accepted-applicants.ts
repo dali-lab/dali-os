@@ -49,7 +49,10 @@ const PROFILE_QUESTIONS = [
     required: false,
     data: { label: "Name on file with the College (if different from above)" },
   },
-  { key: "profile.collegeId", type: "text", required: true, data: { label: "College ID number" } },
+  // The form question key stays "profile.collegeId" for backward compatibility
+  // with already-published onboarding form versions; the interpreter maps it
+  // to User.netId (consolidated column).
+  { key: "profile.collegeId", type: "text", required: true, data: { label: "Dartmouth NetID" } },
   { key: "profile.phoneNumber", type: "text", required: true, data: { label: "Phone number" } },
   {
     key: "profile.birthday",

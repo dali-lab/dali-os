@@ -24,7 +24,10 @@ const STRING_FIELDS: Record<string, string> = {
   "profile.linkedinUrl": "linkedinUrl",
   // Onboarding profile additions.
   "profile.nameOnFile": "nameOnFile",
-  "profile.collegeId": "collegeId",
+  // The "College ID" question on the onboarding form is the Dartmouth NetID
+  // (single canonical column). Kept under the legacy key so existing form
+  // versions don't need re-publishing; the destination column moved to netId.
+  "profile.collegeId": "netId",
   "profile.phoneNumber": "phoneNumber",
   "profile.ethnicity": "ethnicity",
   "profile.dietaryRestrictions": "dietaryRestrictions",
@@ -42,7 +45,7 @@ export type ProfileUpdate = {
   linkedinUrl?: string;
   classYear?: number;
   nameOnFile?: string;
-  collegeId?: string;
+  netId?: string;
   phoneNumber?: string;
   ethnicity?: string;
   dietaryRestrictions?: string;

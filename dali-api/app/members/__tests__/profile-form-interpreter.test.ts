@@ -77,6 +77,9 @@ describe("interpretProfileForm", () => {
   });
 
   it("maps the new onboarding profile fields", () => {
+    // The legacy "profile.collegeId" answer key now maps to User.netId — the
+    // two columns were consolidated. Existing form versions don't need to be
+    // re-published; the destination column moved.
     const res = interpretProfileForm({
       "profile.nameOnFile": "Jonathan Doe",
       "profile.collegeId": "F00ABCD",
@@ -88,7 +91,7 @@ describe("interpretProfileForm", () => {
     if (!res.ok) return;
     expect(res.update).toEqual({
       nameOnFile: "Jonathan Doe",
-      collegeId: "F00ABCD",
+      netId: "F00ABCD",
       phoneNumber: "+1 555 010 1234",
       ethnicity: "Asian",
       dietaryRestrictions: "Vegetarian",

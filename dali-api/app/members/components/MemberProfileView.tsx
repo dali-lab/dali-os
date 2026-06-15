@@ -329,9 +329,9 @@ function PersonalSection({
                 defaultValue={member.phoneNumber ?? ""}
               />
               <FieldInput
-                name="collegeId"
-                label="College ID"
-                defaultValue={member.collegeId ?? ""}
+                name="netId"
+                label="NetID"
+                defaultValue={member.netId ?? ""}
               />
               <FieldInput
                 name="personalEmail"
@@ -381,7 +381,7 @@ function PersonalSection({
                 value={formatBirthday(member.birthday)}
               />
               <Detail label="Phone" value={member.phoneNumber} />
-              <Detail label="College ID" value={member.collegeId} />
+              <Detail label="NetID" value={member.netId} />
               <Detail label="Time zone" value={member.timeZone} />
               <div>
                 <dt className="text-xs text-muted-foreground mb-0.5">GitHub</dt>
@@ -763,7 +763,7 @@ const PERSONAL_FIELDS = new Set<keyof ProfileMember>([
   "hometown",
   "birthday",
   "phoneNumber",
-  "collegeId",
+  "netId",
   "personalEmail",
   "timeZone",
   "githubUsername",
@@ -795,8 +795,8 @@ function HiddenProfileFields({
     entries.push(["birthday", birthdayInputValue(member.birthday)]);
   if (!skip.has("phoneNumber"))
     entries.push(["phoneNumber", member.phoneNumber ?? ""]);
-  if (!skip.has("collegeId"))
-    entries.push(["collegeId", member.collegeId ?? ""]);
+  if (!skip.has("netId"))
+    entries.push(["netId", member.netId ?? ""]);
   if (!skip.has("personalEmail"))
     entries.push(["personalEmail", member.personalEmail ?? ""]);
   if (!skip.has("timeZone")) entries.push(["timeZone", member.timeZone ?? ""]);
