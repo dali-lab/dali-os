@@ -6,6 +6,8 @@ import { isCore } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import { hydrateAuthors } from "~/lib/collabAuth";
+import { resolveMentions } from "~/lib/mentions";
+import { loadProjectRoster, loadLabRoster } from "~/lib/mentions.server";
 
 // Comments + inline annotations on documents (Pages) and files (ProjectFile).
 //   GET  /api/comments?targetType=doc|file&targetId=...   → threads (roots + replies)
@@ -145,5 +147,75 @@ export async function action({ request }: Route.ActionArgs) {
     select: { id: true },
   });
 
+  // Best-effort: notify @-mentioned users. Roster = the comment target's
+  // owning project (or the whole lab if the page lives in the Lab workspace).
+  try {
+    await notifyMentions({
+      authorId: auth.user.sub,
+      commentBody: body.body,
+      targetType: body.targetType,
+      targetId: body.targetId,
+    });
+  } catch (err) {
+    console.error("[api.comments] mention notify failed:", err);
+  }
+
   return withCors(request, Response.json({ id: created.id }, { status: 201 }));
+}
+
+async function notifyMentions(input: {
+  authorId: string;
+  commentBody: string;
+  targetType: "doc" | "file";
+  targetId: string;
+}) {
+  let roster = await loadRosterForTarget(input.targetType, input.targetId);
+  if (roster.length === 0) roster = await loadLabRoster();
+  const mentions = resolveMentions(input.commentBody, roster);
+  if (mentions.length === 0) return;
+
+  const recipients = mentions
+    .map((m) => m.userId)
+    .filter((id) => id !== input.authorId);
+  if (recipients.length === 0) return;
+
+  const author = await prisma.user.findUnique({
+    where: { id: input.authorId },
+    select: { firstName: true, lastName: true },
+  });
+  const authorName = `${author?.firstName ?? ""} ${author?.lastName ?? ""}`.trim() || "Someone";
+  const link =
+    input.targetType === "doc"
+      ? `/documents/${input.targetId}`
+      : `/documents/file/${input.targetId}`;
+
+  await prisma.notification.createMany({
+    data: recipients.map((userId) => ({
+      recipientUserId: userId,
+      createdByUserId: input.authorId,
+      kind: "General" as const,
+      title: `${authorName} mentioned you in a comment`,
+      body: input.commentBody.slice(0, 280),
+      link,
+    })),
+  });
+}
+
+async function loadRosterForTarget(targetType: "doc" | "file", targetId: string) {
+  if (targetType === "doc") {
+    const page = await prisma.page.findUnique({
+      where: { id: targetId },
+      select: { workspaceType: true, workspaceId: true },
+    });
+    if (page?.workspaceType === "Project" && page.workspaceId) {
+      return loadProjectRoster(page.workspaceId);
+    }
+    return [];
+  }
+  const file = await prisma.projectFile.findUnique({
+    where: { id: targetId },
+    select: { projectId: true },
+  });
+  if (file?.projectId) return loadProjectRoster(file.projectId);
+  return [];
 }

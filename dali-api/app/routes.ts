@@ -83,6 +83,19 @@ export default [
 
     // Education
     route("education", "education/routes/education.tsx"),
+    route("education/offerings/:id", "education/routes/education.offerings.$id.tsx"),
+    route("education/offerings/:id/apply", "education/routes/education.offerings.$id.apply.tsx"),
+    route("education/enrolled/:id", "education/routes/education.enrolled.$id.tsx"),
+    route("education/manage", "education/routes/education.manage.tsx"),
+    route("education/manage/new", "education/routes/education.manage.new.tsx"),
+    route("education/manage/:id", "education/routes/education.manage.$id.tsx"),
+    route("education/manage/:id/applications", "education/routes/education.manage.$id.applications.tsx"),
+    route("education/manage/:id/assignments", "education/routes/education.manage.$id.assignments.tsx"),
+    route("education/manage/assignments/:assignmentId", "education/routes/education.manage.assignments.$assignmentId.tsx"),
+    route("education/manage/sessions/:sessionId/attendance", "education/routes/education.manage.sessions.$sessionId.attendance.tsx"),
+    route("education/manage/templates", "education/routes/education.manage.templates.tsx"),
+    route("education/manage/templates/:id", "education/routes/education.manage.templates.$id.tsx"),
+    route("education/enrolled/:id/assignments/:assignmentId", "education/routes/education.enrolled.$id.assignments.$assignmentId.tsx"),
 
     // Internal processes
     route("internal-processes/onboarding", "internal-processes/routes/internal-processes.onboarding.tsx"),
@@ -109,6 +122,11 @@ export default [
     route("portal", "routes/portal.tsx"),
     route("portal/apply", "routes/portal.apply.tsx"),
     route("portal/application", "routes/portal.application.tsx"),
+    route("portal/education", "routes/portal.education.tsx"),
+    route("portal/education/:id", "routes/portal.education.$id.tsx"),
+    route("portal/education/:id/apply", "routes/portal.education.$id.apply.tsx"),
+    route("portal/education/:id/enrolled", "routes/portal.education.$id.enrolled.tsx"),
+    route("portal/education/:id/assignments/:assignmentId", "routes/portal.education.$id.assignments.$assignmentId.tsx"),
   ]),
 
   // Authenticated member form fill (no layout), token-addressed. Every form
@@ -342,4 +360,31 @@ export default [
   // Collaborative editing version history
   route("api/collab/versions", "routes/api.collab.versions.ts"),
   route("api/collab/versions/:id", "routes/api.collab.versions.$id.ts"),
+
+  // Education API — offerings, sessions, questions, applications, decisions, announcements
+  route("api/education/offerings", "education/routes/api.offerings.ts"),
+  route("api/education/offerings/:id", "education/routes/api.offerings.$id.ts"),
+  route("api/education/offerings/:id/publish", "education/routes/api.offerings.$id.publish.ts"),
+  route("api/education/offerings/:id/sessions", "education/routes/api.offerings.$id.sessions.ts"),
+  route("api/education/sessions/:id", "education/routes/api.sessions.$id.ts"),
+  route("api/education/offerings/:id/questions", "education/routes/api.offerings.$id.questions.ts"),
+  route("api/education/offerings/:id/applications", "education/routes/api.offerings.$id.applications.ts"),
+  route("api/education/applications/:id/decision", "education/routes/api.applications.$id.decision.ts"),
+  route("api/education/offerings/:id/announcements", "education/routes/api.offerings.$id.announcements.ts"),
+  route("api/education/offerings/:id/instructors", "education/routes/api.offerings.$id.instructors.ts"),
+  route("api/education/offerings/:id/assignments", "education/routes/api.offerings.$id.assignments.ts"),
+  route("api/education/assignments/:id", "education/routes/api.assignments.$id.ts"),
+  route("api/education/assignments/:id/submission", "education/routes/api.assignments.$id.submission.ts"),
+  route("api/education/sessions/:id/attendance", "education/routes/api.sessions.$id.attendance.ts"),
+  route("api/education/submissions/:id/grade", "education/routes/api.submissions.$id.grade.ts"),
+  route("api/education/applications/decisions/bulk", "education/routes/api.applications.decisions.bulk.ts"),
+  route("api/education/offerings/:id/discussion", "education/routes/api.offerings.$id.discussion.ts"),
+  route("api/education/discussion/:id", "education/routes/api.discussion.$id.ts"),
+  route("api/education/discussion/:id/subscription", "education/routes/api.discussion.$id.subscription.ts"),
+  route("api/education/templates", "education/routes/api.templates.ts"),
+  route("api/education/templates/:id", "education/routes/api.templates.$id.ts"),
+  route("api/education/offerings/:id/questions/from-template", "education/routes/api.offerings.$id.questions.from-template.ts"),
+  route("api/education/offerings/:id/waitlist/reorder", "education/routes/api.offerings.$id.waitlist.reorder.ts"),
+  route("api/education/offerings/:id/decision-emails", "education/routes/api.offerings.$id.decision-emails.ts"),
+  route("api/education/assignments/:id/instructions-doc", "education/routes/api.assignments.$id.instructions-doc.ts"),
 ] satisfies RouteConfig;

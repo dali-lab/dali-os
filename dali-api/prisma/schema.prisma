@@ -129,9 +129,12 @@ model User {
   formBindingsSet       StaffingCycleFormBinding[]
 
   // ─── Phase 1: education back-relations ────────────────────────────────────
-  educationApplications  EducationApplication[]  @relation("EducationApplicant")
-  educationSubmissions   EducationSubmission[]   @relation("EducationSubmissionStudent")
-  educationAnnouncements EducationAnnouncement[] @relation("EducationAnnouncementAuthor")
+  educationApplications        EducationApplication[]            @relation("EducationApplicant")
+  educationSubmissions         EducationSubmission[]             @relation("EducationSubmissionStudent")
+  educationAnnouncements       EducationAnnouncement[]           @relation("EducationAnnouncementAuthor")
+  educationDiscussionPosts     EducationDiscussionPost[]         @relation("EducationDiscussionAuthor")
+  educationDiscussionSubs      EducationDiscussionSubscription[] @relation("EducationDiscussionSubscription")
+  educationApplicationTemplates EducationApplicationTemplate[]   @relation("EducationApplicationTemplateAuthor")
 
   // ─── Phase 1: mentorship back-relations ───────────────────────────────────
   mentorNotesAsMentor MentorNote[] @relation("MentorNoteMentor")
@@ -1180,6 +1183,7 @@ model EmailTemplateVersion {
 
   cycleDecisionEmails     CycleDecisionEmail[]
   cycleNotificationEmails CycleNotificationEmail[]
+  offeringDecisionEmails  OfferingDecisionEmail[]  @relation("OfferingDecisionEmailTemplate")
 
   @@index([templateId, versionNumber])
 }
@@ -1518,6 +1522,7 @@ enum NotificationKind {
   MeetingInvite
   MeetingReminder
   SystemAnnouncement
+  Education
 }
 
 enum MeetingRsvp {
@@ -2254,6 +2259,8 @@ model EducationOffering {
   applicationQuestions EducationApplicationQuestion[]
   assignments          EducationAssignment[]
   announcements        EducationAnnouncement[]
+  discussionPosts      EducationDiscussionPost[]
+  decisionEmails       OfferingDecisionEmail[]
 
   createdAt DateTime @default(now())
 }
@@ -2270,14 +2277,19 @@ enum OfferingStatus {
 }
 
 model EducationSession {
-  id             String   @id @default(cuid())
-  offeringId     String
-  sequence       Int
-  datetime       DateTime
-  location       String?
+  id               String   @id @default(cuid())
+  offeringId       String
+  sequence         Int
+  datetime         DateTime
+  // Default duration when calendar-pushed if not otherwise specified.
+  durationMinutes  Int      @default(60)
+  location         String?
   // Materials as collab doc — slides, notes, pre-reads.
-  materialsDocId String?
-  recordingUrl   String?
+  materialsDocId   String?
+  recordingUrl     String?
+  // Google Calendar event id once the session has been pushed. Set by
+  // education/lib/calendar-push on first push; reused for updates.
+  calendarEventId  String?
 
   offering    EducationOffering     @relation(fields: [offeringId], references: [id])
   attendances EducationAttendance[]
@@ -2297,6 +2309,10 @@ model EducationApplication {
   reviewedAt      DateTime?
   // Free-form: the userId of the reviewer who approved/rejected.
   reviewedBy      String?
+  // Optional explicit ordering for Waitlisted rows. NULL = FIFO by
+  // submittedAt. Mutated by the instructor reorder UI; promotion picks
+  // (waitlistRank ASC NULLS LAST, submittedAt ASC).
+  waitlistRank    Int?
 
   applicant   User                         @relation("EducationApplicant", fields: [applicantUserId], references: [id])
   offering    EducationOffering            @relation(fields: [offeringId], references: [id])
@@ -2415,6 +2431,93 @@ model EducationAnnouncement {
   author   User              @relation("EducationAnnouncementAuthor", fields: [authorId], references: [id])
 
   @@index([offeringId, sentAt])
+}
+
+// One discussion channel per offering. Posts are either top-level (parent
+// null) or single-level replies (parent set, never nested further). Visible
+// to Approved enrollees + instructors + Core. Email policy lives in
+// app/education/lib/discussions-notifications.ts.
+model EducationDiscussionPost {
+  id               String                            @id @default(cuid())
+  offeringId       String
+  authorId         String
+  body             String
+  // null = top-level post; non-null = reply to a top-level post. The
+  // app layer rejects parentPostId pointing at another reply, so this never
+  // goes deeper than two levels.
+  parentPostId     String?
+  // Denormalized: true if author had InstructorAssignment or CoreAssignment
+  // at write time. Drives the "broadcast to all enrollees" email rule for
+  // instructor posts.
+  isFromInstructor Boolean                           @default(false)
+  createdAt        DateTime                          @default(now())
+  editedAt         DateTime?
+
+  offering      EducationOffering                 @relation(fields: [offeringId], references: [id])
+  author        User                              @relation("EducationDiscussionAuthor", fields: [authorId], references: [id])
+  parentPost    EducationDiscussionPost?          @relation("DiscussionReplies", fields: [parentPostId], references: [id])
+  replies       EducationDiscussionPost[]         @relation("DiscussionReplies")
+  subscriptions EducationDiscussionSubscription[]
+
+  @@index([offeringId, parentPostId, createdAt])
+}
+
+// Per-user opt-in to email notifications for replies on a specific
+// top-level post. Always points at a top-level post (parentPostId=null);
+// the app-layer creates rows for the author and each replier automatically.
+// Users can DELETE their own row to mute a thread.
+model EducationDiscussionSubscription {
+  id     String @id @default(cuid())
+  postId String
+  userId String
+
+  post EducationDiscussionPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User                    @relation("EducationDiscussionSubscription", fields: [userId], references: [id])
+
+  @@unique([postId, userId])
+  @@index([userId])
+}
+
+// Reusable application questionnaire template. Used by the offering builder
+// to seed a new offering's EducationApplicationQuestion list with one click.
+// Templates are managed at /education/manage/templates by Core; instructors
+// can apply but not edit (kept simple for v1).
+model EducationApplicationTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  createdById String
+  createdAt   DateTime @default(now())
+
+  createdBy User                                   @relation("EducationApplicationTemplateAuthor", fields: [createdById], references: [id])
+  questions EducationApplicationTemplateQuestion[]
+}
+
+model EducationApplicationTemplateQuestion {
+  id         String  @id @default(cuid())
+  templateId String
+  prompt     String
+  position   Int
+  required   Boolean @default(true)
+
+  template EducationApplicationTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@index([templateId, position])
+}
+
+// Per-offering binding: which EmailTemplateVersion fires for each
+// EduApplicationStatus transition. No row = the inline fallback in
+// app/education/lib/notifications.ts is used.
+model OfferingDecisionEmail {
+  offeringId String
+  offering   EducationOffering @relation(fields: [offeringId], references: [id], onDelete: Cascade)
+
+  status EduApplicationStatus
+
+  emailTemplateVersionId String
+  emailTemplateVersion   EmailTemplateVersion @relation("OfferingDecisionEmailTemplate", fields: [emailTemplateVersionId], references: [id])
+
+  @@id([offeringId, status])
 }
 
 // ─── Staffing ────────────────────────────────────────────────────────────────

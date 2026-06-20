@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Check, Trash2, RotateCcw, MessageSquare } from "lucide-react";
+import { MentionText } from "~/components/MentionText";
 
 export type Comment = {
   id: string;
@@ -244,7 +245,9 @@ export function CommentsRail({
                 {t.root.anchor && (
                   <span className="text-[10px] text-accent-coral">inline</span>
                 )}
-                <p className="text-sm text-foreground whitespace-pre-wrap mt-0.5">{t.root.body}</p>
+                <span className="block mt-0.5">
+                  <MentionText body={t.root.body} className="text-sm text-foreground whitespace-pre-wrap" />
+                </span>
               </button>
 
               {t.replies.map((r) => (
@@ -253,7 +256,9 @@ export function CommentsRail({
                     <span className="text-xs font-medium text-foreground">{r.author}</span>
                     <span className="text-[10px] text-muted-foreground">{fmt(r.createdAt)}</span>
                   </div>
-                  <p className="text-sm text-foreground whitespace-pre-wrap mt-0.5">{r.body}</p>
+                  <span className="block mt-0.5">
+                    <MentionText body={r.body} className="text-sm text-foreground whitespace-pre-wrap" />
+                  </span>
                 </div>
               ))}
 

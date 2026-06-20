@@ -358,3 +358,64 @@ export async function updateGoogleAttendeeRsvp(opts: {
     throw new Error(`Google events.patch failed (${patchRes.status}): ${detail}`);
   }
 }
+
+export type PatchGoogleEventInput = {
+  linkId: string;
+  eventId: string;
+  calendarId?: string;
+  summary?: string;
+  description?: string;
+  startIso?: string;
+  endIso?: string;
+};
+
+/**
+ * Patch a previously-created Google Calendar event. Only the provided fields
+ * are sent; unspecified fields keep their current value (PATCH semantics).
+ * `sendUpdates=all` so existing attendees get a "this event was updated"
+ * email.
+ */
+export async function patchGoogleCalendarEvent(input: PatchGoogleEventInput): Promise<void> {
+  const token = await getValidAccessTokenForLink(input.linkId);
+  const calendarId = encodeURIComponent(input.calendarId ?? "primary");
+  const body: Record<string, unknown> = {};
+  if (input.summary !== undefined) body.summary = input.summary;
+  if (input.description !== undefined) body.description = input.description;
+  if (input.startIso !== undefined) body.start = { dateTime: input.startIso };
+  if (input.endIso !== undefined) body.end = { dateTime: input.endIso };
+  if (Object.keys(body).length === 0) return;
+  const url = `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${encodeURIComponent(input.eventId)}?sendUpdates=all`;
+  const res = await fetch(url, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const detail = await extractGoogleErrorDetail(res);
+    throw new Error(`Google events.patch failed (${res.status}): ${detail}`);
+  }
+}
+
+/**
+ * Delete a Google Calendar event. `sendUpdates=all` so attendees get a
+ * cancellation notification. 404 is treated as success (already gone).
+ */
+export async function deleteGoogleCalendarEvent(opts: {
+  linkId: string;
+  eventId: string;
+  calendarId?: string;
+}): Promise<void> {
+  const token = await getValidAccessTokenForLink(opts.linkId);
+  const calendarId = encodeURIComponent(opts.calendarId ?? "primary");
+  const url = `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${encodeURIComponent(opts.eventId)}?sendUpdates=all`;
+  const res = await fetch(url, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (res.ok || res.status === 404 || res.status === 410) return;
+  const detail = await extractGoogleErrorDetail(res);
+  throw new Error(`Google events.delete failed (${res.status}): ${detail}`);
+}

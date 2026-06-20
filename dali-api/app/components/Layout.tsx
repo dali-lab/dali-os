@@ -45,6 +45,7 @@ interface LayoutProps {
   isCore?: boolean
   isAdmin?: boolean
   isDomainLead?: boolean
+  isInstructor?: boolean
   canViewForms?: boolean
   canViewStaffing?: boolean
   isInterviewer?: boolean
@@ -56,7 +57,7 @@ const EXPANDED_AREAS_KEY = 'dali:sidebar:expanded-areas'
 
 type AreaKey = 'hiring' | 'projects' | 'members' | 'partners' | 'education' | 'internal-processes' | 'admin-console'
 
-export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDomainLead = false, canViewForms = false, canViewStaffing = false, isInterviewer = false, hasHiringAccess = false }: LayoutProps) {
+export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDomainLead = false, isInstructor = false, canViewForms = false, canViewStaffing = false, isInterviewer = false, hasHiringAccess = false }: LayoutProps) {
   const location = useLocation()
   const { revalidate } = useRevalidator()
   // Held in a ref so the message listener (mounted once) always calls the
@@ -445,12 +446,23 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
 
   const educationSections = [
     {
-      label: 'Overview',
+      label: 'Catalog',
       to: '/education',
       icon: GraduationCap,
       show: true,
-      active: path === '/education' || path.startsWith('/education/'),
+      active:
+        path === '/education' ||
+        path.startsWith('/education/offerings') ||
+        path.startsWith('/education/enrolled'),
       sub: null as { label: string; to: string; active: boolean }[] | null,
+    },
+    {
+      label: 'Manage',
+      to: '/education/manage',
+      icon: ClipboardList,
+      show: isCore || isInstructor,
+      active: path.startsWith('/education/manage'),
+      sub: null,
     },
   ].filter((s) => s.show)
 

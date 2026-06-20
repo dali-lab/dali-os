@@ -75,12 +75,24 @@ export async function loader({ request, params }: Route.LoaderArgs) {
               domains: { select: { domainId: true, rubricVersion: { select: { criteria: true } } } },
             },
           },
+          userId: true,
           user: { select: { firstName: true, lastName: true } },
         },
       },
     },
   });
   if (!da) return redirect("/hiring/applications");
+
+  // Surface past DALI Education the applicant has attended — useful context
+  // for reviewers (and applicants who specifically mention prior involvement).
+  const pastEducation = await prisma.educationApplication.findMany({
+    where: { applicantUserId: da.application.userId, status: "Approved" },
+    select: {
+      id: true,
+      offering: { select: { id: true, title: true, type: true, startsAt: true } },
+    },
+    orderBy: { offering: { startsAt: "desc" } },
+  });
 
   const cycleId = da.application.applicationCycleId;
   const effectiveDomainId = da.domainId; // always set (backfilled)
@@ -425,6 +437,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     canSeePreReleaseDecisions,
     canSeeDelibs,
     selectedReviewId,
+    pastEducation: pastEducation.map((e) => ({
+      id: e.id,
+      offeringId: e.offering.id,
+      offeringTitle: e.offering.title,
+      offeringType: e.offering.type,
+      startsAt: e.offering.startsAt.toISOString(),
+    })),
   };
 }
 
@@ -531,6 +550,26 @@ export default function ApplicationReadOnlyDetail() {
         </div>
       </div>
 
+      {data.pastEducation.length > 0 && (
+        <section className="bg-card rounded-xl border border-border shadow-sm">
+          <div className="px-6 py-4 border-b border-border bg-muted/50">
+            <h2 className="text-lg font-bold text-foreground">Past DALI Education</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Offerings this applicant has been enrolled in.
+            </p>
+          </div>
+          <ul className="p-6 space-y-2">
+            {data.pastEducation.map((e) => (
+              <li key={e.id} className="text-sm text-foreground">
+                <span className="font-semibold">{e.offeringTitle}</span>
+                <span className="ml-2 text-muted-foreground">
+                  {e.offeringType} · {new Date(e.startsAt).toLocaleDateString()}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       <InterviewsSection
         interviews={data.interviews}
         interviewPrepNote={data.interviewPrepNote}
