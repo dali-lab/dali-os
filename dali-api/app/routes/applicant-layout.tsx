@@ -36,6 +36,15 @@ export default function ApplicantLayout() {
           </span>
         </Link>
 
+        <nav className="ml-6 hidden md:flex items-center gap-4 text-sm">
+          <Link to="/portal" className="text-muted-foreground hover:text-dark-blue">
+            Application
+          </Link>
+          <Link to="/portal/education" className="text-muted-foreground hover:text-dark-blue">
+            Education
+          </Link>
+        </nav>
+
         <div className="ml-auto flex items-center gap-3 sm:gap-4">
           <div className="flex items-center gap-2 min-w-0">
             <div className="w-8 h-8 rounded-full bg-accent-coral flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
