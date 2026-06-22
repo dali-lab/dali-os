@@ -53,8 +53,13 @@ export type PayrollRow = {
 };
 
 export function formatDate(d: Date): string {
-  // ISO YYYY-MM-DD; Dartmouth payroll accepts this format.
-  return d.toISOString().slice(0, 10);
+  // MMDDYY with no separators — the format JobX expects for hire dates. UTC to
+  // match how Term start/end dates are stored (midnight UTC), avoiding an
+  // off-by-one from local-timezone conversion.
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  const yy = String(d.getUTCFullYear()).slice(-2);
+  return mm + dd + yy;
 }
 
 // JobCodeLookup uses nullable `level` and `domainId` as wildcards. Match the
