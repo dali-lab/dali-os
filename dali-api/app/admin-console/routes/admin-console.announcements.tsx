@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { redirect, useLoaderData } from "react-router";
+import { redirect, useLoaderData, useSearchParams } from "react-router";
 import type { Route } from "./+types/admin-console.announcements";
 import { prisma } from "~/lib/db";
 import { listVisibleGroupsForUser } from "~/lib/groups";
@@ -19,7 +19,7 @@ import {
 import { SearchInput } from "~/components/ui/SearchInput";
 
 export const meta: Route.MetaFunction = () => [
-  { title: "Announcements · Operations · DALI OS" },
+  { title: "Announcements · Admin · DALI OS" },
 ];
 
 // Admin composer: write an announcement or a todo and send it to the whole
@@ -64,8 +64,18 @@ export async function loader({ request }: Route.LoaderArgs) {
 export default function AnnouncementsPage() {
   const { members, groups, publishedForms } = useLoaderData<typeof loader>();
 
+  // Optional deep-link pre-seed (e.g. the staffing boards' "Send to members"
+  // affordance opens this composer with the bound form + whole-lab audience
+  // already selected). Only honored for forms that exist in the published list.
+  const [searchParams] = useSearchParams();
+  const seedFormId = searchParams.get("formId") ?? "";
+  const seededForm = publishedForms.some((f) => f.id === seedFormId)
+    ? seedFormId
+    : "";
+  const seedAllMembers = searchParams.get("audience") === "all";
+
   // Composable audience: any mix of whole-lab + groups + individuals.
-  const [allMembers, setAllMembers] = useState(false);
+  const [allMembers, setAllMembers] = useState(seedAllMembers);
   const [pickedGroups, setPickedGroups] = useState<Set<string>>(new Set());
   const [pickedUsers, setPickedUsers] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
@@ -74,7 +84,7 @@ export default function AnnouncementsPage() {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [dueAt, setDueAt] = useState("");
-  const [formId, setFormId] = useState("");
+  const [formId, setFormId] = useState(seededForm);
   const [formSearch, setFormSearch] = useState("");
 
   const [sending, setSending] = useState(false);

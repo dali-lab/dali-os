@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/projects.intent-to-work";
+import { useFilteredList } from "~/hooks/useFilteredList";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { parseFormDataJson } from "~/lib/safe-json";
 import { canManageStaffing, canViewStaffing, currentTerm } from "~/lib/roles";
@@ -24,6 +25,8 @@ import {
   type ColumnMapping,
 } from "../lib/slot-roles";
 import { buildSubmissionView } from "../lib/submission-view.server";
+import { deriveSlotStatus, type SlotStatus } from "../lib/slot-status.server";
+import { SlotStatusStrip } from "../components/SlotStatusStrip";
 import type { Question } from "~/types";
 
 const SLOT = "intent-to-work" as const;
@@ -148,6 +151,13 @@ export async function loader({ request }: Route.LoaderArgs) {
     select: { id: true, displayName: true },
   });
 
+  // Per-slot guardrail status (bound / mapped / sent-to). Single-cycle view
+  // only — the all-terms aggregate has no one slot to bind, mirroring binding.
+  const slotStatus: SlotStatus | null = singleCycleId
+    ? (await deriveSlotStatus(singleCycleId)).find((s) => s.slot === SLOT) ??
+      null
+    : null;
+
   return {
     gate: "ok" as const,
     cycle: { name: cycleName },
@@ -164,6 +174,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     mappingWarning,
     allTerms,
     domainOptions,
+    slotStatus,
   };
 }
 
@@ -261,19 +272,14 @@ function Loaded({
     { gate: "ok" }
   >;
 }) {
-  const [query, setQuery] = useState("");
   const [domainId, setDomainId] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return data.submissions.filter((s) => {
-      if (q && !`${s.name} ${s.email ?? ""}`.toLowerCase().includes(q))
-        return false;
-      if (domainId && !s.domainIds.includes(domainId)) return false;
-      return true;
-    });
-  }, [data.submissions, query, domainId]);
+  const { search, setSearch, filtered } = useFilteredList(data.submissions, {
+    searchFields: (s) => [s.name, s.email],
+    predicates: [(s) => !domainId || s.domainIds.includes(domainId)],
+    deps: [domainId],
+  });
 
   const domains = useMemo(
     () => data.domainOptions.map((d) => ({ id: d.id, name: d.displayName })),
@@ -314,9 +320,11 @@ function Loaded({
         </div>
       )}
 
+      {data.slotStatus && <SlotStatusStrip status={data.slotStatus} />}
+
       <div className="flex flex-col sm:flex-row gap-2">
         <div className="flex-1">
-          <SubmissionFilters query={query} onQueryChange={setQuery} />
+          <SubmissionFilters query={search} onQueryChange={setSearch} />
         </div>
         <DomainFilter
           domains={domains}
