@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useRevalidator } from "react-router";
+import { X } from "lucide-react";
 import { Modal } from "~/components/Modal";
 import { Button } from "~/components/ui/Button";
 import { CollaborativeEditor } from "~/components/CollaborativeEditor";
@@ -474,9 +475,9 @@ function EpicDetail({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="text-muted-foreground hover:text-foreground text-lg leading-none"
+            className="text-muted-foreground/70 hover:text-foreground rounded p-1 hover:bg-muted"
           >
-            ×
+            <X className="w-5 h-5" aria-hidden />
           </button>
         </div>
       </div>
