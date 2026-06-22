@@ -8,6 +8,7 @@ import {
   ExternalLink,
   HelpCircle,
   CalendarClock,
+  Share2,
 } from "lucide-react";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
@@ -153,6 +154,15 @@ export default function Home() {
       </header>
 
       <AttentionBanner tasks={tasks} notifications={notifications} />
+
+      <a
+        href="/graph"
+        onClick={(e) => openTaskLink(e, "/graph", "Graph")}
+        className="inline-flex items-center gap-2 self-start rounded-md border border-border bg-card px-3 py-2 text-sm font-medium text-foreground hover:border-accent-coral/50 transition-colors"
+      >
+        <Share2 className="w-4 h-4 text-accent-coral" />
+        Explore the lab graph
+      </a>
 
       <div className="flex flex-col gap-6">
         <WeekCalendarPanel days={weekDays} events={weekEvents} />

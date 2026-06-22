@@ -34,6 +34,7 @@ import {
   SplitSquareHorizontal,
   ExternalLink,
   HelpCircle,
+  Share2,
 } from 'lucide-react'
 import { userInitials } from '~/lib/display'
 import { TabWorkspace, type TabWorkspaceHandle, type OpenTabRequest } from '~/components/TabWorkspace'
@@ -749,6 +750,24 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
             >
               <Calendar className="w-4 h-4 flex-shrink-0" />
               {!collapsed && <span className="truncate">Calendar</span>}
+            </button>
+          )
+        })()}
+        {(() => {
+          // Global interactive lab graph (Obsidian-style). Self-contained
+          // top-level entry — see PR note re: overlap with the Nav PR (#858).
+          const graphActive = path.startsWith('/graph')
+          return (
+            <button
+              type="button"
+              title={collapsed ? 'Graph' : undefined}
+              {...tabClickProps({ url: '/graph', label: 'Graph' })}
+              className={`flex items-center gap-3 rounded-md ${collapsed ? 'px-3 py-2 justify-center' : 'px-3 py-2'} text-sm font-heading font-semibold text-left transition-colors hover:bg-white/5 ${
+                graphActive ? 'text-white' : 'text-white/65 hover:text-white'
+              }`}
+            >
+              <Share2 className="w-4 h-4 flex-shrink-0" />
+              {!collapsed && <span className="truncate">Graph</span>}
             </button>
           )
         })()}

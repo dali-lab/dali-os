@@ -25,7 +25,6 @@ import {
   removeEligibility,
 } from "~/admin-console/lib/eligibility.server";
 import { NEW_MEMBER_PROFILE_FORM_NAME } from "~/members/lib/profile-form-interpreter";
-import { buildConnections, type ConnectionsResult } from "~/lib/connections";
 
 export type ProfileMember = {
   id: string;
@@ -81,10 +80,6 @@ export type ProfilePageData = {
   /** Re-exported so the view can render the Domains & levels picker without
    *  needing its own admin-console import. */
   allowedLevels: readonly Level[];
-  /** Local connections neighborhood (graph Phase 1). Built from the same
-   *  assignment / eligibility / mentorship / task rows already shown on this
-   *  page, so it exposes no new data. */
-  connections: ConnectionsResult;
 };
 
 const TEXT_FIELDS = [
@@ -221,8 +216,6 @@ export async function loadProfilePage({
 
   const collabToken = parseSessionCookie(request);
 
-  const connections = await buildConnections(prisma, "user", targetId);
-
   return {
     member: {
       ...member,
@@ -249,7 +242,6 @@ export async function loadProfilePage({
     presencePhotoUrl: presenceUser?.photoUrl ?? null,
     presenceSubtitle: presenceUser?.subtitle ?? null,
     allowedLevels: ALLOWED_LEVELS,
-    connections,
   };
 }
 

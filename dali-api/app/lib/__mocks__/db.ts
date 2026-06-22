@@ -103,6 +103,9 @@ export const prisma = {
   projectPartner: {
     findMany: vi.fn().mockResolvedValue([]),
   },
+  partnerOrg: {
+    findMany: vi.fn().mockResolvedValue([]),
+  },
   projectRoleRequest: {
     findMany: vi.fn().mockResolvedValue([]),
   },
