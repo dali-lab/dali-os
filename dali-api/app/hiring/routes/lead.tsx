@@ -4,7 +4,8 @@ import type { Route } from "./+types/lead";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
-import { ChevronRight, ChevronDown, Plus, X } from "lucide-react";
+import { ChevronRight, ChevronDown, Plus } from "lucide-react";
+import { Modal, ModalHeader } from "~/components/Modal";
 import { STATUS_COLORS, STATUS_LABELS } from "~/hiring/lib/labels";
 
 export const meta: Route.MetaFunction = () => [{ title: "Hiring lead · DALI OS" }];
@@ -79,17 +80,20 @@ export default function HiringLeadDashboard() {
         </div>
       </div>
 
-      {showModal && (
+      <Modal
+        open={showModal}
+        onClose={() => setShowModal(false)}
+        labelledBy="new-cycle-title"
+        containerClassName="bg-card rounded-lg shadow-xl w-full max-w-sm p-6 space-y-4 my-auto"
+      >
         <>
-          <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setShowModal(false)}>
-            <div className="bg-card rounded-lg shadow-xl w-full max-w-sm p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-foreground">New Hiring Cycle</h2>
-                <button onClick={() => setShowModal(false)} className="text-muted-foreground/70 hover:text-muted-foreground">
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-              <Form method="post" onSubmit={() => setShowModal(false)} className="space-y-4">
+          <ModalHeader
+            titleId="new-cycle-title"
+            title="New Hiring Cycle"
+            onClose={() => setShowModal(false)}
+            className="mb-0"
+          />
+          <Form method="post" onSubmit={() => setShowModal(false)} className="space-y-4">
                 <div>
                   <label htmlFor="cycle-name" className="block text-sm font-medium text-foreground/80 mb-1">
                     Cycle name
@@ -137,10 +141,8 @@ export default function HiringLeadDashboard() {
                   </button>
                 </div>
               </Form>
-            </div>
-          </div>
         </>
-      )}
+      </Modal>
 
 
       <ActiveCycleHero cycles={cycles} />

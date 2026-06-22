@@ -6,7 +6,7 @@ import { isAdmin } from "~/lib/roles";
 import { BarChart3, AlertTriangle } from "lucide-react";
 
 export const meta: Route.MetaFunction = () => [
-  { title: "Analytics · Operations · DALI OS" },
+  { title: "Analytics · Admin · DALI OS" },
 ];
 
 // Slim usage + crash dashboard for a mandated internal tool. We don't track
