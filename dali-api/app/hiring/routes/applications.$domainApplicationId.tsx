@@ -27,6 +27,13 @@ export const meta: Route.MetaFunction = ({ data }) => {
   return [{ title: `${name ?? "Application"} · Applications · DALI OS` }];
 };
 
+// Resolves the dynamic leaf crumb so the trail reads
+// "Hiring › Applications › <applicant name>" instead of a raw id.
+export const handle = {
+  breadcrumb: (data: unknown) =>
+    (data as { applicantName?: string } | undefined)?.applicantName ?? null,
+};
+
 // Read-only view of one (applicant, domain) submission with a selectable
 // reviewer-review viewer. Reachable from the Applications database list.
 //

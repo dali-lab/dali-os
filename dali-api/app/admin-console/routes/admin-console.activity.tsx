@@ -14,7 +14,7 @@ import {
 } from "~/lib/audit-query";
 import { ListTodo, ChevronLeft, ChevronRight, X } from "lucide-react";
 
-export const meta: Route.MetaFunction = () => [{ title: "Activity · Operations · DALI OS" }];
+export const meta: Route.MetaFunction = () => [{ title: "Activity · Admin · DALI OS" }];
 
 // Read-only viewer over the AuditLog table. Offset-paginated and filterable
 // on the indexed columns (action, userId, createdAt) plus a cheap equality

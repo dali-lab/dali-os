@@ -15,7 +15,7 @@ import {
 } from "~/admin-console/lib/payroll-export";
 
 export const meta: Route.MetaFunction = () => [
-  { title: "Payroll export · Operations · DALI OS" },
+  { title: "Payroll export · Admin · DALI OS" },
 ];
 
 // The CSV itself is served by the sibling resource route at
