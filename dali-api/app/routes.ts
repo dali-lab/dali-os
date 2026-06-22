@@ -7,6 +7,8 @@ export default [
     route("profile", "routes/profile.tsx"),
     route("onboarding", "routes/onboarding.tsx"),
     route("calendar", "calendar/routes/calendar.tsx"),
+    // My Tasks surface: Open tasks + browsable notification history.
+    route("notifications", "routes/notifications.tsx"),
 
     // Hiring section
     route("hiring/reviewer", "hiring/routes/reviewer.tsx"),

@@ -27,16 +27,7 @@ import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
 import type { DecisionType } from "~/types";
 import { formatVersionLabel, buildVersionNumberMap } from "~/lib/formatVersion";
 import { selectActiveCycleForDomainLead } from "~/hiring/lib/cycle-picker";
-import { STATUS_LABELS, DECISION_LABELS } from "~/hiring/lib/labels";
-
-// Every status/decision pill carries a border in its OWN hue (never a neutral
-// black/gray line on a colored pill) so the whole page reads consistently.
-const STATUS_COLORS: Record<string, string> = {
-  Draft: "bg-muted text-foreground/80 border border-current/30",
-  Open: "bg-green-100 text-green-700 border border-green-200",
-  UnderReview: "bg-yellow-100 text-yellow-700 border border-yellow-200",
-  Completed: "bg-blue-100 text-blue-700 border border-blue-200",
-};
+import { STATUS_LABELS, DECISION_LABELS, STATUS_COLORS, DECISION_COLORS } from "~/hiring/lib/labels";
 
 const STATUS_MESSAGES: Record<string, string> = {
   Draft: "This cycle is still being set up.",
@@ -715,7 +706,7 @@ export default function DomainLeadDashboard() {
                       <span className="text-muted-foreground/70 hidden sm:inline">·</span>
                       <span className="text-lg text-muted-foreground">{cycle.name}</span>
                       {currentStatus && (
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[currentStatus]}`}>
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border border-current/30 ${STATUS_COLORS[currentStatus]}`}>
                           {STATUS_LABELS[currentStatus]}
                         </span>
                       )}
@@ -2030,16 +2021,6 @@ function DelibsSection({ cycleId, domainId, sessions, initialCount, finalCount }
   );
 }
 
-// bg + text + an explicit same-hue border (e.g. red pill → red border), so the
-// outline always matches the pill and never falls back to the neutral gray
-// border from the global `*` rule.
-const DECISION_COLORS: Record<string, string> = {
-  Rejected: "bg-red-100 text-red-700 border-red-300 dark:bg-red-900/30 dark:text-red-400 dark:border-red-700",
-  InvitedToInterview: "bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-700",
-  Accepted: "bg-green-100 text-green-700 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700",
-  Waitlisted: "bg-yellow-100 text-yellow-700 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-700",
-};
-
 // Stage treatment composes on top of the `border border-current/40` the badge
 // always applies. Draft reads as "tentative" (faded + dashed, same hue);
 // Final/Released keep the solid same-hue border.
@@ -2079,7 +2060,7 @@ function DecisionPillBadge({ pill, isCurrent = false }: { pill: DecisionPill; is
     <span
       title={tooltip}
       aria-label={tooltip}
-      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold border ${DECISION_COLORS[pill.type] ?? "bg-muted text-muted-foreground border-current/40"} ${STAGE_TREATMENT[pill.stage]} ${accent}`}
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold border border-current/40 ${DECISION_COLORS[pill.type] ?? "bg-muted text-muted-foreground"} ${STAGE_TREATMENT[pill.stage]} ${accent}`}
     >
       {Icon && <Icon className="w-3 h-3" />}
       {baseLabel}{rankSuffix}{stageSuffix}

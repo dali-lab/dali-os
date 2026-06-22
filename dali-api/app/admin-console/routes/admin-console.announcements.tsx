@@ -19,7 +19,7 @@ import {
 import { SearchInput } from "~/components/ui/SearchInput";
 
 export const meta: Route.MetaFunction = () => [
-  { title: "Announcements · Operations · DALI OS" },
+  { title: "Announcements · Admin · DALI OS" },
 ];
 
 // Admin composer: write an announcement or a todo and send it to the whole

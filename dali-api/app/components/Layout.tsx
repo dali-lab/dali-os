@@ -148,9 +148,6 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
     const areaKey: AreaKey | null =
       path.startsWith('/admin-console') ? 'admin-console'
       : path.startsWith('/hiring') ? 'hiring'
-      // Level Up lives at /projects/level-up but is surfaced under Internal
-      // Processes — resolve it there before the generic /projects branch.
-      : path.startsWith('/projects/level-up') ? 'internal-processes'
       : path.startsWith('/projects') ? 'projects'
       : path.startsWith('/members') ? 'members'
       : path.startsWith('/partners') ? 'partners'
@@ -239,9 +236,6 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
   const activeAreaKey: AreaKey | null =
     path.startsWith('/admin-console') ? 'admin-console'
     : path.startsWith('/hiring') ? 'hiring'
-    // Level Up lives at /projects/level-up but is surfaced under Internal
-    // Processes — resolve it there before the generic /projects branch.
-    : path.startsWith('/projects/level-up') ? 'internal-processes'
     : path.startsWith('/projects') ? 'projects'
     : path.startsWith('/members') ? 'members'
     : path.startsWith('/partners') ? 'partners'
@@ -319,7 +313,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
 
   const adminSections = [
     {
-      label: 'Roles',
+      label: 'Roles & Permissions',
       to: '/admin-console/members',
       icon: Users,
       show: true,
@@ -388,6 +382,17 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
       sub: null,
     },
     {
+      // Member-facing staffing surface (created by the Staffing PR; the route
+      // string works even before that PR merges). Sits under the Staffing
+      // grouping alongside Intent to Work / Project Bids / Level Up.
+      label: 'My Staffing',
+      to: '/projects/my-staffing',
+      icon: UserPlus,
+      show: true,
+      active: path.startsWith('/projects/my-staffing'),
+      sub: null,
+    },
+    {
       label: 'Intent to Work',
       to: '/projects/intent-to-work',
       icon: FileText,
@@ -403,11 +408,24 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
       active: path.startsWith('/projects/project-bids'),
       sub: null,
     },
+    {
+      label: 'Level Up',
+      // Page lives under /projects/level-up; regrouped here under Projects →
+      // Staffing. Match the legacy /internal-processes/level-up path too so
+      // the entry highlights on either path (the redirect stub is unchanged).
+      to: '/projects/level-up',
+      icon: TrendingUp,
+      show: canViewStaffing,
+      active:
+        path.startsWith('/projects/level-up') ||
+        path.startsWith('/internal-processes/level-up'),
+      sub: null,
+    },
   ].filter((s) => s.show)
 
   const membersSections = [
     {
-      label: 'Database',
+      label: 'Directory',
       to: '/members',
       icon: UsersRound,
       show: true,
@@ -472,18 +490,6 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
       sub: null as { label: string; to: string; active: boolean }[] | null,
     },
     {
-      label: 'Level Up',
-      // Page lives under /projects/level-up; surfaced here under Internal
-      // Processes. Match both so the entry highlights on either path.
-      to: '/projects/level-up',
-      icon: TrendingUp,
-      show: canViewStaffing,
-      active:
-        path.startsWith('/projects/level-up') ||
-        path.startsWith('/internal-processes/level-up'),
-      sub: null,
-    },
-    {
       label: 'JobX',
       to: '/internal-processes/jobx',
       icon: Rocket,
@@ -514,7 +520,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
     },
     {
       key: 'members' as AreaKey,
-      label: 'Members',
+      label: 'People',
       to: '/members',
       icon: UsersRound,
       show: true,
@@ -541,7 +547,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
     },
     {
       key: 'internal-processes' as AreaKey,
-      label: 'Internal Processes',
+      label: 'Lab Processes',
       to: '/internal-processes/transfer',
       icon: Workflow,
       show: true,
@@ -550,7 +556,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
     },
     {
       key: 'admin-console' as AreaKey,
-      label: 'Operations',
+      label: 'Admin',
       to: '/admin-console',
       icon: Settings,
       show: isCore,
@@ -630,9 +636,10 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
         {(() => {
           const hasTasks = taskCount > 0
           const homeActive = path === '/'
-          // Tasks has no page of its own. With no todos it's an inert label.
-          // With todos the header navigates to Home (the task overview) and
-          // sits above one subtab per todo, each linking to its own target.
+          const tasksActive = path.startsWith('/notifications')
+          // "My Tasks" opens the dedicated surface (Open + History tabs). With
+          // todos it also sits above one subtab per open todo, each linking to
+          // that todo's own target; the header itself goes to /notifications.
           const headerInner = (
             <>
               <span className="relative flex-shrink-0">
@@ -644,7 +651,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
               </span>
               {!collapsed && (
                 <>
-                  <span className="truncate">Tasks</span>
+                  <span className="truncate">My Tasks</span>
                   <span
                     className={`ml-auto inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[11px] font-bold ${
                       hasTasks
@@ -676,23 +683,16 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
                 {!collapsed && <span className="truncate">Home</span>}
               </button>
               <div className="flex flex-col">
-                {hasTasks ? (
-                  <button
-                    type="button"
-                    title={collapsed ? `Tasks (${taskCount})` : undefined}
-                    {...tabClickProps({ url: '/', label: 'Home' })}
-                    className={`relative flex items-center gap-3 rounded-md ${collapsed ? 'px-3 py-2 justify-center' : 'px-3 py-2'} text-sm font-heading font-semibold text-left text-white transition-colors hover:bg-white/5`}
-                  >
-                    {headerInner}
-                  </button>
-                ) : (
-                  <div
-                    title={collapsed ? 'Tasks (0)' : undefined}
-                    className={`relative flex items-center gap-3 rounded-md ${collapsed ? 'px-3 py-2 justify-center' : 'px-3 py-2'} text-sm font-heading font-semibold text-white/40`}
-                  >
-                    {headerInner}
-                  </div>
-                )}
+                <button
+                  type="button"
+                  title={collapsed ? `My Tasks (${taskCount})` : undefined}
+                  {...tabClickProps({ url: '/notifications', label: 'My Tasks' })}
+                  className={`relative flex items-center gap-3 rounded-md ${collapsed ? 'px-3 py-2 justify-center' : 'px-3 py-2'} text-sm font-heading font-semibold text-left transition-colors hover:bg-white/5 ${
+                    tasksActive || hasTasks ? 'text-white' : 'text-white/40 hover:text-white'
+                  }`}
+                >
+                  {headerInner}
+                </button>
 
                 {!collapsed && hasTasks && (
                   <div className="mt-1 mb-1 ml-4 pl-2 border-l border-white/10 flex flex-col gap-0.5">
@@ -730,6 +730,15 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
                         </div>
                       )
                     })}
+                    {/* Entry point into the full My Tasks surface — Open list
+                        plus the browsable cleared/history view. */}
+                    <button
+                      type="button"
+                      {...tabClickProps({ url: '/notifications?tab=history', label: 'My Tasks' })}
+                      className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[12px] font-medium text-left text-white/40 hover:text-white hover:bg-white/5 transition-colors"
+                    >
+                      <span className="truncate">See all →</span>
+                    </button>
                   </div>
                 )}
               </div>
@@ -1019,11 +1028,14 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
         </div>
       </div>
 
-      {/* Mobile section breadcrumb — visible below header on small screens */}
-      {activeSection && (
+      {/* Mobile breadcrumb — visible below header on small screens. Shows the
+          full ancestry (Area › Section [› Sub]) rather than only the section. */}
+      {activeSection && activeArea && (
         <div className="md:hidden bg-card border-b border-border">
           <div className="px-4 h-11 flex items-center gap-2 text-sm font-heading font-semibold text-foreground">
             <activeSection.icon className="w-4 h-4 text-accent-coral" />
+            <span className="text-muted-foreground font-medium">{activeArea.label}</span>
+            <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/50" />
             <span>{activeSection.label}</span>
             {activeSection.sub && (
               <nav className="flex items-center gap-0.5 ml-auto overflow-x-auto">

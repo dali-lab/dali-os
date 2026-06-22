@@ -3,7 +3,13 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db");
 
 import { prisma } from "~/lib/db";
-import { listOpenTasks, countOpenTasks } from "~/lib/tasks";
+import {
+  listOpenTasks,
+  countOpenTasks,
+  resolveNotificationState,
+  listNotificationHistory,
+  type NotifLiveness,
+} from "~/lib/tasks";
 
 const mockPrisma = prisma as unknown as {
   notification: {
@@ -11,6 +17,19 @@ const mockPrisma = prisma as unknown as {
     count: ReturnType<typeof vi.fn>;
   };
 };
+
+// Minimal liveness row; override per-case.
+function liveness(over: Partial<NotifLiveness> = {}): NotifLiveness {
+  return {
+    readAt: null,
+    dueAt: null,
+    formId: null,
+    scheduledMeetingId: null,
+    scheduledMeeting: null,
+    interviewAssignment: null,
+    ...over,
+  };
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -78,5 +97,166 @@ describe("countOpenTasks", () => {
     expect(mockPrisma.notification.count).toHaveBeenCalledWith({
       where: expectedWhere("user-1"),
     });
+  });
+});
+
+describe("resolveNotificationState", () => {
+  const now = new Date("2026-06-01T12:00:00Z");
+
+  it("unread plain → Open", () => {
+    expect(resolveNotificationState(liveness(), now)).toBe("Open");
+  });
+
+  it("read plain → Cleared", () => {
+    expect(resolveNotificationState(liveness({ readAt: now }), now)).toBe(
+      "Cleared",
+    );
+  });
+
+  it("read with formId → Submitted", () => {
+    expect(
+      resolveNotificationState(liveness({ readAt: now, formId: "f1" }), now),
+    ).toBe("Submitted");
+  });
+
+  it("unread with a Cancelled linked meeting → Cancelled", () => {
+    expect(
+      resolveNotificationState(
+        liveness({
+          scheduledMeetingId: "m1",
+          scheduledMeeting: { status: "Cancelled" },
+        }),
+        now,
+      ),
+    ).toBe("Cancelled");
+  });
+
+  it("unread with a non-Active interview assignment → Cancelled", () => {
+    expect(
+      resolveNotificationState(
+        liveness({
+          interviewAssignment: {
+            status: "Declined",
+            interview: { status: "Scheduled" },
+          },
+        }),
+        now,
+      ),
+    ).toBe("Cancelled");
+  });
+
+  it("unread past dueAt → Expired", () => {
+    expect(
+      resolveNotificationState(
+        liveness({ dueAt: new Date("2026-05-01T00:00:00Z") }),
+        now,
+      ),
+    ).toBe("Expired");
+  });
+
+  it("Cancelled wins over a set readAt", () => {
+    expect(
+      resolveNotificationState(
+        liveness({
+          readAt: now,
+          scheduledMeetingId: "m1",
+          scheduledMeeting: { status: "Cancelled" },
+        }),
+        now,
+      ),
+    ).toBe("Cancelled");
+  });
+});
+
+describe("listNotificationHistory", () => {
+  function row(over: Record<string, unknown> = {}) {
+    return {
+      id: "n1",
+      kind: "General",
+      title: "Hello",
+      body: "World",
+      link: "/somewhere",
+      dueAt: null,
+      readAt: null,
+      createdAt: new Date("2026-05-20T10:00:00Z"),
+      formId: null,
+      scheduledMeetingId: null,
+      createdBy: { id: "u9", firstName: "Ada", lastName: "Lovelace" },
+      form: null,
+      scheduledMeeting: null,
+      interviewAssignment: null,
+      ...over,
+    };
+  }
+
+  it("returns items with derived state, sender, and counts", async () => {
+    mockPrisma.notification.findMany.mockResolvedValue([row()]);
+    mockPrisma.notification.count
+      .mockResolvedValueOnce(3) // open
+      .mockResolvedValueOnce(7); // cleared
+
+    const res = await listNotificationHistory("user-1");
+    expect(res.counts).toEqual({ open: 3, cleared: 7 });
+    expect(res.items[0]).toMatchObject({
+      id: "n1",
+      sender: "Ada Lovelace",
+      state: "Open",
+      clearedAt: null,
+    });
+    expect(res.nextCursor).toBeNull();
+  });
+
+  it("status=cleared filters on readAt not null", async () => {
+    mockPrisma.notification.findMany.mockResolvedValue([]);
+    await listNotificationHistory("user-1", { status: "cleared" });
+    const call = mockPrisma.notification.findMany.mock.calls[0][0];
+    expect(call.where.AND).toContainEqual({ NOT: { readAt: null } });
+  });
+
+  it("kind + q compose into the base where", async () => {
+    mockPrisma.notification.findMany.mockResolvedValue([]);
+    await listNotificationHistory("user-1", { kind: "General", q: "budget" });
+    const call = mockPrisma.notification.findMany.mock.calls[0][0];
+    const base = call.where.AND[0];
+    expect(base.kind).toBe("General");
+    expect(base.OR).toEqual([
+      { title: { contains: "budget", mode: "insensitive" } },
+      { body: { contains: "budget", mode: "insensitive" } },
+    ]);
+  });
+
+  it("clamps limit to 50 and overfetches by one", async () => {
+    mockPrisma.notification.findMany.mockResolvedValue([]);
+    await listNotificationHistory("user-1", { limit: 999 });
+    const call = mockPrisma.notification.findMany.mock.calls[0][0];
+    expect(call.take).toBe(51);
+  });
+
+  it("emits a nextCursor when more rows exist than the limit", async () => {
+    // limit 1 → overfetch 2; two rows means hasMore.
+    mockPrisma.notification.findMany.mockResolvedValue([
+      row({ id: "a", createdAt: new Date("2026-05-20T10:00:00Z") }),
+      row({ id: "b", createdAt: new Date("2026-05-19T10:00:00Z") }),
+    ]);
+    const res = await listNotificationHistory("user-1", { limit: 1 });
+    expect(res.items).toHaveLength(1);
+    expect(res.items[0].id).toBe("a");
+    expect(res.nextCursor).toEqual({
+      createdAt: "2026-05-20T10:00:00.000Z",
+      id: "a",
+    });
+  });
+
+  it("links a Submitted form row to its fill page", async () => {
+    mockPrisma.notification.findMany.mockResolvedValue([
+      row({
+        readAt: new Date("2026-05-21T10:00:00Z"),
+        formId: "f1",
+        form: { published: true, publicToken: "tok123" },
+      }),
+    ]);
+    const res = await listNotificationHistory("user-1");
+    expect(res.items[0].state).toBe("Submitted");
+    expect(res.items[0].link).toBe("/forms/fill/tok123");
   });
 });
