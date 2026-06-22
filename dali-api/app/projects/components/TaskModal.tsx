@@ -5,6 +5,7 @@
 // it collects the full set of fields and hands them to onCreate on submit.
 
 import { useEffect, useState } from "react";
+import { X } from "lucide-react";
 import { Modal } from "~/components/Modal";
 import { Button } from "~/components/ui/Button";
 import type { TaskBoardOptions, TaskCardModel, Priority } from "../lib/task-board";
@@ -149,10 +150,10 @@ export function TaskModal({
           <button
             type="button"
             onClick={onClose}
-            className="text-muted-foreground hover:text-foreground text-sm px-2 py-1"
+            className="text-muted-foreground/70 hover:text-foreground rounded p-1 hover:bg-muted"
             aria-label="Close"
           >
-            ✕
+            <X className="w-5 h-5" aria-hidden />
           </button>
         </div>
 

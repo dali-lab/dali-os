@@ -1,4 +1,4 @@
-import { Modal } from "~/components/Modal";
+import { Modal, ModalHeader } from "~/components/Modal";
 import type { BidField, Level, Preference } from "../lib/staffing-board";
 
 type BidModalProps = {
@@ -70,23 +70,12 @@ export function BidModal({
       labelledBy="bid-modal-title"
       containerClassName="bg-card rounded-2xl shadow-xl max-w-lg w-full p-5 sm:p-6 my-auto max-h-[85vh] overflow-y-auto"
     >
-      <div className="flex items-start justify-between gap-4 mb-4">
-        <div>
-          <h2 id="bid-modal-title" className="font-heading text-lg font-bold text-foreground">
-            {memberName}'s bid
-          </h2>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Full bid submission for this staffing cycle.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="text-muted-foreground hover:text-foreground text-sm px-2 py-1 rounded hover:bg-muted"
-        >
-          Close
-        </button>
-      </div>
+      <ModalHeader
+        titleId="bid-modal-title"
+        title={`${memberName}'s bid`}
+        subtitle="Full bid submission for this staffing cycle."
+        onClose={onClose}
+      />
 
       {sorted.length === 0 && bidFields.length === 0 ? (
         <p className="text-sm text-muted-foreground italic">

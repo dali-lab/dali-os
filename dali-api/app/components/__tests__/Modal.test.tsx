@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { Modal, nextTrapTarget } from "../Modal";
+import { Modal, ModalHeader, ModalFooter, nextTrapTarget } from "../Modal";
 
 describe("nextTrapTarget (focus-trap cycling)", () => {
   function makeButtons(n: number): HTMLElement[] {
@@ -77,5 +77,83 @@ describe("Modal render output", () => {
     expect(html).toContain('id="my-title"');
     expect(html).toContain("Hello");
     expect(html).toContain("OK");
+  });
+});
+
+describe("ModalHeader", () => {
+  it("renders an <h2> carrying the passed titleId and a close button with the default aria-label", () => {
+    const html = renderToStaticMarkup(
+      createElement(ModalHeader, {
+        titleId: "my-title",
+        title: "Settings",
+        onClose: () => {},
+      }),
+    );
+    expect(html).toContain('id="my-title"');
+    expect(html).toContain("Settings");
+    expect(html).toContain('aria-label="Close"');
+  });
+
+  it("renders the subtitle when provided", () => {
+    const html = renderToStaticMarkup(
+      createElement(ModalHeader, {
+        titleId: "t",
+        title: "Title",
+        subtitle: "A helpful description",
+        onClose: () => {},
+      }),
+    );
+    expect(html).toContain("A helpful description");
+  });
+
+  it("uses a custom close label", () => {
+    const html = renderToStaticMarkup(
+      createElement(ModalHeader, {
+        titleId: "t",
+        title: "Title",
+        onClose: () => {},
+        closeLabel: "Close settings",
+      }),
+    );
+    expect(html).toContain('aria-label="Close settings"');
+  });
+
+  it("omits the close button when hideClose is set", () => {
+    const html = renderToStaticMarkup(
+      createElement(ModalHeader, {
+        titleId: "t",
+        title: "Title",
+        onClose: () => {},
+        hideClose: true,
+      }),
+    );
+    expect(html).not.toContain("aria-label");
+    expect(html).not.toContain("<button");
+  });
+});
+
+describe("ModalFooter", () => {
+  it("renders a Cancel button and the primary child", () => {
+    const html = renderToStaticMarkup(
+      createElement(
+        ModalFooter,
+        { onCancel: () => {} },
+        createElement("button", { key: "p" }, "Save"),
+      ),
+    );
+    expect(html).toContain("Cancel");
+    expect(html).toContain("Save");
+  });
+
+  it("uses a custom cancel label", () => {
+    const html = renderToStaticMarkup(
+      createElement(
+        ModalFooter,
+        { onCancel: () => {}, cancelLabel: "Go back" },
+        createElement("button", { key: "p" }, "Confirm"),
+      ),
+    );
+    expect(html).toContain("Go back");
+    expect(html).not.toContain(">Cancel<");
   });
 });

@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import Cropper, { type Area } from "react-easy-crop";
-import { Modal } from "./Modal";
+import { Modal, ModalHeader } from "./Modal";
 
 const OUTPUT_SIZE = 512;
 
@@ -96,12 +96,13 @@ export function PhotoCropModal({
       disableEscape={processing}
       containerClassName="bg-card rounded-2xl shadow-brand-2 max-w-md w-full p-5 sm:p-6 my-auto"
     >
-      <h2
-        id="photo-crop-title"
-        className="font-heading text-lg font-bold text-foreground mb-3"
-      >
-        Adjust photo
-      </h2>
+      <ModalHeader
+        titleId="photo-crop-title"
+        title="Adjust photo"
+        onClose={onCancel}
+        hideClose={processing}
+        className="mb-3"
+      />
 
       <div className="relative w-full h-72 bg-black rounded-lg overflow-hidden">
         <Cropper

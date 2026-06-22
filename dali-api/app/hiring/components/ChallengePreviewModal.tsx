@@ -1,6 +1,5 @@
-import { X } from "lucide-react";
 import type { Question } from "~/types";
-import { Modal } from "~/components/Modal";
+import { Modal, ModalHeader } from "~/components/Modal";
 import { ChallengePreview } from "~/hiring/components/ChallengePreview";
 
 export interface ChallengePreviewModalProps {
@@ -30,24 +29,14 @@ export function ChallengePreviewModal({
       containerClassName="bg-card rounded-2xl shadow-xl max-w-2xl w-full mx-4 p-6 max-h-[85vh] overflow-y-auto"
     >
       <div className="space-y-5">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h2 id={headingId} className="text-lg font-bold text-foreground">
-              {challengeName}
-            </h2>
-            {versionLabel && (
-              <p className="text-xs text-muted-foreground mt-0.5">{versionLabel}</p>
-            )}
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close preview"
-            className="text-muted-foreground hover:text-foreground"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
+        <ModalHeader
+          titleId={headingId}
+          title={challengeName}
+          subtitle={versionLabel}
+          onClose={onClose}
+          closeLabel="Close preview"
+          className="mb-0"
+        />
         <ChallengePreview description={description} questions={questions} />
       </div>
     </Modal>
