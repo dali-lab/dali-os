@@ -1,8 +1,13 @@
 import { useEditor, EditorContent, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
-import Link from "@tiptap/extension-link";
 import { useEffect, useRef, useState } from "react";
+import {
+  EDITOR_CONTENT_CLASS,
+  EditorShell,
+  isProseMirrorDoc,
+  linkExtension,
+} from "./editor/shared";
 
 interface RichTextEditorProps {
   value: unknown;
@@ -11,12 +16,6 @@ interface RichTextEditorProps {
   disabled?: boolean;
   className?: string;
 }
-
-const LINK_HTML_ATTRIBUTES = {
-  target: "_blank",
-  rel: "noopener noreferrer nofollow",
-  class: "text-blue-600 underline hover:text-blue-800",
-};
 
 const LINK_PROTOCOLS = ["http", "https", "mailto"];
 
@@ -47,20 +46,13 @@ export function RichTextEditor({
     extensions: [
       StarterKit,
       Placeholder.configure({ placeholder }),
-      Link.configure({
-        openOnClick: false,
-        autolink: true,
-        linkOnPaste: true,
-        protocols: LINK_PROTOCOLS,
-        HTMLAttributes: LINK_HTML_ATTRIBUTES,
-      }),
+      linkExtension({ interactive: false }),
     ],
     content: isProseMirrorDoc(value) ? (value as object) : "",
     editable: !disabled,
     editorProps: {
       attributes: {
-        class:
-          "prose prose-sm max-w-none focus:outline-none min-h-[6rem] px-3 py-2",
+        class: EDITOR_CONTENT_CLASS,
       },
     },
     onUpdate: ({ editor }) => {
@@ -73,16 +65,10 @@ export function RichTextEditor({
   }, [editor, disabled]);
 
   return (
-    <div
-      className={`rounded-lg border bg-card ${
-        disabled
-          ? "border-border bg-muted/50 opacity-75"
-          : "border-gray-300 focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent"
-      } ${className ?? ""}`}
-    >
+    <EditorShell disabled={disabled} className={className}>
       {editor && !disabled ? <Toolbar editor={editor} /> : null}
       <EditorContent editor={editor} />
-    </div>
+    </EditorShell>
   );
 }
 
@@ -158,10 +144,4 @@ function Toolbar({ editor }: { editor: Editor }) {
       )}
     </div>
   );
-}
-
-function isProseMirrorDoc(value: unknown): boolean {
-  if (!value || typeof value !== "object") return false;
-  const maybe = value as { type?: unknown; content?: unknown };
-  return maybe.type === "doc";
 }

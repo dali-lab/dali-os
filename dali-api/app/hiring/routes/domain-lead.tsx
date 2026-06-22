@@ -2795,15 +2795,6 @@ function ReviewModal({ review, rubricCriteria, onClose }: {
     if (c?.key) criteriaByKey[c.key] = { label: c.label ?? c.key, description: c.description, maxScore: c.maxScore };
   }
 
-  // Close on Escape
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
   const hasAnyContent =
     scoreEntries.length > 0 ||
     (review.feedback && review.feedback.trim() !== "") ||
@@ -2811,17 +2802,16 @@ function ReviewModal({ review, rubricCriteria, onClose }: {
     !!review.overallRecommendation;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-      onClick={onClose}
+    <Modal
+      open
+      onClose={onClose}
+      labelledBy="reviewer-detail-title"
+      containerClassName="relative bg-card rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto my-auto"
     >
-      <div
-        className="relative bg-card rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <>
         <div className="flex items-start justify-between px-6 py-4 border-b border-border">
           <div>
-            <h2 className="text-lg font-semibold text-foreground">{reviewerName}</h2>
+            <h2 id="reviewer-detail-title" className="text-lg font-semibold text-foreground">{reviewerName}</h2>
             <div className="mt-1 flex items-center gap-2 text-xs">
               {isSubmitted ? (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-medium bg-green-50 text-green-700 border border-green-200">
@@ -2847,11 +2837,12 @@ function ReviewModal({ review, rubricCriteria, onClose }: {
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="text-muted-foreground/70 hover:text-foreground/80 transition"
+            className="text-muted-foreground/70 hover:text-foreground rounded p-1 hover:bg-muted"
             aria-label="Close"
           >
-            <X className="w-5 h-5" />
+            <X className="w-5 h-5" aria-hidden />
           </button>
         </div>
 
@@ -2925,8 +2916,8 @@ function ReviewModal({ review, rubricCriteria, onClose }: {
             </>
           )}
         </div>
-      </div>
-    </div>
+      </>
+    </Modal>
   );
 }
 

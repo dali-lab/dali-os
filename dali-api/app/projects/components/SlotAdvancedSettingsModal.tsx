@@ -5,7 +5,7 @@
 // management) can still open it to see the current binding/columns
 // read-only — both inner components already render that way when canManage
 // is false.
-import { Modal } from "~/components/Modal";
+import { Modal, ModalHeader } from "~/components/Modal";
 import { SlotFormPicker } from "./SlotFormPicker";
 import { SlotColumnMapper } from "./SlotColumnMapper";
 import type { Slot } from "~/projects/lib/form-slots";
@@ -57,28 +57,13 @@ export function SlotAdvancedSettingsModal({
       labelledBy={titleId}
       containerClassName="bg-card rounded-2xl shadow-xl w-full max-w-3xl p-5 sm:p-6 my-auto"
     >
-      <div className="flex items-start justify-between gap-3 mb-3">
-        <div>
-          <h2
-            id={titleId}
-            className="font-heading text-lg font-semibold text-foreground"
-          >
-            {slotLabel} settings
-          </h2>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Connect the form members fill, then map its questions to the
-            columns shown on the board.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close settings"
-          className="text-muted-foreground hover:text-foreground text-xl leading-none px-1"
-        >
-          ×
-        </button>
-      </div>
+      <ModalHeader
+        titleId={titleId}
+        title={`${slotLabel} settings`}
+        subtitle="Connect the form members fill, then map its questions to the columns shown on the board."
+        onClose={onClose}
+        closeLabel="Close settings"
+      />
 
       <div className="flex flex-col gap-4 max-h-[70vh] overflow-y-auto pr-1">
         <SlotFormPicker
