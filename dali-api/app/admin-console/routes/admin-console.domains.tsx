@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { redirect, useLoaderData, useFetcher } from "react-router";
+import { redirect, useLoaderData, useFetcher, Link } from "react-router";
 import type { Route } from "./+types/admin-console.domains";
 import { prisma } from "~/lib/db";
 import { ensureDomainGroup } from "~/lib/groups";
@@ -12,7 +12,7 @@ import {
   addOrUpdateEligibility,
   removeEligibility,
 } from "~/admin-console/lib/eligibility.server";
-import { ChevronDown, Trash2, Plus, X } from "lucide-react";
+import { ChevronDown, Trash2, Plus, X, Share2 } from "lucide-react";
 import {
   type DomainWithCounts,
   type Member,
@@ -517,21 +517,32 @@ function DomainRowItem({
           <span className="text-xs text-red-700">{fetcher.data.error}</span>
         )}
       </div>
-      {viewerIsAdmin && (
-        <fetcher.Form method="post">
-          <input type="hidden" name="intent" value="delete-domain" />
-          <input type="hidden" name="domainId" value={domain.id} />
-          <button
-            type="submit"
-            disabled={inUse || isDeleting}
-            title={inUse ? `Cannot delete — in use by ${inUseBy.join(", ")}` : "Delete domain"}
-            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-red-50 text-red-700 hover:bg-red-100 disabled:bg-muted disabled:text-muted-foreground/60 disabled:cursor-not-allowed"
-          >
-            <Trash2 className="w-3 h-3" />
-            Delete
-          </button>
-        </fetcher.Form>
-      )}
+      <div className="flex items-center gap-2 shrink-0">
+        {/* Connections view (graph Phase 1) — Core-gated, same as this page. */}
+        <Link
+          to={`/connections/domain/${domain.id}`}
+          title="View connections"
+          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium border border-border text-foreground hover:bg-muted transition-colors"
+        >
+          <Share2 className="w-3 h-3" />
+          Connections
+        </Link>
+        {viewerIsAdmin && (
+          <fetcher.Form method="post">
+            <input type="hidden" name="intent" value="delete-domain" />
+            <input type="hidden" name="domainId" value={domain.id} />
+            <button
+              type="submit"
+              disabled={inUse || isDeleting}
+              title={inUse ? `Cannot delete — in use by ${inUseBy.join(", ")}` : "Delete domain"}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-red-50 text-red-700 hover:bg-red-100 disabled:bg-muted disabled:text-muted-foreground/60 disabled:cursor-not-allowed"
+            >
+              <Trash2 className="w-3 h-3" />
+              Delete
+            </button>
+          </fetcher.Form>
+        )}
+      </div>
     </li>
   );
 }

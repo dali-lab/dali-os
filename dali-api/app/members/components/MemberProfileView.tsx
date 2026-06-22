@@ -15,11 +15,13 @@ import {
   Mail,
   MessageSquare,
   Plus,
+  Share2,
   Shield,
   User as UserIcon,
   X,
 } from "lucide-react";
 import { EditableSection } from "~/components/EditableSection";
+import { ConnectionsPanel } from "~/components/ConnectionsPanel";
 import { ProfilePhotoAvatar } from "~/components/ProfilePhotoAvatar";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { PresenceBar } from "~/components/collab/PresenceBar";
@@ -54,6 +56,7 @@ export function MemberProfileView({
     presencePhotoUrl,
     presenceSubtitle,
     allowedLevels,
+    connections,
   } = data;
 
   // /members/:id renders inside a TabWorkspace iframe; a successful save only
@@ -153,6 +156,8 @@ export function MemberProfileView({
         pendingReviews={pendingReviews}
         showReviewsRow={showReviewsRow}
       />
+
+      <ConnectionsSection connections={connections} />
     </div>
   );
 
@@ -527,6 +532,24 @@ function ActivitySection({
           )}
         </div>
       )}
+    </section>
+  );
+}
+
+// ─── Connections (graph Phase 1) ────────────────────────────────────────────
+
+function ConnectionsSection({
+  connections,
+}: {
+  connections: ProfilePageData["connections"];
+}) {
+  return (
+    <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
+      <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
+        <Share2 className="w-4 h-4 text-accent-coral" />
+        Connections
+      </h2>
+      <ConnectionsPanel data={connections} />
     </section>
   );
 }

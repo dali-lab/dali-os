@@ -71,6 +71,10 @@ export default [
     route("documents/file/:fileId", "routes/documents.file.$fileId.tsx"),
     route("documents/:pageId", "routes/documents.$pageId.tsx"),
 
+    // Entity connections (graph Phase 1) — per-entity local neighborhood,
+    // re-centerable. :type is project | user | domain.
+    route("connections/:type/:id", "connections/routes/connections.$type.$id.tsx"),
+
     // Members directory (separate from admin-console/members)
     route("members", "members/routes/members.tsx"),
     route("members/groups", "members/routes/members.groups.tsx"),

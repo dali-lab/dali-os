@@ -90,6 +90,34 @@ export const prisma = {
     findUnique: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
   },
+  domain: {
+    findUnique: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+  },
+  projectDomain: {
+    findMany: vi.fn().mockResolvedValue([]),
+  },
+  projectTerm: {
+    findMany: vi.fn().mockResolvedValue([]),
+  },
+  projectPartner: {
+    findMany: vi.fn().mockResolvedValue([]),
+  },
+  projectRoleRequest: {
+    findMany: vi.fn().mockResolvedValue([]),
+  },
+  mentorshipPair: {
+    findMany: vi.fn().mockResolvedValue([]),
+  },
+  domainEligibility: {
+    findMany: vi.fn().mockResolvedValue([]),
+  },
+  staffingAssignment: {
+    findMany: vi.fn().mockResolvedValue([]),
+  },
+  projectFileTag: {
+    findMany: vi.fn().mockResolvedValue([]),
+  },
   sprint: {
     findMany: vi.fn().mockResolvedValue([]),
     findFirst: vi.fn(),
@@ -129,6 +157,7 @@ export const prisma = {
     count: vi.fn().mockResolvedValue(0),
   },
   taskAssignee: {
+    findMany: vi.fn().mockResolvedValue([]),
     createMany: vi.fn(),
     deleteMany: vi.fn(),
   },

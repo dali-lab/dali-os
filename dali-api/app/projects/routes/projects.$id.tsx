@@ -29,6 +29,8 @@ import { Markdown } from "~/components/Markdown";
 import { parseSessionCookie } from "~/lib/cookies";
 import { isCore, isProjectMember, canManageStaffing, currentTerm } from "~/lib/roles";
 import { getPresenceUser } from "~/lib/presence-user";
+import { buildConnections } from "~/lib/connections";
+import { ConnectionsPanel } from "~/components/ConnectionsPanel";
 import { TaskBoard } from "../components/TaskBoard";
 import { type TimelineEpic, type EpicStatus } from "../components/EpicsTimeline";
 import {
@@ -70,15 +72,16 @@ type ProjectStatus = (typeof STATUSES)[number];
 // "Scope" is no longer a public tab — its domain/term/challenge config moved
 // into a settings popup (gated to Core/Admin/Staff). Public tabs are just the
 // content views.
-const TABS = ["overview", "work"] as const;
+const TABS = ["overview", "work", "connections"] as const;
 type Tab = (typeof TABS)[number];
 function isTab(x: string | null): x is Tab {
-  return x === "overview" || x === "work";
+  return x === "overview" || x === "work" || x === "connections";
 }
 
 const TAB_LABELS: Record<Tab, string> = {
   overview: "Overview",
   work: "Work",
+  connections: "Connections",
 };
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -517,6 +520,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // project.imageUrl so the upload field round-trips the key on save.
   const imageUrlResolved = await resolvePhotoUrl(project.imageUrl);
 
+  // Local connections neighborhood (graph Phase 1). No new data exposure —
+  // every edge maps to a join row already shown on this detail page; gated by
+  // the page's own auth above.
+  const connections = await buildConnections(prisma, "project", project.id);
+
   return {
     project: {
       id: project.id,
@@ -566,6 +574,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     canEditScope,
     canEditAssignmentLevel: core,
     canViewScope,
+    connections,
     currentTerm: current ? { id: current.id, code: current.code } : null,
     collabToken,
     userName,
@@ -821,6 +830,7 @@ export default function ProjectDetail() {
     canEditScope,
     canEditAssignmentLevel,
     canViewScope,
+    connections,
     currentTerm,
     collabToken,
     userName,
@@ -961,6 +971,8 @@ export default function ProjectDetail() {
           userName={userName}
         />
       )}
+
+      {tab === "connections" && <ConnectionsPanel data={connections} />}
     </div>
   );
 
