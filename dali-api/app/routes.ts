@@ -49,6 +49,10 @@ export default [
     // Projects
     route("projects/list", "projects/routes/projects.list.tsx"),
     route("projects/staffing", "projects/routes/projects.staffing.tsx"),
+    // Member-facing staffing destination (requireMember, not canViewStaffing):
+    // the persistent place a member fills/revisits the cycle's staffing forms.
+    // Must precede projects/:id so it isn't captured by the :id param.
+    route("projects/my-staffing", "projects/routes/projects.my-staffing.tsx"),
     // Staffing input forms (member self-service). Must precede projects/:id
     // so these literal segments aren't captured by the :id param.
     route("projects/intent-to-work", "projects/routes/projects.intent-to-work.tsx"),
