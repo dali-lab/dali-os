@@ -17,6 +17,7 @@ import { SubmissionFilters } from "../components/SubmissionFilters";
 import { SlotAdvancedSettingsModal } from "../components/SlotAdvancedSettingsModal";
 import { DomainFilter } from "../components/DomainFilter";
 import { TermFilter } from "~/components/TermFilter";
+import { Modal, ModalHeader } from "~/components/Modal";
 import { resolveTermFilter } from "~/lib/terms";
 import {
   parseColumnMapping,
@@ -688,16 +689,20 @@ function LevelUpConfirmDialog({
   }, [fetcher.data, onClose]);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+    <Modal
+      open
+      onClose={onClose}
+      labelledBy="level-up-confirm-title"
+      disableEscape={pending}
+      containerClassName="bg-card border border-border rounded-lg shadow-lg w-full max-w-sm p-6 flex flex-col gap-4 my-auto"
     >
-      <div className="bg-card border border-border rounded-lg shadow-lg w-full max-w-sm mx-4 p-6 flex flex-col gap-4">
-        <h2 className="font-heading text-lg font-bold text-foreground">
-          Confirm Level Up
-        </h2>
+      <>
+        <ModalHeader
+          titleId="level-up-confirm-title"
+          title="Confirm Level Up"
+          onClose={onClose}
+          className="mb-0"
+        />
         <p className="text-sm text-foreground">
           Promote{" "}
           <span className="font-semibold">{row.name}</span> to{" "}
@@ -735,8 +740,8 @@ function LevelUpConfirmDialog({
             </button>
           </fetcher.Form>
         </div>
-      </div>
-    </div>
+      </>
+    </Modal>
   );
 }
 

@@ -9,7 +9,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { Button } from "~/components/ui/Button";
-import { Modal } from "~/components/Modal";
+import { Modal, ModalHeader } from "~/components/Modal";
 import type { loader } from "~/hiring/routes/library";
 
 type Tab = "challenges" | "rubrics" | "agreements";
@@ -194,9 +194,12 @@ function ChallengesPanel({
         className="fixed inset-0 z-50 flex items-center justify-center bg-black/10 backdrop-blur-[1px] p-4 sm:p-6 overflow-y-auto"
         containerClassName="bg-card rounded-xl shadow-xl max-w-md w-full p-6 my-auto space-y-6"
       >
-        <h2 id="new-challenge-title" className="text-xl font-bold text-foreground">
-          New Challenge
-        </h2>
+        <ModalHeader
+          titleId="new-challenge-title"
+          title="New Challenge"
+          onClose={() => setShowModal(false)}
+          className="mb-0"
+        />
 
         <Form
           method="post"
@@ -313,9 +316,12 @@ function RubricsPanel({ rubrics }: { rubrics: any[] }) {
         labelledBy="new-rubric-title"
       >
         <div className="space-y-4">
-          <h2 id="new-rubric-title" className="text-lg font-semibold text-foreground">
-            New Rubric
-          </h2>
+          <ModalHeader
+            titleId="new-rubric-title"
+            title="New Rubric"
+            onClose={() => setShowModal(false)}
+            className="mb-0"
+          />
           <Form
             method="post"
             onSubmit={() => setShowModal(false)}
@@ -442,9 +448,12 @@ function AgreementsPanel({
         labelledBy="new-agreement-title"
       >
         <div className="space-y-4">
-          <h2 id="new-agreement-title" className="text-lg font-semibold text-foreground">
-            New Confidentiality Agreement
-          </h2>
+          <ModalHeader
+            titleId="new-agreement-title"
+            title="New Confidentiality Agreement"
+            onClose={() => setShowModal(false)}
+            className="mb-0"
+          />
           <Form
             method="post"
             onSubmit={() => setShowModal(false)}

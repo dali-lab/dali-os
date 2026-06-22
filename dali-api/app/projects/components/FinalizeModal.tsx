@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useRevalidator } from "react-router";
-import { Modal } from "~/components/Modal";
+import { Modal, ModalHeader } from "~/components/Modal";
 import { Button } from "~/components/ui/Button";
 
 type Automation = "assignments" | "slack" | "gmail" | "github";
@@ -179,24 +179,13 @@ export function FinalizeModal({
       containerClassName="bg-card rounded-2xl shadow-xl max-w-lg w-full p-5 sm:p-6 my-auto"
       disableEscape={running}
     >
-      <div className="flex items-start justify-between gap-4 mb-4">
-        <div>
-          <h2 id="finalize-modal-title" className="font-heading text-lg font-bold text-foreground">
-            Finalize {projectName}
-          </h2>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Run the selected automations. Safe to re-run.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          disabled={running}
-          className="text-muted-foreground hover:text-foreground text-sm px-2 py-1 rounded hover:bg-muted disabled:opacity-50"
-        >
-          Close
-        </button>
-      </div>
+      <ModalHeader
+        titleId="finalize-modal-title"
+        title={`Finalize ${projectName}`}
+        subtitle="Run the selected automations. Safe to re-run."
+        onClose={onClose}
+        hideClose={running}
+      />
 
       {error && (
         <div className="bg-destructive/10 border border-destructive/30 text-destructive text-sm rounded-md px-3 py-2 mb-3">

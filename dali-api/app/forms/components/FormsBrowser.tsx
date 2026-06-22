@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useFetcher } from "react-router";
 import { Folder, FileText, MoreVertical } from "lucide-react";
 import { Button } from "~/components/ui/Button";
+import { Modal, ModalHeader, ModalFooter } from "~/components/Modal";
 import type { FormCard, FolderCard } from "~/forms/lib/forms-data";
 
 function errorOf(data: unknown): string | null {
@@ -388,27 +389,18 @@ function FormsDialog({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
-      onClick={onCancel}
+    <Modal
+      open
+      onClose={onCancel}
+      labelledBy="forms-dialog-title"
+      containerClassName="bg-card border border-border rounded-lg w-full max-w-sm p-5 flex flex-col gap-4"
     >
-      <div
-        className="bg-card border border-border rounded-lg w-full max-w-sm p-5 flex flex-col gap-4"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-start justify-between gap-3">
-          <h2 className="font-heading text-lg font-bold text-foreground">
-            {dialog.title}
-          </h2>
-          <button
-            type="button"
-            onClick={onCancel}
-            aria-label="Close"
-            className="text-muted-foreground hover:text-foreground text-lg leading-none"
-          >
-            ✕
-          </button>
-        </div>
+      <>
+        <ModalHeader
+          titleId="forms-dialog-title"
+          title={dialog.title}
+          onClose={onCancel}
+        />
 
         {dialog.kind === "prompt" ? (
           <form
@@ -437,14 +429,7 @@ function FormsDialog({
           <p className="text-sm text-muted-foreground">{dialog.message}</p>
         )}
 
-        <div className="flex items-center justify-end gap-2">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="px-3 py-1.5 text-sm border border-border rounded-md text-foreground hover:bg-muted/40 transition-colors"
-          >
-            Cancel
-          </button>
+        <ModalFooter onCancel={onCancel} className="mt-0">
           <button
             type="button"
             onClick={confirm}
@@ -459,8 +444,8 @@ function FormsDialog({
           >
             {dialog.confirmLabel}
           </button>
-        </div>
-      </div>
-    </div>
+        </ModalFooter>
+      </>
+    </Modal>
   );
 }
