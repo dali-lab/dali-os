@@ -1,5 +1,4 @@
-import { Link, redirect, useLoaderData, useSearchParams } from "react-router";
-import { Calendar, MapPin, Users } from "lucide-react";
+import { redirect, useLoaderData, useSearchParams } from "react-router";
 import type { Route } from "./+types/applications.$domainApplicationId";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
@@ -8,19 +7,14 @@ import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
 import { presignAnswers } from "~/hiring/lib/presign";
 import { ApplicationViewer } from "~/hiring/components/ApplicationViewer";
 import { ReviewSummary } from "~/hiring/components/ReviewSummary";
-import type { Question, RubricCriterion } from "~/types";
+import { DetailCard } from "~/hiring/components/DetailCard";
+import { ApplicantDetailHeader } from "~/hiring/components/ApplicantDetailHeader";
 import {
-  INTERVIEW_STATUS_COLORS,
-  INTERVIEW_STATUS_LABELS,
-  DECISION_COLORS,
-  STAGE_LABELS,
-} from "~/hiring/lib/labels";
-
-const LOCATION_LABELS: Record<string, string> = {
-  PodAppa: "Pod Appa",
-  PodMomo: "Pod Momo",
-  Online: "Online",
-};
+  InterviewNotesCard,
+  type InterviewNotesData,
+} from "~/hiring/components/InterviewNotesCard";
+import { DecisionHistoryList } from "~/hiring/components/DecisionHistoryList";
+import type { Question, RubricCriterion } from "~/types";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const name = (data as { applicantName?: string } | undefined)?.applicantName;
@@ -437,14 +431,11 @@ export default function ApplicationReadOnlyDetail() {
 
   return (
     <div className="space-y-6 pb-12">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">
-          {data.applicantName}
-        </h1>
-        <p className="mt-1 text-muted-foreground">
-          {data.domainName} · {data.cycleName}
-        </p>
-      </div>
+      <ApplicantDetailHeader
+        name={data.applicantName}
+        domainName={data.domainName}
+        cycleName={data.cycleName}
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left: application content (read-only annotations from the selected
@@ -460,16 +451,15 @@ export default function ApplicationReadOnlyDetail() {
 
         {/* Right: review viewer. */}
         <div className="space-y-4">
-          <div className="bg-card rounded-xl border border-border shadow-sm sticky top-24">
-            <div className="px-6 py-4 border-b border-border bg-muted/50">
-              <h2 className="text-lg font-bold text-foreground">Reviews</h2>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {data.reviews.length === 0
-                  ? "No submitted reviews yet."
-                  : `${data.reviews.length} submitted`}
-              </p>
-            </div>
-
+          <DetailCard
+            title="Reviews"
+            subtitle={
+              data.reviews.length === 0
+                ? "No submitted reviews yet."
+                : `${data.reviews.length} submitted`
+            }
+            className="sticky top-24"
+          >
             {data.reviews.length > 0 && (
               <div className="p-6 space-y-5">
                 {/* Reviewer selector */}
@@ -527,7 +517,7 @@ export default function ApplicationReadOnlyDetail() {
                 )}
               </div>
             )}
-          </div>
+          </DetailCard>
         </div>
       </div>
 
@@ -558,15 +548,14 @@ function InterviewsSection({
 }) {
   const hasPrepNote = interviewPrepNote != null && interviewPrepNote.trim().length > 0;
   return (
-    <section className="bg-card rounded-xl border border-border shadow-sm">
-      <div className="px-6 py-4 border-b border-border bg-muted/50">
-        <h2 className="text-lg font-bold text-foreground">Interviews</h2>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          {interviews.length === 0
-            ? "No interviews yet."
-            : `${interviews.length} ${interviews.length === 1 ? "interview" : "interviews"}`}
-        </p>
-      </div>
+    <DetailCard
+      title="Interviews"
+      subtitle={
+        interviews.length === 0
+          ? "No interviews yet."
+          : `${interviews.length} ${interviews.length === 1 ? "interview" : "interviews"}`
+      }
+    >
       {hasPrepNote && (
         <div className="px-6 py-3 border-b border-border bg-amber-50/40">
           <div className="text-xs font-bold text-amber-900 uppercase tracking-wider">
@@ -582,145 +571,43 @@ function InterviewsSection({
       )}
       {interviews.length > 0 && (
         <ul className="divide-y divide-border">
-          {interviews.map((iv) => {
-            const start = new Date(iv.startTime);
-            const end = new Date(iv.endTime);
-            const statusLabel = INTERVIEW_STATUS_LABELS[iv.status] ?? iv.status;
-            const statusClass =
-              INTERVIEW_STATUS_COLORS[iv.status] ?? "bg-muted text-foreground/80";
-            const locationLabel = LOCATION_LABELS[iv.location] ?? iv.location;
-            return (
-              <li key={iv.id} className="px-6 py-4 space-y-3">
-                <div className="flex flex-wrap items-center gap-3">
-                  <span
-                    className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${statusClass}`}
-                  >
-                    {statusLabel}
-                  </span>
-                  <span className="inline-flex items-center gap-1.5 text-sm text-foreground">
-                    <Calendar className="w-3.5 h-3.5 text-muted-foreground" aria-hidden />
-                    {start.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
-                    {" · "}
-                    {start.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
-                    {" – "}
-                    {end.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
-                  </span>
-                  <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <MapPin className="w-3.5 h-3.5" aria-hidden />
-                    {locationLabel}
-                    {iv.location === "Online" && iv.zoomJoinUrl && (
-                      <a
-                        href={iv.zoomJoinUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-600 hover:underline ml-1"
-                      >
-                        link
-                      </a>
-                    )}
-                  </span>
-                  <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <Users className="w-3.5 h-3.5" aria-hidden />
-                    {iv.assignments.length === 0
-                      ? "No interviewers assigned"
-                      : iv.assignments
-                          .map((a) => `${a.interviewerName} (${a.role === "InDomain" ? a.domainName : "Cross"})`)
-                          .join(", ")}
-                  </span>
-                </div>
-                <div className="rounded-md border border-border bg-background/50 p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
-                      Joint notes
-                    </div>
-                    {iv.assignments.some((a) => a.canEditNotes) && (
-                      <Link
-                        to={`/hiring/interviewer/interview/${iv.id}`}
-                        className="text-xs text-blue-600 hover:underline"
-                      >
-                        Open in interviewer view
-                      </Link>
-                    )}
-                  </div>
-                  {iv.jointNotes && iv.jointNotes.plainText.trim().length > 0 ? (
-                    <>
-                      <p className="mt-2 text-sm text-foreground whitespace-pre-wrap">
-                        {iv.jointNotes.plainText}
-                      </p>
-                      <p className="mt-1 text-[11px] text-muted-foreground/80">
-                        Last edit{" "}
-                        {new Date(iv.jointNotes.updatedAt).toLocaleString(undefined, {
-                          month: "short",
-                          day: "numeric",
-                          hour: "numeric",
-                          minute: "2-digit",
-                        })}
-                      </p>
-                    </>
-                  ) : (
-                    <p className="mt-2 text-xs text-muted-foreground/70 italic">
-                      No notes yet.
-                    </p>
-                  )}
-                </div>
-                {(iv.recommendation || iv.recommendationNotes) && (
-                  <div className="rounded-md border border-border bg-background/50 p-3">
-                    <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
-                      Joint recommendation
-                    </div>
-                    {iv.recommendation && (
-                      <div className="mt-2">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-muted text-foreground/80">
-                          {iv.recommendation}
-                        </span>
-                      </div>
-                    )}
-                    {iv.recommendationNotes && iv.recommendationNotes.trim().length > 0 && (
-                      <p className="mt-2 text-sm text-foreground whitespace-pre-wrap">
-                        {iv.recommendationNotes}
-                      </p>
-                    )}
-                  </div>
-                )}
-                {iv.assignments.some((a) => a.privateNotes) && (
-                  <div className="space-y-2 pl-1">
-                    <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
-                      Per-interviewer notes
-                    </div>
-                    {iv.assignments
-                      .filter((a) => a.privateNotes && a.privateNotes.plainText.trim().length > 0)
-                      .map((a) => (
-                        <div key={a.id} className="rounded-md border border-border bg-background/50 p-3">
-                          <div className="text-sm font-medium text-foreground">
-                            {a.interviewerName}{" "}
-                            <span className="text-xs font-normal text-muted-foreground">
-                              · {a.role === "InDomain" ? a.domainName : `Cross (${a.domainName})`}
-                            </span>
-                          </div>
-                          <p className="mt-2 text-sm text-foreground whitespace-pre-wrap">
-                            {a.privateNotes!.plainText}
-                          </p>
-                          <p className="mt-1 text-[11px] text-muted-foreground/80">
-                            Last edit{" "}
-                            {new Date(a.privateNotes!.updatedAt).toLocaleString(undefined, {
-                              month: "short",
-                              day: "numeric",
-                              hour: "numeric",
-                              minute: "2-digit",
-                            })}
-                          </p>
-                        </div>
-                      ))}
-                  </div>
-                )}
-              </li>
-            );
-          })}
+          {interviews.map((iv) => (
+            <li key={iv.id}>
+              <InterviewNotesCard interview={toInterviewNotesData(iv)} />
+            </li>
+          ))}
         </ul>
       )}
-    </section>
+    </DetailCard>
   );
 }
+
+// Map the rich loader row into the shared InterviewNotesCard prop shape.
+function toInterviewNotesData(iv: InterviewRow): InterviewNotesData {
+  return {
+    id: iv.id,
+    startTime: iv.startTime,
+    endTime: iv.endTime,
+    status: iv.status,
+    location: iv.location,
+    zoomJoinUrl: iv.zoomJoinUrl,
+    recommendation: iv.recommendation,
+    recommendationNotes: iv.recommendationNotes,
+    jointNotes: iv.jointNotes,
+    openInInterviewerHref: iv.assignments.some((a) => a.canEditNotes)
+      ? `/hiring/interviewer/interview/${iv.id}`
+      : undefined,
+    interviewers: iv.assignments.map((a) => ({
+      id: a.id,
+      name: a.interviewerName,
+      role: a.role,
+      domainName: a.domainName,
+      notes: a.privateNotes?.plainText ?? null,
+      notesUpdatedAt: a.privateNotes?.updatedAt ?? null,
+    })),
+  };
+}
+
 
 function DecisionsSection({
   decisions,
@@ -730,69 +617,34 @@ function DecisionsSection({
   canSeePreReleaseDecisions: boolean;
 }) {
   return (
-    <section className="bg-card rounded-xl border border-border shadow-sm">
-      <div className="px-6 py-4 border-b border-border bg-muted/50">
-        <h2 className="text-lg font-bold text-foreground">Decisions</h2>
-        <p className="text-xs text-muted-foreground mt-0.5">
+    <DetailCard
+      title="Decisions"
+      subtitle={
+        <>
           {decisions.length === 0
             ? canSeePreReleaseDecisions
               ? "No decisions recorded."
               : "No released decisions yet."
             : `${decisions.length} ${decisions.length === 1 ? "record" : "records"}`}
           {!canSeePreReleaseDecisions && decisions.length > 0 && " (released only)"}
-        </p>
-      </div>
-      {decisions.length > 0 && (
-        <ol className="divide-y divide-border">
-          {decisions.map((d) => (
-            <li key={d.id} className="px-6 py-3 flex items-start gap-3">
-              <span
-                className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold flex-shrink-0 ${
-                  DECISION_COLORS[d.type] ?? "bg-muted text-foreground/80"
-                }`}
-              >
-                {d.type}
-                {d.waitlistRank != null && ` #${d.waitlistRank}`}
-              </span>
-              <span className="text-xs text-muted-foreground flex-shrink-0 mt-0.5">
-                {STAGE_LABELS[d.stage] ?? d.stage}
-              </span>
-              <div className="flex-1 min-w-0">
-                {d.notes && (
-                  <p className="text-sm text-foreground whitespace-pre-wrap">{d.notes}</p>
-                )}
-              </div>
-              <div className="text-xs text-muted-foreground/80 text-right flex-shrink-0">
-                <div>
-                  {new Date(d.createdAt).toLocaleDateString(undefined, {
-                    month: "short",
-                    day: "numeric",
-                    year: "numeric",
-                  })}
-                </div>
-                {d.madeByName && (
-                  <div className="text-[11px] text-muted-foreground/70">by {d.madeByName}</div>
-                )}
-              </div>
-            </li>
-          ))}
-        </ol>
-      )}
-    </section>
+        </>
+      }
+    >
+      {decisions.length > 0 && <DecisionHistoryList decisions={decisions} showNotes />}
+    </DetailCard>
   );
 }
 
 function DelibsSection({ delibs }: { delibs: DelibsRef[] }) {
   return (
-    <section className="bg-card rounded-xl border border-border shadow-sm">
-      <div className="px-6 py-4 border-b border-border bg-muted/50">
-        <h2 className="text-lg font-bold text-foreground">Delibs</h2>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          {delibs.length === 0
-            ? "Not part of any delibs session."
-            : `${delibs.length} ${delibs.length === 1 ? "session" : "sessions"}`}
-        </p>
-      </div>
+    <DetailCard
+      title="Delibs"
+      subtitle={
+        delibs.length === 0
+          ? "Not part of any delibs session."
+          : `${delibs.length} ${delibs.length === 1 ? "session" : "sessions"}`
+      }
+    >
       {delibs.length > 0 && (
         <ul className="divide-y divide-border">
           {delibs.map((s) => (
@@ -821,6 +673,6 @@ function DelibsSection({ delibs }: { delibs: DelibsRef[] }) {
           ))}
         </ul>
       )}
-    </section>
+    </DetailCard>
   );
 }
