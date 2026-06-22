@@ -24,7 +24,7 @@ import { TermFilter } from "~/components/TermFilter";
 import { resolveTermFilter } from "~/lib/terms";
 import { deriveCoreTitles } from "~/lib/core-titles";
 
-export const meta: Route.MetaFunction = () => [{ title: "Members · DALI OS" }];
+export const meta: Route.MetaFunction = () => [{ title: "Directory · People · DALI OS" }];
 
 type MemberRow = {
   id: string;
@@ -254,7 +254,7 @@ export default function MembersList() {
       <header className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="font-heading text-2xl font-bold text-foreground">
-            Members
+            Directory
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
             Everyone with a DALI membership row.
