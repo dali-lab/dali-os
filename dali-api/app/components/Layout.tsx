@@ -118,7 +118,10 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
         workspaceRef.current?.openTabToSide(req)
         return
       }
-      workspaceRef.current?.openTab(req)
+      // Single-click from the sidebar opens a preview (ephemeral) tab: it reuses
+      // the pane's preview slot instead of stacking, so skimming sections never
+      // piles up tabs. Promoted to a kept tab on double-click / navigating in it.
+      workspaceRef.current?.openTab(req, { ephemeral: true })
     },
     onAuxClick: (e: React.MouseEvent) => {
       if (e.button !== 1) return
