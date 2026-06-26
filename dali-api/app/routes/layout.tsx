@@ -4,7 +4,7 @@ import { Layout } from '~/components/Layout'
 import { Breadcrumbs } from '~/components/Breadcrumbs'
 import { LaunchWelcome } from '~/components/LaunchWelcome'
 import { requireAuth } from "~/lib/auth";
-import { getUserRoles } from '~/lib/roles'
+import { getUserRoles, currentTerm } from '~/lib/roles'
 import { getActiveCycle } from '~/hiring/lib/cycles'
 import { prisma } from '~/lib/db'
 import { resolvePhotoUrl } from '~/lib/photo'
@@ -84,6 +84,23 @@ export async function loader({ request }: Route.LoaderArgs) {
   const fetchDest = request.headers.get('sec-fetch-dest')
   const isEmbedded = fetchDest === 'iframe' || fetchDest === 'frame'
 
+  // Projects the member is staffed on this term — used once to auto-pin their
+  // project tabs the first time the workspace pinning feature loads.
+  let myProjects: { id: string; name: string }[] = []
+  if (isLabMember) {
+    const term = await currentTerm()
+    if (term) {
+      const assignments = await prisma.projectAssignment.findMany({
+        where: { userId: auth.user.sub, termId: term.id },
+        select: { projectId: true, project: { select: { name: true } } },
+        distinct: ['projectId'],
+      })
+      myProjects = assignments
+        .map((a) => ({ id: a.projectId, name: a.project.name }))
+        .sort((x, y) => x.name.localeCompare(y.name))
+    }
+  }
+
   // Pageview is fire-and-forget — never blocks the response.
   recordPageView({
     request,
@@ -91,11 +108,11 @@ export async function loader({ request }: Route.LoaderArgs) {
     sessionId: auth.sessionId,
   })
 
-  return { user: auth.user, photoUrl, hasCalendarLink, shouldShowTour, isCore: core, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, isEmbedded }
+  return { user: auth.user, photoUrl, hasCalendarLink, shouldShowTour, isCore: core, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, isEmbedded, myProjects }
 }
 
 export default function AppLayoutRoute() {
-  const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, isEmbedded } = useLoaderData<typeof loader>()
+  const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, isEmbedded, myProjects } = useLoaderData<typeof loader>()
   const [searchParams] = useSearchParams()
   const location = useLocation()
   const navigate = useNavigate()
@@ -241,7 +258,7 @@ export default function AppLayoutRoute() {
 
   return (
     <>
-      <Layout user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} hasHiringAccess={hasHiringAccess} />
+      <Layout user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} hasHiringAccess={hasHiringAccess} myProjects={myProjects} />
       <LaunchWelcome firstName={user.firstName || user.email.split('@')[0]} hasCalendarLink={hasCalendarLink} shouldShowTour={shouldShowTour} />
     </>
   )

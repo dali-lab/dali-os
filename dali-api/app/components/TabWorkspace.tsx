@@ -81,6 +81,9 @@ interface WorkspaceState {
 }
 
 const STORAGE_KEY = 'dali:tabworkspace:v4'
+// Versioned key for the one-off "auto-pin starter tabs" migration. Bump the
+// version to re-introduce a different starter set later.
+const AUTOPIN_KEY = 'dali:tabworkspace:autopin:v1'
 // Hard backstop on tabs per pane. Unpinned tabs that don't fit collapse into the
 // overflow menu rather than being evicted, so this cap is generous and mostly a
 // runaway guard; pinned tabs never count toward eviction (see appendWithLruCap).
@@ -239,6 +242,46 @@ function splitVisibleOverflow(
   }
 }
 
+// One-off: pin a set of starter tabs (Home, Calendar, the member's projects) to
+// make the pinning feature discoverable. Pins any matching open tab in place;
+// opens the rest as pinned, dormant tabs in the first pane WITHOUT stealing
+// focus. Idempotent across calls is the caller's job (via AUTOPIN_KEY).
+function applyAutoPin(state: WorkspaceState, reqs: OpenTabRequest[]): WorkspaceState {
+  if (reqs.length === 0) return state
+  const matched = new Set<string>()
+  let panes = state.panes.map((p) => ({
+    ...p,
+    tabs: p.tabs.map((t) => {
+      const hit = reqs.find((r) => r.url === t.url || r.url === t.origin)
+      if (!hit) return t
+      matched.add(hit.url)
+      return t.pinned ? t : { ...t, pinned: true, ephemeral: false }
+    }),
+  }))
+  const missing = reqs.filter((r) => !matched.has(r.url))
+  if (missing.length > 0) {
+    const seed = now()
+    const newTabs: Tab[] = missing.map((r, i) => ({
+      id: newId(),
+      label: r.label,
+      url: r.url,
+      origin: r.url,
+      // Older than any active tab so adding these never steals focus on load.
+      lastActivatedAt: seed - (missing.length - i),
+      backStack: [],
+      forwardStack: [],
+      pinned: true,
+      ephemeral: false,
+    }))
+    panes = panes.map((p, idx) => {
+      if (idx !== 0) return p
+      const tabs = [...p.tabs, ...newTabs]
+      return { ...p, tabs, activeTabId: p.activeTabId ?? tabs[0]?.id ?? null }
+    })
+  }
+  return { ...state, panes: panes.map((p) => ({ ...p, tabs: normalize(p.tabs) })) }
+}
+
 // Locate an open tab whose current url matches `url`. Re-clicking a sidebar
 // section while a tab opened from that section has drifted to a sub-page
 // (e.g. a cycle detail under Cycles) intentionally does NOT match — the user
@@ -255,6 +298,9 @@ function findTabPane(state: WorkspaceState, url: string): { paneId: string; tabI
 export interface TabWorkspaceProps {
   /** Tabs to seed the workspace with on first mount when localStorage is empty. */
   initialTabs?: OpenTabRequest[]
+  /** One-off starter tabs to auto-pin once per browser (gated by AUTOPIN_KEY),
+   *  even for users who already have a saved workspace. */
+  autoPinTabs?: OpenTabRequest[]
   /** Exposes the imperative `openTab` API to the parent. */
   apiRef?: React.MutableRefObject<TabWorkspaceHandle | null>
   /** Notified when the focused pane's active tab URL changes (null when no tab). */
@@ -282,7 +328,7 @@ interface PaneDrop {
   zone: PaneDropZone
 }
 
-export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWorkspaceProps) {
+export function TabWorkspace({ initialTabs, autoPinTabs, apiRef, onActiveUrlChange }: TabWorkspaceProps) {
   const [state, setState] = useState<WorkspaceState>(emptyState)
   const [contextMenu, setContextMenu] = useState<
     | { paneId: string; tabId: string; x: number; y: number }
@@ -488,6 +534,26 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
       setState(loaded)
     }
     hydrated.current = true
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // One-off auto-pin: introduce pinning by pinning the member's starter tabs the
+  // first time this runs in a browser. Gated by AUTOPIN_KEY so it never re-pins
+  // after the user unpins, and runs after hydration so it also applies to
+  // existing saved workspaces — not just fresh ones.
+  useEffect(() => {
+    if (!hydrated.current) return
+    if (typeof window === 'undefined') return
+    if (!autoPinTabs || autoPinTabs.length === 0) return
+    if (window.localStorage.getItem(AUTOPIN_KEY)) return
+    setState((prev) => applyAutoPin(prev, autoPinTabs))
+    try {
+      window.localStorage.setItem(AUTOPIN_KEY, '1')
+    } catch {
+      // ignore quota / disabled storage
+    }
+  // Runs once on mount (after the hydrate effect); the localStorage gate makes
+  // any re-run a no-op.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

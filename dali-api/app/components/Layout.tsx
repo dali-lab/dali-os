@@ -49,6 +49,8 @@ interface LayoutProps {
   canViewStaffing?: boolean
   isInterviewer?: boolean
   hasHiringAccess?: boolean
+  /** Projects the member is staffed on this term, for the one-off auto-pin. */
+  myProjects?: { id: string; name: string }[]
 }
 
 const SIDEBAR_COLLAPSED_KEY = 'dali:sidebar:collapsed'
@@ -56,7 +58,7 @@ const EXPANDED_AREAS_KEY = 'dali:sidebar:expanded-areas'
 
 type AreaKey = 'hiring' | 'projects' | 'members' | 'partners' | 'education' | 'internal-processes' | 'admin-console'
 
-export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDomainLead = false, canViewForms = false, canViewStaffing = false, isInterviewer = false, hasHiringAccess = false }: LayoutProps) {
+export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDomainLead = false, canViewForms = false, canViewStaffing = false, isInterviewer = false, hasHiringAccess = false, myProjects = [] }: LayoutProps) {
   const location = useLocation()
   const { revalidate } = useRevalidator()
   // Held in a ref so the message listener (mounted once) always calls the
@@ -1091,6 +1093,13 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
             ...(activeSection && location.pathname !== '/'
               ? [{ url: location.pathname + location.search, label: activeSection.label }]
               : []),
+          ]}
+          // One-off (runs once per browser): pin Home, Calendar, and each of the
+          // member's current-term projects to introduce the pinning feature.
+          autoPinTabs={[
+            { url: '/', label: 'Home' },
+            { url: '/calendar', label: 'Calendar' },
+            ...myProjects.map((p) => ({ url: `/projects/${p.id}`, label: p.name })),
           ]}
           onActiveUrlChange={setFocusedTabUrl}
         />
