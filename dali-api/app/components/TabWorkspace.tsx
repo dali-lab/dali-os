@@ -958,6 +958,14 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
     doc.addEventListener('keydown', onKey)
     doc.addEventListener('mousedown', onMouse)
     doc.addEventListener('auxclick', onMouse)
+    // Any genuine interaction inside a preview tab — a click/tap on a control, a
+    // keystroke in a field — promotes it to a kept tab, so the next sidebar
+    // single-click can't replace it and discard in-progress work. Passive
+    // viewing (scroll, hover) deliberately does NOT promote. promoteTabById
+    // no-ops once the tab is kept, so these stay cheap after the first hit.
+    const onInteract = () => promoteTabById(tabId)
+    doc.addEventListener('pointerdown', onInteract)
+    doc.addEventListener('keydown', onInteract)
   }
 
   // Close context menu on click-anywhere.
@@ -1255,6 +1263,25 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
             },
       ),
     }))
+  }
+
+  // Promote a preview tab to kept by id, without needing its pane. Used by the
+  // in-iframe interaction listeners. Returns the previous state unchanged when
+  // the tab isn't ephemeral, so the common case (interacting with an already-
+  // kept tab) bails out of setState and never re-renders.
+  const promoteTabById = (tabId: string) => {
+    setState((prev) => {
+      let changed = false
+      const panes = prev.panes.map((p) => {
+        if (!p.tabs.some((t) => t.id === tabId && t.ephemeral)) return p
+        changed = true
+        return {
+          ...p,
+          tabs: p.tabs.map((t) => (t.id === tabId ? { ...t, ephemeral: false } : t)),
+        }
+      })
+      return changed ? { ...prev, panes } : prev
+    })
   }
 
   // Toggle pinned state. Pinning also promotes a preview tab (a pin is a
