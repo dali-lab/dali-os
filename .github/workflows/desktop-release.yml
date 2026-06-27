@@ -108,6 +108,9 @@ jobs:
 
           aws s3 cp "${TARGZ}" "${S3}/releases/${VERSION}/"
           aws s3 cp "${DMG}"   "${S3}/releases/${VERSION}/"
+          # Stable, version-less copy the website's /download page links to, so
+          # that page never depends on the version/filename. Overwritten each release.
+          aws s3 cp "${DMG}" "${S3}/DALI-OS-macos.dmg" --content-type application/x-apple-diskimage
 
           # Universal build: both arch keys point at the one universal artifact.
           cat > latest.json <<EOF
