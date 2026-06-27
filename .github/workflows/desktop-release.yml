@@ -48,14 +48,13 @@ jobs:
         working-directory: desktop
         run: npm install
 
-      # tauri-action builds → Developer ID signs (hardened runtime) → notarytool
-      # submit+wait → staple → emits the updater .app.tar.gz + .sig when both the
-      # APPLE_* and TAURI_SIGNING_* env are present.
-      - name: Build, sign, notarize, staple
-        uses: tauri-apps/tauri-action@v0
-        with:
-          projectPath: desktop
-          args: --target universal-apple-darwin
+      # Export Apple signing creds to the job env ONLY when a cert secret is
+      # actually set. GitHub injects an empty string for an unset secret, and
+      # Tauri's bundler treats "present-but-empty" APPLE_CERTIFICATE as "sign",
+      # then fails importing an empty cert. Gating here means: no Apple secrets →
+      # clean UNSIGNED build; once the APPLE_* secrets exist → signing +
+      # notarization turn on automatically with no workflow edit.
+      - name: Configure Apple signing (only when a cert is present)
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -63,6 +62,30 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -n "$APPLE_CERTIFICATE" ]; then
+            echo "Apple cert present — release will be signed + notarized."
+            {
+              echo "APPLE_CERTIFICATE<<__CERT__"; echo "$APPLE_CERTIFICATE"; echo "__CERT__"
+              echo "APPLE_CERTIFICATE_PASSWORD=$APPLE_CERTIFICATE_PASSWORD"
+              echo "APPLE_SIGNING_IDENTITY=$APPLE_SIGNING_IDENTITY"
+              echo "APPLE_ID=$APPLE_ID"
+              echo "APPLE_PASSWORD=$APPLE_PASSWORD"
+              echo "APPLE_TEAM_ID=$APPLE_TEAM_ID"
+            } >> "$GITHUB_ENV"
+          else
+            echo "::warning::No APPLE_CERTIFICATE secret — building UNSIGNED (Gatekeeper will warn on launch)."
+          fi
+
+      # tauri-action builds → (Developer ID sign + notarytool + staple when the
+      # Apple env above was exported) → emits the updater .app.tar.gz + .sig
+      # (signed with the minisign key, which is always present).
+      - name: Build (sign + notarize when Apple creds present)
+        uses: tauri-apps/tauri-action@v0
+        with:
+          projectPath: desktop
+          args: --target universal-apple-darwin
+        env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
