@@ -25,3 +25,6 @@ pub fn notifications_url() -> String {
 pub fn logout_url() -> String {
     format!("{PROD_ORIGIN}/logout")
 }
+pub fn help_url() -> String {
+    format!("{PROD_ORIGIN}/help")
+}
