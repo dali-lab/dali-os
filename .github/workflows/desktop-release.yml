@@ -1,6 +1,8 @@
-# Builds, signs, notarizes, and publishes the macOS desktop shell. Separate from
-# the web app's test.yml / build-check.yml — it only runs when a desktop release
-# tag is pushed, so cutting a web deploy never builds the desktop binary.
+# Builds, signs, notarizes, and publishes the macOS desktop shell — separate from
+# the web app's CI/deploy. It auto-releases when desktop/src-tauri/tauri.conf.json's
+# version changes on `dev` (a version-bump merge IS the release), and also accepts
+# a manual `desktop-v*` tag or a workflow_dispatch as a fallback. Re-runs for an
+# already-released version are skipped (idempotent).
 #
 # REQUIRES secrets the repo owner must provision (the build can't create them):
 #   Apple (Gatekeeper):  APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD,
@@ -15,26 +17,55 @@ name: Desktop Release (macOS)
 
 on:
   push:
+    branches: [dev]
+    paths:
+      - "desktop/src-tauri/tauri.conf.json"
     tags:
       - "desktop-v*"
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write # needed to push the release tag
+
+concurrency:
+  group: desktop-release
+  cancel-in-progress: false
 
 jobs:
+  # Decide the version + whether there's actually a new release to cut. On a
+  # `desktop-v*` tag the version comes from the tag; otherwise from tauri.conf.json,
+  # and we skip if that version was already released (its tag exists).
+  decide:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      release: ${{ steps.v.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME#desktop-v}"
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          else
+            VERSION="$(jq -r .version desktop/src-tauri/tauri.conf.json)"
+            if git ls-remote --exit-code --tags origin "refs/tags/desktop-v${VERSION}" >/dev/null 2>&1; then
+              echo "desktop-v${VERSION} already released — skipping."
+              echo "release=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "New version ${VERSION} — releasing."
+              echo "release=true" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
   build-macos:
+    needs: decide
+    if: ${{ needs.decide.outputs.release == 'true' }}
     runs-on: macos-14 # Apple silicon
     steps:
       - uses: actions/checkout@v4
-
-      - name: Derive version from tag
-        id: ver
-        run: |
-          REF="${GITHUB_REF_NAME}"
-          VERSION="${REF#desktop-v}"
-          if [ -z "$VERSION" ] || [ "$VERSION" = "$REF" ]; then VERSION="0.0.0-dev"; fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -95,7 +126,7 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.DESKTOP_AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.DESKTOP_AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: us-east-1
-          VERSION: ${{ steps.ver.outputs.version }}
+          VERSION: ${{ needs.decide.outputs.version }}
         run: |
           set -euo pipefail
           BUNDLE="src-tauri/target/universal-apple-darwin/release/bundle"
@@ -125,3 +156,15 @@ jobs:
           EOF
 
           aws s3 cp latest.json "${S3}/latest.json"
+
+      # Record the release as a tag (only when we weren't already triggered by one).
+      # Pushed with GITHUB_TOKEN, which intentionally does NOT re-trigger this
+      # workflow — so no release loop. The tag is what makes future re-runs idempotent.
+      - name: Tag the release
+        if: ${{ github.ref_type != 'tag' }}
+        env:
+          VERSION: ${{ needs.decide.outputs.version }}
+        run: |
+          set -euo pipefail
+          git tag "desktop-v${VERSION}"
+          git push origin "desktop-v${VERSION}"
