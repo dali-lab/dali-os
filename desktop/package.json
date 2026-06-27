@@ -1,6 +1,6 @@
 {
   "name": "dali-os-desktop",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "private": true,
   "description": "Native macOS desktop shell for DALI OS (Tauri v2).",
   "scripts": {

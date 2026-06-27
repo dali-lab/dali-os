@@ -1,6 +1,6 @@
 [package]
 name = "dali-os-desktop"
-version = "1.0.0"
+version = "0.1.0"
 description = "DALI OS desktop shell"
 authors = ["DALI Lab"]
 edition = "2021"
