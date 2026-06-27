@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main-remote",
+  "description": "The main window loads the remote prod origin. It is granted ZERO permissions and is intentionally NOT listed under any capability's `remote.urls`, so XSS in the web app cannot reach a single native IPC command. The offline fallback page uses a plain same-origin link to retry, so it needs no IPC either.",
+  "windows": ["main"],
+  "permissions": []
+}

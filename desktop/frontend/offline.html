@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DALI OS — offline</title>
+    <link rel="stylesheet" href="pairing.css" />
+  </head>
+  <body>
+    <main class="card">
+      <img class="logo" src="assets/logo.svg" alt="DALI Lab" />
+      <h1>Can't reach DALI OS</h1>
+      <p class="muted">
+        You appear to be offline, or DALI OS is temporarily unavailable. Check
+        your connection and try again.
+      </p>
+      <!-- Plain same-origin link: clicking it navigates the main window back to
+           the prod origin, which the shell's nav interception allows. No IPC is
+           used here, so this page needs no native permissions. -->
+      <a class="primary" style="display:inline-block;text-decoration:none"
+         href="https://os.dali.dartmouth.edu/">Retry</a>
+    </main>
+  </body>
+</html>

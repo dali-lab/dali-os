@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sign in to DALI OS</title>
+    <link rel="stylesheet" href="pairing.css" />
+  </head>
+  <body>
+    <main class="card">
+      <img class="logo" src="assets/logo.svg" alt="DALI Lab" />
+      <h1 id="title">Sign in to DALI OS</h1>
+      <p id="subtitle" class="muted">
+        Connect this Mac to your DALI OS account. A browser window will open for
+        you to sign in and approve.
+      </p>
+
+      <!-- Idle / start -->
+      <section id="view-idle" class="view">
+        <button id="btn-signin" class="primary">Sign in</button>
+      </section>
+
+      <!-- Awaiting approval -->
+      <section id="view-pairing" class="view hidden">
+        <p class="muted">Confirm this code matches the one on the approval page:</p>
+        <div id="user-code" class="code">––––-––––</div>
+        <p class="muted small">
+          We opened your browser to approve this device.
+          <a href="#" id="reopen">Open it again</a>.
+        </p>
+        <div class="spinner" aria-hidden="true"></div>
+        <p class="muted small">Waiting for approval…</p>
+        <button id="btn-cancel" class="ghost">Cancel</button>
+      </section>
+
+      <!-- Terminal: error / expired -->
+      <section id="view-message" class="view hidden">
+        <p id="message-text"></p>
+        <button id="btn-retry" class="primary">Try again</button>
+      </section>
+    </main>
+    <script src="pairing.js"></script>
+  </body>
+</html>
