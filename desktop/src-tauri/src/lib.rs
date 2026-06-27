@@ -15,6 +15,7 @@ mod pairing;
 mod poller;
 mod state;
 mod tray;
+mod updater;
 mod window;
 
 use tauri::{Manager, WindowEvent};
@@ -87,6 +88,26 @@ pub fn run() {
                     let _ = window.hide();
                 }
             }
+        })
+        // App menu bar actions (menu.rs). Predefined items (Cut/Copy/Quit/…) are
+        // handled by macOS directly and need no arm here.
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "reload" => {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.eval("location.reload()");
+                }
+            }
+            "help" => {
+                window::navigate_main(app, &config::help_url());
+                window::show_main(app);
+            }
+            "sign-out" => {
+                tauri::async_runtime::spawn(commands::do_sign_out(app.clone()));
+            }
+            "check-update" => {
+                tauri::async_runtime::spawn(updater::check_now(app.clone()));
+            }
+            _ => {}
         })
         .run(tauri::generate_context!())
         .expect("error while running DALI OS desktop");

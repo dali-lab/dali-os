@@ -129,6 +129,10 @@ export default [
   route("privacy", "routes/privacy.tsx"),
   route("terms", "routes/terms.tsx"),
 
+  // Public, shareable desktop download page (OS auto-detect). Not linked from
+  // anywhere yet — reachable by direct URL.
+  route("download", "routes/download.tsx"),
+
   // Login (no layout)
   route("login", "routes/login.tsx"),
   route("dev-login", "routes/dev-login.ts"),
