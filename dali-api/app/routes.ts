@@ -137,6 +137,15 @@ export default [
   route("auth/callback/google", "routes/auth.callback.google.ts"),
   route("auth/callback/cas", "routes/auth.callback.cas.ts"),
 
+  // Desktop device pairing (GitHub-CLI style). Additive — OAuth + login
+  // untouched. /link is the only new web UI surface. See TAURI_DESKTOP_PLAN.md.
+  route("auth/pair/start", "routes/auth.pair.start.ts"),
+  route("auth/pair/approve", "routes/auth.pair.approve.ts"),
+  route("auth/pair/poll", "routes/auth.pair.poll.ts"),
+  route("auth/handoff", "routes/auth.handoff.ts"),
+  route("link", "routes/link.tsx"),
+  route("api/desktop/version", "routes/api.desktop.version.ts"),
+
   // OAuth endpoints (no layout)
   route("oauth/authorize", "routes/oauth.authorize.ts"),
   route("oauth/callback/google", "routes/oauth.callback.google.ts"),

@@ -33,8 +33,8 @@ const CARDS = [
   },
   {
     to: "/settings/sessions",
-    title: "Active sessions",
-    body: "Devices currently signed in to DALI OS. Sign out from anywhere.",
+    title: "Your devices",
+    body: "Browsers, the desktop app, and connected tools signed in to DALI OS. Sign out from anywhere.",
     icon: KeyRound,
   },
   {

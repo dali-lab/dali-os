@@ -1,0 +1,124 @@
+# Builds, signs, notarizes, and publishes the macOS desktop shell. Separate from
+# the web app's test.yml / build-check.yml — it only runs when a desktop release
+# tag is pushed, so cutting a web deploy never builds the desktop binary.
+#
+# REQUIRES secrets the repo owner must provision (the build can't create them):
+#   Apple (Gatekeeper):  APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD,
+#                        APPLE_SIGNING_IDENTITY, APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID
+#   Tauri updater:       TAURI_SIGNING_PRIVATE_KEY, TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+#                        (the matching PUBLIC key goes in desktop/src-tauri/tauri.conf.json)
+#   S3 publish:          DESKTOP_AWS_ACCESS_KEY_ID, DESKTOP_AWS_SECRET_ACCESS_KEY
+# Publishes to the dedicated public bucket s3://dali-os-desktop-releases (NOT the
+# private uploads bucket). See ../../TAURI_DESKTOP_PLAN.md and ../../desktop/README.md.
+
+name: Desktop Release (macOS)
+
+on:
+  push:
+    tags:
+      - "desktop-v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-macos:
+    runs-on: macos-14 # Apple silicon
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Derive version from tag
+        id: ver
+        run: |
+          REF="${GITHUB_REF_NAME}"
+          VERSION="${REF#desktop-v}"
+          if [ -z "$VERSION" ] || [ "$VERSION" = "$REF" ]; then VERSION="0.0.0-dev"; fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install desktop deps
+        working-directory: desktop
+        run: npm install
+
+      # Export Apple signing creds to the job env ONLY when a cert secret is
+      # actually set. GitHub injects an empty string for an unset secret, and
+      # Tauri's bundler treats "present-but-empty" APPLE_CERTIFICATE as "sign",
+      # then fails importing an empty cert. Gating here means: no Apple secrets →
+      # clean UNSIGNED build; once the APPLE_* secrets exist → signing +
+      # notarization turn on automatically with no workflow edit.
+      - name: Configure Apple signing (only when a cert is present)
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -n "$APPLE_CERTIFICATE" ]; then
+            echo "Apple cert present — release will be signed + notarized."
+            {
+              echo "APPLE_CERTIFICATE<<__CERT__"; echo "$APPLE_CERTIFICATE"; echo "__CERT__"
+              echo "APPLE_CERTIFICATE_PASSWORD=$APPLE_CERTIFICATE_PASSWORD"
+              echo "APPLE_SIGNING_IDENTITY=$APPLE_SIGNING_IDENTITY"
+              echo "APPLE_ID=$APPLE_ID"
+              echo "APPLE_PASSWORD=$APPLE_PASSWORD"
+              echo "APPLE_TEAM_ID=$APPLE_TEAM_ID"
+            } >> "$GITHUB_ENV"
+          else
+            echo "::warning::No APPLE_CERTIFICATE secret — building UNSIGNED (Gatekeeper will warn on launch)."
+          fi
+
+      # tauri-action builds → (Developer ID sign + notarytool + staple when the
+      # Apple env above was exported) → emits the updater .app.tar.gz + .sig
+      # (signed with the minisign key, which is always present).
+      - name: Build (sign + notarize when Apple creds present)
+        uses: tauri-apps/tauri-action@v0
+        with:
+          projectPath: desktop
+          args: --target universal-apple-darwin
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+      - name: Compose latest.json + publish to S3
+        working-directory: desktop
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.DESKTOP_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DESKTOP_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          BUNDLE="src-tauri/target/universal-apple-darwin/release/bundle"
+          S3="s3://dali-os-desktop-releases"
+          PUBLIC_BASE="https://dali-os-desktop-releases.s3.us-east-1.amazonaws.com/releases/${VERSION}"
+
+          TARGZ="$(ls "${BUNDLE}"/macos/*.app.tar.gz | head -n1)"
+          DMG="$(ls "${BUNDLE}"/dmg/*.dmg | head -n1)"
+          SIG="$(cat "${TARGZ}.sig")"
+
+          aws s3 cp "${TARGZ}" "${S3}/releases/${VERSION}/"
+          aws s3 cp "${DMG}"   "${S3}/releases/${VERSION}/"
+
+          # Universal build: both arch keys point at the one universal artifact.
+          cat > latest.json <<EOF
+          {
+            "version": "${VERSION}",
+            "notes": "DALI OS desktop ${VERSION}",
+            "platforms": {
+              "darwin-aarch64": { "signature": "${SIG}", "url": "${PUBLIC_BASE}/$(basename "${TARGZ}")" },
+              "darwin-x86_64":  { "signature": "${SIG}", "url": "${PUBLIC_BASE}/$(basename "${TARGZ}")" }
+            }
+          }
+          EOF
+
+          aws s3 cp latest.json "${S3}/latest.json"
