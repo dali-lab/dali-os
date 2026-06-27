@@ -5,8 +5,9 @@
 // Builder::on_menu_event handler in lib.rs. Custom ids are kept distinct from the
 // tray ids (open/signout/quit in tray.rs).
 
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Wry};
+use tauri_plugin_autostart::ManagerExt;
 
 pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     // App-handled items (see lib.rs on_menu_event).
@@ -14,6 +15,18 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     let sign_out = MenuItem::with_id(app, "sign-out", "Sign Out", true, None::<&str>)?;
     let reload = MenuItem::with_id(app, "reload", "Reload", true, Some("CmdOrCtrl+R"))?;
     let help_item = MenuItem::with_id(app, "help", "DALI OS Help", true, None::<&str>)?;
+    let zoom_in = MenuItem::with_id(app, "zoom-in", "Zoom In", true, Some("CmdOrCtrl+="))?;
+    let zoom_out = MenuItem::with_id(app, "zoom-out", "Zoom Out", true, Some("CmdOrCtrl+-"))?;
+    let zoom_reset = MenuItem::with_id(app, "zoom-reset", "Actual Size", true, Some("CmdOrCtrl+0"))?;
+    // Reflects the current launch-at-login state; toggled in lib.rs on_menu_event.
+    let open_at_login = CheckMenuItem::with_id(
+        app,
+        "open-at-login",
+        "Open at Login",
+        true,
+        app.autolaunch().is_enabled().unwrap_or(false),
+        None::<&str>,
+    )?;
 
     let app_menu = Submenu::with_items(
         app,
@@ -29,6 +42,8 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
             &PredefinedMenuItem::hide(app, None)?,
             &PredefinedMenuItem::hide_others(app, None)?,
             &PredefinedMenuItem::show_all(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &open_at_login,
             &PredefinedMenuItem::separator(app)?,
             &sign_out,
             &PredefinedMenuItem::separator(app)?,
@@ -57,6 +72,10 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         true,
         &[
             &reload,
+            &PredefinedMenuItem::separator(app)?,
+            &zoom_in,
+            &zoom_out,
+            &zoom_reset,
             &PredefinedMenuItem::separator(app)?,
             &PredefinedMenuItem::fullscreen(app, None)?,
         ],

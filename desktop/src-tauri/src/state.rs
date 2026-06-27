@@ -26,6 +26,8 @@ pub struct AppState {
     // Notification ids already surfaced this session — dedupe so a steady poll
     // doesn't re-alert the same item.
     pub seen_notifs: Mutex<HashSet<String>>,
+    // Webview zoom factor (View → Zoom). In-memory; resets to 1.0 on restart.
+    pub zoom: Mutex<f64>,
 }
 
 impl AppState {
@@ -35,6 +37,7 @@ impl AppState {
             auth: Mutex::new(AuthState::Unpaired),
             pairing_cancel: AtomicBool::new(false),
             seen_notifs: Mutex::new(HashSet::new()),
+            zoom: Mutex::new(1.0),
         }
     }
 
@@ -46,6 +49,20 @@ impl AppState {
 
     pub fn auth(&self) -> AuthState {
         self.auth.lock().map(|g| *g).unwrap_or(AuthState::Unpaired)
+    }
+
+    /// Adjust the webview zoom by `delta`, clamped to a sane range; returns the
+    /// new factor.
+    pub fn bump_zoom(&self, delta: f64) -> f64 {
+        let mut g = self.zoom.lock().unwrap_or_else(|e| e.into_inner());
+        *g = (*g + delta).clamp(0.5, 3.0);
+        *g
+    }
+
+    pub fn reset_zoom(&self) -> f64 {
+        let mut g = self.zoom.lock().unwrap_or_else(|e| e.into_inner());
+        *g = 1.0;
+        *g
     }
 }
 
