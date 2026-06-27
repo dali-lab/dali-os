@@ -74,3 +74,9 @@ pub fn set_badge(app: &AppHandle, count: i64) {
         let _ = w.set_badge_count(if count > 0 { Some(count) } else { None });
     }
 }
+
+pub fn apply_zoom(app: &AppHandle, factor: f64) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.set_zoom(factor);
+    }
+}

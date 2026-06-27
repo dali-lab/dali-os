@@ -78,6 +78,9 @@ pub fn run() {
                 window::show_pairing(&handle);
             }
 
+            // Check for a newer signed release at launch (silent if up to date).
+            tauri::async_runtime::spawn(updater::check_on_launch(handle.clone()));
+
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -106,6 +109,27 @@ pub fn run() {
             }
             "check-update" => {
                 tauri::async_runtime::spawn(updater::check_now(app.clone()));
+            }
+            "zoom-in" => {
+                let z = app.state::<AppState>().bump_zoom(0.1);
+                window::apply_zoom(app, z);
+            }
+            "zoom-out" => {
+                let z = app.state::<AppState>().bump_zoom(-0.1);
+                window::apply_zoom(app, z);
+            }
+            "zoom-reset" => {
+                let z = app.state::<AppState>().reset_zoom();
+                window::apply_zoom(app, z);
+            }
+            "open-at-login" => {
+                use tauri_plugin_autostart::ManagerExt;
+                let al = app.autolaunch();
+                let _ = if al.is_enabled().unwrap_or(false) {
+                    al.disable()
+                } else {
+                    al.enable()
+                };
             }
             _ => {}
         })
