@@ -1,4 +1,5 @@
-import { redirect, useEffect, useState } from "react";
+import { redirect } from "react-router";
+import { useEffect, useState } from "react";
 import { Download } from "lucide-react";
 import type { Route } from "./+types/download";
 import { requireAuth } from "~/lib/auth";
