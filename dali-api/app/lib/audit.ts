@@ -37,6 +37,7 @@ export const AUDIT_ACTIONS = [
   "staffing.assign",
   "staffing.finalize",
   "staffing.term_channel",
+  "staffing.sync_teams",
   "staffing.board-member.add",
   "staffing.board-member.remove",
   "staffing.reorder",
