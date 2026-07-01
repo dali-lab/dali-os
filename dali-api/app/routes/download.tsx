@@ -1,18 +1,14 @@
-// Public, shareable desktop-download page. No auth, no app layout (like
-// /privacy and /terms) so the link works anywhere. Detects the visitor's OS
-// client-side and surfaces the macOS build. The download target is derived from
-// the live updater feed (latest.json), so it always points at the current
-// release with no per-release edit here. Not linked from anywhere yet — reachable
-// only by visiting /download directly.
-
-import { useEffect, useState } from "react";
+import { redirect, useEffect, useState } from "react";
 import { Download } from "lucide-react";
 import type { Route } from "./+types/download";
+import { requireAuth } from "~/lib/auth";
 
 const RELEASES_BASE = "https://dali-os-desktop-releases.s3.us-east-1.amazonaws.com";
-// Stable, version-less artifact published by the release workflow each release —
-// the download link never has to know the version or filename, so it can't drift.
+// Stable, version-less artifacts published by the release workflow each release —
+// the download links never have to know the version or filename, so they can't drift.
 const STABLE_DMG_URL = `${RELEASES_BASE}/DALI-OS-macos.dmg`;
+const STABLE_APPIMAGE_URL = `${RELEASES_BASE}/DALI-OS-linux.AppImage`;
+const STABLE_WINDOWS_URL = `${RELEASES_BASE}/DALI-OS-windows.exe`;
 const VERSION_TTL_MS = 5 * 60 * 1000;
 
 // Small server-side memo so a popular share link doesn't hit S3 on every render.
@@ -51,24 +47,28 @@ export const meta: Route.MetaFunction = () => {
   ];
 };
 
-export async function loader(_: Route.LoaderArgs) {
-  // Version is cosmetic (a label); the download target is the stable URL.
+export async function loader({ request }: Route.LoaderArgs) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return redirect("/login");
   const version = await getLatestVersion();
-  return { version, dmgUrl: STABLE_DMG_URL };
+  return { version, dmgUrl: STABLE_DMG_URL, appImageUrl: STABLE_APPIMAGE_URL, windowsUrl: STABLE_WINDOWS_URL };
 }
 
 export default function DownloadPage({ loaderData }: Route.ComponentProps) {
-  const { version, dmgUrl } = loaderData;
-  const [os, setOs] = useState<"mac" | "windows" | "other" | null>(null);
+  const { version, dmgUrl, appImageUrl, windowsUrl } = loaderData;
+  const [os, setOs] = useState<"mac" | "linux" | "windows" | "other" | null>(null);
 
   useEffect(() => {
     const ua = navigator.userAgent;
     if (/Mac/i.test(ua)) setOs("mac");
+    else if (/Linux/i.test(ua)) setOs("linux");
     else if (/Windows/i.test(ua)) setOs("windows");
     else setOs("other");
   }, []);
 
-  const notMac = os === "windows" || os === "other";
+  const isLinux = os === "linux";
+  const isWindows = os === "windows";
+  const isUnknown = os === "other";
 
   return (
     <div className="min-h-screen bg-zinc-50 flex items-center justify-center px-4 py-12">
@@ -83,35 +83,66 @@ export default function DownloadPage({ loaderData }: Route.ComponentProps) {
         </p>
 
         <div className="mt-8 rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm">
-          <a
-            href={dmgUrl}
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-zinc-900 px-6 py-3.5 text-base font-semibold text-white transition hover:bg-zinc-700"
-          >
-            <Download className="h-5 w-5" />
-            Download for macOS
-          </a>
-          {version ? (
-            <p className="mt-3 text-xs text-zinc-500">
-              Version {version} · Universal (Apple Silicon &amp; Intel)
+          {isUnknown ? (
+            <p className="rounded-lg bg-amber-50 px-4 py-2 text-xs text-amber-800">
+              DALI OS desktop is available for macOS, Linux, and Windows.
             </p>
-          ) : null}
-          {notMac ? (
-            <p className="mt-4 rounded-lg bg-amber-50 px-4 py-2 text-xs text-amber-800">
-              DALI OS desktop is macOS-only for now. Windows is coming later.
-            </p>
-          ) : null}
+          ) : (
+            <>
+              <a
+                href={isLinux ? appImageUrl : isWindows ? windowsUrl : dmgUrl}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-zinc-900 px-6 py-3.5 text-base font-semibold text-white transition hover:bg-zinc-700"
+              >
+                <Download className="h-5 w-5" />
+                {isLinux ? "Download for Linux" : isWindows ? "Download for Windows" : "Download for macOS"}
+              </a>
+              {version ? (
+                <p className="mt-3 text-xs text-zinc-500">
+                  {isLinux
+                    ? `Version ${version} · x86_64 AppImage`
+                    : isWindows
+                    ? `Version ${version} · Windows (x64)`
+                    : `Version ${version} · Universal (Apple Silicon & Intel)`}
+                </p>
+              ) : null}
 
-          <div className="mt-6 border-t border-zinc-100 pt-5 text-left">
-            <p className="text-xs font-semibold text-zinc-700">Installing</p>
-            <p className="mt-1 text-xs text-zinc-500">
-              Open the downloaded{" "}
-              <code className="rounded bg-zinc-100 px-1">.dmg</code> and drag DALI
-              OS to your Applications folder, then open it from there.
-            </p>
-          </div>
+              <div className="mt-6 border-t border-zinc-100 pt-5 text-left">
+                <p className="text-xs font-semibold text-zinc-700">Installing</p>
+                {isLinux ? (
+                  <p className="mt-1 text-xs text-zinc-500">
+                    Make the downloaded{" "}
+                    <code className="rounded bg-zinc-100 px-1">.AppImage</code>{" "}
+                    executable (<code className="rounded bg-zinc-100 px-1">chmod +x</code>
+                    ), then run it directly or move it to{" "}
+                    <code className="rounded bg-zinc-100 px-1">~/.local/bin</code>.
+                  </p>
+                ) : isWindows ? (
+                  <p className="mt-1 text-xs text-zinc-500">
+                    Run the downloaded{" "}
+                    <code className="rounded bg-zinc-100 px-1">.exe</code> and follow
+                    the setup wizard. If Windows SmartScreen warns about an unknown
+                    publisher, click <strong>More info</strong> then{" "}
+                    <strong>Run anyway</strong>.
+                  </p>
+                ) : (
+                  <p className="mt-1 text-xs text-zinc-500">
+                    Open the downloaded{" "}
+                    <code className="rounded bg-zinc-100 px-1">.dmg</code> and drag DALI
+                    OS to your Applications folder, then open it from there.
+                  </p>
+                )}
+              </div>
+            </>
+          )}
         </div>
 
-        <p className="mt-6 text-xs text-zinc-400">Requires macOS 12 or later.</p>
+        <p className="mt-6 text-xs text-zinc-400">
+          {isLinux
+            ? "Requires a Linux desktop with Secret Service support (GNOME Keyring or KWallet)."
+            : isWindows
+            ? "Requires Windows 10 or later with WebView2 (pre-installed on most systems)."
+            : "Requires macOS 12 or later."}
+        </p>
       </main>
     </div>
   );

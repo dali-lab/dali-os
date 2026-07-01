@@ -1,8 +1,9 @@
-# Builds, signs, notarizes, and publishes the macOS desktop shell — separate from
-# the web app's CI/deploy. It auto-releases when desktop/src-tauri/tauri.conf.json's
-# version changes on `dev` (a version-bump merge IS the release), and also accepts
-# a manual `desktop-v*` tag or a workflow_dispatch as a fallback. Re-runs for an
-# already-released version are skipped (idempotent).
+# Builds, signs, notarizes (macOS), and publishes the desktop shell for macOS and
+# Linux — separate from the web app's CI/deploy. It auto-releases when
+# desktop/src-tauri/tauri.conf.json's version changes on `dev` (a version-bump
+# merge IS the release), and also accepts a manual `desktop-v*` tag or a
+# workflow_dispatch as a fallback. Re-runs for an already-released version are
+# skipped (idempotent).
 #
 # REQUIRES secrets the repo owner must provision (the build can't create them):
 #   Apple (Gatekeeper):  APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD,
@@ -13,7 +14,7 @@
 # Publishes to the dedicated public bucket s3://dali-os-desktop-releases (NOT the
 # private uploads bucket). See ../../TAURI_DESKTOP_PLAN.md and ../../desktop/README.md.
 
-name: Desktop Release (macOS)
+name: Desktop Release (macOS + Linux)
 
 on:
   push:
@@ -64,6 +65,8 @@ jobs:
     needs: decide
     if: ${{ needs.decide.outputs.release == 'true' }}
     runs-on: macos-14 # Apple silicon
+    outputs:
+      mac_url: ${{ steps.upload.outputs.mac_url }}
     steps:
       - uses: actions/checkout@v4
 
@@ -115,12 +118,13 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         with:
           projectPath: desktop
-          args: --target universal-apple-darwin
+          args: --target universal-apple-darwin --bundles app,dmg
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
-      - name: Compose latest.json + publish to S3
+      - name: Upload versioned artifacts to S3
+        id: upload
         working-directory: desktop
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.DESKTOP_AWS_ACCESS_KEY_ID }}
@@ -135,27 +139,203 @@ jobs:
 
           TARGZ="$(ls "${BUNDLE}"/macos/*.app.tar.gz | head -n1)"
           DMG="$(ls "${BUNDLE}"/dmg/*.dmg | head -n1)"
-          SIG="$(cat "${TARGZ}.sig")"
 
           aws s3 cp "${TARGZ}" "${S3}/releases/${VERSION}/"
           aws s3 cp "${DMG}"   "${S3}/releases/${VERSION}/"
-          # Stable, version-less copy the website's /download page links to, so
-          # that page never depends on the version/filename. Overwritten each release.
+          # Stable, version-less copy the website's /download page links to.
           aws s3 cp "${DMG}" "${S3}/DALI-OS-macos.dmg" --content-type application/x-apple-diskimage
 
-          # Universal build: both arch keys point at the one universal artifact.
+          echo "mac_url=${PUBLIC_BASE}/$(basename "${TARGZ}")" >> "$GITHUB_OUTPUT"
+
+      - name: Save sig for publish job
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-sig
+          path: desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz.sig
+
+  build-linux:
+    needs: decide
+    if: ${{ needs.decide.outputs.release == 'true' }}
+    runs-on: ubuntu-latest
+    outputs:
+      linux_url: ${{ steps.upload.outputs.linux_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install desktop deps
+        working-directory: desktop
+        run: npm install
+
+      - name: Build AppImage
+        uses: tauri-apps/tauri-action@v0
+        with:
+          projectPath: desktop
+          args: --bundles appimage
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+      - name: Upload versioned artifacts to S3
+        id: upload
+        working-directory: desktop
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.DESKTOP_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DESKTOP_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
+          VERSION: ${{ needs.decide.outputs.version }}
+        run: |
+          set -euo pipefail
+          BUNDLE="src-tauri/target/x86_64-unknown-linux-gnu/release/bundle"
+          S3="s3://dali-os-desktop-releases"
+          PUBLIC_BASE="https://dali-os-desktop-releases.s3.us-east-1.amazonaws.com/releases/${VERSION}"
+
+          TARGZ="$(ls "${BUNDLE}"/appimage/*.AppImage.tar.gz | head -n1)"
+          APPIMAGE="$(ls "${BUNDLE}"/appimage/*.AppImage | grep -v '\.tar\.gz' | head -n1)"
+
+          aws s3 cp "${TARGZ}"     "${S3}/releases/${VERSION}/"
+          aws s3 cp "${APPIMAGE}"  "${S3}/releases/${VERSION}/"
+          # Stable, version-less copy the website's /download page links to.
+          aws s3 cp "${APPIMAGE}"  "${S3}/DALI-OS-linux.AppImage"
+
+          echo "linux_url=${PUBLIC_BASE}/$(basename "${TARGZ}")" >> "$GITHUB_OUTPUT"
+
+      - name: Save sig for publish job
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-sig
+          path: desktop/src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/appimage/*.AppImage.tar.gz.sig
+
+  build-windows:
+    needs: decide
+    if: ${{ needs.decide.outputs.release == 'true' }}
+    runs-on: windows-latest
+    outputs:
+      windows_url: ${{ steps.upload.outputs.windows_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install desktop deps
+        working-directory: desktop
+        run: npm install
+
+      # Unsigned build — SmartScreen will warn on first run ("Unknown publisher").
+      # To add code signing later, provision WINDOWS_CERTIFICATE +
+      # WINDOWS_CERTIFICATE_PASSWORD secrets and set them in env here.
+      - name: Build NSIS installer
+        uses: tauri-apps/tauri-action@v0
+        with:
+          projectPath: desktop
+          args: --bundles nsis
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+      - name: Upload versioned artifacts to S3
+        id: upload
+        working-directory: desktop
+        shell: bash
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.DESKTOP_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DESKTOP_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
+          VERSION: ${{ needs.decide.outputs.version }}
+        run: |
+          set -euo pipefail
+          BUNDLE="src-tauri/target/x86_64-pc-windows-msvc/release/bundle"
+          S3="s3://dali-os-desktop-releases"
+          PUBLIC_BASE="https://dali-os-desktop-releases.s3.us-east-1.amazonaws.com/releases/${VERSION}"
+
+          TARGZ="$(ls "${BUNDLE}"/nsis/*.nsis.zip | head -n1)"
+          EXE="$(ls "${BUNDLE}"/nsis/*-setup.exe | head -n1)"
+
+          aws s3 cp "${TARGZ}" "${S3}/releases/${VERSION}/"
+          aws s3 cp "${EXE}"   "${S3}/releases/${VERSION}/"
+          # Stable, version-less copy the website's /download page links to.
+          aws s3 cp "${EXE}" "${S3}/DALI-OS-windows.exe"
+
+          echo "windows_url=${PUBLIC_BASE}/$(basename "${TARGZ}")" >> "$GITHUB_OUTPUT"
+
+      - name: Save sig for publish job
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-sig
+          path: desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.nsis.zip.sig
+
+  # Merge all platform artifacts into latest.json and tag the release. Runs only
+  # after all three builds succeed so the feed is never partially updated.
+  publish:
+    needs: [decide, build-macos, build-linux, build-windows]
+    if: ${{ needs.decide.outputs.release == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: macos-sig
+          path: sigs/mac
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-sig
+          path: sigs/linux
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-sig
+          path: sigs/windows
+
+      - name: Compose latest.json and publish to S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.DESKTOP_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DESKTOP_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
+          VERSION: ${{ needs.decide.outputs.version }}
+          MAC_URL: ${{ needs.build-macos.outputs.mac_url }}
+          LINUX_URL: ${{ needs.build-linux.outputs.linux_url }}
+          WINDOWS_URL: ${{ needs.build-windows.outputs.windows_url }}
+        run: |
+          set -euo pipefail
+          MAC_SIG="$(cat sigs/mac/*.sig)"
+          LINUX_SIG="$(cat sigs/linux/*.sig)"
+          WINDOWS_SIG="$(cat sigs/windows/*.sig)"
+
+          # Universal build: both Darwin arch keys share the one universal artifact.
           cat > latest.json <<EOF
           {
             "version": "${VERSION}",
             "notes": "DALI OS desktop ${VERSION}",
             "platforms": {
-              "darwin-aarch64": { "signature": "${SIG}", "url": "${PUBLIC_BASE}/$(basename "${TARGZ}")" },
-              "darwin-x86_64":  { "signature": "${SIG}", "url": "${PUBLIC_BASE}/$(basename "${TARGZ}")" }
+              "darwin-aarch64": { "signature": "${MAC_SIG}", "url": "${MAC_URL}" },
+              "darwin-x86_64":  { "signature": "${MAC_SIG}", "url": "${MAC_URL}" },
+              "linux-x86_64":   { "signature": "${LINUX_SIG}", "url": "${LINUX_URL}" },
+              "windows-x86_64": { "signature": "${WINDOWS_SIG}", "url": "${WINDOWS_URL}" }
             }
           }
           EOF
 
-          aws s3 cp latest.json "${S3}/latest.json"
+          aws s3 cp latest.json "s3://dali-os-desktop-releases/latest.json"
 
       # Record the release as a tag (only when we weren't already triggered by one).
       # Pushed with GITHUB_TOKEN, which intentionally does NOT re-trigger this

@@ -44,15 +44,30 @@ fn emit_state(app: &AppHandle, payload: serde_json::Value) {
 }
 
 fn device_label() -> String {
-    let host = std::process::Command::new("scutil")
-        .args(["--get", "ComputerName"])
-        .output()
-        .ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "Mac".to_string());
-    format!("{host} · macOS")
+    #[cfg(target_os = "macos")]
+    {
+        let host = std::process::Command::new("scutil")
+            .args(["--get", "ComputerName"])
+            .output()
+            .ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "Mac".to_string());
+        format!("{host} · macOS")
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let host = std::fs::read_to_string("/etc/hostname")
+            .map(|s| s.trim().to_string())
+            .unwrap_or_else(|_| "Linux".to_string());
+        format!("{host} · Linux")
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let host = std::env::var("COMPUTERNAME").unwrap_or_else(|_| "Windows".to_string());
+        format!("{host} · Windows")
+    }
 }
 
 pub async fn run(app: AppHandle) {

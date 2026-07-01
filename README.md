@@ -123,7 +123,7 @@ Tiptap documents are CRDT-synced through the Hocuspocus server (`app/collab/serv
 
 ## Desktop app
 
-`desktop/` is a Tauri v2 macOS shell that wraps the live hosted web app. It adds native notifications, auto-update, a tray icon, device-pairing sign-in (Google blocks embedded webviews), and deep-link click-through. The web server is unchanged except for additive `/auth/pair/*`, `/auth/handoff`, and `/link` routes.
+`desktop/` is a Tauri v2 cross platform shell that wraps the live hosted web app. It adds native notifications, auto-update, a tray icon, device-pairing sign-in (Google blocks embedded webviews), and deep-link click-through. The web server is unchanged except for additive `/auth/pair/*`, `/auth/handoff`, and `/link` routes.
 
 Releases are tagged `desktop-v*` and built by `desktop-release.yml` — the CI signs with Apple Developer ID and a Tauri updater minisign keypair. See `desktop/README.md` for the full security model and provisioning checklist.
 
