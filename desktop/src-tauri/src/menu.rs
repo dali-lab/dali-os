@@ -28,6 +28,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         None::<&str>,
     )?;
 
+    #[cfg(target_os = "macos")]
     let app_menu = Submenu::with_items(
         app,
         "DALI OS",
@@ -42,6 +43,24 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
             &PredefinedMenuItem::hide(app, None)?,
             &PredefinedMenuItem::hide_others(app, None)?,
             &PredefinedMenuItem::show_all(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &open_at_login,
+            &PredefinedMenuItem::separator(app)?,
+            &sign_out,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::quit(app, None)?,
+        ],
+    )?;
+
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    let app_menu = Submenu::with_items(
+        app,
+        "DALI OS",
+        true,
+        &[
+            &PredefinedMenuItem::about(app, None, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &check_update,
             &PredefinedMenuItem::separator(app)?,
             &open_at_login,
             &PredefinedMenuItem::separator(app)?,
