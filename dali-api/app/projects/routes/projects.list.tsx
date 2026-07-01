@@ -12,6 +12,7 @@ import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { prisma } from "~/lib/db";
+import { githubTeamSlug } from "~/lib/github-slug";
 import { ensureProjectGroup } from "~/lib/groups";
 import { ViewToggle, useViewPreference } from "~/components/ViewToggle";
 import { TermFilter } from "~/components/TermFilter";
@@ -139,6 +140,9 @@ export async function action({ request }: Route.ActionArgs) {
   const created = await prisma.project.create({
     data: {
       name,
+      // Auto-derive the GitHub team slug from the name (editable later on the
+      // project page). Enables the roster→team sync without a manual step.
+      githubTeamSlug: githubTeamSlug(name) || null,
       description: description === "" ? null : description,
       status: status as ProjectStatus,
       // Seed the initial term into the project's term set (if chosen).

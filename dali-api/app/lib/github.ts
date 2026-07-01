@@ -99,13 +99,38 @@ export async function ensureTeam(slug: string): Promise<{ slug: string; created:
 
 // Add (or confirm) a member on a team. PUT is idempotent — re-adding an
 // existing member is a no-op that returns 200. Role defaults to "member".
-export async function addTeamMember(teamSlug: string, username: string): Promise<void> {
+// Returns the resulting membership state: "pending" when the user isn't yet an
+// org member (GitHub emails them an org invite) vs "active" once accepted.
+export async function addTeamMember(
+  teamSlug: string,
+  username: string,
+): Promise<{ state: "active" | "pending" }> {
   const org = requireOrg();
-  await githubAppClient().rest.teams.addOrUpdateMembershipForUserInOrg({
+  const res = await githubAppClient().rest.teams.addOrUpdateMembershipForUserInOrg({
     org,
     team_slug: teamSlug,
     username,
     role: "member",
+  });
+  return { state: res?.data?.state === "pending" ? "pending" : "active" };
+}
+
+// Grant a team a permission on a repo under GITHUB_ORG. PUT is idempotent —
+// re-granting (or changing) the permission overwrites and returns 204. A missing
+// repo or team surfaces as 404; callers decide whether to swallow it (isNotFound).
+export async function grantTeamRepo(
+  teamSlug: string,
+  owner: string,
+  repo: string,
+  permission: "pull" | "triage" | "push" | "maintain" | "admin" = "push",
+): Promise<void> {
+  const org = requireOrg();
+  await githubAppClient().rest.teams.addOrUpdateRepoPermissionsInOrg({
+    org,
+    team_slug: teamSlug,
+    owner,
+    repo,
+    permission,
   });
 }
 
