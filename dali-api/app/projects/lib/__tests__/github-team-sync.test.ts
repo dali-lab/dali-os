@@ -19,6 +19,9 @@ function fakeOctokit(o: {
   create?: ReturnType<typeof vi.fn>;
   addMembership?: ReturnType<typeof vi.fn>;
   grantRepo?: ReturnType<typeof vi.fn>;
+  removeMembership?: ReturnType<typeof vi.fn>;
+  listMembers?: ReturnType<typeof vi.fn>;
+  removeRepo?: ReturnType<typeof vi.fn>;
 }) {
   return {
     rest: {
@@ -28,6 +31,10 @@ function fakeOctokit(o: {
         addOrUpdateMembershipForUserInOrg:
           o.addMembership ?? vi.fn().mockResolvedValue({ data: { state: "active" } }),
         addOrUpdateRepoPermissionsInOrg: o.grantRepo ?? vi.fn().mockResolvedValue({}),
+        // Guardrail spies — the add-only invariant means these must NEVER fire.
+        removeMembershipForUserInOrg: o.removeMembership ?? vi.fn(),
+        listMembersInOrg: o.listMembers ?? vi.fn(),
+        removeRepoInOrg: o.removeRepo ?? vi.fn(),
       },
     },
   } as unknown as Octokit;
@@ -206,5 +213,24 @@ describe("syncProjectTeam", () => {
     const r = await syncProjectTeam("nope", TERM);
     expect(r.status).toBe("skipped");
     expect(r.message).toContain("not found");
+  });
+
+  it("is add-only: never removes members/repos or lists membership, even on re-run", async () => {
+    mockPrisma.project.findUnique.mockResolvedValue(
+      projectRow({
+        repoUrls: ["dali-lab/foo"],
+        assignments: [assignment("u1", "A", "A", "aaa"), assignment("u2", "B", "B", "bbb")],
+      }),
+    );
+    const removeMembership = vi.fn();
+    const listMembers = vi.fn();
+    const removeRepo = vi.fn();
+    __setGitHubClientForTests(fakeOctokit({ removeMembership, listMembers, removeRepo }));
+
+    await syncProjectTeam("p1", TERM);
+    await syncProjectTeam("p1", TERM); // re-run: still no removal/reconcile
+    expect(removeMembership).not.toHaveBeenCalled();
+    expect(listMembers).not.toHaveBeenCalled();
+    expect(removeRepo).not.toHaveBeenCalled();
   });
 });

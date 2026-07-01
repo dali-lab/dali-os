@@ -77,16 +77,18 @@ export async function action({ request }: Route.ActionArgs) {
     });
 
     // githubTeamSlug is NOT @unique — detect duplicates across the sweep so two
-    // projects that resolve to the same team aren't merged into one.
+    // projects that resolve to the same team aren't merged into one. Normalized
+    // to lowercase because GitHub resolves team slugs case-insensitively
+    // ("MyApp" and "myapp" are the same team).
     const slugCounts = new Map<string, number>();
     for (const p of projects) {
-      const s = p.githubTeamSlug?.trim();
+      const s = p.githubTeamSlug?.trim().toLowerCase();
       if (s) slugCounts.set(s, (slugCounts.get(s) ?? 0) + 1);
     }
 
     const reports: ProjectTeamSyncReport[] = [];
     for (const p of projects) {
-      const s = p.githubTeamSlug?.trim();
+      const s = p.githubTeamSlug?.trim().toLowerCase();
       if (s && (slugCounts.get(s) ?? 0) > 1) {
         reports.push({
           projectId: p.id,
@@ -155,12 +157,16 @@ export async function action({ request }: Route.ActionArgs) {
         membersEnsured,
         membersPending,
         missing,
-        // Bounded per-project rows only — no full member arrays (keeps JSON small, less PII).
+        // Bounded per-project counts only — no member names/arrays (keeps the
+        // audit JSON small and free of PII; full detail is in the response body).
         projects: reports.map((r) => ({
           projectId: r.projectId,
           slug: r.slug,
           status: r.status,
-          message: r.message,
+          membersEnsured: r.membersEnsured,
+          missingCount: r.missingHandles.length,
+          memberErrorCount: r.memberErrors.length,
+          repoErrorCount: r.repos.filter((x) => x.status === "error").length,
         })),
       },
     });
