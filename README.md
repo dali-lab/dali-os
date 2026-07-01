@@ -45,7 +45,7 @@ docker-compose.yml      local Postgres + API + Prisma Studio
 
 ## Local dev
 
-Prereqs: Docker, Node 22, a repo-root `.env` containing `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
+Prereqs: Docker, Node 22, and `dali-api/.env` populated from `dali-api/.env.example`.
 
 ```bash
 docker compose up
