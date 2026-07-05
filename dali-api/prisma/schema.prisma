@@ -152,6 +152,7 @@ model User {
   // ─── Phase 1: OAuth / magic-link back-relations ───────────────────────────
   oauthGrants   OAuthGrant[]
   oneTimeTokens OneTimeToken[]
+  devicePairings DevicePairing[]
 
   // ─── Phase 1: Gmail integration (single per User) ─────────────────────────
   gmailIntegration      GmailIntegration?
@@ -3193,6 +3194,75 @@ enum TokenPurpose {
   PartnerMagicLink
   AlumniEmailLink
   EmailVerification
+}
+
+// ─── Desktop device pairing (GitHub-CLI style) ───────────────────────────────
+//
+// Backs the Tauri desktop app's sign-in. The app POSTs /auth/pair/start to
+// create a Pending row, opens the system browser to /link?code=<userCode>, the
+// signed-in user approves (binding userId), and the app polls /auth/pair/poll.
+// On the consuming poll the server mints (a) a long-lived desktop Session for
+// the background notification poller — returned for the OS keychain — and (b) a
+// one-time handoff code that /auth/handoff redeems into a fresh webview cookie
+// session. All codes are SHA-256 hashed at rest (same scheme as Session.id and
+// OneTimeToken.tokenHash); raw values exist only in transit. See
+// TAURI_DESKTOP_PLAN.md.
+model DevicePairing {
+  id String @id @default(cuid())
+
+  // sha256(raw deviceCode), base64url. The raw deviceCode is the high-entropy
+  // bearer secret the app polls with; we never store it.
+  deviceCodeHash String @unique
+  // Short, human-eyeballed code (8 chars from an unambiguous alphabet, no
+  // 0/O/1/I/L). Stored canonical uppercase. NOT a bearer secret — approval
+  // still requires an authenticated web session — so low entropy is fine.
+  userCode String @unique
+
+  status DevicePairingStatus @default(Pending)
+
+  // Human label the shell sends (hostname / OS), rendered on /link so the user
+  // confirms which device they're approving.
+  deviceLabel String
+
+  // Bound at approval; null while pending.
+  userId String?
+
+  // Hashed id of the long-lived desktop Session minted on the consuming poll.
+  // Doubles as the single-mint guard (claim requires this null) and an audit
+  // link from the pairing to its revocable Session row.
+  desktopSessionId String?
+
+  // One-time handoff code minted on the consuming poll, ~60s TTL, single-use.
+  // sha256(raw), base64url. Redeemed by /auth/handoff to plant the webview
+  // cookie session.
+  handoffCodeHash  String?
+  handoffExpiresAt DateTime?
+  handoffUsedAt    DateTime?
+
+  // Pairing-request expiry (~10 min). Independent of handoff expiry.
+  expiresAt  DateTime
+  approvedAt DateTime?
+
+  // Audit / abuse review of the start request.
+  startIp        String?
+  startUserAgent String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status, expiresAt])
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+enum DevicePairingStatus {
+  Pending
+  Approved
+  Consumed
+  Cancelled
+  Expired
 }
 
 // ─── Gmail integration (send-as) ─────────────────────────────────────────────

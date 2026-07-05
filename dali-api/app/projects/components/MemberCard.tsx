@@ -1,5 +1,3 @@
-import { useSortable } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
 import { fullName as buildFullName } from "~/lib/display";
 import { Avatar } from "~/components/ui/Avatar";
 import { RolePills } from "~/components/ui/RolePills";
@@ -13,7 +11,6 @@ const LEVEL_BADGE: Record<Level, { label: string; cls: string }> = {
 
 type Props = {
   card: MemberCardModel;
-  columnId: string;
   projectNames: Record<string, string>;
   domainNames: Record<string, string>;
   onOpenBid: () => void;
@@ -21,39 +18,42 @@ type Props = {
   onRemove?: () => void;
   /** When false the card is static (read-only viewers). */
   draggable: boolean;
+  /**
+   * Drag listeners + a11y attributes from the KanbanBoard sortable wrapper.
+   * Spread onto the card root so the whole card initiates a drag. Empty for
+   * read-only viewers.
+   */
+  dragHandleProps: Record<string, unknown>;
+  /** The card is the one being dragged — dim it; the DragOverlay floats a copy. */
+  isDragging: boolean;
 };
 
-export function MemberCard({ card, columnId, projectNames, domainNames, onOpenBid, onRemove, draggable }: Props) {
-  // The card's sortable id is its userId (unique per board). Column membership
-  // travels in `data` so the drag handler knows where the card came from.
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({
-      id: card.userId,
-      data: { userId: card.userId, fromColumn: columnId },
-      disabled: !draggable,
-    });
-
+export function MemberCard({
+  card,
+  projectNames,
+  domainNames,
+  onOpenBid,
+  onRemove,
+  draggable,
+  dragHandleProps,
+  isDragging,
+}: Props) {
   const fullName = buildFullName(card);
 
   // Only wire dnd listeners + grab cursor when draggable. Read-only viewers
   // still see the card and can click it to open the bid modal.
-  const dragProps = draggable ? { ...attributes, ...listeners } : {};
+  const dragProps = draggable ? dragHandleProps : {};
 
-  // useSortable's transform/transition animate the SIBLINGS shifting to make
-  // room as a card is dragged over them. The dragged card itself is dimmed and
-  // its floating copy is rendered by DragOverlay (portaled above all columns),
-  // so it can never clip under an adjacent column's stacking context.
+  // The wrapper (KanbanBoard's SortableCardWrapper) owns setNodeRef + the
+  // sortable transform that animates SIBLINGS shifting to make room. The dragged
+  // card itself is dimmed; its floating copy is rendered by DragOverlay (portaled
+  // above all columns), so it can never clip under an adjacent column.
   //
-  // Clicking anywhere on the card opens the member's bid. The DndContext uses
-  // a small activation-distance constraint, so a pointer press that doesn't
-  // move past the threshold lands here as a click rather than starting a drag.
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  };
+  // Clicking anywhere on the card opens the member's bid. The DndContext uses a
+  // small activation-distance constraint, so a pointer press that doesn't move
+  // past the threshold lands here as a click rather than starting a drag.
   return (
     <div
-      ref={setNodeRef}
       {...dragProps}
       onClick={onOpenBid}
       role="button"

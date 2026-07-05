@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
+import { Modal } from "~/components/Modal";
 
 interface Author {
   id: string;
@@ -132,25 +133,27 @@ export function VersionHistoryPanel({ documentName, onClose }: VersionHistoryPan
   }, [selectedId, onClose]);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
-      onClick={onClose}
+    <Modal
+      open
+      onClose={onClose}
+      labelledBy="version-history-title"
+      disableEscape={restoring}
+      containerClassName="bg-card rounded-xl shadow-2xl border border-border w-[min(900px,92vw)] h-[min(640px,86vh)] flex overflow-hidden"
     >
-      <div
-        className="bg-card rounded-xl shadow-2xl border border-border w-[min(900px,92vw)] h-[min(640px,86vh)] flex overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <>
         {/* Left: version list */}
         <div className="w-72 border-r border-border flex flex-col">
           <div className="px-4 py-3 border-b border-border flex items-center justify-between bg-muted/50">
-            <h2 className="text-sm font-semibold text-foreground">Version history</h2>
+            <h2 id="version-history-title" className="text-sm font-semibold text-foreground">
+              Version history
+            </h2>
             <button
               type="button"
               onClick={onClose}
-              className="text-muted-foreground/70 hover:text-muted-foreground"
+              className="text-muted-foreground/70 hover:text-foreground rounded p-1 hover:bg-muted"
               aria-label="Close"
             >
-              <X size={16} />
+              <X className="w-5 h-5" aria-hidden />
             </button>
           </div>
           <div className="flex-1 overflow-y-auto">
@@ -234,7 +237,7 @@ export function VersionHistoryPanel({ documentName, onClose }: VersionHistoryPan
             </div>
           )}
         </div>
-      </div>
-    </div>
+      </>
+    </Modal>
   );
 }

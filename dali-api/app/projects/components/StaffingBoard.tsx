@@ -1,17 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useRevalidator } from "react-router";
-import {
-  DndContext,
-  DragOverlay,
-  PointerSensor,
-  closestCorners,
-  useDroppable,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-  type DragStartEvent,
-} from "@dnd-kit/core";
-import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import type { DragEndEvent } from "@dnd-kit/core";
+import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
 import {
   buildBoard,
   resolveAssignmentInputs,
@@ -95,9 +85,6 @@ export function StaffingBoard({
   const [openBidUserId, setOpenBidUserId] = useState<string | null>(null);
   // Project id whose finalize modal is open, or null.
   const [finalizeProjectId, setFinalizeProjectId] = useState<string | null>(null);
-  // userId of the card being dragged, or null. Drives the DragOverlay so the
-  // dragged card floats above every column instead of clipping under them.
-  const [activeCardUserId, setActiveCardUserId] = useState<string | null>(null);
 
   // Number of drag saves currently in flight. While > 0 we hold off adopting
   // server data so a live push from someone else can't revert our own unsaved
@@ -146,8 +133,8 @@ export function StaffingBoard({
     [members],
   );
 
-  // Flat userId → card lookup so DragOverlay can render the active card without
-  // knowing which column it came from.
+  // Flat userId → card lookup so the DragOverlay can render the active card
+  // without knowing which column it came from.
   const cardByUserId = useMemo(() => {
     const map = new Map<string, MemberCardModel>();
     for (const cards of Object.values(board)) {
@@ -155,22 +142,19 @@ export function StaffingBoard({
     }
     return map;
   }, [board]);
-  const activeCard = activeCardUserId ? cardByUserId.get(activeCardUserId) ?? null : null;
 
-  // The whole member card is both draggable and clickable. A small activation
-  // distance disambiguates the two: a press that moves <6px fires the card's
-  // onClick (open bid); past that it starts a drag, suppressing the click.
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-  );
-
-  function handleDragStart(event: DragStartEvent) {
-    const data = event.active.data.current as { userId?: string } | undefined;
-    setActiveCardUserId(data?.userId ?? null);
-  }
+  // userId → its current column key. The card's `data.fromColumn` (which the
+  // drag handler reads to know where a card came from) used to live on each
+  // MemberCard via columnId; now it's derived once from the built board.
+  const columnIdOf = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const [columnKey, cards] of Object.entries(board)) {
+      for (const c of cards) map.set(c.userId, columnKey);
+    }
+    return map;
+  }, [board]);
 
   function handleDragEnd(event: DragEndEvent) {
-    setActiveCardUserId(null);
     if (!canManage) return;
     const overId = event.over?.id;
     if (!overId || typeof overId !== "string") return;
@@ -300,9 +284,91 @@ export function StaffingBoard({
 
   const termCode = terms.find((t) => t.id === termId)?.code ?? "";
 
+  // Per-column tone (kept from the original): the Unassigned column is muted,
+  // active projects get the teal wash, paused/archived projects read as dim.
+  const toneClasses: Record<"muted" | "active" | "dim", string> = {
+    muted: "border-border bg-muted/20",
+    active: "border-accent-teal/40 bg-accent-teal/[0.04]",
+    dim: "border-border bg-card",
+  };
+  // pt-1/px on the row (the primitive's default row layout) keeps each column's
+  // top + side borders off the scroll-clip edge so they stay visible.
+  const shell = (tone: "muted" | "active" | "dim") =>
+    `flex-shrink-0 w-64 border rounded-lg ${toneClasses[tone]} flex flex-col max-h-[calc(100vh-12rem)]`;
+  // Only the card list scrolls; the header stays pinned. flex-1 + min-h-0 lets
+  // it shrink within the column's max-height so overflow-y kicks in.
+  const listClass = "flex flex-col gap-2 p-2 flex-1 min-h-0 overflow-y-auto";
+  // An empty column keeps a tall drop target so a card can be dropped into it.
+  const emptyDropTarget = () => (
+    <div className="text-xs text-muted-foreground italic text-center py-4 min-h-[12rem]">
+      Empty
+    </div>
+  );
+
+  const columnSubtitle = (countLabel: string, demand?: DomainDemand[]) => (
+    <>
+      <div>{countLabel}</div>
+      {demand && demand.length > 0 && (
+        <div className="mt-1 flex flex-wrap gap-1">
+          {demand.map((d) => (
+            <span
+              key={d.domainId}
+              className="text-[10px] px-1.5 py-0.5 rounded-full border border-border bg-background text-muted-foreground"
+              title={`Expected ${d.slots} ${d.domainName} this term`}
+            >
+              {d.domainName} · {d.slots}
+            </span>
+          ))}
+        </div>
+      )}
+    </>
+  );
+
+  const columns: KanbanColumn<MemberCardModel>[] = [
+    {
+      id: UNASSIGNED,
+      title: "Unassigned",
+      subtitle: columnSubtitle(`${board[UNASSIGNED]?.length ?? 0} bidding`),
+      cards: board[UNASSIGNED] ?? [],
+      className: shell("muted"),
+      listClassName: listClass,
+      headerExtra: <span />,
+      renderEmpty: emptyDropTarget,
+    },
+    ...projects.map<KanbanColumn<MemberCardModel>>((p) => {
+      const tone = p.status === "Active" ? "active" : "dim";
+      return {
+        id: p.id,
+        title: p.name,
+        subtitle: columnSubtitle(
+          `${board[p.id]?.length ?? 0} assigned`,
+          demandByProject[p.id],
+        ),
+        cards: board[p.id] ?? [],
+        className: shell(tone),
+        listClassName: listClass,
+        renderEmpty: emptyDropTarget,
+        headerExtra: canManage ? (
+          <button
+            type="button"
+            onClick={() => setFinalizeProjectId(p.id)}
+            title={`Finalize ${p.name}`}
+            aria-label={`Finalize ${p.name}`}
+            className="flex-shrink-0 text-muted-foreground hover:text-accent-coral transition-colors"
+          >
+            <CheckCircle2 className="w-4 h-4" />
+          </button>
+        ) : (
+          <span />
+        ),
+      };
+    }),
+  ];
+
   return (
     <div className="flex flex-col gap-3">
       {canManage && <TermChannelBanner termId={termId} termCode={termCode} />}
+      {canManage && <SyncTeamsBanner termId={termId} termCode={termCode} />}
       <div className="flex items-center justify-end gap-3 flex-wrap">
         {canManage && <AddMemberControl cycleId={cycleId} />}
         <DomainFilter
@@ -346,70 +412,52 @@ export function StaffingBoard({
         </div>
       </div>
 
-      {error && (
-        <div className="bg-destructive/10 border border-destructive/30 text-destructive text-sm rounded-md px-3 py-2">
-          {error}
-        </div>
-      )}
-
       {/* Stable id: with multiple DndContexts mounting (tabbed workspace
           iframe + other boards) the default useId differs between SSR and
           client, hydration-mismatches dnd-kit's internal ids, and drag never
-          activates. A fixed id keeps server/client deterministic. */}
-      <DndContext
+          activates. A fixed id keeps server/client deterministic. The primitive
+          owns the DndContext, the SortableContext per column, the coral isOver
+          ring, and the DragOverlay; the staffing-specific optimistic state +
+          index math + SSE guard stay in this component. */}
+      <KanbanBoard<MemberCardModel>
         id="staffing-board"
-        sensors={sensors}
-        collisionDetection={closestCorners}
-        onDragStart={handleDragStart}
+        columns={columns}
+        getCardId={(c) => c.userId}
+        getCardData={(c) => ({ userId: c.userId, fromColumn: columnIdOf.get(c.userId) ?? UNASSIGNED })}
+        draggable={canManage}
+        sortable
         onDragEnd={handleDragEnd}
-        onDragCancel={() => setActiveCardUserId(null)}
-      >
-        {/* pt-1 keeps each column's top border off the scroll-clip edge so it
-            stays visible; px on the row prevents the first/last column border
-            being shaved by overflow-x. */}
-        <div className="flex gap-3 overflow-x-auto pt-1 pb-3 px-0.5">
-          <Column
-            id={UNASSIGNED}
-            title="Unassigned"
-            subtitle={`${board[UNASSIGNED]?.length ?? 0} bidding`}
-            tone="muted"
-            cards={board[UNASSIGNED] ?? []}
+        error={error}
+        renderCard={(card, { isDragging, dragHandleProps }) => (
+          <MemberCard
+            card={card}
             projectNames={projectNames}
             domainNames={domainNames}
-            onOpenBid={setOpenBidUserId}
-            onRemoveMember={canManage ? handleRemoveMember : undefined}
+            onOpenBid={() => setOpenBidUserId(card.userId)}
+            // Remove (×) only on the Unassigned column, matching the original:
+            // the destructive board-member delete shouldn't surface from project
+            // columns. (MemberCardBody additionally gates it on manuallyAdded.)
+            onRemove={
+              canManage && columnIdOf.get(card.userId) === UNASSIGNED
+                ? () => handleRemoveMember(card.userId)
+                : undefined
+            }
             draggable={canManage}
+            dragHandleProps={dragHandleProps}
+            isDragging={isDragging}
           />
-          {projects.map((p) => (
-            <Column
-              key={p.id}
-              id={p.id}
-              title={p.name}
-              subtitle={`${board[p.id]?.length ?? 0} assigned`}
-              tone={p.status === "Active" ? "active" : "dim"}
-              cards={board[p.id] ?? []}
-              projectNames={projectNames}
-              domainNames={domainNames}
-              demand={demandByProject[p.id]}
-              onOpenBid={setOpenBidUserId}
-              draggable={canManage}
-              onFinalize={canManage ? () => setFinalizeProjectId(p.id) : undefined}
-            />
-          ))}
-        </div>
-
-        {/* The dragged card, portaled above every column so it can never clip
-            under an adjacent column's stacking context. */}
-        <DragOverlay>
-          {activeCard ? (
+        )}
+        renderOverlay={(activeId) => {
+          const card = activeId ? cardByUserId.get(activeId) ?? null : null;
+          return card ? (
             <MemberCardPreview
-              card={activeCard}
+              card={card}
               projectNames={projectNames}
               domainNames={domainNames}
             />
-          ) : null}
-        </DragOverlay>
-      </DndContext>
+          ) : null;
+        }}
+      />
 
       {openBidMember && (
         <BidModal
@@ -524,113 +572,105 @@ function TermChannelBanner({ termId, termCode }: { termId: string; termCode: str
   );
 }
 
-type ColumnTone = "muted" | "active" | "dim";
+// Full-width banner: add-only GitHub team sync for every project staffed this
+// term. Ensures each project's org team, adds its rostered members, and grants
+// the team push on its repos. Idempotent — safe to re-run. Two-click confirm
+// because it can send org invites in bulk.
+function SyncTeamsBanner({ termId, termCode }: { termId: string; termCode: string }) {
+  const [running, setRunning] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; message: string; warnings?: string[] } | null>(
+    null,
+  );
 
-function Column({
-  id,
-  title,
-  subtitle,
-  tone,
-  cards,
-  projectNames,
-  domainNames,
-  demand,
-  onOpenBid,
-  onRemoveMember,
-  draggable,
-  onFinalize,
-}: {
-  id: string;
-  title: string;
-  subtitle: string;
-  tone: ColumnTone;
-  cards: MemberCardModel[];
-  projectNames: Record<string, string>;
-  domainNames: Record<string, string>;
-  // Per-domain expected headcount for this project this term. Absent for
-  // the Unassigned column and for projects with no ProjectRoleRequest rows;
-  // rendered as small chips under the assigned count.
-  demand?: DomainDemand[];
-  onOpenBid: (userId: string) => void;
-  // Remove a manually-added member from the board. Only set for managers.
-  onRemoveMember?: (userId: string) => void;
-  draggable: boolean;
-  // Only set for project columns the user can manage; renders the finalize
-  // icon button in the header.
-  onFinalize?: () => void;
-}) {
-  const { isOver, setNodeRef } = useDroppable({ id });
-  const cardIds = cards.map((c) => c.userId);
-  const toneClasses: Record<ColumnTone, string> = {
-    muted: "border-border bg-muted/20",
-    active: "border-accent-teal/40 bg-accent-teal/[0.04]",
-    dim: "border-border bg-card",
-  };
+  // Reset when the selected term changes.
+  useEffect(() => {
+    setResult(null);
+    setConfirming(false);
+  }, [termCode]);
+
+  async function run() {
+    setRunning(true);
+    setResult(null);
+    setConfirming(false);
+    try {
+      const res = await fetch("/api/staffing/sync-teams", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ termId }),
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        message?: string;
+        error?: string;
+        warnings?: string[];
+      };
+      if (!res.ok) {
+        setResult({ ok: false, message: json.error ?? `Failed: ${res.status}` });
+        return;
+      }
+      setResult({ ok: json.ok ?? true, message: json.message ?? "Done.", warnings: json.warnings });
+    } catch (err) {
+      setResult({ ok: false, message: err instanceof Error ? err.message : "Network error" });
+    } finally {
+      setRunning(false);
+    }
+  }
 
   return (
-    <div
-      ref={setNodeRef}
-      className={`flex-shrink-0 w-64 border rounded-lg ${toneClasses[tone]} ${
-        isOver ? "ring-2 ring-accent-coral/40" : ""
-      } flex flex-col max-h-[calc(100vh-12rem)]`}
-    >
-      <div className="px-3 py-2 border-b border-border flex-shrink-0">
-        <div className="flex items-center gap-1.5">
-          <div className="text-sm font-semibold text-foreground truncate flex-1" title={title}>
-            {title}
-          </div>
-          {onFinalize && (
-            <button
-              type="button"
-              onClick={onFinalize}
-              title={`Finalize ${title}`}
-              aria-label={`Finalize ${title}`}
-              className="flex-shrink-0 text-muted-foreground hover:text-accent-coral transition-colors"
-            >
-              <CheckCircle2 className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-        <div className="text-[11px] text-muted-foreground">{subtitle}</div>
-        {demand && demand.length > 0 && (
-          <div className="mt-1 flex flex-wrap gap-1">
-            {demand.map((d) => (
-              <span
-                key={d.domainId}
-                className="text-[10px] px-1.5 py-0.5 rounded-full border border-border bg-background text-muted-foreground"
-                title={`Expected ${d.slots} ${d.domainName} this term`}
-              >
-                {d.domainName} · {d.slots}
-              </span>
-            ))}
-          </div>
+    <div className="w-full rounded-lg border border-accent-coral/30 bg-accent-coral/10 px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="min-w-0">
+        <p className="text-sm font-heading font-semibold text-foreground">
+          Sync GitHub teams{termCode ? ` for ${termCode}` : ""}
+        </p>
+        <p className="text-xs text-muted-foreground break-words">
+          For every project staffed this term: ensure its org team, add rostered members, and grant
+          the team push on its repos. Add-only — never removes anyone. Safe to re-run.
+        </p>
+        {result && (
+          <>
+            <p className={`text-xs mt-1 break-words ${result.ok ? "text-accent-teal" : "text-destructive"}`}>
+              {result.ok ? "✓ " : "✗ "}
+              {result.message}
+            </p>
+            {result.warnings?.length ? (
+              <ul className="text-xs text-muted-foreground mt-1 list-disc pl-4 max-h-32 overflow-auto break-words">
+                {result.warnings.map((w, i) => (
+                  <li key={i}>{w}</li>
+                ))}
+              </ul>
+            ) : null}
+          </>
         )}
       </div>
-      {/* Only the card list scrolls; the header above stays pinned. flex-1 +
-          min-h-0 lets it shrink within the column's max-height so overflow-y
-          kicks in instead of stretching the page. */}
-      <div className="flex flex-col gap-2 p-2 flex-1 min-h-0 overflow-y-auto">
-        <SortableContext items={cardIds} strategy={verticalListSortingStrategy}>
-          {cards.length === 0 ? (
-            // min-h keeps an empty column a usable drop target.
-            <div className="text-xs text-muted-foreground italic text-center py-4 min-h-[12rem]">
-              Empty
-            </div>
-          ) : (
-            cards.map((card) => (
-              <MemberCard
-                key={card.userId}
-                card={card}
-                columnId={id}
-                projectNames={projectNames}
-                domainNames={domainNames}
-                onOpenBid={() => onOpenBid(card.userId)}
-                onRemove={onRemoveMember ? () => onRemoveMember(card.userId) : undefined}
-                draggable={draggable}
-              />
-            ))
-          )}
-        </SortableContext>
+      <div className="flex items-center gap-2 flex-shrink-0">
+        {confirming ? (
+          <>
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={running}
+              onClick={run}
+              className="whitespace-nowrap"
+            >
+              {running ? "Syncing…" : "Confirm sync"}
+            </Button>
+            <Button variant="ghost" size="sm" disabled={running} onClick={() => setConfirming(false)}>
+              Cancel
+            </Button>
+          </>
+        ) : (
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={running}
+            onClick={() => setConfirming(true)}
+            className="whitespace-nowrap"
+          >
+            Sync all current-term teams
+          </Button>
+        )}
       </div>
     </div>
   );

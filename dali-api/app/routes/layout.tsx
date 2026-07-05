@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Outlet, redirect, useLoaderData, useLocation, useNavigate, useSearchParams } from 'react-router'
 import { Layout } from '~/components/Layout'
+import { Breadcrumbs } from '~/components/Breadcrumbs'
 import { LaunchWelcome } from '~/components/LaunchWelcome'
 import { requireAuth } from "~/lib/auth";
 import { getUserRoles } from '~/lib/roles'
@@ -222,11 +223,17 @@ export default function AppLayoutRoute() {
     };
   }, [location.key]);
 
-  // Skip the sidebar shell when rendered inside a TabWorkspace iframe.
+  // Skip the sidebar shell when rendered inside a TabWorkspace iframe. This is
+  // where every routed page actually renders, so the breadcrumb trail (derived
+  // from the iframe document's matched routes) lives here — it picks up each
+  // detail route's `handle.breadcrumb` for the dynamic leaf crumb.
   if (embedded) {
     return (
       <div className="min-h-dvh bg-page overflow-x-hidden">
         <div className="w-full px-3 sm:px-6 lg:px-10 pt-4 sm:pt-8 md:pt-12 pb-6 sm:pb-8">
+          <div className="mb-4 empty:mb-0">
+            <Breadcrumbs />
+          </div>
           <Outlet />
         </div>
       </div>

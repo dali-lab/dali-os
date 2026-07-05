@@ -1,14 +1,11 @@
 import type { Question } from "~/types";
-import { ChallengeQuestionField } from "~/hiring/components/ChallengeQuestionField";
+import { FormFieldList } from "~/forms/components/FormField";
 import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
-import { InfoBody } from "~/hiring/lib/info-body";
 
 export interface ChallengePreviewProps {
   description?: unknown;
   questions: Question[];
 }
-
-const noop = () => {};
 
 export function ChallengePreview({ description, questions }: ChallengePreviewProps) {
   return (
@@ -27,40 +24,18 @@ export function ChallengePreview({ description, questions }: ChallengePreviewPro
         <p className="text-sm text-muted-foreground/70 italic">No questions in this version.</p>
       ) : (
         <div className="space-y-6">
-          {questions.map(q => {
-            if (q.type === "info") {
-              return (
-                <div
-                  key={q.key}
-                  className="rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground"
-                >
-                  <InfoBody body={q.data.body} />
-                </div>
-              );
+          <FormFieldList
+            questions={questions}
+            disabled
+            labelClassName="font-semibold"
+            labelSuffix={q =>
+              q.data.afterDomains ? (
+                <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-800 align-middle">
+                  Shown after domain questions
+                </span>
+              ) : null
             }
-            return (
-              <div key={q.key}>
-                <label className="block text-sm font-semibold text-dark-blue mb-1">
-                  {q.data.label}
-                  {q.required && <span className="text-accent-coral ml-0.5">*</span>}
-                  {q.data.afterDomains && (
-                    <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-800 align-middle">
-                      Shown after domain questions
-                    </span>
-                  )}
-                </label>
-                {q.data.description && (
-                  <p className="text-xs text-muted-foreground mb-1">{q.data.description}</p>
-                )}
-                <ChallengeQuestionField
-                  question={q}
-                  value=""
-                  onChange={noop}
-                  disabled
-                />
-              </div>
-            );
-          })}
+          />
         </div>
       )}
     </div>

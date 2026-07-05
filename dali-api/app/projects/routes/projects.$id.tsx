@@ -11,7 +11,7 @@ import {
   useSubmit,
 } from "react-router";
 import { Check, Pencil, X, Settings } from "lucide-react";
-import { Modal } from "~/components/Modal";
+import { Modal, ModalHeader } from "~/components/Modal";
 import { EditableSection } from "~/components/EditableSection";
 import { TagPicker } from "~/components/TagPicker";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
@@ -914,25 +914,13 @@ export default function ProjectDetail() {
           labelledBy="scope-settings-title"
           containerClassName="bg-card rounded-2xl shadow-xl w-full max-w-4xl p-5 sm:p-6 my-auto max-h-[85vh] overflow-y-auto"
         >
-          <div className="flex items-start justify-between gap-3 mb-4">
-            <div>
-              <h2 id="scope-settings-title" className="font-heading text-lg font-bold text-foreground">
-                Domain settings
-              </h2>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Declared domains, planned terms, and the per-domain challenge
-                for each term.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setScopeSettingsOpen(false)}
-              aria-label="Close scope settings"
-              className="text-muted-foreground hover:text-foreground text-xl leading-none px-1"
-            >
-              ×
-            </button>
-          </div>
+          <ModalHeader
+            titleId="scope-settings-title"
+            title="Domain settings"
+            subtitle="Declared domains, planned terms, and the per-domain challenge for each term."
+            onClose={() => setScopeSettingsOpen(false)}
+            closeLabel="Close scope settings"
+          />
           <ScopeTab
             project={project}
             allDomainOptions={allDomainOptions}

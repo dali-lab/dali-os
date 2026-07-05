@@ -509,6 +509,17 @@ export async function action({ request }: Route.ActionArgs) {
         status: "skipped",
         message: "No GitHub team slug provided — enter one in the Finalize modal.",
       };
+    } else if (
+      (await prisma.project.count({
+        where: { id: { not: project.id }, githubTeamSlug: { equals: slug, mode: "insensitive" } },
+      })) > 0
+    ) {
+      // Another project already owns this slug — ensureTeam would merge their
+      // rosters into one team. Skip, matching the sync-teams sweep's guard.
+      results.github = {
+        status: "skipped",
+        message: `GitHub team slug "${slug}" is used by another project — skipped to avoid merging teams. Set a unique slug.`,
+      };
     } else {
       try {
         const roster = await prisma.staffingAssignment.findMany({

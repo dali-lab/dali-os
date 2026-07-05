@@ -7,6 +7,8 @@ export default [
     route("profile", "routes/profile.tsx"),
     route("onboarding", "routes/onboarding.tsx"),
     route("calendar", "calendar/routes/calendar.tsx"),
+    // My Tasks surface: Open tasks + browsable notification history.
+    route("notifications", "routes/notifications.tsx"),
 
     // Hiring section
     route("hiring/reviewer", "hiring/routes/reviewer.tsx"),
@@ -47,6 +49,10 @@ export default [
     // Projects
     route("projects/list", "projects/routes/projects.list.tsx"),
     route("projects/staffing", "projects/routes/projects.staffing.tsx"),
+    // Member-facing staffing destination (requireMember, not canViewStaffing):
+    // the persistent place a member fills/revisits the cycle's staffing forms.
+    // Must precede projects/:id so it isn't captured by the :id param.
+    route("projects/my-staffing", "projects/routes/projects.my-staffing.tsx"),
     // Staffing input forms (member self-service). Must precede projects/:id
     // so these literal segments aren't captured by the :id param.
     route("projects/intent-to-work", "projects/routes/projects.intent-to-work.tsx"),
@@ -141,6 +147,10 @@ export default [
   route("privacy", "routes/privacy.tsx"),
   route("terms", "routes/terms.tsx"),
 
+  // Public, shareable desktop download page (OS auto-detect). Not linked from
+  // anywhere yet — reachable by direct URL.
+  route("download", "routes/download.tsx"),
+
   // Login (no layout)
   route("login", "routes/login.tsx"),
   route("dev-login", "routes/dev-login.ts"),
@@ -148,6 +158,15 @@ export default [
   route("logout", "routes/logout.ts"),
   route("auth/callback/google", "routes/auth.callback.google.ts"),
   route("auth/callback/cas", "routes/auth.callback.cas.ts"),
+
+  // Desktop device pairing (GitHub-CLI style). Additive — OAuth + login
+  // untouched. /link is the only new web UI surface. See TAURI_DESKTOP_PLAN.md.
+  route("auth/pair/start", "routes/auth.pair.start.ts"),
+  route("auth/pair/approve", "routes/auth.pair.approve.ts"),
+  route("auth/pair/poll", "routes/auth.pair.poll.ts"),
+  route("auth/handoff", "routes/auth.handoff.ts"),
+  route("link", "routes/link.tsx"),
+  route("api/desktop/version", "routes/api.desktop.version.ts"),
 
   // OAuth endpoints (no layout)
   route("oauth/authorize", "routes/oauth.authorize.ts"),
@@ -230,6 +249,7 @@ export default [
   route("api/staffing/assign", "projects/routes/api.staffing.assign.ts"),
   route("api/staffing/finalize", "projects/routes/api.staffing.finalize.ts"),
   route("api/staffing/term-channel", "projects/routes/api.staffing.term-channel.ts"),
+  route("api/staffing/sync-teams", "projects/routes/api.staffing.sync-teams.ts"),
   route("api/staffing/board-member", "projects/routes/api.staffing.board-member.ts"),
   route("api/staffing/events", "projects/routes/api.staffing.events.ts"),
   route("api/staffing/reorder", "projects/routes/api.staffing.reorder.ts"),

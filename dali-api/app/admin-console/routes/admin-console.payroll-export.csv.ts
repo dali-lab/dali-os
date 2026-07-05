@@ -8,7 +8,6 @@ import {
   buildCoreRows,
   buildInstructorRows,
   buildPayrollRows,
-  formatDate,
   pickDefaultTermId,
   rowsToCsv,
 } from "~/admin-console/lib/payroll-export";
@@ -60,7 +59,10 @@ export async function loader({ request }: Route.LoaderArgs) {
     buildInstructorRows(selectedTerm.id, instructorIds),
   ]);
   const csv = rowsToCsv([...projectRows, ...coreRows, ...instructorRows]);
-  const filename = `payroll-${selectedTerm.code}-${formatDate(new Date())}.csv`;
+  // Sortable ISO date stamp for the filename (distinct from the MMDDYY hire
+  // dates inside the CSV).
+  const fileStamp = new Date().toISOString().slice(0, 10);
+  const filename = `payroll-${selectedTerm.code}-${fileStamp}.csv`;
 
   return csvResponse(csv, filename, {
     status: 200,
