@@ -6,6 +6,10 @@ import { isCore } from "~/lib/roles";
 import { getTemplate } from "~/education/lib/templates-data";
 import { Button } from "~/components/ui/Button";
 
+export const handle = {
+  breadcrumb: (data: any) => data?.template?.name,
+};
+
 export const meta: Route.MetaFunction = ({ data }) => [
   { title: data && "template" in data ? `${(data as any).template.name} · Templates` : "Template · Education" },
 ];

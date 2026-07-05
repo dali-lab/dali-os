@@ -34,9 +34,6 @@ export default function TemplatesList() {
     <div className="p-6 md:p-10 max-w-3xl mx-auto">
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <Link to="/education/manage" className="text-xs text-muted-foreground hover:underline">
-            ← Back to manage
-          </Link>
           <h1 className="font-heading text-2xl font-bold text-dark-blue mt-2">Application templates</h1>
           <p className="text-sm text-muted-foreground mt-1">
             Reusable question sets — apply with one click in the offering builder.

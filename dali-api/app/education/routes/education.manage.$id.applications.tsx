@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, redirect, useLoaderData, useRevalidator } from "react-router";
+import { redirect, useLoaderData, useRevalidator } from "react-router";
 import type { Route } from "./+types/education.manage.$id.applications";
 import { requireAuth } from "~/lib/auth";
 import { canManageOffering } from "~/education/lib/auth";
@@ -9,6 +9,10 @@ import { getDownloadUrl } from "~/lib/s3";
 import { ApplicationsTable } from "~/education/components/ApplicationsTable";
 import { WaitlistReorder } from "~/education/components/WaitlistReorder";
 import { Button } from "~/components/ui/Button";
+
+export const handle = {
+  breadcrumb: () => "Applications",
+};
 
 export const meta: Route.MetaFunction = () => [{ title: "Applications · Education" }];
 
@@ -102,11 +106,6 @@ export default function ReviewApplications() {
 
   return (
     <div className="p-6 md:p-10 max-w-4xl mx-auto">
-      <div className="mb-4 flex items-center gap-3">
-        <Link to={`/education/manage/${data.offering.id}`} className="text-xs text-muted-foreground hover:underline">
-          ← Back to offering
-        </Link>
-      </div>
       <h1 className="font-heading text-2xl font-bold text-dark-blue mb-1">{data.offering.title}</h1>
       <p className="text-sm text-muted-foreground mb-6">
         Capacity {data.offering.capacity} · {data.counts.Approved ?? 0} approved · {data.counts.Waitlisted ?? 0} waitlisted · {data.counts.Submitted ?? 0} pending review

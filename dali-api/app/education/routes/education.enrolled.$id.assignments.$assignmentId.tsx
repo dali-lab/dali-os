@@ -1,9 +1,13 @@
-import { Link, redirect, useLoaderData } from "react-router";
+import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/education.enrolled.$id.assignments.$assignmentId";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { getAssignmentWithMySubmission } from "~/education/lib/assignments-data";
 import { SubmissionForm } from "~/education/components/SubmissionForm";
+
+export const handle = {
+  breadcrumb: (data: any) => data?.assignment?.title,
+};
 
 export const meta: Route.MetaFunction = () => [{ title: "Assignment · Education" }];
 
@@ -66,11 +70,6 @@ export default function AssignmentDetail() {
   const data = useLoaderData<typeof loader>();
   return (
     <div className="p-6 md:p-10 max-w-3xl mx-auto">
-      <div className="mb-4 flex items-center gap-3">
-        <Link to={data.backHref} className="text-xs text-muted-foreground hover:underline">
-          ← Back to enrolled view
-        </Link>
-      </div>
       <h1 className="font-heading text-2xl font-bold text-dark-blue mb-1">{data.assignment.title}</h1>
       <p className="text-sm text-muted-foreground mb-6">
         {data.assignment.offering?.title} · {data.assignment.submissionType} ·{" "}

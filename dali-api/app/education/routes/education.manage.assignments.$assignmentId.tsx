@@ -6,6 +6,10 @@ import { canManageOffering } from "~/education/lib/auth";
 import { listSubmissionsForAssignment } from "~/education/lib/assignments-data";
 import { GradePanel } from "~/education/components/GradePanel";
 
+export const handle = {
+  breadcrumb: (data: any) => data?.assignment?.title,
+};
+
 export const meta: Route.MetaFunction = () => [{ title: "Submissions · Education" }];
 
 export async function loader({ request, params }: Route.LoaderArgs) {

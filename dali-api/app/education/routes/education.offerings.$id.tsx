@@ -4,6 +4,10 @@ import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { OfferingDetail } from "~/education/components/OfferingDetail";
 
+export const handle = {
+  breadcrumb: (data: any) => data?.offering?.title,
+};
+
 export const meta: Route.MetaFunction = ({ data }) => [
   { title: data && "offering" in data ? `${(data as any).offering.title} · Education` : "Offering · Education" },
 ];

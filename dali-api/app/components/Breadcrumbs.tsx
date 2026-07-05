@@ -3,10 +3,11 @@ import { ChevronRight } from 'lucide-react'
 
 export type Crumb = { label: string; to?: string }
 
-// A route opts into a dynamic leaf crumb by exporting:
-//   export const handle = { breadcrumb: (data) => data.application.applicantName }
-// The component calls it with that route's loader data to resolve the last
-// crumb (e.g. an applicant's name in place of a raw id).
+// A route opts into a dynamic crumb by exporting:
+//   export const handle = { breadcrumb: (data) => data.offering.title }
+// The component calls each match's resolver for its own path segment, so
+// intermediate layout routes (e.g. an enrolled offering layout) can supply
+// dynamic labels even when they are not the leaf match.
 type Handle = { breadcrumb?: (data: unknown) => string | null | undefined }
 
 // Static label map for the fixed path segments. Keeps lab vocabulary verbatim
@@ -49,6 +50,14 @@ const SEGMENT_LABELS: Record<string, string> = {
 
   partners: 'Partners',
   education: 'Education',
+  enrolled: 'My Learning',
+  offerings: 'Offerings',
+  manage: 'Manage',
+  sessions: 'Sessions',
+  assignments: 'Assignments',
+  discussions: 'Discussions',
+  grades: 'Grades',
+  templates: 'Templates',
 
   'internal-processes': 'Lab Processes',
   onboarding: 'Onboarding',
@@ -68,29 +77,37 @@ function titleCase(seg: string) {
 }
 
 export function Breadcrumbs() {
-  const matches = useMatches()
+  const allMatches = useMatches() as { handle?: Handle; data?: unknown; pathname: string }[]
   const { pathname } = useLocation()
 
-  // Build crumbs from the path segments. The last matched route may supply a
-  // dynamic leaf label via its `handle.breadcrumb(loaderData)`.
+  // Build crumbs from the path segments. Each matched route may supply a
+  // dynamic label via its `handle.breadcrumb(loaderData)`, covering both the
+  // leaf and intermediate layout routes (e.g. an offering title in the middle
+  // of a nested manage/enrolled path).
   const segments = pathname.split('/').filter(Boolean)
-  const leaf = matches[matches.length - 1] as
-    | { handle?: Handle; data?: unknown }
-    | undefined
-  const leafLabel =
-    leaf?.handle?.breadcrumb && leaf.data != null
-      ? leaf.handle.breadcrumb(leaf.data)
-      : null
 
   const crumbs: Crumb[] = segments.map((seg, i) => {
-    const to = '/' + segments.slice(0, i + 1).join('/')
+    const segPath = '/' + segments.slice(0, i + 1).join('/')
     const isLast = i === segments.length - 1
-    if (isLast && leafLabel) {
-      return { label: leafLabel }
+
+    // Find the deepest match whose pathname aligns with this segment's path
+    // and that exposes a breadcrumb resolver.
+    const match = [...allMatches].reverse().find(
+      (m) =>
+        (m.pathname === segPath || m.pathname === segPath + '/') &&
+        m.handle?.breadcrumb != null,
+    )
+    const dynamicLabel =
+      match?.handle?.breadcrumb && match.data != null
+        ? match.handle.breadcrumb(match.data)
+        : null
+
+    if (dynamicLabel) {
+      return { label: dynamicLabel, to: isLast ? undefined : segPath }
     }
     return {
       label: SEGMENT_LABELS[seg] ?? titleCase(seg),
-      to: isLast ? undefined : to,
+      to: isLast ? undefined : segPath,
     }
   })
 

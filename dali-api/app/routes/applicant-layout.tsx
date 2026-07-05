@@ -3,6 +3,7 @@ import type { Route } from "./+types/applicant-layout";
 import { requireAuth } from "~/lib/auth";
 import { userInitials } from "~/lib/display";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
+import { Breadcrumbs } from "~/components/Breadcrumbs";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -68,6 +69,9 @@ export default function ApplicantLayout() {
 
       {/* Content */}
       <div className="pt-16">
+        <div className="px-4 sm:px-6 pt-4 mb-0 empty:mb-0">
+          <Breadcrumbs />
+        </div>
         <Outlet />
       </div>
     </div>

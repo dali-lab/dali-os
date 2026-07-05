@@ -7,6 +7,10 @@ import { listTemplates } from "~/education/lib/templates-data";
 import { prisma } from "~/lib/db";
 import { OfferingBuilder } from "~/education/components/OfferingBuilder";
 
+export const handle = {
+  breadcrumb: (data: any) => data?.offering?.title,
+};
+
 export const meta: Route.MetaFunction = ({ data }) => [
   { title: data && "offering" in data ? `Edit ${(data as any).offering.title} · Education` : "Edit offering" },
 ];
