@@ -38,6 +38,7 @@ import {
 import { userInitials } from '~/lib/display'
 import { TabWorkspace, type TabWorkspaceHandle, type OpenTabRequest } from '~/components/TabWorkspace'
 import { useOpenTasks, TASKS_CHANGED_EVENT } from '~/components/NotificationBell'
+import { DesktopBanner } from '~/components/DesktopBanner'
 
 interface LayoutProps {
   user: { email: string; firstName?: string; lastName?: string }
@@ -1091,6 +1092,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
       )}
 
       <main className={`flex-1 min-w-0 flex flex-col ${collapsed ? 'md:pl-16' : 'md:pl-64'} transition-[padding] duration-200`}>
+        <DesktopBanner />
         {/* Always render the tabbed workspace. The Home tab is the default
             landing surface and stays available alongside section tabs.
             Use the actual current URL (not activeSection.to) for the section

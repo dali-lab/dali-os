@@ -37,9 +37,8 @@ async function getLatestVersion(): Promise<string | null> {
 }
 
 export const meta: Route.MetaFunction = () => {
-  const title = "Download DALI OS for Mac";
-  const description =
-    "The DALI OS desktop app — a native window with menu bar, dock, and background notifications even when it's closed.";
+  const title = "Download DALI OS";
+  const description = "The DALI Lab desktop app.";
   return [
     { title },
     { name: "description", content: description },
@@ -76,12 +75,9 @@ export default function DownloadPage({ loaderData }: Route.ComponentProps) {
       <main className="w-full max-w-lg text-center">
         <img src="/logo-blue.svg" alt="DALI Lab" className="mx-auto h-12 w-auto" />
         <h1 className="mt-8 text-3xl font-semibold text-zinc-900">
-          DALI OS for desktop
+        A better experience on DALI OS Desktop.
         </h1>
-        <p className="mt-3 text-zinc-600">
-          A native window for DALI OS — menu bar, dock, and background
-          notifications even when it&apos;s closed.
-        </p>
+        <p className="mt-2 text-zinc-500">Fast, minimal, and browser-free.</p>
 
         <div className="mt-8 rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm">
           {isUnknown ? (
