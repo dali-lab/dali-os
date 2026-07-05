@@ -1,17 +1,29 @@
-import { useState } from "react";
-import { redirect, useLoaderData, useFetcher, Link } from "react-router";
+import { useState, useEffect, useCallback } from "react";
+import { redirect, useLoaderData, useFetcher, useRevalidator, useSearchParams, Link } from "react-router";
 import type { Route } from "./+types/portal.application";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { getActiveCycle } from "~/hiring/lib/cycles";
+import { sendExtensionNoticeIfDue } from "~/hiring/lib/extension-notice";
+import {
+  inferDomainApplicationStatus,
+  domainApplicationStatusInclude,
+} from "~/hiring/lib/domain-application-status";
 import { presignAnswers } from "~/hiring/lib/presign";
-import type { Question } from "~/types";
-import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
-import { Modal } from "~/components/Modal";
-import { QuestionList } from "~/hiring/components/ApplicationAnswers";
 import { sendInterviewCancelEmails } from "~/hiring/lib/interview-emails";
+import type { DomainApplicationStatus } from "~/types";
+import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
+import type { Question } from "~/types";
+import { InterviewSlotPicker } from "~/hiring/components/InterviewSlotPicker";
+import { QuestionList } from "~/hiring/components/ApplicationAnswers";
+import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
+import { Confetti } from "~/components/Confetti";
+import { Modal } from "~/components/Modal";
+import { formatInterviewDate, formatInterviewTimeRange } from "~/hiring/lib/interview-time";
+import { APPLICATIONS_FROM_EMAIL } from "~/lib/app-env";
+import { Button } from "~/components/ui/Button";
 
-export const meta: Route.MetaFunction = () => [{ title: "My application · DALI OS" }];
+export const meta: Route.MetaFunction = () => [{ title: "Application · DALI" }];
 
 // ─── Loader ──────────────────────────────────────────────────────────────────
 
@@ -19,76 +31,189 @@ export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
 
+  const emptyResult = {
+    // tracker fields
+    cycleName: null as string | null,
+    cycleId: null as string | null,
+    cycleStatus: null as string | null,
+    closeDate: null as string | null,
+    originalCloseDate: null as string | null,
+    domainApplications: [] as any[],
+    slotDurationMinutes: 30,
+    hasApplication: false,
+    applicationStatus: null as string | null,
+    // submission fields
+    submittedAt: null as string | null,
+    withdrawnAt: null as string | null,
+    canWithdraw: false,
+    generalQuestions: [] as Question[],
+    generalAnswers: {} as Record<string, string>,
+    submissionDomains: [] as { id: string; name: string; questions: Question[]; answers: Record<string, string> }[],
+  };
+
+  // Cycle lookup: active first, fall back to user's most recent application's cycle
+  // so the tracker is visible after a cycle moves to Completed.
   const active = await getActiveCycle();
   let cycleId: string;
+  let cycleName: string;
+  let cycleStatus: ApplicationCycleStatus;
+  let closeDate: string | null = null;
+  let originalCloseDate: string | null = null;
 
   if (active) {
     cycleId = active.id;
+    cycleName = active.name;
+    cycleStatus = active.currentStatus as ApplicationCycleStatus;
+    closeDate = active.closeDate ? active.closeDate.toISOString() : null;
+    originalCloseDate = active.originalCloseDate ? active.originalCloseDate.toISOString() : null;
+    await sendExtensionNoticeIfDue(active.id);
   } else {
     const recentApp = await prisma.application.findFirst({
       where: { userId: auth.user.sub },
+      include: {
+        applicationCycle: {
+          include: { statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 } },
+        },
+      },
       orderBy: { createdAt: "desc" },
-      select: { applicationCycleId: true },
     });
-    if (!recentApp) return redirect("/portal");
+
+    if (!recentApp) return emptyResult;
+
     cycleId = recentApp.applicationCycleId;
+    cycleName = recentApp.applicationCycle.name;
+    cycleStatus = (recentApp.applicationCycle.statusUpdates[0]?.newStatus ?? "Draft") as ApplicationCycleStatus;
+    closeDate = recentApp.applicationCycle.closeDate ? recentApp.applicationCycle.closeDate.toISOString() : null;
+    originalCloseDate = recentApp.applicationCycle.originalCloseDate ? recentApp.applicationCycle.originalCloseDate.toISOString() : null;
   }
 
-  const application = await prisma.application.findFirst({
+  // Tracker application query (domain cards + status)
+  const trackerApp = await prisma.application.findFirst({
     where: { userId: auth.user.sub, applicationCycleId: cycleId },
     include: {
-      statusUpdates: { orderBy: { createdAt: "asc" } },
-      generalChallengeVersion: { select: { questions: true } },
+      statusUpdates: true,
       domainApplications: {
         where: { selected: true },
         include: {
-          challengeVersion: {
-            select: { questions: true, domain: true },
-          },
+          ...domainApplicationStatusInclude,
+          challengeVersion: { include: { domain: true } },
         },
       },
     },
   });
 
-  // Need at least one Submitted update to render this page. Withdrawn is allowed
-  // (and renders the withdrawn-state view); Draft alone redirects back to /portal.
-  const submittedUpdate = application?.statusUpdates.find((u: any) => u.newStatus === "Submitted");
-  if (!application || !submittedUpdate) return redirect("/portal");
+  const config = await prisma.interviewConfig.findUnique({
+    where: { applicationCycleId: cycleId },
+  });
 
-  const latestUpdate = application.statusUpdates[application.statusUpdates.length - 1];
-  const isWithdrawn = latestUpdate?.newStatus === "Withdrawn";
-  const withdrawnUpdate = isWithdrawn ? latestUpdate : null;
-  const canWithdraw = !!active && !isWithdrawn;
+  const latestStatus = trackerApp?.statusUpdates
+    .slice()
+    .sort((a: any, b: any) => b.createdAt.getTime() - a.createdAt.getTime())[0]?.newStatus;
+  const appStatus = latestStatus === "Withdrawn"
+    ? "Withdrawn"
+    : trackerApp?.statusUpdates.some((u: any) => u.newStatus === "Submitted")
+      ? "Submitted"
+      : trackerApp
+        ? "Draft"
+        : null;
 
-  const generalQuestions = (application.generalChallengeVersion?.questions as unknown as Question[]) ?? [];
-  const rawGeneralAnswers = application.answers as Record<string, string>;
-  const generalAnswers = await presignAnswers(generalQuestions, rawGeneralAnswers);
+  const domainApplications = (trackerApp?.domainApplications ?? []).map((da: any) => {
+    const inferredStatus = inferDomainApplicationStatus(
+      { ...da, application: { statusUpdates: trackerApp!.statusUpdates } } as any,
+      cycleStatus,
+    );
+    const activeInterview = da.interviews?.find((i: any) => i.status === "Scheduled");
+    return {
+      id: da.id,
+      domainName: da.challengeVersion?.domain?.name ?? "Unknown",
+      domainId: da.challengeVersion?.domainId,
+      inferredStatus,
+      interview: activeInterview
+        ? { id: activeInterview.id, startTime: activeInterview.startTime, endTime: activeInterview.endTime, status: activeInterview.status, location: activeInterview.location, zoomJoinUrl: activeInterview.zoomJoinUrl }
+        : null,
+    };
+  });
 
-  const domains = await Promise.all(
-    application.domainApplications.map(async (da: any) => {
-      const questions = da.challengeVersion.questions as unknown as Question[];
-      const rawAnswers = da.answers as Record<string, string>;
-      const answers = await presignAnswers(questions, rawAnswers);
-      return {
-        id: da.id,
-        name: da.challengeVersion.domain?.name ?? "Unknown Domain",
-        questions,
-        answers,
-      };
-    }),
-  );
+  // Submission view query (questions + answers) — only when the application has
+  // been submitted at some point. This is independent of the tracker query.
+  let submittedAt: string | null = null;
+  let withdrawnAt: string | null = null;
+  let canWithdraw = false;
+  let generalQuestions: Question[] = [];
+  let generalAnswers: Record<string, string> = {};
+  let submissionDomains: { id: string; name: string; questions: Question[]; answers: Record<string, string> }[] = [];
+
+  const submittedUpdate = trackerApp?.statusUpdates
+    .slice()
+    .sort((a: any, b: any) => a.createdAt.getTime() - b.createdAt.getTime())
+    .find((u: any) => u.newStatus === "Submitted");
+
+  if (trackerApp && submittedUpdate) {
+    const submissionApp = await prisma.application.findFirst({
+      where: { userId: auth.user.sub, applicationCycleId: cycleId },
+      include: {
+        statusUpdates: { orderBy: { createdAt: "asc" } },
+        generalChallengeVersion: { select: { questions: true } },
+        domainApplications: {
+          where: { selected: true },
+          include: {
+            challengeVersion: { select: { questions: true, domain: true } },
+          },
+        },
+      },
+    });
+
+    if (submissionApp) {
+      const orderedUpdates = submissionApp.statusUpdates as any[];
+      const latestUpdate = orderedUpdates[orderedUpdates.length - 1];
+      const isWithdrawn = latestUpdate?.newStatus === "Withdrawn";
+      const withdrawnUpdate = isWithdrawn ? latestUpdate : null;
+
+      submittedAt = submittedUpdate.createdAt.toISOString();
+      withdrawnAt = withdrawnUpdate?.createdAt.toISOString() ?? null;
+      canWithdraw = !!active && !isWithdrawn;
+
+      const rawGeneralAnswers = submissionApp.answers as Record<string, string>;
+      const gQuestions = (submissionApp.generalChallengeVersion?.questions as unknown as Question[]) ?? [];
+      generalQuestions = gQuestions;
+      generalAnswers = await presignAnswers(gQuestions, rawGeneralAnswers);
+
+      submissionDomains = await Promise.all(
+        submissionApp.domainApplications.map(async (da: any) => {
+          const questions = da.challengeVersion.questions as unknown as Question[];
+          const rawAnswers = da.answers as Record<string, string>;
+          const answers = await presignAnswers(questions, rawAnswers);
+          return {
+            id: da.id,
+            name: da.challengeVersion.domain?.name ?? "Unknown Domain",
+            questions,
+            answers,
+          };
+        }),
+      );
+    }
+  }
 
   return {
-      submittedAt: submittedUpdate.createdAt.toISOString(),
-      withdrawnAt: withdrawnUpdate?.createdAt.toISOString() ?? null,
-      canWithdraw,
-      generalQuestions,
-      generalAnswers,
-      domains,
-    };
+    cycleName,
+    cycleId,
+    cycleStatus,
+    closeDate,
+    originalCloseDate,
+    domainApplications,
+    slotDurationMinutes: config?.slotDurationMinutes ?? 30,
+    hasApplication: !!trackerApp,
+    applicationStatus: appStatus,
+    submittedAt,
+    withdrawnAt,
+    canWithdraw,
+    generalQuestions,
+    generalAnswers,
+    submissionDomains,
+  };
 }
 
-// ─── Action ──────────────────────────────────────────────────────────────────
+// ─── Action ───────────────────────────────────────────────────────────────────
 
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
@@ -118,9 +243,9 @@ export async function action({ request }: Route.ActionArgs) {
   const latest = application.statusUpdates[0]?.newStatus;
   if (latest !== "Submitted") {
     return Response.json(
-          { error: latest === "Withdrawn" ? "Already withdrawn" : "Application is not submitted" },
-          { status: 400 },
-        );
+      { error: latest === "Withdrawn" ? "Already withdrawn" : "Application is not submitted" },
+      { status: 400 },
+    );
   }
 
   const cancelledInterviews = await prisma.$transaction(async (tx) => {
@@ -163,7 +288,842 @@ export async function action({ request }: Route.ActionArgs) {
   return Response.json({ ok: true });
 }
 
-// ─── Domain section (collapsible) ────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface DomainAppData {
+  id: string;
+  domainName: string;
+  domainId: string;
+  inferredStatus: DomainApplicationStatus;
+  interview: { id: string; startTime: string; endTime: string; status: string; location?: string; zoomJoinUrl?: string | null } | null;
+}
+
+interface TimeSlot {
+  id: string;
+  date: string;
+  time: string;
+  isoStart: string;
+  isoEnd: string;
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function apiSlotToTimeSlot(slot: { startTime: string; endTime: string }, index: number): TimeSlot {
+  return {
+    id: `slot-${index}`,
+    date: formatInterviewDate(slot.startTime),
+    time: formatInterviewTimeRange(slot.startTime, slot.endTime),
+    isoStart: slot.startTime,
+    isoEnd: slot.endTime,
+  };
+}
+
+function groupSlotsByDate(slots: TimeSlot[]): { date: string; slots: TimeSlot[] }[] {
+  const map = new Map<string, TimeSlot[]>();
+  for (const s of slots) {
+    const group = map.get(s.date) ?? [];
+    group.push(s);
+    map.set(s.date, group);
+  }
+  return Array.from(map.entries()).map(([date, slots]) => ({ date, slots }));
+}
+
+function formatInterviewLocation(location?: string): string {
+  if (location === "PodAppa") return "Pod Appa, DALI Lab";
+  if (location === "PodMomo") return "Pod Momo, DALI Lab";
+  return "Online";
+}
+
+function formatDeadline(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-US", {
+    timeZone: "America/New_York",
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function formatRemaining(iso: string): { label: string; tone: "urgent" | "warn" | "ok" } | null {
+  const ms = new Date(iso).getTime() - Date.now();
+  if (ms <= 0) return null;
+  if (ms > 7 * 86_400_000) return null;
+  const days = Math.floor(ms / 86_400_000);
+  const hours = Math.floor(ms / 3_600_000);
+  if (days >= 2) return { label: `${days} days remaining`, tone: "ok" };
+  if (hours >= 24) return { label: "1 day remaining", tone: "warn" };
+  if (hours >= 1) return { label: `Closes in ${hours} hour${hours === 1 ? "" : "s"}`, tone: "urgent" };
+  const mins = Math.max(1, Math.floor(ms / 60_000));
+  return { label: `Closes in ${mins} minute${mins === 1 ? "" : "s"}`, tone: "urgent" };
+}
+
+function DeadlineLine({ closeDate, originalCloseDate }: { closeDate: string; originalCloseDate?: string | null }) {
+  const [label, setLabel] = useState<string>("");
+  const [originalLabel, setOriginalLabel] = useState<string>("");
+  const [remaining, setRemaining] = useState<{ label: string; tone: "urgent" | "warn" | "ok" } | null>(null);
+  const [showExtension, setShowExtension] = useState(false);
+  useEffect(() => {
+    setLabel(formatDeadline(closeDate));
+    setOriginalLabel(originalCloseDate ? formatDeadline(originalCloseDate) : "");
+    const tick = () => {
+      setRemaining(formatRemaining(closeDate));
+      if (originalCloseDate) {
+        const orig = new Date(originalCloseDate).getTime();
+        const close = new Date(closeDate).getTime();
+        const now = Date.now();
+        setShowExtension(orig < close && now < close);
+      } else {
+        setShowExtension(false);
+      }
+    };
+    tick();
+    const id = setInterval(tick, 60_000);
+    return () => clearInterval(id);
+  }, [closeDate, originalCloseDate]);
+  if (!label) return null;
+  const toneStyles: Record<"urgent" | "warn" | "ok", string> = {
+    urgent: "text-red-700",
+    warn: "text-yellow-800",
+    ok: "text-muted-foreground",
+  };
+  return (
+    <div className={`text-sm mt-2 flex items-center gap-2 flex-wrap ${remaining ? toneStyles[remaining.tone] : "text-muted-foreground"}`}>
+      <span>
+        Applications close on{" "}
+        {showExtension && originalLabel ? (
+          <>
+            <span className="line-through text-muted-foreground/70 mr-1">{originalLabel}</span>
+            <span className="font-semibold">{label}</span>
+          </>
+        ) : (
+          label
+        )}
+      </span>
+      {showExtension && (
+        <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-amber-100 text-amber-800">
+          Deadline extended
+        </span>
+      )}
+      {remaining && (
+        <span className={`text-xs px-2.5 py-0.5 rounded-full font-semibold ${
+          remaining.tone === "urgent" ? "bg-red-100 text-red-700" :
+          remaining.tone === "warn" ? "bg-yellow-100 text-yellow-800" :
+          "bg-blue-100 text-blue-700"
+        }`}>
+          {remaining.label}
+        </span>
+      )}
+    </div>
+  );
+}
+
+// ─── Shared UI ────────────────────────────────────────────────────────────────
+
+const cardBg = "bg-brand-tint";
+
+function StatusBadge({ label, variant }: { label: string; variant: "blue" | "green" | "yellow" | "red" | "gray" }) {
+  const styles: Record<string, string> = {
+    blue: "bg-blue-100 text-blue-700",
+    green: "bg-green-100 text-green-700",
+    yellow: "bg-yellow-100 text-yellow-800",
+    red: "bg-red-100 text-red-700",
+    gray: "bg-muted text-muted-foreground",
+  };
+  return (
+    <span className={`text-xs px-2.5 py-0.5 rounded-full font-semibold ${styles[variant]}`}>
+      {label}
+    </span>
+  );
+}
+
+function PulsingDot({ color }: { color: string }) {
+  return <span className={`w-2 h-2 rounded-full ${color} animate-pulse`} />;
+}
+
+function StageIndicator({ stage }: { stage: DomainApplicationStatus | "ApplicationsClosed" }) {
+  const steps: { label: string; keys: (DomainApplicationStatus | "ApplicationsClosed")[] }[] = [
+    { label: "Applied", keys: ["ApplicationOpen"] },
+    { label: "Review", keys: ["Pending"] },
+    { label: "Interview", keys: ["InvitedToInterview", "InterviewScheduled", "PostInterviewPending", "Withdrawn"] },
+    { label: "Decision", keys: ["Accepted", "Rejected", "Waitlisted"] },
+  ];
+
+  const currentStep = steps.find(s => s.keys.includes(stage));
+  if (!currentStep) return null;
+
+  return (
+    <div className="px-2.5 py-1 rounded-full text-xs font-medium bg-accent-teal text-white">
+      {currentStep.label}
+    </div>
+  );
+}
+
+// ─── Stage Views ──────────────────────────────────────────────────────────────
+
+function ApplicationOpenView({ cycleName, closeDate }: { cycleName: string; closeDate: string | null }) {
+  return (
+    <div className="max-w-2xl mx-auto text-center py-16">
+      <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-accent-green/30 flex items-center justify-center">
+        <svg className="w-8 h-8 text-accent-teal" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+      </div>
+      <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">Applications Are Open</h2>
+      <p className="text-muted-foreground mb-8 leading-relaxed">
+        The {cycleName} application cycle is now accepting applications. Start yours to join the DALI Lab!
+      </p>
+      <Link to="/portal/apply" className="px-8 py-3 rounded-full bg-accent-coral text-white font-semibold font-heading tracking-wider hover:bg-accent-coral/90 transition shadow-lg hover:shadow-xl">
+        Start Application
+      </Link>
+    </div>
+  );
+}
+
+function ApplicationDraftView({ cycleName, closeDate }: { cycleName: string; closeDate: string | null }) {
+  return (
+    <div className="max-w-2xl mx-auto text-center py-16">
+      <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-accent-green/30 flex items-center justify-center">
+        <svg className="w-8 h-8 text-accent-teal" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+      </div>
+      <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">Application In Progress</h2>
+      <p className="text-muted-foreground mb-8 leading-relaxed">
+        You have a draft application for {cycleName}. Complete and submit it to be considered!
+      </p>
+      <Link to="/portal/apply" className="px-8 py-3 rounded-full bg-accent-coral text-white font-semibold font-heading tracking-wider hover:bg-accent-coral/90 transition shadow-lg hover:shadow-xl">
+        Continue Application
+      </Link>
+    </div>
+  );
+}
+
+function WithdrawnView({ cycleName }: { cycleName: string }) {
+  return (
+    <div className="max-w-2xl mx-auto py-12">
+      <div className="text-center mb-6">
+        <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-muted flex items-center justify-center">
+          <svg className="w-8 h-8 text-muted-foreground/70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </div>
+        <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">Application Withdrawn</h2>
+        <p className="text-muted-foreground leading-relaxed">
+          You withdrew your application for {cycleName}. If you change your mind, contact the DALI team.
+        </p>
+        <div className="mt-4">
+          <a href="#submission" className="text-sm text-accent-coral hover:underline">
+            View your submission ↓
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PendingView({ cycleName }: { cycleName: string }) {
+  return (
+    <div className="max-w-2xl mx-auto py-12">
+      <div className="text-center mb-10">
+        <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-yellow-100 flex items-center justify-center">
+          <svg className="w-8 h-8 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </div>
+        <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">Application Pending Review</h2>
+        <p className="text-muted-foreground leading-relaxed">
+          Your application is being reviewed by the DALI team. We'll update you here once a decision has been made.
+        </p>
+        <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-yellow-50 text-sm text-yellow-700">
+          <PulsingDot color="bg-yellow-500" />
+          Pending
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RejectedView({ cycleName }: { cycleName: string }) {
+  const [feedbackRequested, setFeedbackRequested] = useState(false);
+
+  return (
+    <div className="max-w-2xl mx-auto py-12">
+      <div className="text-center mb-10">
+        <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-muted flex items-center justify-center">
+          <svg className="w-8 h-8 text-muted-foreground/70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+          </svg>
+        </div>
+        <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">Thank You for Applying</h2>
+        <p className="text-muted-foreground leading-relaxed max-w-lg mx-auto">
+          Unfortunately, we are unable to move your application forward for {cycleName}. The applicant pool was extremely competitive this cycle.
+        </p>
+      </div>
+
+      <div className={`px-6 py-5 rounded-2xl ${cardBg}`}>
+        <h3 className="font-heading text-sm font-bold text-dark-blue uppercase tracking-wider mb-2">
+          Want to know more?
+        </h3>
+        <p className="text-sm text-muted-foreground mb-4">
+          You can request feedback on your application. A member of the DALI team will follow up with you via email.
+        </p>
+        {feedbackRequested ? (
+          <div className="flex items-center gap-2 text-sm text-green-600 font-medium">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+            Feedback requested — we'll be in touch soon.
+          </div>
+        ) : (
+          <button
+            onClick={() => setFeedbackRequested(true)}
+            className="px-5 py-2 rounded-full border-2 border-accent-coral text-accent-coral text-sm font-semibold hover:bg-accent-coral hover:text-white transition"
+          >
+            Request Feedback
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function InvitedToInterviewView({
+  domainApp,
+  cycleId,
+  cycleName,
+  onBooked,
+}: {
+  domainApp: DomainAppData;
+  cycleId: string;
+  cycleName: string;
+  onBooked: () => void;
+}) {
+  const [slots, setSlots] = useState<TimeSlot[]>([]);
+  const [loadingSlots, setLoadingSlots] = useState(false);
+  const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
+  const [booking, setBooking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!domainApp.domainId) return;
+    setLoadingSlots(true);
+    fetch(`/api/hiring/cycles/${cycleId}/available-slots?domainId=${domainApp.domainId}&mode=in-person`, {
+      credentials: "include",
+    })
+      .then(r => r.ok ? r.json() : [])
+      .then((apiSlots: { startTime: string; endTime: string }[]) => {
+        setSlots(apiSlots.map(apiSlotToTimeSlot));
+      })
+      .catch(() => {})
+      .finally(() => setLoadingSlots(false));
+  }, [cycleId, domainApp.domainId]);
+
+  const grouped = groupSlotsByDate(slots);
+  const slot = slots.find(s => s.id === selectedSlot);
+
+  async function handleConfirm() {
+    if (!slot) return;
+    setBooking(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/hiring/domain-applications/${domainApp.id}/schedule-interview`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ startTime: slot.isoStart, mode: "in-person" }),
+      });
+      if (res.ok) {
+        onBooked();
+      } else {
+        const body = await res.json().catch(() => ({}));
+        setError(body.error ?? "Failed to book this slot. It may have been taken.");
+        const slotsRes = await fetch(`/api/hiring/cycles/${cycleId}/available-slots?domainId=${domainApp.domainId}&mode=in-person`, { credentials: "include" });
+        if (slotsRes.ok) {
+          const freshSlots = await slotsRes.json();
+          setSlots(freshSlots.map(apiSlotToTimeSlot));
+          setSelectedSlot(null);
+        }
+      }
+    } finally {
+      setBooking(false);
+    }
+  }
+
+  return (
+    <div className="max-w-2xl mx-auto py-12">
+      <div className="text-center mb-10">
+        <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-accent-green/30 flex items-center justify-center">
+          <svg className="w-8 h-8 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+        </div>
+        <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">You're Invited to Interview!</h2>
+        <p className="text-muted-foreground leading-relaxed">
+          Congratulations! The DALI team would like to interview you for <span className="font-medium text-dark-blue">{domainApp.domainName}</span>. Please select a time slot below.
+        </p>
+      </div>
+
+      {error && (
+        <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-800">
+          {error}
+        </div>
+      )}
+
+      {loadingSlots ? (
+        <div className={`px-6 py-8 rounded-2xl ${cardBg} text-center`}>
+          <p className="text-muted-foreground">Loading available times...</p>
+        </div>
+      ) : slots.length === 0 ? (
+        <div className={`px-6 py-8 rounded-2xl ${cardBg} text-center`}>
+          <p className="text-muted-foreground">No interview slots are available yet. The DALI team is still setting up interview times — check back soon.</p>
+        </div>
+      ) : (
+        <>
+          <div className="mb-8">
+            <InterviewSlotPicker
+              groups={grouped}
+              variant="selectable"
+              selectedSlotId={selectedSlot}
+              onSelect={(s) => setSelectedSlot(s.id)}
+            />
+          </div>
+
+          <Button
+            variant="primary"
+            size="md"
+            onClick={handleConfirm}
+            disabled={!selectedSlot || booking}
+          >
+            {booking ? "Booking..." : "Confirm Time"}
+          </Button>
+        </>
+      )}
+
+      <p className="text-sm text-muted-foreground mt-6">
+        Can't attend in-person?{" "}
+        <a href={`mailto:${APPLICATIONS_FROM_EMAIL}`} className="underline text-dark-blue hover:text-accent-coral">
+          Email {APPLICATIONS_FROM_EMAIL}
+        </a>{" "}
+        to request an online interview.
+      </p>
+    </div>
+  );
+}
+
+function InterviewScheduledView({
+  domainApp,
+  cycleId,
+  cycleName,
+  slotDurationMinutes,
+  onCancelled,
+  onRescheduled,
+}: {
+  domainApp: DomainAppData;
+  cycleId: string;
+  cycleName: string;
+  slotDurationMinutes: number;
+  onCancelled: () => void;
+  onRescheduled: () => void;
+}) {
+  const interview = domainApp.interview!;
+  const slot = apiSlotToTimeSlot(interview, 0);
+  const [rescheduling, setRescheduling] = useState(false);
+  const [rescheduleSlots, setRescheduleSlots] = useState<TimeSlot[]>([]);
+  const [loadingRescheduleSlots, setLoadingRescheduleSlots] = useState(false);
+  const [selectedRescheduleSlotId, setSelectedRescheduleSlotId] = useState<string | null>(null);
+  const [confirmingReschedule, setConfirmingReschedule] = useState(false);
+  const [rescheduleError, setRescheduleError] = useState<string | null>(null);
+  const [declining, setDeclining] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!rescheduling) return;
+    setLoadingRescheduleSlots(true);
+    const mode = interview.location === "Online" ? "online" : "in-person";
+    fetch(`/api/hiring/cycles/${cycleId}/available-slots?domainId=${domainApp.domainId}&mode=${mode}`, { credentials: "include" })
+      .then(r => r.ok ? r.json() : [])
+      .then((apiSlots: { startTime: string; endTime: string }[]) => {
+        setRescheduleSlots(
+          apiSlots.map(apiSlotToTimeSlot).filter(s => s.isoStart !== slot.isoStart),
+        );
+      })
+      .catch(() => {})
+      .finally(() => setLoadingRescheduleSlots(false));
+  }, [rescheduling, cycleId, domainApp.domainId, slot.isoStart]);
+
+  async function handleCancel() {
+    setCancelling(true);
+    const res = await fetch("/api/hiring/my-interview/cancel", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ domainApplicationId: domainApp.id }),
+    });
+    if (res.ok) {
+      onCancelled();
+    } else {
+      const body = await res.json().catch(() => ({}));
+      setCancelError(body.error ?? "Failed to cancel interview.");
+      setDeclining(false);
+    }
+    setCancelling(false);
+  }
+
+  function exitRescheduling() {
+    setRescheduling(false);
+    setSelectedRescheduleSlotId(null);
+    setRescheduleError(null);
+  }
+
+  async function handleConfirmReschedule() {
+    const newSlot = rescheduleSlots.find(s => s.id === selectedRescheduleSlotId);
+    if (!newSlot) return;
+    setConfirmingReschedule(true);
+    setRescheduleError(null);
+    const mode = interview.location === "Online" ? "online" : "in-person";
+    try {
+      const newEnd = new Date(new Date(newSlot.isoStart).getTime() + slotDurationMinutes * 60_000).toISOString();
+      const res = await fetch("/api/hiring/my-interview/reschedule", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ domainApplicationId: domainApp.id, newStart: newSlot.isoStart, newEnd, mode }),
+      });
+      if (res.ok) {
+        setSelectedRescheduleSlotId(null);
+        setRescheduling(false);
+        onRescheduled();
+      } else {
+        const body = await res.json().catch(() => ({}));
+        setRescheduleError(body.error ?? "Failed to reschedule. The slot may have been taken.");
+        const slotsRes = await fetch(`/api/hiring/cycles/${cycleId}/available-slots?domainId=${domainApp.domainId}&mode=${mode}`, { credentials: "include" });
+        if (slotsRes.ok) {
+          const freshSlots = await slotsRes.json();
+          setRescheduleSlots(
+            freshSlots.map(apiSlotToTimeSlot).filter((s: TimeSlot) => s.isoStart !== slot.isoStart),
+          );
+          setSelectedRescheduleSlotId(null);
+        }
+      }
+    } finally {
+      setConfirmingReschedule(false);
+    }
+  }
+
+  if (rescheduling) {
+    const grouped = groupSlotsByDate(rescheduleSlots);
+    return (
+      <div className="max-w-2xl mx-auto py-12">
+        <h2 className="font-heading text-xl font-bold text-dark-blue mb-2">Reschedule Interview</h2>
+        <p className="text-sm text-muted-foreground mb-6">
+          Currently scheduled: <strong>{slot.date}, {slot.time}</strong> ({formatInterviewLocation(interview.location)}). Choose a format and new time.
+        </p>
+
+        {rescheduleError && (
+          <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-800">
+            {rescheduleError}
+          </div>
+        )}
+
+        {loadingRescheduleSlots ? (
+          <div className="px-6 py-8 rounded-2xl bg-muted/30 text-center mb-8">
+            <p className="text-muted-foreground">Loading available times...</p>
+          </div>
+        ) : rescheduleSlots.length === 0 ? (
+          <div className="px-6 py-8 rounded-2xl bg-muted/30 text-center mb-8">
+            <p className="text-muted-foreground">No slots available. Check back later.</p>
+          </div>
+        ) : (
+          <>
+            <div className="mb-8">
+              <InterviewSlotPicker
+                groups={grouped}
+                variant="selectable"
+                selectedSlotId={selectedRescheduleSlotId}
+                onSelect={(s) => setSelectedRescheduleSlotId(s.id)}
+              />
+            </div>
+
+            <Button
+              variant="primary"
+              size="md"
+              onClick={handleConfirmReschedule}
+              disabled={!selectedRescheduleSlotId || confirmingReschedule}
+              className="mr-3"
+            >
+              {confirmingReschedule ? "Rescheduling..." : "Confirm Reschedule"}
+            </Button>
+          </>
+        )}
+        <button onClick={exitRescheduling} className="text-sm font-semibold text-muted-foreground hover:underline">
+          Cancel
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-2xl mx-auto py-12">
+      <div className="text-center mb-10">
+        <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-accent-green/30 flex items-center justify-center">
+          <svg className="w-8 h-8 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+        </div>
+        <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">Interview Confirmed</h2>
+        <p className="text-muted-foreground leading-relaxed">
+          You're all set for your <span className="font-medium text-dark-blue">{domainApp.domainName}</span> interview!
+        </p>
+      </div>
+
+      <div className={`px-6 py-6 rounded-2xl ${cardBg} mb-6`}>
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Date &amp; Time</span>
+            <p className="text-lg font-bold text-dark-blue mt-1">{slot.date}</p>
+            <p className="text-sm text-dark-blue">{slot.time}</p>
+          </div>
+          <StatusBadge label="Scheduled" variant="green" />
+        </div>
+        <div className="pt-4 border-t border-border/60">
+          <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Location</span>
+          <p className="text-sm text-dark-blue mt-1">{formatInterviewLocation(interview.location)}</p>
+        </div>
+        {interview.location === "Online" && interview.zoomJoinUrl && (
+          <div className="pt-4 border-t border-border/60">
+            <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Meeting Link</span>
+            <a href={interview.zoomJoinUrl} target="_blank" rel="noopener noreferrer"
+               className="flex items-center gap-1.5 text-sm text-accent-coral hover:underline mt-1">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+              Join Meeting
+            </a>
+          </div>
+        )}
+      </div>
+
+      <p className="text-sm text-muted-foreground mb-4">A calendar invite has been sent to your Dartmouth email.</p>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <button onClick={() => setRescheduling(true)} className="px-5 py-2.5 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-accent-coral hover:text-accent-coral transition">
+          Reschedule
+        </button>
+        {declining ? (
+          <div className="rounded-xl border-2 border-red-200 bg-red-50 px-4 py-3 text-left space-y-2">
+            <p className="text-sm font-semibold text-red-700">This action is final</p>
+            <p className="text-xs text-red-600/80">Cancelling your interview will withdraw you from the interview process for this domain. You will not be able to rebook.</p>
+            <div className="flex items-center gap-3 pt-1">
+              <button onClick={handleCancel} disabled={cancelling} className="px-4 py-1.5 rounded-full bg-red-600 text-white text-sm font-semibold hover:bg-red-700 transition disabled:opacity-50">
+                {cancelling ? "Cancelling..." : "Yes, withdraw"}
+              </button>
+              <button onClick={() => setDeclining(false)} className="text-sm font-semibold text-muted-foreground hover:underline">Go back</button>
+            </div>
+          </div>
+        ) : (
+          <button onClick={() => setDeclining(true)} className="text-sm font-semibold text-muted-foreground hover:text-red-500 transition">
+            Cancel Interview
+          </button>
+        )}
+        {cancelError && (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {cancelError}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PostInterviewPendingView() {
+  return (
+    <div className="max-w-2xl mx-auto py-12 text-center">
+      <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-blue-100 flex items-center justify-center">
+        <svg className="w-8 h-8 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+        </svg>
+      </div>
+      <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">Interview Complete</h2>
+      <p className="text-muted-foreground leading-relaxed mb-4">
+        Thanks for interviewing with us! The team is reviewing all candidates and will share a final decision soon.
+      </p>
+      <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-50 text-sm text-blue-600">
+        <PulsingDot color="bg-blue-500" />
+        Decision pending
+      </div>
+    </div>
+  );
+}
+
+function AcceptedView({ cycleName }: { cycleName: string }) {
+  const CHECKLIST = [
+    { id: "ob1", label: "Accept your offer", description: "Confirm your acceptance by clicking the button below." },
+    { id: "ob2", label: "Complete the new member form", description: "Fill out the onboarding form sent to your email." },
+    { id: "ob3", label: "Join the DALI Slack workspace", description: "Use the invite link in your acceptance email to join Slack." },
+    { id: "ob4", label: "Set up your development environment", description: "Follow the setup guide pinned in #onboarding on Slack." },
+    { id: "ob5", label: "Attend the kickoff meeting", description: "Check your email for date and location details." },
+    { id: "ob6", label: "Complete intro training modules", description: "Finish the assigned training modules before Week 2." },
+  ];
+
+  const [checked, setChecked] = useState<Record<string, boolean>>({});
+  const completedCount = Object.values(checked).filter(Boolean).length;
+
+  return (
+    <div className="max-w-2xl mx-auto py-12">
+      <div className="text-center mb-10">
+        <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-accent-green/30 flex items-center justify-center">
+          <svg className="w-10 h-10 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </div>
+        <h2 className="font-heading text-3xl font-bold text-dark-blue mb-3">Congratulations!</h2>
+        <p className="text-muted-foreground leading-relaxed text-lg">
+          You've been accepted to DALI Lab for {cycleName}!
+        </p>
+      </div>
+
+      <div className="mb-6">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm font-semibold text-dark-blue">Onboarding Progress</span>
+          <span className="text-sm text-muted-foreground">{completedCount}/{CHECKLIST.length}</span>
+        </div>
+        <div className="h-2 rounded-full bg-muted overflow-hidden">
+          <div
+            className="h-full rounded-full bg-accent-coral transition-all duration-400"
+            style={{ width: `${(completedCount / CHECKLIST.length) * 100}%` }}
+          />
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-green-200 bg-gradient-to-br from-accent-green/5 to-accent-teal/5 overflow-hidden">
+        <div className="px-6 py-4 border-b border-green-200/60">
+          <h3 className="font-heading text-base font-bold text-dark-blue">Onboarding Checklist</h3>
+        </div>
+        <div className="divide-y divide-green-100">
+          {CHECKLIST.map(item => (
+            <label key={item.id} className="flex items-start gap-4 px-6 py-4 cursor-pointer hover:bg-green-50/50 transition">
+              <input
+                type="checkbox"
+                checked={!!checked[item.id]}
+                onChange={e => setChecked(prev => ({ ...prev, [item.id]: e.target.checked }))}
+                className="mt-0.5 w-5 h-5 rounded accent-accent-coral flex-shrink-0"
+              />
+              <div>
+                <span className={`text-sm font-semibold transition-colors ${checked[item.id] ? "text-muted-foreground/70 line-through" : "text-dark-blue"}`}>
+                  {item.label}
+                </span>
+                <p className={`text-xs mt-0.5 transition-colors ${checked[item.id] ? "text-muted-foreground/50" : "text-muted-foreground"}`}>
+                  {item.description}
+                </p>
+              </div>
+            </label>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WaitlistedView({ cycleName }: { cycleName: string }) {
+  return (
+    <div className="max-w-2xl mx-auto py-12">
+      <div className="text-center mb-10">
+        <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-yellow-100 flex items-center justify-center">
+          <svg className="w-8 h-8 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </div>
+        <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">You're on the Waitlist</h2>
+        <p className="text-muted-foreground leading-relaxed max-w-lg mx-auto">
+          You performed well in the interview process and we'd love to have you at DALI. We've placed you on the waitlist for {cycleName} and will reach out if a spot becomes available.
+        </p>
+      </div>
+
+      <div className={`px-6 py-5 rounded-2xl ${cardBg}`}>
+        <h3 className="font-heading text-sm font-bold text-dark-blue uppercase tracking-wider mb-3">What this means</h3>
+        <ul className="space-y-2 text-sm text-muted-foreground">
+          <li className="flex items-start gap-2">
+            <span className="text-accent-teal mt-0.5">-</span>
+            <span>If a spot opens, we'll contact you by email. No action needed on your part.</span>
+          </li>
+          <li className="flex items-start gap-2">
+            <span className="text-accent-teal mt-0.5">-</span>
+            <span>Waitlisted candidates are often extended offers for the following cycle.</span>
+          </li>
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+// ─── Per-Domain Card ──────────────────────────────────────────────────────────
+
+function DomainApplicationCard({
+  da,
+  cycleId,
+  cycleName,
+  slotDurationMinutes,
+  onRevalidate,
+}: {
+  da: DomainAppData;
+  cycleId: string;
+  cycleName: string;
+  slotDurationMinutes: number;
+  onRevalidate: () => void;
+}) {
+  const stage = da.inferredStatus;
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  return (
+    <div className="rounded-2xl border border-border overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full bg-brand-tint px-6 py-4 flex items-center justify-between cursor-pointer"
+      >
+        <h3 className="font-heading text-base font-bold text-dark-blue">{da.domainName}</h3>
+        <div className="flex items-center gap-3">
+          <StageIndicator stage={stage} />
+          <svg
+            className={`w-5 h-5 text-muted-foreground transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`}
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </div>
+      </button>
+      {isExpanded && (
+        <div className="px-2">
+          {stage === "Pending" && <PendingView cycleName={cycleName} />}
+          {stage === "Rejected" && <RejectedView cycleName={cycleName} />}
+          {stage === "InvitedToInterview" && (
+            <InvitedToInterviewView domainApp={da} cycleId={cycleId} cycleName={cycleName} onBooked={onRevalidate} />
+          )}
+          {stage === "InterviewScheduled" && (
+            <InterviewScheduledView
+              domainApp={da}
+              cycleId={cycleId}
+              cycleName={cycleName}
+              slotDurationMinutes={slotDurationMinutes}
+              onCancelled={onRevalidate}
+              onRescheduled={onRevalidate}
+            />
+          )}
+          {stage === "Withdrawn" && <WithdrawnView cycleName={cycleName} />}
+          {stage === "PostInterviewPending" && <PostInterviewPendingView />}
+          {stage === "Accepted" && <AcceptedView cycleName={cycleName} />}
+          {stage === "Waitlisted" && <WaitlistedView cycleName={cycleName} />}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Submission answers section ───────────────────────────────────────────────
 
 function DomainSection({
   name,
@@ -197,33 +1157,44 @@ function DomainSection({
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function PortalApplication() {
-  const { submittedAt, withdrawnAt, canWithdraw, generalQuestions, generalAnswers, domains } =
-    useLoaderData<typeof loader>() as {
-      submittedAt: string;
-      withdrawnAt: string | null;
-      canWithdraw: boolean;
-      generalQuestions: Question[];
-      generalAnswers: Record<string, string>;
-      domains: { id: string; name: string; questions: Question[]; answers: Record<string, string> }[];
-    };
+  const data = useLoaderData<typeof loader>() as any;
+  const {
+    cycleName,
+    cycleId,
+    cycleStatus,
+    closeDate,
+    originalCloseDate,
+    domainApplications,
+    slotDurationMinutes,
+    hasApplication,
+    applicationStatus,
+    submittedAt,
+    withdrawnAt,
+    canWithdraw,
+    generalQuestions,
+    generalAnswers,
+    submissionDomains,
+  } = data;
 
-  const isWithdrawn = withdrawnAt !== null;
+  const revalidator = useRevalidator();
+  const handleRevalidate = useCallback(() => {
+    revalidator.revalidate();
+  }, [revalidator]);
+
+  const [searchParams, setSearchParams] = useSearchParams();
+  const justSubmitted = searchParams.get("just-submitted") === "1";
+  const handleConfettiFire = useCallback(() => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.delete("just-submitted");
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
+
+  // Withdraw modal state (for submission section)
   const [showWithdrawModal, setShowWithdrawModal] = useState(false);
   const withdrawFetcher = useFetcher();
   const submittingWithdraw = withdrawFetcher.state !== "idle";
-
-  const submittedDate = new Date(submittedAt).toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-  const withdrawnDate = withdrawnAt
-    ? new Date(withdrawnAt).toLocaleDateString(undefined, {
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-      })
-    : null;
 
   function confirmWithdraw() {
     const form = new FormData();
@@ -232,92 +1203,234 @@ export default function PortalApplication() {
     setShowWithdrawModal(false);
   }
 
+  const submittedDate = submittedAt
+    ? new Date(submittedAt).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })
+    : null;
+  const withdrawnDate = withdrawnAt
+    ? new Date(withdrawnAt).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })
+    : null;
+  const isWithdrawn = withdrawnAt !== null;
+
+  if (!cycleId) {
+    return (
+      <div className="max-w-2xl mx-auto py-16 text-center px-6">
+        <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">No Active Cycle</h2>
+        <p className="text-muted-foreground mb-8">There is no active application cycle right now. Check back later!</p>
+        <Link
+          to="/portal/education"
+          className="inline-block px-6 py-2.5 rounded-full border-2 border-accent-coral text-accent-coral text-sm font-semibold hover:bg-accent-coral hover:text-white transition"
+        >
+          Browse DALI Education →
+        </Link>
+      </div>
+    );
+  }
+
+  const das = domainApplications as DomainAppData[];
+
+  let topLevelStage: "ApplicationOpen" | "ApplicationsClosed" | "Pending" | "Draft" | "Withdrawn" | null = null;
+  if (applicationStatus === "Withdrawn") {
+    topLevelStage = "Withdrawn";
+  } else if (das.length === 0) {
+    if (applicationStatus === "Submitted") {
+      topLevelStage = "Pending";
+    } else if (!hasApplication && cycleStatus === "Open") {
+      topLevelStage = "ApplicationOpen";
+    } else if (!hasApplication) {
+      topLevelStage = "ApplicationsClosed";
+    }
+  } else if (applicationStatus === "Draft") {
+    topLevelStage = "Draft";
+  }
+
   return (
     <div>
+      <Confetti trigger={justSubmitted} onFire={handleConfettiFire} />
+
       {/* Header */}
       <div className="bg-brand-tint px-6 md:px-16 lg:px-24 py-10">
-        <div className="max-w-3xl mx-auto">
+        <div className="max-w-3xl mx-auto flex items-start justify-between gap-4">
+          <div>
+            <Link
+              to="/portal"
+              className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-accent-coral transition mb-3"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+              Home
+            </Link>
+            <h1 className="font-heading text-xl font-bold text-dark-blue">
+              {cycleName} Application Portal
+            </h1>
+            {cycleStatus === "Open" && closeDate && (
+              <DeadlineLine closeDate={closeDate} originalCloseDate={originalCloseDate} />
+            )}
+          </div>
           <Link
-            to="/portal"
-            className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-accent-coral transition mb-4"
+            to="/portal/education"
+            className="shrink-0 text-sm text-accent-coral hover:underline whitespace-nowrap"
           >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-            Back to portal
+            DALI Education →
           </Link>
-          <h1 className="font-heading text-xl font-bold text-dark-blue">Your Application</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Submitted {submittedDate} — this view reflects your most recently saved answers.
-          </p>
         </div>
       </div>
 
-      {/* Content */}
+      {/* Tracker content */}
       <div className="px-6 md:px-16 lg:px-24 py-10">
-        <div className="max-w-3xl mx-auto space-y-8">
-          {/* Withdrawn notice OR withdraw action */}
-          {isWithdrawn ? (
-            <div
-              role="status"
-              className="rounded-2xl border border-border bg-muted/30 px-6 py-5 flex items-start gap-3"
-            >
-              <svg className="w-5 h-5 text-muted-foreground mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        {topLevelStage === "ApplicationsClosed" && (
+          <div className="max-w-2xl mx-auto text-center py-16">
+            <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-muted flex items-center justify-center">
+              <svg className="w-8 h-8 text-muted-foreground/70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              <div>
-                <p className="text-sm font-semibold text-dark-blue">
-                  You withdrew this application on {withdrawnDate}.
-                </p>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Your answers are preserved below for reference. If you change your mind, contact the DALI team.
-                </p>
-              </div>
             </div>
-          ) : canWithdraw ? (
-            <div className="rounded-2xl border border-border px-6 py-5 flex items-center justify-between gap-4">
-              <div>
-                <p className="text-sm font-semibold text-dark-blue">No longer want to be considered?</p>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Withdrawing removes your application from review. This cannot be undone from the portal.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowWithdrawModal(true)}
-                disabled={submittingWithdraw}
-                className="shrink-0 px-5 py-2 rounded-full border-2 border-red-500 text-red-500 text-sm font-semibold hover:bg-red-500 hover:text-white transition disabled:opacity-50"
-              >
-                Withdraw Application
-              </button>
-            </div>
-          ) : null}
-
-          {/* General questions */}
-          <div className="rounded-2xl bg-brand-tint px-6 py-5">
-            <h2 className="font-heading text-sm font-bold text-dark-blue uppercase tracking-wider mb-5">
-              General Questions
-            </h2>
-            <QuestionList questions={generalQuestions} answers={generalAnswers} />
+            <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">Applications Closed</h2>
+            <p className="text-muted-foreground leading-relaxed">
+              The application window for {cycleName} has closed. Check back for future application cycles!
+            </p>
           </div>
+        )}
+        {topLevelStage === "ApplicationOpen" && (
+          <ApplicationOpenView cycleName={cycleName} closeDate={closeDate} />
+        )}
+        {topLevelStage === "Pending" && (
+          <>
+            <PendingView cycleName={cycleName} />
+            {cycleStatus === "Open" && (
+              <div className="max-w-2xl mx-auto mt-4 rounded-xl border border-blue-200 bg-blue-50 px-5 py-4 flex items-center justify-between gap-4">
+                <p className="text-sm text-blue-800">
+                  The cycle is still open — you can still update your application.
+                </p>
+                <Link
+                  to="/portal/apply"
+                  className="shrink-0 px-4 py-2 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition"
+                >
+                  Edit Application
+                </Link>
+              </div>
+            )}
+          </>
+        )}
+        {topLevelStage === "Draft" && (
+          <ApplicationDraftView cycleName={cycleName} closeDate={cycleStatus === "Open" ? closeDate : null} />
+        )}
+        {topLevelStage === "Withdrawn" && <WithdrawnView cycleName={cycleName} />}
 
-          {/* Domain sections */}
-          {domains.length > 0 && (
-            <div className="space-y-4">
-              <h2 className="font-heading text-sm font-bold text-dark-blue uppercase tracking-wider">
-                Domain Questions
-              </h2>
-              {domains.map(d => (
-                <DomainSection
-                  key={d.id}
-                  name={d.name}
-                  questions={d.questions}
-                  answers={d.answers}
-                />
-              ))}
+        {das.length > 0 && applicationStatus !== "Draft" && applicationStatus !== "Withdrawn" && (
+          <div className="max-w-3xl mx-auto space-y-8">
+            {cycleStatus === "Open" && applicationStatus === "Submitted" && (
+              <div className="rounded-xl border border-blue-200 bg-blue-50 px-5 py-4 flex items-center justify-between gap-4">
+                <p className="text-sm text-blue-800">
+                  The cycle is still open — you can still update your application.
+                </p>
+                <Link
+                  to="/portal/apply"
+                  className="shrink-0 px-4 py-2 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition"
+                >
+                  Edit Application
+                </Link>
+              </div>
+            )}
+            {submittedAt && (
+              <div className="flex justify-end">
+                <a href="#submission" className="text-sm text-accent-coral hover:underline">
+                  View your submission ↓
+                </a>
+              </div>
+            )}
+            {das.map(da => (
+              <DomainApplicationCard
+                key={da.id}
+                da={da}
+                cycleId={cycleId}
+                cycleName={cycleName}
+                slotDurationMinutes={slotDurationMinutes}
+                onRevalidate={handleRevalidate}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Submission answers section — rendered when the application has been submitted */}
+      {submittedAt && (
+        <div id="submission" className="px-6 md:px-16 lg:px-24 py-10 border-t border-border">
+          <div className="max-w-3xl mx-auto space-y-8">
+            <div>
+              <h2 className="font-heading text-lg font-bold text-dark-blue mb-1">Your Submitted Answers</h2>
+              <p className="text-sm text-muted-foreground">
+                Submitted {submittedDate} — this view reflects your most recently saved answers.
+              </p>
             </div>
-          )}
+
+            {/* Withdrawn notice OR withdraw action */}
+            {isWithdrawn ? (
+              <div
+                role="status"
+                className="rounded-2xl border border-border bg-muted/30 px-6 py-5 flex items-start gap-3"
+              >
+                <svg className="w-5 h-5 text-muted-foreground mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <div>
+                  <p className="text-sm font-semibold text-dark-blue">
+                    You withdrew this application on {withdrawnDate}.
+                  </p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Your answers are preserved below for reference. If you change your mind, contact the DALI team.
+                  </p>
+                </div>
+              </div>
+            ) : canWithdraw ? (
+              <div className="rounded-2xl border border-border px-6 py-5 flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-semibold text-dark-blue">No longer want to be considered?</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Withdrawing removes your application from review. This cannot be undone from the portal.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowWithdrawModal(true)}
+                  disabled={submittingWithdraw}
+                  className="shrink-0 px-5 py-2 rounded-full border-2 border-red-500 text-red-500 text-sm font-semibold hover:bg-red-500 hover:text-white transition disabled:opacity-50"
+                >
+                  Withdraw Application
+                </button>
+              </div>
+            ) : null}
+
+            {/* General questions */}
+            <div className="rounded-2xl bg-brand-tint px-6 py-5">
+              <h3 className="font-heading text-sm font-bold text-dark-blue uppercase tracking-wider mb-5">
+                General Questions
+              </h3>
+              <QuestionList questions={generalQuestions} answers={generalAnswers} />
+            </div>
+
+            {/* Domain sections */}
+            {submissionDomains.length > 0 && (
+              <div className="space-y-4">
+                <h3 className="font-heading text-sm font-bold text-dark-blue uppercase tracking-wider">
+                  Domain Questions
+                </h3>
+                {submissionDomains.map((d: { id: string; name: string; questions: Question[]; answers: Record<string, string> }) => (
+                  <DomainSection
+                    key={d.id}
+                    name={d.name}
+                    questions={d.questions}
+                    answers={d.answers}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
         </div>
+      )}
+
+      <div className="px-6 md:px-16 lg:px-24 py-6 text-center text-xs text-muted-foreground/70">
+        Made with ❤️ at the DALI Lab.
       </div>
 
       {/* Withdraw confirmation modal */}

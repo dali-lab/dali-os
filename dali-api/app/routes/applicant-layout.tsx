@@ -38,6 +38,9 @@ export default function ApplicantLayout() {
 
         <nav className="ml-6 hidden md:flex items-center gap-4 text-sm">
           <Link to="/portal" className="text-muted-foreground hover:text-dark-blue">
+            Home
+          </Link>
+          <Link to="/portal/application" className="text-muted-foreground hover:text-dark-blue">
             Application
           </Link>
           <Link to="/portal/education" className="text-muted-foreground hover:text-dark-blue">

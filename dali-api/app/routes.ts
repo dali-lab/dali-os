@@ -131,7 +131,7 @@ export default [
 
   // Applicant portal (lightweight layout)
   layout("routes/applicant-layout.tsx", [
-    route("portal", "routes/portal.tsx"),
+    route("portal", "routes/portal.home.tsx"),
     route("portal/apply", "routes/portal.apply.tsx"),
     route("portal/application", "routes/portal.application.tsx"),
     route("portal/education", "routes/portal.education.tsx"),
