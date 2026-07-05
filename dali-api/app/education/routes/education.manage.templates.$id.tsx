@@ -23,7 +23,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       id: template.id,
       name: template.name,
       description: template.description ?? "",
-      questions: template.questions.map((q) => ({ prompt: q.prompt, required: q.required })),
+      questions: template.questions.map((q) => ({ prompt: q.prompt, required: q.required, type: q.type as "Text" | "Url" | "File" })),
     },
   };
 }
@@ -32,18 +32,18 @@ export default function TemplateEditor() {
   const { template } = useLoaderData<typeof loader>();
   const [name, setName] = useState(template.name);
   const [description, setDescription] = useState(template.description);
-  const [questions, setQuestions] = useState(template.questions);
+  const [questions, setQuestions] = useState<{ prompt: string; required: boolean; type: "Text" | "Url" | "File" }[]>(template.questions);
   const [busy, setBusy] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
   const { revalidate } = useRevalidator();
 
-  function update(i: number, patch: Partial<{ prompt: string; required: boolean }>) {
+  function update(i: number, patch: Partial<{ prompt: string; required: boolean; type: "Text" | "Url" | "File" }>) {
     setQuestions((prev) => prev.map((q, idx) => (idx === i ? { ...q, ...patch } : q)));
   }
   function add() {
-    setQuestions((prev) => [...prev, { prompt: "", required: true }]);
+    setQuestions((prev) => [...prev, { prompt: "", required: true, type: "Text" }]);
   }
   function remove(i: number) {
     setQuestions((prev) => prev.filter((_, idx) => idx !== i));
@@ -111,10 +111,28 @@ export default function TemplateEditor() {
                   className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm"
                 />
                 <div className="flex items-center justify-between">
-                  <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
-                    <input type="checkbox" checked={q.required} onChange={(e) => update(i, { required: e.target.checked })} />
-                    Required
-                  </label>
+                  <div className="flex items-center gap-4">
+                    <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+                      <input type="checkbox" checked={q.required} onChange={(e) => update(i, { required: e.target.checked })} />
+                      Required
+                    </label>
+                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <span>Type:</span>
+                      {(["Text", "Url", "File"] as const).map((t) => (
+                        <button
+                          key={t}
+                          onClick={() => update(i, { type: t })}
+                          className={`px-2 py-0.5 rounded border text-xs transition-colors ${
+                            q.type === t
+                              ? "border-accent-coral bg-accent-coral/10 text-accent-coral font-semibold"
+                              : "border-border text-muted-foreground hover:border-dark-blue"
+                          }`}
+                        >
+                          {t}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   <button onClick={() => remove(i)} className="text-xs text-red-600 hover:underline">Remove</button>
                 </div>
               </div>

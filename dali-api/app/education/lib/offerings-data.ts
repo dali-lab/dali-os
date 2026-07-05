@@ -150,7 +150,7 @@ export async function deleteSession(id: string) {
 
 export async function replaceQuestions(
   offeringId: string,
-  questions: { prompt: string; required: boolean }[],
+  questions: { prompt: string; required: boolean; type?: "Text" | "Url" | "File" }[],
 ) {
   await prisma.educationApplicationQuestion.deleteMany({ where: { offeringId } });
   if (questions.length === 0) return [];
@@ -159,12 +159,14 @@ export async function replaceQuestions(
       offeringId,
       prompt: q.prompt,
       required: q.required,
+      type: q.type ?? "Text",
       position: i,
     })),
   });
   return prisma.educationApplicationQuestion.findMany({
     where: { offeringId },
     orderBy: { position: "asc" },
+    select: { id: true, prompt: true, required: true, type: true, position: true },
   });
 }
 
@@ -178,6 +180,6 @@ export async function duplicateQuestionsFromOffering(
   });
   return replaceQuestions(
     targetOfferingId,
-    source.map((q) => ({ prompt: q.prompt, required: q.required })),
+    source.map((q) => ({ prompt: q.prompt, required: q.required, type: q.type as "Text" | "Url" | "File" })),
   );
 }

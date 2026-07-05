@@ -32,14 +32,15 @@ export async function action({ request, params }: Route.ActionArgs) {
   const patch: Parameters<typeof updateTemplate>[1] = {};
   if (body.name !== undefined) patch.name = String(body.name);
   if (body.description !== undefined) patch.description = body.description ? String(body.description) : null;
+  const VALID_TYPES = new Set(["Text", "Url", "File"]);
   if (Array.isArray(body.questions)) {
     patch.questions = body.questions
-      .map((q: any) =>
-        q && typeof q.prompt === "string" && q.prompt.trim()
-          ? { prompt: q.prompt.trim(), required: q.required !== false }
-          : null,
-      )
-      .filter(Boolean) as { prompt: string; required: boolean }[];
+      .map((q: any) => {
+        if (!q || typeof q.prompt !== "string" || !q.prompt.trim()) return null;
+        const type = (typeof q.type === "string" && VALID_TYPES.has(q.type) ? q.type : "Text") as "Text" | "Url" | "File";
+        return { prompt: q.prompt.trim(), required: q.required !== false, type };
+      })
+      .filter(Boolean) as { prompt: string; required: boolean; type: "Text" | "Url" | "File" }[];
   }
 
   const updated = await updateTemplate(params.id, patch);

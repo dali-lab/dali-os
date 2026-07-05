@@ -38,7 +38,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   return {
     offering: { id: offering.id, title: offering.title },
-    questions: questions.map((q) => ({ id: q.id, prompt: q.prompt, required: q.required })),
+    questions: questions.map((q) => ({ id: q.id, prompt: q.prompt, required: q.required, type: q.type as "Text" | "Url" | "File" })),
     initialAnswers: initial,
   };
 }

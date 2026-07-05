@@ -57,6 +57,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       prompt: q.prompt,
       required: q.required,
       position: q.position,
+      type: q.type,
     })),
     templates: templates.map((t) => ({
       id: t.id,
@@ -81,27 +82,15 @@ export default function EditOffering() {
   const data = useLoaderData<typeof loader>();
   return (
     <div className="p-6 md:p-10">
-      <div className="max-w-3xl mx-auto mb-4 flex items-center gap-3">
+      <div className="max-w-5xl mx-auto mb-4 flex items-center gap-3">
         <Link to="/education/manage" className="text-xs text-muted-foreground hover:underline">
           ← All offerings
         </Link>
         <Link
-          to={`/education/manage/${data.offering.id}/applications`}
-          className="ml-auto text-xs text-accent-coral hover:underline"
-        >
-          Review applications →
-        </Link>
-        <Link
-          to={`/education/manage/${data.offering.id}/assignments`}
-          className="text-xs text-accent-coral hover:underline"
-        >
-          Assignments →
-        </Link>
-        <Link
           to={`/education/enrolled/${data.offering.id}`}
-          className="text-xs text-muted-foreground hover:underline"
+          className="ml-auto text-xs text-muted-foreground hover:underline"
         >
-          Preview enrolled view
+          Preview enrolled view →
         </Link>
       </div>
       <OfferingBuilder

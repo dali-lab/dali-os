@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useRevalidator } from "react-router";
+import { Link, useRevalidator } from "react-router";
 import { Button } from "~/components/ui/Button";
 
 interface Session {
@@ -14,6 +14,7 @@ interface Question {
   prompt: string;
   required: boolean;
   position: number;
+  type: "Text" | "Url" | "File";
 }
 
 export interface OfferingBuilderProps {
@@ -38,6 +39,14 @@ export interface OfferingBuilderProps {
 
 type Tab = "settings" | "sessions" | "questions" | "emails" | "publish";
 
+const TAB_LABELS: Record<Tab, string> = {
+  settings: "Settings",
+  sessions: "Sessions",
+  questions: "Questions",
+  emails: "Emails",
+  publish: "Publish",
+};
+
 export function OfferingBuilder({
   offering,
   sessions,
@@ -49,43 +58,71 @@ export function OfferingBuilder({
   const [tab, setTab] = useState<Tab>("settings");
 
   return (
-    <div className="max-w-3xl mx-auto">
-      <header className="mb-4">
-        <h1 className="font-heading text-2xl font-bold text-dark-blue mb-1">{offering.title || "Untitled offering"}</h1>
-        <p className="text-xs text-muted-foreground">
-          {offering.type} · Status: <span className="font-semibold">{offering.status}</span>
-        </p>
-      </header>
-
-      <nav className="border-b border-border mb-5 flex gap-4">
-        {(["settings", "sessions", "questions", "emails", "publish"] as Tab[]).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`pb-2 text-sm capitalize ${
-              tab === t
-                ? "text-dark-blue font-semibold border-b-2 border-accent-coral"
-                : "text-muted-foreground hover:text-dark-blue"
-            }`}
+    <div className="max-w-5xl mx-auto">
+      <div className="flex flex-col md:flex-row">
+        {/* Left-rail nav */}
+        <nav className="flex flex-row md:flex-col md:w-44 md:shrink-0 overflow-x-auto md:overflow-x-visible border-b md:border-b-0 md:border-r border-border md:pt-1 md:pb-4">
+          {(["settings", "sessions", "questions", "emails", "publish"] as Tab[]).map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={[
+                "block py-2 px-3 text-sm transition-colors whitespace-nowrap text-left",
+                tab === t
+                  ? "text-dark-blue font-semibold border-b-2 md:border-b-0 md:border-l-2 border-accent-coral"
+                  : "text-muted-foreground hover:text-dark-blue",
+              ].join(" ")}
+            >
+              {TAB_LABELS[t]}
+            </button>
+          ))}
+          {/* Management links — desktop only; visible on mobile via the manage route header */}
+          <div className="hidden md:block border-t border-border my-2 mx-3" />
+          <Link
+            to={`/education/manage/${offering.id}/applications`}
+            className="hidden md:block py-2 px-3 text-sm text-muted-foreground hover:text-dark-blue whitespace-nowrap"
           >
-            {t}
-          </button>
-        ))}
-      </nav>
+            Applications
+          </Link>
+          <Link
+            to={`/education/manage/${offering.id}/assignments`}
+            className="hidden md:block py-2 px-3 text-sm text-muted-foreground hover:text-dark-blue whitespace-nowrap"
+          >
+            Assignments
+          </Link>
+        </nav>
 
-      {tab === "settings" && <SettingsTab offering={offering} />}
-      {tab === "sessions" && <SessionsTab offeringId={offering.id} sessions={sessions} />}
-      {tab === "questions" && (
-        <QuestionsTab offeringId={offering.id} questions={questions} templates={templates ?? []} />
-      )}
-      {tab === "emails" && (
-        <EmailsTab
-          offeringId={offering.id}
-          emailTemplates={emailTemplates ?? []}
-          bindings={decisionEmailBindings ?? []}
-        />
-      )}
-      {tab === "publish" && <PublishTab offering={offering} />}
+        {/* Content */}
+        <div className="flex-1 min-w-0 md:pl-8 pt-4 md:pt-0">
+          <header className="mb-5">
+            <h1 className="font-heading text-2xl font-bold text-dark-blue mb-1">
+              {offering.title || "Untitled offering"}
+            </h1>
+            <p className="text-xs text-muted-foreground">
+              {offering.type} · Status:{" "}
+              <span className="font-semibold">{offering.status}</span>
+            </p>
+          </header>
+
+          {tab === "settings" && <SettingsTab offering={offering} />}
+          {tab === "sessions" && <SessionsTab offeringId={offering.id} sessions={sessions} />}
+          {tab === "questions" && (
+            <QuestionsTab
+              offeringId={offering.id}
+              questions={questions}
+              templates={templates ?? []}
+            />
+          )}
+          {tab === "emails" && (
+            <EmailsTab
+              offeringId={offering.id}
+              emailTemplates={emailTemplates ?? []}
+              bindings={decisionEmailBindings ?? []}
+            />
+          )}
+          {tab === "publish" && <PublishTab offering={offering} />}
+        </div>
+      </div>
     </div>
   );
 }
@@ -335,8 +372,8 @@ function QuestionsTab({
   templates: { id: string; name: string; questionCount: number }[];
 }) {
   const { revalidate } = useRevalidator();
-  const [items, setItems] = useState<{ prompt: string; required: boolean }[]>(
-    () => questions.map((q) => ({ prompt: q.prompt, required: q.required })),
+  const [items, setItems] = useState<{ prompt: string; required: boolean; type: "Text" | "Url" | "File" }[]>(
+    () => questions.map((q) => ({ prompt: q.prompt, required: q.required, type: q.type ?? "Text" })),
   );
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -359,7 +396,7 @@ function QuestionsTab({
     setApplying(false);
     if (res.ok) {
       const next = await res.json();
-      setItems(next.map((q: any) => ({ prompt: q.prompt, required: q.required })));
+      setItems(next.map((q: any) => ({ prompt: q.prompt, required: q.required, type: q.type ?? "Text" })));
       revalidate();
     } else {
       const body = await res.json().catch(() => ({}));
@@ -367,11 +404,11 @@ function QuestionsTab({
     }
   }
 
-  function update(i: number, patch: Partial<{ prompt: string; required: boolean }>) {
+  function update(i: number, patch: Partial<{ prompt: string; required: boolean; type: "Text" | "Url" | "File" }>) {
     setItems((prev) => prev.map((item, idx) => (idx === i ? { ...item, ...patch } : item)));
   }
   function add() {
-    setItems((prev) => [...prev, { prompt: "", required: true }]);
+    setItems((prev) => [...prev, { prompt: "", required: true, type: "Text" }]);
   }
   function remove(i: number) {
     setItems((prev) => prev.filter((_, idx) => idx !== i));
@@ -433,10 +470,28 @@ function QuestionsTab({
             className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm"
           />
           <div className="flex items-center justify-between">
-            <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
-              <input type="checkbox" checked={q.required} onChange={(e) => update(i, { required: e.target.checked })} />
-              Required
-            </label>
+            <div className="flex items-center gap-4">
+              <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+                <input type="checkbox" checked={q.required} onChange={(e) => update(i, { required: e.target.checked })} />
+                Required
+              </label>
+              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                <span>Type:</span>
+                {(["Text", "Url", "File"] as const).map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => update(i, { type: t })}
+                    className={`px-2 py-0.5 rounded border text-xs transition-colors ${
+                      q.type === t
+                        ? "border-accent-coral bg-accent-coral/10 text-accent-coral font-semibold"
+                        : "border-border text-muted-foreground hover:border-dark-blue"
+                    }`}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+            </div>
             <button onClick={() => remove(i)} className="text-xs text-red-600 hover:underline">
               Remove
             </button>

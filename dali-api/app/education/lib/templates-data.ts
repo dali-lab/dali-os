@@ -24,7 +24,7 @@ export async function createTemplate(input: {
   name: string;
   description: string | null;
   createdById: string;
-  questions: { prompt: string; required: boolean }[];
+  questions: { prompt: string; required: boolean; type?: "Text" | "Url" | "File" }[];
 }) {
   const template = await prisma.educationApplicationTemplate.create({
     data: {
@@ -40,6 +40,7 @@ export async function createTemplate(input: {
         prompt: q.prompt,
         position: i,
         required: q.required,
+        type: q.type ?? "Text",
       })),
     });
   }
@@ -51,7 +52,7 @@ export async function updateTemplate(
   patch: {
     name?: string;
     description?: string | null;
-    questions?: { prompt: string; required: boolean }[];
+    questions?: { prompt: string; required: boolean; type?: "Text" | "Url" | "File" }[];
   },
 ) {
   if (patch.name !== undefined || patch.description !== undefined) {
@@ -74,6 +75,7 @@ export async function updateTemplate(
           prompt: q.prompt,
           position: i,
           required: q.required,
+          type: q.type ?? "Text",
         })),
       });
     }
@@ -98,10 +100,12 @@ export async function applyTemplateToOffering(templateId: string, offeringId: st
       prompt: q.prompt,
       position: i,
       required: q.required,
+      type: q.type as "Text" | "Url" | "File",
     })),
   });
   return prisma.educationApplicationQuestion.findMany({
     where: { offeringId },
     orderBy: { position: "asc" },
+    select: { id: true, prompt: true, required: true, type: true, position: true },
   });
 }

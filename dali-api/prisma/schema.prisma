@@ -2332,12 +2332,19 @@ enum EduApplicationStatus {
   Withdrawn
 }
 
+enum QuestionType {
+  Text
+  Url
+  File
+}
+
 model EducationApplicationQuestion {
-  id         String  @id @default(cuid())
+  id         String       @id @default(cuid())
   offeringId String
   prompt     String
   position   Int
-  required   Boolean @default(true)
+  required   Boolean      @default(true)
+  type       QuestionType @default(Text)
 
   offering EducationOffering            @relation(fields: [offeringId], references: [id])
   answers  EducationApplicationAnswer[]
@@ -2493,11 +2500,12 @@ model EducationApplicationTemplate {
 }
 
 model EducationApplicationTemplateQuestion {
-  id         String  @id @default(cuid())
+  id         String       @id @default(cuid())
   templateId String
   prompt     String
   position   Int
-  required   Boolean @default(true)
+  required   Boolean      @default(true)
+  type       QuestionType @default(Text)
 
   template EducationApplicationTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
 

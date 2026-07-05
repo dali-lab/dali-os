@@ -5,6 +5,7 @@ import { requireAuth } from "~/lib/auth";
 import { canManageOffering } from "~/education/lib/auth";
 import { listApplicationsForOffering } from "~/education/lib/applications-data";
 import { prisma } from "~/lib/db";
+import { getDownloadUrl } from "~/lib/s3";
 import { ApplicationsTable } from "~/education/components/ApplicationsTable";
 import { WaitlistReorder } from "~/education/components/WaitlistReorder";
 import { Button } from "~/components/ui/Button";
@@ -33,19 +34,37 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     {} as Record<string, number>,
   );
 
-  return {
-    offering,
-    counts,
-    applications: apps.map((a) => ({
+  // Presign file-type answers so the reviewer can download them
+  const applicationsWithPresignedFiles = await Promise.all(
+    apps.map(async (a) => ({
       id: a.id,
       status: a.status,
       submittedAt: a.submittedAt.toISOString(),
       applicant: a.applicant,
-      answers: a.answers.map((ans) => ({
-        question: { prompt: ans.question.prompt, position: ans.question.position },
-        content: ans.content,
-      })),
+      answers: await Promise.all(
+        a.answers.map(async (ans) => {
+          const type = ans.question.type as "Text" | "Url" | "File";
+          let content = ans.content;
+          if (type === "File" && content) {
+            try {
+              content = await getDownloadUrl(content);
+            } catch {
+              // leave as key if presign fails
+            }
+          }
+          return {
+            question: { prompt: ans.question.prompt, position: ans.question.position, type },
+            content,
+          };
+        }),
+      ),
     })),
+  );
+
+  return {
+    offering,
+    counts,
+    applications: applicationsWithPresignedFiles,
   };
 }
 

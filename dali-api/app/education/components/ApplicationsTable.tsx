@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useRevalidator } from "react-router";
 import { Button } from "~/components/ui/Button";
 import { StatusPill } from "./OfferingCard";
+import { EducationAnswerDisplay } from "./EducationAnswerDisplay";
 
 interface Row {
   id: string;
@@ -14,7 +15,7 @@ interface Row {
   };
   status: "Submitted" | "Approved" | "Waitlisted" | "Rejected" | "Withdrawn";
   submittedAt: string;
-  answers: { question: { prompt: string; position: number }; content: string }[];
+  answers: { question: { prompt: string; position: number; type: "Text" | "Url" | "File" }; content: string }[];
 }
 
 export function ApplicationsTable({ rows }: { rows: Row[] }) {
@@ -192,7 +193,9 @@ export function ApplicationsTable({ rows }: { rows: Row[] }) {
                             .map((a, idx) => (
                               <div key={idx}>
                                 <dt className="text-xs font-semibold text-dark-blue">{a.question.prompt}</dt>
-                                <dd className="text-sm text-muted-foreground whitespace-pre-wrap">{a.content || <em>(blank)</em>}</dd>
+                                <dd>
+                                  <EducationAnswerDisplay question={a.question} answer={a.content} />
+                                </dd>
                               </div>
                             ))}
                         </dl>

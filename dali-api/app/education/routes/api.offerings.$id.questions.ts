@@ -32,15 +32,17 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!Array.isArray(body.questions)) {
     return Response.json({ error: "questions array required" }, { status: 400 });
   }
+  const VALID_TYPES = new Set(["Text", "Url", "File"]);
   const cleaned = body.questions
     .map((q: unknown) => {
       if (!q || typeof q !== "object") return null;
-      const row = q as { prompt?: unknown; required?: unknown };
+      const row = q as { prompt?: unknown; required?: unknown; type?: unknown };
       const prompt = typeof row.prompt === "string" ? row.prompt.trim() : "";
       if (!prompt) return null;
-      return { prompt, required: row.required !== false };
+      const type = (typeof row.type === "string" && VALID_TYPES.has(row.type) ? row.type : "Text") as "Text" | "Url" | "File";
+      return { prompt, required: row.required !== false, type };
     })
-    .filter(Boolean) as { prompt: string; required: boolean }[];
+    .filter(Boolean) as { prompt: string; required: boolean; type: "Text" | "Url" | "File" }[];
 
   const result = await replaceQuestions(params.id, cleaned);
   await logAuditEvent({
