@@ -33,8 +33,9 @@ export interface UserRoles {
   isInstructor: boolean;
   /**
    * Derived: this user has graduated and is no longer an active lab member.
-   * See `isAlumni()` for the layered derivation (People API → graduatedAt →
-   * lookup negative-override → classYear + assignment history).
+   * See `isAlumni()` for the layered derivation (current-assignment guard →
+   * People degree-conferral → graduatedAt → enrolled-override → classYear
+   * + assignment history).
    */
   isAlumni: boolean;
   /** Forms & Groups: Core, Admin, or Instructor. */
@@ -311,28 +312,32 @@ export function standardGradDate(classYear: number): Date {
   return new Date(classYear, 5, 15);
 }
 
-// Tier-3 lookup-Student override expires after this many days. If the lookup
-// sync is older, we don't trust "still a Student" to override classYear math —
-// the member may have graduated and we just haven't refreshed.
-const LOOKUP_FRESHNESS_DAYS = 14;
+// Tier-3 enrolled-student override expires after this many days. If the
+// People sync is older, we don't trust "still enrolled" to override classYear
+// math — the member may have graduated and we just haven't refreshed. Must
+// stay comfortably above the 7-day refresh cadence in dartmouth-refresh.ts
+// or the override goes dark between syncs.
+const ENROLLMENT_FRESHNESS_DAYS = 14;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Whether the user is an alumnus — graduated and no longer active in the lab.
  *
- * Layered derivation, most-authoritative first (see alumni_plan.md):
+ * Layered derivation (see alumni_plan.md "Observed API behavior" for why
+ * each signal is trusted the way it is):
  *
- *   Tier 1: People API says ALUMNI                       → true
- *   Tier 2: explicit `graduatedAt` is in the past        → true
- *   Tier 3: lookup says "still Student" (fresh sync)     → false (override)
- *   Tier 4: classYear past Commencement
- *           AND has past assignment(s)
- *           AND no current-term assignment               → true
- *
- * Tier 3 is the critical 5th-year-senior guard: a member with
- * `classYear = 2025` and an active 2026 spring assignment is *not* alumni
- * regardless of what the classYear math would say.
+ *   Tier 0: has a current-term assignment                → false (active is
+ *           never alumni — protects staffed BE dual-degree candidates and
+ *           fresh grads until their final term rolls off)
+ *   Tier 1: People affiliations include "Alum" (degree conferred — appears
+ *           within weeks) OR IDM code is ALUMNI (trails by months) → true
+ *   Tier 2: explicit `graduatedAt` in the past           → true
+ *   Tier 3: fresh sync + Student + NOT Alum              → false (enrolled —
+ *           the +1 guard; "Student" alone lingers post-grad, the compound
+ *           doesn't)
+ *   Tier 4: classYear past Commencement + past assignment(s) → true
+ *           (fallback for users with no netId / nothing synced)
  */
 export async function isAlumni(userId: string): Promise<boolean> {
   const user = await prisma.user.findUnique({
@@ -341,47 +346,62 @@ export async function isAlumni(userId: string): Promise<boolean> {
       classYear: true,
       graduatedAt: true,
       dartmouthAffiliation: true,
-      dartmouthLookupAffiliation: true,
-      dartmouthLookupSyncedAt: true,
+      dartmouthIsAlum: true,
+      dartmouthIsStudent: true,
+      dartmouthPeopleSyncedAt: true,
     },
   });
   if (!user) return false;
 
-  // Tier 1: Dartmouth IDM has officially flipped the account to ALUMNI.
-  if (user.dartmouthAffiliation === "ALUMNI") return true;
-
   const now = new Date();
 
-  // Tier 2: explicit graduation date set (off-cycle grads, or stamped by
-  // the People API the first time we observed ALUMNI).
+  // Nothing points at alumni → done, without paying for assignment queries.
+  // This is the common case for every current student.
+  const hasPositiveSignal =
+    user.dartmouthIsAlum === true ||
+    user.dartmouthAffiliation === "ALUMNI" ||
+    (user.graduatedAt !== null && user.graduatedAt < now) ||
+    (user.classYear !== null && standardGradDate(user.classYear) <= now);
+  if (!hasPositiveSignal) return false;
+
+  // Tier 0: anyone holding a current-term assignment is never alumni,
+  // whatever the directory says. A BE dual-degree candidate has their AB
+  // conferred (Alum affiliation present) while still enrolled and staffed;
+  // a fresh grad still holds their final-term assignment until rollover.
+  const term = await currentTerm();
+  if (term && (await hasAnyCurrentAssignment(userId, term.id))) return false;
+
+  // Tier 1: degree conferred ("Alum" shows up within weeks of Commencement)
+  // or the eventual IDM ALUMNI flip.
+  if (user.dartmouthIsAlum === true || user.dartmouthAffiliation === "ALUMNI") {
+    return true;
+  }
+
+  // Tier 2: explicit graduation date (off-cycle grads set manually, or
+  // stamped by the refresh on the first observed graduation signal).
   if (user.graduatedAt && user.graduatedAt < now) return true;
 
-  // Tier 3: lookup-says-Student override. Protects 5th-year seniors whose
-  // classYear is past but who are demonstrably still students per Dartmouth's
-  // public directory. Sync must be fresh — a stale "Student" record may be
-  // months-old reality that has since flipped.
+  // Tier 3: enrolled override. Student AND NOT Alum is the only reliable
+  // "currently enrolled" compound — protects +1 students whose classYear
+  // math says graduated. The NOT-Alum half is already guaranteed here
+  // (Tier 1 returned on any Alum signal). Sync must be fresh: a stale
+  // record may predate an actual graduation.
   if (
-    user.dartmouthLookupAffiliation === "Student" &&
-    user.dartmouthLookupSyncedAt &&
-    now.getTime() - user.dartmouthLookupSyncedAt.getTime() <
-      LOOKUP_FRESHNESS_DAYS * DAY_MS
+    user.dartmouthIsStudent === true &&
+    user.dartmouthPeopleSyncedAt &&
+    now.getTime() - user.dartmouthPeopleSyncedAt.getTime() <
+      ENROLLMENT_FRESHNESS_DAYS * DAY_MS
   ) {
     return false;
   }
 
-  // Tier 4: classYear math + assignment history. Requires *both* a past
-  // assignment AND zero current-term assignments — protects on-leave members
-  // (no current assignment, but classYear still in the future) and
-  // recently-staffed members from being miscategorized.
+  // Tier 4: classYear math + assignment history, for users with nothing
+  // synced. Requires a past assignment so brand-new accounts with a stale
+  // classYear don't read as alumni of a lab they never joined.
   if (!user.classYear) return false;
   if (standardGradDate(user.classYear) > now) return false;
 
-  const term = await currentTerm();
-  const [past, current] = await Promise.all([
-    hasAnyPastAssignment(userId, term?.id ?? null),
-    term ? hasAnyCurrentAssignment(userId, term.id) : Promise.resolve(false),
-  ]);
-  return past && !current;
+  return hasAnyPastAssignment(userId, term?.id ?? null);
 }
 
 // Past = any ProjectAssignment / CoreAssignment / InstructorAssignment /

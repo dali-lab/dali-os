@@ -5,6 +5,7 @@ import { Breadcrumbs } from '~/components/Breadcrumbs'
 import { LaunchWelcome } from '~/components/LaunchWelcome'
 import { requireAuth } from "~/lib/auth";
 import { getUserRoles } from '~/lib/roles'
+import { refreshDartmouthSignals } from '~/lib/dartmouth-refresh'
 import { getActiveCycle } from '~/hiring/lib/cycles'
 import { prisma } from '~/lib/db'
 import { resolvePhotoUrl } from '~/lib/photo'
@@ -44,6 +45,13 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Onboarding is NOT a hard gate: a new member can use the whole app freely.
   // Their onboarding lives as a persistent task (the welcome notification) that
   // links to /onboarding and only clears once they finish. See welcome.server.
+
+  // Fire-and-forget Dartmouth directory sync. Login callbacks also trigger
+  // this, but sessions live 30 days — without a shell-load trigger, a user
+  // who never re-authenticates would age past the enrolled-override's trust
+  // window in roles.ts. Internally throttled: when the cache is <7 days old
+  // this is a single indexed point-read.
+  void refreshDartmouthSignals(auth.user.sub)
 
   const {
     isLabMember,

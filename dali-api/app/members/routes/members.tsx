@@ -46,12 +46,15 @@ function parseStatus(raw: string | null): MemberStatus {
   return raw === "alumni" ? "alumni" : "active";
 }
 
-// SQL predicate for the alumni directory: anyone Dartmouth-IDM officially
-// marks ALUMNI, anyone with an explicit graduatedAt in the past, or anyone
-// whose classYear's standard grad date has passed. Mirrors the safe subset
-// of the per-user isAlumni() derivation that can be expressed in a single
-// Prisma `where` clause (skips the assignment-count fallback — directory
-// inclusion is forgiving by design).
+// SQL predicate for the alumni directory: degree conferred per Dartmouth
+// ("Alum" affiliation or the eventual IDM ALUMNI flip), an explicit
+// graduatedAt in the past, or classYear past the standard grad date.
+// Known-enrolled members (Student affiliation without Alum — i.e. +1
+// students whose classYear has lapsed) are excluded so they don't appear
+// in the alumni list a year early. Mirrors the safe subset of the per-user
+// isAlumni() derivation expressible in a single Prisma `where` clause
+// (skips the assignment checks — directory inclusion is forgiving by
+// design).
 function alumniWhereClause(now: Date) {
   // Dartmouth Commencement is mid-June. Class of 2026 starts appearing in
   // the alumni list on 2026-06-15.
@@ -63,10 +66,12 @@ function alumniWhereClause(now: Date) {
     : now.getFullYear() - 1;
   return {
     OR: [
+      { dartmouthIsAlum: true },
       { dartmouthAffiliation: "ALUMNI" },
       { graduatedAt: { lt: now } },
       { classYear: { lte: cohortCutoff } },
     ],
+    NOT: { dartmouthIsStudent: true, dartmouthIsAlum: false },
   };
 }
 
