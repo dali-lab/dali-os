@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.audit-logs";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, forbidden } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import {
@@ -23,7 +23,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return withCors(request, auth.response);
   if (!(await isAdmin(auth.user.sub)))
-    return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+    return forbidden(request);
 
   const url = new URL(request.url);
   const limit = Math.min(

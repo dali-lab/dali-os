@@ -3,15 +3,15 @@ import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
-import { parseJson } from "~/lib/validate";
+import { parseJson, idSchema } from "~/lib/validate";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
 import { sendReassignmentEmails } from "~/hiring/lib/interview-emails";
 import { notifyInterviewAssigned } from "~/hiring/lib/interview-notifications";
 import { logAuditEvent } from "~/lib/audit";
 
 const ReassignSchema = z.object({
-  assignmentId: z.string().min(1).max(100),
-  newCycleInterviewerId: z.string().min(1).max(100),
+  assignmentId: idSchema,
+  newCycleInterviewerId: idSchema,
 });
 
 export async function action({ request, params }: Route.ActionArgs) {

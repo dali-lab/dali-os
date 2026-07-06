@@ -11,6 +11,7 @@ import {
 import { Pencil } from "lucide-react";
 import type { Route } from "./+types/partners.applications.$id";
 import { prisma } from "~/lib/db";
+import { githubTeamSlug } from "~/lib/github-slug";
 import { requireAuth } from "~/lib/auth";
 import { parseSessionCookie } from "~/lib/cookies";
 import { canViewStaffing, isCore } from "~/lib/roles";
@@ -245,6 +246,8 @@ export async function action({ request, params }: Route.ActionArgs) {
       const created = await tx.project.create({
         data: {
           name: app.title,
+          // Auto-derive the GitHub team slug from the title (editable later).
+          githubTeamSlug: githubTeamSlug(app.title) || null,
           description: app.summary,
           ...(firstTermId
             ? { projectTerms: { create: { termId: firstTermId } } }
@@ -294,13 +297,7 @@ export default function PartnerApplicationDetail() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <Link
-          to="/partners/applications"
-          className="text-sm text-muted-foreground hover:text-foreground"
-        >
-          ← Back to applications
-        </Link>
+      <div className="flex items-center justify-end">
         <EditModeToggle
           canEdit={canEditPerm}
           editMode={editMode}

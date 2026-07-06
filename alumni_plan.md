@@ -25,11 +25,11 @@ Both ship in v1 — we already have a Dartmouth API key.
 ### People API JWT exchange
 
 ```
-POST https://api.dartmouth.edu/api/jwt?scope=urn:dartmouth:people:read.sensitive
+POST https://api.dartmouth.edu/api/jwt
 Headers:  Authorization: {DARTMOUTH_API_KEY}    (raw key, no "Bearer" prefix)
 ```
 
-Response: `{ jwt, payload: { exp, ... }, accepted_scopes }`. Verify `accepted_scopes` contains `urn:dartmouth:people:read.sensitive` before using.
+Response: `{ jwt, payload: { exp, ... }, accepted_scopes }`. No optional scope is requested: `dartmouth_affiliation` (the only field we read) is in the base no-scope People payload, and the optional scopes (`private` / `read.sensitive` / `read.highlysensitive`) gate FERPA/sensitive fields that require data-steward approvals we don't need.
 
 JWT expiration is ~6 hours (per sample payload `exp - iat ≈ 21600s`). Cache in process memory; re-fetch when within 5 minutes of expiry. No DB persistence — process restarts just re-exchange the key. One env var: `DARTMOUTH_API_KEY`.
 
@@ -59,7 +59,7 @@ Flat-named modules, all `dartmouth-` prefixed to disambiguate from session JWT m
 
 - `dartmouth-lookup.ts` — `lookupByNetId(netId)`: GET `lookup.dartmouth.edu/api/search?query={netId}` with Referer header. Returns `{ affiliation, classYear? }` or null. Parses `dcDeptclass: "'27"` → `2027`.
 - `dartmouth-people.ts` — `peopleByNetId(netId)`: GET `api.dartmouth.edu/api/people/{netid}` with `Authorization: Bearer {jwt}`. Returns `{ dartmouthAffiliation }`.
-- `dartmouth-jwt.ts` — `getDartmouthJwt()`: cached JWT exchanger. POSTs to `/api/jwt` with API key, verifies `accepted_scopes`, caches in memory until 5 min before `exp`. All People calls go through this.
+- `dartmouth-jwt.ts` — `getDartmouthJwt()`: cached JWT exchanger. POSTs to `/api/jwt` with API key (no optional scope), caches in memory until 5 min before `exp`. All People calls go through this.
 
 Single shared helper `refreshDartmouthSignals(userId, { staleAfterDays })` in `dartmouth-refresh.ts`:
 - Skip if `*SyncedAt` is fresher than threshold

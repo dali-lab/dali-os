@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.calendar.group-availability";
 import { z } from "zod";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, forbidden } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import {
@@ -8,7 +8,7 @@ import {
   intersectFreeIntervals,
   type Interval,
 } from "~/lib/availability";
-import { getZonedYMD } from "~/lib/timezone";
+import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
 
 const Schema = z.object({
   userIds: z.array(z.string().min(1)).min(1).max(50),
@@ -53,7 +53,7 @@ function splitByZonedDay(
   let cursor = interval.start;
   while (cursor.getTime() < interval.end.getTime()) {
     const ymd = getZonedYMD(cursor, timezone);
-    const nextDayUtc = nextLocalMidnightUtc(cursor, timezone);
+    const nextDayUtc = zonedDayStartUtc(ymd.year, ymd.month, ymd.day + 1, timezone);
     const segmentEnd = nextDayUtc.getTime() < interval.end.getTime() ? nextDayUtc : interval.end;
     const startHour = localHourFractional(cursor, timezone);
     const durationHours = (segmentEnd.getTime() - cursor.getTime()) / 3_600_000;
@@ -82,36 +82,6 @@ function localHourFractional(d: Date, timezone: string): number {
   return (get("hour") % 24) + get("minute") / 60 + get("second") / 3600;
 }
 
-function nextLocalMidnightUtc(after: Date, timezone: string): Date {
-  // Find the local midnight of the day strictly after `after`.
-  const ymd = getZonedYMD(after, timezone);
-  // Walk forward day-by-day in local terms.
-  const oneDay = 24 * 60 * 60 * 1000;
-  for (let i = 1; i <= 2; i++) {
-    const guessUtc = new Date(Date.UTC(ymd.year, ymd.month - 1, ymd.day) + i * oneDay);
-    const guessYmd = getZonedYMD(guessUtc, timezone);
-    const midnightFmt = new Intl.DateTimeFormat("en-US", {
-      timeZone: timezone,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    });
-    const parts = midnightFmt.formatToParts(guessUtc);
-    const lp = (t: string) => parseInt(parts.find((p) => p.type === t)?.value ?? "0", 10);
-    const offsetMs =
-      Date.UTC(lp("year"), lp("month") - 1, lp("day"), lp("hour") % 24, lp("minute")) -
-      guessUtc.getTime();
-    const localMidnight = new Date(guessUtc.getTime() - offsetMs);
-    if (localMidnight.getTime() > after.getTime()) return localMidnight;
-    // Otherwise iterate (handles a day-boundary skew).
-    void guessYmd;
-  }
-  return new Date(after.getTime() + oneDay);
-}
-
 export async function action({ request }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
   if (preflight) return preflight;
@@ -119,7 +89,7 @@ export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return withCors(request, auth.response);
   if (auth.user.type === "applicant")
-    return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+    return forbidden(request);
 
   if (request.method !== "POST") {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));

@@ -1,4 +1,16 @@
 import { prisma } from "~/lib/db";
+import { cycleSortKeyRange } from "~/lib/core-cycle";
+
+function getAdminUserIdsFromEnv(): string[] {
+  return (process.env.ADMIN_USER_IDS ?? "").split(",").filter(Boolean);
+}
+
+// True if the userId is in ADMIN_USER_IDS env. Exported so list-view loaders
+// can OR this into their per-row isAdmin/isCore derivation without paying
+// per-row getUserRoles() round-trips.
+export function isAdminViaEnv(userId: string): boolean {
+  return getAdminUserIdsFromEnv().includes(userId);
+}
 
 // Phase 2 rewrite: role flags derived from the new typed assignment tables
 // (AdminMembership, CoreAssignment, DomainLeadAssignment) rather than the
@@ -14,7 +26,7 @@ import { prisma } from "~/lib/db";
 
 export interface UserRoles {
   isLabMember: boolean;
-  /** Core (current term) or Admin. */
+  /** Core (current Spring-anchored cycle) or Admin. */
   isCore: boolean;
   isAdmin: boolean;
   isDomainLead: boolean;
@@ -36,21 +48,19 @@ export interface UserRoles {
  * Use this in layout loaders instead of calling individual checks separately.
  */
 export async function getUserRoles(userId: string): Promise<UserRoles> {
-  const envIds = (process.env.ADMIN_USER_IDS ?? "")
-    .split(",")
-    .filter(Boolean);
+  const envIds = getAdminUserIdsFromEnv();
 
-  const term = await currentTerm();
+  const cycleTermIds = await getActiveCoreCycleTermIds();
 
   const [member, admin, core, domainLead, instructor, alumni] = await Promise.all([
     prisma.dALIMember.findUnique({ where: { userId }, select: { id: true } }),
     prisma.adminMembership.findUnique({ where: { userId }, select: { id: true } }),
-    // Core access tracks the current term: a former Core member from a past
-    // term shouldn't keep broad authority. If the Term table isn't seeded
-    // (term === null), no row can match — treat that as no Core access.
-    term
+    // Core access tracks the active election cycle (Spring N → Winter N+1,
+    // with the prior cycle overlapping during Spring elections). An empty
+    // Term table → no rows can match → treated as no Core access.
+    cycleTermIds.length > 0
       ? prisma.coreAssignment.findFirst({
-          where: { userId, termId: term.id },
+          where: { userId, termId: { in: cycleTermIds } },
           select: { id: true },
         })
       : Promise.resolve(null),
@@ -96,24 +106,23 @@ export async function getUserRoles(userId: string): Promise<UserRoles> {
 // ─── Individual checks (for route-level guards) ──────────────────────────────
 
 /**
- * Core (current term) or Admin. Past-term Core assignments do not count —
- * Core access is tied to the current Term. If the Term table is empty
+ * Core (active Spring-anchored cycle) or Admin. Cycle = the most recent
+ * Spring through the following Winter; during Spring elections, the prior
+ * cycle remains active for the handoff. If the Term table is empty
  * (e.g. seed hasn't run), Admin is the only path that passes.
  */
 export async function isCore(userId: string): Promise<boolean> {
-  const envIds = (process.env.ADMIN_USER_IDS ?? "")
-    .split(",")
-    .filter(Boolean);
+  const envIds = getAdminUserIdsFromEnv();
   if (envIds.includes(userId)) return true;
   const admin = await prisma.adminMembership.findUnique({
     where: { userId },
     select: { id: true },
   });
   if (admin !== null) return true;
-  const term = await currentTerm();
-  if (!term) return false;
+  const cycleTermIds = await getActiveCoreCycleTermIds();
+  if (cycleTermIds.length === 0) return false;
   const core = await prisma.coreAssignment.findFirst({
-    where: { userId, termId: term.id },
+    where: { userId, termId: { in: cycleTermIds } },
     select: { id: true },
   });
   return core !== null;
@@ -121,9 +130,7 @@ export async function isCore(userId: string): Promise<boolean> {
 
 /** Admin: full-time staff. */
 export async function isAdmin(userId: string): Promise<boolean> {
-  const envIds = (process.env.ADMIN_USER_IDS ?? "")
-    .split(",")
-    .filter(Boolean);
+  const envIds = getAdminUserIdsFromEnv();
   if (envIds.includes(userId)) return true;
   const row = await prisma.adminMembership.findUnique({
     where: { userId },
@@ -216,27 +223,81 @@ export async function currentTerm() {
   });
 }
 
+/**
+ * Strict variant of `currentTerm()`: returns the Term whose
+ * [startDate, endDate] window contains now, or null if now falls in the
+ * inter-term gap. No roll-forward to the next upcoming term. Use this when
+ * the call site must fail closed between terms (e.g. intern eligibility).
+ */
+export async function currentTermStrict() {
+  const now = new Date();
+  return prisma.term.findFirst({
+    where: { startDate: { lte: now }, endDate: { gte: now } },
+    orderBy: { sortKey: "desc" },
+  });
+}
+
+/**
+ * Prisma `where` predicate for "current lab members" — Users with a DALIMember
+ * row who are active in the current term. Use this in directory / picker
+ * endpoints that should exclude alumni and applicants (e.g. calendar attendee
+ * picker, announcements recipient picker, hiring reviewer/interviewer picker).
+ *
+ * "Active this term" matches the canonical Members page (`members.tsx`): a
+ * CoreAssignment OR a project assignment for the current term. If there is no
+ * current term at all (empty Term table), the predicate degrades to "any lab
+ * member" rather than returning nothing.
+ */
+export async function currentTermMemberWhere() {
+  const term = await currentTerm();
+  if (!term) return { daliMember: { isNot: null } };
+  return {
+    daliMember: { isNot: null },
+    OR: [
+      { coreAssignments: { some: { termId: term.id } } },
+      { projectAssignments: { some: { termId: term.id } } },
+    ],
+  };
+}
+
+/**
+ * Term IDs that constitute the active Core cycle. Core is elected in
+ * Spring and the cycle window spans `[Spring N, Spring N+1)` in sortKey
+ * space.
+ *
+ * During a Spring term, the previous cycle is also active so an outgoing
+ * Core keeps access through the election handoff (until the new cycle's
+ * assignments take over the following Summer). Outside of Spring, the
+ * helper just returns the current cycle's term ids — same set the
+ * cycle-aware fan-out writes to CoreAssignment.
+ *
+ * Cycle math lives in `~/lib/core-cycle.ts` and is shared with the
+ * add/remove writers so reads + writes can't drift.
+ */
+export async function getActiveCoreCycleTermIds(): Promise<string[]> {
+  const term = await currentTerm();
+  if (!term) return [];
+  const currentRange = cycleSortKeyRange(term.sortKey);
+  // Spring (digit 2) extends the window back one cycle for the handoff.
+  const lowerBound = term.sortKey % 10 === 2 ? currentRange.gte - 10 : currentRange.gte;
+  const terms = await prisma.term.findMany({
+    where: { sortKey: { gte: lowerBound, lt: currentRange.lt } },
+    select: { id: true },
+  });
+  return terms.map((t) => t.id);
+}
+
 // ─── Staffing-board access ───────────────────────────────────────────────────
 
 /**
- * Allowed to read + modify the staffing board: admins, or Core members whose
- * leadTitle implies staffing authority (we match the substring "staffing"
- * case-insensitively so titles like "Staffing Lead", "Staffing Coordinator",
- * "Co-Lead, Staffing" all qualify without us hardcoding strings).
+ * Allowed to read + modify the staffing board: any Core member (admins, or
+ * anyone with a current-term CoreAssignment). Previously this was narrowed to
+ * Core members whose leadTitle contained "staffing", but every Core member who
+ * can view the board should also be able to manage it — same membership set as
+ * `isCore`, so the board's view + mutate gates align.
  */
 export async function canManageStaffing(userId: string): Promise<boolean> {
-  if (await isAdmin(userId)) return true;
-  const term = await currentTerm();
-  if (!term) return false;
-  const core = await prisma.coreAssignment.findFirst({
-    where: {
-      userId,
-      termId: term.id,
-      leadTitle: { contains: "staffing", mode: "insensitive" },
-    },
-    select: { id: true },
-  });
-  return core !== null;
+  return isCore(userId);
 }
 
 // ─── Alumni derivation ───────────────────────────────────────────────────────

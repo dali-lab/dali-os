@@ -8,10 +8,11 @@ import {
   useNavigate,
 } from "react-router";
 import type { Route } from "./+types/projects.list";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { prisma } from "~/lib/db";
+import { githubTeamSlug } from "~/lib/github-slug";
 import { ensureProjectGroup } from "~/lib/groups";
 import { ViewToggle, useViewPreference } from "~/components/ViewToggle";
 import { TermFilter } from "~/components/TermFilter";
@@ -38,7 +39,8 @@ type ProjectRow = {
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
-  if (auth.user.type === "applicant") return redirect("/portal");
+  const portalRedirect = redirectApplicantToPortal(auth);
+  if (portalRedirect) return portalRedirect;
 
   const { terms, selected, termId, isAll } = await resolveTermFilter(request);
 
@@ -99,7 +101,8 @@ export async function loader({ request }: Route.LoaderArgs) {
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
-  if (auth.user.type === "applicant") return redirect("/portal");
+  const portalRedirect = redirectApplicantToPortal(auth);
+  if (portalRedirect) return portalRedirect;
   if (!(await isCore(auth.user.sub))) {
     return { error: "You don't have permission to create projects." };
   }
@@ -137,6 +140,9 @@ export async function action({ request }: Route.ActionArgs) {
   const created = await prisma.project.create({
     data: {
       name,
+      // Auto-derive the GitHub team slug from the name (editable later on the
+      // project page). Enables the roster→team sync without a manual step.
+      githubTeamSlug: githubTeamSlug(name) || null,
       description: description === "" ? null : description,
       status: status as ProjectStatus,
       // Seed the initial term into the project's term set (if chosen).

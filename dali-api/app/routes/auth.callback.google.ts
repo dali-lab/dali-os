@@ -5,6 +5,7 @@ import { setSessionCookie } from "~/lib/cookies";
 import { getClientIp } from "~/lib/request-meta";
 import { logAuditEvent } from "~/lib/audit";
 import { upsertUserFromGoogle } from "~/lib/user-provisioning";
+import { getApiBaseUrl, getCasBaseUrl } from "~/lib/app-env";
 
 const OAUTH_STATE_COOKIE = "__dali_oauth_state";
 
@@ -24,7 +25,7 @@ export async function action() {
 
 export async function loader({ request }: Route.LoaderArgs) {
   const url = new URL(request.url);
-  const apiBase = process.env.API_BASE_URL ?? "http://localhost:3001";
+  const apiBase = getApiBaseUrl();
 
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
@@ -115,7 +116,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   // callback `/oauth/callback/google` which gates on a different signal.
   const { user } = await upsertUserFromGoogle(googleUser);
 
-  // Issue session and set cookie
   const session = await issueSession({
     userId: user.id,
     userAgent: request.headers.get("user-agent") ?? undefined,
@@ -131,10 +131,27 @@ export async function loader({ request }: Route.LoaderArgs) {
     },
     request,
   });
+
   const headers = new Headers();
   headers.append("Set-Cookie", clearStateCookie);
   setSessionCookie(headers, session.rawId);
-  headers.set("Location", "/hiring/reviewer");
 
+  // First Google login for a brand-new member (or an accepted applicant whose
+  // CAS-side User row hasn't been linked yet) → chain through CAS so we can
+  // merge with any existing applicant record. The session cookie identifies
+  // which User to attach the netId to on return; linkCasToGoogleUser handles
+  // the merge / no-op / attach cases. Mirrors the MCP-provider flow in
+  // oauth.callback.google.ts.
+  if (!user.netId) {
+    const casBase = getCasBaseUrl();
+    const serviceUrl = `${apiBase}/auth/callback/cas?link=1`;
+    headers.set(
+      "Location",
+      `${casBase}/login?service=${encodeURIComponent(serviceUrl)}`,
+    );
+    return new Response(null, { status: 302, headers });
+  }
+
+  headers.set("Location", "/");
   return new Response(null, { status: 302, headers });
 }

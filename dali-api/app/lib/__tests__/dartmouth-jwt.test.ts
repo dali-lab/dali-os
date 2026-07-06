@@ -32,22 +32,24 @@ describe("getDartmouthJwt", () => {
     else process.env.DARTMOUTH_API_KEY = originalKey;
   });
 
-  function mockExchange(jwt: string, accepted_scopes: string[]) {
+  function mockExchange(jwt: string) {
     (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
-      new Response(JSON.stringify({ jwt, accepted_scopes }), { status: 200 }),
+      new Response(JSON.stringify({ jwt }), { status: 200 }),
     );
   }
 
   it("exchanges the API key and returns the JWT", async () => {
     const jwt = fakeJwt(Math.floor(Date.now() / 1000) + 3600);
-    mockExchange(jwt, ["urn:dartmouth:people:read.sensitive"]);
+    mockExchange(jwt);
     const result = await getDartmouthJwt();
     expect(result).toBe(jwt);
 
     const fetchMock = global.fetch as ReturnType<typeof vi.fn>;
     const call = fetchMock.mock.calls[0];
     expect(call[0]).toContain("api.dartmouth.edu/api/jwt");
-    expect(call[0]).toContain("urn%3Adartmouth%3Apeople%3Aread.sensitive");
+    // No optional scope requested — dartmouth_affiliation is in the base
+    // no-scope People payload.
+    expect(call[0]).not.toContain("scope");
     expect((call[1] as RequestInit).method).toBe("POST");
     // Raw key — no "Bearer" prefix.
     expect((call[1] as RequestInit).headers).toEqual({
@@ -57,7 +59,7 @@ describe("getDartmouthJwt", () => {
 
   it("caches subsequent calls until close to expiry", async () => {
     const jwt = fakeJwt(Math.floor(Date.now() / 1000) + 3600);
-    mockExchange(jwt, ["urn:dartmouth:people:read.sensitive"]);
+    mockExchange(jwt);
 
     await getDartmouthJwt();
     await getDartmouthJwt();
@@ -75,33 +77,15 @@ describe("getDartmouthJwt", () => {
     const fetchMock = global.fetch as ReturnType<typeof vi.fn>;
     fetchMock
       .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            jwt: stale,
-            accepted_scopes: ["urn:dartmouth:people:read.sensitive"],
-          }),
-          { status: 200 },
-        ),
+        new Response(JSON.stringify({ jwt: stale }), { status: 200 }),
       )
       .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            jwt: fresh,
-            accepted_scopes: ["urn:dartmouth:people:read.sensitive"],
-          }),
-          { status: 200 },
-        ),
+        new Response(JSON.stringify({ jwt: fresh }), { status: 200 }),
       );
 
     expect(await getDartmouthJwt()).toBe(stale);
     expect(await getDartmouthJwt()).toBe(fresh);
     expect(fetchMock).toHaveBeenCalledTimes(2);
-  });
-
-  it("throws when required scope was not granted", async () => {
-    const jwt = fakeJwt(Math.floor(Date.now() / 1000) + 3600);
-    mockExchange(jwt, ["urn:dartmouth:something:else"]);
-    await expect(getDartmouthJwt()).rejects.toThrow(/scope.*not granted/);
   });
 
   it("throws when DARTMOUTH_API_KEY is unset", async () => {

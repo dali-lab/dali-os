@@ -4,13 +4,14 @@ import {
   Link,
   redirect,
   useActionData,
+  useFetcher,
   useLoaderData,
   useRevalidator,
   useSearchParams,
   useSubmit,
 } from "react-router";
 import { Check, Pencil, X, Settings } from "lucide-react";
-import { Modal } from "~/components/Modal";
+import { Modal, ModalHeader } from "~/components/Modal";
 import { EditableSection } from "~/components/EditableSection";
 import { TagPicker } from "~/components/TagPicker";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
@@ -19,7 +20,12 @@ import { uploadFileToS3, formatBytes } from "~/lib/upload-client";
 import type { Route } from "./+types/projects.$id";
 import { prisma } from "~/lib/db";
 import { ensureProjectGroup } from "~/lib/groups";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
+import { fullName } from "~/lib/display";
+import { USER_NAME_SELECT } from "~/lib/prisma-shapes";
+import { resolvePhotoUrl } from "~/lib/photo";
+import { ProjectImageBanner } from "../components/ProjectImageBanner";
+import { Markdown } from "~/components/Markdown";
 import { parseSessionCookie } from "~/lib/cookies";
 import { isCore, isProjectMember, canManageStaffing, currentTerm } from "~/lib/roles";
 import { getPresenceUser } from "~/lib/presence-user";
@@ -78,7 +84,8 @@ const TAB_LABELS: Record<Tab, string> = {
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
-  if (auth.user.type === "applicant") return redirect("/portal");
+  const portalRedirect = redirectApplicantToPortal(auth);
+  if (portalRedirect) return portalRedirect;
 
   const project = await prisma.project.findUnique({
     where: { id: params.id },
@@ -88,9 +95,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       description: true,
       status: true,
       calendarEmail: true,
+      teamGroupEmail: true,
       imageUrl: true,
       repoUrls: true,
+      deploymentUrl: true,
       githubTeamSlug: true,
+      slackChannelName: true,
+      chartStringType: true,
+      chartString: true,
       overviewPageId: true,
       prdPageId: true,
       projectTerms: {
@@ -110,8 +122,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       },
       assignments: {
         select: {
+          id: true,
           level: true,
-          user: { select: { id: true, firstName: true, lastName: true } },
+          userId: true,
+          termId: true,
+          domainId: true,
+          user: { select: USER_NAME_SELECT },
           term: { select: { code: true, sortKey: true } },
           domain: { select: { id: true, name: true } },
         },
@@ -154,10 +170,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           dueAt: true,
           epicId: true,
           sprintId: true,
+          githubIssueNumber: true,
+          githubIssueUrl: true,
           domain: { select: { id: true, displayName: true } },
           assignees: {
             select: {
-              user: { select: { id: true, firstName: true, lastName: true } },
+              user: { select: USER_NAME_SELECT },
             },
           },
         },
@@ -306,11 +324,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     sprintId: t.sprintId,
     assignees: t.assignees.map((a) => ({
       id: a.user.id,
-      name: `${a.user.firstName} ${a.user.lastName}`.trim(),
+      name: fullName(a.user),
     })),
     domain: t.domain
       ? { id: t.domain.id, name: t.domain.displayName }
       : null,
+    githubIssueUrl: t.githubIssueUrl,
+    githubIssueNumber: t.githubIssueNumber,
   }));
 
   // Board option lists for the TaskModal: members assignable on this project
@@ -320,7 +340,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   for (const a of project.assignments) {
     const id = a.user.id;
     if (!memberMap.has(id)) {
-      memberMap.set(id, `${a.user.firstName} ${a.user.lastName}`.trim());
+      memberMap.set(id, fullName(a.user));
     }
   }
   const boardOptions: TaskBoardOptions = {
@@ -334,12 +354,61 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         select: { id: true, displayName: true },
       })
     ).map((d) => ({ id: d.id, name: d.displayName })),
+    repoUrls: project.repoUrls,
   };
 
   // Team grouped by term, newest term first. Current = highest sortKey.
+  //
+  // For Core viewers we also surface per-assignment editing context:
+  //   - eligibilityLevel: ceiling enforced by /api/projects/assignments/:id/level
+  //   - activeMenteeCount: a P3→lower demotion is blocked while this > 0
+  // Both lookups are skipped for non-Core viewers (they see read-only badges).
+  const eligibilityCeilings = new Map<string, string>();
+  const menteeCounts = new Map<string, number>();
+  if (core && project.assignments.length > 0) {
+    const eligibilityPairs = new Map<string, { userId: string; domainId: string }>();
+    for (const a of project.assignments) {
+      eligibilityPairs.set(`${a.userId}:${a.domainId}`, {
+        userId: a.userId,
+        domainId: a.domainId,
+      });
+    }
+    const mentorUserIds = [...new Set(project.assignments.map((a) => a.userId))];
+    const [eligibilityRows, mentorRows] = await Promise.all([
+      prisma.domainEligibility.findMany({
+        where: { OR: [...eligibilityPairs.values()] },
+        select: { userId: true, domainId: true, level: true },
+      }),
+      // Over-fetch: any MentorshipPair on this project where any of our
+      // assignees is the mentor. We bucket client-side by the exact
+      // (mentorUserId, termId, domainId) tuple the endpoint checks.
+      prisma.mentorshipPair.findMany({
+        where: { projectId: project.id, mentorUserId: { in: mentorUserIds } },
+        select: { mentorUserId: true, termId: true, domainId: true },
+      }),
+    ]);
+    for (const e of eligibilityRows) {
+      eligibilityCeilings.set(`${e.userId}:${e.domainId}`, e.level);
+    }
+    for (const m of mentorRows) {
+      const key = `${m.mentorUserId}:${m.termId}:${m.domainId}`;
+      menteeCounts.set(key, (menteeCounts.get(key) ?? 0) + 1);
+    }
+  }
+
+  type TeamMember = {
+    assignmentId: string;
+    userId: string;
+    name: string;
+    domain: string;
+    domainId: string;
+    level: string;
+    eligibilityLevel: string | null;
+    activeMenteeCount: number;
+  };
   const teamByTerm = new Map<
     string,
-    { code: string; sortKey: number; members: { name: string; domain: string; level: string }[] }
+    { code: string; sortKey: number; members: TeamMember[] }
   >();
   for (const a of project.assignments) {
     const key = a.term.code;
@@ -347,9 +416,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       teamByTerm.set(key, { code: a.term.code, sortKey: a.term.sortKey, members: [] });
     }
     teamByTerm.get(key)!.members.push({
-      name: `${a.user.firstName} ${a.user.lastName}`.trim(),
+      assignmentId: a.id,
+      userId: a.userId,
+      name: fullName(a.user),
       domain: a.domain.name,
+      domainId: a.domainId,
       level: a.level,
+      eligibilityLevel: eligibilityCeilings.get(`${a.userId}:${a.domainId}`) ?? null,
+      activeMenteeCount:
+        menteeCounts.get(`${a.userId}:${a.termId}:${a.domainId}`) ?? 0,
     });
   }
   const teams = [...teamByTerm.values()].sort((a, b) => b.sortKey - a.sortKey);
@@ -437,6 +512,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     .map((id) => ({ id, name: idToName.get(id) ?? "(unknown)" }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
+  // imageUrl may be an S3 key (uploaded via the project image control) or a
+  // legacy pasted URL; resolve to a displayable src. The raw value stays on
+  // project.imageUrl so the upload field round-trips the key on save.
+  const imageUrlResolved = await resolvePhotoUrl(project.imageUrl);
+
   return {
     project: {
       id: project.id,
@@ -444,9 +524,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       description: project.description,
       status: project.status,
       calendarEmail: project.calendarEmail,
+      teamGroupEmail: project.teamGroupEmail,
       imageUrl: project.imageUrl,
+      imageUrlResolved,
       repoUrls: project.repoUrls,
+      deploymentUrl: project.deploymentUrl,
       githubTeamSlug: project.githubTeamSlug,
+      slackChannelName: project.slackChannelName,
+      chartStringType: project.chartStringType,
+      chartString: project.chartString,
       overviewPageId: project.overviewPageId,
       prdPageId: project.prdPageId,
       startTerm,
@@ -478,6 +564,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     boardOptions,
     canEdit,
     canEditScope,
+    canEditAssignmentLevel: core,
     canViewScope,
     currentTerm: current ? { id: current.id, code: current.code } : null,
     collabToken,
@@ -491,7 +578,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
-  if (auth.user.type === "applicant") return redirect("/portal");
+  const portalRedirect = redirectApplicantToPortal(auth);
+  if (portalRedirect) return portalRedirect;
 
   // Content edits are open to Core/Admin or anyone staffed on the project;
   // scope/domain settings (scopesBulk, domains, terms) stay Core/Admin only.
@@ -531,6 +619,17 @@ export async function action({ request, params }: Route.ActionArgs) {
     await prisma.project.update({
       where: { id: params.id },
       data: { description: descriptionRaw === "" ? null : descriptionRaw },
+    });
+    return redirect(`/projects/${params.id}`);
+  }
+
+  // Image-only update: the banner saves immediately on upload (its own fetcher),
+  // independent of the details form. Same gate as above (already checked).
+  if (intent === "update-image") {
+    const imageUrlRaw = (form.get("imageUrl") as string | null)?.trim() ?? "";
+    await prisma.project.update({
+      where: { id: params.id },
+      data: { imageUrl: imageUrlRaw === "" ? null : imageUrlRaw },
     });
     return redirect(`/projects/${params.id}`);
   }
@@ -634,13 +733,14 @@ export async function action({ request, params }: Route.ActionArgs) {
     return redirect(`/projects/${params.id}`);
   }
 
-  // Details form: calendar email, image, repos. (Description + name/status
-  // are saved by their own segments above.)
+  // Details form: calendar email, repos, deployment. (Description, name/status,
+  // and the image banner are saved by their own segments above.)
   const calendarEmailRaw = (form.get("calendarEmail") as string | null)?.trim() ?? "";
-  const imageUrlRaw = (form.get("imageUrl") as string | null)?.trim() ?? "";
   const repoUrlsRaw = (form.get("repoUrls") as string | null) ?? "";
+  const deploymentUrlRaw = (form.get("deploymentUrl") as string | null)?.trim() ?? "";
   const termCountRaw = (form.get("termCount") as string | null) ?? "";
   const githubTeamRaw = (form.get("githubTeamSlug") as string | null)?.trim() ?? "";
+  const slackChannelRaw = (form.get("slackChannelName") as string | null)?.trim() ?? "";
 
   // Normalize to a GitHub-safe team slug: lowercase, non-alphanumerics → single
   // hyphens, trimmed. Empty clears the field (automation then skips).
@@ -651,6 +751,19 @@ export async function action({ request, params }: Route.ActionArgs) {
           .toLowerCase()
           .replace(/[^a-z0-9]+/g, "-")
           .replace(/^-+|-+$/g, "");
+
+  // Slack channel name: lowercase, hyphens, ≤80 (Slack's channel-name rules), to
+  // match what the finalize step would derive. Empty clears it. Editing here is
+  // metadata-only — the channel is get-or-created when an automation runs.
+  const slackChannelName =
+    slackChannelRaw === ""
+      ? null
+      : slackChannelRaw
+          .toLowerCase()
+          .replace(/[^a-z0-9-_\s]/g, "")
+          .trim()
+          .replace(/\s+/g, "-")
+          .slice(0, 80);
 
   // repoUrls textarea: one URL per line, blanks dropped.
   const repoUrls = repoUrlsRaw
@@ -663,14 +776,26 @@ export async function action({ request, params }: Route.ActionArgs) {
   // falls back to 1 rather than erroring the whole form.
   const termCount = Math.max(1, Math.floor(Number(termCountRaw)) || 1);
 
+  // Payroll chart string — Core-only. Project members posting these fields
+  // are silently ignored rather than 403'd to keep the form forgiving.
+  const chartStringFields: { chartStringType?: string | null; chartString?: string | null } = {};
+  if (core) {
+    const chartStringTypeRaw = (form.get("chartStringType") as string | null)?.trim() ?? "";
+    const chartStringRaw = (form.get("chartString") as string | null)?.trim() ?? "";
+    chartStringFields.chartStringType = chartStringTypeRaw === "" ? null : chartStringTypeRaw;
+    chartStringFields.chartString = chartStringRaw === "" ? null : chartStringRaw;
+  }
+
   await prisma.project.update({
     where: { id: params.id },
     data: {
       calendarEmail: calendarEmailRaw === "" ? null : calendarEmailRaw,
-      imageUrl: imageUrlRaw === "" ? null : imageUrlRaw,
       repoUrls,
+      deploymentUrl: deploymentUrlRaw === "" ? null : deploymentUrlRaw,
       termCount,
       githubTeamSlug,
+      slackChannelName,
+      ...chartStringFields,
     },
   });
   return redirect(`/projects/${params.id}`);
@@ -694,6 +819,7 @@ export default function ProjectDetail() {
     domainScopeGrid,
     canEdit,
     canEditScope,
+    canEditAssignmentLevel,
     canViewScope,
     currentTerm,
     collabToken,
@@ -721,13 +847,7 @@ export default function ProjectDetail() {
 
   const page = (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-3">
-        <Link
-          to="/projects/list"
-          className="text-sm text-muted-foreground hover:text-foreground"
-        >
-          ← Back to projects
-        </Link>
+      <div className="flex items-center justify-end gap-3">
         <PresenceBar />
       </div>
 
@@ -778,6 +898,8 @@ export default function ProjectDetail() {
           files={files}
           allTags={allTags}
           canEdit={canEdit}
+          canEditFinance={canEditScope}
+          canEditAssignmentLevel={canEditAssignmentLevel}
           domainScopeGrid={domainScopeGrid}
           currentTerm={currentTerm}
           actionError={actionData?.error}
@@ -792,25 +914,13 @@ export default function ProjectDetail() {
           labelledBy="scope-settings-title"
           containerClassName="bg-card rounded-2xl shadow-xl w-full max-w-4xl p-5 sm:p-6 my-auto max-h-[85vh] overflow-y-auto"
         >
-          <div className="flex items-start justify-between gap-3 mb-4">
-            <div>
-              <h2 id="scope-settings-title" className="font-heading text-lg font-bold text-foreground">
-                Domain settings
-              </h2>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Declared domains, planned terms, and the per-domain challenge
-                for each term.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setScopeSettingsOpen(false)}
-              aria-label="Close scope settings"
-              className="text-muted-foreground hover:text-foreground text-xl leading-none px-1"
-            >
-              ×
-            </button>
-          </div>
+          <ModalHeader
+            titleId="scope-settings-title"
+            title="Domain settings"
+            subtitle="Declared domains, planned terms, and the per-domain challenge for each term."
+            onClose={() => setScopeSettingsOpen(false)}
+            closeLabel="Close scope settings"
+          />
           <ScopeTab
             project={project}
             allDomainOptions={allDomainOptions}
@@ -905,13 +1015,12 @@ function ProjectHeader({
 
   return (
     <header className="flex flex-col gap-4">
-      {project.imageUrl && (
-        <img
-          src={project.imageUrl}
-          alt=""
-          className="w-full h-48 rounded-lg object-cover border border-border"
-        />
-      )}
+      <ProjectImageBanner
+        projectId={project.id}
+        projectName={project.name}
+        initialPreviewUrl={project.imageUrlResolved}
+        canEdit={canEdit}
+      />
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-3">
           <div key={resetKey} className="flex items-center gap-2 flex-wrap">
@@ -1029,21 +1138,22 @@ function DescriptionSegment({
     >
       {({ editing }) =>
         editing ? (
-          <Form method="post" ref={formRef} className="flex flex-col gap-2">
+          <Form method="post" ref={formRef} className="flex flex-col gap-1.5">
             <input type="hidden" name="intent" value="description" />
             <textarea
               name="description"
-              rows={4}
+              rows={6}
               defaultValue={description ?? ""}
-              placeholder="Add a short description…"
-              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+              placeholder="Add a short description… (Markdown supported)"
+              className="px-2 py-1.5 text-sm font-mono border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
               autoFocus
             />
+            <p className="text-[11px] text-muted-foreground">
+              Supports Markdown — **bold**, headings, lists, links, `code`.
+            </p>
           </Form>
         ) : description ? (
-          <p className="text-sm text-foreground whitespace-pre-wrap">
-            {description}
-          </p>
+          <Markdown>{description}</Markdown>
         ) : (
           <p className="text-sm text-muted-foreground italic">
             No description.
@@ -1306,9 +1416,11 @@ function TermsChipsEditor({
 function DetailsSegment({
   project,
   canEdit,
+  canEditFinance,
 }: {
   project: LoaderData["project"];
   canEdit: boolean;
+  canEditFinance: boolean;
 }) {
   const submit = useSubmit();
   const formRef = useRef<HTMLFormElement | null>(null);
@@ -1340,22 +1452,26 @@ function DetailsSegment({
               )}
             </label>
 
+            {/* Team email group — provisioned by the staffing "Create team email
+                group" automation; read-only here (not lead-editable). */}
             <label className="flex flex-col gap-1 text-xs">
-              <span className="text-muted-foreground">Image URL</span>
-              {editing ? (
-                <input
-                  name="imageUrl"
-                  type="url"
-                  defaultValue={project.imageUrl ?? ""}
-                  placeholder="https://…"
-                  className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-                />
-              ) : (
-                <span className="px-2 py-1.5 text-sm text-foreground">
-                  {project.imageUrl ?? "—"}
-                </span>
-              )}
+              <span className="text-muted-foreground">Team email group</span>
+              <span className="px-2 py-1.5 text-sm">
+                {project.teamGroupEmail ? (
+                  <a
+                    href={`mailto:${project.teamGroupEmail}`}
+                    className="text-accent-coral hover:underline break-all"
+                  >
+                    {project.teamGroupEmail}
+                  </a>
+                ) : (
+                  <span className="text-muted-foreground">
+                    Not created yet — run staffing finalize.
+                  </span>
+                )}
+              </span>
             </label>
+
 
             <label className="flex flex-col gap-1 text-xs">
               <span className="text-muted-foreground">GitHub team</span>
@@ -1370,6 +1486,23 @@ function DetailsSegment({
               ) : (
                 <span className="px-2 py-1.5 text-sm text-foreground">
                   {project.githubTeamSlug ?? "—"}
+                </span>
+              )}
+            </label>
+
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="text-muted-foreground">Slack channel</span>
+              {editing ? (
+                <input
+                  name="slackChannelName"
+                  type="text"
+                  defaultValue={project.slackChannelName ?? ""}
+                  placeholder="project-name"
+                  className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                />
+              ) : (
+                <span className="px-2 py-1.5 text-sm text-foreground">
+                  {project.slackChannelName ?? "—"}
                 </span>
               )}
             </label>
@@ -1428,6 +1561,74 @@ function DetailsSegment({
               </span>
             )}
           </label>
+
+          <label className="flex flex-col gap-1 text-xs">
+            <span className="text-muted-foreground">Deployment</span>
+            {editing ? (
+              <input
+                name="deploymentUrl"
+                type="url"
+                defaultValue={project.deploymentUrl ?? ""}
+                placeholder="https://projectname.fly.dev"
+                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 font-mono"
+              />
+            ) : project.deploymentUrl ? (
+              <a
+                href={project.deploymentUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="px-2 py-1.5 text-sm text-accent-coral hover:underline break-all"
+              >
+                {project.deploymentUrl}
+              </a>
+            ) : (
+              <span className="px-2 py-1.5 text-sm text-muted-foreground">—</span>
+            )}
+          </label>
+
+          {/* Payroll chart string — surfaced and editable only to Core (action
+              handler enforces the same gate). Read-only to project members. */}
+          {canEditFinance && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-border">
+              <label className="flex flex-col gap-1 text-xs sm:col-span-2">
+                <span className="text-muted-foreground font-medium">
+                  Payroll · used for payroll export
+                </span>
+              </label>
+              <label className="flex flex-col gap-1 text-xs">
+                <span className="text-muted-foreground">Chart string type</span>
+                {editing ? (
+                  <input
+                    name="chartStringType"
+                    type="text"
+                    defaultValue={project.chartStringType ?? ""}
+                    placeholder="e.g. Grant, Department"
+                    className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                  />
+                ) : (
+                  <span className="px-2 py-1.5 text-sm text-foreground">
+                    {project.chartStringType ?? "—"}
+                  </span>
+                )}
+              </label>
+              <label className="flex flex-col gap-1 text-xs">
+                <span className="text-muted-foreground">Full chart string</span>
+                {editing ? (
+                  <input
+                    name="chartString"
+                    type="text"
+                    defaultValue={project.chartString ?? ""}
+                    placeholder="full GL chart string"
+                    className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 font-mono"
+                  />
+                ) : (
+                  <span className="px-2 py-1.5 text-sm text-foreground font-mono break-all">
+                    {project.chartString ?? "—"}
+                  </span>
+                )}
+              </label>
+            </div>
+          )}
         </Form>
       )}
     </EditableSection>
@@ -1538,7 +1739,13 @@ function DomainChips({
   );
 }
 
-function TeamSection({ teams }: { teams: LoaderData["teams"] }) {
+function TeamSection({
+  teams,
+  canEdit,
+}: {
+  teams: LoaderData["teams"];
+  canEdit: boolean;
+}) {
   const [showAll, setShowAll] = useState(false);
   // teams is pre-sorted newest term first by the loader.
   const visible = showAll ? teams : teams.slice(0, 1);
@@ -1572,16 +1779,18 @@ function TeamSection({ teams }: { teams: LoaderData["teams"] }) {
                 )}
               </div>
               <div className="flex flex-wrap gap-2">
-                {team.members.map((m, j) => (
+                {team.members.map((m) => (
                   <span
-                    key={j}
-                    className="text-xs px-2 py-1 rounded-md border border-border text-foreground"
+                    key={m.assignmentId}
+                    className="text-xs px-2 py-1 rounded-md border border-border text-foreground inline-flex items-center gap-1"
                   >
                     {m.name}
-                    <span className="text-muted-foreground">
-                      {" "}
-                      · {m.domain} {m.level}
-                    </span>
+                    <span className="text-muted-foreground">· {m.domain}</span>
+                    {canEdit ? (
+                      <TeamLevelEditor member={m} />
+                    ) : (
+                      <span className="text-muted-foreground">{m.level}</span>
+                    )}
                   </span>
                 ))}
               </div>
@@ -1593,6 +1802,77 @@ function TeamSection({ teams }: { teams: LoaderData["teams"] }) {
   );
 }
 
+const LEVEL_OPTIONS: ("P1" | "P2" | "P3")[] = ["P1", "P2", "P3"];
+const LEVEL_RANK: Record<"P1" | "P2" | "P3", number> = { P1: 1, P2: 2, P3: 3 };
+
+function TeamLevelEditor({
+  member,
+}: {
+  member: LoaderData["teams"][number]["members"][number];
+}) {
+  const fetcher = useFetcher<{ ok?: boolean; error?: string }>();
+  const ceilingRank = member.eligibilityLevel
+    ? LEVEL_RANK[member.eligibilityLevel as "P1" | "P2" | "P3"]
+    : 0;
+  const currentRank = LEVEL_RANK[member.level as "P1" | "P2" | "P3"];
+  const blockedByMentees = member.activeMenteeCount > 0;
+
+  const value = (fetcher.formData?.get("level") as string | null) ?? member.level;
+  const busy = fetcher.state !== "idle";
+  const error = fetcher.data?.error;
+
+  function disabledReason(opt: "P1" | "P2" | "P3"): string | null {
+    if (opt === member.level) return null;
+    if (LEVEL_RANK[opt] > ceilingRank) {
+      return member.eligibilityLevel
+        ? `Eligible only up to ${member.eligibilityLevel} in ${member.domain}. Promote first.`
+        : `No ${member.domain} eligibility. Promote first.`;
+    }
+    if (blockedByMentees && LEVEL_RANK[opt] < currentRank) {
+      return `Mentoring ${member.activeMenteeCount} mentee${member.activeMenteeCount === 1 ? "" : "s"}. Reassign first.`;
+    }
+    return null;
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1">
+      <select
+        aria-label={`Level for ${member.name} in ${member.domain}`}
+        className="text-xs bg-transparent text-muted-foreground rounded border border-transparent hover:border-border focus:border-border focus:outline-none px-0.5"
+        value={value}
+        disabled={busy}
+        onChange={(e) => {
+          const next = e.target.value;
+          if (next === member.level) return;
+          fetcher.submit(
+            { level: next },
+            {
+              method: "post",
+              action: `/api/projects/assignments/${member.assignmentId}/level`,
+              encType: "application/json",
+            },
+          );
+        }}
+      >
+        {LEVEL_OPTIONS.map((opt) => {
+          const reason = disabledReason(opt);
+          return (
+            <option key={opt} value={opt} disabled={reason !== null} title={reason ?? undefined}>
+              {opt}
+              {reason ? " (locked)" : ""}
+            </option>
+          );
+        })}
+      </select>
+      {error && (
+        <span className="text-[10px] text-destructive" title={error}>
+          !
+        </span>
+      )}
+    </span>
+  );
+}
+
 function OverviewTab({
   project,
   teams,
@@ -1600,6 +1880,8 @@ function OverviewTab({
   files,
   allTags,
   canEdit,
+  canEditFinance,
+  canEditAssignmentLevel,
   domainScopeGrid,
   currentTerm,
   actionError,
@@ -1610,6 +1892,8 @@ function OverviewTab({
   files: LoaderData["files"];
   allTags: LoaderData["allTags"];
   canEdit: boolean;
+  canEditFinance: boolean;
+  canEditAssignmentLevel: boolean;
   domainScopeGrid: LoaderData["domainScopeGrid"];
   currentTerm: LoaderData["currentTerm"];
   actionError?: string;
@@ -1661,11 +1945,15 @@ function OverviewTab({
           which expects the full field set. Section-level Save submits and
           closes; Cancel reverts (the wrapper remounts the body which resets
           defaultValue inputs). */}
-      <DetailsSegment project={project} canEdit={canEdit} />
+      <DetailsSegment
+        project={project}
+        canEdit={canEdit}
+        canEditFinance={canEditFinance}
+      />
 
       {/* Team — read-only summary, separate from the editable details. */}
       <section className="bg-card border border-border rounded-lg p-4">
-        <TeamSection teams={teams} />
+        <TeamSection teams={teams} canEdit={canEditAssignmentLevel} />
       </section>
 
       {/* Documents — collab-doc pages; rows + Add open the doc as a split-screen

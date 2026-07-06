@@ -1,11 +1,11 @@
 import type { Route } from "./+types/api.cycles.$cycleId.interview-config";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, forbidden } from "~/lib/auth";
 import { isCore, hasCycleAccess } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { parseJson } from "~/lib/validate";
-import { isValidTimezone } from "~/lib/timezone";
+import { idSchema, parseJson } from "~/lib/validate";
+import { APPLICATION_TZ, isValidTimezone } from "~/lib/timezone";
 
 const InterviewConfigSchema = z
   .object({
@@ -15,7 +15,7 @@ const InterviewConfigSchema = z
     dayEndHour: z.number().int().min(0).max(23).optional(),
     interviewStartDate: z.string().datetime({ offset: true }),
     interviewEndDate: z.string().datetime({ offset: true }),
-    timezone: z.string().min(1).max(100).optional(),
+    timezone: idSchema.optional(),
     rescheduleNoticeHours: z.number().int().min(0).max(168).optional(),
     cancelNoticeHours: z.number().int().min(0).max(168).optional(),
     bookingNoticeHours: z.number().int().min(0).max(168).optional(),
@@ -40,7 +40,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!auth.ok) return withCors(request, auth.response);
 
   if (!(await hasCycleAccess(auth.user.sub, params.cycleId!)))
-    return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+    return forbidden(request);
 
   const config = await prisma.interviewConfig.findUnique({
     where: { applicationCycleId: params.cycleId },
@@ -55,7 +55,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const auth = await requireAuth(request);
   if (!auth.ok) return withCors(request, auth.response);
-  if (!(await isCore(auth.user.sub))) return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+  if (!(await isCore(auth.user.sub))) return forbidden(request);
 
   if (request.method !== "POST") {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
@@ -80,7 +80,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       rescheduleNoticeHours: body.rescheduleNoticeHours ?? 12,
       cancelNoticeHours: body.cancelNoticeHours ?? 0,
       bookingNoticeHours: body.bookingNoticeHours ?? 12,
-      timezone: body.timezone ?? "America/New_York",
+      timezone: body.timezone ?? APPLICATION_TZ,
     },
     create: {
       applicationCycleId: params.cycleId,
@@ -93,7 +93,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       rescheduleNoticeHours: body.rescheduleNoticeHours ?? 12,
       cancelNoticeHours: body.cancelNoticeHours ?? 0,
       bookingNoticeHours: body.bookingNoticeHours ?? 12,
-      timezone: body.timezone ?? "America/New_York",
+      timezone: body.timezone ?? APPLICATION_TZ,
     },
   });
 

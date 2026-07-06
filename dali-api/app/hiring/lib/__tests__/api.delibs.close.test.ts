@@ -3,11 +3,21 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db");
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
+  requireCore: vi.fn(),
+  requireCoreOrDomainLead: vi.fn(),
+  requireMemberSession: vi.fn(),
+  forbidden: vi.fn((_req: Request) =>
+    Response.json({ error: "Forbidden" }, { status: 403 }),
+  ),
+  unauthorized: vi.fn((_req: Request) =>
+    Response.json({ error: "Unauthorized" }, { status: 401 }),
+  ),
+  redirectApplicantToPortal: vi.fn(() => null),
 }));
 vi.mock("~/lib/roles");
 
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, requireCoreOrDomainLead } from "~/lib/auth";
 import { isCore, isDomainLead } from "~/lib/roles";
 import { action } from "~/hiring/routes/api.delibs.$id";
 
@@ -40,6 +50,14 @@ beforeEach(() => {
   (mockPrisma as any).$transaction = vi.fn(async (cb: any) => cb(mockTx));
 
   vi.mocked(requireAuth).mockResolvedValue({ ok: true, user: { sub: USER_ID } } as any);
+  vi.mocked(requireCoreOrDomainLead).mockResolvedValue({
+    ok: true,
+    auth: {
+      ok: true,
+      user: { sub: USER_ID, email: "u@x.com", type: "member" },
+      sessionId: "sid",
+    },
+  } as any);
   vi.mocked(isCore).mockResolvedValue(true);
   vi.mocked(isDomainLead).mockResolvedValue(false);
   mockPrisma.dALIMember.findUnique.mockResolvedValue({ id: MEMBER_ID, userId: USER_ID });

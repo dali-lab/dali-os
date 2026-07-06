@@ -1,6 +1,6 @@
 import type { Route } from "./+types/users.$id";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, forbidden } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 
 
@@ -13,7 +13,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   // users can only access their own data
   if (auth.user.sub !== params.id) {
-    return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+    return forbidden(request);
   }
 
   const user = await prisma.user.findUnique({

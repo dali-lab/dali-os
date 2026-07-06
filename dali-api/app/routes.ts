@@ -5,7 +5,10 @@ export default [
   layout("routes/layout.tsx", [
     index("routes/home.tsx"),
     route("profile", "routes/profile.tsx"),
+    route("onboarding", "routes/onboarding.tsx"),
     route("calendar", "calendar/routes/calendar.tsx"),
+    // My Tasks surface: Open tasks + browsable notification history.
+    route("notifications", "routes/notifications.tsx"),
 
     // Hiring section
     route("hiring/reviewer", "hiring/routes/reviewer.tsx"),
@@ -20,6 +23,7 @@ export default [
     route("hiring/lead", "hiring/routes/lead.tsx"),
     route("hiring/lead/cycle/:id", "hiring/routes/lead.cycle.$id.tsx"),
     route("hiring/lead/intern-to-full-cycle/:id", "hiring/routes/lead.intern-to-full-cycle.$id.tsx"),
+    route("hiring/lead/waitlists", "hiring/routes/lead.waitlists.tsx"),
     // Library — challenges, rubrics, and confidentiality agreements behind one
     // page with pills. The list views are consolidated here; the detail pages
     // keep their original paths.
@@ -40,10 +44,15 @@ export default [
     route("admin-console/announcements", "admin-console/routes/admin-console.announcements.tsx"),
     route("admin-console/activity", "admin-console/routes/admin-console.activity.tsx"),
     route("admin-console/analytics", "admin-console/routes/admin-console.analytics.tsx"),
+    route("admin-console/payroll-export", "admin-console/routes/admin-console.payroll-export.tsx"),
 
     // Projects
     route("projects/list", "projects/routes/projects.list.tsx"),
     route("projects/staffing", "projects/routes/projects.staffing.tsx"),
+    // Member-facing staffing destination (requireMember, not canViewStaffing):
+    // the persistent place a member fills/revisits the cycle's staffing forms.
+    // Must precede projects/:id so it isn't captured by the :id param.
+    route("projects/my-staffing", "projects/routes/projects.my-staffing.tsx"),
     // Staffing input forms (member self-service). Must precede projects/:id
     // so these literal segments aren't captured by the :id param.
     route("projects/intent-to-work", "projects/routes/projects.intent-to-work.tsx"),
@@ -82,6 +91,7 @@ export default [
     route("education", "education/routes/education.tsx"),
 
     // Internal processes
+    route("internal-processes/onboarding", "internal-processes/routes/internal-processes.onboarding.tsx"),
     route("internal-processes/transfer", "internal-processes/routes/internal-processes.transfer.tsx"),
     route("internal-processes/level-up", "internal-processes/routes/internal-processes.level-up.tsx"),
     route("internal-processes/jobx", "internal-processes/routes/internal-processes.jobx.tsx"),
@@ -119,6 +129,10 @@ export default [
   route("privacy", "routes/privacy.tsx"),
   route("terms", "routes/terms.tsx"),
 
+  // Public, shareable desktop download page (OS auto-detect). Not linked from
+  // anywhere yet — reachable by direct URL.
+  route("download", "routes/download.tsx"),
+
   // Login (no layout)
   route("login", "routes/login.tsx"),
   route("dev-login", "routes/dev-login.ts"),
@@ -126,6 +140,15 @@ export default [
   route("logout", "routes/logout.ts"),
   route("auth/callback/google", "routes/auth.callback.google.ts"),
   route("auth/callback/cas", "routes/auth.callback.cas.ts"),
+
+  // Desktop device pairing (GitHub-CLI style). Additive — OAuth + login
+  // untouched. /link is the only new web UI surface. See TAURI_DESKTOP_PLAN.md.
+  route("auth/pair/start", "routes/auth.pair.start.ts"),
+  route("auth/pair/approve", "routes/auth.pair.approve.ts"),
+  route("auth/pair/poll", "routes/auth.pair.poll.ts"),
+  route("auth/handoff", "routes/auth.handoff.ts"),
+  route("link", "routes/link.tsx"),
+  route("api/desktop/version", "routes/api.desktop.version.ts"),
 
   // OAuth endpoints (no layout)
   route("oauth/authorize", "routes/oauth.authorize.ts"),
@@ -151,8 +174,23 @@ export default [
     { id: "well-known.oauth-protected-resource.mcp" },
   ),
   route("mcp", "routes/mcp.ts"),
-  route("help/mcp", "routes/help.mcp.tsx"),
+
+  // Settings pages (no layout — opened in a TabWorkspace iframe via the
+  // sidebar footer icons; their own <main> provides padding).
+  route("settings", "routes/settings._index.tsx"),
+  route("settings/calendar", "routes/settings.calendar.tsx"),
+  route("settings/sessions", "routes/settings.sessions.tsx"),
+  route("settings/slack", "routes/settings.slack.tsx"),
   route("settings/connected-apps", "routes/settings.connected-apps.tsx"),
+
+  // Help pages (same shell convention as Settings).
+  route("help", "routes/help._index.tsx"),
+  route("help/getting-started", "routes/help.getting-started.tsx"),
+  route("help/shortcuts", "routes/help.shortcuts.tsx"),
+  route("help/calendar", "routes/help.calendar.tsx"),
+  route("help/staffing", "routes/help.staffing.tsx"),
+  route("help/notifications", "routes/help.notifications.tsx"),
+  route("help/mcp", "routes/help.mcp.tsx"),
 
   // Authenticated API endpoints (no layout)
   route("users/:id", "members/routes/users.$id.ts"),
@@ -167,6 +205,7 @@ export default [
   // Groups (admin) and notifications (per-user + admin send)
   route("api/groups", "admin-console/routes/api.groups.ts"),
   route("api/groups/:groupId", "admin-console/routes/api.groups.$groupId.ts"),
+  route("api/tour/complete", "routes/api.tour.complete.ts"),
   route("api/notifications", "routes/api.notifications.ts"),
   route("api/notifications/send", "admin-console/routes/api.notifications.send.ts"),
   route("api/notifications/:id/read", "routes/api.notifications.$id.read.ts"),
@@ -181,12 +220,27 @@ export default [
   route("api/slack/events", "slack/routes/api.slack.events.ts"),
   route("api/slack/interactivity", "slack/routes/api.slack.interactivity.ts"),
 
+  // GitHub webhook (signature-verified). Mirrors issue events back into linked
+  // tasks (close → Done, reopen → InProgress, assignee + comment sync).
+  route("api/webhooks/github", "projects/routes/api.webhooks.github.ts"),
+
   // Staffing input (bids / intent to work) is collected exclusively through
   // bound forms at /forms/fill/:token — there are no direct submit endpoints.
 
   // Staffing board (always open; one cycle per term, auto-created on view)
   route("api/staffing/assign", "projects/routes/api.staffing.assign.ts"),
   route("api/staffing/finalize", "projects/routes/api.staffing.finalize.ts"),
+  route("api/staffing/term-channel", "projects/routes/api.staffing.term-channel.ts"),
+  route("api/staffing/sync-teams", "projects/routes/api.staffing.sync-teams.ts"),
+  route("api/staffing/board-member", "projects/routes/api.staffing.board-member.ts"),
+  route("api/staffing/events", "projects/routes/api.staffing.events.ts"),
+  route("api/staffing/reorder", "projects/routes/api.staffing.reorder.ts"),
+
+  // Core-only level correction for an already-finalized ProjectAssignment.
+  route(
+    "api/projects/assignments/:id/level",
+    "projects/routes/api.assignment-level.ts",
+  ),
 
   // Project task board
   route("api/projects/:id/tasks", "projects/routes/api.projects.$id.tasks.ts"),
@@ -223,6 +277,10 @@ export default [
 
   // Document export (server-rendered PDF / Word)
   route("documents/:pageId/export", "routes/documents.$pageId.export.ts"),
+
+  // Payroll CSV export (resource route — registered OUTSIDE the app layout so
+  // the Response streams as a bare CSV body, not wrapped in an HTML shell).
+  route("admin-console/payroll-export.csv", "admin-console/routes/admin-console.payroll-export.csv.ts"),
 
   // Partner application status (board drag-and-drop) + domain scope
   route("api/partner-applications/:id/status", "partners/routes/api.partner-applications.$id.status.ts"),
@@ -263,6 +321,10 @@ export default [
 
   route("api/hiring/decisions/:id/finalize", "hiring/routes/api.decisions.$id.finalize.ts"),
   route("api/hiring/decisions/:id/release", "hiring/routes/api.decisions.$id.release.ts"),
+
+  route("api/hiring/waitlist", "hiring/routes/api.waitlist.ts"),
+  route("api/hiring/waitlist/:domainApplicationId/accept", "hiring/routes/api.waitlist.$domainApplicationId.accept.ts"),
+  route("api/hiring/waitlist/:domainApplicationId/remove", "hiring/routes/api.waitlist.$domainApplicationId.remove.ts"),
 
   route("api/hiring/interviews/:id/complete", "hiring/routes/api.interviews.$id.complete.ts"),
   route("api/hiring/interviews/:id/reassign", "hiring/routes/api.interviews.$id.reassign.ts"),

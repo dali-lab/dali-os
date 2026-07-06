@@ -5,6 +5,7 @@
 // — this only controls which form is surfaced to members.
 import { useState } from "react";
 import { useFetcher } from "react-router";
+import { Button } from "~/components/ui/Button";
 
 type SelectableForm = { id: string; name: string; published: boolean };
 
@@ -73,13 +74,14 @@ export function SlotFormPicker({
                 </option>
               ))}
             </select>
-            <button
+            <Button
               type="submit"
+              variant="primary"
+              size="sm"
               disabled={saving || !dirty}
-              className="px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors disabled:opacity-60"
             >
               {saving ? "Saving…" : "Save"}
-            </button>
+            </Button>
           </fetcher.Form>
         ) : (
           <div className="flex-1 text-sm text-foreground">
@@ -89,6 +91,36 @@ export function SlotFormPicker({
       </div>
 
       {error && <p className="text-xs text-destructive">{error}</p>}
+
+      {/* Binding a form and telling members about it are two separate steps —
+          setSlotBinding sends nothing. Surface the send action right here so a
+          form can't be bound but silently never announced. Deep-links to the
+          existing Announcements composer (pre-seeded with this form + the whole
+          lab); no new send path, so the composer's published-form check still
+          applies. Disabled until the form is published, since the composer
+          rejects unpublished forms. */}
+      {canManage && binding && (
+        <div className="flex flex-wrap items-center gap-2">
+          {fillUrl ? (
+            <a
+              href={`/admin-console/announcements?formId=${encodeURIComponent(binding.formId)}&audience=all`}
+              className="px-3 py-1.5 text-xs font-medium rounded-md border border-border text-foreground hover:bg-muted"
+            >
+              Send to members
+            </a>
+          ) : (
+            <span
+              className="px-3 py-1.5 text-xs font-medium rounded-md border border-border text-muted-foreground opacity-60 cursor-not-allowed"
+              title="Publish the form before sending it to members"
+            >
+              Send to members
+            </span>
+          )}
+          <span className="text-xs text-muted-foreground">
+            Opens the Announcements composer with this form attached.
+          </span>
+        </div>
+      )}
 
       {binding && (
         <p className="text-xs text-muted-foreground">

@@ -1,7 +1,7 @@
 import { redirect, useLoaderData, Link } from "react-router";
 import { ChevronRight } from "lucide-react";
 import type { Route } from "./+types/forms.$folderId";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, forbidden, redirectApplicantToPortal } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { loadFormsLevel, runFormsAction } from "~/forms/lib/forms-data";
 import { FormsBrowser } from "~/forms/components/FormsBrowser";
@@ -13,7 +13,8 @@ export const meta: Route.MetaFunction = ({ data }) => [
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
-  if (auth.user.type === "applicant") return redirect("/portal");
+  const portalRedirect = redirectApplicantToPortal(auth);
+  if (portalRedirect) return portalRedirect;
   if (!(await isCore(auth.user.sub))) return redirect("/");
 
   const level = await loadFormsLevel(params.folderId);
@@ -25,7 +26,7 @@ export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
   if (!(await isCore(auth.user.sub)))
-    return Response.json({ error: "Forbidden" }, { status: 403 });
+    return forbidden(request);
 
   const result = await runFormsAction(
     await request.formData(),

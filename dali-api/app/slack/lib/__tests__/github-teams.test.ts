@@ -2,8 +2,9 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   ensureTeam,
   addTeamMember,
+  grantTeamRepo,
   __setGitHubClientForTests,
-} from "~/slack/lib/github-app";
+} from "~/lib/github";
 import type { Octokit } from "@octokit/rest";
 
 // Minimal fake of the Octokit surface the team helpers touch.
@@ -11,6 +12,7 @@ function fakeOctokit(overrides: {
   getByName?: ReturnType<typeof vi.fn>;
   create?: ReturnType<typeof vi.fn>;
   addMembership?: ReturnType<typeof vi.fn>;
+  grantRepo?: ReturnType<typeof vi.fn>;
 }) {
   return {
     rest: {
@@ -18,6 +20,7 @@ function fakeOctokit(overrides: {
         getByName: overrides.getByName ?? vi.fn(),
         create: overrides.create ?? vi.fn(),
         addOrUpdateMembershipForUserInOrg: overrides.addMembership ?? vi.fn(),
+        addOrUpdateRepoPermissionsInOrg: overrides.grantRepo ?? vi.fn(),
       },
     },
   } as unknown as Octokit;
@@ -79,12 +82,64 @@ describe("addTeamMember", () => {
     const addMembership = vi.fn().mockResolvedValue({});
     __setGitHubClientForTests(fakeOctokit({ addMembership }));
 
-    await addTeamMember("alpha", "octocat");
+    const res = await addTeamMember("alpha", "octocat");
     expect(addMembership).toHaveBeenCalledWith({
       org: "dali-test-org",
       team_slug: "alpha",
       username: "octocat",
       role: "member",
     });
+    // No data.state on the response → defaults to "active" (backward-compatible).
+    expect(res).toEqual({ state: "active" });
+  });
+
+  it("reports state:'pending' when the user isn't yet an org member", async () => {
+    const addMembership = vi.fn().mockResolvedValue({ data: { state: "pending" } });
+    __setGitHubClientForTests(fakeOctokit({ addMembership }));
+    expect(await addTeamMember("alpha", "invitee")).toEqual({ state: "pending" });
+  });
+
+  it("reports state:'active' for an accepted membership", async () => {
+    const addMembership = vi.fn().mockResolvedValue({ data: { state: "active" } });
+    __setGitHubClientForTests(fakeOctokit({ addMembership }));
+    expect(await addTeamMember("alpha", "member")).toEqual({ state: "active" });
+  });
+});
+
+describe("grantTeamRepo", () => {
+  it("grants push by default with the right params", async () => {
+    const grantRepo = vi.fn().mockResolvedValue({});
+    __setGitHubClientForTests(fakeOctokit({ grantRepo }));
+
+    await grantTeamRepo("alpha", "dali-lab", "foo");
+    expect(grantRepo).toHaveBeenCalledWith({
+      org: "dali-test-org",
+      team_slug: "alpha",
+      owner: "dali-lab",
+      repo: "foo",
+      permission: "push",
+    });
+  });
+
+  it("honors an explicit permission", async () => {
+    const grantRepo = vi.fn().mockResolvedValue({});
+    __setGitHubClientForTests(fakeOctokit({ grantRepo }));
+
+    await grantTeamRepo("alpha", "dali-lab", "bar", "admin");
+    expect(grantRepo).toHaveBeenCalledWith(
+      expect.objectContaining({ owner: "dali-lab", repo: "bar", permission: "admin" }),
+    );
+  });
+
+  it("throws when GITHUB_ORG is unset", async () => {
+    delete process.env.GITHUB_ORG;
+    __setGitHubClientForTests(fakeOctokit({}));
+    await expect(grantTeamRepo("alpha", "dali-lab", "foo")).rejects.toThrow("GITHUB_ORG");
+  });
+
+  it("propagates a 404 (missing repo/team)", async () => {
+    const grantRepo = vi.fn().mockRejectedValue(notFound);
+    __setGitHubClientForTests(fakeOctokit({ grantRepo }));
+    await expect(grantTeamRepo("alpha", "dali-lab", "nope")).rejects.toBe(notFound);
   });
 });

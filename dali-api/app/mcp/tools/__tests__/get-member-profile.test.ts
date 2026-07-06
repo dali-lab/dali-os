@@ -29,7 +29,6 @@ const FULL_USER = {
   major: "CS",
   hometown: "NYC",
   linkedinUrl: null,
-  githubUrl: null,
   personalSite: null,
   daliMember: { id: "dm-1", createdAt: new Date("2025-09-01T00:00:00Z") },
   adminMembership: null,

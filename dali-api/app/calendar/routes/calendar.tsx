@@ -17,15 +17,16 @@ import {
   RefreshCw,
   RotateCcw,
 } from "lucide-react";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, forbidden, redirectApplicantToPortal } from "~/lib/auth";
+import { fullName } from "~/lib/display";
 import { prisma } from "~/lib/db";
 import { listVisibleGroupsForUser } from "~/lib/groups";
+import { currentTermMemberWhere } from "~/lib/roles";
 import { CalendarActionSchema } from "~/lib/calendar-schemas";
 import { fetchBusyEvents, listCalendarsForLink } from "~/lib/google-calendar";
-import { getZonedHourFraction, getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
+import { APPLICATION_TZ as DEFAULT_TIMEZONE, getZonedHourFraction, getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
 import type { Route } from "./+types/calendar";
 
-const DEFAULT_TIMEZONE = "America/New_York";
 const DEFAULT_BUFFER_MIN = 15;
 const DEFAULT_WORK_START_MIN = 9 * 60;
 const DEFAULT_WORK_END_MIN = 17 * 60;
@@ -159,9 +160,14 @@ function weekWindow(timezone: string, anchor?: Date): { start: Date; end: Date }
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
-  if (auth.user.type === "applicant") return redirect("/portal");
+  const portalRedirect = redirectApplicantToPortal(auth);
+  if (portalRedirect) return portalRedirect;
 
   const userId = auth.user.sub;
+
+  // Participant picker is for scheduling with current lab members — exclude
+  // applicants, partners, and alumni who happen to still have a User row.
+  const memberWhere = await currentTermMemberWhere();
 
   const [settings, whRows, blocks, links, groups, users] = await Promise.all([
     prisma.userAvailabilitySettings.findUnique({ where: { userId } }),
@@ -179,6 +185,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       rows.map((r) => ({ id: r.id, name: r.name, memberIds: r.memberIds })),
     ),
     prisma.user.findMany({
+      where: memberWhere,
       select: { id: true, firstName: true, lastName: true, daliEmail: true },
       orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
     }),
@@ -315,7 +322,7 @@ export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
   if (auth.user.type === "applicant")
-    return Response.json({ error: "Forbidden" }, { status: 403 });
+    return forbidden(request);
 
   const userId = auth.user.sub;
   const form = await request.formData();
@@ -1692,7 +1699,7 @@ function AvailabilityWeekGrid({
       />
       {enableDragCreate && (
         <p className="px-1 pb-2 text-[11px] text-muted-foreground">
-          Drag a range on the grid to create a block or meeting.
+          Drag a range on the grid to block off time. To invite people, use the Schedule Meeting tab.
         </p>
       )}
       <WeekGrid
@@ -1730,7 +1737,6 @@ function AvailabilityWeekGrid({
           selection
             ? () => (
                 <CreateFromDragPopover
-                  data={data}
                   startLocal={selection.startLocal}
                   endLocal={selection.endLocal}
                   onClose={() => setSelection(null)}
@@ -1838,21 +1844,16 @@ function dayHourToLocal(dayDateUtc: Date, hour: number): string {
 /* Drag-to-create side modal (My Availability tab)                      */
 /* ------------------------------------------------------------------ */
 
-type DragCreateKind = "block" | "meeting";
-
 function CreateFromDragPopover({
-  data,
   startLocal,
   endLocal,
   onClose,
 }: {
-  data: LoaderData;
   startLocal: string;
   endLocal: string;
   onClose: () => void;
 }) {
   const revalidator = useRevalidator();
-  const [kind, setKind] = useState<DragCreateKind>("block");
   const [title, setTitle] = useState("");
   const [start, setStart] = useState(startLocal);
   const [end, setEnd] = useState(endLocal);
@@ -1864,30 +1865,11 @@ function CreateFromDragPopover({
     setEnd(endLocal);
   }, [startLocal, endLocal]);
   const [repeats, setRepeats] = useState<Repeats>("none");
-  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
-  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const googleLinks = data.calendarLinks.filter((l) => l.provider === "Google" && l.enabled);
-  const [organizerCalendarLinkId, setOrganizerCalendarLinkId] = useState<string>(
-    googleLinks[0]?.id ?? "",
-  );
-
-  const usersById = new Map(data.users.map((u) => [u.id, u]));
-  const groupsById = new Map(data.groups.map((g) => [g.id, g]));
-  const resolvedParticipantIds = (() => {
-    const set = new Set<string>(selectedUserIds);
-    for (const gid of selectedGroupIds) {
-      const g = groupsById.get(gid);
-      if (g) for (const uid of g.memberIds) set.add(uid);
-    }
-    return Array.from(set);
-  })();
-
   const startEndValid =
     !!start && !!end && new Date(end).getTime() > new Date(start).getTime();
-  const duration = durationMinutesBetween(start, end);
   const canSubmit = title.trim().length > 0 && startEndValid && !submitting;
 
   // Close on Escape.
@@ -1905,53 +1887,21 @@ function CreateFromDragPopover({
     setSubmitting(true);
     setError(null);
     try {
-      if (kind === "block") {
-        // Manual blocks are owned by the route action (add-manual-block).
-        const body = new FormData();
-        body.set("intent", "add-manual-block");
-        body.set("title", title.trim());
-        body.set("startTime", new Date(start).toISOString());
-        body.set("endTime", new Date(end).toISOString());
-        const rrule = repeatsToRRule(repeats);
-        if (rrule) body.set("recurrenceRule", rrule);
-        const res = await fetch("/calendar", { method: "POST", credentials: "include", body });
-        if (!res.ok) {
-          const j = await res.json().catch(() => null);
-          setError(j?.error ?? "Failed to create block");
-          return;
-        }
-      } else {
-        // Meetings reuse the scheduled-meeting endpoint: invitees, recurrence,
-        // and (when an organizer calendar + invitees are present) a real Google
-        // Calendar invite. A solo meeting stays in-app only.
-        const payload: Record<string, unknown> = {
-          title: title.trim(),
-          durationMinutes: duration,
-          startTime: new Date(start).toISOString(),
-        };
-        const rrule = repeatsToRRule(repeats);
-        if (rrule) payload.recurrenceRule = rrule;
-        if (organizerCalendarLinkId) payload.organizerCalendarLinkId = organizerCalendarLinkId;
-        if (selectedGroupIds.length === 1 && selectedUserIds.length === 0) {
-          payload.scopeType = "Group";
-          payload.groupId = selectedGroupIds[0];
-        } else if (resolvedParticipantIds.length > 0) {
-          payload.scopeType = "UserList";
-          payload.participantUserIds = resolvedParticipantIds;
-        } else {
-          payload.scopeType = "None";
-        }
-        const res = await fetch("/api/scheduled-meetings", {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
+      // Drag-to-create only makes personal blocks. Meetings live in the
+      // Schedule Meeting tab where the gradient/picker have room to breathe —
+      // a popover over the grid couldn't show both.
+      const body = new FormData();
+      body.set("intent", "add-manual-block");
+      body.set("title", title.trim());
+      body.set("startTime", new Date(start).toISOString());
+      body.set("endTime", new Date(end).toISOString());
+      const rrule = repeatsToRRule(repeats);
+      if (rrule) body.set("recurrenceRule", rrule);
+      const res = await fetch("/calendar", { method: "POST", credentials: "include", body });
+      if (!res.ok) {
         const j = await res.json().catch(() => null);
-        if (!res.ok) {
-          setError(j?.error ?? "Failed to create meeting");
-          return;
-        }
+        setError(j?.error ?? "Failed to create block");
+        return;
       }
       revalidator.revalidate();
       onClose();
@@ -1967,10 +1917,10 @@ function CreateFromDragPopover({
       className="w-80 max-h-[26rem] overflow-y-auto rounded-lg border border-border bg-card shadow-xl"
       role="dialog"
       aria-modal="false"
-      aria-label="New on your calendar"
+      aria-label="New personal block"
     >
       <div className="flex items-center justify-between px-3 py-2 border-b border-border sticky top-0 bg-card z-10">
-        <h2 className="font-heading font-semibold text-sm text-foreground">New on your calendar</h2>
+        <h2 className="font-heading font-semibold text-sm text-foreground">New personal block</h2>
         <button
           type="button"
           onClick={onClose}
@@ -1982,31 +1932,9 @@ function CreateFromDragPopover({
       </div>
 
       <form onSubmit={submit} className="p-3 space-y-3">
-          {/* Type toggle */}
-          <div className="inline-flex rounded-md border border-border p-0.5 bg-background">
-            <button
-              type="button"
-              onClick={() => setKind("block")}
-              className={`px-3 py-1.5 text-xs font-semibold rounded transition-colors ${
-                kind === "block" ? "bg-accent-coral text-white" : "text-muted-foreground hover:bg-muted"
-              }`}
-            >
-              Personal block
-            </button>
-            <button
-              type="button"
-              onClick={() => setKind("meeting")}
-              className={`px-3 py-1.5 text-xs font-semibold rounded transition-colors ${
-                kind === "meeting" ? "bg-accent-coral text-white" : "text-muted-foreground hover:bg-muted"
-              }`}
-            >
-              Meeting
-            </button>
-          </div>
           <p className="text-xs text-muted-foreground">
-            {kind === "block"
-              ? "Blocks your own time. Not shared with anyone."
-              : "Invites people and (with a linked Google account) sends a Google Calendar invite."}
+            Blocks your own time. Not shared with anyone. To invite people, use
+            the <strong>Schedule Meeting</strong> tab.
           </p>
 
           <div>
@@ -2020,7 +1948,7 @@ function CreateFromDragPopover({
               onChange={(e) => setTitle(e.target.value)}
               required
               autoFocus
-              placeholder={kind === "block" ? "e.g. Focus time" : "e.g. Design sync"}
+              placeholder="e.g. Focus time"
               className="w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground"
             />
           </div>
@@ -2074,50 +2002,6 @@ function CreateFromDragPopover({
             </select>
           </div>
 
-          {kind === "meeting" && (
-            <>
-              <div>
-                <label
-                  htmlFor="drag-organizer"
-                  className="block text-sm font-medium text-foreground mb-1"
-                >
-                  Send invite from
-                </label>
-                {googleLinks.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">
-                    No Google calendar linked. The meeting will be in-app only.
-                  </p>
-                ) : (
-                  <select
-                    id="drag-organizer"
-                    value={organizerCalendarLinkId}
-                    onChange={(e) => setOrganizerCalendarLinkId(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground"
-                  >
-                    <option value="">No invite (in-app notification only)</option>
-                    {googleLinks.map((l) => (
-                      <option key={l.id} value={l.id}>
-                        {l.displayName ? `${l.displayName} — ${l.externalEmail}` : l.externalEmail}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
-
-              <ParticipantPicker
-                users={data.users}
-                groups={data.groups}
-                selectedUserIds={selectedUserIds}
-                selectedGroupIds={selectedGroupIds}
-                onChangeUsers={setSelectedUserIds}
-                onChangeGroups={setSelectedGroupIds}
-                usersById={usersById}
-                groupsById={groupsById}
-                resolvedCount={resolvedParticipantIds.length}
-              />
-            </>
-          )}
-
           {error && <p className="text-sm text-red-700">{error}</p>}
 
           <div className="flex items-center justify-end gap-2 pt-1">
@@ -2133,7 +2017,7 @@ function CreateFromDragPopover({
               disabled={!canSubmit}
               className="px-4 py-2 rounded-md bg-accent-coral text-white text-sm font-medium hover:bg-accent-coral/90 transition-colors disabled:opacity-50"
             >
-              {submitting ? "Creating…" : kind === "block" ? "Add block" : "Create meeting"}
+              {submitting ? "Creating…" : "Add block"}
             </button>
           </div>
         </form>
@@ -2206,7 +2090,7 @@ function ScheduleView({ data }: { data: LoaderData }) {
 }
 
 function userLabel(u: UserOption) {
-  const name = `${u.firstName} ${u.lastName}`.trim();
+  const name = fullName(u);
   return name || u.daliEmail || u.id;
 }
 

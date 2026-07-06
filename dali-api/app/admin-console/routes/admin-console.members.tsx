@@ -2,8 +2,10 @@ import { useState } from "react";
 import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/admin-console.members";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
-import { isAdmin, isCore, currentTerm } from "~/lib/roles";
+import { requireAuth, forbidden } from "~/lib/auth";
+import { isAdmin, isCore, isAdminViaEnv, currentTerm } from "~/lib/roles";
+import { LAB_MEMBER_WHERE, MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
+import { coreCycleTermIds } from "~/lib/core-cycle";
 import { Users, Check } from "lucide-react";
 import {
   AdminToggle,
@@ -12,7 +14,7 @@ import {
   type Member,
 } from "~/admin-console/components/admin-console-shared";
 
-export const meta: Route.MetaFunction = () => [{ title: "Roles · Operations · DALI OS" }];
+export const meta: Route.MetaFunction = () => [{ title: "Roles & Permissions · Admin · DALI OS" }];
 
 // Phase 2 rewrite: role state lives in AdminMembership / CoreAssignment /
 // DomainLeadAssignment instead of DALIMember.roles[]. The admin page now
@@ -31,14 +33,14 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const [users, domains, term] = await Promise.all([
     prisma.user.findMany({
-      where: { daliMember: { isNot: null } },
+      where: { ...LAB_MEMBER_WHERE },
       include: {
         daliMember: { select: { id: true } },
         adminMembership: { select: { id: true } },
         coreAssignments: { select: { id: true, termId: true, leadTitle: true } },
         domainLeadAssignmentsAsUser: { include: { domain: true } },
       },
-      orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+      orderBy: MEMBER_LIST_ORDER_BY,
     }),
     prisma.domain.findMany({
       where: { active: true },
@@ -52,14 +54,15 @@ export async function loader({ request }: Route.LoaderArgs) {
     const currentCore = term !== null
       ? u.coreAssignments.filter((a) => a.termId === term.id)
       : [];
+    const isAdminUser = u.adminMembership !== null || isAdminViaEnv(u.id);
     return {
       id: u.id,
       firstName: u.firstName,
       lastName: u.lastName,
       daliEmail: u.daliEmail,
       isLabMember: u.daliMember !== null,
-      isAdmin: u.adminMembership !== null,
-      isCore: currentCore.length > 0,
+      isAdmin: isAdminUser,
+      isCore: isAdminUser || currentCore.length > 0,
       coreAssignments: currentCore.map((a) => ({ id: a.id, leadTitle: a.leadTitle })),
       domainLeadAssignments: u.domainLeadAssignmentsAsUser.map((a) => ({
         id: a.id,
@@ -79,7 +82,7 @@ export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
   if (!(await isCore(auth.user.sub)))
-    return Response.json({ error: "Forbidden" }, { status: 403 });
+    return forbidden(request);
 
   const formData = await request.formData();
   const intent = formData.get("intent") as string;
@@ -87,7 +90,7 @@ export async function action({ request }: Route.ActionArgs) {
   // Admin-promotion is the only Admin-gated mutation on this page.
   if (intent === "set-admin") {
     if (!(await isAdmin(auth.user.sub)))
-      return Response.json({ error: "Forbidden" }, { status: 403 });
+      return forbidden(request);
     const userId = formData.get("userId") as string;
     const value = formData.get("value") === "true";
     if (value) {
@@ -102,9 +105,15 @@ export async function action({ request }: Route.ActionArgs) {
     return null;
   }
 
-  // Free-text Core title for the current term. A member can hold multiple
-  // titles in the same term (schema-side: no unique on (userId, termId)).
-  // App-level guard: ignore exact-title duplicates rather than 409.
+  // Free-text Core title for the current Core cycle. A member can hold
+  // multiple titles in the same term (schema-side: no unique on
+  // (userId, termId, leadTitle)). App-level guard: ignore exact-title
+  // duplicates rather than 409.
+  //
+  // The Core "cycle" runs Spring → following Winter (4 terms). We materialize
+  // one CoreAssignment row per term in the cycle so every reader (payroll,
+  // search, isCore) can query by termId and get the same answer without
+  // re-deriving cycle math. See lib/core-cycle.ts.
   if (intent === "add-core-title") {
     const userId = formData.get("userId") as string;
     const rawTitle = String(formData.get("leadTitle") ?? "").trim();
@@ -116,21 +125,40 @@ export async function action({ request }: Route.ActionArgs) {
         { status: 500 },
       );
     }
-    const existing = await prisma.coreAssignment.findFirst({
-      where: { userId, termId: term.id, leadTitle },
-      select: { id: true },
+    const cycleTermIds = await coreCycleTermIds(term.id);
+    const existing = await prisma.coreAssignment.findMany({
+      where: { userId, termId: { in: cycleTermIds }, leadTitle },
+      select: { termId: true },
     });
-    if (!existing) {
-      await prisma.coreAssignment.create({
-        data: { userId, termId: term.id, leadTitle },
+    const alreadyCovered = new Set(existing.map((e) => e.termId));
+    const missing = cycleTermIds.filter((tid) => !alreadyCovered.has(tid));
+    if (missing.length > 0) {
+      await prisma.coreAssignment.createMany({
+        data: missing.map((termId) => ({ userId, termId, leadTitle })),
       });
     }
     return null;
   }
 
+  // Remove this Core title for the entire cycle the assignment belongs to —
+  // not just the single term the row was indexed by. (Multiple CoreAssignment
+  // rows fan out across the cycle on add; clearing all of them keeps the
+  // data consistent across surfaces.)
   if (intent === "remove-core-title") {
     const assignmentId = formData.get("assignmentId") as string;
-    await prisma.coreAssignment.deleteMany({ where: { id: assignmentId } });
+    const target = await prisma.coreAssignment.findUnique({
+      where: { id: assignmentId },
+      select: { userId: true, termId: true, leadTitle: true },
+    });
+    if (!target) return null;
+    const cycleTermIds = await coreCycleTermIds(target.termId);
+    await prisma.coreAssignment.deleteMany({
+      where: {
+        userId: target.userId,
+        leadTitle: target.leadTitle,
+        termId: { in: cycleTermIds },
+      },
+    });
     return null;
   }
 
@@ -185,7 +213,7 @@ export default function AdminConsoleMembers() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <Users className="w-6 h-6 text-foreground/80" />
-          <h1 className="text-2xl font-bold text-foreground">Roles</h1>
+          <h1 className="text-2xl font-bold text-foreground">Roles & Permissions</h1>
           <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground">
             {filtered.length}{filtered.length !== members.length ? ` of ${members.length}` : ""} members
           </span>

@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { redirect, useLoaderData } from "react-router";
+import { redirect, useLoaderData, useSearchParams } from "react-router";
 import type { Route } from "./+types/admin-console.announcements";
 import { prisma } from "~/lib/db";
 import { listVisibleGroupsForUser } from "~/lib/groups";
 import { requireAuth } from "~/lib/auth";
-import { isCore } from "~/lib/roles";
+import { isCore, currentTermMemberWhere } from "~/lib/roles";
+import { MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
+import { fullName } from "~/lib/display";
 import {
   Megaphone,
   Search,
@@ -14,9 +16,10 @@ import {
   Paperclip,
   CheckCircle2,
 } from "lucide-react";
+import { SearchInput } from "~/components/ui/SearchInput";
 
 export const meta: Route.MetaFunction = () => [
-  { title: "Announcements · Operations · DALI OS" },
+  { title: "Announcements · Admin · DALI OS" },
 ];
 
 // Admin composer: write an announcement or a todo and send it to the whole
@@ -29,10 +32,14 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!auth.ok) return redirect("/login");
   if (!(await isCore(auth.user.sub))) return redirect("/");
 
+  // Recipient picker is for sending to current lab members — alumni and
+  // applicants are excluded so a stale autocomplete suggestion can't
+  // accidentally notify someone who's no longer on the lab roster.
+  const memberWhere = await currentTermMemberWhere();
   const [users, visibleGroups, forms] = await Promise.all([
     prisma.user.findMany({
-      where: { daliMember: { isNot: null } },
-      orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+      where: memberWhere,
+      orderBy: MEMBER_LIST_ORDER_BY,
       select: { id: true, firstName: true, lastName: true, daliEmail: true },
     }),
     listVisibleGroupsForUser(auth.user.sub),
@@ -46,7 +53,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   return {
     members: users.map((u) => ({
       id: u.id,
-      name: `${u.firstName} ${u.lastName}`.trim(),
+      name: fullName(u),
       email: u.daliEmail,
     })),
     groups: visibleGroups.map((g) => ({ id: g.id, name: g.name })),
@@ -57,8 +64,18 @@ export async function loader({ request }: Route.LoaderArgs) {
 export default function AnnouncementsPage() {
   const { members, groups, publishedForms } = useLoaderData<typeof loader>();
 
+  // Optional deep-link pre-seed (e.g. the staffing boards' "Send to members"
+  // affordance opens this composer with the bound form + whole-lab audience
+  // already selected). Only honored for forms that exist in the published list.
+  const [searchParams] = useSearchParams();
+  const seedFormId = searchParams.get("formId") ?? "";
+  const seededForm = publishedForms.some((f) => f.id === seedFormId)
+    ? seedFormId
+    : "";
+  const seedAllMembers = searchParams.get("audience") === "all";
+
   // Composable audience: any mix of whole-lab + groups + individuals.
-  const [allMembers, setAllMembers] = useState(false);
+  const [allMembers, setAllMembers] = useState(seedAllMembers);
   const [pickedGroups, setPickedGroups] = useState<Set<string>>(new Set());
   const [pickedUsers, setPickedUsers] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
@@ -67,7 +84,7 @@ export default function AnnouncementsPage() {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [dueAt, setDueAt] = useState("");
-  const [formId, setFormId] = useState("");
+  const [formId, setFormId] = useState(seededForm);
   const [formSearch, setFormSearch] = useState("");
 
   const [sending, setSending] = useState(false);
@@ -367,16 +384,11 @@ export default function AnnouncementsPage() {
                 </span>
               ) : (
                 <>
-                  <div className="relative">
-                    <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-                    <input
-                      type="text"
-                      placeholder="Search groups…"
-                      value={groupSearch}
-                      onChange={(e) => setGroupSearch(e.target.value)}
-                      className="w-full pl-7 pr-2 py-1.5 text-sm border border-border rounded-md bg-card text-foreground"
-                    />
-                  </div>
+                  <SearchInput
+                    value={groupSearch}
+                    onChange={(e) => setGroupSearch(e.target.value)}
+                    placeholder="Search groups…"
+                  />
                   {filteredGroups.length === 0 ? (
                     <span className="text-xs text-muted-foreground">
                       No matching groups.
@@ -419,16 +431,11 @@ export default function AnnouncementsPage() {
                   </span>
                 )}
               </div>
-              <div className="relative">
-                <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-                <input
-                  type="text"
-                  placeholder="Search people…"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="w-full pl-7 pr-2 py-1.5 text-sm border border-border rounded-md bg-card text-foreground"
-                />
-              </div>
+              <SearchInput
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search people…"
+              />
               <div className="max-h-64 overflow-y-auto border border-border rounded-md divide-y divide-border bg-card">
                 {filteredMembers.map((m) => (
                   <label

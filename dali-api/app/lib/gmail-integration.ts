@@ -1,10 +1,9 @@
 import { prisma } from "~/lib/db";
+import { APPLICATIONS_FROM_EMAIL as GMAIL_USER } from "~/lib/app-env";
 
 // Phase 2: Gmail send-as credentials moved from User.google* to the
 // GmailIntegration model. This helper is the single read path for callers
 // that previously looked up `User.googleRefreshToken` by daliEmail.
-
-const GMAIL_USER = "applications@dali.dartmouth.edu";
 
 /**
  * Returns the refresh token for the Gmail send-as integration tied to the

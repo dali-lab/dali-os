@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { X, Maximize2, SplitSquareHorizontal, Loader2, ChevronLeft, ChevronRight, Copy } from 'lucide-react'
+import { X, Maximize2, SplitSquareHorizontal, Loader2, ChevronLeft, ChevronRight, Copy, Pin, PinOff, ChevronDown } from 'lucide-react'
 
 export interface OpenTabRequest {
   url: string
@@ -7,8 +7,11 @@ export interface OpenTabRequest {
 }
 
 export interface TabWorkspaceHandle {
-  /** Open a tab in the focused pane, or focus it if already open anywhere. */
-  openTab: (req: OpenTabRequest) => void
+  /** Open a tab in the focused pane, or focus it if already open anywhere.
+   *  Pass { ephemeral: true } for a preview tab: it reuses the focused pane's
+   *  single preview slot instead of stacking, so casual browsing from the
+   *  sidebar never piles up tabs. */
+  openTab: (req: OpenTabRequest, opts?: { ephemeral?: boolean }) => void
   /** Open a tab in the focused pane WITHOUT switching to it. Used by
    *  sidebar middle-click to open a section in the background, matching
    *  browser-tab middle-click behaviour. If the tab is already open it
@@ -43,6 +46,15 @@ interface Tab {
   // long-lived tab can't blow up localStorage.
   backStack: string[]
   forwardStack: string[]
+  // Pinned tabs cluster at the left of the pane, render compact, never get
+  // evicted or pushed into the overflow menu, and survive "Close others /
+  // Close unpinned". Toggled from the tab context menu.
+  pinned: boolean
+  // Ephemeral (preview) tabs are opened by a single sidebar click into ONE
+  // reusable slot per pane — opening another section replaces this tab instead
+  // of stacking. Promoted to a kept tab (ephemeral:false) on double-click,
+  // in-tab navigation, or pin. Rendered in italics.
+  ephemeral: boolean
 }
 
 interface Pane {
@@ -69,9 +81,19 @@ interface WorkspaceState {
 }
 
 const STORAGE_KEY = 'dali:tabworkspace:v4'
-const MAX_TABS_PER_PANE = 10
+// Hard backstop on tabs per pane. Unpinned tabs that don't fit collapse into the
+// overflow menu rather than being evicted, so this cap is generous and mostly a
+// runaway guard; pinned tabs never count toward eviction (see appendWithLruCap).
+const MAX_TABS_PER_PANE = 20
 const HISTORY_CAP = 50
 const CLOSED_CAP = 10
+// Fixed pixel widths used to compute how many unpinned tabs fit in a pane's tab
+// strip before the rest collapse into the overflow menu. Unpinned tabs render
+// at a fixed width so the fit math is exact; pinned tabs are compact (pin icon +
+// short label). Tuned to the padding/typography below.
+const TAB_W = 168
+const PINNED_TAB_W = 128
+const OVERFLOW_BTN_W = 52
 
 function newId() {
   return Math.random().toString(36).slice(2, 10)
@@ -144,7 +166,14 @@ function loadState(): WorkspaceState {
       ...parsed,
       panes: parsed.panes.map((p) => ({
         ...p,
-        tabs: p.tabs.map((t) => (t.origin ? t : { ...t, origin: t.url })),
+        // Backfill fields added after v4 shipped (origin, pinned, ephemeral) so
+        // tabs persisted by older builds keep working without a storage reset.
+        tabs: p.tabs.map((t) => ({
+          ...t,
+          origin: t.origin ?? t.url,
+          pinned: t.pinned ?? false,
+          ephemeral: t.ephemeral ?? false,
+        })),
       })),
       closedTabs: Array.isArray(parsed.closedTabs) ? parsed.closedTabs : [],
     }
@@ -161,6 +190,7 @@ function appendWithLruCap(tabs: Tab[], protectedTabId: string): Tab[] {
   let victimTime = Infinity
   for (let i = 0; i < tabs.length; i++) {
     if (tabs[i].id === protectedTabId) continue
+    if (tabs[i].pinned) continue // pinned tabs are never evicted
     if (tabs[i].lastActivatedAt < victimTime) {
       victimTime = tabs[i].lastActivatedAt
       victimIdx = i
@@ -170,12 +200,53 @@ function appendWithLruCap(tabs: Tab[], protectedTabId: string): Tab[] {
   return [...tabs.slice(0, victimIdx), ...tabs.slice(victimIdx + 1)]
 }
 
-// Locate an open tab for `url`, matching on either its origin (so re-clicking
-// a sidebar section focuses a tab that has since drifted to a sub-page) or its
-// current url (so re-opening the exact deep link focuses it too).
+// Stable partition keeping pinned tabs first (in their relative order) followed
+// by unpinned tabs (in theirs). Run after any pin/unpin or tab move so the array
+// order — which drives left-to-right render order — always shows pins on the
+// left, matching the VS Code / browser convention.
+function normalize(tabs: Tab[]): Tab[] {
+  const pinned = tabs.filter((t) => t.pinned)
+  const unpinned = tabs.filter((t) => !t.pinned)
+  return pinned.length === 0 ? tabs : [...pinned, ...unpinned]
+}
+
+// Split a pane's tabs into the pinned cluster, the unpinned tabs that fit inline
+// at the given strip width, and the rest (overflow). Visibility membership is by
+// recency so the active tab (always most-recently-activated) is never hidden;
+// callers render `visible` in positional order so tabs don't shuffle on click.
+// width === 0 (not measured yet) shows everything — overflow kicks in on measure.
+function splitVisibleOverflow(
+  tabs: Tab[],
+  width: number,
+): { pinned: Tab[]; visible: Tab[]; overflow: Tab[] } {
+  const pinned = tabs.filter((t) => t.pinned)
+  const unpinned = tabs.filter((t) => !t.pinned)
+  if (width <= 0 || unpinned.length === 0) return { pinned, visible: unpinned, overflow: [] }
+  const availBase = width - pinned.length * PINNED_TAB_W
+  if (unpinned.length * TAB_W <= availBase) return { pinned, visible: unpinned, overflow: [] }
+  const cap = Math.max(1, Math.floor((availBase - OVERFLOW_BTN_W) / TAB_W))
+  if (cap >= unpinned.length) return { pinned, visible: unpinned, overflow: [] }
+  const recentIds = new Set(
+    [...unpinned]
+      .sort((a, b) => b.lastActivatedAt - a.lastActivatedAt)
+      .slice(0, cap)
+      .map((t) => t.id),
+  )
+  return {
+    pinned,
+    visible: unpinned.filter((t) => recentIds.has(t.id)),
+    overflow: unpinned.filter((t) => !recentIds.has(t.id)),
+  }
+}
+
+// Locate an open tab whose current url matches `url`. Re-clicking a sidebar
+// section while a tab opened from that section has drifted to a sub-page
+// (e.g. a cycle detail under Cycles) intentionally does NOT match — the user
+// gets a fresh tab on the section page rather than being snapped to the
+// drifted child, which lets them keep both views side-by-side.
 function findTabPane(state: WorkspaceState, url: string): { paneId: string; tabId: string } | null {
   for (const pane of state.panes) {
-    const tab = pane.tabs.find((t) => t.origin === url || t.url === url)
+    const tab = pane.tabs.find((t) => t.url === url)
     if (tab) return { paneId: pane.id, tabId: tab.id }
   }
   return null
@@ -222,6 +293,11 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
     | { paneId: string; side: 'back' | 'forward'; x: number; y: number }
     | null
   >(null)
+  // Click on a pane's overflow "+N" button → dropdown of its hidden tabs.
+  const [overflowMenu, setOverflowMenu] = useState<
+    | { paneId: string; x: number; y: number }
+    | null
+  >(null)
   const hydrated = useRef(false)
   const dragSourceRef = useRef<DragSource | null>(null)
   const [dragOver, setDragOver] = useState<DragOver | null>(null)
@@ -240,6 +316,44 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
   // until its iframe's onLoad fires. (In-iframe React Router navigations are
   // covered separately by the root NavigationProgress bar.)
   const [loadedTabIds, setLoadedTabIds] = useState<Set<string>>(() => new Set())
+
+  // Measured inner width of each pane's tab strip (drives how many unpinned tabs
+  // fit before the rest collapse into the overflow menu). Keyed by pane id.
+  const [paneWidths, setPaneWidths] = useState<Record<string, number>>({})
+  const stripObservers = useRef<Map<string, ResizeObserver>>(new Map())
+  const stripRefCbs = useRef<Map<string, (el: HTMLDivElement | null) => void>>(new Map())
+  // One stable ResizeObserver-backed ref callback per pane id, so attaching it
+  // to the strip element doesn't tear down/re-observe on every render.
+  const stripRefCb = (paneId: string) => {
+    let cb = stripRefCbs.current.get(paneId)
+    if (!cb) {
+      cb = (el: HTMLDivElement | null) => {
+        const prevOb = stripObservers.current.get(paneId)
+        if (prevOb) {
+          prevOb.disconnect()
+          stripObservers.current.delete(paneId)
+        }
+        if (el && typeof ResizeObserver !== 'undefined') {
+          const ob = new ResizeObserver((entries) => {
+            const w = Math.round(entries[0]?.contentRect.width ?? el.clientWidth)
+            setPaneWidths((prev) => (prev[paneId] === w ? prev : { ...prev, [paneId]: w }))
+          })
+          ob.observe(el)
+          stripObservers.current.set(paneId, ob)
+          setPaneWidths((prev) => ({ ...prev, [paneId]: Math.round(el.clientWidth) }))
+        }
+      }
+      stripRefCbs.current.set(paneId, cb)
+    }
+    return cb
+  }
+  useEffect(() => {
+    const observers = stripObservers.current
+    return () => {
+      for (const ob of observers.values()) ob.disconnect()
+      observers.clear()
+    }
+  }, [])
 
   // The URL each iframe was mounted with. Captured once per tab (the first
   // time it mounts) and used as the iframe `src`, so updating the tab's live
@@ -313,6 +427,8 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
         lastActivatedAt: seedTime - (initialTabs.length - 1 - i),
         backStack: [],
         forwardStack: [],
+        pinned: false,
+        ephemeral: false,
       }))
       const paneId = loaded.panes[0]?.id ?? newId()
       setState({
@@ -352,6 +468,8 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
           lastActivatedAt: now(),
           backStack: [],
           forwardStack: [],
+          pinned: false,
+          ephemeral: false,
         }
         setState({
           ...loaded,
@@ -417,10 +535,11 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
               return { ...t, url: nextUrl }
             }
             // A new in-tab navigation: push the old url onto backStack and
-            // clear forwardStack (browser semantics).
+            // clear forwardStack (browser semantics). Navigating inside a
+            // preview tab is real engagement, so promote it to a kept tab.
             const back = [...t.backStack, t.url]
             if (back.length > HISTORY_CAP) back.splice(0, back.length - HISTORY_CAP)
-            return { ...t, url: nextUrl, backStack: back, forwardStack: [] }
+            return { ...t, url: nextUrl, backStack: back, forwardStack: [], ephemeral: false }
           }),
         }))
         return changed ? { ...prev, panes } : prev
@@ -465,7 +584,8 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
   useEffect(() => {
     if (!apiRef) return
     apiRef.current = {
-      openTab: (req) => {
+      openTab: (req, opts) => {
+        const ephemeral = opts?.ephemeral ?? false
         setState((prev) => {
           const existing = findTabPane(prev, req.url)
           if (existing) {
@@ -485,6 +605,39 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
               ),
             }
           }
+          // Preview open: reuse the focused pane's existing ephemeral slot (if
+          // any) by swapping in a fresh tab at the same position, so single-
+          // clicking around the sidebar never stacks tabs. A new id gives the
+          // iframe a clean seed without touching the cached src of other tabs.
+          if (ephemeral) {
+            const focused = prev.panes.find((p) => p.id === prev.focusedPaneId)
+            const slotIdx = focused ? focused.tabs.findIndex((t) => t.ephemeral) : -1
+            if (focused && slotIdx >= 0) {
+              const replacement: Tab = {
+                id: newId(),
+                label: req.label,
+                url: req.url,
+                origin: req.url,
+                lastActivatedAt: now(),
+                backStack: [],
+                forwardStack: [],
+                pinned: false,
+                ephemeral: true,
+              }
+              return {
+                ...prev,
+                panes: prev.panes.map((p) =>
+                  p.id === focused.id
+                    ? {
+                        ...p,
+                        activeTabId: replacement.id,
+                        tabs: p.tabs.map((t, i) => (i === slotIdx ? replacement : t)),
+                      }
+                    : p,
+                ),
+              }
+            }
+          }
           const newTab: Tab = {
             id: newId(),
             label: req.label,
@@ -493,6 +646,8 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
             lastActivatedAt: now(),
             backStack: [],
             forwardStack: [],
+            pinned: false,
+            ephemeral,
           }
           return {
             ...prev,
@@ -522,6 +677,8 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
             lastActivatedAt: now() - 1, // older than the currently-active tab
             backStack: [],
             forwardStack: [],
+            pinned: false,
+            ephemeral: false,
           }
           return {
             ...prev,
@@ -566,6 +723,8 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
             lastActivatedAt: now(),
             backStack: [],
             forwardStack: [],
+            pinned: false,
+            ephemeral: false,
           }
           // Already split — open in the pane that isn't focused.
           if (prev.panes.length >= 2) {
@@ -799,6 +958,14 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
     doc.addEventListener('keydown', onKey)
     doc.addEventListener('mousedown', onMouse)
     doc.addEventListener('auxclick', onMouse)
+    // Any genuine interaction inside a preview tab — a click/tap on a control, a
+    // keystroke in a field — promotes it to a kept tab, so the next sidebar
+    // single-click can't replace it and discard in-progress work. Passive
+    // viewing (scroll, hover) deliberately does NOT promote. promoteTabById
+    // no-ops once the tab is kept, so these stay cheap after the first hit.
+    const onInteract = () => promoteTabById(tabId)
+    doc.addEventListener('pointerdown', onInteract)
+    doc.addEventListener('keydown', onInteract)
   }
 
   // Close context menu on click-anywhere.
@@ -824,6 +991,18 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
       window.removeEventListener('contextmenu', onDocClick)
     }
   }, [historyMenu])
+
+  // Same for the overflow dropdown.
+  useEffect(() => {
+    if (!overflowMenu) return
+    const onDocClick = () => setOverflowMenu(null)
+    window.addEventListener('click', onDocClick)
+    window.addEventListener('contextmenu', onDocClick)
+    return () => {
+      window.removeEventListener('click', onDocClick)
+      window.removeEventListener('contextmenu', onDocClick)
+    }
+  }, [overflowMenu])
 
   // Browser-style back/forward for the pane's active tab. The iframe's own
   // `window.history` would work mid-session but is wiped on a parent reload
@@ -930,6 +1109,8 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
         lastActivatedAt: now(),
         backStack: last.backStack,
         forwardStack: last.forwardStack,
+        pinned: false,
+        ephemeral: false,
       }
       return {
         ...prev,
@@ -1014,6 +1195,110 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
     })
   }
 
+  // Close a set of tabs in one pane at once (backs the bulk-close context-menu
+  // actions). Mirrors closeTab's bookkeeping: records each closed tab in the
+  // recently-closed LRU, repoints activeTabId to the nearest survivor, and drops
+  // a pane that empties. Pinned tabs are filtered out by the callers.
+  const closeTabs = (paneId: string, idsToClose: Set<string>) => {
+    if (idsToClose.size === 0) return
+    setState((prev) => {
+      const pane = prev.panes.find((p) => p.id === paneId)
+      if (!pane) return prev
+      const closing = pane.tabs.filter((t) => idsToClose.has(t.id))
+      if (closing.length === 0) return prev
+      const remaining = pane.tabs.filter((t) => !idsToClose.has(t.id))
+      let activeTabId = pane.activeTabId
+      if (activeTabId && idsToClose.has(activeTabId)) {
+        // Walk outward from the old active index for the nearest surviving tab.
+        const oldIdx = pane.tabs.findIndex((t) => t.id === activeTabId)
+        let pick: string | null = null
+        for (let d = 1; d < pane.tabs.length && !pick; d++) {
+          const after = pane.tabs[oldIdx + d]
+          if (after && !idsToClose.has(after.id)) pick = after.id
+          const before = pane.tabs[oldIdx - d]
+          if (!pick && before && !idsToClose.has(before.id)) pick = before.id
+        }
+        activeTabId = pick ?? remaining[0]?.id ?? null
+      }
+      const closedTabs = [
+        ...prev.closedTabs,
+        ...closing.map((t) => ({
+          label: t.label,
+          url: t.url,
+          origin: t.origin,
+          backStack: t.backStack,
+          forwardStack: t.forwardStack,
+          closedAt: now(),
+        })),
+      ].slice(-CLOSED_CAP)
+      const panes = prev.panes.map((p) =>
+        p.id === paneId ? { ...p, tabs: remaining, activeTabId } : p,
+      )
+      const nonEmpty = panes.filter((p) => p.tabs.length > 0)
+      if (nonEmpty.length > 0 && nonEmpty.length < panes.length) {
+        const focusedStillExists = nonEmpty.some((p) => p.id === prev.focusedPaneId)
+        return {
+          panes: nonEmpty,
+          focusedPaneId: focusedStillExists ? prev.focusedPaneId : nonEmpty[0].id,
+          closedTabs,
+        }
+      }
+      return { ...prev, panes, closedTabs }
+    })
+  }
+
+  // Promote a preview (ephemeral) tab to a kept tab. Triggered by double-click;
+  // in-tab navigation and pinning promote via their own paths.
+  const promoteTab = (paneId: string, tabId: string) => {
+    setState((prev) => ({
+      ...prev,
+      panes: prev.panes.map((p) =>
+        p.id !== paneId
+          ? p
+          : {
+              ...p,
+              tabs: p.tabs.map((t) =>
+                t.id === tabId && t.ephemeral ? { ...t, ephemeral: false } : t,
+              ),
+            },
+      ),
+    }))
+  }
+
+  // Promote a preview tab to kept by id, without needing its pane. Used by the
+  // in-iframe interaction listeners. Returns the previous state unchanged when
+  // the tab isn't ephemeral, so the common case (interacting with an already-
+  // kept tab) bails out of setState and never re-renders.
+  const promoteTabById = (tabId: string) => {
+    setState((prev) => {
+      let changed = false
+      const panes = prev.panes.map((p) => {
+        if (!p.tabs.some((t) => t.id === tabId && t.ephemeral)) return p
+        changed = true
+        return {
+          ...p,
+          tabs: p.tabs.map((t) => (t.id === tabId ? { ...t, ephemeral: false } : t)),
+        }
+      })
+      return changed ? { ...prev, panes } : prev
+    })
+  }
+
+  // Toggle pinned state. Pinning also promotes a preview tab (a pin is a
+  // commitment), and re-normalizes so pinned tabs cluster at the pane's left.
+  const togglePin = (paneId: string, tabId: string) => {
+    setState((prev) => ({
+      ...prev,
+      panes: prev.panes.map((p) => {
+        if (p.id !== paneId) return p
+        const tabs = p.tabs.map((t) =>
+          t.id === tabId ? { ...t, pinned: !t.pinned, ephemeral: false } : t,
+        )
+        return { ...p, tabs: normalize(tabs) }
+      }),
+    }))
+  }
+
   // Duplicate a tab in place: a new tab opens immediately after the source in
   // the same pane, pointing at the source's current url. We don't copy the
   // source's history stacks — the duplicate is conceptually a fresh visit to
@@ -1032,6 +1317,8 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
         lastActivatedAt: now(),
         backStack: [],
         forwardStack: [],
+        pinned: false,
+        ephemeral: false,
       }
       const idx = pane.tabs.findIndex((t) => t.id === tabId)
       const inserted = [
@@ -1179,7 +1466,7 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
         return {
           ...prev,
           panes: prev.panes.map((p) =>
-            p.id === source.paneId ? { ...p, tabs: next, activeTabId: tab.id } : p,
+            p.id === source.paneId ? { ...p, tabs: normalize(next), activeTabId: tab.id } : p,
           ),
           focusedPaneId: source.paneId,
         }
@@ -1204,7 +1491,7 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
           ]
           return {
             ...p,
-            tabs: appendWithLruCap(inserted, tab.id),
+            tabs: appendWithLruCap(normalize(inserted), tab.id),
             activeTabId: tab.id,
           }
         }
@@ -1261,6 +1548,117 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
         const isFocused = pane.id === state.focusedPaneId
         const activeTab = pane.tabs.find((t) => t.id === pane.activeTabId) ?? pane.tabs[0]
         const showLeftBorder = idx > 0
+        const { pinned: pinnedTabs, visible: visibleUnpinned, overflow: overflowUnpinned } =
+          splitVisibleOverflow(pane.tabs, paneWidths[pane.id] ?? 0)
+
+        // Render one tab button. Pinned tabs are compact (pin icon + short label,
+        // no close affordance — middle-click or the context menu unpins/closes);
+        // unpinned tabs keep the hover × . Ephemeral (preview) tabs render italic.
+        const renderTab = (tab: Tab) => {
+          const arrIdx = pane.tabs.findIndex((t) => t.id === tab.id)
+          const isActive = tab.id === pane.activeTabId
+          const indicatorBefore = dragOver?.paneId === pane.id && dragOver.index === arrIdx
+          const indicatorAfter =
+            dragOver?.paneId === pane.id &&
+            dragOver.index === arrIdx + 1 &&
+            arrIdx === pane.tabs.length - 1
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              draggable
+              onDragStart={(e) => {
+                dragSourceRef.current = { paneId: pane.id, tabId: tab.id }
+                setIsDragging(true)
+                e.dataTransfer.effectAllowed = 'move'
+                try {
+                  e.dataTransfer.setData('text/plain', tab.id)
+                } catch {
+                  // ignore
+                }
+              }}
+              onDragEnd={() => {
+                dragSourceRef.current = null
+                setDragOver(null)
+                setPaneDrop(null)
+                setIsDragging(false)
+              }}
+              onDragOver={(e) => {
+                if (!dragSourceRef.current) return
+                e.preventDefault()
+                e.stopPropagation()
+                e.dataTransfer.dropEffect = 'move'
+                if (paneDrop) setPaneDrop(null)
+                const rect = e.currentTarget.getBoundingClientRect()
+                const midpoint = rect.left + rect.width / 2
+                const insertIdx = e.clientX < midpoint ? arrIdx : arrIdx + 1
+                if (dragOver?.paneId !== pane.id || dragOver.index !== insertIdx) {
+                  setDragOver({ paneId: pane.id, index: insertIdx })
+                }
+              }}
+              onDrop={(e) => {
+                if (!dragSourceRef.current) return
+                e.preventDefault()
+                e.stopPropagation()
+                const src = dragSourceRef.current
+                const tgt = dragOver ?? { paneId: pane.id, index: arrIdx }
+                moveTab(src, tgt)
+                dragSourceRef.current = null
+                setDragOver(null)
+                setPaneDrop(null)
+                setIsDragging(false)
+              }}
+              onClick={(e) => {
+                e.stopPropagation()
+                setActiveTab(pane.id, tab.id)
+              }}
+              onDoubleClick={(e) => {
+                e.stopPropagation()
+                promoteTab(pane.id, tab.id)
+              }}
+              onAuxClick={(e) => {
+                if (e.button !== 1) return
+                e.preventDefault()
+                e.stopPropagation()
+                closeTab(pane.id, tab.id)
+              }}
+              onContextMenu={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                setContextMenu({ paneId: pane.id, tabId: tab.id, x: e.clientX, y: e.clientY })
+              }}
+              title={tab.label}
+              style={{ width: tab.pinned ? PINNED_TAB_W : TAB_W }}
+              className={`group relative flex-none flex items-center gap-2 ${tab.pinned ? 'px-2.5' : 'px-3'} border-r border-border text-xs font-medium whitespace-nowrap transition-colors ${
+                isActive
+                  ? 'bg-card text-foreground'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-card/50'
+              } ${indicatorBefore ? 'before:absolute before:left-0 before:top-0 before:bottom-0 before:w-0.5 before:bg-accent-coral' : ''} ${indicatorAfter ? 'after:absolute after:right-0 after:top-0 after:bottom-0 after:w-0.5 after:bg-accent-coral' : ''}`}
+            >
+              {tab.pinned && (
+                <Pin className="w-3 h-3 shrink-0 text-accent-coral fill-accent-coral pointer-events-none" />
+              )}
+              <span
+                className={`truncate flex-1 text-left pointer-events-none ${tab.ephemeral ? 'italic' : ''}`}
+              >
+                {tab.label}
+              </span>
+              {!tab.pinned && (
+                <span
+                  role="button"
+                  aria-label={`Close ${tab.label}`}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    closeTab(pane.id, tab.id)
+                  }}
+                  className="p-0.5 rounded-sm text-muted-foreground/60 hover:text-foreground hover:bg-muted opacity-60 group-hover:opacity-100"
+                >
+                  <X className="w-3 h-3" />
+                </span>
+              )}
+            </button>
+          )
+        }
         return (
           <div
             key={pane.id}
@@ -1274,50 +1672,52 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
               {(() => {
                 const canBack = !!activeTab && activeTab.backStack.length > 0
                 const canFwd = !!activeTab && activeTab.forwardStack.length > 0
+                if (!canBack && !canFwd) return null
                 return (
                   <div className="flex items-stretch border-r border-border">
-                    <button
-                      type="button"
-                      disabled={!canBack}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        goBack(pane.id)
-                      }}
-                      onContextMenu={(e) => {
-                        if (!canBack) return
-                        e.preventDefault()
-                        e.stopPropagation()
-                        setHistoryMenu({ paneId: pane.id, side: 'back', x: e.clientX, y: e.clientY })
-                      }}
-                      title="Back (right-click for history)"
-                      aria-label="Back"
-                      className="px-2 text-muted-foreground/70 hover:text-foreground hover:bg-muted disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-default"
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      disabled={!canFwd}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        goForward(pane.id)
-                      }}
-                      onContextMenu={(e) => {
-                        if (!canFwd) return
-                        e.preventDefault()
-                        e.stopPropagation()
-                        setHistoryMenu({ paneId: pane.id, side: 'forward', x: e.clientX, y: e.clientY })
-                      }}
-                      title="Forward (right-click for history)"
-                      aria-label="Forward"
-                      className="px-2 text-muted-foreground/70 hover:text-foreground hover:bg-muted disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-default"
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
+                    {canBack && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          goBack(pane.id)
+                        }}
+                        onContextMenu={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          setHistoryMenu({ paneId: pane.id, side: 'back', x: e.clientX, y: e.clientY })
+                        }}
+                        title="Back (right-click for history)"
+                        aria-label="Back"
+                        className="px-2.5 text-muted-foreground hover:text-foreground hover:bg-muted"
+                      >
+                        <ChevronLeft className="w-[18px] h-[18px]" />
+                      </button>
+                    )}
+                    {canFwd && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          goForward(pane.id)
+                        }}
+                        onContextMenu={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          setHistoryMenu({ paneId: pane.id, side: 'forward', x: e.clientX, y: e.clientY })
+                        }}
+                        title="Forward (right-click for history)"
+                        aria-label="Forward"
+                        className="px-2.5 text-muted-foreground hover:text-foreground hover:bg-muted"
+                      >
+                        <ChevronRight className="w-[18px] h-[18px]" />
+                      </button>
+                    )}
                   </div>
                 )
               })()}
               <div
+                ref={stripRefCb(pane.id)}
                 className="flex-1 flex items-stretch overflow-x-auto"
                 onDragOver={(e) => {
                   // Allow drop on the empty area at the end of the strip.
@@ -1343,94 +1743,25 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
                   setIsDragging(false)
                 }}
               >
-                {pane.tabs.map((tab, tabIdx) => {
-                  const isActive = tab.id === pane.activeTabId
-                  const indicatorBefore =
-                    dragOver?.paneId === pane.id && dragOver.index === tabIdx
-                  const indicatorAfter =
-                    dragOver?.paneId === pane.id &&
-                    dragOver.index === tabIdx + 1 &&
-                    tabIdx === pane.tabs.length - 1
-                  return (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      draggable
-                      onDragStart={(e) => {
-                        dragSourceRef.current = { paneId: pane.id, tabId: tab.id }
-                        setIsDragging(true)
-                        e.dataTransfer.effectAllowed = 'move'
-                        // Firefox requires some dataTransfer data to start a drag.
-                        try {
-                          e.dataTransfer.setData('text/plain', tab.id)
-                        } catch {
-                          // ignore
-                        }
-                      }}
-                      onDragEnd={() => {
-                        dragSourceRef.current = null
-                        setDragOver(null)
-                        setPaneDrop(null)
-                        setIsDragging(false)
-                      }}
-                      onDragOver={(e) => {
-                        if (!dragSourceRef.current) return
-                        e.preventDefault()
-                        e.stopPropagation()
-                        e.dataTransfer.dropEffect = 'move'
-                        if (paneDrop) setPaneDrop(null)
-                        const rect = e.currentTarget.getBoundingClientRect()
-                        const midpoint = rect.left + rect.width / 2
-                        const insertIdx = e.clientX < midpoint ? tabIdx : tabIdx + 1
-                        if (
-                          dragOver?.paneId !== pane.id ||
-                          dragOver.index !== insertIdx
-                        ) {
-                          setDragOver({ paneId: pane.id, index: insertIdx })
-                        }
-                      }}
-                      onDrop={(e) => {
-                        if (!dragSourceRef.current) return
-                        e.preventDefault()
-                        e.stopPropagation()
-                        const src = dragSourceRef.current
-                        const tgt = dragOver ?? { paneId: pane.id, index: tabIdx }
-                        moveTab(src, tgt)
-                        dragSourceRef.current = null
-                        setDragOver(null)
-                        setPaneDrop(null)
-                        setIsDragging(false)
-                      }}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setActiveTab(pane.id, tab.id)
-                      }}
-                      onContextMenu={(e) => {
-                        e.preventDefault()
-                        e.stopPropagation()
-                        setContextMenu({ paneId: pane.id, tabId: tab.id, x: e.clientX, y: e.clientY })
-                      }}
-                      className={`group relative flex items-center gap-2 px-3 border-r border-border text-xs font-medium whitespace-nowrap transition-colors ${
-                        isActive
-                          ? 'bg-card text-foreground'
-                          : 'text-muted-foreground hover:text-foreground hover:bg-card/50'
-                      } ${indicatorBefore ? 'before:absolute before:left-0 before:top-0 before:bottom-0 before:w-0.5 before:bg-accent-coral' : ''} ${indicatorAfter ? 'after:absolute after:right-0 after:top-0 after:bottom-0 after:w-0.5 after:bg-accent-coral' : ''}`}
-                    >
-                      <span className="truncate max-w-[160px] pointer-events-none">{tab.label}</span>
-                      <span
-                        role="button"
-                        aria-label={`Close ${tab.label}`}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          closeTab(pane.id, tab.id)
-                        }}
-                        className="p-0.5 rounded-sm text-muted-foreground/60 hover:text-foreground hover:bg-muted opacity-60 group-hover:opacity-100"
-                      >
-                        <X className="w-3 h-3" />
-                      </span>
-                    </button>
-                  )
-                })}
+                {pinnedTabs.map(renderTab)}
+                {visibleUnpinned.map(renderTab)}
+                {overflowUnpinned.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      const rect = e.currentTarget.getBoundingClientRect()
+                      setOverflowMenu({ paneId: pane.id, x: rect.right, y: rect.bottom })
+                    }}
+                    title={`${overflowUnpinned.length} more tab${overflowUnpinned.length === 1 ? '' : 's'}`}
+                    aria-label={`Show ${overflowUnpinned.length} more tabs`}
+                    style={{ width: OVERFLOW_BTN_W }}
+                    className="flex-none flex items-center justify-center gap-0.5 border-r border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-card/50 transition-colors"
+                  >
+                    +{overflowUnpinned.length}
+                    <ChevronDown className="w-3 h-3" />
+                  </button>
+                )}
                 {pane.tabs.length === 0 && (
                   <div className="px-3 flex items-center text-xs text-muted-foreground/60">
                     No tabs open. Click a section in the sidebar.
@@ -1544,12 +1875,34 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
       })}
 
       {/* Right-click context menu */}
-      {contextMenu && (
+      {contextMenu && (() => {
+        const cmPane = state.panes.find((p) => p.id === contextMenu.paneId)
+        const cmTab = cmPane?.tabs.find((t) => t.id === contextMenu.tabId)
+        if (!cmPane || !cmTab) return null
+        const cmIdx = cmPane.tabs.findIndex((t) => t.id === contextMenu.tabId)
+        // Bulk-close sets always spare pinned tabs.
+        const otherIds = cmPane.tabs.filter((t) => t.id !== cmTab.id && !t.pinned).map((t) => t.id)
+        const rightIds = cmPane.tabs.slice(cmIdx + 1).filter((t) => !t.pinned).map((t) => t.id)
+        const unpinnedIds = cmPane.tabs.filter((t) => !t.pinned).map((t) => t.id)
+        const hasPinned = cmPane.tabs.some((t) => t.pinned)
+        const item = 'w-full flex items-center gap-2 px-3 py-1.5 hover:bg-muted text-left'
+        return (
         <div
-          className="fixed z-50 bg-card border border-border rounded-md shadow-lg py-1 min-w-[180px] text-sm"
+          className="fixed z-50 bg-card border border-border rounded-md shadow-lg py-1 min-w-[200px] text-sm"
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onClick={(e) => e.stopPropagation()}
         >
+          <button
+            type="button"
+            onClick={() => {
+              togglePin(contextMenu.paneId, contextMenu.tabId)
+              setContextMenu(null)
+            }}
+            className={item}
+          >
+            {cmTab.pinned ? <PinOff className="w-3.5 h-3.5" /> : <Pin className="w-3.5 h-3.5" />}
+            {cmTab.pinned ? 'Unpin tab' : 'Pin tab'}
+          </button>
           {state.panes.length >= 2 ? (
             <button
               type="button"
@@ -1557,7 +1910,7 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
                 fullScreenTab(contextMenu.paneId, contextMenu.tabId)
                 setContextMenu(null)
               }}
-              className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-muted text-left"
+              className={item}
             >
               <Maximize2 className="w-3.5 h-3.5" />
               Full screen
@@ -1569,7 +1922,7 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
                 openTabToSide(contextMenu.paneId, contextMenu.tabId)
                 setContextMenu(null)
               }}
-              className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-muted text-left"
+              className={item}
             >
               <SplitSquareHorizontal className="w-3.5 h-3.5" />
               Open to the side
@@ -1581,24 +1934,65 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
               duplicateTab(contextMenu.paneId, contextMenu.tabId)
               setContextMenu(null)
             }}
-            className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-muted text-left"
+            className={item}
           >
             <Copy className="w-3.5 h-3.5" />
             Duplicate tab
           </button>
+          <div className="my-1 border-t border-border" />
           <button
             type="button"
             onClick={() => {
               closeTab(contextMenu.paneId, contextMenu.tabId)
               setContextMenu(null)
             }}
-            className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-muted text-left text-foreground"
+            className={`${item} text-foreground`}
           >
             <X className="w-3.5 h-3.5" />
             Close tab
           </button>
+          {otherIds.length > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                closeTabs(contextMenu.paneId, new Set(otherIds))
+                setContextMenu(null)
+              }}
+              className={item}
+            >
+              <X className="w-3.5 h-3.5" />
+              Close others
+            </button>
+          )}
+          {rightIds.length > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                closeTabs(contextMenu.paneId, new Set(rightIds))
+                setContextMenu(null)
+              }}
+              className={item}
+            >
+              <X className="w-3.5 h-3.5" />
+              Close tabs to the right
+            </button>
+          )}
+          {hasPinned && unpinnedIds.length > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                closeTabs(contextMenu.paneId, new Set(unpinnedIds))
+                setContextMenu(null)
+              }}
+              className={item}
+            >
+              <X className="w-3.5 h-3.5" />
+              Close unpinned
+            </button>
+          )}
         </div>
-      )}
+        )
+      })()}
 
       {/* Back/forward history dropdown. Entries are listed most-recent first;
           clicking entry i navigates i+1 steps in that direction. */}
@@ -1636,6 +2030,51 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
                 </button>
               )
             })}
+          </div>
+        )
+      })()}
+
+      {/* Overflow dropdown: the unpinned tabs that didn't fit inline. Clicking
+          one activates it (which bumps it back into the visible set); the ×
+          closes it. Right-aligned under the +N button via a translate. */}
+      {overflowMenu && (() => {
+        const pane = state.panes.find((p) => p.id === overflowMenu.paneId)
+        if (!pane) return null
+        const { overflow } = splitVisibleOverflow(pane.tabs, paneWidths[pane.id] ?? 0)
+        if (overflow.length === 0) return null
+        const ordered = [...overflow].sort((a, b) => b.lastActivatedAt - a.lastActivatedAt)
+        return (
+          <div
+            className="fixed z-50 bg-card border border-border rounded-md shadow-lg py-1 min-w-[200px] max-w-[320px] text-sm -translate-x-full"
+            style={{ left: overflowMenu.x, top: overflowMenu.y }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {ordered.map((tab) => (
+              <div
+                key={tab.id}
+                className="group flex items-center gap-2 pl-3 pr-1.5 py-1.5 hover:bg-muted"
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab(overflowMenu.paneId, tab.id)
+                    setOverflowMenu(null)
+                  }}
+                  title={tab.label}
+                  className="flex-1 min-w-0 flex items-center text-left"
+                >
+                  <span className={`truncate ${tab.ephemeral ? 'italic' : ''}`}>{tab.label}</span>
+                </button>
+                <span
+                  role="button"
+                  aria-label={`Close ${tab.label}`}
+                  onClick={() => closeTab(overflowMenu.paneId, tab.id)}
+                  className="p-0.5 rounded-sm text-muted-foreground/60 hover:text-foreground hover:bg-card opacity-60 group-hover:opacity-100"
+                >
+                  <X className="w-3 h-3" />
+                </span>
+              </div>
+            ))}
           </div>
         )
       })()}

@@ -3,6 +3,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { hasCycleAccess } from "~/lib/roles";
 import { generateCandidateSlots, isInterviewerFree } from "~/hiring/lib/scheduling";
+import { APPLICATION_TZ } from "~/lib/timezone";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -19,7 +20,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       configured: false,
       slots: [],
       slotDurationMinutes: 30,
-      timezone: "America/New_York",
+      timezone: APPLICATION_TZ,
     });
   }
 

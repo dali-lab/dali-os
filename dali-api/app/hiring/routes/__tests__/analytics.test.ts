@@ -31,6 +31,7 @@ beforeEach(() => {
     isAdmin: false,
     isDomainLead: false,
     isInstructor: false,
+    isAlumni: false,
     canViewForms: true,
     canViewStaffing: true,
   });

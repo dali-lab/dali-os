@@ -2,8 +2,14 @@ import type { Route } from "./+types/api.notifications";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { listOpenTasks } from "~/lib/tasks";
+import { listOpenTasks, listNotificationHistory } from "~/lib/tasks";
 import { listMyNotifications } from "~/lib/notifications";
+import { ONBOARDING_LINK } from "~/members/lib/welcome.server";
+
+// Query params that switch the loader into history mode. Their presence (not
+// their value) flips the payload, so the legacy poller — which sends none — is
+// untouched.
+const HISTORY_PARAMS = ["status", "kind", "q", "cursor", "limit"] as const;
 
 export async function loader({ request }: Route.LoaderArgs) {
   const preflight = handlePreflight(request);
@@ -13,6 +19,45 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!auth.ok) return withCors(request, auth.response);
 
   const userId = auth.user.sub;
+
+  // History mode: any history param present → return the browsable history
+  // payload { items, nextCursor, counts }. Additive and back-compatible.
+  const url = new URL(request.url);
+  const isHistory = HISTORY_PARAMS.some((p) => url.searchParams.has(p));
+  if (isHistory) {
+    const statusRaw = url.searchParams.get("status");
+    const status =
+      statusRaw === "open" || statusRaw === "cleared" || statusRaw === "all"
+        ? statusRaw
+        : "all";
+    const cursorRaw = url.searchParams.get("cursor");
+    let cursor: { createdAt: string; id: string } | null = null;
+    if (cursorRaw) {
+      try {
+        const parsed = JSON.parse(cursorRaw);
+        if (
+          parsed &&
+          typeof parsed.createdAt === "string" &&
+          typeof parsed.id === "string"
+        ) {
+          cursor = { createdAt: parsed.createdAt, id: parsed.id };
+        }
+      } catch {
+        // Malformed cursor → treat as first page.
+      }
+    }
+    const limitRaw = Number(url.searchParams.get("limit"));
+    const result = await listNotificationHistory(userId, {
+      status,
+      kind: url.searchParams.get("kind") ?? undefined,
+      q: url.searchParams.get("q") ?? undefined,
+      limit: Number.isFinite(limitRaw) && limitRaw > 0 ? limitRaw : undefined,
+      cursor,
+    });
+    return withCors(request, Response.json(result));
+  }
+
+  // Legacy payload (unchanged): the bell poller reads taskCount/tasks.
   // dev (#…) refactored notification fetching into listMyNotifications();
   // keep that helper and layer the open-tasks payload on top so the bell
   // still shows tasks (Tasks-nav feature).
@@ -38,14 +83,15 @@ export async function action({ request }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
 
-  // POST with no id = "mark all read". Meeting invites are excluded: they
-  // clear only when the recipient RSVPs (Accept/Maybe/Decline), never on a
-  // blanket read.
+  // POST with no id = "mark all read". Excluded: meeting invites (clear only on
+  // RSVP) and the onboarding task (clears only when onboarding is finished), so
+  // neither is dismissed by a blanket read.
   await prisma.notification.updateMany({
     where: {
       recipientUserId: auth.user.sub,
       readAt: null,
       scheduledMeetingId: null,
+      NOT: { kind: "SystemAnnouncement", link: ONBOARDING_LINK },
     },
     data: { readAt: new Date() },
   });

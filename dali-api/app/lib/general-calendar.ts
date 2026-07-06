@@ -11,6 +11,7 @@
 
 import rrulePkg from "rrule";
 import type { RRule as RRuleType } from "rrule";
+import { zonedWallTimeUtc } from "~/lib/timezone";
 
 const { RRule, rrulestr } = rrulePkg as unknown as {
   RRule: typeof import("rrule").RRule;
@@ -221,37 +222,15 @@ function parseIcsDate(namePart: string, value: string): { date: Date; allDay: bo
   // Floating or TZID local time. Resolve the named zone's UTC offset at that
   // wall-clock instant; fall back to UTC if the tz is missing/invalid.
   const tzid = /TZID=([^;:]+)/.exec(namePart)?.[1];
-  const utcGuess = Date.UTC(y, mon - 1, day, hour, min, sec);
-  if (!tzid) return { date: new Date(utcGuess), allDay: false };
-  const offsetMs = tzOffsetMs(tzid, new Date(utcGuess));
-  return { date: new Date(utcGuess - offsetMs), allDay: false };
-}
-
-// How far the named timezone is ahead of UTC at `instant`, in ms.
-function tzOffsetMs(timeZone: string, instant: Date): number {
+  if (!tzid) {
+    return { date: new Date(Date.UTC(y, mon - 1, day, hour, min, sec)), allDay: false };
+  }
   try {
-    const dtf = new Intl.DateTimeFormat("en-US", {
-      timeZone,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-    });
-    const parts = dtf.formatToParts(instant);
-    const get = (t: string) => +(parts.find((p) => p.type === t)?.value ?? "0");
-    const asUtc = Date.UTC(
-      get("year"),
-      get("month") - 1,
-      get("day"),
-      get("hour") % 24,
-      get("minute"),
-      get("second"),
-    );
-    return asUtc - instant.getTime();
+    // zonedWallTimeUtc handles minute-precision wall clocks; carry seconds
+    // separately since DST offsets never change mid-minute.
+    const minuteUtc = zonedWallTimeUtc(y, mon, day, hour, min, tzid);
+    return { date: new Date(minuteUtc.getTime() + sec * 1000), allDay: false };
   } catch {
-    return 0;
+    return { date: new Date(Date.UTC(y, mon - 1, day, hour, min, sec)), allDay: false };
   }
 }

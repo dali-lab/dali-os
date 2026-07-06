@@ -1,9 +1,9 @@
 import type { Route } from "./+types/api.projects.$id.tasks";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
-import { isCore } from "~/lib/roles";
+import { requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { isTaskStatus } from "../lib/task-board";
+import { createIssueForTask, normalizeRepo } from "../lib/github-task-sync";
 
 // POST /api/projects/:id/tasks
 //
@@ -19,6 +19,9 @@ type Body = {
   epicId?: string | null;
   // ISO timestamp (or null/absent for no deadline).
   dueAt?: string | null;
+  // Present = mirror to GH. `repo` must be one of the project's repoUrls
+  // (server validates; never trust the client's free-text).
+  github?: { repo: string };
 };
 
 function isBody(x: unknown): x is Body {
@@ -29,6 +32,11 @@ function isBody(x: unknown): x is Body {
   if (o.sprintId != null && typeof o.sprintId !== "string") return false;
   if (o.epicId != null && typeof o.epicId !== "string") return false;
   if (o.dueAt != null && typeof o.dueAt !== "string") return false;
+  if (o.github !== undefined) {
+    if (!o.github || typeof o.github !== "object") return false;
+    const g = o.github as Record<string, unknown>;
+    if (typeof g.repo !== "string") return false;
+  }
   return true;
 }
 
@@ -43,15 +51,12 @@ export async function action({ request, params }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
   if (preflight) return preflight;
 
-  const auth = await requireAuth(request);
-  if (!auth.ok) return withCors(request, auth.response);
-
   if (request.method !== "POST") {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
-  if (!(await isCore(auth.user.sub))) {
-    return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
-  }
+  const gate = await requireProjectEditAccess(request, params.id!);
+  if (!gate.ok) return gate.response;
+  const auth = gate.auth;
 
   let body: unknown;
   try {
@@ -80,10 +85,29 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const project = await prisma.project.findUnique({
     where: { id: params.id },
-    select: { id: true },
+    select: { id: true, repoUrls: true },
   });
   if (!project) {
     return withCors(request, Response.json({ error: "Project not found" }, { status: 404 }));
+  }
+
+  // Validate the GH repo (if requested) is one of the project's declared
+  // repos. Compare in normalized "owner/repo" form so users can paste either
+  // the URL or the shortform when configuring the project.
+  let githubRepo: string | null = null;
+  if (body.github) {
+    const requested = normalizeRepo(body.github.repo);
+    if (!requested) {
+      return withCors(request, Response.json({ error: "Invalid github.repo" }, { status: 400 }));
+    }
+    const allowed = project.repoUrls.map(normalizeRepo).filter((r): r is string => !!r);
+    if (!allowed.includes(requested)) {
+      return withCors(
+        request,
+        Response.json({ error: "github.repo is not in project.repoUrls" }, { status: 400 }),
+      );
+    }
+    githubRepo = requested;
   }
 
   // Append after the current max position in the target column.
@@ -107,6 +131,13 @@ export async function action({ request, params }: Route.ActionArgs) {
     },
     select: { id: true },
   });
+
+  if (githubRepo) {
+    // Fire-and-forget: GH outage or slow response must never block the user.
+    void createIssueForTask(task.id, githubRepo).catch((err) =>
+      console.error(`task ${task.id}: github mirror failed`, err),
+    );
+  }
 
   return withCors(request, Response.json({ id: task.id }));
 }

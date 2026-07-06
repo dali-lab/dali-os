@@ -10,8 +10,12 @@
 // Multi-instance Fly deployments each maintain their own cache — that's fine,
 // the cost of a redundant exchange is one extra HTTP call.
 
+// No optional scope is requested. Everything we read from the People API
+// (dartmouth_affiliation) is in the base no-scope payload; the optional
+// scopes (private / read.sensitive / read.highlysensitive) gate FERPA and
+// sensitive fields we never use, and each requires data-steward approval
+// that would otherwise become a silent deployment dependency.
 const JWT_URL = "https://api.dartmouth.edu/api/jwt";
-const PEOPLE_SCOPE = "urn:dartmouth:people:read.sensitive";
 const REFRESH_BUFFER_MS = 5 * 60 * 1000; // refresh when within 5 min of exp
 
 type CachedJwt = {
@@ -47,8 +51,7 @@ async function exchange(): Promise<CachedJwt> {
     );
   }
 
-  const url = `${JWT_URL}?scope=${encodeURIComponent(PEOPLE_SCOPE)}`;
-  const res = await fetch(url, {
+  const res = await fetch(JWT_URL, {
     method: "POST",
     // DartAPI docs: API key goes in `Authorization` header as the raw key
     // (no "Bearer " prefix). The returned JWT is what gets used with Bearer
@@ -62,20 +65,10 @@ async function exchange(): Promise<CachedJwt> {
     );
   }
 
-  const body = (await res.json()) as {
-    jwt?: string;
-    accepted_scopes?: string[];
-  };
+  const body = (await res.json()) as { jwt?: string };
 
   if (!body.jwt) {
     throw new Error("dartmouth-jwt: response missing jwt field");
-  }
-  if (!body.accepted_scopes?.includes(PEOPLE_SCOPE)) {
-    throw new Error(
-      `dartmouth-jwt: required scope ${PEOPLE_SCOPE} not granted (accepted: ${
-        body.accepted_scopes?.join(",") ?? "none"
-      })`,
-    );
   }
 
   return {

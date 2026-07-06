@@ -1,4 +1,4 @@
-import { Link, redirect, useLoaderData } from "react-router";
+import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/documents.$pageId";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
@@ -35,15 +35,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const canEdit = await isCore(auth.user.sub);
 
-  // Parent project for the back link — only present for Project pages.
-  const project =
-    page.workspaceType === "Project" && page.workspaceId
-      ? await prisma.project.findUnique({
-          where: { id: page.workspaceId },
-          select: { id: true, name: true },
-        })
-      : null;
-
   const allTags = await prisma.docTag.findMany({
     where: { archivedAt: null },
     orderBy: { label: "asc" },
@@ -60,7 +51,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     title: page.title,
     tags: page.tags.map((t) => t.tag).sort((a, b) => a.label.localeCompare(b.label)),
     allTags,
-    project,
     canEdit,
     collabToken,
     userName: presenceUser?.name ?? fallbackName,
@@ -76,7 +66,6 @@ export default function DocumentPage() {
     title,
     tags,
     allTags,
-    project,
     canEdit,
     collabToken,
     userName,
@@ -87,15 +76,6 @@ export default function DocumentPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      {project && (
-        <Link
-          to={`/projects/${project.id}`}
-          className="text-sm text-muted-foreground hover:text-foreground"
-        >
-          ← Back to {project.name}
-        </Link>
-      )}
-
       <DocumentEditor
         pageId={pageId}
         initialTitle={title}
