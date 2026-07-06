@@ -5,6 +5,7 @@ import { setSessionCookie } from "~/lib/cookies";
 import { getClientIp } from "~/lib/request-meta";
 import { logAuditEvent } from "~/lib/audit";
 import { upsertUserFromGoogle } from "~/lib/user-provisioning";
+import { refreshDartmouthSignals } from "~/lib/dartmouth-refresh";
 import { getApiBaseUrl, getCasBaseUrl } from "~/lib/app-env";
 
 const OAUTH_STATE_COOKIE = "__dali_oauth_state";
@@ -115,6 +116,10 @@ export async function loader({ request }: Route.LoaderArgs) {
   // unreachable through this route — they live on for the OAuth-provider
   // callback `/oauth/callback/google` which gates on a different signal.
   const { user } = await upsertUserFromGoogle(googleUser);
+  // Fire-and-forget Dartmouth directory sync (safe no-op without a netId).
+  // Members mostly sign in with Google, so this — not the CAS callback — is
+  // the trigger that actually keeps their signals fresh.
+  void refreshDartmouthSignals(user.id);
 
   const session = await issueSession({
     userId: user.id,

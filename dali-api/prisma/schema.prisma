@@ -98,17 +98,18 @@ model User {
   manualBlocks         ManualBlock[]
 
   // ─── Dartmouth directory signals (cached) ────────────────────────────────
-  // From lookup.dartmouth.edu (public, unauthenticated). Currently-affiliated
-  // accounts only: "Student" | "Staff" | "Faculty" | null=absent-from-lookup.
-  // Refreshed lazily on CAS sign-in and during the annual Commencement sweep.
-  dartmouthLookupAffiliation String?
-  dartmouthLookupSyncedAt    DateTime?
-  // From api.dartmouth.edu/api/people/{netid} (JWT-authenticated).
-  // dartmouth_affiliation values: "ALUMNI" | "DART" | "E-FAC" | ... See
-  // alumni_plan.md for the full code table. ALUMNI is the canonical alumni
-  // signal once Dartmouth flips it post-grad.
-  dartmouthAffiliation       String?
-  dartmouthPeopleSyncedAt    DateTime?
+  // From api.dartmouth.edu/api/people/{netid} (JWT-authenticated), refreshed
+  // lazily on login. See alumni_plan.md "Observed API behavior".
+  // dartmouthAffiliation: raw IDM code ("DART" | "ALUMNI" | "E-FAC" | ...).
+  // Stays DART for months post-graduation — the slow long-tail signal.
+  dartmouthAffiliation    String?
+  // "Alum" in the affiliations array — degree conferred; appears within
+  // weeks of Commencement. The prompt graduation signal.
+  dartmouthIsAlum         Boolean?
+  // "Student" in the affiliations array. Lingers after graduation, so
+  // currently-enrolled is the compound: isStudent AND NOT isAlum.
+  dartmouthIsStudent      Boolean?
+  dartmouthPeopleSyncedAt DateTime?
 
   // ─── Phase 1: foundational role-model back-relations ──────────────────────
   domainEligibilities     DomainEligibility[]

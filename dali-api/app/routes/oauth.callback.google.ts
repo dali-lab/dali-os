@@ -7,6 +7,7 @@ import {
   exchangeGoogleCode,
 } from "~/lib/oauth";
 import { upsertUserFromGoogle } from "~/lib/user-provisioning";
+import { refreshDartmouthSignals } from "~/lib/dartmouth-refresh";
 import { issueSession } from "~/lib/session";
 import { setSessionCookie } from "~/lib/cookies";
 import { getClientIp } from "~/lib/request-meta";
@@ -75,6 +76,10 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   const { user } = await upsertUserFromGoogle(googleUser);
+  // Fire-and-forget Dartmouth directory sync (safe no-op without a netId).
+  // Members mostly sign in with Google, so this — not the CAS callback — is
+  // the trigger that actually keeps their signals fresh.
+  void refreshDartmouthSignals(user.id);
 
   // Resolve the OAuthClient policy. requireMembership is a belt-and-suspenders
   // check after the upsert (which already creates a DALIMember marker).

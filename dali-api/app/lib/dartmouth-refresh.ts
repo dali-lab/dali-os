@@ -1,45 +1,36 @@
 // Orchestrator: refresh a user's cached Dartmouth directory signals from
-// both lookup.dartmouth.edu and api.dartmouth.edu/api/people, writing the
-// results onto the User row.
+// api.dartmouth.edu/api/people, writing the results onto the User row.
 //
 // Lazy by default — callers pass `staleAfterDays` and we skip the network
-// call when both caches are fresher than that. This is the function CAS
-// callbacks fire-and-forget on login, and the annual Commencement sweep
-// runs against every graduating member.
+// call when the cache is fresher than that. Login callbacks (CAS and Google)
+// fire-and-forget this; the default staleness of 7 days keeps the
+// enrolled-student override in roles.ts continuously fed for anyone active
+// weekly, while costing at most one People call per user per week.
 //
-// Failure of either API is non-fatal: we log and move on. Tier-1 / Tier-3
-// derivation in roles.ts simply falls through when a signal is absent.
+// Failure is non-fatal: we log and move on. Derivation in roles.ts simply
+// falls through to classYear math when signals are absent or stale.
 
 import { prisma } from "~/lib/db";
-import {
-  lookupByNetId,
-  type DartmouthLookupResult,
-} from "~/lib/dartmouth-lookup";
-import {
-  peopleByNetId,
-  type DartmouthPeopleResult,
-} from "~/lib/dartmouth-people";
+import { peopleByNetId } from "~/lib/dartmouth-people";
 
 export type RefreshOptions = {
-  // Skip the network call when both caches are this fresh. Default 30 days.
+  // Skip the network call when the cache is this fresh. Default 7 days —
+  // must stay comfortably under the trust window roles.ts applies to the
+  // enrolled-student override (14 days) or the override goes dark between
+  // syncs.
   staleAfterDays?: number;
   // When true, swallow errors and never throw — for fire-and-forget use
-  // from CAS callback. Default true (background semantics).
+  // from login callbacks. Default true (background semantics).
   swallow?: boolean;
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-function isFresh(syncedAt: Date | null, staleAfterMs: number): boolean {
-  if (!syncedAt) return false;
-  return Date.now() - syncedAt.getTime() < staleAfterMs;
-}
-
 export async function refreshDartmouthSignals(
   userId: string,
   opts: RefreshOptions = {},
 ): Promise<void> {
-  const staleAfterDays = opts.staleAfterDays ?? 30;
+  const staleAfterDays = opts.staleAfterDays ?? 7;
   const swallow = opts.swallow ?? true;
   const staleAfterMs = staleAfterDays * DAY_MS;
 
@@ -50,81 +41,64 @@ export async function refreshDartmouthSignals(
         netId: true,
         classYear: true,
         graduatedAt: true,
+        dartmouthIsAlum: true,
         dartmouthAffiliation: true,
-        dartmouthLookupSyncedAt: true,
         dartmouthPeopleSyncedAt: true,
       },
     });
 
     if (!user || !user.netId) return;
 
-    const lookupFresh = isFresh(user.dartmouthLookupSyncedAt, staleAfterMs);
-    const peopleFresh = isFresh(user.dartmouthPeopleSyncedAt, staleAfterMs);
-    if (lookupFresh && peopleFresh) return;
+    if (
+      user.dartmouthPeopleSyncedAt &&
+      Date.now() - user.dartmouthPeopleSyncedAt.getTime() < staleAfterMs
+    ) {
+      return;
+    }
 
-    // Fire both in parallel. Either may throw; we capture per-promise so
-    // one bad API doesn't lose the other's data.
-    const [lookupSettled, peopleSettled] = await Promise.allSettled([
-      lookupFresh
-        ? Promise.resolve(null as DartmouthLookupResult | null)
-        : lookupByNetId(user.netId),
-      peopleFresh
-        ? Promise.resolve(null as DartmouthPeopleResult | null)
-        : peopleByNetId(user.netId),
-    ]);
+    const people = await peopleByNetId(user.netId);
 
     const now = new Date();
-    const updates: Record<string, unknown> = {};
+    const updates: Record<string, unknown> = {
+      dartmouthPeopleSyncedAt: now,
+    };
 
-    if (lookupSettled.status === "fulfilled") {
-      const lookup = lookupSettled.value;
-      updates.dartmouthLookupSyncedAt = now;
-      if (lookup) {
-        updates.dartmouthLookupAffiliation = lookup.affiliation;
-        // Only populate classYear when we don't already have one — user
-        // input (or the Notion import) wins. Never clobber.
-        if (lookup.classYear && user.classYear == null) {
-          updates.classYear = lookup.classYear;
-        }
-      } else if (!lookupFresh) {
-        // Absent-from-lookup: explicitly null out the cached affiliation so
-        // staleness doesn't masquerade as "still a student."
-        updates.dartmouthLookupAffiliation = null;
+    // 404 (identity gone from the People API) keeps the last-known cached
+    // signals — an account aging out of IDM says nothing about whether the
+    // person graduated, and roles.ts already discounts stale data via the
+    // synced-at timestamp.
+    if (people) {
+      updates.dartmouthAffiliation = people.dartmouthAffiliation;
+      updates.dartmouthIsAlum = people.isAlum;
+      updates.dartmouthIsStudent = people.isStudent;
+
+      // Only populate classYear when we don't already have one — user input
+      // (or the Notion import) wins. Never clobber. department_class is
+      // class identity ("'25" for a +1 who walks in '26), which is exactly
+      // what we display and what the derivation's Tier-4 fallback expects.
+      if (people.classYear && user.classYear == null) {
+        updates.classYear = people.classYear;
       }
-    } else {
-      console.warn(
-        `dartmouth-refresh: lookup failed for userId=${userId}: ${lookupSettled.reason}`,
-      );
-    }
 
-    if (peopleSettled.status === "fulfilled") {
-      const people = peopleSettled.value;
-      updates.dartmouthPeopleSyncedAt = now;
-      if (people) {
-        const affiliation = people.dartmouthAffiliation;
-        updates.dartmouthAffiliation = affiliation;
-        // First time we see ALUMNI and graduatedAt is null, stamp it. This
-        // is the canonical "officially graduated" event. Don't overwrite an
-        // existing graduatedAt — off-cycle grads set theirs manually.
-        if (
-          affiliation === "ALUMNI" &&
-          user.dartmouthAffiliation !== "ALUMNI" &&
-          user.graduatedAt == null
-        ) {
-          updates.graduatedAt = now;
-        }
+      // First time we observe a graduation signal ("Alum" affiliation shows
+      // up within weeks of conferral; the IDM ALUMNI flip trails by months)
+      // and graduatedAt is unset, stamp it. Don't overwrite an existing
+      // graduatedAt — off-cycle grads set theirs manually.
+      const isAlumNow =
+        people.isAlum || people.dartmouthAffiliation === "ALUMNI";
+      const wasAlum =
+        user.dartmouthIsAlum === true ||
+        user.dartmouthAffiliation === "ALUMNI";
+      if (isAlumNow && !wasAlum && user.graduatedAt == null) {
+        updates.graduatedAt = now;
       }
-    } else {
-      console.warn(
-        `dartmouth-refresh: people failed for userId=${userId}: ${peopleSettled.reason}`,
-      );
     }
 
-    if (Object.keys(updates).length > 0) {
-      await prisma.user.update({ where: { id: userId }, data: updates });
-    }
+    await prisma.user.update({ where: { id: userId }, data: updates });
   } catch (err) {
     if (!swallow) throw err;
-    console.warn(`dartmouth-refresh: unexpected error for userId=${userId}: ${err}`);
+    console.warn(
+      `dartmouth-refresh: failed for userId=${userId}: ${err}`,
+    );
   }
 }
