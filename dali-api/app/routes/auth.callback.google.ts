@@ -1,5 +1,6 @@
 import type { Route } from "./+types/auth.callback.google";
 import { exchangeGoogleCode } from "~/lib/oauth";
+import { prisma } from "~/lib/db";
 import { issueSession } from "~/lib/session";
 import { setSessionCookie } from "~/lib/cookies";
 import { getClientIp } from "~/lib/request-meta";
@@ -82,12 +83,49 @@ export async function loader({ request }: Route.LoaderArgs) {
     });
   }
 
-  // The only /login button that uses this callback is the Member button, so
-  // @dali.dartmouth.edu is the only valid outcome. Enforce unconditionally —
-  // we no longer rely on the __dali_account_type cookie (which could be
-  // stripped) to gate the check. Dartmouth-student and partner branches that
-  // used to live inline below are gone for the same reason: unreachable from
-  // any production route. They live on (for now) in the OAuth-provider
+  // Returning-partner convenience sign-in (spec: Google is repeat sign-in
+  // only; magic link is the sole account-creation path). Branches on DB
+  // state — a pre-existing PartnerUser matched by the Google-verified email —
+  // not on any strippable cookie, so it cannot widen access: an email with
+  // no PartnerUser row falls through to the member-domain check unchanged.
+  const partnerCandidate = await prisma.user.findUnique({
+    where: { personalEmail: googleUser.email.toLowerCase() },
+    select: { id: true, partnerUser: { select: { id: true } } },
+  });
+  if (partnerCandidate?.partnerUser) {
+    const session = await issueSession({
+      userId: partnerCandidate.id,
+      userAgent: request.headers.get("user-agent") ?? undefined,
+      ip: getClientIp(request),
+    });
+    await logAuditEvent({
+      action: "login.success",
+      userId: partnerCandidate.id,
+      metadata: {
+        provider: "google",
+        authType: "partner",
+        email: googleUser.email,
+      },
+      request,
+    });
+    await prisma.partnerUser.update({
+      where: { id: partnerCandidate.partnerUser.id },
+      data: { authProvider: "Google" },
+    });
+    const headers = new Headers();
+    headers.append("Set-Cookie", clearStateCookie);
+    setSessionCookie(headers, session.rawId);
+    headers.set("Location", "/partner");
+    return new Response(null, { status: 302, headers });
+  }
+
+  // The /login Member button and the partner login's Google button both use
+  // this callback; with the partner branch handled above on DB state,
+  // @dali.dartmouth.edu is the only valid outcome here. Enforce
+  // unconditionally — we no longer rely on the __dali_account_type cookie
+  // (which could be stripped) to gate the check. Dartmouth-student branches
+  // that used to live inline below are gone for the same reason: unreachable
+  // from any production route. They live on (for now) in the OAuth-provider
   // callback `/oauth/callback/google`, which gates on a different signal
   // (`OAuthSession.accountType`).
   if (!googleUser.email.endsWith("@dali.dartmouth.edu")) {

@@ -1,8 +1,15 @@
+import { randomBytes } from "node:crypto";
 import { Form, redirect, useActionData, useNavigation } from "react-router";
 import type { Route } from "./+types/partner.login";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
+import { checkRateLimit } from "~/lib/rate-limit";
+import { getApiBaseUrl } from "~/lib/app-env";
+import { buildGoogleAuthUrl } from "~/lib/google-oauth";
 import { issuePartnerMagicLink } from "~/partners/lib/magic-link.server";
+
+const OAUTH_STATE_COOKIE = "__dali_oauth_state";
+const isProduction = process.env.NODE_ENV === "production";
 
 export const meta: Route.MetaFunction = () => [
   { title: "DALI OS · Partner sign in" },
@@ -22,6 +29,36 @@ export async function loader({ request }: Route.LoaderArgs) {
 
 export async function action({ request }: Route.ActionArgs) {
   const formData = await request.formData();
+
+  // Repeat sign-in via Google (spec: convenience only — accounts are never
+  // created here; the callback only accepts pre-existing PartnerUsers).
+  // Same state-cookie shape as /login, minus the @dali.dartmouth.edu hint.
+  if (formData.get("provider") === "google") {
+    const limited = checkRateLimit(request, { max: 5, windowMs: 60_000 });
+    if (limited) return limited;
+    const state = randomBytes(32).toString("base64url");
+    const stateCookie = [
+      `${OAUTH_STATE_COOKIE}=${state}`,
+      "Path=/auth/callback/google",
+      "Max-Age=600",
+      "HttpOnly",
+      "SameSite=Lax",
+      ...(isProduction ? ["Secure"] : []),
+    ].join("; ");
+    const headers = new Headers();
+    headers.append("Set-Cookie", stateCookie);
+    headers.set(
+      "Location",
+      buildGoogleAuthUrl({
+        clientId: process.env.GOOGLE_CLIENT_ID!,
+        redirectUri: `${getApiBaseUrl()}/auth/callback/google`,
+        scopes: ["openid", "email", "profile"],
+        state,
+      }),
+    );
+    return new Response(null, { status: 302, headers });
+  }
+
   const email = String(formData.get("email") ?? "");
   if (!email.includes("@")) {
     return { error: "Enter a valid email address" };
@@ -88,6 +125,20 @@ export default function PartnerLogin() {
                 {submitting ? "Sending…" : "Email me a sign-in link"}
               </button>
             </Form>
+            <Form method="post" className="mt-3">
+              <input type="hidden" name="provider" value="google" />
+              <button
+                type="submit"
+                disabled={submitting}
+                className="w-full rounded-xl border border-border bg-card text-dark-blue font-heading font-semibold py-3 hover:border-accent-coral transition disabled:opacity-50"
+              >
+                Continue with Google
+              </button>
+            </Form>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Google works for returning partners whose account email is a
+              Google account. First time here? Use the email link above.
+            </p>
           </>
         )}
 
