@@ -33,7 +33,16 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     throw new Response("Not found", { status: 404 });
   }
 
-  const canEdit = await isCore(auth.user.sub);
+  // Mirrors authorizeCollabDoc's `doc:` gate: Core everywhere, plus the
+  // offering's instructors for EducationOffering-workspace pages.
+  let canEdit = await isCore(auth.user.sub);
+  if (!canEdit && page.workspaceType === "EducationOffering" && page.workspaceId) {
+    const instructor = await prisma.instructorAssignment.findFirst({
+      where: { userId: auth.user.sub, offeringId: page.workspaceId },
+      select: { id: true },
+    });
+    canEdit = instructor !== null;
+  }
 
   const allTags = await prisma.docTag.findMany({
     where: { archivedAt: null },

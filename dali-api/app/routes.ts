@@ -92,9 +92,13 @@ export default [
     route("education", "education/routes/education.tsx"),
     route("education/manage", "education/routes/education.manage.tsx"),
     route("education/manage/new", "education/routes/education.manage.new.tsx"),
+    route("education/manage/assignments/:assignmentId", "education/routes/education.manage.assignments.$assignmentId.tsx"),
     route("education/manage/:offeringId", "education/routes/education.manage.$offeringId.tsx"),
     route("education/:offeringId", "education/routes/education.$offeringId.tsx"),
     route("education/:offeringId/apply", "education/routes/education.$offeringId.apply.tsx"),
+    route("education/:offeringId/hub", "education/routes/education.$offeringId.hub.tsx"),
+    route("education/:offeringId/page/:pageId", "education/routes/education.$offeringId.page.$pageId.tsx"),
+    route("education/:offeringId/assignments/:assignmentId", "education/routes/education.$offeringId.assignments.$assignmentId.tsx"),
 
     // Internal processes
     route("internal-processes/onboarding", "internal-processes/routes/internal-processes.onboarding.tsx"),
@@ -125,6 +129,9 @@ export default [
     route("portal/education", "routes/portal.education.tsx"),
     route("portal/education/:offeringId", "routes/portal.education.$offeringId.tsx"),
     route("portal/education/:offeringId/apply", "routes/portal.education.$offeringId.apply.tsx"),
+    route("portal/education/:offeringId/hub", "routes/portal.education.$offeringId.hub.tsx"),
+    route("portal/education/:offeringId/page/:pageId", "routes/portal.education.$offeringId.page.$pageId.tsx"),
+    route("portal/education/:offeringId/assignments/:assignmentId", "routes/portal.education.$offeringId.assignments.$assignmentId.tsx"),
   ]),
 
   // Authenticated member form fill (no layout), token-addressed. Every form

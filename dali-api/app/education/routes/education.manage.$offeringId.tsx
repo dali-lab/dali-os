@@ -21,8 +21,21 @@ import { listApplications } from "~/education/lib/apply.server";
 import { decideApplication } from "~/education/lib/decisions.server";
 import { isOfferingManager } from "~/education/lib/access.server";
 import { ApplicationAnswers } from "~/education/components/ApplicationAnswers";
+import { listMaterialPages, createMaterialPage } from "~/education/lib/lms.server";
+import {
+  listAssignments,
+  createAssignment,
+  updateAssignment,
+  deleteAssignment,
+} from "~/education/lib/assignments.server";
+import { listAnnouncements, postAnnouncement } from "~/education/lib/announcements.server";
+import {
+  ManageMaterials,
+  ManageAssignments,
+  ManageAnnouncements,
+} from "~/education/components/ManageCourseContent";
 import type { Question } from "~/types";
-import type { EduApplicationStatus } from "~/generated/prisma/client";
+import type { EduApplicationStatus, SubmissionType } from "~/generated/prisma/client";
 import { prisma } from "~/lib/db";
 import { parseSessionCookie } from "~/lib/cookies";
 import { Button, buttonClasses } from "~/components/ui/Button";
@@ -55,37 +68,55 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!offering) throw new Response("Not found", { status: 404 });
 
   const core = await isCore(gate.auth.user.sub);
-  const [instructorCandidates, applications, emailTemplates, decisionEmailBindings] =
-    await Promise.all([
-      core
-        ? prisma.user.findMany({
-            where: await currentTermMemberWhere(),
-            select: { id: true, firstName: true, lastName: true },
-            orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
-          })
-        : Promise.resolve([]),
-      listApplications(params.offeringId!),
-      prisma.emailTemplate.findMany({
-        select: {
-          id: true,
-          name: true,
-          versions: {
-            orderBy: { versionNumber: "desc" },
-            take: 1,
-            select: { id: true, versionNumber: true },
-          },
+  const [
+    instructorCandidates,
+    applications,
+    emailTemplates,
+    decisionEmailBindings,
+    materials,
+    assignments,
+    announcements,
+  ] = await Promise.all([
+    core
+      ? prisma.user.findMany({
+          where: await currentTermMemberWhere(),
+          select: { id: true, firstName: true, lastName: true },
+          orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
+        })
+      : Promise.resolve([]),
+    listApplications(params.offeringId!),
+    prisma.emailTemplate.findMany({
+      select: {
+        id: true,
+        name: true,
+        versions: {
+          orderBy: { versionNumber: "desc" },
+          take: 1,
+          select: { id: true, versionNumber: true },
         },
-        orderBy: { name: "asc" },
-      }),
-      prisma.educationDecisionEmail.findMany({
-        where: { offeringId: params.offeringId! },
-        select: { status: true, emailTemplateVersionId: true },
-      }),
-    ]);
+      },
+      orderBy: { name: "asc" },
+    }),
+    prisma.educationDecisionEmail.findMany({
+      where: { offeringId: params.offeringId! },
+      select: { status: true, emailTemplateVersionId: true },
+    }),
+    listMaterialPages(params.offeringId!),
+    listAssignments(params.offeringId!),
+    listAnnouncements(params.offeringId!),
+  ]);
 
   return {
     offering,
     applications,
+    materials,
+    assignments,
+    announcements: announcements.map((a) => ({
+      id: a.id,
+      body: a.body,
+      sentAt: a.sentAt,
+      authorName: `${a.author.firstName} ${a.author.lastName}`.trim(),
+    })),
     emailTemplates: emailTemplates
       .filter((t) => t.versions.length > 0)
       .map((t) => ({ name: t.name, versionId: t.versions[0]!.id })),
@@ -105,24 +136,88 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!auth.ok) return auth.response;
   const formData = await request.formData();
 
-  if (formData.get("intent") === "decide-application") {
+  const intent = String(formData.get("intent") ?? "");
+  const contentIntents = [
+    "decide-application",
+    "create-page",
+    "create-assignment",
+    "update-assignment",
+    "delete-assignment",
+    "post-announcement",
+  ];
+  if (contentIntents.includes(intent)) {
     if (!(await isOfferingManager(auth.user.sub, params.offeringId!)))
       return Response.json({ error: "Forbidden" }, { status: 403 });
-    const applicationId = String(formData.get("applicationId") ?? "");
-    const application = await prisma.educationApplication.findUnique({
-      where: { id: applicationId },
-      select: { offeringId: true },
-    });
-    if (!application || application.offeringId !== params.offeringId)
-      return Response.json({ error: "Application not found" }, { status: 404 });
-    const result = await decideApplication({
-      applicationId,
-      status: String(formData.get("status")) as EduApplicationStatus,
-      actorId: auth.user.sub,
-    });
-    if ("error" in result && typeof result.error === "string")
-      return Response.json({ error: result.error }, { status: result.status });
-    return { ok: true };
+
+    const fail = (r: { error: string; status: number }) =>
+      Response.json({ error: r.error }, { status: r.status });
+
+    switch (intent) {
+      case "decide-application": {
+        const applicationId = String(formData.get("applicationId") ?? "");
+        const application = await prisma.educationApplication.findUnique({
+          where: { id: applicationId },
+          select: { offeringId: true },
+        });
+        if (!application || application.offeringId !== params.offeringId)
+          return Response.json({ error: "Application not found" }, { status: 404 });
+        const result = await decideApplication({
+          applicationId,
+          status: String(formData.get("status")) as EduApplicationStatus,
+          actorId: auth.user.sub,
+        });
+        return "error" in result ? fail(result) : { ok: true };
+      }
+      case "create-page": {
+        const result = await createMaterialPage({
+          offeringId: params.offeringId!,
+          title: String(formData.get("title") ?? ""),
+          parentPageId: String(formData.get("parentPageId") ?? "") || null,
+          actorId: auth.user.sub,
+        });
+        return "error" in result ? fail(result) : { ok: true };
+      }
+      case "create-assignment": {
+        const dueAtRaw = String(formData.get("dueAt") ?? "");
+        const result = await createAssignment({
+          offeringId: params.offeringId!,
+          sessionId: String(formData.get("sessionId") ?? "") || null,
+          title: String(formData.get("title") ?? ""),
+          dueAt: dueAtRaw ? new Date(dueAtRaw) : null,
+          submissionType: String(formData.get("submissionType")) as SubmissionType,
+          actorId: auth.user.sub,
+        });
+        return "error" in result ? fail(result) : { ok: true };
+      }
+      case "update-assignment": {
+        const dueAtRaw = String(formData.get("dueAt") ?? "");
+        const result = await updateAssignment({
+          assignmentId: String(formData.get("assignmentId") ?? ""),
+          offeringId: params.offeringId!,
+          title: String(formData.get("title") ?? ""),
+          dueAt: dueAtRaw ? new Date(dueAtRaw) : null,
+          submissionType: String(formData.get("submissionType")) as SubmissionType,
+          actorId: auth.user.sub,
+        });
+        return "error" in result ? fail(result) : { ok: true };
+      }
+      case "delete-assignment": {
+        const result = await deleteAssignment({
+          assignmentId: String(formData.get("assignmentId") ?? ""),
+          offeringId: params.offeringId!,
+          actorId: auth.user.sub,
+        });
+        return "error" in result ? fail(result) : { ok: true };
+      }
+      case "post-announcement": {
+        const result = await postAnnouncement({
+          offeringId: params.offeringId!,
+          authorId: auth.user.sub,
+          body: String(formData.get("body") ?? ""),
+        });
+        return "error" in result ? fail(result) : { ok: true };
+      }
+    }
   }
 
   // Pin the offering id from the URL so a form can't retarget another offering.
@@ -138,12 +233,18 @@ const TABS = [
   { key: "details", label: "Details" },
   { key: "sessions", label: "Sessions" },
   { key: "applications", label: "Applications" },
+  { key: "materials", label: "Materials" },
+  { key: "assignments", label: "Assignments" },
+  { key: "announcements", label: "Announcements" },
 ] as const;
 
 export default function ManageOffering() {
   const {
     offering,
     applications,
+    materials,
+    assignments,
+    announcements,
     emailTemplates,
     decisionEmailBindings,
     isCore: core,
@@ -560,6 +661,21 @@ export default function ManageOffering() {
             ))
           )}
         </div>
+      )}
+
+      {tab === "materials" && <ManageMaterials materials={materials} />}
+
+      {tab === "assignments" && (
+        <ManageAssignments
+          assignments={assignments}
+          sessions={offering.sessions.map((s) => ({ id: s.id, sequence: s.sequence }))}
+          collabToken={collabToken}
+          userName={userName}
+        />
+      )}
+
+      {tab === "announcements" && (
+        <ManageAnnouncements announcements={announcements} />
       )}
     </div>
   );

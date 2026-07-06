@@ -68,3 +68,58 @@ export function redirectDartmouthToPortal(auth: AuthSuccess): Response | null {
   if (auth.user.type === "dartmouth") return redirect("/portal/education");
   return null;
 }
+
+/**
+ * Gate for course-hub routes: an Approved application, or manager preview.
+ * Throws a redirect back to the offering detail page (member or portal
+ * surface per `surface`) when neither holds. Every hub loader must call this
+ * itself — React Router runs parent and child loaders in parallel, so a
+ * parent's redirect doesn't stop a child loader from executing.
+ */
+export async function requireEnrollment(
+  request: Request,
+  offeringId: string,
+  surface: "member" | "portal",
+): Promise<{
+  auth: AuthSuccess;
+  applicationId: string | null;
+  isManager: boolean;
+}> {
+  const auth = await requireAuth(request);
+  if (!auth.ok) throw redirect("/login");
+  if (surface === "member" && auth.user.type === "dartmouth") {
+    throw redirect(`/portal/education/${offeringId}/hub`);
+  }
+  if (surface === "portal" && auth.user.type === "member") {
+    throw redirect(`/education/${offeringId}/hub`);
+  }
+
+  const [application, isManager] = await Promise.all([
+    prisma.educationApplication.findUnique({
+      where: {
+        applicantUserId_offeringId: {
+          applicantUserId: auth.user.sub,
+          offeringId,
+        },
+      },
+      select: { id: true, status: true },
+    }),
+    surface === "member"
+      ? isOfferingManager(auth.user.sub, offeringId)
+      : Promise.resolve(false),
+  ]);
+
+  const enrolled = application?.status === "Approved";
+  if (!enrolled && !isManager) {
+    throw redirect(
+      surface === "member"
+        ? `/education/${offeringId}`
+        : `/portal/education/${offeringId}`,
+    );
+  }
+  return {
+    auth,
+    applicationId: enrolled ? application!.id : null,
+    isManager,
+  };
+}
