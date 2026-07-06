@@ -16,6 +16,7 @@ import { buildSubmissionView } from "../lib/submission-view.server";
 import { StaffingBoard } from "../components/StaffingBoard";
 import { dedupeLiveAssignments } from "../lib/staffing-board";
 import { staffingPills } from "../components/staffingPills";
+import { projectsPills } from "../components/projectsPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
 import type {
   Assignment,
@@ -444,6 +445,9 @@ export default function StaffingPage() {
 
   const page = (
     <div className="flex flex-col gap-4">
+      <AreaPillNav
+        items={projectsPills({ canViewStaffing: true, active: "staffing" })}
+      />
       <AreaPillNav items={staffingPills("board")} />
       <header className="flex items-start justify-between gap-3">
         <div>

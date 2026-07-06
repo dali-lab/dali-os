@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/admin-console.members";
+import { adminPills } from "~/admin-console/adminPills";
+import { AreaPillNav } from "~/components/AreaPillNav";
 import { prisma } from "~/lib/db";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { isAdmin, isCore, isAdminViaEnv, currentTerm } from "~/lib/roles";
@@ -210,6 +212,7 @@ export default function AdminConsoleMembers() {
 
   return (
     <div className="space-y-6">
+      <AreaPillNav items={adminPills({ isAdmin: viewerIsAdmin, active: "members" })} />
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <Users className="w-6 h-6 text-foreground/80" />

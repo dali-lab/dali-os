@@ -2,13 +2,9 @@ import React, { useState, useEffect, useRef } from 'react'
 import { Link, useLocation, useRevalidator } from 'react-router'
 import {
   LogOut,
-  Users,
   Calendar,
-  Shield,
-  FileText,
   Menu,
   X,
-  BarChart3,
   ChevronLeft,
   ChevronRight,
   ChevronDown,
@@ -18,15 +14,10 @@ import {
   UsersRound,
   Handshake,
   Home,
-  List,
-  UserPlus,
   Workflow,
-  ArrowRightLeft,
-  Rocket,
   ClipboardList,
   GraduationCap,
   ListTodo,
-  Megaphone,
   SplitSquareHorizontal,
   ExternalLink,
   HelpCircle,
@@ -243,105 +234,10 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
     : path.startsWith('/internal-processes') ? 'internal-processes'
     : null
 
-  // Hiring collapsed to a childless entry: /hiring is a role-aware hub, and
-  // its tools (Reviews, Applications, Domain, Cycles, Analytics, Library) are
-  // an AreaPillNav row on each hiring page — same pattern as People /
-  // Partners / Education.
-  const adminSections = [
-    {
-      label: 'Roles & Permissions',
-      to: '/admin-console/members',
-      icon: Users,
-      show: true,
-      active: path.startsWith('/admin-console/members'),
-      sub: null as { label: string; to: string; active: boolean }[] | null,
-    },
-    {
-      label: 'Domains',
-      to: '/admin-console/domains',
-      icon: Shield,
-      // Core or Admin can manage domain leads + eligibilities; only Admin
-      // sees the Create/Delete controls (gated inside the page).
-      show: isCore,
-      active: path.startsWith('/admin-console/domains'),
-      sub: null,
-    },
-    {
-      label: 'Announcements',
-      to: '/admin-console/announcements',
-      icon: Megaphone,
-      show: isCore,
-      active: path.startsWith('/admin-console/announcements'),
-      sub: null,
-    },
-    {
-      label: 'Activity',
-      to: '/admin-console/activity',
-      icon: ListTodo,
-      show: isAdmin,
-      active: path.startsWith('/admin-console/activity'),
-      sub: null,
-    },
-    {
-      label: 'Analytics',
-      to: '/admin-console/analytics',
-      icon: BarChart3,
-      show: isAdmin,
-      active: path.startsWith('/admin-console/analytics'),
-      sub: null,
-    },
-    {
-      label: 'Payroll export',
-      to: '/admin-console/payroll-export',
-      icon: FileText,
-      show: isAdmin,
-      active: path.startsWith('/admin-console/payroll-export'),
-      sub: null,
-    },
-  ].filter((s) => s.show)
-
-  const projectsSections = [
-    {
-      label: 'Hub',
-      to: '/projects/list',
-      icon: List,
-      show: true,
-      active: path.startsWith('/projects/list'),
-      sub: null as { label: string; to: string; active: boolean }[] | null,
-    },
-    {
-      label: 'Staffing',
-      to: '/projects/staffing',
-      icon: UserPlus,
-      show: canViewStaffing,
-      // Intent to Work / Project Bids / Level Up are pills on the Staffing
-      // surface rather than sidebar entries — highlight Staffing on all of
-      // them (incl. the legacy /internal-processes/level-up redirect stub).
-      active:
-        path.startsWith('/projects/staffing') ||
-        path.startsWith('/projects/intent-to-work') ||
-        path.startsWith('/projects/project-bids') ||
-        path.startsWith('/projects/level-up') ||
-        path.startsWith('/internal-processes/level-up'),
-      sub: null,
-    },
-    {
-      // Member-facing staffing surface: the persistent place a member fills
-      // and revisits the cycle's staffing forms.
-      label: 'My Staffing',
-      to: '/projects/my-staffing',
-      icon: UserPlus,
-      show: true,
-      active: path.startsWith('/projects/my-staffing'),
-      sub: null,
-    },
-  ].filter((s) => s.show)
-
-  // People / Partners / Education are single-destination areas: their
-  // role-gated sub-surfaces (Groups, Partner Applications, Manage,
-  // CE Compliance) live as in-page pills (AreaPillNav) on the landing pages
-  // instead of sidebar children — for most members these areas expanded to a
-  // lone child, which was pure noise.
+  // Every area is a childless sidebar entry: the button lands on the area's
+  // main surface and lateral navigation between its role-gated tools is an
+  // in-page AreaPillNav row on those pages. No area drops down — one sidebar
+  // behavior everywhere.
   const emptySections: {
     label: string
     to: string
@@ -350,33 +246,6 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
     active: boolean
     sub: { label: string; to: string; active: boolean }[] | null
   }[] = []
-
-  const internalProcessesSections = [
-    {
-      label: 'Onboarding',
-      to: '/internal-processes/onboarding',
-      icon: UserPlus,
-      show: isCore,
-      active: path.startsWith('/internal-processes/onboarding'),
-      sub: null as { label: string; to: string; active: boolean }[] | null,
-    },
-    {
-      label: 'Transfer',
-      to: '/internal-processes/transfer',
-      icon: ArrowRightLeft,
-      show: true,
-      active: path.startsWith('/internal-processes/transfer'),
-      sub: null as { label: string; to: string; active: boolean }[] | null,
-    },
-    {
-      label: 'JobX',
-      to: '/internal-processes/jobx',
-      icon: Rocket,
-      show: true,
-      active: path.startsWith('/internal-processes/jobx'),
-      sub: null,
-    },
-  ].filter((s) => s.show)
 
   const areas = [
     {
@@ -395,7 +264,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
       icon: FolderKanban,
       show: true,
       active: activeAreaKey === 'projects',
-      sections: projectsSections,
+      sections: emptySections,
     },
     {
       key: 'members' as AreaKey,
@@ -431,16 +300,16 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
       icon: Workflow,
       show: true,
       active: activeAreaKey === 'internal-processes',
-      sections: internalProcessesSections,
+      sections: emptySections,
     },
     {
       key: 'admin-console' as AreaKey,
       label: 'Admin',
-      to: '/admin-console',
+      to: '/admin-console/members',
       icon: Settings,
       show: isCore,
       active: activeAreaKey === 'admin-console',
-      sections: adminSections,
+      sections: emptySections,
     },
   ].filter((a) => a.show)
 

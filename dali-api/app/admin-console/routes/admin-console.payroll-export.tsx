@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import { Form, redirect, useLoaderData, useSearchParams } from "react-router";
 import type { Route } from "./+types/admin-console.payroll-export";
+import { adminPills } from "~/admin-console/adminPills";
+import { AreaPillNav } from "~/components/AreaPillNav";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
@@ -118,6 +120,7 @@ export default function PayrollExport() {
 
   return (
     <div className="space-y-6">
+      <AreaPillNav items={adminPills({ isAdmin: true, active: "payroll" })} />
       <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <FileDown className="w-6 h-6 text-foreground/80" />

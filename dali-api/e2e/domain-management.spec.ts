@@ -2,9 +2,10 @@ import { test, expect } from './fixtures';
 
 const ADMIN_EMAIL = 'admin@dali.dartmouth.edu';
 
-// /admin-console/domains renders inside the workspace iframe titled "Domains".
+// /admin-console/domains renders inside the workspace iframe. The Admin
+// sidebar area is childless, so the tab is seeded with the area label.
 const domainsFrame = (page: import('@playwright/test').Page) =>
-  page.frameLocator('iframe[title="Domains"]');
+  page.frameLocator('iframe[title="Admin"]');
 
 test.describe('admin domain management', () => {
   test.beforeEach(async ({ loginAs }) => {

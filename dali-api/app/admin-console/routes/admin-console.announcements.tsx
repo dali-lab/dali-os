@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { redirect, useLoaderData, useSearchParams } from "react-router";
 import type { Route } from "./+types/admin-console.announcements";
+import { adminPills } from "~/admin-console/adminPills";
+import { AreaPillNav } from "~/components/AreaPillNav";
 import { prisma } from "~/lib/db";
 import { listVisibleGroupsForUser } from "~/lib/groups";
 import { requireAuth } from "~/lib/auth";
-import { isCore, currentTermMemberWhere } from "~/lib/roles";
+import { isCore, isAdmin, currentTermMemberWhere } from "~/lib/roles";
 import { MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { fullName } from "~/lib/display";
 import {
@@ -58,11 +60,12 @@ export async function loader({ request }: Route.LoaderArgs) {
     })),
     groups: visibleGroups.map((g) => ({ id: g.id, name: g.name })),
     publishedForms: forms,
+    viewerIsAdmin: await isAdmin(auth.user.sub),
   };
 }
 
 export default function AnnouncementsPage() {
-  const { members, groups, publishedForms } = useLoaderData<typeof loader>();
+  const { members, groups, publishedForms, viewerIsAdmin } = useLoaderData<typeof loader>();
 
   // Optional deep-link pre-seed (e.g. the staffing boards' "Send to members"
   // affordance opens this composer with the bound form + whole-lab audience
@@ -194,6 +197,7 @@ export default function AnnouncementsPage() {
 
   return (
     <div className="flex flex-col gap-5 max-w-3xl">
+      <AreaPillNav items={adminPills({ isAdmin: viewerIsAdmin, active: "announcements" })} />
       <header className="flex items-start gap-3">
         <Megaphone className="w-6 h-6 text-accent-coral mt-0.5" />
         <div>

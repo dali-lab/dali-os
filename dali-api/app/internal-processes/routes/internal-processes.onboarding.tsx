@@ -2,6 +2,8 @@ import { redirect, useFetcher, useLoaderData, useNavigate, useSearchParams } fro
 import type { Route } from "./+types/internal-processes.onboarding";
 import { requireAuth, unauthorized, forbidden } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
+import { labProcessesPills } from "~/internal-processes/labProcessesPills";
+import { AreaPillNav } from "~/components/AreaPillNav";
 import { prisma } from "~/lib/db";
 
 export const meta: Route.MetaFunction = () => [
@@ -209,6 +211,9 @@ export default function InternalProcessesOnboarding() {
 
   return (
     <div className="px-6 md:px-10 py-8">
+      <div className="mb-4">
+        <AreaPillNav items={labProcessesPills({ isCore: true, active: "onboarding" })} />
+      </div>
       <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
         <div>
           <h1 className="font-heading text-2xl font-bold text-dark-blue">Onboarding</h1>
