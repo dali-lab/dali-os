@@ -1,4 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+
+// hub.server transitively imports ~/lib/db; the generated Prisma client isn't
+// built in the unit-test CI job, so swap in the shared mock like every other
+// hiring test does.
+vi.mock("~/lib/db");
+
 import { releaseQueueCount, type HubDecisionRow } from "~/hiring/lib/hub.server";
 
 describe("releaseQueueCount", () => {
