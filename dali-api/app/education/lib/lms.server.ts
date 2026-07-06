@@ -8,6 +8,7 @@ import { collabDocToProseMirror, collabDocToHtml } from "~/collab/export";
 import { listAnnouncements } from "./announcements.server";
 import { listAssignments } from "./assignments.server";
 import { listThreads, offeringInstructorIds } from "./discussions.server";
+import { studentVisibleFeedback } from "./student-notes.server";
 
 export async function listMaterialPages(offeringId: string) {
   const pages = await prisma.page.findMany({
@@ -166,21 +167,33 @@ export async function getHubData(args: {
   if (!offering) return null;
 
   const instructorIds = await offeringInstructorIds(args.offeringId);
-  const [descriptionHtml, announcements, sessions, materials, assignments, threads, mySubmissions] =
-    await Promise.all([
-      offering.descriptionDocId
-        ? collabDocToHtml(offering.descriptionDocId)
-        : Promise.resolve(""),
-      listAnnouncements(args.offeringId),
-      listSessionsWithMyAttendance(args.offeringId, args.applicationId),
-      listMaterialPages(args.offeringId),
-      listAssignments(args.offeringId),
-      listThreads(args.offeringId, instructorIds),
-      prisma.educationSubmission.findMany({
-        where: { studentId: args.userId },
-        select: { assignmentId: true, submittedAt: true },
-      }),
-    ]);
+  const [
+    descriptionHtml,
+    announcements,
+    sessions,
+    materials,
+    assignments,
+    threads,
+    mySubmissions,
+    myFeedback,
+  ] = await Promise.all([
+    offering.descriptionDocId
+      ? collabDocToHtml(offering.descriptionDocId)
+      : Promise.resolve(""),
+    listAnnouncements(args.offeringId),
+    listSessionsWithMyAttendance(args.offeringId, args.applicationId),
+    listMaterialPages(args.offeringId),
+    listAssignments(args.offeringId),
+    listThreads(args.offeringId, instructorIds),
+    prisma.educationSubmission.findMany({
+      where: { studentId: args.userId },
+      select: { assignmentId: true, submittedAt: true },
+    }),
+    // Student-visible lane only — the safe reader by construction.
+    args.applicationId
+      ? studentVisibleFeedback(args.applicationId)
+      : Promise.resolve(null),
+  ]);
 
   const submittedByAssignment = new Map(
     mySubmissions.map((s) => [s.assignmentId, s.submittedAt]),
@@ -208,6 +221,7 @@ export async function getHubData(args: {
       mySubmittedAt: submittedByAssignment.get(a.id) ?? null,
     })),
     threads,
+    myFeedback,
     isManager: args.isManager,
     currentUserId: args.userId,
   };

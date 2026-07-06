@@ -33,6 +33,11 @@ export type HubData = {
     mySubmittedAt: string | Date | null;
   }[];
   threads: DiscussionPost[];
+  myFeedback: {
+    feedback: string;
+    updatedAt: string | Date | null;
+    authorName: string | null;
+  } | null;
   currentUserId: string;
   isManager: boolean;
 };
@@ -87,6 +92,17 @@ export function CourseHub({ data, basePath }: { data: HubData; basePath: string 
 
       {tab === "overview" && (
         <div className="flex flex-col gap-5 max-w-3xl">
+          {data.myFeedback && (
+            <section className="bg-accent-teal/5 border border-accent-teal/30 rounded-lg p-4">
+              <p className="text-xs font-semibold text-accent-teal">
+                Instructor feedback
+                {data.myFeedback.authorName ? ` · ${data.myFeedback.authorName}` : ""}
+              </p>
+              <p className="text-sm text-foreground whitespace-pre-wrap mt-1">
+                {data.myFeedback.feedback}
+              </p>
+            </section>
+          )}
           {data.offering.descriptionHtml && (
             <section
               className="bg-card border border-border rounded-lg p-5 prose prose-sm max-w-none"

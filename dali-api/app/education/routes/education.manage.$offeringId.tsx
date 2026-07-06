@@ -30,6 +30,7 @@ import {
 } from "~/education/lib/assignments.server";
 import { listAnnouncements, postAnnouncement } from "~/education/lib/announcements.server";
 import { getSessionRoster, saveAttendance } from "~/education/lib/attendance.server";
+import { notesForOffering, upsertStudentNote } from "~/education/lib/student-notes.server";
 import {
   ManageMaterials,
   ManageAssignments,
@@ -118,9 +119,19 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     listAnnouncements(params.offeringId!),
   ]);
 
+  const notes = await notesForOffering(params.offeringId!);
+
   return {
     offering,
-    applications,
+    applications: applications.map((a) => ({
+      ...a,
+      note: notes.get(a.id)
+        ? {
+            feedback: notes.get(a.id)!.feedback,
+            internalNote: notes.get(a.id)!.internalNote,
+          }
+        : null,
+    })),
     roster,
     materials,
     assignments,
@@ -158,6 +169,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     "delete-assignment",
     "post-announcement",
     "save-attendance",
+    "save-student-note",
   ];
   if (contentIntents.includes(intent)) {
     if (!(await isOfferingManager(auth.user.sub, params.offeringId!)))
@@ -228,6 +240,22 @@ export async function action({ request, params }: Route.ActionArgs) {
           offeringId: params.offeringId!,
           authorId: auth.user.sub,
           body: String(formData.get("body") ?? ""),
+        });
+        return "error" in result ? fail(result) : { ok: true };
+      }
+      case "save-student-note": {
+        const applicationId = String(formData.get("applicationId") ?? "");
+        const application = await prisma.educationApplication.findUnique({
+          where: { id: applicationId },
+          select: { offeringId: true },
+        });
+        if (!application || application.offeringId !== params.offeringId)
+          return Response.json({ error: "Application not found" }, { status: 404 });
+        const result = await upsertStudentNote({
+          applicationId,
+          actorId: auth.user.sub,
+          feedback: String(formData.get("feedback") ?? ""),
+          internalNote: String(formData.get("internalNote") ?? ""),
         });
         return "error" in result ? fail(result) : { ok: true };
       }
@@ -690,6 +718,45 @@ export default function ManageOffering() {
                         </Form>
                       ))}
                   </div>
+
+                  {a.status === "Approved" && (
+                    <Form
+                      method="post"
+                      className="grid gap-3 sm:grid-cols-2 items-start pt-3 border-t border-border"
+                    >
+                      <input type="hidden" name="intent" value="save-student-note" />
+                      <input type="hidden" name="applicationId" value={a.id} />
+                      <label className="block">
+                        <span className="text-xs font-semibold text-muted-foreground">
+                          Feedback to student — shared with their certificate
+                        </span>
+                        <textarea
+                          name="feedback"
+                          rows={3}
+                          defaultValue={a.note?.feedback ?? ""}
+                          placeholder="Overall performance feedback the student will see…"
+                          className="mt-1 w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="text-xs font-semibold text-amber-800">
+                          Internal note — hiring only, never shown to the student
+                        </span>
+                        <textarea
+                          name="internalNote"
+                          rows={3}
+                          defaultValue={a.note?.internalNote ?? ""}
+                          placeholder="Engagement/competency signal for future hiring…"
+                          className="mt-1 w-full rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5 text-sm"
+                        />
+                      </label>
+                      <div className="sm:col-span-2">
+                        <Button type="submit" variant="secondary" size="sm">
+                          Save notes
+                        </Button>
+                      </div>
+                    </Form>
+                  )}
                 </div>
               </details>
             ))
