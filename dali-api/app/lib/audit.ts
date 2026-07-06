@@ -56,6 +56,19 @@ export const AUDIT_ACTIONS = [
   "mcp.tool_called",
   "mcp.resource_read",
   "mcp.prompt_rendered",
+  "partner.org.create",
+  "partner.org.update",
+  "partner.member.update",
+  "partner.member.remove",
+  "partner.project.link",
+  "partner.project.update",
+  "partner.project.unlink",
+  "partner.invited",
+  "partner.invite.accepted",
+  "partner.invite.revoked",
+  "partner.application.submitted",
+  "partner.magic_link.requested",
+  "page.partner-visibility",
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

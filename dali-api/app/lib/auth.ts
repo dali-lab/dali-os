@@ -73,6 +73,7 @@ function buildAuthUser(user: {
   id: string;
   daliEmail: string | null;
   dartmouthEmail: string | null;
+  personalEmail: string | null;
   netId: string | null;
   firstName: string;
   lastName: string;

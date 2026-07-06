@@ -3,7 +3,7 @@ import type { Route } from "./+types/documents.$pageId";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { parseSessionCookie } from "~/lib/cookies";
-import { isCore } from "~/lib/roles";
+import { isCore, isProjectMember } from "~/lib/roles";
 import { getPresenceUser } from "~/lib/presence-user";
 import { DocumentEditor } from "~/components/DocumentEditor";
 
@@ -33,7 +33,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     throw new Response("Not found", { status: 404 });
   }
 
-  const canEdit = await isCore(auth.user.sub);
+  // Mirrors the doc gate in authorizeCollabDoc: Core everywhere, plus anyone
+  // staffed on the project for Project-workspace pages (the same gate the
+  // document API routes use — without this the editor rendered enabled but
+  // the collab handshake rejected members).
+  const canEdit =
+    (await isCore(auth.user.sub)) ||
+    (page.workspaceType === "Project" &&
+      page.workspaceId !== null &&
+      (await isProjectMember(auth.user.sub, page.workspaceId)));
 
   const allTags = await prisma.docTag.findMany({
     where: { archivedAt: null },

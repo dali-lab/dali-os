@@ -1,6 +1,7 @@
 import { prisma } from "~/lib/db";
-import { isCore, isDomainLead } from "~/lib/roles";
+import { isCore, isDomainLead, isProjectMember } from "~/lib/roles";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
+import { partnerHasProjectAccess } from "~/partners/lib/partner-access";
 
 /** Hydrate author IDs into `{ id, name }` objects in a single IN query. */
 export async function hydrateAuthors(
@@ -105,32 +106,51 @@ export async function authorizeCollabDoc(
     return false;
   }
 
-  // doc:{pageId}:body — any live FreeForm page. Access mirrors the page edit
-  // gate used by the document API routes (isCore === Admin || Core). The
-  // page must be a live (non-archived) Page; workspaceType is unrestricted
-  // so Lab + EducationOffering pages can be edited the same way as Project
-  // pages.
+  // doc:{pageId}:body — any live FreeForm page. Core/Admin everywhere.
+  // Project-workspace pages additionally open to anyone staffed on the
+  // project (mirrors requireProjectEditAccess, the gate the document API
+  // routes already use) and — when the page is explicitly marked
+  // partnerVisible — to partner users whose org holds an active
+  // ProjectPartner link to the project.
   if (entity === "doc") {
     const page = await prisma.page.findUnique({
       where: { id },
-      select: { archivedAt: true },
+      select: {
+        archivedAt: true,
+        workspaceType: true,
+        workspaceId: true,
+        partnerVisible: true,
+      },
     });
     if (!page || page.archivedAt !== null) {
       return false;
     }
-    return isCore(userSub);
+    if (await isCore(userSub)) return true;
+    if (page.workspaceType === "Project" && page.workspaceId) {
+      if (await isProjectMember(userSub, page.workspaceId)) return true;
+      if (page.partnerVisible) {
+        return partnerHasProjectAccess(userSub, page.workspaceId);
+      }
+    }
+    return false;
   }
 
   // partnersow:{applicationId}:body — the versionable Statement of Work for a
-  // partner application. Same edit gate as the partner-application routes
-  // (isCore === Admin || Core). The application must exist.
+  // partner application. Core/Admin (same gate as the internal application
+  // routes), plus partner users in the org that owns the application — the
+  // SOW is co-drafted between the partner and Core.
   if (entity === "partnersow") {
     const application = await prisma.partnerApplication.findUnique({
       where: { id },
-      select: { id: true },
+      select: { partnerOrgId: true },
     });
     if (!application) return false;
-    return isCore(userSub);
+    if (await isCore(userSub)) return true;
+    const partnerUser = await prisma.partnerUser.findUnique({
+      where: { userId: userSub },
+      select: { partnerOrgId: true },
+    });
+    return partnerUser?.partnerOrgId === application.partnerOrgId;
   }
 
   // epic:{descriptionDocId}:description — the rich description on an Epic.

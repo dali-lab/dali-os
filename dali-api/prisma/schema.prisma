@@ -2798,6 +2798,13 @@ model Page {
   // and surface only in the workspace's Archive view.
   archivedAt DateTime?
 
+  // Partner sharing: when true and workspaceType == Project, users of any
+  // PartnerOrg with an active ProjectPartner link to workspaceId may open
+  // (and collaboratively edit) this page from the partner portal. Meaningless
+  // for Lab/EducationOffering workspaces (stays false). Distinct from a
+  // future public flag — the audiences are orthogonal.
+  partnerVisible Boolean @default(false)
+
   parent   Page?  @relation("PageTree", fields: [parentPageId], references: [id])
   children Page[] @relation("PageTree")
 
@@ -2959,8 +2966,36 @@ model PartnerOrg {
   users        PartnerUser[]
   projects     ProjectPartner[]
   applications PartnerApplication[]
+  invites      PartnerInvite[]
 
   createdAt DateTime @default(now())
+}
+
+// Teammate invites into an existing PartnerOrg, sent by a partner (from
+// portal settings) or by Core (from the internal org page). Deliberately not
+// an OneTimeToken: invites are listed per-org with revoke/re-send, and the
+// invitee's User row is only created on acceptance. The raw token is
+// SHA-256 hashed at rest (same convention as OneTimeToken/Session).
+model PartnerInvite {
+  id              String    @id @default(cuid())
+  partnerOrgId    String
+  // Normalized lowercase.
+  email           String
+  displayRole     String?
+  // sha256(raw token), base64url. Looked up by hash.
+  tokenHash       String    @unique
+  // User.id of the partner teammate or Core member who sent it. Loose ref,
+  // no relation — display-only.
+  invitedByUserId String?
+  expiresAt       DateTime
+  acceptedAt      DateTime?
+  revokedAt       DateTime?
+  createdAt       DateTime  @default(now())
+
+  partnerOrg PartnerOrg @relation(fields: [partnerOrgId], references: [id])
+
+  @@index([partnerOrgId])
+  @@index([email])
 }
 
 // Per Cl-3: PartnerUser.userId @unique → User. Single Session model and
