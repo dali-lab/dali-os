@@ -94,6 +94,7 @@ export default [
     route("education/manage/new", "education/routes/education.manage.new.tsx"),
     route("education/manage/:offeringId", "education/routes/education.manage.$offeringId.tsx"),
     route("education/:offeringId", "education/routes/education.$offeringId.tsx"),
+    route("education/:offeringId/apply", "education/routes/education.$offeringId.apply.tsx"),
 
     // Internal processes
     route("internal-processes/onboarding", "internal-processes/routes/internal-processes.onboarding.tsx"),

@@ -18,8 +18,11 @@ import {
   runOfferingAction,
 } from "~/education/lib/offerings.server";
 import { listApplications } from "~/education/lib/apply.server";
+import { decideApplication } from "~/education/lib/decisions.server";
+import { isOfferingManager } from "~/education/lib/access.server";
 import { ApplicationAnswers } from "~/education/components/ApplicationAnswers";
 import type { Question } from "~/types";
+import type { EduApplicationStatus } from "~/generated/prisma/client";
 import { prisma } from "~/lib/db";
 import { parseSessionCookie } from "~/lib/cookies";
 import { Button, buttonClasses } from "~/components/ui/Button";
@@ -52,20 +55,41 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!offering) throw new Response("Not found", { status: 404 });
 
   const core = await isCore(gate.auth.user.sub);
-  const [instructorCandidates, applications] = await Promise.all([
-    core
-      ? prisma.user.findMany({
-          where: await currentTermMemberWhere(),
-          select: { id: true, firstName: true, lastName: true },
-          orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
-        })
-      : Promise.resolve([]),
-    listApplications(params.offeringId!),
-  ]);
+  const [instructorCandidates, applications, emailTemplates, decisionEmailBindings] =
+    await Promise.all([
+      core
+        ? prisma.user.findMany({
+            where: await currentTermMemberWhere(),
+            select: { id: true, firstName: true, lastName: true },
+            orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
+          })
+        : Promise.resolve([]),
+      listApplications(params.offeringId!),
+      prisma.emailTemplate.findMany({
+        select: {
+          id: true,
+          name: true,
+          versions: {
+            orderBy: { versionNumber: "desc" },
+            take: 1,
+            select: { id: true, versionNumber: true },
+          },
+        },
+        orderBy: { name: "asc" },
+      }),
+      prisma.educationDecisionEmail.findMany({
+        where: { offeringId: params.offeringId! },
+        select: { status: true, emailTemplateVersionId: true },
+      }),
+    ]);
 
   return {
     offering,
     applications,
+    emailTemplates: emailTemplates
+      .filter((t) => t.versions.length > 0)
+      .map((t) => ({ name: t.name, versionId: t.versions[0]!.id })),
+    decisionEmailBindings,
     isCore: core,
     instructorCandidates: instructorCandidates.map((u) => ({
       id: u.id,
@@ -80,6 +104,27 @@ export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
   const formData = await request.formData();
+
+  if (formData.get("intent") === "decide-application") {
+    if (!(await isOfferingManager(auth.user.sub, params.offeringId!)))
+      return Response.json({ error: "Forbidden" }, { status: 403 });
+    const applicationId = String(formData.get("applicationId") ?? "");
+    const application = await prisma.educationApplication.findUnique({
+      where: { id: applicationId },
+      select: { offeringId: true },
+    });
+    if (!application || application.offeringId !== params.offeringId)
+      return Response.json({ error: "Application not found" }, { status: 404 });
+    const result = await decideApplication({
+      applicationId,
+      status: String(formData.get("status")) as EduApplicationStatus,
+      actorId: auth.user.sub,
+    });
+    if ("error" in result && typeof result.error === "string")
+      return Response.json({ error: result.error }, { status: result.status });
+    return { ok: true };
+  }
+
   // Pin the offering id from the URL so a form can't retarget another offering.
   formData.set("offeringId", params.offeringId!);
   const result = await runOfferingAction(formData, auth.user.sub);
@@ -99,6 +144,8 @@ export default function ManageOffering() {
   const {
     offering,
     applications,
+    emailTemplates,
+    decisionEmailBindings,
     isCore: core,
     instructorCandidates,
     collabToken,
@@ -270,6 +317,53 @@ export default function ManageOffering() {
             </Form>
           )}
 
+          <section className="bg-card border border-border rounded-lg p-5">
+            <h2 className="text-sm font-semibold text-foreground mb-1">
+              Decision emails
+            </h2>
+            <p className="text-xs text-muted-foreground mb-3">
+              Pick a template to email applicants when their status changes.
+              Unbound statuses fall back to a short built-in message.
+              Templates are shared with hiring — manage them at{" "}
+              <Link to="/hiring/emails" className="underline">
+                /hiring/emails
+              </Link>
+              . <code className="text-[11px]">{"{{domain}}"}</code> carries the
+              offering title.
+            </p>
+            <div className="flex flex-col gap-3">
+              {(["Approved", "Waitlisted", "Rejected"] as const).map((status) => (
+                <Form
+                  key={status}
+                  method="post"
+                  className="flex items-center gap-3"
+                >
+                  <input type="hidden" name="intent" value="set-decision-email" />
+                  <input type="hidden" name="status" value={status} />
+                  <span className="text-sm text-foreground w-24">{status}</span>
+                  <select
+                    name="emailTemplateVersionId"
+                    defaultValue={
+                      decisionEmailBindings.find((b) => b.status === status)
+                        ?.emailTemplateVersionId ?? ""
+                    }
+                    className="flex-1 rounded-md border border-border bg-card px-2 py-1.5 text-sm"
+                  >
+                    <option value="">Built-in message (no template)</option>
+                    {emailTemplates.map((t) => (
+                      <option key={t.versionId} value={t.versionId}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                  <Button type="submit" variant="secondary" size="sm">
+                    Save
+                  </Button>
+                </Form>
+              ))}
+            </div>
+          </section>
+
           {core && offering.status === "Draft" && (
             <Form
               method="post"
@@ -424,7 +518,7 @@ export default function ManageOffering() {
                     {formatDateTime(a.submittedAt)}
                   </span>
                 </summary>
-                <div className="mt-3 pt-3 border-t border-border">
+                <div className="mt-3 pt-3 border-t border-border flex flex-col gap-4">
                   {a.formSubmission ? (
                     <ApplicationAnswers
                       questions={
@@ -439,6 +533,28 @@ export default function ManageOffering() {
                       No answers recorded.
                     </p>
                   )}
+                  <div className="flex items-center gap-2">
+                    {(["Approved", "Waitlisted", "Rejected"] as const)
+                      .filter((s) => s !== a.status)
+                      .map((s) => (
+                        <Form key={s} method="post">
+                          <input type="hidden" name="intent" value="decide-application" />
+                          <input type="hidden" name="applicationId" value={a.id} />
+                          <input type="hidden" name="status" value={s} />
+                          <Button
+                            type="submit"
+                            size="sm"
+                            variant={s === "Approved" ? "primary" : "secondary"}
+                          >
+                            {s === "Approved"
+                              ? "Approve"
+                              : s === "Waitlisted"
+                                ? "Waitlist"
+                                : "Reject"}
+                          </Button>
+                        </Form>
+                      ))}
+                  </div>
                 </div>
               </details>
             ))

@@ -411,6 +411,36 @@ export async function runOfferingAction(
       return { ok: true };
     }
 
+    case "set-decision-email": {
+      const status = formData.get("status");
+      if (status !== "Approved" && status !== "Waitlisted" && status !== "Rejected")
+        return bad("Invalid decision-email status");
+      const versionId = String(formData.get("emailTemplateVersionId") ?? "");
+      if (!versionId) {
+        await prisma.educationDecisionEmail.deleteMany({
+          where: { offeringId, status },
+        });
+      } else {
+        const version = await prisma.emailTemplateVersion.findUnique({
+          where: { id: versionId },
+          select: { id: true },
+        });
+        if (!version) return bad("Email template version not found", 404);
+        await prisma.educationDecisionEmail.upsert({
+          where: { offeringId_status: { offeringId, status } },
+          create: { offeringId, status, emailTemplateVersionId: versionId },
+          update: { emailTemplateVersionId: versionId },
+        });
+      }
+      await logAuditEvent({
+        action: "education.decision-email.bind",
+        userId: actorId,
+        targetId: offeringId,
+        metadata: { status, emailTemplateVersionId: versionId || null },
+      });
+      return { ok: true, id: offeringId };
+    }
+
     case "set-instructors": {
       if (!(await isCore(actorId))) return bad("Core only", 403);
       // One repeated field per selected instructor (checkbox-native).

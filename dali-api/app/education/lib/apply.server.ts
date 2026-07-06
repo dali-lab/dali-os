@@ -3,6 +3,7 @@ import type { Prisma, EduApplicationStatus } from "~/generated/prisma/client";
 import { validateAnswers } from "~/forms/lib/public-form";
 import { loadOfferingApplicationForm } from "./application-form.server";
 import { registrationOpen } from "./offerings.server";
+import { notifyApplicationStatus } from "./notifications.server";
 import { logAuditEvent } from "~/lib/audit";
 
 export type SubmitApplicationResult =
@@ -93,7 +94,7 @@ export async function submitApplication(args: {
     return { error: "You've already applied to this offering.", status: 409 };
   }
 
-  const finalStatus = await prisma.$transaction(async (tx) => {
+  const outcome = await prisma.$transaction(async (tx) => {
     await lockOffering(tx, args.offeringId);
 
     // Review-required → Submitted. RSVP → seat if available, else waitlist.
@@ -146,7 +147,7 @@ export async function submitApplication(args: {
           submittedAt: new Date(),
         },
       });
-      return nextStatus;
+      return { status: nextStatus, applicationId: existing.id };
     }
 
     const submission = await tx.formSubmission.create({
@@ -160,7 +161,7 @@ export async function submitApplication(args: {
       },
       select: { id: true },
     });
-    await tx.educationApplication.create({
+    const created = await tx.educationApplication.create({
       data: {
         applicantUserId: args.userId,
         offeringId: args.offeringId,
@@ -168,17 +169,23 @@ export async function submitApplication(args: {
         waitlistRank,
         formSubmissionId: submission.id,
       },
+      select: { id: true },
     });
-    return status;
+    return { status, applicationId: created.id };
   });
 
   await logAuditEvent({
     action: "education.application.submit",
     userId: args.userId,
     targetId: args.offeringId,
-    metadata: { status: finalStatus },
+    metadata: { status: outcome.status },
   });
-  return { ok: true, status: finalStatus };
+  // RSVP-style submits decide immediately — tell the applicant which way it
+  // went. Review-required submits stay silent until an instructor decides.
+  if (outcome.status === "Approved" || outcome.status === "Waitlisted") {
+    await notifyApplicationStatus(outcome.applicationId);
+  }
+  return { ok: true, status: outcome.status };
 }
 
 export async function getMyApplication(userId: string, offeringId: string) {

@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
+vi.mock("~/education/lib/notifications.server", () => ({
+  notifyApplicationStatus: vi.fn(),
+}));
 
 import { prisma } from "~/lib/db";
 import { submitApplication } from "~/education/lib/apply.server";

@@ -1,6 +1,7 @@
-import { redirect, useLoaderData, Link } from "react-router";
+import { redirect, useLoaderData, Link, Form } from "react-router";
 import type { Route } from "./+types/education.$offeringId";
 import { requireAuth } from "~/lib/auth";
+import { withdrawApplication } from "~/education/lib/decisions.server";
 import {
   isOfferingManager,
   redirectDartmouthToPortal,
@@ -80,6 +81,21 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   };
 }
 
+export async function action({ request, params }: Route.ActionArgs) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
+  const formData = await request.formData();
+  if (formData.get("intent") !== "withdraw")
+    return Response.json({ error: "Unknown intent" }, { status: 400 });
+  const result = await withdrawApplication({
+    userId: auth.user.sub,
+    offeringId: params.offeringId!,
+  });
+  if ("error" in result && typeof result.error === "string")
+    return Response.json({ error: result.error }, { status: result.status });
+  return { ok: true };
+}
+
 export default function OfferingDetail() {
   const { offering, descriptionHtml, myStatus, isManager, canApply } =
     useLoaderData<typeof loader>();
@@ -125,6 +141,26 @@ export default function OfferingDetail() {
               >
                 Manage
               </Link>
+            )}
+            {(myStatus === "Submitted" ||
+              myStatus === "Approved" ||
+              myStatus === "Waitlisted") && (
+              <Form
+                method="post"
+                onSubmit={(e) => {
+                  if (!confirm("Withdraw from this offering? Your seat goes to the waitlist.")) {
+                    e.preventDefault();
+                  }
+                }}
+              >
+                <input type="hidden" name="intent" value="withdraw" />
+                <button
+                  type="submit"
+                  className={buttonClasses("ghost", "sm")}
+                >
+                  Withdraw
+                </button>
+              </Form>
             )}
           </div>
         </div>
