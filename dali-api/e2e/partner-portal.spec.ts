@@ -1,0 +1,197 @@
+import { createHash, randomBytes } from 'node:crypto';
+import pg from 'pg';
+import { test, expect } from './fixtures';
+
+const DATABASE_URL =
+  process.env.DATABASE_URL || 'postgresql://dali:dali@localhost:5432/dali';
+
+async function withDb<T>(fn: (client: pg.Client) => Promise<T>): Promise<T> {
+  const client = new pg.Client(DATABASE_URL);
+  await client.connect();
+  try {
+    return await fn(client);
+  } finally {
+    await client.end();
+  }
+}
+
+function getPageId(title: string): Promise<string> {
+  return withDb(async (c) => {
+    const res = await c.query(
+      `SELECT id FROM "Page" WHERE "workspaceId" = 'project-tuck-alumni' AND title = $1`,
+      [title],
+    );
+    return res.rows[0]?.id as string;
+  });
+}
+
+// Seed a consumable magic-link token directly (the email path is a no-op in
+// dev), so the full self-signup flow is drivable end-to-end.
+async function insertMagicToken(email: string): Promise<string> {
+  const raw = randomBytes(32).toString('base64url');
+  const hash = createHash('sha256').update(raw).digest('base64url');
+  await withDb(async (c) => {
+    const userId = `e2e-partner-${randomBytes(8).toString('hex')}`;
+    await c.query(
+      `INSERT INTO "User" (id, "personalEmail", "firstName", "lastName", "updatedAt")
+       VALUES ($1, $2, '', '', now())
+       ON CONFLICT ("personalEmail") DO NOTHING`,
+      [userId, email],
+    );
+    const idRes = await c.query(
+      `SELECT id FROM "User" WHERE "personalEmail" = $1`,
+      [email],
+    );
+    await c.query(
+      `INSERT INTO "OneTimeToken" (id, "userId", "tokenHash", purpose, "expiresAt")
+       VALUES ($1, $2, $3, 'PartnerMagicLink', now() + interval '15 minutes')`,
+      [`e2e-tok-${randomBytes(8).toString('hex')}`, idRes.rows[0].id, hash],
+    );
+  });
+  return raw;
+}
+
+test.describe('internal Organizations pages (Core)', () => {
+  test.beforeEach(async ({ loginAs }) => {
+    await loginAs({ daliEmail: 'admin@dali.dartmouth.edu' });
+  });
+
+  // ?embed=1 renders member routes standalone instead of inside the
+  // TabWorkspace iframe shell (see kanban-drag.spec.ts).
+  test('lists partner orgs with counts', async ({ page }) => {
+    await page.goto('/partners?embed=1');
+    await expect(
+      page.getByRole('heading', { name: 'Organizations' }),
+    ).toBeVisible();
+    await expect(page.getByText('Tuck School of Business')).toBeVisible();
+  });
+
+  test('org detail shows members, pending invites, and projects', async ({ page }) => {
+    await page.goto('/partners/partner-tuck-school?embed=1');
+    await expect(
+      page.getByRole('heading', { name: 'Tuck School of Business' }),
+    ).toBeVisible();
+    await expect(page.getByText('Pat Tuck')).toBeVisible();
+    await expect(page.getByText('invitee.tuck@example.com')).toBeVisible();
+    await expect(page.getByText('Tuck Alumni Connect')).toBeVisible();
+  });
+});
+
+test.describe('project hub share toggle (member)', () => {
+  test.beforeEach(async ({ loginAs }) => {
+    await loginAs({ daliEmail: 'admin@dali.dartmouth.edu' });
+  });
+
+  test('overview shows the Partners section and share states', async ({ page }) => {
+    await page.goto('/projects/project-tuck-alumni?embed=1');
+    await expect(page.getByRole('heading', { name: 'Partners' })).toBeVisible();
+    await expect(page.getByText('Pat Tuck (Program Sponsor)')).toBeVisible();
+    // Seeded states: Weekly Partner Update shared, Internal Retro Notes not.
+    await expect(
+      page.getByRole('button', { name: 'Shared with partner' }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'Share with partner', exact: true }),
+    ).toBeVisible();
+  });
+
+  test('toggling share flips the badge and back', async ({ page }) => {
+    await page.goto('/projects/project-tuck-alumni?embed=1');
+    const shareButton = page.getByRole('button', {
+      name: 'Share with partner',
+      exact: true,
+    });
+    await shareButton.click();
+    await expect(
+      page.getByRole('button', { name: 'Shared with partner' }),
+    ).toHaveCount(2);
+    // Revert so the test is idempotent against the seed baseline.
+    await page
+      .getByRole('button', { name: 'Shared with partner' })
+      .last()
+      .click();
+    await expect(
+      page.getByRole('button', { name: 'Shared with partner' }),
+    ).toHaveCount(1);
+  });
+});
+
+test.describe('partner portal', () => {
+  test.beforeEach(async ({ loginAs }) => {
+    await loginAs({ personalEmail: 'partner.tuck@example.com' });
+  });
+
+  test('home shows org welcome, project card, and bounces from member shell', async ({ page }) => {
+    await page.goto('/partner');
+    await expect(
+      page.getByRole('heading', { name: 'Welcome, Tuck School of Business' }),
+    ).toBeVisible();
+    await expect(page.getByText('Tuck Alumni Connect')).toBeVisible();
+
+    // Partner accounts never see the member shell.
+    await page.goto('/');
+    await expect(page).toHaveURL(/\/partner$/);
+  });
+
+  test('project view shows sprint summary and only shared pages', async ({ page }) => {
+    await page.goto('/partner/projects/project-tuck-alumni');
+    await expect(
+      page.getByRole('heading', { name: 'Tuck Alumni Connect' }),
+    ).toBeVisible();
+    await expect(page.getByText('Sprint 3 — Matching flow')).toBeVisible();
+    await expect(page.getByText('2 of 5 tasks done')).toBeVisible();
+    await expect(page.getByText('Weekly Partner Update')).toBeVisible();
+    await expect(page.getByText('Internal Retro Notes')).not.toBeVisible();
+  });
+
+  test('shared page opens an editable collab editor', async ({ page }) => {
+    const pageId = await getPageId('Weekly Partner Update');
+    await page.goto(`/partner/projects/project-tuck-alumni/pages/${pageId}`);
+    await expect(
+      page.getByRole('heading', { name: 'Weekly Partner Update' }),
+    ).toBeVisible();
+    await expect(page.locator('[contenteditable="true"]')).toBeVisible();
+  });
+
+  test('unshared pages and other orgs’ projects 404', async ({ page }) => {
+    const internalPageId = await getPageId('Internal Retro Notes');
+    const unshared = await page.goto(
+      `/partner/projects/project-tuck-alumni/pages/${internalPageId}`,
+    );
+    expect(unshared?.status()).toBe(404);
+
+    // Hood's contact can't open Tuck's project.
+    await page.goto('/dev-login-as?personalEmail=partner.hood%40example.com');
+    const crossOrg = await page.goto('/partner/projects/project-tuck-alumni');
+    expect(crossOrg?.status()).toBe(404);
+  });
+});
+
+test.describe('partner self-signup', () => {
+  test('magic link → onboarding → apply → status', async ({ page }) => {
+    const email = `e2e-partner-${Date.now()}@example.com`;
+    const raw = await insertMagicToken(email);
+
+    // GET landing must not consume the token; POST does.
+    await page.goto(`/partner/auth/verify?token=${raw}`);
+    await page.getByRole('button', { name: 'Continue to DALI OS' }).click();
+    await expect(page).toHaveURL(/\/partner\/onboarding/);
+
+    await page.getByLabel('First name').fill('Emery');
+    await page.getByLabel('Last name').fill('Example');
+    await page.getByLabel('Organization name').fill('Example Robotics');
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await expect(
+      page.getByRole('heading', { name: 'Welcome, Example Robotics' }),
+    ).toBeVisible();
+
+    // Submit a pitch and land on its status page.
+    await page.goto('/partner/apply');
+    await page.getByLabel('Project title').fill('Warehouse robot dashboard');
+    await page.getByRole('button', { name: 'Submit pitch' }).click();
+    await expect(
+      page.getByRole('heading', { name: 'Warehouse robot dashboard' }),
+    ).toBeVisible();
+    await expect(page.getByText('Submitted', { exact: true })).toBeVisible();
+  });
+});

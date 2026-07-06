@@ -3595,6 +3595,137 @@ async function main() {
             authProvider: "MagicLink",
           },
         });
+
+        // A pending teammate invite with a deterministic token so E2E can
+        // drive /partner/invite/:token without email. Raw token:
+        // "e2e-partner-invite-token" (sha256 → base64url below).
+        const { createHash } = await import("node:crypto");
+        const inviteHash = createHash("sha256")
+          .update("e2e-partner-invite-token")
+          .digest("base64url");
+        await prisma.partnerInvite.upsert({
+          where: { tokenHash: inviteHash },
+          update: {
+            acceptedAt: null,
+            revokedAt: null,
+            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          },
+          create: {
+            partnerOrgId: tuck.id,
+            email: "invitee.tuck@example.com",
+            displayRole: "Design Lead",
+            tokenHash: inviteHash,
+            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          },
+        });
+      }
+
+      // Second partner org contact (Hood) — exercises the cross-org 404s.
+      const hood = await prisma.partnerOrg.findUnique({
+        where: { id: "partner-hood-museum" },
+        select: { id: true },
+      });
+      if (hood) {
+        const hoodContact = await prisma.user.upsert({
+          where: { personalEmail: "partner.hood@example.com" },
+          update: { firstName: "Harper", lastName: "Hood" },
+          create: {
+            personalEmail: "partner.hood@example.com",
+            firstName: "Harper",
+            lastName: "Hood",
+          },
+        });
+        await prisma.partnerUser.upsert({
+          where: { userId: hoodContact.id },
+          update: { partnerOrgId: hood.id },
+          create: {
+            userId: hoodContact.id,
+            partnerOrgId: hood.id,
+            displayRole: "Curator",
+            authProvider: "MagicLink",
+          },
+        });
+      }
+
+      // Partner-portal demo data on Pat Tuck's project: an active sprint with
+      // mixed task statuses (sprint summary), a planned next sprint, and a
+      // shared + an internal page (share-toggle / partner-page visibility).
+      const tuckProject = await prisma.project.findUnique({
+        where: { id: "project-tuck-alumni" },
+        select: { id: true },
+      });
+      if (tuckProject) {
+        await prisma.task.deleteMany({ where: { projectId: tuckProject.id } });
+        await prisma.sprint.deleteMany({ where: { projectId: tuckProject.id } });
+        const tuckSprint = await prisma.sprint.create({
+          data: {
+            projectId: tuckProject.id,
+            name: "Sprint 3 — Matching flow",
+            startsAt: new Date("2026-04-06"),
+            endsAt: new Date("2026-04-20"),
+            status: "Active",
+          },
+        });
+        await prisma.sprint.create({
+          data: {
+            projectId: tuckProject.id,
+            name: "Sprint 4 — Notifications",
+            startsAt: new Date("2026-04-20"),
+            endsAt: new Date("2026-05-04"),
+            status: "Planned",
+          },
+        });
+        const tuckTasks: {
+          title: string;
+          status: "Todo" | "InProgress" | "Done";
+        }[] = [
+          { title: "Mentor matching algorithm v1", status: "Done" },
+          { title: "Alumni profile import", status: "Done" },
+          { title: "Match review screen", status: "InProgress" },
+          { title: "Email digest opt-in", status: "Todo" },
+          { title: "Load-test matching queue", status: "Todo" },
+        ];
+        for (const t of tuckTasks) {
+          await prisma.task.create({
+            data: {
+              projectId: tuckProject.id,
+              sprintId: tuckSprint.id,
+              title: t.title,
+              status: t.status,
+              createdById: admin.id,
+            },
+          });
+        }
+
+        // Pages: idempotent by (workspace, title) since Page ids are cuids.
+        const seedPage = async (title: string, partnerVisible: boolean) => {
+          const existing = await prisma.page.findFirst({
+            where: {
+              workspaceType: "Project",
+              workspaceId: tuckProject.id,
+              title,
+            },
+            select: { id: true },
+          });
+          if (existing) {
+            await prisma.page.update({
+              where: { id: existing.id },
+              data: { partnerVisible, archivedAt: null },
+            });
+          } else {
+            await prisma.page.create({
+              data: {
+                workspaceType: "Project",
+                workspaceId: tuckProject.id,
+                title,
+                partnerVisible,
+                createdById: admin.id,
+              },
+            });
+          }
+        };
+        await seedPage("Weekly Partner Update", true);
+        await seedPage("Internal Retro Notes", false);
       }
 
       // Templates (idempotent by name): page + mentor-note.
@@ -3699,7 +3830,7 @@ async function main() {
       console.log(
         `  v0 demo rows: ${eligCount} eligibilities, ${assignCount} project assignments, ` +
           `+ term-status / role-requests / staffing-assignments / essentiality / ` +
-          `epic-sprint-task / mentorship / partner-user / templates / offering / ` +
+          `epic-sprint-task / mentorship / partner-user / partner-portal-demo / templates / offering / ` +
           `page / notifications / job-codes`,
       );
     }
