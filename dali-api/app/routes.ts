@@ -117,6 +117,14 @@ export default [
     route("portal/application", "routes/portal.application.tsx"),
   ]),
 
+  // Partner auth (no layout). Singular /partner = partner-facing portal;
+  // plural /partners = the internal Core surface registered in the member
+  // layout above.
+  route("partner/login", "partners/routes/partner.login.tsx"),
+  route("partner/auth/verify", "partners/routes/partner.auth.verify.tsx"),
+  route("partner/invite/:token", "partners/routes/partner.invite.$token.tsx"),
+  route("partner/onboarding", "partners/routes/partner.onboarding.tsx"),
+
   // Authenticated member form fill (no layout), token-addressed. Every form
   // is filled while logged in — the submitter is always the session user, so
   // there's no name/email capture and submissions can drive StaffingPreference

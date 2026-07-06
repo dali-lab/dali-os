@@ -34,6 +34,14 @@ export async function loader({ request }: Route.LoaderArgs) {
     if (member) {
       return redirect(member.onboardedAt ? "/" : "/onboarding");
     }
+    // Signed-in partners land in their portal, not the applicant one.
+    const partnerUser = await prisma.partnerUser.findUnique({
+      where: { userId: auth.user.sub },
+      select: { id: true },
+    });
+    if (partnerUser) {
+      return redirect("/partner");
+    }
     return redirect("/portal");
   }
   return {};
@@ -279,6 +287,48 @@ export default function Login() {
                 </svg>
               </button>
             </Form>
+            {/* Partner — magic-link auth on its own page, no OAuth */}
+            <a
+              href="/partner/login"
+              className="w-full flex items-center gap-4 p-5 rounded-2xl border-2 border-transparent bg-brand-tint hover:border-accent-coral transition group text-left"
+            >
+              <div className="w-10 h-10 rounded-full bg-card flex items-center justify-center flex-shrink-0 shadow-sm">
+                <svg
+                  className="w-5 h-5 text-dark-blue"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+                  />
+                </svg>
+              </div>
+              <div className="flex-1 min-w-0">
+                <span className="font-heading font-semibold text-dark-blue group-hover:text-accent-coral transition block">
+                  Partner
+                </span>
+                <span className="text-xs text-muted-foreground mt-0.5 block">
+                  Sign-in link sent to your work email
+                </span>
+              </div>
+              <svg
+                className="w-4 h-4 text-muted-foreground group-hover:text-accent-coral transition flex-shrink-0"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M9 5l7 7-7 7"
+                />
+              </svg>
+            </a>
           </div>
 
           {/* Public policy links. This page doubles as the app's public home
