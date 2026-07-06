@@ -94,8 +94,10 @@ export async function loadPublicForm(
 }
 
 // Shared answer validation for the authenticated member submit path.
-// Returns an error result, or null when the answers are valid.
-async function validateAnswers(
+// Returns an error result, or null when the answers are valid. Exported for
+// the education apply flow, which validates against an offering-bound form
+// without going through the public token path.
+export async function validateAnswers(
   questions: Question[],
   answers: Record<string, unknown>,
   userId: string,

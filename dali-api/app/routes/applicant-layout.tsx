@@ -36,6 +36,15 @@ export default function ApplicantLayout() {
           </span>
         </Link>
 
+        <div className="ml-6 flex items-center gap-4 text-sm font-medium">
+          <Link to="/portal" className="text-dark-blue hover:text-accent-coral transition">
+            Apply
+          </Link>
+          <Link to="/portal/education" className="text-dark-blue hover:text-accent-coral transition">
+            Education
+          </Link>
+        </div>
+
         <div className="ml-auto flex items-center gap-3 sm:gap-4">
           <div className="flex items-center gap-2 min-w-0">
             <div className="w-8 h-8 rounded-full bg-accent-coral flex items-center justify-center text-white text-sm font-bold flex-shrink-0">

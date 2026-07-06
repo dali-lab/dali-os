@@ -2,6 +2,7 @@ import { prisma } from "~/lib/db";
 import { currentTerm, isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import { manageableOfferingIds, isOfferingManager } from "./access.server";
+import { createOfferingApplicationForm } from "./application-form.server";
 import type { OfferingStatus, OfferingType } from "~/generated/prisma/client";
 
 // ─── Reads ───────────────────────────────────────────────────────────────────
@@ -227,6 +228,9 @@ export async function runOfferingAction(
       where: { id: offering.id },
       data: { descriptionDocId: `eduoffering:${offering.id}:description` },
     });
+    // Every offering gets its own application form, cloned from the education
+    // template for its type. Instructors edit it at /forms/edit/:formId.
+    await createOfferingApplicationForm(offering.id, actorId);
     await logAuditEvent({
       action: "education.offering.create",
       userId: actorId,

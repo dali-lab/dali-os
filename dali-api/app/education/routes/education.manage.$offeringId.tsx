@@ -17,10 +17,13 @@ import {
   getOfferingDetail,
   runOfferingAction,
 } from "~/education/lib/offerings.server";
+import { listApplications } from "~/education/lib/apply.server";
+import { ApplicationAnswers } from "~/education/components/ApplicationAnswers";
+import type { Question } from "~/types";
 import { prisma } from "~/lib/db";
 import { parseSessionCookie } from "~/lib/cookies";
 import { Button, buttonClasses } from "~/components/ui/Button";
-import { TypeBadge, StatusBadge } from "~/education/components/OfferingCard";
+import { TypeBadge, StatusBadge, MyStatusChip } from "~/education/components/OfferingCard";
 import { OfferingFields, toDatetimeLocal } from "~/education/components/OfferingFields";
 import { CollaborativeEditor } from "~/components/CollaborativeEditor";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
@@ -49,16 +52,20 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!offering) throw new Response("Not found", { status: 404 });
 
   const core = await isCore(gate.auth.user.sub);
-  const instructorCandidates = core
-    ? await prisma.user.findMany({
-        where: await currentTermMemberWhere(),
-        select: { id: true, firstName: true, lastName: true },
-        orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
-      })
-    : [];
+  const [instructorCandidates, applications] = await Promise.all([
+    core
+      ? prisma.user.findMany({
+          where: await currentTermMemberWhere(),
+          select: { id: true, firstName: true, lastName: true },
+          orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
+        })
+      : Promise.resolve([]),
+    listApplications(params.offeringId!),
+  ]);
 
   return {
     offering,
+    applications,
     isCore: core,
     instructorCandidates: instructorCandidates.map((u) => ({
       id: u.id,
@@ -85,11 +92,13 @@ export async function action({ request, params }: Route.ActionArgs) {
 const TABS = [
   { key: "details", label: "Details" },
   { key: "sessions", label: "Sessions" },
+  { key: "applications", label: "Applications" },
 ] as const;
 
 export default function ManageOffering() {
   const {
     offering,
+    applications,
     isCore: core,
     instructorCandidates,
     collabToken,
@@ -169,6 +178,21 @@ export default function ManageOffering() {
 
       {tab === "details" && (
         <div className="flex flex-col gap-6 max-w-2xl">
+          {offering.applicationFormId && (
+            <div className="bg-brand-tint rounded-lg px-4 py-3 flex items-center justify-between gap-4">
+              <p className="text-sm text-foreground">
+                Applicants answer this offering&apos;s application form.
+                Fillers always see the latest saved version.
+              </p>
+              <Link
+                to={`/forms/edit/${offering.applicationFormId}`}
+                className={buttonClasses("secondary", "sm") + " shrink-0"}
+              >
+                Edit application form
+              </Link>
+            </div>
+          )}
+
           <Form
             method="post"
             className="bg-card border border-border rounded-lg p-5 flex flex-col gap-4"
@@ -364,6 +388,61 @@ export default function ManageOffering() {
               Add session
             </Button>
           </Form>
+        </div>
+      )}
+
+      {tab === "applications" && (
+        <div className="flex flex-col gap-3 max-w-3xl">
+          {applications.length === 0 ? (
+            <p className="text-sm text-muted-foreground italic">
+              No applications yet.
+            </p>
+          ) : (
+            applications.map((a) => (
+              <details
+                key={a.id}
+                className="bg-card border border-border rounded-lg px-4 py-3"
+              >
+                <summary className="flex items-center justify-between gap-4 cursor-pointer list-none">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <MyStatusChip status={a.status} />
+                    <span className="text-sm font-medium text-foreground truncate">
+                      {`${a.applicant.firstName} ${a.applicant.lastName}`.trim()}
+                    </span>
+                    <span className="text-xs text-muted-foreground truncate">
+                      {a.applicant.daliEmail ??
+                        a.applicant.dartmouthEmail ??
+                        (a.applicant.netId ? `${a.applicant.netId}@dartmouth.edu` : "")}
+                    </span>
+                    {a.status === "Waitlisted" && a.waitlistRank != null && (
+                      <span className="text-xs text-muted-foreground">
+                        #{a.waitlistRank}
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-xs text-muted-foreground shrink-0">
+                    {formatDateTime(a.submittedAt)}
+                  </span>
+                </summary>
+                <div className="mt-3 pt-3 border-t border-border">
+                  {a.formSubmission ? (
+                    <ApplicationAnswers
+                      questions={
+                        (a.formSubmission.formVersion.questions as unknown as Question[]) ?? []
+                      }
+                      answers={
+                        (a.formSubmission.answers as Record<string, unknown>) ?? {}
+                      }
+                    />
+                  ) : (
+                    <p className="text-xs text-muted-foreground italic">
+                      No answers recorded.
+                    </p>
+                  )}
+                </div>
+              </details>
+            ))
+          )}
         </div>
       )}
     </div>

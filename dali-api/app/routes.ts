@@ -120,6 +120,10 @@ export default [
     route("portal", "routes/portal.tsx"),
     route("portal/apply", "routes/portal.apply.tsx"),
     route("portal/application", "routes/portal.application.tsx"),
+    // Education mirror for non-member Dartmouth students.
+    route("portal/education", "routes/portal.education.tsx"),
+    route("portal/education/:offeringId", "routes/portal.education.$offeringId.tsx"),
+    route("portal/education/:offeringId/apply", "routes/portal.education.$offeringId.apply.tsx"),
   ]),
 
   // Authenticated member form fill (no layout), token-addressed. Every form
