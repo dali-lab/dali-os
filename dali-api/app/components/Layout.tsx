@@ -446,6 +446,11 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
 
   const activeArea = areas.find((a) => a.active)
   const activeSection = activeArea?.sections.find((s) => s.active)
+  // Label for a workspace tab opened by direct navigation into an area.
+  // Childless areas (Hiring, People, Partners, Education) have no matching
+  // section, so fall back to the area label — without this, deep links into
+  // collapsed areas seeded no section tab at all.
+  const initialTabLabel = activeSection?.label ?? activeArea?.label
 
   const initials = userInitials(user)
   const openTasks = useOpenTasks()
@@ -965,8 +970,8 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
           apiRef={workspaceRef}
           initialTabs={[
             { url: '/', label: 'Home' },
-            ...(activeSection && location.pathname !== '/'
-              ? [{ url: location.pathname + location.search, label: activeSection.label }]
+            ...(initialTabLabel && location.pathname !== '/'
+              ? [{ url: location.pathname + location.search, label: initialTabLabel }]
               : []),
           ]}
           onActiveUrlChange={setFocusedTabUrl}
