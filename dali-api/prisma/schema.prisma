@@ -45,22 +45,22 @@ model User {
   // ─── Profile fields (Phase 1 additions; all nullable) ─────────────────────
   // Dartmouth class year (e.g., 2026). Solves the "took a term off"
   // ambiguity. Used for alumni derivation + display.
-  classYear    Int?
+  classYear      Int?
   // Optional explicit graduation override for off-cycle graduations.
-  graduatedAt  DateTime?
-  pronouns     String?
-  photoUrl     String?
+  graduatedAt    DateTime?
+  pronouns       String?
+  photoUrl       String?
   // Bio stored as a collab doc reference for rich formatting + @mentions.
-  bioDocId     String?
-  major        String?
-  hometown     String?
-  linkedinUrl  String?
+  bioDocId       String?
+  major          String?
+  hometown       String?
+  linkedinUrl    String?
   // Bare GitHub login (e.g. "octocat"). Used to add the member to their
   // project's GitHub team during staffing finalize, and to derive a profile
   // link in the UI. Editable in member details; nullable — a member with no
   // username is silently skipped (and reported) by that automation.
   githubUsername String?
-  personalSite String?
+  personalSite   String?
 
   // ─── Onboarding profile fields (collected on the New Member Profile form) ──
   // Name as it appears on file with the College, when different from the
@@ -131,6 +131,16 @@ model User {
   educationSubmissions   EducationSubmission[]   @relation("EducationSubmissionStudent")
   educationAnnouncements EducationAnnouncement[] @relation("EducationAnnouncementAuthor")
 
+  // ─── Education LMS expansion back-relations ───────────────────────────────
+  educationDiscussionPosts    EducationDiscussionPost[] @relation("EducationDiscussionAuthor")
+  educationNoteFeedbackAuthor EducationStudentNote[]    @relation("EduNoteFeedbackAuthor")
+  educationNoteInternalAuthor EducationStudentNote[]    @relation("EduNoteInternalAuthor")
+  ceCredits                   CECredit[]                @relation("CECreditUser")
+  ceCreditsGranted            CECredit[]                @relation("CECreditGrantor")
+  educationCertificatesIssued EducationCertificate[]    @relation("EducationCertificateIssuer")
+  educationFormBindingsSet    EducationFormBinding[]    @relation("EducationFormBindingUpdater")
+  educationOfferingsClosedOut EducationOffering[]       @relation("EducationOfferingClosedOutBy")
+
   // ─── Phase 1: mentorship back-relations ───────────────────────────────────
   mentorNotesAsMentor MentorNote[] @relation("MentorNoteMentor")
   mentorNotesAsMentee MentorNote[] @relation("MentorNoteMentee")
@@ -147,8 +157,8 @@ model User {
   partnerUser PartnerUser?
 
   // ─── Phase 1: OAuth / magic-link back-relations ───────────────────────────
-  oauthGrants   OAuthGrant[]
-  oneTimeTokens OneTimeToken[]
+  oauthGrants    OAuthGrant[]
+  oneTimeTokens  OneTimeToken[]
   devicePairings DevicePairing[]
 
   // ─── Phase 1: Gmail integration (single per User) ─────────────────────────
@@ -1179,6 +1189,7 @@ model EmailTemplateVersion {
 
   cycleDecisionEmails     CycleDecisionEmail[]
   cycleNotificationEmails CycleNotificationEmail[]
+  educationDecisionEmails EducationDecisionEmail[]
 
   @@index([templateId, versionNumber])
 }
@@ -1517,6 +1528,7 @@ enum NotificationKind {
   MeetingInvite
   MeetingReminder
   SystemAnnouncement
+  Education
 }
 
 enum MeetingRsvp {
@@ -1670,6 +1682,7 @@ model Term {
   partnerApplications   PartnerApplicationTargetTerm[]
   intentToWork          IntentToWork[]
   projectDomainScopes   ProjectDomainScope[]
+  ceCredits             CECredit[]
 
   @@index([sortKey])
 }
@@ -1835,7 +1848,7 @@ enum AssignmentType {
 // ─── Project workspace ───────────────────────────────────────────────────────
 
 model Project {
-  id            String        @id @default(cuid())
+  id            String  @id @default(cuid())
   name          String
   // Short plain-text blurb shown at the top of the project detail page.
   // Rich/long-form content lives in the collab overview page instead.
@@ -1857,8 +1870,8 @@ model Project {
   // fewer terms added than expected (still being scheduled) or more. Drives
   // the "N of M terms added" projection. The start term is derived as the
   // earliest term in `projectTerms` (by Term.sortKey), not stored.
-  termCount     Int           @default(1)
-  status        ProjectStatus @default(Active)
+  termCount      Int           @default(1)
+  status         ProjectStatus @default(Active)
 
   // Auto-created on Project creation: a top-level FreeForm Page in the
   // Project workspace, seeded from the "Project Brief" PageTemplate. The
@@ -1892,7 +1905,7 @@ model Project {
   // post the team announcement on staffing finalize. Backfilled by finalize/modal
   // Save when the channel (named by slackChannelName) is get-or-created. Null
   // until the first sync runs the Slack channel step.
-  slackChannelId String?
+  slackChannelId   String?
   // Human channel name (e.g. "project-alpha") — the SHARED source of truth edited
   // on the project details page AND the staffing Finalize modal. Defaults to the
   // slugified project name until set. Finalize/modal-Save get-or-creates this
@@ -2247,12 +2260,30 @@ model EducationOffering {
   // education identity if not set.
   calendarEmail        String?
 
+  // The application/RSVP form for this offering, built with the shared Forms
+  // system. Cloned from an education template at offering creation; fillers
+  // always see the latest FormVersion. Null only transiently (offering
+  // created before its form) — apply routes treat null as "not open".
+  applicationFormId String?
+  applicationForm   Form?   @relation("EducationOfferingApplicationForm", fields: [applicationFormId], references: [id], onDelete: SetNull)
+
+  // Close-out: explicit instructor/Core action that issues certificates and
+  // fires instructor exit surveys. Idempotent — re-running only issues
+  // missing certificates. Independent of Archived status.
+  closedOutAt   DateTime?
+  closedOutById String?
+  closedOutBy   User?     @relation("EducationOfferingClosedOutBy", fields: [closedOutById], references: [id])
+
   instructors          InstructorAssignment[]
   sessions             EducationSession[]
   applications         EducationApplication[]
   applicationQuestions EducationApplicationQuestion[]
   assignments          EducationAssignment[]
   announcements        EducationAnnouncement[]
+  decisionEmails       EducationDecisionEmail[]
+  discussionPosts      EducationDiscussionPost[]
+  formBindings         EducationFormBinding[]
+  formSubmissions      FormSubmission[]
 
   createdAt DateTime @default(now())
 }
@@ -2274,13 +2305,20 @@ model EducationSession {
   sequence       Int
   datetime       DateTime
   location       String?
-  // Materials as collab doc — slides, notes, pre-reads.
+  // DORMANT in v1 — per-session materials live as pages in the offering's
+  // page workspace instead. Kept for a possible per-session doc link later.
   materialsDocId String?
   recordingUrl   String?
 
-  offering    EducationOffering     @relation(fields: [offeringId], references: [id])
-  attendances EducationAttendance[]
-  assignments EducationAssignment[]
+  // Stamped when session-feedback todos/emails have been fanned out for this
+  // session (first attendance save). Guards against duplicate fan-out.
+  feedbackRequestedAt DateTime?
+
+  offering        EducationOffering     @relation(fields: [offeringId], references: [id])
+  attendances     EducationAttendance[]
+  assignments     EducationAssignment[]
+  ceCredits       CECredit[]
+  formSubmissions FormSubmission[]
 
   @@index([offeringId, sequence])
 }
@@ -2297,11 +2335,22 @@ model EducationApplication {
   // Free-form: the userId of the reviewer who approved/rejected.
   reviewedBy      String?
 
+  // The Forms-system submission holding this application's answers.
+  // SetNull so deleting a form doesn't cascade away the application record.
+  formSubmissionId String?         @unique
+  formSubmission   FormSubmission? @relation(fields: [formSubmissionId], references: [id], onDelete: SetNull)
+
+  // FIFO position while status=Waitlisted (1 = next up). Mutable in place —
+  // ranks shift down when someone is promoted or removed. Null otherwise.
+  waitlistRank Int?
+
   applicant   User                         @relation("EducationApplicant", fields: [applicantUserId], references: [id])
   offering    EducationOffering            @relation(fields: [offeringId], references: [id])
   answers     EducationApplicationAnswer[]
   attendances EducationAttendance[]
   submissions EducationSubmission[]
+  note        EducationStudentNote?
+  certificate EducationCertificate?
 
   // One application per (applicant, offering). Withdrawal transitions
   // status, doesn't insert a second row.
@@ -2316,6 +2365,10 @@ enum EduApplicationStatus {
   Withdrawn
 }
 
+// DORMANT — never written or read. Applications use the shared Forms system
+// (EducationOffering.applicationFormId → Form/FormVersion/FormSubmission)
+// instead of these bespoke question tables. Kept because the migration that
+// created them is applied; do not build on them.
 model EducationApplicationQuestion {
   id         String  @id @default(cuid())
   offeringId String
@@ -2329,6 +2382,7 @@ model EducationApplicationQuestion {
   @@index([offeringId, position])
 }
 
+// DORMANT — see EducationApplicationQuestion.
 model EducationApplicationAnswer {
   id            String @id @default(cuid())
   applicationId String
@@ -2384,13 +2438,21 @@ model EducationSubmission {
   id            String    @id @default(cuid())
   assignmentId  String
   studentId     String
-  // Submission body as collab doc + optional file attachments (S3 URLs JSON).
+  // DORMANT in v1 — students (incl. portal users) don't get collab editing;
+  // the plain-text columns below hold the body and feedback instead.
   contentDocId  String?
   files         Json?
   submittedAt   DateTime?
   gradedAt      DateTime?
-  // Feedback as collab doc — instructor can leave rich feedback.
+  // DORMANT in v1 — see contentDocId.
   feedbackDocId String?
+
+  // Plain-text submission body (Text/Mixed submission types).
+  textContent  String?
+  // Free-form grade label (e.g. "Complete", "95"). No rubric in v1.
+  grade        String?
+  // Instructor feedback on this submission, shown to the student.
+  feedbackText String?
 
   assignment             EducationAssignment   @relation(fields: [assignmentId], references: [id])
   student                User                  @relation("EducationSubmissionStudent", fields: [studentId], references: [id])
@@ -2414,6 +2476,129 @@ model EducationAnnouncement {
   author   User              @relation("EducationAnnouncementAuthor", fields: [authorId], references: [id])
 
   @@index([offeringId, sentAt])
+}
+
+// Per-offering binding: which EmailTemplateVersion fires when an application
+// reaches the given status. One row per (offering, status). No row = in-app
+// notification only, no email. Mirrors hiring's CycleDecisionEmail.
+model EducationDecisionEmail {
+  offeringId String
+  offering   EducationOffering @relation(fields: [offeringId], references: [id], onDelete: Cascade)
+
+  status EduApplicationStatus
+
+  emailTemplateVersionId String
+  emailTemplateVersion   EmailTemplateVersion @relation(fields: [emailTemplateVersionId], references: [id])
+
+  @@id([offeringId, status])
+}
+
+// Course discussion board: top-level posts + one reply level (replies to
+// replies are rejected at the lib layer). Plain text bodies in v1.
+model EducationDiscussionPost {
+  id         String   @id @default(cuid())
+  offeringId String
+  authorId   String
+  // Null = top-level post; set = reply to that (top-level) post.
+  parentId   String?
+  body       String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  offering EducationOffering         @relation(fields: [offeringId], references: [id], onDelete: Cascade)
+  author   User                      @relation("EducationDiscussionAuthor", fields: [authorId], references: [id])
+  parent   EducationDiscussionPost?  @relation("EducationDiscussionReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies  EducationDiscussionPost[] @relation("EducationDiscussionReplies")
+
+  @@index([offeringId, createdAt])
+  @@index([parentId])
+}
+
+// One consolidated instructor note per enrolled student per offering, with
+// two lanes as two named columns. `feedback` is student-visible (shown with
+// their certificate); `internalNote` is HIRING-ONLY and must never be
+// selected by any student/portal-facing loader — the only sanctioned readers
+// are the instructor roster view and the hiring application views (both
+// behind reviewer access + confidentiality gates). Two columns (not an enum
+// lane table) so the safe path is the default: leaking requires explicitly
+// selecting the column, not merely forgetting a `where`.
+model EducationStudentNote {
+  id            String @id @default(cuid())
+  applicationId String @unique
+
+  feedback          String?
+  feedbackUpdatedAt DateTime?
+  feedbackAuthorId  String?
+
+  internalNote          String?
+  internalNoteUpdatedAt DateTime?
+  internalNoteAuthorId  String?
+
+  application        EducationApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  feedbackAuthor     User?                @relation("EduNoteFeedbackAuthor", fields: [feedbackAuthorId], references: [id])
+  internalNoteAuthor User?                @relation("EduNoteInternalAuthor", fields: [internalNoteAuthorId], references: [id])
+}
+
+// Continuing-education credit ledger. Every lab member must earn ≥1 credit
+// per term; compliance views are display-only (nothing hard-blocks on this).
+// Two row shapes:
+//   - Attendance-derived: sessionId set, grantedById null. Written when an
+//     instructor marks Present; deleted if the mark moves off Present.
+//   - Manual grant: sessionId null, grantedById + reason set (covers the
+//     async CEC check-in path and special cases; Core-only).
+model CECredit {
+  id     String @id @default(cuid())
+  userId String
+  termId String
+
+  sessionId   String?
+  grantedById String?
+  reason      String?
+  grantedAt   DateTime @default(now())
+
+  user      User              @relation("CECreditUser", fields: [userId], references: [id])
+  term      Term              @relation(fields: [termId], references: [id])
+  session   EducationSession? @relation(fields: [sessionId], references: [id])
+  grantedBy User?             @relation("CECreditGrantor", fields: [grantedById], references: [id])
+
+  // Idempotent attendance-derived grants. Postgres treats NULL sessionId as
+  // distinct, so manual grants are unconstrained by this.
+  @@unique([userId, sessionId])
+  @@index([termId])
+  @@index([userId, termId])
+}
+
+// Completion certificate. Pure derived data (name, offering, term, dates) —
+// the HTML page and PDF are generated on demand from this row; no stored
+// artifact. Issued by the offering close-out action when the attendance
+// threshold is met.
+model EducationCertificate {
+  id            String   @id @default(cuid())
+  applicationId String   @unique
+  issuedAt      DateTime @default(now())
+  issuedById    String
+
+  application EducationApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  issuedBy    User                 @relation("EducationCertificateIssuer", fields: [issuedById], references: [id])
+}
+
+// Binds a Form to a named slot on one offering, mirroring
+// StaffingCycleFormBinding. Slots: "session-feedback" | "instructor-exit"
+// (free string — new slots need no migration).
+model EducationFormBinding {
+  id          String   @id @default(cuid())
+  offeringId  String
+  slot        String
+  formId      String
+  updatedAt   DateTime @updatedAt
+  updatedById String
+
+  offering  EducationOffering @relation(fields: [offeringId], references: [id], onDelete: Cascade)
+  form      Form              @relation("EducationFormBindings", fields: [formId], references: [id], onDelete: Cascade)
+  updatedBy User              @relation("EducationFormBindingUpdater", fields: [updatedById], references: [id])
+
+  @@unique([offeringId, slot])
+  @@index([formId])
 }
 
 // ─── Staffing ────────────────────────────────────────────────────────────────
@@ -2572,6 +2757,9 @@ model Form {
   notifications Notification[]
   cycleBindings StaffingCycleFormBinding[]
 
+  educationOfferingsAsApplicationForm EducationOffering[]    @relation("EducationOfferingApplicationForm")
+  educationBindings                   EducationFormBinding[] @relation("EducationFormBindings")
+
   @@index([folderId])
   @@index([createdById])
 }
@@ -2633,15 +2821,28 @@ model FormSubmission {
   staffingCycleId String?
   staffingCycle   StaffingCycle? @relation(fields: [staffingCycleId], references: [id], onDelete: SetNull)
   // Which slot it was filled for (mirrors StaffingCycleFormBinding.slot, e.g.
-  // "project-bids"). Null unless staffingCycleId is set.
+  // "project-bids"). Null unless staffingCycleId is set. Education feedback
+  // submissions reuse this column with EducationFormBinding slots (e.g.
+  // "session-feedback") alongside educationOfferingId.
   slot            String?
 
+  // Education context, set only when this submission was filled through an
+  // education slot binding (session feedback / instructor exit survey) or as
+  // an offering application. Nullable + SetNull mirrors staffingCycleId.
+  educationOfferingId String?
+  educationOffering   EducationOffering? @relation(fields: [educationOfferingId], references: [id], onDelete: SetNull)
+  educationSessionId  String?
+  educationSession    EducationSession?  @relation(fields: [educationSessionId], references: [id], onDelete: SetNull)
+
   answers Json
+
+  educationApplication EducationApplication?
 
   @@index([userId, formVersionId])
   @@index([formId])
   @@index([formVersionId])
   @@index([staffingCycleId, slot])
+  @@index([educationOfferingId, slot])
 }
 
 // Binds a generic Form to a named "slot" within one staffing cycle, so an
@@ -3113,7 +3314,7 @@ model DevicePairing {
   // Short, human-eyeballed code (8 chars from an unambiguous alphabet, no
   // 0/O/1/I/L). Stored canonical uppercase. NOT a bearer secret — approval
   // still requires an authenticated web session — so low entropy is fine.
-  userCode String @unique
+  userCode       String @unique
 
   status DevicePairingStatus @default(Pending)
 
@@ -3289,13 +3490,13 @@ model PartnerApplicationTargetTerm {
 // domain; `expectedMembers` is the headcount used to project expected lab
 // numbers per term.
 model PartnerApplicationDomain {
-  id                 String  @id @default(cuid())
+  id                 String @id @default(cuid())
   applicationId      String
   domainId           String
   // Rich-text ProseMirror JSON doc (Tiptap StarterKit + Link). Pre-migration
   // rows were free text and have been wrapped into a single-paragraph doc.
   expectedChallenges Json?
-  expectedMembers    Int     @default(0)
+  expectedMembers    Int    @default(0)
 
   application PartnerApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   domain      Domain             @relation(fields: [domainId], references: [id])
