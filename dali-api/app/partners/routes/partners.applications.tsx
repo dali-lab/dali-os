@@ -222,18 +222,18 @@ export default function PartnersApplications() {
 
   return (
     <div className="flex flex-col gap-4">
+      <AreaPillNav
+        items={[
+          { label: "Organizations", to: "/partners" },
+          { label: "Applications", to: "/partners/applications", active: true },
+        ]}
+      />
       <header className="flex items-start justify-between gap-3 flex-wrap">
-        <div className="flex flex-col gap-2">
+        <div>
           <h1 className="font-heading text-2xl font-bold text-foreground">
             Partner Applications
           </h1>
-          <AreaPillNav
-            items={[
-              { label: "Organizations", to: "/partners" },
-              { label: "Applications", to: "/partners/applications", active: true },
-            ]}
-          />
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-muted-foreground mt-1">
             Inbound partner pitches, their expected scope per domain, and where
             they sit in review.
           </p>

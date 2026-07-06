@@ -73,15 +73,15 @@ export default function CECompliance() {
 
   return (
     <div className="flex flex-col gap-4 max-w-3xl">
+      <AreaPillNav
+        items={educationPills({ canManage: true, isCore: true, active: "compliance" })}
+      />
       <header className="flex items-start justify-between gap-4">
-        <div className="flex flex-col gap-2">
+        <div>
           <h1 className="font-heading text-2xl font-bold text-foreground">
             CE credit compliance
           </h1>
-          <AreaPillNav
-            items={educationPills({ canManage: true, isCore: true, active: "compliance" })}
-          />
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-muted-foreground mt-1">
             Every member needs at least one continuing-education credit per
             term — earned by attending a workshop or miniseries session, or
             granted manually (e.g. the async CEC check-in). Display-only:

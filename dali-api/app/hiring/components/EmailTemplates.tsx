@@ -38,6 +38,12 @@ export default function EmailTemplatesList() {
 
   return (
     <div className="space-y-8">
+      <AreaPillNav
+        items={[
+          { label: "Library", to: "/hiring/library" },
+          { label: "Emails", to: "/hiring/emails", active: true },
+        ]}
+      />
       {!dismissed && gmailAuthorized && (
         <div className="flex items-center justify-between bg-green-50 border border-green-200 text-green-800 text-sm rounded-lg px-4 py-3">
           <span>Gmail authorized successfully. Decision emails are now active.</span>
@@ -71,15 +77,9 @@ export default function EmailTemplatesList() {
       </div>
 
       <div className="flex justify-between items-center">
-        <div className="flex flex-col gap-2">
+        <div>
           <h1 className="text-2xl font-bold text-foreground">Email Templates</h1>
-          <AreaPillNav
-            items={[
-              { label: "Library", to: "/hiring/library" },
-              { label: "Emails", to: "/hiring/emails", active: true },
-            ]}
-          />
-          <p className="text-muted-foreground">
+          <p className="mt-1 text-muted-foreground">
             Manage email templates and their versions independently of hiring cycles. Bind a template
             to a decision type from the cycle admin page.
           </p>

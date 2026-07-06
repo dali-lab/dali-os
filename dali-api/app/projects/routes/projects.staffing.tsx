@@ -444,11 +444,11 @@ export default function StaffingPage() {
 
   const page = (
     <div className="flex flex-col gap-4">
+      <AreaPillNav items={staffingPills("board")} />
       <header className="flex items-start justify-between gap-3">
-        <div className="flex flex-col gap-2">
+        <div>
           <h1 className="font-heading text-2xl font-bold text-foreground">Staffing</h1>
-          <AreaPillNav items={staffingPills("board")} />
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-muted-foreground mt-1">
             {data.canManage
               ? "Pick a term, then drag-and-drop project assignments. Changes are saved as Proposed staffing assignments."
               : "Pick a term to view its proposed assignments."}

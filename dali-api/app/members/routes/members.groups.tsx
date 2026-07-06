@@ -263,19 +263,19 @@ export default function AdminConsoleGroups() {
 
   return (
     <div className="space-y-6">
+      <AreaPillNav
+        items={[
+          { label: "Directory", to: "/members" },
+          { label: "Groups", to: "/members/groups", active: true },
+        ]}
+      />
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-3">
           <Users className="w-6 h-6 text-foreground/80" />
           <h1 className="text-2xl font-bold text-foreground">User Groups</h1>
           <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground">
             {activeCount}
           </span>
-          <AreaPillNav
-            items={[
-              { label: "Directory", to: "/members" },
-              { label: "Groups", to: "/members/groups", active: true },
-            ]}
-          />
         </div>
         <button
           type="button"

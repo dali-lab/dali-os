@@ -759,13 +759,14 @@ function Header({
   settingsLabel?: string;
 }) {
   return (
+    <>
+    <AreaPillNav items={staffingPills("level-up")} />
     <header className="flex items-start justify-between gap-3">
-      <div className="flex flex-col gap-2">
+      <div>
         <h1 className="font-heading text-2xl font-bold text-foreground">
           Level Up
         </h1>
-        <AreaPillNav items={staffingPills("level-up")} />
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-muted-foreground mt-1">
           Member level up applications{cycleName ? ` for ${cycleName}` : ""}.
         </p>
       </div>
@@ -779,5 +780,6 @@ function Header({
         </button>
       )}
     </header>
+    </>
   );
 }

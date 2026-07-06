@@ -31,15 +31,15 @@ export default function ManageEducation() {
 
   return (
     <div className="flex flex-col gap-6">
+      <AreaPillNav
+        items={educationPills({ canManage: true, isCore, active: "manage" })}
+      />
       <header className="flex items-start justify-between gap-4">
-        <div className="flex flex-col gap-2">
+        <div>
           <h1 className="font-heading text-2xl font-bold text-foreground">
             Manage education
           </h1>
-          <AreaPillNav
-            items={educationPills({ canManage: true, isCore, active: "manage" })}
-          />
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-muted-foreground mt-1">
             {isCore
               ? "All offerings, drafts included. Create a new offering or open one to edit sessions, review applications, and take attendance."
               : "Offerings you teach. Open one to edit sessions, review applications, and take attendance."}

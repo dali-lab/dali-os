@@ -33,12 +33,12 @@ export default function EducationCatalog() {
 
   return (
     <div className="flex flex-col gap-6">
-      <header className="flex flex-col gap-2">
+      <AreaPillNav items={educationPills({ canManage, isCore, active: "browse" })} />
+      <header>
         <h1 className="font-heading text-2xl font-bold text-foreground">
           Education
         </h1>
-        <AreaPillNav items={educationPills({ canManage, isCore, active: "browse" })} />
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-muted-foreground mt-1">
           Miniseries and workshops run by the lab. Apply or RSVP to a
           published offering; once you&apos;re in, the course hub has
           sessions, materials, and assignments.
