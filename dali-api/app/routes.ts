@@ -119,9 +119,17 @@ export default [
     route("portal/application", "routes/portal.application.tsx"),
   ]),
 
-  // Partner auth (no layout). Singular /partner = partner-facing portal;
-  // plural /partners = the internal Core surface registered in the member
-  // layout above.
+  // Partner portal (external partner shell). Singular /partner =
+  // partner-facing; plural /partners = the internal Core surface registered
+  // in the member layout above.
+  layout("partners/routes/partner-layout.tsx", [
+    route("partner", "partners/routes/partner.home.tsx"),
+    route("partner/apply", "partners/routes/partner.apply.tsx"),
+    route("partner/applications/:id", "partners/routes/partner.applications.$id.tsx"),
+    route("partner/settings", "partners/routes/partner.settings.tsx"),
+  ]),
+
+  // Partner auth (no layout).
   route("partner/login", "partners/routes/partner.login.tsx"),
   route("partner/auth/verify", "partners/routes/partner.auth.verify.tsx"),
   route("partner/invite/:token", "partners/routes/partner.invite.$token.tsx"),
