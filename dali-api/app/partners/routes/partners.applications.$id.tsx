@@ -39,6 +39,11 @@ export const meta: Route.MetaFunction = ({ data }) => {
   ];
 };
 
+export const handle = {
+  breadcrumb: (data: unknown) =>
+    (data as { application?: { title: string } } | undefined)?.application?.title,
+};
+
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);

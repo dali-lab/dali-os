@@ -17,6 +17,14 @@ export const meta: Route.MetaFunction = ({ data }) => {
   ];
 };
 
+export const handle = {
+  breadcrumb: (data: unknown) => {
+    const m = (data as { member?: { firstName: string; lastName: string } } | undefined)
+      ?.member;
+    return m ? `${m.firstName} ${m.lastName}`.trim() : undefined;
+  },
+};
+
 export async function loader({ request, params }: Route.LoaderArgs) {
   return loadProfilePage({ request, targetId: params.id });
 }

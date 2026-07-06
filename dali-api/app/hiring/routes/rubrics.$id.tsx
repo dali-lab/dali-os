@@ -9,6 +9,11 @@ export const meta: Route.MetaFunction = ({ data }) => {
   return [{ title: `${name || 'Rubric'} · DALI OS` }]
 }
 
+export const handle = {
+  breadcrumb: (data: unknown) =>
+    (data as { rubric?: { name: string } } | undefined)?.rubric?.name,
+}
+
 export async function loader({ request, params }: Route.LoaderArgs) {
   const gate = await requireCoreOrDomainLead(request)
   if (!gate.ok) return gate.response

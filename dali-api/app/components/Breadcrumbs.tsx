@@ -101,25 +101,35 @@ export function Breadcrumbs() {
     }
   }
 
+  // Wayfinding contract with AreaPillNav: breadcrumbs are the hierarchical
+  // trail (Area › … › page), pills are lateral switching between an area's
+  // sibling sections. Both may appear on a section landing page (trail ends
+  // where the pills begin); only breadcrumbs continue onto detail pages.
   const crumbs: Crumb[] = []
+  let afterDroppedId = false
   for (let i = 0; i < segments.length; i += 1) {
     const seg = segments[i]!
     const to = '/' + segments.slice(0, i + 1).join('/')
     const isLast = i === segments.length - 1
+    // Once an opaque id has been dropped, later prefixes still contain it and
+    // aren't guaranteed to be real routes (e.g. /education/<id>/assignments
+    // has no index page) — keep the labels but stop linking them.
+    const linkable = !isLast && !afterDroppedId
     const dynamicLabel = labelByPath.get(to)
     if (dynamicLabel) {
-      crumbs.push({ label: dynamicLabel, to: isLast ? undefined : to })
+      crumbs.push({ label: dynamicLabel, to: linkable ? to : undefined })
       continue
     }
     if (isOpaqueId(seg)) {
       // A trailing id with no route-provided label still needs a crumb so the
       // trail doesn't end on a link; anything mid-path just drops out.
       if (isLast) crumbs.push({ label: 'Details' })
+      else afterDroppedId = true
       continue
     }
     crumbs.push({
       label: SEGMENT_LABELS[seg] ?? titleCase(seg),
-      to: isLast ? undefined : to,
+      to: linkable ? to : undefined,
     })
   }
 

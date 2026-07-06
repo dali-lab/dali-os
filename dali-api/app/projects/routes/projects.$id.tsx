@@ -48,6 +48,11 @@ export const meta: Route.MetaFunction = ({ data }) => {
   return [{ title: p ? `${p.name} · Projects · DALI OS` : "Project · DALI OS" }];
 };
 
+export const handle = {
+  breadcrumb: (data: unknown) =>
+    (data as { project?: { name: string } } | undefined)?.project?.name,
+};
+
 // Open a project document as a split-screen tab. This page renders inside a
 // TabWorkspace iframe, so we ask the parent shell to open /documents/:id in a
 // second pane beside the project (dali:openTabToSide → Layout). When somehow

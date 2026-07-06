@@ -12,6 +12,10 @@ export const meta: Route.MetaFunction = ({ data }) => {
   return [{ title: t ? `${t} · DALI OS` : "Document · DALI OS" }];
 };
 
+export const handle = {
+  breadcrumb: (data: unknown) => (data as { title?: string } | undefined)?.title,
+};
+
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
