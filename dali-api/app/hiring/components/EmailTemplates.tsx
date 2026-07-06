@@ -3,6 +3,7 @@ import { Link, Form, useLoaderData, useSearchParams } from 'react-router'
 import { Plus, Mail, ChevronRight, X } from 'lucide-react'
 import { Button } from '~/components/ui/Button'
 import { Modal, ModalHeader } from '~/components/Modal'
+import { AreaPillNav } from '~/components/AreaPillNav'
 import type { loader } from '~/hiring/routes/email-templates'
 
 const GMAIL_ERROR_MESSAGES: Record<string, string> = {
@@ -70,9 +71,15 @@ export default function EmailTemplatesList() {
       </div>
 
       <div className="flex justify-between items-center">
-        <div>
+        <div className="flex flex-col gap-2">
           <h1 className="text-2xl font-bold text-foreground">Email Templates</h1>
-          <p className="mt-1 text-muted-foreground">
+          <AreaPillNav
+            items={[
+              { label: "Library", to: "/hiring/library" },
+              { label: "Emails", to: "/hiring/emails", active: true },
+            ]}
+          />
+          <p className="text-muted-foreground">
             Manage email templates and their versions independently of hiring cycles. Bind a template
             to a decision type from the cycle admin page.
           </p>

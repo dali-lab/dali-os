@@ -5,7 +5,6 @@ import {
   Users,
   Calendar,
   Shield,
-  Mail,
   FileText,
   MessageSquare,
   Menu,
@@ -22,14 +21,11 @@ import {
   Home,
   List,
   UserPlus,
-  Building2,
   Workflow,
   ArrowRightLeft,
-  TrendingUp,
   Rocket,
   ClipboardList,
   GraduationCap,
-  BadgeCheck,
   ListTodo,
   Megaphone,
   SplitSquareHorizontal,
@@ -51,7 +47,6 @@ interface LayoutProps {
   canViewStaffing?: boolean
   isInterviewer?: boolean
   hasHiringAccess?: boolean
-  isInstructor?: boolean
 }
 
 const SIDEBAR_COLLAPSED_KEY = 'dali:sidebar:collapsed'
@@ -59,7 +54,7 @@ const EXPANDED_AREAS_KEY = 'dali:sidebar:expanded-areas'
 
 type AreaKey = 'hiring' | 'projects' | 'members' | 'partners' | 'education' | 'internal-processes' | 'admin-console'
 
-export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDomainLead = false, canViewForms = false, canViewStaffing = false, isInterviewer = false, hasHiringAccess = false, isInstructor = false }: LayoutProps) {
+export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDomainLead = false, canViewForms = false, canViewStaffing = false, isInterviewer = false, hasHiringAccess = false }: LayoutProps) {
   const location = useLocation()
   const { revalidate } = useRevalidator()
   // Held in a ref so the message listener (mounted once) always calls the
@@ -299,20 +294,14 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
       icon: FileText,
       show: isCore || isDomainLead || isAdmin,
       // Highlight Library on its list page and on the challenge / rubric /
-      // agreement detail pages it links into.
+      // agreement / email-template pages it links into (Emails folded into
+      // the Library pill row rather than holding its own sidebar entry).
       active:
         path.startsWith('/hiring/library') ||
         path.startsWith('/hiring/challenges') ||
         path.startsWith('/hiring/rubrics') ||
-        path.startsWith('/hiring/confidentiality-agreements'),
-      sub: null,
-    },
-    {
-      label: 'Emails',
-      to: '/hiring/emails',
-      icon: Mail,
-      show: isCore,
-      active: path.startsWith('/hiring/emails'),
+        path.startsWith('/hiring/confidentiality-agreements') ||
+        path.startsWith('/hiring/emails'),
       sub: null,
     },
   ].filter((s) => s.show)
@@ -384,13 +373,20 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
       to: '/projects/staffing',
       icon: UserPlus,
       show: canViewStaffing,
-      active: path.startsWith('/projects/staffing'),
+      // Intent to Work / Project Bids / Level Up are pills on the Staffing
+      // surface rather than sidebar entries — highlight Staffing on all of
+      // them (incl. the legacy /internal-processes/level-up redirect stub).
+      active:
+        path.startsWith('/projects/staffing') ||
+        path.startsWith('/projects/intent-to-work') ||
+        path.startsWith('/projects/project-bids') ||
+        path.startsWith('/projects/level-up') ||
+        path.startsWith('/internal-processes/level-up'),
       sub: null,
     },
     {
-      // Member-facing staffing surface (created by the Staffing PR; the route
-      // string works even before that PR merges). Sits under the Staffing
-      // grouping alongside Intent to Work / Project Bids / Level Up.
+      // Member-facing staffing surface: the persistent place a member fills
+      // and revisits the cycle's staffing forms.
       label: 'My Staffing',
       to: '/projects/my-staffing',
       icon: UserPlus,
@@ -398,103 +394,21 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
       active: path.startsWith('/projects/my-staffing'),
       sub: null,
     },
-    {
-      label: 'Intent to Work',
-      to: '/projects/intent-to-work',
-      icon: FileText,
-      show: canViewStaffing,
-      active: path.startsWith('/projects/intent-to-work'),
-      sub: null,
-    },
-    {
-      label: 'Project Bids',
-      to: '/projects/project-bids',
-      icon: ClipboardList,
-      show: canViewStaffing,
-      active: path.startsWith('/projects/project-bids'),
-      sub: null,
-    },
-    {
-      label: 'Level Up',
-      // Page lives under /projects/level-up; regrouped here under Projects →
-      // Staffing. Match the legacy /internal-processes/level-up path too so
-      // the entry highlights on either path (the redirect stub is unchanged).
-      to: '/projects/level-up',
-      icon: TrendingUp,
-      show: canViewStaffing,
-      active:
-        path.startsWith('/projects/level-up') ||
-        path.startsWith('/internal-processes/level-up'),
-      sub: null,
-    },
   ].filter((s) => s.show)
 
-  const membersSections = [
-    {
-      label: 'Directory',
-      to: '/members',
-      icon: UsersRound,
-      show: true,
-      active: path === '/members',
-      sub: null as { label: string; to: string; active: boolean }[] | null,
-    },
-    {
-      label: 'Groups',
-      to: '/members/groups',
-      icon: Users,
-      show: canViewForms,
-      active: path.startsWith('/members/groups'),
-      sub: null,
-    },
-  ].filter((s) => s.show)
-
-  const partnersSections = [
-    {
-      label: 'Organizations',
-      to: '/partners',
-      icon: Building2,
-      show: true,
-      active: path === '/partners',
-      sub: null as { label: string; to: string; active: boolean }[] | null,
-    },
-    {
-      label: 'Applications',
-      to: '/partners/applications',
-      icon: ClipboardList,
-      show: canViewStaffing,
-      active: path.startsWith('/partners/applications'),
-      sub: null,
-    },
-  ].filter((s) => s.show)
-
-  const educationSections = [
-    {
-      label: 'Browse',
-      to: '/education',
-      icon: GraduationCap,
-      show: true,
-      active:
-        path === '/education' ||
-        (path.startsWith('/education/') && !path.startsWith('/education/manage')),
-      sub: null as { label: string; to: string; active: boolean }[] | null,
-    },
-    {
-      label: 'Manage',
-      to: '/education/manage',
-      icon: ClipboardList,
-      show: isCore || isInstructor,
-      active: path.startsWith('/education/manage'),
-      sub: null,
-    },
-    {
-      label: 'CE Compliance',
-      to: '/education/compliance',
-      icon: BadgeCheck,
-      show: isCore,
-      active: path.startsWith('/education/compliance'),
-      sub: null,
-    },
-  ].filter((s) => s.show)
+  // People / Partners / Education are single-destination areas: their
+  // role-gated sub-surfaces (Groups, Partner Applications, Manage,
+  // CE Compliance) live as in-page pills (AreaPillNav) on the landing pages
+  // instead of sidebar children — for most members these areas expanded to a
+  // lone child, which was pure noise.
+  const emptySections: {
+    label: string
+    to: string
+    icon: typeof GraduationCap
+    show: boolean
+    active: boolean
+    sub: { label: string; to: string; active: boolean }[] | null
+  }[] = []
 
   const internalProcessesSections = [
     {
@@ -549,7 +463,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
       icon: UsersRound,
       show: true,
       active: activeAreaKey === 'members',
-      sections: membersSections,
+      sections: emptySections,
     },
     {
       key: 'partners' as AreaKey,
@@ -558,7 +472,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
       icon: Handshake,
       show: true,
       active: activeAreaKey === 'partners',
-      sections: partnersSections,
+      sections: emptySections,
     },
     {
       key: 'education' as AreaKey,
@@ -567,7 +481,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
       icon: GraduationCap,
       show: true,
       active: activeAreaKey === 'education',
-      sections: educationSections,
+      sections: emptySections,
     },
     {
       key: 'internal-processes' as AreaKey,
@@ -874,7 +788,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
                   <area.icon className="w-4 h-4 flex-shrink-0" />
                   {!collapsed && <span className="truncate">{area.label}</span>}
                 </button>
-                {!collapsed && (
+                {!collapsed && area.sections.length > 0 && (
                   <button
                     type="button"
                     onClick={() => toggleAreaExpanded(area.key, area.active)}

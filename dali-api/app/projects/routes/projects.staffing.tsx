@@ -15,6 +15,8 @@ import { getSlotBinding } from "../lib/form-slots";
 import { buildSubmissionView } from "../lib/submission-view.server";
 import { StaffingBoard } from "../components/StaffingBoard";
 import { dedupeLiveAssignments } from "../lib/staffing-board";
+import { staffingPills } from "../components/staffingPills";
+import { AreaPillNav } from "~/components/AreaPillNav";
 import type {
   Assignment,
   BidField,
@@ -443,9 +445,10 @@ export default function StaffingPage() {
   const page = (
     <div className="flex flex-col gap-4">
       <header className="flex items-start justify-between gap-3">
-        <div>
+        <div className="flex flex-col gap-2">
           <h1 className="font-heading text-2xl font-bold text-foreground">Staffing</h1>
-          <p className="text-sm text-muted-foreground mt-1">
+          <AreaPillNav items={staffingPills("board")} />
+          <p className="text-sm text-muted-foreground">
             {data.canManage
               ? "Pick a term, then drag-and-drop project assignments. Changes are saved as Proposed staffing assignments."
               : "Pick a term to view its proposed assignments."}

@@ -5,6 +5,8 @@ import { getUserRoles } from "~/lib/roles";
 import { redirectDartmouthToPortal } from "~/education/lib/access.server";
 import { listManageable } from "~/education/lib/offerings.server";
 import { OfferingCard } from "~/education/components/OfferingCard";
+import { educationPills } from "~/education/components/educationPills";
+import { AreaPillNav } from "~/components/AreaPillNav";
 import { buttonClasses } from "~/components/ui/Button";
 
 export const meta: Route.MetaFunction = () => [
@@ -30,11 +32,14 @@ export default function ManageEducation() {
   return (
     <div className="flex flex-col gap-6">
       <header className="flex items-start justify-between gap-4">
-        <div>
+        <div className="flex flex-col gap-2">
           <h1 className="font-heading text-2xl font-bold text-foreground">
             Manage education
           </h1>
-          <p className="text-sm text-muted-foreground mt-1">
+          <AreaPillNav
+            items={educationPills({ canManage: true, isCore, active: "manage" })}
+          />
+          <p className="text-sm text-muted-foreground">
             {isCore
               ? "All offerings, drafts included. Create a new offering or open one to edit sessions, review applications, and take attendance."
               : "Offerings you teach. Open one to edit sessions, review applications, and take attendance."}

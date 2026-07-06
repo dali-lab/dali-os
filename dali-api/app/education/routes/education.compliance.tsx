@@ -9,6 +9,8 @@ import {
   creditHistory,
 } from "~/education/lib/ce-credits.server";
 import { redirectDartmouthToPortal } from "~/education/lib/access.server";
+import { educationPills } from "~/education/components/educationPills";
+import { AreaPillNav } from "~/components/AreaPillNav";
 import { TermFilter } from "~/components/TermFilter";
 import { Button } from "~/components/ui/Button";
 import { cn } from "~/lib/cn";
@@ -72,11 +74,14 @@ export default function CECompliance() {
   return (
     <div className="flex flex-col gap-4 max-w-3xl">
       <header className="flex items-start justify-between gap-4">
-        <div>
+        <div className="flex flex-col gap-2">
           <h1 className="font-heading text-2xl font-bold text-foreground">
             CE credit compliance
           </h1>
-          <p className="text-sm text-muted-foreground mt-1">
+          <AreaPillNav
+            items={educationPills({ canManage: true, isCore: true, active: "compliance" })}
+          />
+          <p className="text-sm text-muted-foreground">
             Every member needs at least one continuing-education credit per
             term — earned by attending a workshop or miniseries session, or
             granted manually (e.g. the async CEC check-in). Display-only:

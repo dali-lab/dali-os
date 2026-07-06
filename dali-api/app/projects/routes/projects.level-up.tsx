@@ -27,6 +27,8 @@ import {
 import { buildSubmissionView } from "../lib/submission-view.server";
 import { deriveSlotStatus, type SlotStatus } from "../lib/slot-status.server";
 import { SlotStatusStrip } from "../components/SlotStatusStrip";
+import { staffingPills } from "../components/staffingPills";
+import { AreaPillNav } from "~/components/AreaPillNav";
 import type { Question } from "~/types";
 import { isLevel, type Level } from "~/lib/level";
 
@@ -758,11 +760,12 @@ function Header({
 }) {
   return (
     <header className="flex items-start justify-between gap-3">
-      <div>
+      <div className="flex flex-col gap-2">
         <h1 className="font-heading text-2xl font-bold text-foreground">
           Level Up
         </h1>
-        <p className="text-sm text-muted-foreground mt-1">
+        <AreaPillNav items={staffingPills("level-up")} />
+        <p className="text-sm text-muted-foreground">
           Member level up applications{cycleName ? ` for ${cycleName}` : ""}.
         </p>
       </div>
