@@ -1,11 +1,9 @@
-import { redirect, useLoaderData, Link } from "react-router";
+import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/education";
 import { requireAuth } from "~/lib/auth";
-import { getUserRoles } from "~/lib/roles";
 import { redirectDartmouthToPortal } from "~/education/lib/access.server";
 import { listCatalog } from "~/education/lib/offerings.server";
 import { OfferingCard } from "~/education/components/OfferingCard";
-import { buttonClasses } from "~/components/ui/Button";
 
 export const meta: Route.MetaFunction = () => [{ title: "Education · DALI OS" }];
 
@@ -15,38 +13,26 @@ export async function loader({ request }: Route.LoaderArgs) {
   const portalRedirect = redirectDartmouthToPortal(auth);
   if (portalRedirect) return portalRedirect;
 
-  const [offerings, roles] = await Promise.all([
-    listCatalog(auth.user.sub),
-    getUserRoles(auth.user.sub),
-  ]);
-  return {
-    offerings,
-    canManage: roles.isCore || roles.isInstructor,
-  };
+  // Managers reach /education/manage via the sidebar entry; the catalog stays
+  // a pure browse surface (per-offering Manage buttons live on detail pages).
+  return { offerings: await listCatalog(auth.user.sub) };
 }
 
 export default function EducationCatalog() {
-  const { offerings, canManage } = useLoaderData<typeof loader>();
+  const { offerings } = useLoaderData<typeof loader>();
   const enrolled = offerings.filter((o) => o.myStatus === "Approved");
 
   return (
     <div className="flex flex-col gap-6">
-      <header className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="font-heading text-2xl font-bold text-foreground">
-            Education
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Miniseries and workshops run by the lab. Apply or RSVP to a
-            published offering; once you&apos;re in, the course hub has
-            sessions, materials, and assignments.
-          </p>
-        </div>
-        {canManage && (
-          <Link to="/education/manage" className={buttonClasses("secondary", "sm")}>
-            Manage
-          </Link>
-        )}
+      <header>
+        <h1 className="font-heading text-2xl font-bold text-foreground">
+          Education
+        </h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          Miniseries and workshops run by the lab. Apply or RSVP to a
+          published offering; once you&apos;re in, the course hub has
+          sessions, materials, and assignments.
+        </p>
       </header>
 
       {enrolled.length > 0 && (
