@@ -8,6 +8,10 @@ import {
 import { interpretIntentForm } from "../app/projects/lib/intent-form-interpreter.js";
 import { replaceIntentSet } from "../app/projects/lib/intent-validation.js";
 import { syncDefaultGroups } from "../app/lib/groups.js";
+import {
+  ensureEducationTemplates,
+  createOfferingApplicationForm,
+} from "../app/education/lib/application-form.server.js";
 import type { Question } from "../app/types.js";
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
@@ -3626,21 +3630,39 @@ async function main() {
         });
       }
 
-      // EducationOffering + InstructorAssignment: one published miniseries.
+      // EducationOffering + InstructorAssignment: one published miniseries
+      // with an open registration window (review-required apply flow).
       const offering = await prisma.educationOffering.upsert({
         where: { id: "offering-react-miniseries" },
-        update: { title: "Intro to React" },
+        update: {
+          title: "Intro to React",
+          registrationClosesAt: new Date("2027-05-01"),
+          startsAt: new Date("2027-05-02"),
+          endsAt: new Date("2027-06-15"),
+        },
         create: {
           id: "offering-react-miniseries",
           type: "Miniseries",
           title: "Intro to React",
           capacity: 25,
           registrationOpensAt: new Date("2026-03-01"),
-          registrationClosesAt: new Date("2026-03-25"),
-          startsAt: new Date("2026-04-01"),
-          endsAt: new Date("2026-05-15"),
+          registrationClosesAt: new Date("2027-05-01"),
+          startsAt: new Date("2027-05-02"),
+          endsAt: new Date("2027-06-15"),
           status: "Published",
           requiresReview: true,
+          descriptionDocId: "eduoffering:offering-react-miniseries:description",
+        },
+      });
+      await prisma.educationSession.upsert({
+        where: { id: "session-react-1" },
+        update: {},
+        create: {
+          id: "session-react-1",
+          offeringId: "offering-react-miniseries",
+          sequence: 1,
+          datetime: new Date("2027-05-04T18:00:00Z"),
+          location: "DALI Space",
         },
       });
       await prisma.instructorAssignment.upsert({
@@ -3654,6 +3676,54 @@ async function main() {
         update: {},
         create: { userId: admin.id, offeringId: offering.id, termId: term26S.id },
       });
+
+      // A published RSVP workshop with an open registration window and a tiny
+      // capacity, so the auto-approve → waitlist → promotion flow is
+      // exercisable straight from the seed (E2E leans on this).
+      const workshop = await prisma.educationOffering.upsert({
+        where: { id: "offering-figma-workshop" },
+        update: { title: "Figma Crash Course" },
+        create: {
+          id: "offering-figma-workshop",
+          type: "Workshop",
+          title: "Figma Crash Course",
+          capacity: 2,
+          registrationOpensAt: new Date("2026-01-01"),
+          registrationClosesAt: new Date("2027-06-01"),
+          startsAt: new Date("2027-06-02"),
+          endsAt: new Date("2027-06-02"),
+          status: "Published",
+          requiresReview: false,
+          descriptionDocId: "eduoffering:offering-figma-workshop:description",
+        },
+      });
+      await prisma.educationSession.upsert({
+        where: { id: "session-figma-1" },
+        update: {},
+        create: {
+          id: "session-figma-1",
+          offeringId: workshop.id,
+          sequence: 1,
+          datetime: new Date("2027-06-02T18:00:00Z"),
+          location: "Sudikoff 007",
+        },
+      });
+      await prisma.instructorAssignment.upsert({
+        where: {
+          userId_offeringId_termId: {
+            userId: admin.id,
+            offeringId: workshop.id,
+            termId: term26S.id,
+          },
+        },
+        update: {},
+        create: { userId: admin.id, offeringId: workshop.id, termId: term26S.id },
+      });
+      // Application forms cloned from the education templates (idempotent —
+      // both helpers no-op when the folder/form already exists).
+      await ensureEducationTemplates(admin.id);
+      await createOfferingApplicationForm(offering.id, admin.id);
+      await createOfferingApplicationForm(workshop.id, admin.id);
 
       // Lab-workspace Page + NotificationEvent/Preference for the admin.
       await prisma.page.deleteMany({
