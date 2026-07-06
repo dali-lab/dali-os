@@ -101,6 +101,7 @@ export type ProfilePageData = {
       type: "Miniseries" | "Workshop";
       termCode: string;
     }>;
+    ceCredits: Array<{ termCode: string; count: number }>;
   } | null;
 };
 

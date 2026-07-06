@@ -63,9 +63,9 @@ export async function getEducationEngagement(userId: string): Promise<Engagement
   }));
 }
 
-/** Profile-safe view: same shape minus both note lanes. */
+/** Profile-safe view: same shape minus both note lanes, plus CE credits. */
 export async function getEducationProfile(userId: string) {
-  const [engagement, taught] = await Promise.all([
+  const [engagement, taught, credits] = await Promise.all([
     getEducationEngagement(userId).then((entries) =>
       entries.map(({ internalNote: _internal, feedback: _feedback, ...rest }) => rest),
     ),
@@ -79,7 +79,24 @@ export async function getEducationProfile(userId: string) {
       },
       orderBy: { offering: { startsAt: "desc" } },
     }),
+    prisma.cECredit.findMany({
+      where: { userId },
+      select: { term: { select: { code: true, sortKey: true } } },
+    }),
   ]);
+
+  // CE credit counts per term, newest first.
+  const ceByTerm = new Map<string, { termCode: string; sortKey: number; count: number }>();
+  for (const c of credits) {
+    const cur = ceByTerm.get(c.term.code) ?? {
+      termCode: c.term.code,
+      sortKey: c.term.sortKey,
+      count: 0,
+    };
+    cur.count += 1;
+    ceByTerm.set(c.term.code, cur);
+  }
+
   return {
     attended: engagement,
     taught: taught.map((t) => ({
@@ -88,5 +105,8 @@ export async function getEducationProfile(userId: string) {
       type: t.offering.type,
       termCode: t.term.code,
     })),
+    ceCredits: [...ceByTerm.values()]
+      .sort((a, b) => b.sortKey - a.sortKey)
+      .map(({ termCode, count }) => ({ termCode, count })),
   };
 }

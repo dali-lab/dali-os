@@ -541,7 +541,13 @@ function EducationSection({
 }: {
   education: NonNullable<ProfilePageData["education"]>;
 }) {
-  if (education.attended.length === 0 && education.taught.length === 0) return null;
+  if (
+    education.attended.length === 0 &&
+    education.taught.length === 0 &&
+    education.ceCredits.length === 0
+  ) {
+    return null;
+  }
   return (
     <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
       <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
@@ -571,6 +577,22 @@ function EducationSection({
               </li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {education.ceCredits.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+            CE credits
+          </h3>
+          {education.ceCredits.map((c) => (
+            <span
+              key={c.termCode}
+              className="inline-flex items-center rounded-full bg-accent-teal/10 text-accent-teal px-2 py-0.5 text-[11px] font-semibold"
+            >
+              {c.termCode}: {c.count}
+            </span>
+          ))}
         </div>
       )}
 

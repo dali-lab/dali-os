@@ -1,5 +1,6 @@
 import { prisma } from "~/lib/db";
 import { logAuditEvent } from "~/lib/audit";
+import { syncCreditForAttendance } from "./ce-credits.server";
 import type { AttendanceStatus } from "~/generated/prisma/client";
 
 // Instructor attendance marking. The roster is the offering's Approved
@@ -68,10 +69,10 @@ export async function saveAttendance(args: {
       offeringId: args.offeringId,
       status: "Approved",
     },
-    select: { id: true },
+    select: { id: true, applicantUserId: true },
   });
-  const validIds = new Set(valid.map((v) => v.id));
-  const marks = args.marks.filter((m) => validIds.has(m.applicationId));
+  const userByApplication = new Map(valid.map((v) => [v.id, v.applicantUserId]));
+  const marks = args.marks.filter((m) => userByApplication.has(m.applicationId));
 
   await prisma.$transaction(async (tx) => {
     for (const m of marks) {
@@ -95,6 +96,14 @@ export async function saveAttendance(args: {
           update: { status: m.status },
         });
       }
+      // Ledger stays consistent with the mark in the same transaction:
+      // Present grants a CE credit, anything else revokes the derived row.
+      await syncCreditForAttendance(tx, {
+        userId: userByApplication.get(m.applicationId)!,
+        sessionId: args.sessionId,
+        status: m.status,
+        sessionDate: session.datetime,
+      });
     }
   });
 

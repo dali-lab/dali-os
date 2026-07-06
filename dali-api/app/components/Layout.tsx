@@ -29,6 +29,7 @@ import {
   Rocket,
   ClipboardList,
   GraduationCap,
+  BadgeCheck,
   ListTodo,
   Megaphone,
   SplitSquareHorizontal,
@@ -483,6 +484,14 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
       icon: ClipboardList,
       show: isCore || isInstructor,
       active: path.startsWith('/education/manage'),
+      sub: null,
+    },
+    {
+      label: 'CE Compliance',
+      to: '/education/compliance',
+      icon: BadgeCheck,
+      show: isCore,
+      active: path.startsWith('/education/compliance'),
       sub: null,
     },
   ].filter((s) => s.show)

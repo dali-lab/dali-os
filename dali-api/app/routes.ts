@@ -90,6 +90,7 @@ export default [
     // Education. Literal "manage" segments must precede the :offeringId param
     // so /education/manage/* isn't captured as an offering id.
     route("education", "education/routes/education.tsx"),
+    route("education/compliance", "education/routes/education.compliance.tsx"),
     route("education/manage", "education/routes/education.manage.tsx"),
     route("education/manage/new", "education/routes/education.manage.new.tsx"),
     route("education/manage/assignments/:assignmentId", "education/routes/education.manage.assignments.$assignmentId.tsx"),
