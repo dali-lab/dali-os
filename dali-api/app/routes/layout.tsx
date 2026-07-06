@@ -3,7 +3,7 @@ import { Outlet, redirect, useLoaderData, useLocation, useNavigate, useSearchPar
 import { Layout } from '~/components/Layout'
 import { Breadcrumbs } from '~/components/Breadcrumbs'
 import { LaunchWelcome } from '~/components/LaunchWelcome'
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { getUserRoles } from '~/lib/roles'
 import { getActiveCycle } from '~/hiring/lib/cycles'
 import { prisma } from '~/lib/db'
@@ -15,6 +15,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request)
   if (!auth.ok) return redirect('/login')
   if (auth.user.type === 'applicant') return redirect('/portal')
+  const partnerRedirect = await redirectPartnerToPortal(auth)
+  if (partnerRedirect) return partnerRedirect
 
   // Onboarding is NOT a hard gate: a new member can use the whole app freely.
   // Their onboarding lives as a persistent task (the welcome notification) that

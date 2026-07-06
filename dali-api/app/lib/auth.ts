@@ -236,3 +236,25 @@ export function redirectApplicantToPortal(auth: AuthSuccess): Response | null {
   if (auth.user.type === "applicant") return redirect("/portal");
   return null;
 }
+
+// Partner accounts belong in /partner, not the member shell or applicant
+// portal. Type "partner" alone is a residual bucket (no daliEmail, no netId)
+// that also holds members mid-Workspace-provisioning, so the gate keys off
+// the PartnerUser row. Cheap for everyone else: no query unless the type
+// matches. Prisma is lazy-imported so tests mocking only ~/lib/auth's
+// consumers don't need a db mock (same pattern as lib/audit.ts).
+export async function isPartnerAccount(auth: AuthSuccess): Promise<boolean> {
+  if (auth.user.type !== "partner") return false;
+  const { prisma } = await import("~/lib/db");
+  const partnerUser = await prisma.partnerUser.findUnique({
+    where: { userId: auth.user.sub },
+    select: { id: true },
+  });
+  return partnerUser !== null;
+}
+
+export async function redirectPartnerToPortal(
+  auth: AuthSuccess,
+): Promise<Response | null> {
+  return (await isPartnerAccount(auth)) ? redirect("/partner") : null;
+}

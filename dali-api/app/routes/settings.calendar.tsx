@@ -5,7 +5,7 @@
 
 import { Link, redirect, useFetcher } from "react-router";
 import { CalendarDays, Plus, Trash2 } from "lucide-react";
-import { requireAuth, forbidden, unauthorized } from "~/lib/auth";
+import { requireAuth, forbidden, unauthorized, redirectPartnerToPortal, isPartnerAccount } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { listCalendarsForLink } from "~/lib/google-calendar";
 import { CalendarActionSchema } from "~/lib/calendar-schemas";
@@ -34,6 +34,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
   if (auth.user.type === "applicant") return redirect("/portal");
+  const partnerRedirect = await redirectPartnerToPortal(auth);
+  if (partnerRedirect) return partnerRedirect;
 
   const links = await prisma.userCalendarLink.findMany({
     where: { userId: auth.user.sub },
@@ -76,6 +78,7 @@ export async function action({ request }: Route.ActionArgs) {
   if (!auth.ok) return unauthorized(request);
   if (auth.user.type === "applicant")
     return forbidden(request);
+  if (await isPartnerAccount(auth)) return forbidden(request);
 
   const userId = auth.user.sub;
   const form = await request.formData();
