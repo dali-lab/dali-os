@@ -29,13 +29,18 @@ import {
   deleteAssignment,
 } from "~/education/lib/assignments.server";
 import { listAnnouncements, postAnnouncement } from "~/education/lib/announcements.server";
+import { getSessionRoster, saveAttendance } from "~/education/lib/attendance.server";
 import {
   ManageMaterials,
   ManageAssignments,
   ManageAnnouncements,
 } from "~/education/components/ManageCourseContent";
 import type { Question } from "~/types";
-import type { EduApplicationStatus, SubmissionType } from "~/generated/prisma/client";
+import type {
+  AttendanceStatus,
+  EduApplicationStatus,
+  SubmissionType,
+} from "~/generated/prisma/client";
 import { prisma } from "~/lib/db";
 import { parseSessionCookie } from "~/lib/cookies";
 import { Button, buttonClasses } from "~/components/ui/Button";
@@ -66,6 +71,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const offering = await getOfferingDetail(params.offeringId!);
   if (!offering) throw new Response("Not found", { status: 404 });
+
+  // Roster tab: ?session= picks the session, defaulting to the first one.
+  const requestedSessionId = new URL(request.url).searchParams.get("session");
+  const rosterSessionId = requestedSessionId ?? offering.sessions[0]?.id ?? null;
+  const roster = rosterSessionId
+    ? await getSessionRoster(params.offeringId!, rosterSessionId)
+    : null;
 
   const core = await isCore(gate.auth.user.sub);
   const [
@@ -109,6 +121,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   return {
     offering,
     applications,
+    roster,
     materials,
     assignments,
     announcements: announcements.map((a) => ({
@@ -144,6 +157,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     "update-assignment",
     "delete-assignment",
     "post-announcement",
+    "save-attendance",
   ];
   if (contentIntents.includes(intent)) {
     if (!(await isOfferingManager(auth.user.sub, params.offeringId!)))
@@ -217,6 +231,24 @@ export async function action({ request, params }: Route.ActionArgs) {
         });
         return "error" in result ? fail(result) : { ok: true };
       }
+      case "save-attendance": {
+        // One `mark-<applicationId>` field per roster row; "" clears the mark.
+        const marks: { applicationId: string; status: AttendanceStatus | null }[] = [];
+        for (const [key, value] of formData.entries()) {
+          if (!key.startsWith("mark-")) continue;
+          marks.push({
+            applicationId: key.slice("mark-".length),
+            status: value === "" ? null : (String(value) as AttendanceStatus),
+          });
+        }
+        const result = await saveAttendance({
+          offeringId: params.offeringId!,
+          sessionId: String(formData.get("sessionId") ?? ""),
+          marks,
+          actorId: auth.user.sub,
+        });
+        return "error" in result ? fail(result) : { ok: true };
+      }
     }
   }
 
@@ -233,6 +265,7 @@ const TABS = [
   { key: "details", label: "Details" },
   { key: "sessions", label: "Sessions" },
   { key: "applications", label: "Applications" },
+  { key: "roster", label: "Roster" },
   { key: "materials", label: "Materials" },
   { key: "assignments", label: "Assignments" },
   { key: "announcements", label: "Announcements" },
@@ -242,6 +275,7 @@ export default function ManageOffering() {
   const {
     offering,
     applications,
+    roster,
     materials,
     assignments,
     announcements,
@@ -659,6 +693,77 @@ export default function ManageOffering() {
                 </div>
               </details>
             ))
+          )}
+        </div>
+      )}
+
+      {tab === "roster" && (
+        <div className="flex flex-col gap-4 max-w-2xl">
+          {offering.sessions.length === 0 ? (
+            <p className="text-sm text-muted-foreground italic">
+              Add a session first — attendance is marked per session.
+            </p>
+          ) : (
+            <>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-muted-foreground">
+                  Session
+                </span>
+                <select
+                  value={roster?.session.id ?? ""}
+                  onChange={(e) =>
+                    setSearchParams(
+                      { tab: "roster", session: e.target.value },
+                      { preventScrollReset: true },
+                    )
+                  }
+                  className="rounded-md border border-border bg-card px-2 py-1.5 text-sm"
+                >
+                  {offering.sessions.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      Session {s.sequence} — {formatDateTime(s.datetime)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {roster && roster.roster.length === 0 && (
+                <p className="text-sm text-muted-foreground italic">
+                  No approved students yet.
+                </p>
+              )}
+              {roster && roster.roster.length > 0 && (
+                <Form method="post" className="bg-card border border-border rounded-lg">
+                  <input type="hidden" name="intent" value="save-attendance" />
+                  <input type="hidden" name="sessionId" value={roster.session.id} />
+                  <ul className="divide-y divide-border">
+                    {roster.roster.map((r) => (
+                      <li
+                        key={r.applicationId}
+                        className="px-4 py-2.5 flex items-center justify-between gap-4"
+                      >
+                        <span className="text-sm text-foreground">{r.name}</span>
+                        <select
+                          name={`mark-${r.applicationId}`}
+                          defaultValue={r.status ?? ""}
+                          className="rounded-md border border-border bg-card px-2 py-1 text-sm"
+                        >
+                          <option value="">Unmarked</option>
+                          <option value="Present">Present</option>
+                          <option value="Absent">Absent</option>
+                          <option value="Excused">Excused</option>
+                        </select>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="px-4 py-3 border-t border-border">
+                    <Button type="submit" size="sm">
+                      Save attendance
+                    </Button>
+                  </div>
+                </Form>
+              )}
+            </>
           )}
         </div>
       )}
