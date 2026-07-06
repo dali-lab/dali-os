@@ -46,6 +46,9 @@ export const prisma = {
   application: {
     findUnique: vi.fn(),
   },
+  applicationCycleStatusUpdate: {
+    findFirst: vi.fn(),
+  },
   auditLog: {
     create: vi.fn(),
   },
@@ -72,11 +75,75 @@ export const prisma = {
   },
   notification: {
     findMany: vi.fn().mockResolvedValue([]),
+    findUnique: vi.fn(),
     count: vi.fn().mockResolvedValue(0),
     create: vi.fn(),
     createMany: vi.fn(),
     update: vi.fn(),
     updateMany: vi.fn(),
+  },
+  projectAssignment: {
+    findMany: vi.fn().mockResolvedValue([]),
+    findFirst: vi.fn(),
+  },
+  project: {
+    findUnique: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+  },
+  sprint: {
+    findMany: vi.fn().mockResolvedValue([]),
+    findFirst: vi.fn(),
+    findUnique: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    updateMany: vi.fn(),
+    delete: vi.fn(),
+  },
+  epic: {
+    findFirst: vi.fn(),
+    findUnique: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+    create: vi.fn(),
+    update: vi.fn(),
+    updateMany: vi.fn(),
+    delete: vi.fn(),
+  },
+  userStory: {
+    findUnique: vi.fn(),
+    findFirst: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+    deleteMany: vi.fn(),
+  },
+  task: {
+    findMany: vi.fn().mockResolvedValue([]),
+    findUnique: vi.fn(),
+    findFirst: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    updateMany: vi.fn(),
+    delete: vi.fn(),
+    aggregate: vi.fn(),
+    groupBy: vi.fn().mockResolvedValue([]),
+    count: vi.fn().mockResolvedValue(0),
+  },
+  taskAssignee: {
+    createMany: vi.fn(),
+    deleteMany: vi.fn(),
+  },
+  taskComment: {
+    create: vi.fn(),
+    deleteMany: vi.fn(),
+  },
+  page: {
+    findUnique: vi.fn(),
+    findFirst: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+    create: vi.fn(),
+  },
+  projectFile: {
+    findMany: vi.fn().mockResolvedValue([]),
   },
   scheduledMeeting: {
     findMany: vi.fn().mockResolvedValue([]),
@@ -118,6 +185,7 @@ export const prisma = {
   },
   term: {
     findFirst: vi.fn().mockResolvedValue(null),
+    findMany: vi.fn().mockResolvedValue([]),
   },
   adminMembership: {
     findUnique: vi.fn(),
@@ -126,6 +194,9 @@ export const prisma = {
     findFirst: vi.fn(),
   },
   domainLeadAssignment: {
+    findFirst: vi.fn(),
+  },
+  instructorAssignment: {
     findFirst: vi.fn(),
   },
   $transaction: vi.fn(),

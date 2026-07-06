@@ -1,9 +1,9 @@
 import type { Route } from "./+types/api.tasks.$id.move";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
-import { isCore } from "~/lib/roles";
+import { requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { isTaskStatus } from "../lib/task-board";
+import { closeIssueForTask, syncIssueForTask } from "../lib/github-task-sync";
 
 // POST /api/tasks/:id/move
 //
@@ -26,15 +26,18 @@ export async function action({ request, params }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
   if (preflight) return preflight;
 
-  const auth = await requireAuth(request);
-  if (!auth.ok) return withCors(request, auth.response);
-
   if (request.method !== "POST") {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
-  if (!(await isCore(auth.user.sub))) {
-    return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+  const task = await prisma.task.findUnique({
+    where: { id: params.id },
+    select: { id: true, githubIssueNumber: true, projectId: true },
+  });
+  if (!task) {
+    return withCors(request, Response.json({ error: "Task not found" }, { status: 404 }));
   }
+  const gate = await requireProjectEditAccess(request, task.projectId);
+  if (!gate.ok) return gate.response;
 
   let body: unknown;
   try {
@@ -49,18 +52,28 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Invalid status" }, { status: 400 }));
   }
 
-  const task = await prisma.task.findUnique({
-    where: { id: params.id },
-    select: { id: true },
-  });
-  if (!task) {
-    return withCors(request, Response.json({ error: "Task not found" }, { status: 404 }));
-  }
-
   await prisma.task.update({
     where: { id: params.id },
     data: { status: body.status, position: body.position },
   });
+
+  // Mirror to GitHub: Done/Cancelled close the issue, anything else relabels
+  // (and reopens if it was previously closed). Fire-and-forget.
+  if (task.githubIssueNumber !== null) {
+    if (body.status === "Done") {
+      void closeIssueForTask(params.id, "completed").catch((err) =>
+        console.error(`task ${params.id}: github close failed`, err),
+      );
+    } else if (body.status === "Cancelled") {
+      void closeIssueForTask(params.id, "not_planned").catch((err) =>
+        console.error(`task ${params.id}: github close failed`, err),
+      );
+    } else {
+      void syncIssueForTask(params.id).catch((err) =>
+        console.error(`task ${params.id}: github sync failed`, err),
+      );
+    }
+  }
 
   return withCors(request, Response.json({ ok: true }));
 }

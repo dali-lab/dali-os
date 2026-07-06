@@ -1,14 +1,14 @@
 import type { Route } from "./+types/api.cycles.$cycleId.reviewers";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
-import { isCore, isDomainLead, hasCycleAccess } from "~/lib/roles";
+import { requireAuth, requireCoreOrDomainLead, forbidden } from "~/lib/auth";
+import { hasCycleAccess } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { parseJson } from "~/lib/validate";
+import { idSchema, parseJson } from "~/lib/validate";
 
 const CreateReviewerSchema = z.object({
-  userId: z.string().min(1).max(100),
-  domainId: z.string().min(1).max(100),
+  userId: idSchema,
+  domainId: idSchema,
 });
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -19,7 +19,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!auth.ok) return withCors(request, auth.response);
 
   if (!(await hasCycleAccess(auth.user.sub, params.cycleId!)))
-    return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+    return forbidden(request);
 
   const reviewers = await prisma.cycleReviewer.findMany({
     where: { applicationCycleId: params.cycleId },
@@ -36,9 +36,8 @@ export async function action({ request, params }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
   if (preflight) return preflight;
 
-  const auth = await requireAuth(request);
-  if (!auth.ok) return withCors(request, auth.response);
-  if (!(await isCore(auth.user.sub)) && !(await isDomainLead(auth.user.sub))) return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+  const gate = await requireCoreOrDomainLead(request);
+  if (!gate.ok) return gate.response;
 
   if (request.method !== "POST") {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));

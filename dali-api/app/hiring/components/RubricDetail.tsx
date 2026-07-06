@@ -1,7 +1,6 @@
 import { useState } from 'react'
-import { Link, Form, useLoaderData } from 'react-router'
+import { Form, useLoaderData } from 'react-router'
 import {
-  ArrowLeft,
   Plus,
   Clock,
   UserIcon,
@@ -10,15 +9,7 @@ import {
 } from 'lucide-react'
 import type { loader } from '~/hiring/routes/rubrics.$id'
 import type { RubricCriterion } from '~/types'
-
-function formatDateTime(iso: string | Date) {
-  const d = new Date(iso)
-  return (
-    d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) +
-    ' at ' +
-    d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
-  )
-}
+import { formatDateTime } from '~/lib/display'
 
 export function RubricDetail() {
   const { rubric } = useLoaderData<typeof loader>()
@@ -69,12 +60,6 @@ export function RubricDetail() {
   return (
     <div className="space-y-6">
       <div>
-        <Link
-          to="/hiring/library?tab=rubrics"
-          className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground/80 mb-4"
-        >
-          <ArrowLeft className="w-4 h-4 mr-1" /> Back to Library
-        </Link>
         <div className="flex justify-between items-start">
           <div>
             <h1 className="text-2xl font-bold text-foreground">{rubric.name}</h1>

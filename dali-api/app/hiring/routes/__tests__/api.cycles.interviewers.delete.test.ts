@@ -3,11 +3,21 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db");
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
+  requireCore: vi.fn(),
+  requireCoreOrDomainLead: vi.fn(),
+  requireMemberSession: vi.fn(),
+  forbidden: vi.fn((_req: Request) =>
+    Response.json({ error: "Forbidden" }, { status: 403 }),
+  ),
+  unauthorized: vi.fn((_req: Request) =>
+    Response.json({ error: "Unauthorized" }, { status: 401 }),
+  ),
+  redirectApplicantToPortal: vi.fn(() => null),
 }));
 vi.mock("~/lib/roles");
 
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, requireCoreOrDomainLead } from "~/lib/auth";
 import { isCore, isDomainLead } from "~/lib/roles";
 import { action } from "~/hiring/routes/api.cycles.$cycleId.interviewers";
 
@@ -46,6 +56,14 @@ beforeEach(() => {
     ok: true,
     user: { sub: USER_ID, email: "u@x.com", type: "user" },
   } as any);
+  vi.mocked(requireCoreOrDomainLead).mockResolvedValue({
+    ok: true,
+    auth: {
+      ok: true,
+      user: { sub: USER_ID, email: "u@x.com", type: "user" },
+      sessionId: "sid",
+    },
+  } as any);
   vi.mocked(isCore).mockResolvedValue(true);
   vi.mocked(isDomainLead).mockResolvedValue(false);
 });
@@ -54,6 +72,10 @@ describe("DELETE /api/hiring/cycles/:cycleId/interviewers", () => {
   it("returns 403 when caller is not a hiring or domain lead", async () => {
     vi.mocked(isCore).mockResolvedValueOnce(false);
     vi.mocked(isDomainLead).mockResolvedValueOnce(false);
+    vi.mocked(requireCoreOrDomainLead).mockResolvedValueOnce({
+      ok: false,
+      response: Response.json({ error: "Forbidden" }, { status: 403 }),
+    });
     const res = await action({
       request: makeDeleteRequest(),
       params: { cycleId: CYCLE_ID },

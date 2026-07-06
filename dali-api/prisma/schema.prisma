@@ -55,13 +55,28 @@ model User {
   major        String?
   hometown     String?
   linkedinUrl  String?
-  githubUrl    String?
-  // Bare GitHub login (e.g. "octocat"), distinct from githubUrl (a display
-  // link). Used to add the member to their project's GitHub team during
-  // staffing finalize. Editable in member details; nullable — a member with no
+  // Bare GitHub login (e.g. "octocat"). Used to add the member to their
+  // project's GitHub team during staffing finalize, and to derive a profile
+  // link in the UI. Editable in member details; nullable — a member with no
   // username is silently skipped (and reported) by that automation.
   githubUsername String?
   personalSite String?
+
+  // ─── Onboarding profile fields (collected on the New Member Profile form) ──
+  // Name as it appears on file with the College, when different from the
+  // first/last above (e.g. a legal name). Optional — blank means "same".
+  nameOnFile          String?
+  phoneNumber         String?
+  birthday            DateTime?
+  // Free-text demographic; collected optionally (includes a "Prefer not to
+  // say" choice on the form). Stored as the selected label.
+  ethnicity           String?
+  dietaryRestrictions String?
+
+  // Manual onboarding step tracking: Figma can't be invited via API, so an admin
+  // marks the member as invited to the DALI Figma from the onboarding board.
+  // Null = not yet invited; the timestamp records when it was checked off.
+  figmaInvitedAt DateTime?
 
   // ─── Relations: existing ──────────────────────────────────────────────────
   daliMember                    DALIMember?
@@ -115,6 +130,8 @@ model User {
   essentialityFormsAsPm EssentialityForm[]         @relation("EssentialityFormPm")
   essentialityRatings   EssentialityRating[]
   staffingAssignments   StaffingAssignment[]
+  staffingBoardMembers  StaffingBoardMember[]
+  staffingCardOrders    StaffingCardOrder[]
   intentToWork          IntentToWork[]
   formsCreated          Form[]
   formFolders           FormFolder[]
@@ -145,6 +162,7 @@ model User {
   // ─── Phase 1: OAuth / magic-link back-relations ───────────────────────────
   oauthGrants   OAuthGrant[]
   oneTimeTokens OneTimeToken[]
+  devicePairings DevicePairing[]
 
   // ─── Phase 1: Gmail integration (single per User) ─────────────────────────
   gmailIntegration      GmailIntegration?
@@ -179,6 +197,18 @@ model DALIMember {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  // Null until the member finishes the first-login onboarding flow
+  // (/onboarding). The layout loader redirects members with a null value into
+  // onboarding. Pre-existing members are backfilled to createdAt by the
+  // migration so they're never forced through it.
+  onboardedAt DateTime?
+
+  // Null until the member finishes (or dismisses) the launch tour. The tour is
+  // shown once per USER (server-driven, not browser localStorage) on the first
+  // home visit after onboarding. Pre-existing members are backfilled so they
+  // don't suddenly get the tour.
+  tourCompletedAt DateTime?
 
   userId String @unique
   user   User   @relation(fields: [userId], references: [id])
@@ -1825,8 +1855,16 @@ model Project {
   description   String?
   // Project-owned Google Workspace identity (e.g.,
   // "projectalpha@dali.dartmouth.edu"). Calendar events for this project
-  // are owned by this identity, not the organizer's personal calendar.
+  // are owned by this identity, not the organizer's personal calendar. Also
+  // the user account provisioned by the staffing "Create Gmail accounts"
+  // finalize automation (backfilled there if unset).
   calendarEmail String?
+
+  // Project-team Google Workspace GROUP address (e.g.,
+  // "projectalpha-team@dali.dartmouth.edu"). Get-or-created by the staffing
+  // "Create Gmail accounts" finalize automation, which also adds the confirmed
+  // roster as group members. Null until that automation first runs.
+  teamGroupEmail String?
   // Expected span length: how many terms the project is *planned* to run, as
   // a target. Independent of the actual ProjectTerm set — a project may have
   // fewer terms added than expected (still being scheduled) or more. Drives
@@ -1852,11 +1890,34 @@ model Project {
   // Git repositories for this project (URLs). Empty by default.
   repoUrls String[] @default([])
 
+  // Live deployment / hosted URL for the project (e.g. a Fly/Vercel app).
+  // Single link, shown on the project detail page next to the repos. Null
+  // until a lead sets it.
+  deploymentUrl String?
+
   // GitHub team slug for this project's org team, persistent across terms.
   // Set on the project detail page. When present, the staffing "Set up GitHub
   // teams" finalize automation get-or-creates a team with this slug under
   // GITHUB_ORG and adds the confirmed roster. Null = automation skips.
   githubTeamSlug String?
+
+  // The project's Slack channel id (e.g. "C0123ABC"), used to invite members +
+  // post the team announcement on staffing finalize. Backfilled by finalize/modal
+  // Save when the channel (named by slackChannelName) is get-or-created. Null
+  // until the first sync runs the Slack channel step.
+  slackChannelId String?
+  // Human channel name (e.g. "project-alpha") — the SHARED source of truth edited
+  // on the project details page AND the staffing Finalize modal. Defaults to the
+  // slugified project name until set. Finalize/modal-Save get-or-creates this
+  // channel and backfills slackChannelId.
+  slackChannelName String?
+
+  // Dartmouth payroll chart string for this project. `chartStringType` is the
+  // GL account category (e.g. "Grant", "Department"); `chartString` is the
+  // full concatenated GL string. Both are admin-edited and surfaced in the
+  // payroll export. Null until an admin sets them.
+  chartStringType String?
+  chartString     String?
 
   overviewPage Page? @relation("ProjectOverview", fields: [overviewPageId], references: [id])
   prdPage      Page? @relation("ProjectPRD", fields: [prdPageId], references: [id])
@@ -2114,6 +2175,14 @@ model Task {
   // JSON shape: [{ "text": "...", "done": false }]
   checklist Json?
 
+  // Optional mirror to a GitHub issue. All three populated together when the
+  // task was created with the "Create GitHub issue" toggle on; null when not
+  // mirrored. The (githubRepo, githubIssueNumber) pair is the lookup key for
+  // inbound webhook events.
+  githubRepo        String?
+  githubIssueNumber Int?
+  githubIssueUrl    String?
+
   project   Project        @relation(fields: [projectId], references: [id])
   sprint    Sprint?        @relation(fields: [sprintId], references: [id])
   epic      Epic?          @relation(fields: [epicId], references: [id])
@@ -2126,6 +2195,7 @@ model Task {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  @@unique([githubRepo, githubIssueNumber], name: "task_github_issue_unique")
   @@index([projectId, sprintId])
 }
 
@@ -2378,6 +2448,28 @@ model StaffingCycle {
   intentToWork      IntentToWork[]
   formBindings      StaffingCycleFormBinding[]
   formSubmissions   FormSubmission[]
+  boardMembers      StaffingBoardMember[]
+  cardOrders        StaffingCardOrder[]
+}
+
+// A member a staffing lead manually placed on the board for a cycle WITHOUT a
+// bid. The board pool is otherwise derived from StaffingPreference / bid
+// submissions, so a non-bidder would never appear; this row makes them show up
+// as an ordinary Unassigned card the lead can then drag into a project. It is
+// not a preference and not an assignment — purely "present on the board".
+// Removed when the lead removes the card. A member who later bids still has
+// their preferences take over the card; this row is harmless either way.
+model StaffingBoardMember {
+  id              String   @id @default(cuid())
+  userId          String
+  staffingCycleId String
+  addedById       String? // actor; free-form userId, nullable for safety
+  createdAt       DateTime @default(now())
+
+  user          User          @relation(fields: [userId], references: [id])
+  staffingCycle StaffingCycle @relation(fields: [staffingCycleId], references: [id])
+
+  @@unique([userId, staffingCycleId])
 }
 
 model StaffingPreference {
@@ -2653,6 +2745,30 @@ model StaffingAssignment {
 
   @@index([userId, termId])
   @@index([projectId, termId])
+}
+
+// Manual position of a member's card within its staffing-board column. The
+// column itself is DERIVED (from the member's assignment, or its absence =
+// Unassigned); this row records only where the card sits in that column's
+// order. One row per (cycle, user); cards with no row fall back to last-name
+// sort. Decoupled from StaffingAssignment so Unassigned bidders — who have no
+// assignment — can still be ordered. `columnKey` is the project id, or
+// "__unassigned__", recorded so a stale order from a previous column is ignored
+// once a card moves.
+model StaffingCardOrder {
+  id              String @id @default(cuid())
+  staffingCycleId String
+  userId          String
+  columnKey       String
+  // Sparse fractional/spread integer key: cards sort ascending by this. Saved
+  // as the card's index in the column on each reorder, so it stays dense.
+  sortKey         Int
+
+  staffingCycle StaffingCycle @relation(fields: [staffingCycleId], references: [id], onDelete: Cascade)
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([staffingCycleId, userId])
+  @@index([staffingCycleId, columnKey])
 }
 
 // Distinct from the existing AssignmentStatus enum (which scopes
@@ -2988,6 +3104,75 @@ enum TokenPurpose {
   PartnerMagicLink
   AlumniEmailLink
   EmailVerification
+}
+
+// ─── Desktop device pairing (GitHub-CLI style) ───────────────────────────────
+//
+// Backs the Tauri desktop app's sign-in. The app POSTs /auth/pair/start to
+// create a Pending row, opens the system browser to /link?code=<userCode>, the
+// signed-in user approves (binding userId), and the app polls /auth/pair/poll.
+// On the consuming poll the server mints (a) a long-lived desktop Session for
+// the background notification poller — returned for the OS keychain — and (b) a
+// one-time handoff code that /auth/handoff redeems into a fresh webview cookie
+// session. All codes are SHA-256 hashed at rest (same scheme as Session.id and
+// OneTimeToken.tokenHash); raw values exist only in transit. See
+// TAURI_DESKTOP_PLAN.md.
+model DevicePairing {
+  id String @id @default(cuid())
+
+  // sha256(raw deviceCode), base64url. The raw deviceCode is the high-entropy
+  // bearer secret the app polls with; we never store it.
+  deviceCodeHash String @unique
+  // Short, human-eyeballed code (8 chars from an unambiguous alphabet, no
+  // 0/O/1/I/L). Stored canonical uppercase. NOT a bearer secret — approval
+  // still requires an authenticated web session — so low entropy is fine.
+  userCode String @unique
+
+  status DevicePairingStatus @default(Pending)
+
+  // Human label the shell sends (hostname / OS), rendered on /link so the user
+  // confirms which device they're approving.
+  deviceLabel String
+
+  // Bound at approval; null while pending.
+  userId String?
+
+  // Hashed id of the long-lived desktop Session minted on the consuming poll.
+  // Doubles as the single-mint guard (claim requires this null) and an audit
+  // link from the pairing to its revocable Session row.
+  desktopSessionId String?
+
+  // One-time handoff code minted on the consuming poll, ~60s TTL, single-use.
+  // sha256(raw), base64url. Redeemed by /auth/handoff to plant the webview
+  // cookie session.
+  handoffCodeHash  String?
+  handoffExpiresAt DateTime?
+  handoffUsedAt    DateTime?
+
+  // Pairing-request expiry (~10 min). Independent of handoff expiry.
+  expiresAt  DateTime
+  approvedAt DateTime?
+
+  // Audit / abuse review of the start request.
+  startIp        String?
+  startUserAgent String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status, expiresAt])
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+enum DevicePairingStatus {
+  Pending
+  Approved
+  Consumed
+  Cancelled
+  Expired
 }
 
 // ─── Gmail integration (send-as) ─────────────────────────────────────────────

@@ -3,8 +3,24 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db");
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
+  requireCore: vi.fn(),
+  requireCoreOrDomainLead: vi.fn(),
+  requireMemberSession: vi.fn(),
+  forbidden: vi.fn((_req: Request) =>
+    Response.json({ error: "Forbidden" }, { status: 403 }),
+  ),
+  unauthorized: vi.fn((_req: Request) =>
+    Response.json({ error: "Unauthorized" }, { status: 401 }),
+  ),
+  redirectApplicantToPortal: vi.fn(() => null),
 }));
 vi.mock("~/lib/roles");
+vi.mock("~/lib/core-cycle", () => ({
+  // Tests treat the cycle as a single term ("term-1"); fan-out behavior is
+  // exercised through the count of writes, not the cycle math.
+  coreCycleTermIds: vi.fn().mockResolvedValue(["term-1"]),
+  cycleSortKeyRange: vi.fn(),
+}));
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
@@ -23,7 +39,10 @@ const mockPrisma = prisma as unknown as {
   };
   coreAssignment: {
     findFirst: ReturnType<typeof vi.fn>;
+    findMany: ReturnType<typeof vi.fn>;
+    findUnique: ReturnType<typeof vi.fn>;
     create: ReturnType<typeof vi.fn>;
+    createMany: ReturnType<typeof vi.fn>;
     deleteMany: ReturnType<typeof vi.fn>;
   };
   domainLeadAssignment: {
@@ -40,7 +59,10 @@ beforeEach(() => {
   };
   (mockPrisma as any).coreAssignment = {
     findFirst: vi.fn().mockResolvedValue(null),
+    findMany: vi.fn().mockResolvedValue([]),
+    findUnique: vi.fn().mockResolvedValue(null),
     create: vi.fn(),
+    createMany: vi.fn(),
     deleteMany: vi.fn(),
   };
   (mockPrisma as any).domainLeadAssignment = {
@@ -100,31 +122,36 @@ describe("admin-console.members action — gate", () => {
 });
 
 describe("admin-console.members action — add-core-title (Core or Admin)", () => {
-  it("creates a CoreAssignment with the free-text title when none exists", async () => {
+  it("materializes a CoreAssignment for every term in the cycle", async () => {
     asCore();
     await action({
       request: postForm({ intent: "add-core-title", userId: USER_ID, leadTitle: "Design Lead" }),
       params: {},
       context: {},
     } as any);
-    expect(mockPrisma.coreAssignment.findFirst).toHaveBeenCalledWith({
-      where: { userId: USER_ID, termId: TERM_ID, leadTitle: "Design Lead" },
-      select: { id: true },
+    // Reads existing cycle-mate rows first to compute the missing set.
+    expect(mockPrisma.coreAssignment.findMany).toHaveBeenCalledWith({
+      where: {
+        userId: USER_ID,
+        termId: { in: [TERM_ID] },
+        leadTitle: "Design Lead",
+      },
+      select: { termId: true },
     });
-    expect(mockPrisma.coreAssignment.create).toHaveBeenCalledWith({
-      data: { userId: USER_ID, termId: TERM_ID, leadTitle: "Design Lead" },
+    expect(mockPrisma.coreAssignment.createMany).toHaveBeenCalledWith({
+      data: [{ userId: USER_ID, termId: TERM_ID, leadTitle: "Design Lead" }],
     });
   });
 
-  it("is a no-op when an identical (user, term, title) row already exists", async () => {
+  it("is a no-op when the cycle is already fully covered", async () => {
     asCore();
-    mockPrisma.coreAssignment.findFirst.mockResolvedValueOnce({ id: "ca-1" });
+    mockPrisma.coreAssignment.findMany.mockResolvedValueOnce([{ termId: TERM_ID }]);
     await action({
       request: postForm({ intent: "add-core-title", userId: USER_ID, leadTitle: "PM" }),
       params: {},
       context: {},
     } as any);
-    expect(mockPrisma.coreAssignment.create).not.toHaveBeenCalled();
+    expect(mockPrisma.coreAssignment.createMany).not.toHaveBeenCalled();
   });
 
   it("treats an empty title as a null (untitled Core) row", async () => {
@@ -134,25 +161,45 @@ describe("admin-console.members action — add-core-title (Core or Admin)", () =
       params: {},
       context: {},
     } as any);
-    expect(mockPrisma.coreAssignment.findFirst).toHaveBeenCalledWith({
-      where: { userId: USER_ID, termId: TERM_ID, leadTitle: null },
-      select: { id: true },
+    expect(mockPrisma.coreAssignment.findMany).toHaveBeenCalledWith({
+      where: {
+        userId: USER_ID,
+        termId: { in: [TERM_ID] },
+        leadTitle: null,
+      },
+      select: { termId: true },
     });
-    expect(mockPrisma.coreAssignment.create).toHaveBeenCalledWith({
-      data: { userId: USER_ID, termId: TERM_ID, leadTitle: null },
+    expect(mockPrisma.coreAssignment.createMany).toHaveBeenCalledWith({
+      data: [{ userId: USER_ID, termId: TERM_ID, leadTitle: null }],
     });
   });
 });
 
 describe("admin-console.members action — remove-core-title", () => {
-  it("deletes by assignment id", async () => {
+  it("clears the (userId, leadTitle) across every term in the cycle", async () => {
     asCore();
+    // The action looks up the assignment first to resolve (userId, termId, leadTitle).
+    mockPrisma.coreAssignment.findUnique.mockResolvedValueOnce({
+      userId: USER_ID,
+      termId: TERM_ID,
+      leadTitle: "Design Lead",
+    });
     await action({
       request: postForm({ intent: "remove-core-title", assignmentId: "ca-1" }),
       params: {},
       context: {},
     } as any);
-    expect(mockPrisma.coreAssignment.deleteMany).toHaveBeenCalledWith({ where: { id: "ca-1" } });
+    expect(mockPrisma.coreAssignment.findUnique).toHaveBeenCalledWith({
+      where: { id: "ca-1" },
+      select: { userId: true, termId: true, leadTitle: true },
+    });
+    expect(mockPrisma.coreAssignment.deleteMany).toHaveBeenCalledWith({
+      where: {
+        userId: USER_ID,
+        leadTitle: "Design Lead",
+        termId: { in: [TERM_ID] },
+      },
+    });
   });
 });
 

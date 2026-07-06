@@ -11,8 +11,8 @@ import {
   currentInternDomains,
 } from "~/hiring/lib/intern-eligibility";
 import type { Question } from "~/types";
-import { InfoBody } from "~/hiring/lib/info-body";
-import { ChallengeQuestionField } from "~/hiring/components/ChallengeQuestionField";
+import { FormFieldList } from "~/forms/components/FormField";
+import { findMissingRequired } from "~/lib/form-answers";
 import { APPLICATION_TZ, APPLICATION_TZ_LABEL } from "~/lib/timezone";
 
 export const meta: Route.MetaFunction = () => [
@@ -136,8 +136,7 @@ export async function action({ request }: Route.ActionArgs) {
     ) as string[]).filter((id) => allowedDomainIds.has(id));
 
     if (intent === "submit") {
-      const missing = questions
-        .filter((q) => q.type !== "info" && q.required && !isAnswered(answers[q.key]))
+      const missing = findMissingRequired(questions, (q) => answers[q.key])
         .map((q) => q.data.label || q.key);
       if (missing.length > 0) {
         return Response.json(
@@ -224,10 +223,6 @@ export async function action({ request }: Route.ActionArgs) {
   return Response.json({ error: "Unknown intent" }, { status: 400 });
 }
 
-function isAnswered(value: string | undefined): boolean {
-  return typeof value === "string" && value.trim() !== "";
-}
-
 // ─── UI ──────────────────────────────────────────────────────────────────────
 
 export default function InternToFullRoute() {
@@ -307,7 +302,7 @@ function Message({ title, children }: { title: string; children: React.ReactNode
       <h2 className="font-heading text-xl font-bold text-dark-blue mb-2">{title}</h2>
       <p className="text-sm text-muted-foreground">{children}</p>
       <Link to="/" className="mt-6 inline-block text-sm text-accent-coral hover:underline">
-        ← Back to home
+        Open home
       </Link>
     </div>
   );
@@ -400,34 +395,12 @@ function FormView({
           Questions
         </h2>
         <div className="space-y-5">
-          {cycle.questions.map((q) => {
-            if (q.type === "info") {
-              return (
-                <div
-                  key={q.key}
-                  className="rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground"
-                >
-                  <InfoBody body={q.data.body} />
-                </div>
-              );
-            }
-            return (
-              <div key={q.key}>
-                <label className="block text-sm font-semibold text-dark-blue mb-1">
-                  {q.data.label}
-                  {q.required && <span className="text-accent-coral ml-0.5">*</span>}
-                </label>
-                {q.data.description && (
-                  <p className="text-xs text-muted-foreground mb-1">{q.data.description}</p>
-                )}
-                <ChallengeQuestionField
-                  question={q}
-                  value={answers[q.key] ?? ""}
-                  onChange={(v) => setAnswers((prev) => ({ ...prev, [q.key]: v }))}
-                />
-              </div>
-            );
-          })}
+          <FormFieldList
+            questions={cycle.questions}
+            labelClassName="font-semibold"
+            values={answers}
+            onChange={(key, v) => setAnswers((prev) => ({ ...prev, [key]: v }))}
+          />
         </div>
       </section>
 

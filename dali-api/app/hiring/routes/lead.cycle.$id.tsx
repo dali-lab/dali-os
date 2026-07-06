@@ -18,7 +18,7 @@ import {
   type DecisionSlotType,
   type NotificationSlotType,
 } from "~/hiring/lib/email-variables";
-import { Modal } from "~/components/Modal";
+import { Modal, ModalHeader } from "~/components/Modal";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { ChallengePreviewModal } from "~/hiring/components/ChallengePreviewModal";
 import { Settings, Users, Calendar, AlertTriangle, Trash2, Plus, CheckCircle, ArrowRight, Circle, ChevronRight, X, LayoutDashboard, Eye, Mail } from 'lucide-react'
@@ -26,6 +26,7 @@ import { formatVersionLabel, buildVersionNumberMap } from "~/lib/formatVersion";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { sendExtensionNoticeIfDue, resendExtensionNotice } from "~/hiring/lib/extension-notice";
 import { ConfidentialityGate } from "~/hiring/components/ConfidentialityGate";
+import { STATUS_COLORS, STATUS_LABELS } from "~/hiring/lib/labels";
 import {
   zonedDayStartUtc,
   zonedDayEndUtc,
@@ -1178,7 +1179,7 @@ export default function HiringLeadCycleDetails() {
     rescheduleNoticeHours: 12,
     cancelNoticeHours: 0,
     bookingNoticeHours: 12,
-    timezone: 'America/New_York',
+    timezone: APPLICATION_TZ,
   })
   const [configSaved, setConfigSaved] = useState(false)
   const [configSaving, setConfigSaving] = useState(false)
@@ -1232,13 +1233,6 @@ export default function HiringLeadCycleDetails() {
   const [showOpenConfirm, setShowOpenConfirm] = useState(false)
 
   const STATUS_FLOW = ['Draft', 'Open', 'UnderReview', 'Completed'] as const
-  const STATUS_LABELS: Record<string, string> = {
-    Draft: 'Draft', Open: 'Open', UnderReview: 'Under Review', Completed: 'Completed',
-  }
-  const STATUS_COLORS: Record<string, string> = {
-    Draft: 'bg-muted text-muted-foreground', Open: 'bg-green-100 text-green-700',
-    UnderReview: 'bg-yellow-100 text-yellow-700', Completed: 'bg-blue-100 text-blue-700',
-  }
 
   // ── Active tab (URL-synced: deep-links, reload, and back/forward all work) ──
   const [searchParams, setSearchParams] = useSearchParams()
@@ -1297,7 +1291,9 @@ export default function HiringLeadCycleDetails() {
 
   const loadMembers = useCallback(async () => {
     try {
-      const r = await fetch('/api/members', { credentials: 'include' })
+      // Reviewer assignment is current-cycle work — exclude alumni so a stale
+      // suggestion can't pick someone who's no longer on the lab roster.
+      const r = await fetch('/api/members?scope=current', { credentials: 'include' })
       setAllMembers(r.ok ? await r.json() : [])
     } catch {}
   }, [])
@@ -3307,34 +3303,29 @@ function DecisionEmailPreviewModal({ decision, binding, onClose }: {
     : null
 
   return (
-    <div
-      className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
-      onClick={onClose}
+    <Modal
+      open
+      onClose={onClose}
+      labelledBy="email-preview-title"
+      containerClassName="bg-card rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] overflow-y-auto my-auto"
     >
-      <div
-        className="bg-card rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between gap-3 px-4 sm:px-6 py-3 sm:py-4 border-b border-border">
-          <div className="min-w-0">
-            <h2 className="text-lg font-bold text-foreground">Email preview</h2>
-            <p className="text-xs text-muted-foreground break-words">
+      <>
+        <ModalHeader
+          titleId="email-preview-title"
+          title="Email preview"
+          subtitle={
+            <>
               {decision.domainApplication.application.user.firstName} {decision.domainApplication.application.user.lastName}
               {' · '}
               {decision.domainApplication.challengeVersion.domain.name}
               {' · '}
               <span className="font-medium">{decision.type}</span>
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-muted-foreground/70 hover:text-foreground flex-shrink-0"
-            aria-label="Close preview"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+            </>
+          }
+          onClose={onClose}
+          closeLabel="Close preview"
+          className="px-4 sm:px-6 py-3 sm:py-4 border-b border-border mb-0"
+        />
         <div className="px-4 sm:px-6 py-4 space-y-4">
           {tmpl ? (
             <>
@@ -3387,8 +3378,8 @@ function DecisionEmailPreviewModal({ decision, binding, onClose }: {
             Close
           </button>
         </div>
-      </div>
-    </div>
+      </>
+    </Modal>
   )
 }
 
@@ -3446,15 +3437,21 @@ function CompleteConfirmModal({ cycleId, onClose, onCompleted, onError }: {
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-card rounded-lg shadow-xl w-full max-w-md p-6 space-y-4" onClick={e => e.stopPropagation()}>
+    <Modal
+      open
+      onClose={onClose}
+      labelledBy="complete-confirm-title"
+      disableEscape={submitting}
+      containerClassName="bg-card rounded-lg shadow-xl w-full max-w-md p-6 space-y-4 my-auto"
+    >
+      <>
         {checking ? (
           <div className="text-center py-4">
             <p className="text-sm text-muted-foreground">Checking cycle readiness...</p>
           </div>
         ) : hasBlockers ? (
           <>
-            <h2 className="text-lg font-semibold text-foreground">Cycle has unfinished work</h2>
+            <h2 id="complete-confirm-title" className="text-lg font-semibold text-foreground">Cycle has unfinished work</h2>
             <div className="space-y-2">
               {pendingInterviews > 0 && (
                 <div className="flex items-center gap-2 text-sm bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-3">
@@ -3489,8 +3486,8 @@ function CompleteConfirmModal({ cycleId, onClose, onCompleted, onError }: {
             </div>
           </>
         ) : null}
-      </div>
-    </div>
+      </>
+    </Modal>
   );
 }
 

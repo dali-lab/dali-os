@@ -1,20 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
-import { Link, useLoaderData, useSubmit, useSearchParams, useNavigation, Form } from 'react-router'
-import { ArrowLeft, Plus, FileText, Clock, UserIcon, Eye } from 'lucide-react'
+import { useLoaderData, useSubmit, useSearchParams, useNavigation, Form } from 'react-router'
+import { Plus, FileText, Clock, UserIcon, Eye } from 'lucide-react'
 import { FormBuilderTab } from '~/hiring/components/ChallengeBuilder'
 import { RichTextViewer, isEmptyDoc } from '~/components/RichTextViewer'
 import { ChallengePreviewModal } from '~/hiring/components/ChallengePreviewModal'
 import type { Question } from '~/types'
 import type { loader } from '~/hiring/routes/challenges.$id'
-
-function formatDateTime(iso: string | Date) {
-  const d = new Date(iso)
-  return (
-    d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) +
-    ' at ' +
-    d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
-  )
-}
+import { formatDateTime } from '~/lib/display'
 
 export function resolveDuplicateDomainId(version: { domainId: string | null }): string {
   // A general version's domainId is null; coerce to '' so the form's selected
@@ -111,12 +103,6 @@ export function ChallengeDetail() {
   return (
     <div className="space-y-6">
       <div>
-        <Link
-          to="/hiring/library?tab=challenges"
-          className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground/80 mb-4"
-        >
-          <ArrowLeft className="w-4 h-4 mr-1" /> Back to Library
-        </Link>
         <div className="flex justify-between items-start">
           <div>
             <h1 className="text-2xl font-bold text-foreground">{challenge.name}</h1>

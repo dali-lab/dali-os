@@ -75,16 +75,29 @@ const SEASONS: { code: Season; sortIndex: 1 | 2 | 3 | 4 }[] = [
   { code: "F", sortIndex: 4 },
 ];
 
-// Approximate Dartmouth quarter windows. Dates are illustrative; Admin
-// Console > Terms can edit any of these post-seed if real boundaries shift.
-function quarterDates(year: number, season: Season): { start: Date; end: Date } {
-  switch (season) {
-    case "W": return { start: new Date(`${year}-01-04`), end: new Date(`${year}-03-13`) };
-    case "S": return { start: new Date(`${year}-03-28`), end: new Date(`${year}-06-05`) };
-    case "X": return { start: new Date(`${year}-06-22`), end: new Date(`${year}-08-29`) };
-    case "F": return { start: new Date(`${year}-09-12`), end: new Date(`${year}-11-23`) };
-  }
-}
+// Real Dartmouth registrar dates for published academic years (start = first
+// day of CLASSES, end = last day of the Final Examination period). Source:
+//   https://registrar.dartmouth.edu/calendars/academic-institutional-calendars
+//
+// Single source of truth: the seed iterates this map and writes one Term row
+// per entry. Listed in chronological order so reviewers can scan the calendar
+// at a glance. Keep in sync with the migration that backfills these dates onto
+// existing rows (prisma/migrations/20260609130000_term_dates_real_registrar);
+// whenever the registrar publishes a new academic year, add its four entries
+// here AND ship a follow-up UPDATE migration so existing prod rows correct too.
+const REGISTRAR_DATES: { code: string; season: Season; start: string; end: string }[] = [
+  { code: "25F", season: "F", start: "2025-09-15", end: "2025-11-26" },
+  { code: "26W", season: "W", start: "2026-01-05", end: "2026-03-17" },
+  { code: "26S", season: "S", start: "2026-03-30", end: "2026-06-09" },
+  { code: "26X", season: "X", start: "2026-06-25", end: "2026-09-01" },
+  { code: "26F", season: "F", start: "2026-09-14", end: "2026-11-25" },
+  { code: "27W", season: "W", start: "2027-01-05", end: "2027-03-16" },
+  { code: "27S", season: "S", start: "2027-03-29", end: "2027-06-08" },
+  { code: "27X", season: "X", start: "2027-06-24", end: "2027-08-31" },
+  { code: "27F", season: "F", start: "2027-09-13", end: "2027-11-24" },
+  { code: "28W", season: "W", start: "2028-01-04", end: "2028-03-14" },
+  { code: "28S", season: "S", start: "2028-03-27", end: "2028-06-06" },
+];
 
 async function seedDomains() {
   let healed = 0;
@@ -158,22 +171,19 @@ async function seedDomains() {
 }
 
 async function seedTerms() {
-  // 26W .. 28F (12 quarters).
-  let count = 0;
-  for (const year of [2026, 2027, 2028]) {
-    for (const s of SEASONS) {
-      const code = `${year % 100}${s.code}`;
-      const { start, end } = quarterDates(year, s.code);
-      const sortKey = year * 10 + s.sortIndex;
-      await prisma.term.upsert({
-        where: { code },
-        update: { sortKey, startDate: start, endDate: end, season: s.code, year },
-        create: { code, year, season: s.code, sortKey, startDate: start, endDate: end },
-      });
-      count++;
-    }
+  for (const t of REGISTRAR_DATES) {
+    const year = 2000 + Number(t.code.slice(0, 2));
+    const sortIndex = SEASONS.find((s) => s.code === t.season)!.sortIndex;
+    const sortKey = year * 10 + sortIndex;
+    const start = new Date(t.start);
+    const end = new Date(t.end);
+    await prisma.term.upsert({
+      where: { code: t.code },
+      update: { sortKey, startDate: start, endDate: end, season: t.season, year },
+      create: { code: t.code, year, season: t.season, sortKey, startDate: start, endDate: end },
+    });
   }
-  console.log(`✓ Seeded ${count} terms.`);
+  console.log(`✓ Seeded ${REGISTRAR_DATES.length} terms.`);
 }
 
 async function seedPageTemplates() {

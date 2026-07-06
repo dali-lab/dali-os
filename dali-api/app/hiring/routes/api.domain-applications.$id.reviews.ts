@@ -3,11 +3,11 @@ import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore, hasCycleAccess } from "~/lib/roles";
-import { parseJson } from "~/lib/validate";
+import { parseJson, idSchema } from "~/lib/validate";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
 
 const CreateReviewSchema = z.object({
-  cycleReviewerId: z.string().min(1).max(100),
+  cycleReviewerId: idSchema,
 });
 
 export async function loader({ request, params }: Route.LoaderArgs) {

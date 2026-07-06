@@ -27,6 +27,7 @@ import {
 } from "./collab/util";
 import { useRegisterCollabEditor } from "./collab/PresenceProvider";
 import { VersionHistoryPanel } from "./collab/VersionHistoryPanel";
+import { EDITOR_CONTENT_CLASS, EditorShell } from "./editor/shared";
 
 interface CollaborativeEditorProps {
   documentName: string;
@@ -391,8 +392,7 @@ function CollaborativeEditorInner({
     editable: !disabled,
     editorProps: {
       attributes: {
-        class:
-          "prose prose-sm max-w-none focus:outline-none min-h-[6rem] px-3 py-2",
+        class: EDITOR_CONTENT_CLASS,
       },
     },
   });
@@ -593,13 +593,11 @@ function CollaborativeEditorInner({
   }, [editor, presenceEnabled, reportFocus]);
 
   return (
-    <div
+    <EditorShell
       ref={containerRef}
-      className={`relative rounded-lg border bg-card ${
-        disabled
-          ? "border-border bg-muted/50 opacity-75"
-          : "border-gray-300 focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent"
-      } ${className ?? ""}`}
+      relative
+      disabled={disabled}
+      className={className}
     >
       <button
         type="button"
@@ -684,6 +682,6 @@ function CollaborativeEditorInner({
           pointer-events: none;
         }
       `}</style>
-    </div>
+    </EditorShell>
   );
 }

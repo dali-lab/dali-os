@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "pairing-local",
+  "description": "The bundled, local, trusted pairing UI. App-defined commands (pairing_start, pairing_cancel, sign_out, get_auth_state, open_external) are invokable from this local window; it additionally needs the event permission to listen for `pairing://state` updates pushed from Rust.",
+  "windows": ["pairing"],
+  "permissions": ["core:event:default"]
+}

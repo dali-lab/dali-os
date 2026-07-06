@@ -9,17 +9,22 @@ import {
   useSearchParams,
 } from "react-router";
 import type { Route } from "./+types/members";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { prisma } from "~/lib/db";
-import { initialsFromName } from "~/lib/display";
+import { promoteToMember } from "~/members/lib/membership.server";
+import { fullName, primaryEmail } from "~/lib/display";
+import { Avatar } from "~/components/ui/Avatar";
+import { RolePills } from "~/components/ui/RolePills";
+import { LAB_MEMBER_WHERE, MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { ViewToggle, useViewPreference } from "~/components/ViewToggle";
 import { TermFilter } from "~/components/TermFilter";
 import { resolveTermFilter } from "~/lib/terms";
+import { deriveCoreTitles } from "~/lib/core-titles";
 
-export const meta: Route.MetaFunction = () => [{ title: "Members · DALI OS" }];
+export const meta: Route.MetaFunction = () => [{ title: "Directory · People · DALI OS" }];
 
 type MemberRow = {
   id: string;
@@ -38,7 +43,8 @@ type MemberRow = {
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
-  if (auth.user.type === "applicant") return redirect("/portal");
+  const portalRedirect = redirectApplicantToPortal(auth);
+  if (portalRedirect) return portalRedirect;
 
   const { terms, selected, termId, isAll } = await resolveTermFilter(request);
 
@@ -75,8 +81,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   // AdminMembership + CoreAssignment per the Phase 2 identity model — see
   // app/admin-console/routes/api.members.ts for the canonical shape.
   const users = await prisma.user.findMany({
-    where: { daliMember: { isNot: null }, ...activeInTerm, ...inDomain },
-    orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+    where: { ...LAB_MEMBER_WHERE, ...activeInTerm, ...inDomain },
+    orderBy: MEMBER_LIST_ORDER_BY,
     select: {
       id: true,
       firstName: true,
@@ -100,7 +106,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     id: u.id,
     firstName: u.firstName,
     lastName: u.lastName,
-    email: u.daliEmail ?? u.dartmouthEmail,
+    email: primaryEmail(u),
     pronouns: u.pronouns,
     classYear: u.classYear,
     photoUrl: await resolvePhotoUrl(u.photoUrl),
@@ -127,21 +133,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   };
 }
 
-// Distinct Core lead titles for a member's Roles column. Title-less Core
-// assignments collapse to a single "Core" pill so a Core member without a
-// specific title still shows up (rather than contributing no pill at all).
-function deriveCoreTitles(
-  assignments: { leadTitle: string | null }[],
-): string[] {
-  if (assignments.length === 0) return [];
-  const titles = new Set(
-    assignments.map((a) => a.leadTitle).filter((t): t is string => !!t),
-  );
-  const hasUntitled = assignments.some((a) => !a.leadTitle);
-  if (hasUntitled) titles.add("Core");
-  return Array.from(titles);
-}
-
 // Profile fields offered on the create form. Mirrors the editable text fields
 // on members/$id so a member can be filled in fully at creation time; all are
 // optional except first/last name. classYear is handled separately (numeric).
@@ -150,14 +141,14 @@ const PROFILE_TEXT_FIELDS = [
   "major",
   "hometown",
   "linkedinUrl",
-  "githubUrl",
   "personalSite",
 ] as const;
 
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
-  if (auth.user.type === "applicant") return redirect("/portal");
+  const portalRedirect = redirectApplicantToPortal(auth);
+  if (portalRedirect) return portalRedirect;
   if (!(await isCore(auth.user.sub))) {
     return { error: "You don't have permission to add members." };
   }
@@ -214,9 +205,7 @@ export async function action({ request }: Route.ActionArgs) {
   if (existing) {
     // The User already exists — promote them to a lab member rather than
     // erroring out, then send the editor to their profile.
-    if (!existing.daliMember) {
-      await prisma.dALIMember.create({ data: { userId: existing.id } });
-    }
+    await promoteToMember({ userId: existing.id, actorId: auth.user.sub });
     return redirect(`/members/${existing.id}`);
   }
 
@@ -265,7 +254,7 @@ export default function MembersList() {
       <header className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="font-heading text-2xl font-bold text-foreground">
-            Members
+            Directory
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
             Everyone with a DALI membership row.
@@ -315,7 +304,6 @@ export default function MembersList() {
             <CreateField name="major" label="Major" />
             <CreateField name="hometown" label="Hometown" />
             <CreateField name="linkedinUrl" label="LinkedIn URL" />
-            <CreateField name="githubUrl" label="GitHub URL" />
             <CreateField name="personalSite" label="Personal site" />
           </div>
           <div className="flex justify-end gap-2">
@@ -452,7 +440,7 @@ function MembersTable({ rows }: { rows: MemberRow[] }) {
               key={m.id}
               onClick={() => {
                 const url = `/members/${m.id}`;
-                const label = `${m.firstName ?? ""} ${m.lastName ?? ""}`.trim() || "Member";
+                const label = fullName(m) || "Member";
                 if (!requestOpenTabIfEmbedded(url, label)) navigate(url);
               }}
               className="border-t border-border hover:bg-muted/20 cursor-pointer"
@@ -462,10 +450,15 @@ function MembersTable({ rows }: { rows: MemberRow[] }) {
               </td>
               <td className="px-4 py-2 text-muted-foreground">{m.email ?? "—"}</td>
               <td className="px-4 py-2">
-                <RolePills
-                  coreTitles={m.coreTitles}
-                  domainRoles={m.domainRoles}
-                />
+                {m.coreTitles.length === 0 && m.domainRoles.length === 0 ? (
+                  <span className="text-muted-foreground text-xs">—</span>
+                ) : (
+                  <RolePills
+                    coreTitles={m.coreTitles}
+                    domainRoles={m.domainRoles}
+                    size="md"
+                  />
+                )}
               </td>
             </tr>
           ))}
@@ -492,7 +485,7 @@ function MemberCard({ member }: { member: MemberRow }) {
       to={`/members/${member.id}`}
       className="border border-border rounded-md p-3 bg-background flex items-start gap-3 hover:bg-muted/10 transition-colors"
     >
-      <Avatar photoUrl={member.photoUrl} name={fullName} />
+      <Avatar photoUrl={member.photoUrl} name={fullName} size="md" className="flex-shrink-0" />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2 flex-wrap">
           <span className="font-semibold text-foreground truncate">{fullName}</span>
@@ -507,61 +500,18 @@ function MemberCard({ member }: { member: MemberRow }) {
           <div className="text-xs text-muted-foreground truncate mt-0.5">{member.email}</div>
         )}
         <div className="mt-2">
-          <RolePills
-            coreTitles={member.coreTitles}
-            domainRoles={member.domainRoles}
-          />
+          {member.coreTitles.length === 0 && member.domainRoles.length === 0 ? (
+            <span className="text-muted-foreground text-xs">—</span>
+          ) : (
+            <RolePills
+              coreTitles={member.coreTitles}
+              domainRoles={member.domainRoles}
+              size="md"
+            />
+          )}
         </div>
       </div>
     </Link>
   );
 }
 
-function Avatar({ photoUrl, name }: { photoUrl: string | null; name: string }) {
-  if (photoUrl) {
-    return (
-      <img
-        src={photoUrl}
-        alt=""
-        className="w-10 h-10 rounded-full object-cover flex-shrink-0"
-      />
-    );
-  }
-  return (
-    <div className="w-10 h-10 rounded-full bg-accent-coral/15 text-accent-coral flex items-center justify-center font-bold text-sm flex-shrink-0">
-      {initialsFromName(name)}
-    </div>
-  );
-}
-
-function RolePills({
-  coreTitles,
-  domainRoles,
-}: {
-  coreTitles: string[];
-  domainRoles: { domainName: string; level: string }[];
-}) {
-  if (coreTitles.length === 0 && domainRoles.length === 0) {
-    return <span className="text-muted-foreground text-xs">—</span>;
-  }
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      {coreTitles.map((title) => (
-        <span
-          key={title}
-          className="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded bg-muted text-foreground"
-        >
-          {title}
-        </span>
-      ))}
-      {domainRoles.map((d) => (
-        <span
-          key={d.domainName}
-          className="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded bg-blue-50 text-blue-700 border border-blue-100"
-        >
-          {d.domainName}
-        </span>
-      ))}
-    </div>
-  );
-}

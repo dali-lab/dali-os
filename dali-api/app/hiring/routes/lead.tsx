@@ -4,21 +4,9 @@ import type { Route } from "./+types/lead";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
-import { ChevronRight, ChevronDown, Plus, X } from "lucide-react";
-
-const STATUS_LABELS: Record<string, string> = {
-  Draft: "Draft",
-  Open: "Open",
-  UnderReview: "Under Review",
-  Completed: "Completed",
-};
-
-const STATUS_COLORS: Record<string, string> = {
-  Draft: "bg-muted text-foreground/80",
-  Open: "bg-green-100 text-green-700",
-  UnderReview: "bg-yellow-100 text-yellow-700",
-  Completed: "bg-blue-100 text-blue-700",
-};
+import { ChevronRight, ChevronDown, Plus } from "lucide-react";
+import { Modal, ModalHeader } from "~/components/Modal";
+import { STATUS_COLORS, STATUS_LABELS } from "~/hiring/lib/labels";
 
 export const meta: Route.MetaFunction = () => [{ title: "Hiring lead · DALI OS" }];
 
@@ -75,26 +63,37 @@ export default function HiringLeadDashboard() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-foreground">Hiring Cycles</h1>
-        <button
-          onClick={() => setShowModal(true)}
-          className="flex items-center gap-1.5 px-3 py-2 bg-accent-coral text-white text-sm font-medium rounded-md hover:bg-accent-coral/90 focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
-          <Plus className="w-4 h-4" />
-          New Cycle
-        </button>
+        <div className="flex items-center gap-2">
+          <Link
+            to="/hiring/lead/waitlists"
+            className="px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-border rounded-md hover:bg-muted"
+          >
+            Waitlists
+          </Link>
+          <button
+            onClick={() => setShowModal(true)}
+            className="flex items-center gap-1.5 px-3 py-2 bg-accent-coral text-white text-sm font-medium rounded-md hover:bg-accent-coral/90 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <Plus className="w-4 h-4" />
+            New Cycle
+          </button>
+        </div>
       </div>
 
-      {showModal && (
+      <Modal
+        open={showModal}
+        onClose={() => setShowModal(false)}
+        labelledBy="new-cycle-title"
+        containerClassName="bg-card rounded-lg shadow-xl w-full max-w-sm p-6 space-y-4 my-auto"
+      >
         <>
-          <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setShowModal(false)}>
-            <div className="bg-card rounded-lg shadow-xl w-full max-w-sm p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-foreground">New Hiring Cycle</h2>
-                <button onClick={() => setShowModal(false)} className="text-muted-foreground/70 hover:text-muted-foreground">
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-              <Form method="post" onSubmit={() => setShowModal(false)} className="space-y-4">
+          <ModalHeader
+            titleId="new-cycle-title"
+            title="New Hiring Cycle"
+            onClose={() => setShowModal(false)}
+            className="mb-0"
+          />
+          <Form method="post" onSubmit={() => setShowModal(false)} className="space-y-4">
                 <div>
                   <label htmlFor="cycle-name" className="block text-sm font-medium text-foreground/80 mb-1">
                     Cycle name
@@ -142,10 +141,8 @@ export default function HiringLeadDashboard() {
                   </button>
                 </div>
               </Form>
-            </div>
-          </div>
         </>
-      )}
+      </Modal>
 
 
       <ActiveCycleHero cycles={cycles} />

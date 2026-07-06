@@ -1,7 +1,9 @@
 import { useMemo, useState } from "react";
 import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/projects.project-bids";
-import { requireAuth } from "~/lib/auth";
+import { useFilteredList } from "~/hooks/useFilteredList";
+import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
+import { parseFormDataJson } from "~/lib/safe-json";
 import { canManageStaffing, canViewStaffing, currentTerm } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { ensureStaffingCycle } from "../lib/staffing-cycle";
@@ -23,6 +25,8 @@ import {
   type ColumnMapping,
 } from "../lib/slot-roles";
 import { buildSubmissionView } from "../lib/submission-view.server";
+import { deriveSlotStatus, type SlotStatus } from "../lib/slot-status.server";
+import { SlotStatusStrip } from "../components/SlotStatusStrip";
 import type { Question } from "~/types";
 
 const SLOT = "project-bids" as const;
@@ -37,7 +41,8 @@ export const meta: Route.MetaFunction = () => [
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
-  if (auth.user.type === "applicant") return redirect("/portal");
+  const portalRedirect = redirectApplicantToPortal(auth);
+  if (portalRedirect) return portalRedirect;
   if (!(await canViewStaffing(auth.user.sub))) return redirect("/");
 
   const {
@@ -144,6 +149,13 @@ export async function loader({ request }: Route.LoaderArgs) {
     select: { id: true, displayName: true },
   });
 
+  // Per-slot guardrail status (bound / mapped / sent-to). Single-cycle view
+  // only — the all-terms aggregate has no one slot to bind, mirroring binding.
+  const slotStatus: SlotStatus | null = singleCycleId
+    ? (await deriveSlotStatus(singleCycleId)).find((s) => s.slot === SLOT) ??
+      null
+    : null;
+
   return {
     gate: "ok" as const,
     cycle: { name: cycleName },
@@ -159,6 +171,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     mappingWarning,
     noFormConnected,
     domainOptions,
+    slotStatus,
   };
 }
 
@@ -206,7 +219,7 @@ export async function action({ request }: Route.ActionArgs) {
         { error: "Bind a form before mapping its columns." },
         { status: 400 },
       );
-    const mapping = parseColumnMapping(safeJsonParse(form.get("mapping")));
+    const mapping = parseColumnMapping(parseFormDataJson(form.get("mapping")));
     if (!mapping)
       return Response.json({ error: "Invalid mapping." }, { status: 400 });
     // Validate against the bound form's current questions before saving.
@@ -233,15 +246,6 @@ export async function action({ request }: Route.ActionArgs) {
   return Response.json({ error: "Unknown intent" }, { status: 400 });
 }
 
-function safeJsonParse(v: FormDataEntryValue | null): unknown {
-  if (typeof v !== "string") return null;
-  try {
-    return JSON.parse(v);
-  } catch {
-    return null;
-  }
-}
-
 export default function ProjectBidsDatabase() {
   const data = useLoaderData<typeof loader>();
 
@@ -264,19 +268,14 @@ function Loaded({
 }: {
   data: Extract<Awaited<ReturnType<typeof loader>>, { gate: "ok" }>;
 }) {
-  const [query, setQuery] = useState("");
   const [domainId, setDomainId] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return data.submissions.filter((s) => {
-      if (q && !`${s.name} ${s.email ?? ""}`.toLowerCase().includes(q))
-        return false;
-      if (domainId && !s.domainIds.includes(domainId)) return false;
-      return true;
-    });
-  }, [data.submissions, query, domainId]);
+  const { search, setSearch, filtered } = useFilteredList(data.submissions, {
+    searchFields: (s) => [s.name, s.email],
+    predicates: [(s) => !domainId || s.domainIds.includes(domainId)],
+    deps: [domainId],
+  });
 
   const domains = useMemo(
     () => data.domainOptions.map((d) => ({ id: d.id, name: d.displayName })),
@@ -319,9 +318,11 @@ function Loaded({
         </div>
       )}
 
+      {data.slotStatus && <SlotStatusStrip status={data.slotStatus} />}
+
       <div className="flex flex-col sm:flex-row gap-2">
         <div className="flex-1">
-          <SubmissionFilters query={query} onQueryChange={setQuery} />
+          <SubmissionFilters query={search} onQueryChange={setSearch} />
         </div>
         <DomainFilter
           domains={domains}

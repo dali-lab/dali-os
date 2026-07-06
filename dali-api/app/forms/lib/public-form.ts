@@ -7,6 +7,7 @@
 import { prisma } from "~/lib/db";
 import type { Question } from "~/types";
 import { resolveReferenceOptions } from "./reference-sources";
+import { safeParseJsonString } from "./forms-data";
 import { currentTerm } from "~/lib/roles";
 import { interpretBidForm } from "~/projects/lib/bid-form-interpreter";
 import { validateBids, replaceBidSet } from "~/projects/lib/bid-validation";
@@ -18,6 +19,13 @@ import {
   type ColumnMapping,
 } from "~/projects/lib/slot-roles";
 import { pickStaffingBinding, type Slot } from "~/projects/lib/form-slots";
+import {
+  interpretProfileForm,
+  NEW_MEMBER_PROFILE_FORM_NAME,
+  type ProfileUpdate,
+} from "~/members/lib/profile-form-interpreter";
+import { clearOnboardingTask } from "~/members/lib/welcome.server";
+import { syncSlackUserId } from "~/members/lib/slack-sync.server";
 
 export type PublicForm = {
   formId: string;
@@ -30,15 +38,6 @@ export type PublicForm = {
   // surface "this form can't be completed publicly" rather than silently drop.
   questions: Question[];
 };
-
-function safeParse(s: string | null): unknown {
-  if (!s) return null;
-  try {
-    return JSON.parse(s);
-  } catch {
-    return null;
-  }
-}
 
 // Resolve a public token to its form's latest version. Returns null when the
 // token is unknown, the form is unpublished, or it has no versions yet —
@@ -89,7 +88,7 @@ export async function loadPublicForm(
     formId: form.id,
     name: form.name,
     versionId: version.id,
-    description: safeParse(version.intro),
+    description: safeParseJsonString(version.intro),
     questions: resolved,
   };
 }
@@ -167,6 +166,7 @@ export async function submitMemberForm(args: {
     where: { publicToken: args.token },
     select: {
       id: true,
+      name: true,
       published: true,
       versions: {
         where: { id: args.versionId },
@@ -226,6 +226,19 @@ export async function submitMemberForm(args: {
   );
 
   if (!staffingBinding) {
+    // The onboarding "New Member Profile" form IS the onboarding step: it writes
+    // its answers onto the member's User profile fields (see profile-form-
+    // interpreter) AND completes onboarding (stamps DALIMember.onboardedAt +
+    // clears the persistent onboarding task). Everything else (Slack, calendar)
+    // happens in earlier provisioning / the later party tour.
+    const isProfileForm = form.name === NEW_MEMBER_PROFILE_FORM_NAME;
+    let profileUpdate: ProfileUpdate | null = null;
+    if (isProfileForm) {
+      const interpreted = interpretProfileForm(args.answers);
+      if (!interpreted.ok) return { error: interpreted.error, status: 400 };
+      profileUpdate = interpreted.update;
+    }
+
     // Ordinary member submission — record it, attributed to the member, and
     // close any "todo" notification that pointed them at this form so the
     // Home banner / Tasks count clears.
@@ -238,8 +251,25 @@ export async function submitMemberForm(args: {
           answers: args.answers as object,
         },
       });
+      if (profileUpdate && Object.keys(profileUpdate).length > 0) {
+        await tx.user.update({ where: { id: args.userId }, data: profileUpdate });
+      }
+      if (isProfileForm) {
+        // Submitting the profile form finishes onboarding.
+        await tx.dALIMember.updateMany({
+          where: { userId: args.userId, onboardedAt: null },
+          data: { onboardedAt: new Date() },
+        });
+      }
       await closeFormTodos(tx, args.userId, form.id);
     });
+    if (isProfileForm) {
+      await clearOnboardingTask(args.userId);
+      // Onboarding Slack-account sync: by now the member may have joined Slack
+      // (e.g. via the welcome invite), so try to resolve + store their Slack
+      // user id for future per-project channel invites. Best-effort.
+      await syncSlackUserId(args.userId).catch(() => {});
+    }
     return { ok: true };
   }
 

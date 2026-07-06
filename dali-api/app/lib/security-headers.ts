@@ -18,6 +18,19 @@ function collabConnectSource(): string | null {
   }
 }
 
+/**
+ * S3 bucket origin for `connect-src` — the browser uploads directly to S3 via
+ * presigned POST, and (for the desktop shell) the updater feed lives there.
+ * Derived from the same env the runtime uses (app/lib/s3.ts), so it tracks the
+ * per-environment bucket without hardcoding.
+ */
+function s3ConnectSource(): string | null {
+  const bucket = process.env.AWS_S3_BUCKET;
+  const region = process.env.AWS_REGION;
+  if (!bucket || !region) return null;
+  return `https://${bucket}.s3.${region}.amazonaws.com`;
+}
+
 function cspDirectives(): Directives {
   // 'unsafe-inline' on style-src is required for Google Fonts' returned CSS
   // and React's inline `style={...}` attributes. Removing it would mean
@@ -25,8 +38,16 @@ function cspDirectives(): Directives {
   const styleSrc = ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"];
 
   const collabOrigin = collabConnectSource();
+  const s3Origin = s3ConnectSource();
   const connectSrc = isProduction
-    ? ["'self'", ...(collabOrigin ? [collabOrigin] : [])]
+    ? [
+        "'self'",
+        ...(collabOrigin ? [collabOrigin] : []),
+        ...(s3Origin ? [s3Origin] : []),
+        // Google sign-in / APIs (additive; the desktop pairing login runs in
+        // the system browser, so this is a forward-compat allowance).
+        "https://accounts.google.com",
+      ]
     : ["'self'", "ws:", "wss:"];
 
   const directives: Directives = {

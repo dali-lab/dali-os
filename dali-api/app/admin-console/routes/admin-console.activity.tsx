@@ -3,6 +3,7 @@ import type { Route } from "./+types/admin-console.activity";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
+import { fullName } from "~/lib/display";
 import { AUDIT_ACTIONS } from "~/lib/audit";
 import {
   parseAuditFilters,
@@ -13,7 +14,7 @@ import {
 } from "~/lib/audit-query";
 import { ListTodo, ChevronLeft, ChevronRight, X } from "lucide-react";
 
-export const meta: Route.MetaFunction = () => [{ title: "Activity · Operations · DALI OS" }];
+export const meta: Route.MetaFunction = () => [{ title: "Activity · Admin · DALI OS" }];
 
 // Read-only viewer over the AuditLog table. Offset-paginated and filterable
 // on the indexed columns (action, userId, createdAt) plus a cheap equality
@@ -90,7 +91,7 @@ type PersonRow = { firstName: string; lastName: string; daliEmail: string | null
 
 function displayPerson(u: PersonRow | null, fallbackId: string | null) {
   if (u) {
-    const name = `${u.firstName} ${u.lastName}`.trim();
+    const name = fullName(u);
     return <span>{name || u.daliEmail || "—"}</span>;
   }
   // Has an id but couldn't resolve it (User row missing, or targetId points

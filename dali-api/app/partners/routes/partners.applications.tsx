@@ -6,12 +6,8 @@ import {
   useLoaderData,
   useNavigate,
 } from "react-router";
-import {
-  DndContext,
-  useDraggable,
-  useDroppable,
-  type DragEndEvent,
-} from "@dnd-kit/core";
+import type { DragEndEvent } from "@dnd-kit/core";
+import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
 import type { Route } from "./+types/partners.applications";
 import { requireAuth } from "~/lib/auth";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
@@ -762,7 +758,9 @@ function ApplicationsTable({ rows }: { rows: ApplicationRow[] }) {
 
 // `rows` already reflects pending moves (the parent merges the optimistic
 // status so the projection chart stays in sync), so a drop just calls onMove
-// then POSTs, and onRevert on failure — no loader refetch.
+// then POSTs, and onRevert on failure — no loader refetch. The optimistic state
+// lives in the parent, so the board uses only the POST/rollback half of the
+// shared flow rather than `useOptimisticBoardMove`'s local state.
 function ApplicationsBoard({
   rows,
   canEdit,
@@ -823,97 +821,55 @@ function ApplicationsBoard({
     })();
   }
 
-  return (
-    <div className="flex flex-col gap-3">
-      {error && (
-        <div className="bg-destructive/10 border border-destructive/30 text-destructive text-sm rounded-md px-3 py-2">
-          {error}
-        </div>
-      )}
-      {/* Stable id so SSR/client agree when multiple DndContexts mount (see
-          StaffingBoard for the hydration-mismatch rationale). */}
-      <DndContext id="partner-applications-board" onDragEnd={handleDragEnd}>
-        <div className="flex gap-3 overflow-x-auto pb-3">
-          {STATUSES.map((status) => (
-            <BoardColumn
-              key={status}
-              status={status}
-              cards={byStatus[status]}
-              canEdit={canEdit}
-            />
-          ))}
-        </div>
-      </DndContext>
-    </div>
-  );
-}
+  const columns: KanbanColumn<ApplicationRow>[] = STATUSES.map((status) => ({
+    id: status,
+    title: <StatusPill status={status} />,
+    cards: byStatus[status],
+    className: "flex-shrink-0 w-72 border rounded-lg border-border bg-card flex flex-col",
+  }));
 
-function BoardColumn({
-  status,
-  cards,
-  canEdit,
-}: {
-  status: Status;
-  cards: ApplicationRow[];
-  canEdit: boolean;
-}) {
-  const { isOver, setNodeRef } = useDroppable({ id: status });
   return (
-    <div
-      ref={setNodeRef}
-      className={`flex-shrink-0 w-72 border rounded-lg border-border bg-card flex flex-col ${
-        isOver ? "ring-2 ring-accent-coral/40" : ""
-      }`}
-    >
-      <div className="px-3 py-2 border-b border-border flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <StatusPill status={status} />
-        </div>
-        <div className="text-[11px] text-muted-foreground">{cards.length}</div>
-      </div>
-      <div className="flex flex-col gap-2 p-2 min-h-[120px]">
-        {cards.length === 0 ? (
-          <div className="text-xs text-muted-foreground italic text-center py-4">
-            Empty
-          </div>
-        ) : (
-          cards.map((a) => (
-            <ApplicationCard key={a.id} app={a} draggable={canEdit} />
-          ))
-        )}
-      </div>
-    </div>
+    <KanbanBoard<ApplicationRow>
+      // Stable id so SSR/client agree when multiple DndContexts mount (see
+      // StaffingBoard for the hydration-mismatch rationale).
+      id="partner-applications-board"
+      columns={columns}
+      getCardId={(a) => a.id}
+      getCardData={(a) => ({ applicationId: a.id, fromStatus: a.status })}
+      draggable={canEdit}
+      onDragEnd={handleDragEnd}
+      error={error}
+      renderCard={(app, { isDragging, dragHandleProps }) => (
+        <ApplicationCard
+          app={app}
+          draggable={canEdit}
+          dragHandleProps={dragHandleProps}
+          isDragging={isDragging}
+        />
+      )}
+    />
   );
 }
 
 function ApplicationCard({
   app,
   draggable,
+  dragHandleProps,
+  isDragging,
 }: {
   app: ApplicationRow;
   draggable: boolean;
+  dragHandleProps: Record<string, unknown>;
+  isDragging: boolean;
 }) {
   const navigate = useNavigate();
-  const { attributes, listeners, setNodeRef, transform, isDragging } =
-    useDraggable({
-      id: app.id,
-      data: { applicationId: app.id, fromStatus: app.status },
-      disabled: !draggable,
-    });
 
-  const style: React.CSSProperties = transform
-    ? {
-        transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
-        zIndex: 50,
-      }
-    : {};
-
-  const dragProps = draggable ? { ...attributes, ...listeners } : {};
+  // The whole card is the drag handle (matching the original behavior); the
+  // activation-distance sensor lets a press that doesn't move land as a click.
+  const dragProps = draggable ? dragHandleProps : {};
 
   return (
     <div
-      ref={setNodeRef}
-      style={style}
       {...dragProps}
       onClick={() => {
         const url = `/partners/applications/${app.id}`;

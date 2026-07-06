@@ -1,16 +1,11 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import {
   PartyPopper,
-  FolderKanban,
   CalendarDays,
-  CalendarPlus,
   UserCircle2,
-  Users,
   ArrowRight,
   X as XIcon,
   Check,
-  Bot,
-  MonitorDown,
 } from "lucide-react";
 import { Modal } from "./Modal";
 
@@ -33,9 +28,10 @@ type TourStep = {
   matches?: (pathname: string) => boolean;
   /** Locates the sidebar element to highlight. Omitted for info-only steps. */
   findTarget?: () => HTMLElement | null;
-  /** Optional primary action for info-only steps. Click runs onClick AND
-   *  advances the tour. */
-  action?: { label: string; onClick: () => void };
+  /** Optional primary action shown alongside Next once the user has arrived
+   *  on the matched page (e.g. "Connect Google Calendar"). Click runs onClick
+   *  but does NOT advance — the user still hits Next to move on. */
+  arrivedAction?: { label: string; onClick: () => void };
 };
 
 /** Walks up through any iframe ancestors so the rect is in the parent
@@ -56,27 +52,6 @@ function getRectInParent(el: HTMLElement): DOMRect {
     doc = frame.ownerDocument;
   }
   return rect;
-}
-
-/** Search any same-origin iframe for a button matching the predicate. Used
- *  to target in-iframe tab pills (e.g. "Schedule Meeting" on the calendar). */
-function findInIframes(
-  predicate: (el: HTMLButtonElement) => boolean,
-): HTMLElement | null {
-  const iframes = document.querySelectorAll<HTMLIFrameElement>("iframe");
-  for (const iframe of iframes) {
-    try {
-      const doc = iframe.contentDocument;
-      if (!doc) continue;
-      const buttons = doc.querySelectorAll<HTMLButtonElement>("button");
-      for (const btn of buttons) {
-        if (predicate(btn)) return btn;
-      }
-    } catch {
-      // cross-origin iframe or detached — skip
-    }
-  }
-  return null;
 }
 
 function findInSidebar(predicate: (el: HTMLButtonElement) => boolean): HTMLElement | null {
@@ -103,56 +78,41 @@ function findByExactText(text: string) {
   return findInSidebar((btn) => (btn.textContent || "").trim() === text);
 }
 
-const STEPS: TourStep[] = [
-  {
-    icon: <FolderKanban className="w-4 h-4" />,
-    eyebrow: "Projects",
-    cta: (
-      <>
-        Open <strong>Projects</strong> from the sidebar.
-      </>
-    ),
-    arrived: <>All active projects live here.</>,
-    matches: (p) => p.startsWith("/projects"),
-    findTarget: () => findByExactText("Projects"),
-  },
-  {
-    icon: <CalendarDays className="w-4 h-4" />,
-    eyebrow: "Calendar",
-    cta: (
-      <>
-        Open <strong>Calendar</strong> from the sidebar.
-      </>
-    ),
-    arrived: <>Lab meetings and events.</>,
-    matches: (p) => p.startsWith("/calendar"),
-    findTarget: () => findByExactText("Calendar"),
-  },
-  {
-    icon: <CalendarPlus className="w-4 h-4" />,
-    eyebrow: "Schedule Meeting",
-    cta: (
-      <>
-        At the top of the Calendar, switch to{" "}
-        <strong>Schedule Meeting</strong>.
-      </>
-    ),
-    arrived: (
-      <>
-        See everyone&apos;s availability and create a meeting. No more
-        when2meets.
-      </>
-    ),
-    // No URL change happens when the pill is clicked (tab state lives in
-    // React state on the calendar page), so this step advances via a DOM
-    // click listener attached to the spotlit element instead of via
-    // dali:tabNavigated. See the find-target effect below.
-    findTarget: () =>
-      findInIframes(
-        (btn) => (btn.textContent || "").trim() === "Schedule Meeting",
+// Two-step post-onboarding tour: walk a freshly-onboarded member through
+// (1) linking their Google Calendar so the lab can see their availability,
+// and (2) their profile page so they know where to update their details.
+// Step 1 is omitted if the member already has a Google calendar linked, so
+// a returning user who linked elsewhere only sees the profile step.
+function buildSteps(opts: { hasCalendarLink: boolean }): TourStep[] {
+  const steps: TourStep[] = [];
+
+  if (!opts.hasCalendarLink) {
+    steps.push({
+      icon: <CalendarDays className="w-4 h-4" />,
+      eyebrow: "Calendar",
+      cta: (
+        <>
+          Open <strong>Calendar</strong> from the sidebar.
+        </>
       ),
-  },
-  {
+      arrived: (
+        <>
+          Connect your <strong>Google Calendar</strong> so the lab can see
+          your availability for scheduling.
+        </>
+      ),
+      matches: (p) => p.startsWith("/calendar"),
+      findTarget: () => findByExactText("Calendar"),
+      arrivedAction: {
+        label: "Connect Google Calendar",
+        onClick: () => {
+          window.location.href = "/oauth/calendar/google/start";
+        },
+      },
+    });
+  }
+
+  steps.push({
     icon: <UserCircle2 className="w-4 h-4" />,
     eyebrow: "Profile",
     cta: (
@@ -160,60 +120,19 @@ const STEPS: TourStep[] = [
         Open your <strong>profile</strong> from the bottom of the sidebar.
       </>
     ),
-    arrived: <>Add a photo and your details here.</>,
+    arrived: (
+      <>
+        Review your details and add anything that&apos;s missing — you can
+        come back here anytime to edit.
+      </>
+    ),
     matches: (p) => p.startsWith("/profile"),
     findTarget: () =>
       findInSidebar((btn) => btn.getAttribute("aria-label") === "Open profile"),
-  },
-  {
-    icon: <Users className="w-4 h-4" />,
-    eyebrow: "Members",
-    cta: (
-      <>
-        Open <strong>Members</strong> from the sidebar.
-      </>
-    ),
-    arrived: <>Everyone in the lab.</>,
-    matches: (p) => p.startsWith("/members"),
-    findTarget: () => findByExactText("Members"),
-  },
-  {
-    icon: <MonitorDown className="w-4 h-4" />,
-    eyebrow: "Install the app",
-    cta: (
-      <>
-        Pin <strong>DALI OS</strong> to your taskbar. In Chrome, click the
-        install icon at the right of the address bar (or <strong>⋮ →
-        Install DALI OS</strong>).
-      </>
-    ),
-  },
-  {
-    icon: <Bot className="w-4 h-4" />,
-    eyebrow: "Connect any AI",
-    cta: (
-      <>
-        Connect any AI assistant to the <strong>DALI OS MCP</strong> and let
-        it read your DALI data for you.
-      </>
-    ),
-    action: {
-      label: "Open docs",
-      onClick: () => {
-        // Layout listens for dali:openTab on the parent window and opens it
-        // in the workspace iframe rather than navigating the top frame.
-        window.postMessage(
-          {
-            type: "dali:openTab",
-            url: "/help/mcp",
-            label: "Connect AI to DALI OS",
-          },
-          window.location.origin,
-        );
-      },
-    },
-  },
-];
+  });
+
+  return steps;
+}
 
 function readPhase(): Phase {
   try {
@@ -225,12 +144,12 @@ function readPhase(): Phase {
   return "modal";
 }
 
-function readStep(): number {
+function readStep(maxStep: number): number {
   try {
     const raw = window.localStorage.getItem(STEP_KEY);
     if (raw === null) return 0;
     const n = parseInt(raw, 10);
-    return Number.isFinite(n) ? Math.max(0, Math.min(STEPS.length, n)) : 0;
+    return Number.isFinite(n) ? Math.max(0, Math.min(maxStep, n)) : 0;
   } catch {
     return 0;
   }
@@ -316,7 +235,21 @@ function Spotlight({ target }: { target: HTMLElement }) {
   );
 }
 
-export function LaunchWelcome({ firstName }: { firstName: string }) {
+export function LaunchWelcome({
+  firstName,
+  hasCalendarLink = true,
+  // Server says this member just onboarded and hasn't done the tour yet — show
+  // it once, overriding any browser-localStorage "seen" flag (the tour is now
+  // tracked per USER on the server).
+  shouldShowTour = false,
+}: {
+  firstName: string;
+  hasCalendarLink?: boolean;
+  shouldShowTour?: boolean;
+}) {
+  // Steps are stable for a given user within a session; the calendar step is
+  // included only when they haven't linked a calendar yet.
+  const steps = useRef(buildSteps({ hasCalendarLink })).current;
   const [phase, setPhase] = useState<Phase>("done");
   const [step, setStep] = useState(0);
   const [arrived, setArrived] = useState(false);
@@ -326,8 +259,42 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
   const titleId = useId();
 
   useEffect(() => {
-    setPhase(readPhase());
-    setStep(readStep());
+    // Auto-show is purely server-driven: only a freshly-onboarded member
+    // (onboardedAt set, tourCompletedAt null) sees the tour automatically.
+    // localStorage no longer triggers it — clearing browser state or opening
+    // incognito won't re-pop the welcome modal for an established member.
+    // localStorage IS still consulted to *resume* a tour mid-flight on reload,
+    // so a freshly-onboarded user who started the tour and then reloaded
+    // continues where they were instead of jumping back to step 0.
+    if (!shouldShowTour) {
+      setPhase("done");
+      return;
+    }
+    const resumed = readPhase();
+    if (resumed === "card") {
+      setPhase("card");
+      setStep(readStep(steps.length));
+    } else {
+      setPhase("modal");
+      setStep(0);
+    }
+  }, [steps.length, shouldShowTour]);
+
+  // Manual re-run: a "Start tour" button (next to the DALI OS logo) dispatches
+  // this event. Re-runs the tour regardless of past completion.
+  useEffect(() => {
+    function onStart() {
+      try {
+        window.localStorage.removeItem(DONE_KEY);
+      } catch {
+        // ignore
+      }
+      setStep(0);
+      setArrived(false);
+      setPhase("modal");
+    }
+    window.addEventListener("dali:start-tour", onStart);
+    return () => window.removeEventListener("dali:start-tour", onStart);
   }, []);
 
   // Re-resolve the highlight target whenever the active step changes.
@@ -341,8 +308,8 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
   // element flips the step to "arrived" the same way a URL change would.
   useEffect(() => {
     if (phase !== "card") return;
-    if (step >= STEPS.length) return;
-    const s = STEPS[step];
+    if (step >= steps.length) return;
+    const s = steps[step];
     const find = s.findTarget;
     if (!find || arrived) {
       setSidebarTarget(null);
@@ -380,11 +347,11 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
       setNextTarget(null);
       return;
     }
-    if (step >= STEPS.length) {
+    if (step >= steps.length) {
       setNextTarget(null);
       return;
     }
-    const s = STEPS[step];
+    const s = steps[step];
     const shouldPulse = s.findTarget ? arrived : true;
     setNextTarget(shouldPulse ? nextButtonRef.current : null);
   }, [phase, step, arrived]);
@@ -396,8 +363,8 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
     (url: string) => {
       if (phase !== "card") return;
       if (arrived) return;
-      if (step >= STEPS.length) return;
-      const match = STEPS[step].matches;
+      if (step >= steps.length) return;
+      const match = steps[step].matches;
       if (!match) return; // info-only step — URL changes don't advance it
       try {
         const path = new URL(url, window.location.origin).pathname;
@@ -446,6 +413,11 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
     } catch {
       // ignore
     }
+    // Persist completion per-user so the tour isn't auto-shown again (the
+    // localStorage flag above is just a same-browser fast path). Best-effort.
+    void fetch("/api/tour/complete", { method: "POST", credentials: "include" }).catch(
+      () => {},
+    );
     setPhase("done");
   }
 
@@ -483,9 +455,8 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
               Welcome to DALI OS
             </h2>
             <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
-              Hi {firstName}. DALI OS is the home of everything DALI,
-              replacing Notion as the lab&apos;s internal site. Want a quick
-              tour?
+              Hi {firstName}. DALI OS is the home of everything DALI.
+              Want a quick tour?
             </p>
           </div>
           <div className="flex items-center justify-end gap-2 pt-2">
@@ -503,8 +474,8 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
     );
   }
 
-  const isFinal = step >= STEPS.length;
-  const current = isFinal ? null : STEPS[step];
+  const isFinal = step >= steps.length;
+  const current = isFinal ? null : steps[step];
 
   return (
     <>
@@ -574,7 +545,7 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
           </div>
 
           <div className="flex items-center gap-1.5" aria-hidden="true">
-            {STEPS.map((_, i) => (
+            {steps.map((_, i) => (
               <span
                 key={i}
                 className={
@@ -597,34 +568,23 @@ export function LaunchWelcome({ firstName }: { firstName: string }) {
                 Back to home
               </button>
             ) : arrived ? (
-              <button
-                ref={nextButtonRef}
-                type="button"
-                onClick={advance}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-accent-coral px-3 py-1.5 text-sm font-semibold text-white hover:bg-accent-coral/90"
-              >
-                Next
-                <ArrowRight className="w-4 h-4" />
-              </button>
-            ) : current && !current.findTarget ? (
               <>
-                <button
-                  type="button"
-                  onClick={advance}
-                  className="text-xs text-muted-foreground hover:text-foreground"
-                >
-                  Skip
-                </button>
+                {current?.arrivedAction && (
+                  <button
+                    type="button"
+                    onClick={current.arrivedAction.onClick}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-accent-coral px-3 py-1.5 text-sm font-semibold text-accent-coral hover:bg-accent-coral/10"
+                  >
+                    {current.arrivedAction.label}
+                  </button>
+                )}
                 <button
                   ref={nextButtonRef}
                   type="button"
-                  onClick={() => {
-                    current.action?.onClick();
-                    advance();
-                  }}
+                  onClick={advance}
                   className="inline-flex items-center gap-1.5 rounded-lg bg-accent-coral px-3 py-1.5 text-sm font-semibold text-white hover:bg-accent-coral/90"
                 >
-                  {current.action?.label ?? "Next"}
+                  Next
                   <ArrowRight className="w-4 h-4" />
                 </button>
               </>

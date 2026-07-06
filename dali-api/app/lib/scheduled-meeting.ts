@@ -6,6 +6,7 @@
 import { prisma } from "~/lib/db";
 import { resolveGroupMembers } from "~/lib/groups";
 import { createGoogleCalendarEvent, type GoogleAttendee } from "~/lib/google-calendar";
+import { primaryEmail } from "~/lib/display";
 import type { ScheduledMeeting } from "~/generated/prisma/client";
 
 export type ScheduledMeetingScope =
@@ -94,7 +95,7 @@ export async function createScheduledMeeting(
     });
     const attendees: GoogleAttendee[] = [];
     for (const u of attendeeUsers) {
-      const email = u.daliEmail ?? u.dartmouthEmail;
+      const email = primaryEmail(u);
       if (!email) continue;
       attendees.push({
         email,

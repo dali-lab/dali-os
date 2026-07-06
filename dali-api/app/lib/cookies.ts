@@ -2,12 +2,8 @@
 
 export const COOKIE_SID = "__dali_sid";
 
-// 30 days in seconds — same horizon as ROLLING_TTL_MS in `lib/session.ts`,
-// kept local so this module doesn't transitively import the Prisma client.
-// The cookie Max-Age and the DB rolling TTL are independently enforced:
-// the server is the source of truth, and an expired DB session 302s to
-// /login on the next request regardless of the cookie's lifetime.
-const SESSION_COOKIE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
+export const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
+export const SESSION_COOKIE_MAX_AGE_SECONDS = SESSION_TTL_SECONDS;
 
 const isProduction = process.env.NODE_ENV === "production";
 

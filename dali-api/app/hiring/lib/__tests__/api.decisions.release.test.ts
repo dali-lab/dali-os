@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
 
 vi.mock("~/lib/db");
 vi.mock("~/lib/auth", () => ({
@@ -6,11 +6,40 @@ vi.mock("~/lib/auth", () => ({
 }));
 vi.mock("~/lib/roles");
 vi.mock("~/lib/gmail");
+// Acceptance side-effects (promote/welcome/provision) are exercised by their
+// own unit tests; stub them here so this suite stays focused on the decision
+// email + released-row behavior.
+vi.mock("~/members/lib/membership.server", () => ({
+  promoteToMember: vi.fn().mockResolvedValue({ created: true }),
+}));
+vi.mock("~/members/lib/welcome.server", () => ({
+  sendWelcome: vi.fn().mockResolvedValue({ notified: true }),
+  onboardingEmailHtml: vi.fn((daliEmail: string | null, tempPassword: string | null = null) =>
+    `<onboarding dali="${daliEmail ?? ""}" pw="${tempPassword ?? ""}"/>`,
+  ),
+}));
+vi.mock("~/members/lib/provisioning.server", () => ({
+  provisionNewMember: vi.fn().mockResolvedValue({
+    github: { status: "skipped", message: "" },
+    slack: { status: "skipped", message: "" },
+    gmail: { status: "skipped", message: "" },
+    daliEmail: null,
+    daliTempPassword: null,
+  }),
+}));
+vi.mock("~/lib/audit", () => ({
+  logAuditEvent: vi.fn().mockResolvedValue(undefined),
+}));
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { sendEmail } from "~/lib/gmail";
+import { promoteToMember } from "~/members/lib/membership.server";
+import { sendWelcome } from "~/members/lib/welcome.server";
+import { provisionNewMember } from "~/members/lib/provisioning.server";
+import { onboardingEmailHtml } from "~/members/lib/welcome.server";
+import { logAuditEvent } from "~/lib/audit";
 import { action } from "~/hiring/routes/api.decisions.$id.release";
 
 const mockPrisma = prisma as unknown as {
@@ -77,6 +106,10 @@ function setupApplicantContext(opts: { domainName?: string | null } = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Candidate emails redirect to a test inbox outside prod; these tests assert
+  // the real-recipient + template behavior, so pin the env to prod. The
+  // dev-redirect path is asserted in its own test below.
+  process.env.DALI_APP_ENV = "prod";
   (mockPrisma as any).dALIMember = { findUnique: vi.fn() };
   (mockPrisma as any).decision = { findUnique: vi.fn(), create: vi.fn() };
   (mockPrisma as any).domainApplication = { findUnique: vi.fn() };
@@ -84,6 +117,10 @@ beforeEach(() => {
   (mockPrisma as any).user = { findUnique: vi.fn() };
   (mockPrisma as any).gmailIntegration = { findFirst: vi.fn() };
   vi.mocked(sendEmail).mockResolvedValue(undefined as any);
+});
+
+afterAll(() => {
+  delete process.env.DALI_APP_ENV;
 });
 
 function makeRequest() {
@@ -123,6 +160,9 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     expect(args.to).toBe("ada@dartmouth.edu");
     expect(args.subject).toBe("Welcome, Ada!");
     expect(args.html).toContain("Hi Ada,");
+    // The onboarding block is appended to the Accepted decision email so the
+    // member gets a single email (no separate welcome message).
+    expect(args.html).toContain("<onboarding");
     expect(args.refreshToken).toBe("gmail-rt");
   });
 
@@ -267,6 +307,165 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
     expect(res.status).toBe(201);
     expect(errSpy).toHaveBeenCalled();
+    errSpy.mockRestore();
+  });
+
+  it("in non-prod, redirects the decision email to the test inbox with a banner naming the real recipient", async () => {
+    process.env.DALI_APP_ENV = "dev";
+    setupAuth();
+    setupFinalDecision("Accepted");
+    setupApplicantContext();
+    mockPrisma.cycleDecisionEmail.findUnique.mockResolvedValue({
+      applicationCycleId: CYCLE_ID,
+      decisionType: "Accepted",
+      emailTemplateVersionId: "etv-1",
+      emailTemplateVersion: { id: "etv-1", subject: "Welcome!", body: "Hi {{firstName}}" },
+    });
+
+    const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
+    expect(res.status).toBe(201);
+    const args = vi.mocked(sendEmail).mock.calls[0][0];
+    // Redirected away from the candidate to the test inbox…
+    expect(args.to).not.toBe("ada@dartmouth.edu");
+    // …and the body names who it would have gone to in prod.
+    expect(args.html).toContain("ada@dartmouth.edu");
+    expect(args.html).toContain("Test environment");
+  });
+
+  it("on Accepted, promotes to member, provisions, and sends welcome — all for the applicant", async () => {
+    setupAuth();
+    setupFinalDecision("Accepted");
+    setupApplicantContext();
+    mockPrisma.cycleDecisionEmail.findUnique.mockResolvedValue({
+      applicationCycleId: CYCLE_ID,
+      decisionType: "Accepted",
+      emailTemplateVersionId: "etv-1",
+      emailTemplateVersion: { id: "etv-1", subject: "Welcome!", body: "Hi {{firstName}}" },
+    });
+
+    const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
+    expect(res.status).toBe(201);
+
+    // Promotes the APPLICANT (not the acting lead) into the target domain at P1.
+    expect(promoteToMember).toHaveBeenCalledOnce();
+    expect(vi.mocked(promoteToMember).mock.calls[0][0]).toMatchObject({
+      userId: "applicant-user-id",
+      domainId: "dom-1",
+      level: "P1",
+      actorId: USER_ID,
+    });
+
+    // Provisions external accounts for the applicant in the target domain.
+    expect(provisionNewMember).toHaveBeenCalledOnce();
+    expect(vi.mocked(provisionNewMember).mock.calls[0][0]).toMatchObject({
+      userId: "applicant-user-id",
+      domainId: "dom-1",
+    });
+
+    // Welcomes the applicant at a reachable address.
+    expect(sendWelcome).toHaveBeenCalledOnce();
+    expect(vi.mocked(sendWelcome).mock.calls[0][0]).toMatchObject({
+      userId: "applicant-user-id",
+      email: "ada@dartmouth.edu",
+    });
+  });
+
+  it("folds the provisioned daliEmail into the welcome call", async () => {
+    setupAuth();
+    setupFinalDecision("Accepted");
+    setupApplicantContext();
+    vi.mocked(provisionNewMember).mockResolvedValueOnce({
+      daliEmail: "ada.lovelace@dali.dartmouth.edu",
+      github: { status: "skipped", message: "" },
+      slack: { status: "skipped", message: "" },
+      gmail: { status: "skipped", message: "" },
+    } as any);
+    mockPrisma.cycleDecisionEmail.findUnique.mockResolvedValue({
+      applicationCycleId: CYCLE_ID,
+      decisionType: "Accepted",
+      emailTemplateVersionId: "etv-1",
+      emailTemplateVersion: { id: "etv-1", subject: "Welcome!", body: "Hi {{firstName}}" },
+    });
+
+    const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
+    expect(res.status).toBe(201);
+    expect(vi.mocked(sendWelcome).mock.calls[0][0].daliEmail).toBe(
+      "ada.lovelace@dali.dartmouth.edu",
+    );
+  });
+
+  it("renders the temp password into the onboarding email but NEVER into the audit log", async () => {
+    setupAuth();
+    setupFinalDecision("Accepted");
+    setupApplicantContext();
+    vi.mocked(provisionNewMember).mockResolvedValueOnce({
+      daliEmail: "ada.lovelace@dali.dartmouth.edu",
+      daliTempPassword: "s3cr3t-temp-pw",
+      github: { status: "skipped", message: "" },
+      slack: { status: "skipped", message: "" },
+    } as any);
+    mockPrisma.cycleDecisionEmail.findUnique.mockResolvedValue({
+      applicationCycleId: CYCLE_ID,
+      decisionType: "Accepted",
+      emailTemplateVersionId: "etv-1",
+      emailTemplateVersion: { id: "etv-1", subject: "Welcome!", body: "Hi {{firstName}}" },
+    });
+
+    const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
+    expect(res.status).toBe(201);
+
+    // The temp password is passed to onboardingEmailHtml (→ into the email body).
+    expect(vi.mocked(onboardingEmailHtml)).toHaveBeenCalledWith(
+      "ada.lovelace@dali.dartmouth.edu",
+      "s3cr3t-temp-pw",
+    );
+
+    // …and it must NOT appear anywhere in the audit metadata.
+    const auditMeta = vi.mocked(logAuditEvent).mock.calls.at(-1)?.[0].metadata;
+    const serialized = JSON.stringify(auditMeta);
+    expect(serialized).not.toContain("s3cr3t-temp-pw");
+    expect(serialized).not.toContain("daliTempPassword");
+  });
+
+  it("does NOT promote / provision / welcome for non-Accepted decisions", async () => {
+    setupAuth();
+    setupFinalDecision("Rejected");
+    setupApplicantContext();
+    mockPrisma.cycleDecisionEmail.findUnique.mockResolvedValue({
+      applicationCycleId: CYCLE_ID,
+      decisionType: "Rejected",
+      emailTemplateVersionId: "etv-rej",
+      emailTemplateVersion: { id: "etv-rej", subject: "x", body: "y" },
+    });
+
+    const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
+    expect(res.status).toBe(201);
+    expect(promoteToMember).not.toHaveBeenCalled();
+    expect(provisionNewMember).not.toHaveBeenCalled();
+    expect(sendWelcome).not.toHaveBeenCalled();
+    // …but the decision email still goes out — without the onboarding block.
+    expect(sendEmail).toHaveBeenCalledOnce();
+    expect(vi.mocked(sendEmail).mock.calls[0][0].html).not.toContain("<onboarding");
+  });
+
+  it("still releases (201) when provisioning throws — failure is isolated", async () => {
+    setupAuth();
+    setupFinalDecision("Accepted");
+    setupApplicantContext();
+    vi.mocked(provisionNewMember).mockRejectedValueOnce(new Error("workspace 500"));
+    mockPrisma.cycleDecisionEmail.findUnique.mockResolvedValue({
+      applicationCycleId: CYCLE_ID,
+      decisionType: "Accepted",
+      emailTemplateVersionId: "etv-1",
+      emailTemplateVersion: { id: "etv-1", subject: "Welcome!", body: "Hi {{firstName}}" },
+    });
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
+    expect(res.status).toBe(201);
+    // promotion ran before provisioning; welcome still runs after the catch.
+    expect(promoteToMember).toHaveBeenCalledOnce();
+    expect(sendWelcome).toHaveBeenCalledOnce();
     errSpy.mockRestore();
   });
 });

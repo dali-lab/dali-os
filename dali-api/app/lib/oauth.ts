@@ -1,6 +1,11 @@
 import { createHash, randomBytes } from "node:crypto";
 import { OAuth2Client } from "google-auth-library";
 import { prisma } from "~/lib/db";
+import { displayEmail } from "~/lib/display";
+import {
+  exchangeGoogleCode as exchangeGoogleCodeImpl,
+  GoogleOAuthError,
+} from "~/lib/google-oauth";
 import type { OAuthProvider, OAuthAccountType } from "~/generated/prisma/enums";
 import type { OAuthClient } from "~/generated/prisma/client";
 
@@ -108,8 +113,7 @@ export function buildUserInfo(
   const resolvedType = authType ?? deriveAuthType(user);
   return {
     id: user.id,
-    email:
-      user.daliEmail ?? user.dartmouthEmail ?? `${user.netId}@dartmouth.edu`,
+    email: displayEmail(user),
     firstName: user.firstName,
     lastName: user.lastName,
     type: resolvedType,
@@ -236,27 +240,24 @@ export async function exchangeAuthorizationCode(params: {
 // google OAuth
 
 export async function exchangeGoogleCode(code: string, callbackUrl: string) {
-  const res = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
+  let data;
+  try {
+    data = await exchangeGoogleCodeImpl({
       code,
-      client_id: process.env.GOOGLE_CLIENT_ID!,
-      client_secret: process.env.GOOGLE_CLIENT_SECRET!,
-      redirect_uri: callbackUrl,
-      grant_type: "authorization_code",
-    }),
-  });
-
-  if (!res.ok) {
-    const err = await res.text();
-    throw new OAuthError(
-      "server_error",
-      `Google token exchange failed: ${err}`,
-    );
+      redirectUri: callbackUrl,
+      clientId: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+    });
+  } catch (err) {
+    if (err instanceof GoogleOAuthError) {
+      throw new OAuthError(
+        "server_error",
+        `Google token exchange failed: ${err.upstreamBody ?? err.message}`,
+      );
+    }
+    throw err;
   }
 
-  const data = await res.json();
   const idToken = data.id_token as string;
 
   const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);

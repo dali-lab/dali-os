@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Outlet, redirect, useLoaderData, useLocation, useNavigate, useSearchParams } from 'react-router'
 import { Layout } from '~/components/Layout'
+import { Breadcrumbs } from '~/components/Breadcrumbs'
 import { LaunchWelcome } from '~/components/LaunchWelcome'
 import { requireAuth } from "~/lib/auth";
 import { getUserRoles } from '~/lib/roles'
@@ -14,6 +15,11 @@ export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request)
   if (!auth.ok) return redirect('/login')
   if (auth.user.type === 'applicant') return redirect('/portal')
+
+  // Onboarding is NOT a hard gate: a new member can use the whole app freely.
+  // Their onboarding lives as a persistent task (the welcome notification) that
+  // links to /onboarding and only clears once they finish. See welcome.server.
+
   const {
     isLabMember,
     isCore: core,
@@ -34,13 +40,43 @@ export async function loader({ request }: Route.LoaderArgs) {
     }
   }
 
+  // Whether to show the Hiring tab at all. Core/Admin/DomainLead always; other
+  // lab members only if they're a reviewer or interviewer on ANY cycle (not
+  // just the active one — a reviewer on a past/future cycle still needs in).
+  let hasHiringAccess = core || admin || domainLead
+  if (!hasHiringAccess && isLabMember) {
+    const [reviewer, interviewer] = await Promise.all([
+      prisma.cycleReviewer.findFirst({ where: { userId: auth.user.sub }, select: { id: true } }),
+      prisma.cycleInterviewer.findFirst({ where: { userId: auth.user.sub }, select: { id: true } }),
+    ])
+    hasHiringAccess = reviewer !== null || interviewer !== null
+  }
+
   // Drives the sidebar footer avatar. The loader runs on every shell
-  // load/revalidation, so this stays in sync after a profile edit.
+  // load/revalidation, so this stays in sync after a profile edit. Also tells
+  // the launch tour whether to offer the "connect your calendar" step.
   const me = await prisma.user.findUnique({
     where: { id: auth.user.sub },
-    select: { photoUrl: true },
+    select: {
+      photoUrl: true,
+      calendarLinks: {
+        where: { provider: "Google", enabled: true },
+        select: { id: true },
+        take: 1,
+      },
+      daliMember: { select: { onboardedAt: true, tourCompletedAt: true } },
+    },
   })
   const photoUrl = await resolvePhotoUrl(me?.photoUrl)
+  const hasCalendarLink = (me?.calendarLinks.length ?? 0) > 0
+
+  // Auto-show the launch tour once per USER (server-driven, not browser
+  // localStorage): a member who has finished onboarding but not yet completed
+  // the tour. Established members were backfilled (tourCompletedAt set), so only
+  // the just-onboarded get it. A manual "start tour" button can re-run it later
+  // regardless of this flag.
+  const shouldShowTour =
+    !!me?.daliMember?.onboardedAt && me.daliMember.tourCompletedAt === null
 
   // Detect iframe context from Sec-Fetch-Dest. Modern browsers (Chrome, Firefox,
   // Safari 16+) set this automatically and it survives server-side redirects,
@@ -55,11 +91,11 @@ export async function loader({ request }: Route.LoaderArgs) {
     sessionId: auth.sessionId,
   })
 
-  return { user: auth.user, photoUrl, isCore: core, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, isEmbedded }
+  return { user: auth.user, photoUrl, hasCalendarLink, shouldShowTour, isCore: core, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, isEmbedded }
 }
 
 export default function AppLayoutRoute() {
-  const { user, photoUrl, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, isEmbedded } = useLoaderData<typeof loader>()
+  const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, isEmbedded } = useLoaderData<typeof loader>()
   const [searchParams] = useSearchParams()
   const location = useLocation()
   const navigate = useNavigate()
@@ -186,11 +222,17 @@ export default function AppLayoutRoute() {
     };
   }, [location.key]);
 
-  // Skip the sidebar shell when rendered inside a TabWorkspace iframe.
+  // Skip the sidebar shell when rendered inside a TabWorkspace iframe. This is
+  // where every routed page actually renders, so the breadcrumb trail (derived
+  // from the iframe document's matched routes) lives here — it picks up each
+  // detail route's `handle.breadcrumb` for the dynamic leaf crumb.
   if (embedded) {
     return (
       <div className="min-h-dvh bg-page overflow-x-hidden">
         <div className="w-full px-3 sm:px-6 lg:px-10 pt-4 sm:pt-8 md:pt-12 pb-6 sm:pb-8">
+          <div className="mb-4 empty:mb-0">
+            <Breadcrumbs />
+          </div>
           <Outlet />
         </div>
       </div>
@@ -199,8 +241,8 @@ export default function AppLayoutRoute() {
 
   return (
     <>
-      <Layout user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} />
-      <LaunchWelcome firstName={user.firstName || user.email.split('@')[0]} />
+      <Layout user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} hasHiringAccess={hasHiringAccess} />
+      <LaunchWelcome firstName={user.firstName || user.email.split('@')[0]} hasCalendarLink={hasCalendarLink} shouldShowTour={shouldShowTour} />
     </>
   )
 }

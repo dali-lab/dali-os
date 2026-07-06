@@ -1,30 +1,25 @@
 import type { Route } from "./+types/api.delibs.$id.moves";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
-import { isCore, isDomainLead, hasCycleAccess } from "~/lib/roles";
+import { requireCoreOrDomainLead, forbidden } from "~/lib/auth";
+import { hasCycleAccess } from "~/lib/roles";
 import { INITIAL_COLUMNS, FINAL_COLUMNS } from "~/hiring/lib/delibs";
-import { parseJson } from "~/lib/validate";
+import { idSchema, parseJson } from "~/lib/validate";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
 
 const MoveSchema = z.object({
-  cardId: z.string().min(1).max(100),
-  toColumn: z.string().min(1).max(100),
+  cardId: idSchema,
+  toColumn: idSchema,
   position: z.number().int().min(0).max(10_000).optional(),
 });
 
 export async function action({ request, params }: Route.ActionArgs) {
-  const auth = await requireAuth(request);
-  if (!auth.ok) return auth.response;
+  const gate = await requireCoreOrDomainLead(request);
+  if (!gate.ok) return gate.response;
+  const auth = gate.auth;
 
   if (request.method !== "POST") {
     return Response.json({ error: "Method not allowed" }, { status: 405 });
-  }
-
-  const hiringLead = await isCore(auth.user.sub);
-  const domainLead = await isDomainLead(auth.user.sub);
-  if (!hiringLead && !domainLead) {
-    return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 
 
@@ -36,14 +31,14 @@ export async function action({ request, params }: Route.ActionArgs) {
     return Response.json({ error: "Not found" }, { status: 404 });
   }
   if (!(await hasCycleAccess(auth.user.sub, sessionForAuth.applicationCycleId))) {
-    return Response.json({ error: "Forbidden" }, { status: 403 });
+    return forbidden(request);
   }
 
-  const gate = await requireApiSignedOrForbidden(
+  const confidentialityGate = await requireApiSignedOrForbidden(
     auth.user.sub,
     sessionForAuth.applicationCycleId,
   );
-  if (gate) return gate;
+  if (confidentialityGate) return confidentialityGate;
 
   const body = await parseJson(request, MoveSchema);
   if (body instanceof Response) return body;
@@ -115,3 +110,4 @@ export async function action({ request, params }: Route.ActionArgs) {
     throw err;
   }
 }
+

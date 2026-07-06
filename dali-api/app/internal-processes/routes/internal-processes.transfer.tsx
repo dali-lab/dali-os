@@ -1,6 +1,6 @@
 import { redirect } from "react-router";
 import type { Route } from "./+types/internal-processes.transfer";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { ComingSoon } from "~/components/ComingSoon";
 
 export const meta: Route.MetaFunction = () => [
@@ -10,7 +10,8 @@ export const meta: Route.MetaFunction = () => [
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
-  if (auth.user.type === "applicant") return redirect("/portal");
+  const portalRedirect = redirectApplicantToPortal(auth);
+  if (portalRedirect) return portalRedirect;
   return null;
 }
 

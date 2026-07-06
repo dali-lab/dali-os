@@ -117,13 +117,13 @@ export async function loadFormForEdit(
       createdByName: `${v.createdBy.firstName} ${v.createdBy.lastName}`.trim(),
       questions: (v.questions as unknown as Question[]) ?? [],
       // intro holds serialized ProseMirror JSON (see module note).
-      description: v.intro ? safeParse(v.intro) : null,
+      description: v.intro ? safeParseJsonString(v.intro) : null,
     })),
     draft: draftQuestions
       ? {
           questions: draftQuestions,
           // draftIntro mirrors FormVersion.intro (serialized ProseMirror JSON).
-          description: form.draftIntro ? safeParse(form.draftIntro) : null,
+          description: safeParseJsonString(form.draftIntro),
         }
       : null,
   };
@@ -196,7 +196,7 @@ export async function loadFormsLevel(folderId: string | null) {
               id: v.id,
               questions: (v.questions as unknown as Question[]) ?? [],
               // intro holds serialized ProseMirror JSON (see module note).
-              description: v.intro ? safeParse(v.intro) : null,
+              description: v.intro ? safeParseJsonString(v.intro) : null,
             }
           : null,
       };
@@ -208,7 +208,8 @@ export async function loadFormsLevel(folderId: string | null) {
   };
 }
 
-function safeParse(s: string): unknown {
+export function safeParseJsonString(s: string | null | undefined): unknown {
+  if (!s) return null;
   try {
     return JSON.parse(s);
   } catch {

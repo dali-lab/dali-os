@@ -1,14 +1,10 @@
 import type { Route } from "./+types/api.cycles.$cycleId.my-interviews.$interviewId.notes";
-import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
-
-const NoteVersionSchema = z.object({
-  content: z.string().max(100_000),
-});
+import { NoteVersionSchema } from "~/hiring/lib/note-schemas";
 
 async function getAssignment(userId: string, cycleId: string, interviewId: string) {
   const member = await prisma.dALIMember.findUnique({ where: { userId } });

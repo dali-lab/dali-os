@@ -1,29 +1,10 @@
 import { useState } from "react";
-import { Link, Form, useLoaderData } from "react-router";
-import { ArrowLeft, Plus, Clock, UserIcon, Pencil } from "lucide-react";
+import { Form, useLoaderData } from "react-router";
+import { Plus, Clock, UserIcon, Pencil } from "lucide-react";
 import type { loader } from "~/hiring/routes/confidentiality-agreements.$id";
 import { RichTextEditor } from "~/components/RichTextEditor";
 import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
-
-function formatDateTime(iso: string | Date) {
-  const d = new Date(iso);
-  return (
-    d.toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    }) +
-    " at " +
-    d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })
-  );
-}
-
-function memberLabel(
-  m: { firstName: string | null; lastName: string | null } | null | undefined,
-) {
-  if (!m) return "Unknown";
-  return `${m.firstName ?? ""} ${m.lastName ?? ""}`.trim() || "Unknown";
-}
+import { formatDateTime, fullName, UNKNOWN_LABEL } from "~/lib/display";
 
 const EMPTY_DOC = { type: "doc", content: [{ type: "paragraph" }] };
 
@@ -51,16 +32,6 @@ export function ConfidentialityAgreementDetail() {
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
-      <div>
-        <Link
-          to="/hiring/library?tab=agreements"
-          className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="w-4 h-4 mr-1" />
-          Back to Library
-        </Link>
-      </div>
-
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           {isRenaming ? (
@@ -165,7 +136,7 @@ export function ConfidentialityAgreementDetail() {
                 </div>
                 <p className="text-xs text-muted-foreground mt-1 inline-flex items-center gap-1 truncate">
                   <UserIcon className="w-3 h-3 shrink-0" />
-                  {memberLabel(v.createdBy)}
+                  {v.createdBy ? fullName(v.createdBy) || UNKNOWN_LABEL : UNKNOWN_LABEL}
                 </p>
               </button>
             );
