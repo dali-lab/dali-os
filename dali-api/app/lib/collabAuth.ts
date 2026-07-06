@@ -148,5 +148,23 @@ export async function authorizeCollabDoc(
     return isCore(userSub);
   }
 
+  // eduoffering:{offeringId}:description — the rich description on an
+  // EducationOffering. Edit gate = offering manager: Core (Admin superset)
+  // or an instructor assigned to this offering. Students never open this
+  // room — catalog/detail pages render it server-side read-only.
+  if (entity === "eduoffering") {
+    const offering = await prisma.educationOffering.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!offering) return false;
+    if (await isCore(userSub)) return true;
+    const instructor = await prisma.instructorAssignment.findFirst({
+      where: { userId: userSub, offeringId: id },
+      select: { id: true },
+    });
+    return instructor !== null;
+  }
+
   return false;
 }

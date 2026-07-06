@@ -87,8 +87,13 @@ export default [
     route("partners/applications", "partners/routes/partners.applications.tsx"),
     route("partners/applications/:id", "partners/routes/partners.applications.$id.tsx"),
 
-    // Education
+    // Education. Literal "manage" segments must precede the :offeringId param
+    // so /education/manage/* isn't captured as an offering id.
     route("education", "education/routes/education.tsx"),
+    route("education/manage", "education/routes/education.manage.tsx"),
+    route("education/manage/new", "education/routes/education.manage.new.tsx"),
+    route("education/manage/:offeringId", "education/routes/education.manage.$offeringId.tsx"),
+    route("education/:offeringId", "education/routes/education.$offeringId.tsx"),
 
     // Internal processes
     route("internal-processes/onboarding", "internal-processes/routes/internal-processes.onboarding.tsx"),
