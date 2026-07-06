@@ -86,6 +86,8 @@ export default [
     route("partners", "partners/routes/partners.tsx"),
     route("partners/applications", "partners/routes/partners.applications.tsx"),
     route("partners/applications/:id", "partners/routes/partners.applications.$id.tsx"),
+    // Literal segments above the param route (repo route-ordering convention).
+    route("partners/:orgId", "partners/routes/partners.$orgId.tsx"),
 
     // Education
     route("education", "education/routes/education.tsx"),
