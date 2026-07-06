@@ -94,12 +94,14 @@ export function OfferingCard({
   myStatus,
   showStatus = false,
   pendingCount,
+  openAssignments,
 }: {
   offering: OfferingCardData;
   to: string;
   myStatus?: string | null;
   showStatus?: boolean;
   pendingCount?: number;
+  openAssignments?: number;
 }) {
   const seatsLeft = Math.max(0, offering.capacity - offering.approvedCount);
   return (
@@ -110,6 +112,11 @@ export function OfferingCard({
             <TypeBadge type={offering.type} />
             {showStatus && <StatusBadge status={offering.status} />}
             {myStatus !== undefined && <MyStatusChip status={myStatus} />}
+            {openAssignments != null && openAssignments > 0 && (
+              <span className="inline-flex items-center rounded-full bg-accent-coral text-white px-2 py-0.5 text-[11px] font-semibold">
+                {openAssignments} assignment{openAssignments === 1 ? "" : "s"} due
+              </span>
+            )}
           </div>
           {pendingCount != null && pendingCount > 0 && (
             <span className="inline-flex items-center rounded-full bg-blue-100 text-blue-800 px-2 py-0.5 text-[11px] font-semibold">

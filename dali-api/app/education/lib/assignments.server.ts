@@ -1,5 +1,6 @@
 import { prisma } from "~/lib/db";
 import { logAuditEvent } from "~/lib/audit";
+import { notifyNewAssignment } from "./notifications.server";
 import type { SubmissionType } from "~/generated/prisma/client";
 
 // Assignments are scoped to the offering as a whole or to one session
@@ -78,6 +79,18 @@ export async function createAssignment(args: {
   await prisma.educationAssignment.update({
     where: { id: assignment.id },
     data: { instructionsDocId: `eduassignment:${assignment.id}:instructions` },
+  });
+  // New work shouldn't sit buried in a tab — tell every enrolled student.
+  await notifyNewAssignment({
+    offeringId: args.offeringId,
+    assignmentId: assignment.id,
+    assignmentTitle: title,
+    dueAt: args.dueAt,
+  }).catch((err) => {
+    console.error("assignment notification fan-out failed", {
+      assignmentId: assignment.id,
+      error: err instanceof Error ? err.message : String(err),
+    });
   });
   await logAuditEvent({
     action: "education.assignment.create",

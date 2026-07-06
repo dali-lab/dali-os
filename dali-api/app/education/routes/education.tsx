@@ -60,7 +60,8 @@ export default function EducationCatalog() {
                 key={o.id}
                 offering={o}
                 myStatus={o.myStatus}
-                to={`/education/${o.id}`}
+                openAssignments={o.openAssignments}
+                to={`/education/${o.id}/hub`}
               />
             ))}
           </div>

@@ -47,6 +47,21 @@ test.describe('education catalog', () => {
   });
 });
 
+test.describe('portal home dashboard', () => {
+  test('non-member sees the dashboard with hiring and education cards', async ({
+    page,
+    loginAs,
+  }) => {
+    await loginAs({ netId: 'f007al1' });
+    await page.goto('/portal');
+    await expect(page.getByRole('heading', { name: 'Apply to DALI' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Education' })).toBeVisible();
+    // Nav reaches the two sub-surfaces.
+    await expect(page.getByRole('link', { name: 'Apply', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Education', exact: true })).toBeVisible();
+  });
+});
+
 test.describe('portal RSVP, waitlist, and auto-promotion', () => {
   test.beforeAll(async () => {
     await resetEducationApplications(WORKSHOP_ID);

@@ -46,7 +46,8 @@ export default function PortalEducation() {
                 key={o.id}
                 offering={o}
                 myStatus={o.myStatus}
-                to={`/portal/education/${o.id}`}
+                openAssignments={o.openAssignments}
+                to={`/portal/education/${o.id}/hub`}
               />
             ))}
           </div>

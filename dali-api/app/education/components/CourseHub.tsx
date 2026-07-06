@@ -71,6 +71,15 @@ export function CourseHub({ data, basePath }: { data: HubData; basePath: string 
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = searchParams.get("tab") ?? "overview";
 
+  // Assignments awaiting this student's submission (past-due ones can't be
+  // submitted anymore, so they don't count) — surfaced as a tab badge so new
+  // work is visible from anywhere in the hub.
+  const openAssignments = data.isManager
+    ? 0
+    : data.assignments.filter(
+        (a) => !a.mySubmittedAt && (!a.dueAt || new Date(a.dueAt) > new Date()),
+      ).length;
+
   return (
     <div className="flex flex-col gap-5">
       <nav className="flex gap-1 border-b border-border overflow-x-auto">
@@ -80,13 +89,18 @@ export function CourseHub({ data, basePath }: { data: HubData; basePath: string 
             type="button"
             onClick={() => setSearchParams({ tab: t.key }, { preventScrollReset: true })}
             className={cn(
-              "px-4 py-2 text-sm font-semibold whitespace-nowrap",
+              "px-4 py-2 text-sm font-semibold whitespace-nowrap inline-flex items-center gap-1.5",
               tab === t.key
                 ? "text-accent-coral border-b-2 border-accent-coral"
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
             {t.label}
+            {t.key === "assignments" && openAssignments > 0 && (
+              <span className="inline-flex items-center justify-center rounded-full bg-accent-coral text-white text-[10px] font-bold min-w-4 h-4 px-1">
+                {openAssignments}
+              </span>
+            )}
           </button>
         ))}
       </nav>

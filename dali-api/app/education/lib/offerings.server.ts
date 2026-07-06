@@ -40,10 +40,54 @@ export async function listCatalog(userId?: string) {
       })
     : [];
   const mineByOffering = new Map(mine.map((a) => [a.offeringId, a.status]));
+
+  // Open (unsubmitted, not past-due) assignments per enrolled offering, so
+  // waiting work is visible from the catalog instead of buried in the hub.
+  const approvedIds = mine
+    .filter((a) => a.status === "Approved")
+    .map((a) => a.offeringId);
+  const openByOffering = new Map<string, number>();
+  if (userId && approvedIds.length > 0) {
+    const assignments = await prisma.educationAssignment.findMany({
+      where: {
+        OR: [
+          { offeringId: { in: approvedIds } },
+          { session: { offeringId: { in: approvedIds } } },
+        ],
+      },
+      select: {
+        id: true,
+        dueAt: true,
+        offeringId: true,
+        session: { select: { offeringId: true } },
+      },
+    });
+    const submitted = new Set(
+      (
+        await prisma.educationSubmission.findMany({
+          where: {
+            studentId: userId,
+            assignmentId: { in: assignments.map((a) => a.id) },
+          },
+          select: { assignmentId: true },
+        })
+      ).map((s) => s.assignmentId),
+    );
+    const now = new Date();
+    for (const a of assignments) {
+      if (submitted.has(a.id)) continue;
+      if (a.dueAt && a.dueAt <= now) continue;
+      const oid = a.offeringId ?? a.session?.offeringId;
+      if (!oid) continue;
+      openByOffering.set(oid, (openByOffering.get(oid) ?? 0) + 1);
+    }
+  }
+
   return offerings.map((o) => ({
     ...shapeOffering(o),
     approvedCount: counts.get(o.id) ?? 0,
     myStatus: mineByOffering.get(o.id) ?? null,
+    openAssignments: openByOffering.get(o.id) ?? 0,
   }));
 }
 

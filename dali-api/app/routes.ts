@@ -121,9 +121,11 @@ export default [
     route("intern-to-full", "routes/intern-to-full.tsx"),
   ]),
 
-  // Applicant portal (lightweight layout)
+  // Applicant portal (lightweight layout). /portal is the non-member home
+  // dashboard; the hiring application tracker lives at /portal/hiring.
   layout("routes/applicant-layout.tsx", [
     route("portal", "routes/portal.tsx"),
+    route("portal/hiring", "routes/portal.hiring.tsx"),
     route("portal/apply", "routes/portal.apply.tsx"),
     route("portal/application", "routes/portal.application.tsx"),
     // Education mirror for non-member Dartmouth students.

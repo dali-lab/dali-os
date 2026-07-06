@@ -38,6 +38,9 @@ export default function ApplicantLayout() {
 
         <div className="ml-6 flex items-center gap-4 text-sm font-medium">
           <Link to="/portal" className="text-dark-blue hover:text-accent-coral transition">
+            Home
+          </Link>
+          <Link to="/portal/hiring" className="text-dark-blue hover:text-accent-coral transition">
             Apply
           </Link>
           <Link to="/portal/education" className="text-dark-blue hover:text-accent-coral transition">

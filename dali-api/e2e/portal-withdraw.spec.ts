@@ -25,9 +25,9 @@ test.describe('portal: withdraw application', () => {
     // link navigation and bounce us back to /portal/application.
     await page.waitForLoadState('networkidle');
 
-    // Dashboard should show the withdrawn state too.
+    // The hiring tracker should show the withdrawn state too.
     await page.getByRole('link', { name: /back to portal/i }).click();
-    await page.waitForURL(/\/portal$/);
+    await page.waitForURL(/\/portal\/hiring$/);
     await expect(page.getByText(/application withdrawn/i)).toBeVisible();
   });
 });

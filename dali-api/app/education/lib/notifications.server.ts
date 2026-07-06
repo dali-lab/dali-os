@@ -6,6 +6,7 @@ import {
   resolveCandidateEmail,
   redirectBannerHtml,
 } from "~/lib/candidate-email";
+import { getFrontendUrl } from "~/lib/app-env";
 import type { EduApplicationStatus } from "~/generated/prisma/client";
 
 type Recipient = {
@@ -117,6 +118,81 @@ export async function notifyApplicationStatus(
     applicant,
     fallback: { subject: title, body },
   });
+}
+
+/**
+ * Tell every approved enrollee a new assignment exists, deep-linked to the
+ * assignment on their surface. Members get an in-app Notification; portal
+ * students (no bell) get the link by email. Best-effort per recipient.
+ */
+export async function notifyNewAssignment(args: {
+  offeringId: string;
+  assignmentId: string;
+  assignmentTitle: string;
+  dueAt: Date | null;
+}): Promise<void> {
+  const offering = await prisma.educationOffering.findUnique({
+    where: { id: args.offeringId },
+    select: { id: true, title: true },
+  });
+  if (!offering) return;
+  const enrollees = await prisma.educationApplication.findMany({
+    where: { offeringId: args.offeringId, status: "Approved" },
+    select: {
+      applicant: {
+        select: {
+          id: true,
+          firstName: true,
+          daliEmail: true,
+          dartmouthEmail: true,
+          personalEmail: true,
+          netId: true,
+        },
+      },
+    },
+  });
+  if (enrollees.length === 0) return;
+
+  const title = `New assignment in ${offering.title}: ${args.assignmentTitle}`;
+  const body = args.dueAt
+    ? `Due ${args.dueAt.toLocaleDateString("en-US", { month: "short", day: "numeric" })}. Open the course hub to submit.`
+    : "Open the course hub to submit.";
+
+  for (const { applicant } of enrollees) {
+    const link = `${educationLink(applicant, offering.id)}/assignments/${args.assignmentId}`;
+    try {
+      if (applicant.daliEmail) {
+        await prisma.notification.create({
+          data: {
+            recipientUserId: applicant.id,
+            kind: "Education",
+            title,
+            body,
+            link,
+          },
+        });
+      } else {
+        const refreshToken = await getApplicationsGmailRefreshToken();
+        if (!refreshToken) continue;
+        const { to, redirectedFrom } = resolveCandidateEmail(recipientEmail(applicant));
+        if (!to) continue;
+        await sendEmail({
+          refreshToken,
+          to,
+          subject: title,
+          html:
+            redirectBannerHtml(redirectedFrom) +
+            `<p>Hi ${applicant.firstName},</p><p>${body}</p><p><a href="${getFrontendUrl()}${link}">Open the assignment</a></p>`,
+        });
+      }
+    } catch (err) {
+      console.error("assignment notification failed", {
+        assignmentId: args.assignmentId,
+        userId: applicant.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
 }
 
 /**

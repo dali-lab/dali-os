@@ -55,6 +55,14 @@ const SEGMENT_LABELS: Record<string, string> = {
   transfer: 'Transfer',
   jobx: 'JobX',
 
+  manage: 'Manage',
+  compliance: 'CE Compliance',
+  hub: 'Course Hub',
+  assignments: 'Assignments',
+  page: 'Materials',
+  apply: 'Apply',
+  certificates: 'Certificates',
+
   documents: 'Documents',
   forms: 'Documents',
   calendar: 'Calendar',
@@ -67,32 +75,53 @@ function titleCase(seg: string) {
   return seg.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
+// Opaque database ids that would render as gibberish in a trail: cuids
+// (25 lowercase alphanumerics starting with "c"), other long unhyphenated
+// tokens, and UUIDs. Human-slugged ids ("offering-figma-workshop") don't
+// match and still titlecase readably.
+function isOpaqueId(seg: string) {
+  return /^[a-z0-9]{20,}$/i.test(seg) || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(seg)
+}
+
 export function Breadcrumbs() {
   const matches = useMatches()
   const { pathname } = useLocation()
 
-  // Build crumbs from the path segments. The last matched route may supply a
-  // dynamic leaf label via its `handle.breadcrumb(loaderData)`.
+  // Build crumbs from the path segments. Any matched route may supply a
+  // dynamic label for its own path via `handle.breadcrumb(loaderData)`;
+  // in flat-route land that's usually just the leaf, so unlabeled dynamic
+  // segments in the middle of the path (raw cuids) are dropped from the
+  // trail instead of rendered verbatim.
   const segments = pathname.split('/').filter(Boolean)
-  const leaf = matches[matches.length - 1] as
-    | { handle?: Handle; data?: unknown }
-    | undefined
-  const leafLabel =
-    leaf?.handle?.breadcrumb && leaf.data != null
-      ? leaf.handle.breadcrumb(leaf.data)
-      : null
+  const labelByPath = new Map<string, string>()
+  for (const m of matches as { pathname: string; handle?: Handle; data?: unknown }[]) {
+    if (m.handle?.breadcrumb && m.data != null) {
+      const label = m.handle.breadcrumb(m.data)
+      if (label) labelByPath.set(m.pathname.replace(/\/$/, ''), label)
+    }
+  }
 
-  const crumbs: Crumb[] = segments.map((seg, i) => {
+  const crumbs: Crumb[] = []
+  for (let i = 0; i < segments.length; i += 1) {
+    const seg = segments[i]!
     const to = '/' + segments.slice(0, i + 1).join('/')
     const isLast = i === segments.length - 1
-    if (isLast && leafLabel) {
-      return { label: leafLabel }
+    const dynamicLabel = labelByPath.get(to)
+    if (dynamicLabel) {
+      crumbs.push({ label: dynamicLabel, to: isLast ? undefined : to })
+      continue
     }
-    return {
+    if (isOpaqueId(seg)) {
+      // A trailing id with no route-provided label still needs a crumb so the
+      // trail doesn't end on a link; anything mid-path just drops out.
+      if (isLast) crumbs.push({ label: 'Details' })
+      continue
+    }
+    crumbs.push({
       label: SEGMENT_LABELS[seg] ?? titleCase(seg),
       to: isLast ? undefined : to,
-    }
-  })
+    })
+  }
 
   // Home / single-segment pages get no trail.
   if (crumbs.length <= 1) return null
