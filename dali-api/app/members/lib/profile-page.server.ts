@@ -25,6 +25,7 @@ import {
   removeEligibility,
 } from "~/admin-console/lib/eligibility.server";
 import { NEW_MEMBER_PROFILE_FORM_NAME } from "~/members/lib/profile-form-interpreter";
+import { getEducationProfile } from "~/education/lib/engagement.server";
 
 export type ProfileMember = {
   id: string;
@@ -80,6 +81,27 @@ export type ProfilePageData = {
   /** Re-exported so the view can render the Domains & levels picker without
    *  needing its own admin-console import. */
   allowedLevels: readonly Level[];
+  /** Education engagement — attended offerings (note lanes excluded) and
+   *  offerings taught. Loaded for self and Core viewers only; null hides the
+   *  card entirely for peer viewers. */
+  education: {
+    attended: Array<{
+      offeringId: string;
+      title: string;
+      type: "Miniseries" | "Workshop";
+      startsAt: Date;
+      endsAt: Date;
+      status: string;
+      attendance: { present: number; excused: number; total: number };
+      certificateIssuedAt: Date | null;
+    }>;
+    taught: Array<{
+      offeringId: string;
+      title: string;
+      type: "Miniseries" | "Workshop";
+      termCode: string;
+    }>;
+  } | null;
 };
 
 const TEXT_FIELDS = [
@@ -207,6 +229,14 @@ export async function loadProfilePage({
   const adminViewer = await isAdmin(auth.user.sub);
   const canEdit = adminViewer || isSelf;
 
+  // Education engagement is for the member themself and Core — not peer
+  // browsing. Teaching history is public credit, but keeping one gate for the
+  // whole card is simpler until someone needs the split.
+  const education =
+    isSelf || canManageEligibility
+      ? await getEducationProfile(targetId)
+      : null;
+
   const roleLabels = [
     roles.isAdmin && "Admin",
     roles.isCore && "Hiring Lead",
@@ -242,6 +272,7 @@ export async function loadProfilePage({
     presencePhotoUrl: presenceUser?.photoUrl ?? null,
     presenceSubtitle: presenceUser?.subtitle ?? null,
     allowedLevels: ALLOWED_LEVELS,
+    education,
   };
 }
 
