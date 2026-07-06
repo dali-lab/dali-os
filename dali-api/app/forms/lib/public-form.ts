@@ -163,6 +163,10 @@ export async function submitMemberForm(args: {
   versionId: string;
   userId: string;
   answers: Record<string, unknown>;
+  // Education feedback context (session feedback / instructor exit survey),
+  // carried from the fill URL's ?session= / ?offering= params. Validated
+  // server-side against EducationFormBinding — never trusted beyond the ids.
+  education?: { sessionId?: string | null; offeringId?: string | null };
 }): Promise<MemberSubmitResult> {
   const form = await prisma.form.findUnique({
     where: { publicToken: args.token },
@@ -216,6 +220,52 @@ export async function submitMemberForm(args: {
   const questions = (version.questions as unknown as Question[]) ?? [];
   const bad = await validateAnswers(questions, args.answers, args.userId);
   if (bad) return bad;
+
+  // Education feedback branch: an explicit session/offering context wins over
+  // every other interpretation. The context re-derives the binding + the
+  // submitter's authorization (enrolled / instructor); the submission records
+  // its education scope, and ONLY the todo for this exact session/offering is
+  // closed — one form serves N sessions, so the formId-wide closeFormTodos
+  // below would wipe the other pending session todos.
+  if (args.education?.sessionId || args.education?.offeringId) {
+    const { educationFillContext, closeEducationFormTodos } = await import(
+      "~/education/lib/feedback.server"
+    );
+    const context = await educationFillContext({
+      formId: form.id,
+      userId: args.userId,
+      sessionId: args.education.sessionId,
+      offeringId: args.education.offeringId,
+    });
+    if (!context) {
+      return {
+        error: "This link isn't valid for you — ask the instructor for a fresh one.",
+        status: 403,
+      };
+    }
+    const linkQuery = context.sessionId
+      ? `?session=${context.sessionId}`
+      : `?offering=${context.offeringId}`;
+    await prisma.$transaction(async (tx) => {
+      await tx.formSubmission.create({
+        data: {
+          formId: form.id,
+          formVersionId: version.id,
+          userId: args.userId,
+          answers: args.answers as object,
+          slot: context.slot,
+          educationOfferingId: context.offeringId,
+          educationSessionId: context.sessionId,
+        },
+      });
+      await closeEducationFormTodos(tx, {
+        userId: args.userId,
+        formId: form.id,
+        linkQuery,
+      });
+    });
+    return { ok: true };
+  }
 
   // Which staffing cycle (if any) this submission feeds is decided by the
   // form's own bindings, not the calendar's current term — see

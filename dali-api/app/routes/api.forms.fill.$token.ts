@@ -14,6 +14,10 @@ import { submitMemberForm } from "~/forms/lib/public-form";
 const SubmitSchema = z.object({
   versionId: z.string().min(1),
   answers: z.record(z.string(), z.unknown()),
+  // Education feedback context from the fill URL. Optional; validated
+  // server-side inside submitMemberForm against EducationFormBinding.
+  educationSessionId: z.string().nullish(),
+  educationOfferingId: z.string().nullish(),
 });
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -26,18 +30,32 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const auth = await requireAuth(request);
   if (!auth.ok) return withCors(request, auth.response);
-  if (!(await requireMember(auth.user.sub))) {
-    return withCors(request, Response.json({ error: "Lab members only" }, { status: 403 }));
-  }
 
   const body = await parseJson(request, SubmitSchema);
   if (body instanceof Response) return withCors(request, body);
+
+  const hasEducationContext = Boolean(
+    body.educationSessionId || body.educationOfferingId,
+  );
+
+  // Non-members are admitted ONLY for education-bound fills (session
+  // feedback from portal students); submitMemberForm re-validates the
+  // context and rejects anything else before writing.
+  if (!hasEducationContext && !(await requireMember(auth.user.sub))) {
+    return withCors(request, Response.json({ error: "Lab members only" }, { status: 403 }));
+  }
 
   const result = await submitMemberForm({
     token: params.token!,
     versionId: body.versionId,
     userId: auth.user.sub,
     answers: body.answers,
+    education: hasEducationContext
+      ? {
+          sessionId: body.educationSessionId ?? null,
+          offeringId: body.educationOfferingId ?? null,
+        }
+      : undefined,
   });
   if ("error" in result)
     return withCors(request, Response.json({ error: result.error }, { status: result.status }));

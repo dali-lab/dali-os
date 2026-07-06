@@ -1,6 +1,7 @@
 import { prisma } from "~/lib/db";
 import { logAuditEvent } from "~/lib/audit";
 import { syncCreditForAttendance } from "./ce-credits.server";
+import { requestSessionFeedback } from "./feedback.server";
 import type { AttendanceStatus } from "~/generated/prisma/client";
 
 // Instructor attendance marking. The roster is the offering's Approved
@@ -105,6 +106,21 @@ export async function saveAttendance(args: {
         sessionDate: session.datetime,
       });
     }
+  });
+
+  // Ask everyone just marked Present for session feedback (deduped inside;
+  // no-op when the offering has no session-feedback form bound).
+  await requestSessionFeedback({
+    offeringId: args.offeringId,
+    sessionId: args.sessionId,
+    presentUserIds: marks
+      .filter((m) => m.status === "Present")
+      .map((m) => userByApplication.get(m.applicationId)!),
+  }).catch((err) => {
+    console.error("session feedback fan-out failed", {
+      sessionId: args.sessionId,
+      error: err instanceof Error ? err.message : String(err),
+    });
   });
 
   await logAuditEvent({

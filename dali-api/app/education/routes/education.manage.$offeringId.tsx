@@ -33,6 +33,12 @@ import { getSessionRoster, saveAttendance } from "~/education/lib/attendance.ser
 import { notesForOffering, upsertStudentNote } from "~/education/lib/student-notes.server";
 import { closeOutOffering } from "~/education/lib/certificates.server";
 import {
+  setFormBinding,
+  listFeedbackResults,
+  SESSION_FEEDBACK_SLOT,
+  INSTRUCTOR_EXIT_SLOT,
+} from "~/education/lib/feedback.server";
+import {
   ManageMaterials,
   ManageAssignments,
   ManageAnnouncements,
@@ -122,7 +128,42 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const notes = await notesForOffering(params.offeringId!);
 
+  // Feedback bindings + results. Instructors see anonymized rows; Core may
+  // see identities (moderation escape hatch).
+  const [publishedForms, feedbackBindings, sessionFeedback, exitFeedback] =
+    await Promise.all([
+      prisma.form.findMany({
+        where: { published: true, publicToken: { not: null } },
+        select: { id: true, name: true },
+        orderBy: { name: "asc" },
+      }),
+      prisma.educationFormBinding.findMany({
+        where: { offeringId: params.offeringId! },
+        select: { slot: true, formId: true },
+      }),
+      rosterSessionId
+        ? listFeedbackResults({
+            offeringId: params.offeringId!,
+            slot: SESSION_FEEDBACK_SLOT,
+            sessionId: rosterSessionId,
+            includeIdentities: core,
+          })
+        : Promise.resolve(null),
+      core
+        ? listFeedbackResults({
+            offeringId: params.offeringId!,
+            slot: INSTRUCTOR_EXIT_SLOT,
+            includeIdentities: true,
+          })
+        : Promise.resolve(null),
+    ]);
+
   return {
+    publishedForms,
+    feedbackBindings,
+    sessionFeedback,
+    exitFeedback,
+    feedbackSessionId: rosterSessionId,
     offering,
     applications: applications.map((a) => ({
       ...a,
@@ -172,6 +213,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     "save-attendance",
     "save-student-note",
     "close-out-offering",
+    "set-form-binding",
   ];
   if (contentIntents.includes(intent)) {
     if (!(await isOfferingManager(auth.user.sub, params.offeringId!)))
@@ -245,6 +287,15 @@ export async function action({ request, params }: Route.ActionArgs) {
         });
         return "error" in result ? fail(result) : { ok: true };
       }
+      case "set-form-binding": {
+        const result = await setFormBinding({
+          offeringId: params.offeringId!,
+          slot: String(formData.get("slot") ?? ""),
+          formId: String(formData.get("formId") ?? "") || null,
+          actorId: auth.user.sub,
+        });
+        return "error" in result ? fail(result) : { ok: true };
+      }
       case "close-out-offering": {
         const result = await closeOutOffering({
           offeringId: params.offeringId!,
@@ -314,6 +365,7 @@ const TABS = [
   { key: "materials", label: "Materials" },
   { key: "assignments", label: "Assignments" },
   { key: "announcements", label: "Announcements" },
+  { key: "feedback", label: "Feedback" },
 ] as const;
 
 export default function ManageOffering() {
@@ -326,6 +378,11 @@ export default function ManageOffering() {
     announcements,
     emailTemplates,
     decisionEmailBindings,
+    publishedForms,
+    feedbackBindings,
+    sessionFeedback,
+    exitFeedback,
+    feedbackSessionId,
     isCore: core,
     instructorCandidates,
     collabToken,
@@ -564,6 +621,48 @@ export default function ManageOffering() {
                     {emailTemplates.map((t) => (
                       <option key={t.versionId} value={t.versionId}>
                         {t.name}
+                      </option>
+                    ))}
+                  </select>
+                  <Button type="submit" variant="secondary" size="sm">
+                    Save
+                  </Button>
+                </Form>
+              ))}
+            </div>
+          </section>
+
+          <section className="bg-card border border-border rounded-lg p-5">
+            <h2 className="text-sm font-semibold text-foreground mb-1">
+              Feedback forms
+            </h2>
+            <p className="text-xs text-muted-foreground mb-3">
+              Bind published forms from the Forms system. Session feedback is
+              requested automatically from everyone marked Present; the exit
+              survey goes to instructors at close-out.
+            </p>
+            <div className="flex flex-col gap-3">
+              {(
+                [
+                  { slot: "session-feedback", label: "Session feedback" },
+                  { slot: "instructor-exit", label: "Instructor exit survey" },
+                ] as const
+              ).map(({ slot, label }) => (
+                <Form key={slot} method="post" className="flex items-center gap-3">
+                  <input type="hidden" name="intent" value="set-form-binding" />
+                  <input type="hidden" name="slot" value={slot} />
+                  <span className="text-sm text-foreground w-44">{label}</span>
+                  <select
+                    name="formId"
+                    defaultValue={
+                      feedbackBindings.find((b) => b.slot === slot)?.formId ?? ""
+                    }
+                    className="flex-1 rounded-md border border-border bg-card px-2 py-1.5 text-sm"
+                  >
+                    <option value="">None</option>
+                    {publishedForms.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.name}
                       </option>
                     ))}
                   </select>
@@ -897,6 +996,118 @@ export default function ManageOffering() {
       {tab === "announcements" && (
         <ManageAnnouncements announcements={announcements} />
       )}
+
+      {tab === "feedback" && (
+        <div className="flex flex-col gap-5 max-w-3xl">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-muted-foreground">
+              Session
+            </span>
+            <select
+              value={feedbackSessionId ?? ""}
+              onChange={(e) =>
+                setSearchParams(
+                  { tab: "feedback", session: e.target.value },
+                  { preventScrollReset: true },
+                )
+              }
+              className="rounded-md border border-border bg-card px-2 py-1.5 text-sm"
+            >
+              {offering.sessions.map((s) => (
+                <option key={s.id} value={s.id}>
+                  Session {s.sequence} — {formatDateTime(s.datetime)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {!sessionFeedback ? (
+            <p className="text-sm text-muted-foreground italic">
+              No session-feedback form is bound yet — pick one on the Details
+              tab.
+            </p>
+          ) : (
+            <FeedbackResults
+              title={`Session feedback (${sessionFeedback.submissions.length} response${sessionFeedback.submissions.length === 1 ? "" : "s"})`}
+              anonymizedNote={!core}
+              results={sessionFeedback}
+            />
+          )}
+
+          {core && exitFeedback && (
+            <FeedbackResults
+              title={`Instructor exit surveys (${exitFeedback.submissions.length})`}
+              anonymizedNote={false}
+              results={exitFeedback}
+            />
+          )}
+        </div>
+      )}
     </div>
+  );
+}
+
+function FeedbackResults({
+  title,
+  anonymizedNote,
+  results,
+}: {
+  title: string;
+  anonymizedNote: boolean;
+  results: {
+    questions: { key: string; type: string; data: { label: string } }[];
+    submissions: {
+      id: string;
+      answers: Record<string, unknown>;
+      submitterName: string | null;
+    }[];
+  };
+}) {
+  const visibleQuestions = results.questions.filter((q) => q.type !== "info");
+  return (
+    <section className="bg-card border border-border rounded-lg p-5 flex flex-col gap-4">
+      <div>
+        <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+        {anonymizedNote && (
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Responses are anonymized and shown in a shuffled order.
+          </p>
+        )}
+      </div>
+      {results.submissions.length === 0 ? (
+        <p className="text-sm text-muted-foreground italic">No responses yet.</p>
+      ) : (
+        visibleQuestions.map((q) => (
+          <div key={q.key}>
+            <h3 className="text-xs font-semibold text-muted-foreground">
+              {q.data.label}
+            </h3>
+            <ul className="mt-1 flex flex-col gap-1">
+              {results.submissions.map((s) => {
+                const raw = s.answers[q.key];
+                const value =
+                  raw == null || raw === ""
+                    ? null
+                    : Array.isArray(raw)
+                      ? raw.join(", ")
+                      : String(raw);
+                if (value === null) return null;
+                return (
+                  <li
+                    key={s.id}
+                    className="text-sm text-foreground border-l-2 border-border pl-3 whitespace-pre-wrap"
+                  >
+                    {value}
+                    {s.submitterName && (
+                      <span className="text-xs text-muted-foreground"> — {s.submitterName}</span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))
+      )}
+    </section>
   );
 }

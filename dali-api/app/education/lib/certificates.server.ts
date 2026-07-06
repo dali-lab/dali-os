@@ -9,6 +9,7 @@ import {
 import { bodyToHtml } from "~/lib/email";
 import { getFrontendUrl } from "~/lib/app-env";
 import { recipientEmail } from "./notifications.server";
+import { requestInstructorExitSurveys } from "./feedback.server";
 import { currentTerm } from "~/lib/roles";
 
 // Completion certificates. Pure derived data — the HTML page and PDF are
@@ -178,6 +179,14 @@ export async function closeOutOffering(args: {
       });
     }
   }
+
+  // Exit surveys for instructors (deduped inside; no-op without a binding).
+  await requestInstructorExitSurveys(args.offeringId).catch((err) => {
+    console.error("exit survey fan-out failed", {
+      offeringId: args.offeringId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  });
 
   await logAuditEvent({
     action: "education.offering.close-out",
