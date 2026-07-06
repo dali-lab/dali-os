@@ -73,6 +73,23 @@ export const prisma = {
   dALIMember: {
     findUnique: vi.fn(),
   },
+  partnerUser: {
+    findUnique: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+  },
+  partnerOrg: {
+    findUnique: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+  },
+  projectPartner: {
+    findFirst: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+  },
+  partnerInvite: {
+    findFirst: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+    updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+  },
   notification: {
     findMany: vi.fn().mockResolvedValue([]),
     findUnique: vi.fn(),
