@@ -3,6 +3,8 @@ import type { Route } from "./+types/analytics";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { getUserRoles } from "~/lib/roles";
+import { hiringPills } from "~/hiring/components/hiringPills";
+import { AreaPillNav } from "~/components/AreaPillNav";
 import {
   inferDomainApplicationStatus,
   domainApplicationStatusInclude,
@@ -57,6 +59,11 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const roles = await getUserRoles(auth.user.sub);
   if (!roles.isCore && !roles.isDomainLead) return redirect("/");
+  const pillRoles = {
+    isCore: roles.isCore,
+    isDomainLead: roles.isDomainLead,
+    isAdmin: roles.isAdmin,
+  };
 
   // Cycles for the selector
   const allCycles = await prisma.applicationCycle.findMany({
@@ -83,6 +90,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       slices: [],
       rows: [],
       confidentialityRequired: null as null | "no_agreement" | "unsigned",
+      pillRoles,
     };
   }
 
@@ -146,6 +154,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       slices: [],
       rows: [],
       confidentialityRequired,
+      pillRoles,
     };
   }
 
@@ -266,6 +275,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     slices,
     rows,
     confidentialityRequired: null as null | "no_agreement" | "unsigned",
+    pillRoles,
   };
 }
 
@@ -293,6 +303,9 @@ export default function AnalyticsDashboard() {
 
   return (
     <div className="space-y-6">
+      {data.pillRoles && (
+        <AreaPillNav items={hiringPills({ ...data.pillRoles, active: "analytics" })} />
+      )}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-bold text-foreground shrink-0">Analytics</h1>
         <div className="flex min-w-0 items-center gap-2 sm:justify-end">

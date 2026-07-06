@@ -6,7 +6,6 @@ import {
   Calendar,
   Shield,
   FileText,
-  MessageSquare,
   Menu,
   X,
   BarChart3,
@@ -244,68 +243,10 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
     : path.startsWith('/internal-processes') ? 'internal-processes'
     : null
 
-  const hiringSections = [
-    {
-      label: 'Domain',
-      to: '/hiring/domain-lead',
-      icon: Shield,
-      show: isDomainLead,
-      active: path.startsWith('/hiring/domain-lead'),
-      sub: null as { label: string; to: string; active: boolean }[] | null,
-    },
-    {
-      label: 'Reviews',
-      to: '/hiring/reviewer',
-      icon: MessageSquare,
-      show: hasHiringAccess,
-      active: path.startsWith('/hiring/reviewer') || path.startsWith('/hiring/interviewer/interview'),
-      sub: null,
-    },
-    {
-      // Database view of all submissions for a cycle. Core sees every domain;
-      // reviewers see only their assigned domains. Gated with the rest of
-      // Hiring so non-hiring members never see it (or its empty reviewer state).
-      label: 'Applications',
-      to: '/hiring/applications',
-      icon: FileText,
-      show: hasHiringAccess,
-      active: path.startsWith('/hiring/applications'),
-      sub: null,
-    },
-    {
-      label: 'Cycles',
-      to: '/hiring/lead',
-      icon: Calendar,
-      show: isCore,
-      active: path.startsWith('/hiring/lead'),
-      sub: null,
-    },
-    {
-      label: 'Analytics',
-      to: '/hiring/analytics',
-      icon: BarChart3,
-      show: isCore || isDomainLead,
-      active: path.startsWith('/hiring/analytics'),
-      sub: null,
-    },
-    {
-      label: 'Library',
-      to: '/hiring/library',
-      icon: FileText,
-      show: isCore || isDomainLead || isAdmin,
-      // Highlight Library on its list page and on the challenge / rubric /
-      // agreement / email-template pages it links into (Emails folded into
-      // the Library pill row rather than holding its own sidebar entry).
-      active:
-        path.startsWith('/hiring/library') ||
-        path.startsWith('/hiring/challenges') ||
-        path.startsWith('/hiring/rubrics') ||
-        path.startsWith('/hiring/confidentiality-agreements') ||
-        path.startsWith('/hiring/emails'),
-      sub: null,
-    },
-  ].filter((s) => s.show)
-
+  // Hiring collapsed to a childless entry: /hiring is a role-aware hub, and
+  // its tools (Reviews, Applications, Domain, Cycles, Analytics, Library) are
+  // an AreaPillNav row on each hiring page — same pattern as People /
+  // Partners / Education.
   const adminSections = [
     {
       label: 'Roles & Permissions',
@@ -441,11 +382,11 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
     {
       key: 'hiring' as AreaKey,
       label: 'Hiring',
-      to: '/hiring/reviewer',
+      to: '/hiring',
       icon: Briefcase,
       show: hasHiringAccess,
       active: activeAreaKey === 'hiring',
-      sections: hiringSections,
+      sections: emptySections,
     },
     {
       key: 'projects' as AreaKey,

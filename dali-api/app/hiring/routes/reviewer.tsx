@@ -10,6 +10,9 @@ import {
   ListOrdered,
 } from 'lucide-react'
 import { getReviewStatus } from '~/hiring/lib/review-status'
+import { getUserRoles } from '~/lib/roles'
+import { hiringPills } from '~/hiring/components/hiringPills'
+import { AreaPillNav } from '~/components/AreaPillNav'
 import { CycleSelector } from '~/hiring/components/CycleSelector'
 import { getActiveCycle, cycleStatusToStage, inferUnderReviewStage } from '~/hiring/lib/cycles'
 import { getCycleConfidentialityState } from '~/hiring/lib/confidentiality'
@@ -48,10 +51,19 @@ export async function loader({ request }: Route.LoaderArgs) {
     delibsSessions: [] as any[],
     delibsApplications: [] as any[],
     confidentialityRequired: null as null | "no_agreement" | "unsigned",
+    pillRoles: null as { isCore: boolean; isDomainLead: boolean; isAdmin: boolean } | null,
   }
 
   const auth = await requireAuth(request)
   if (!auth.ok) return empty
+
+  const roles = await getUserRoles(auth.user.sub)
+  const pillRoles = {
+    isCore: roles.isCore,
+    isDomainLead: roles.isDomainLead,
+    isAdmin: roles.isAdmin,
+  }
+  Object.assign(empty, { pillRoles })
 
   const member = await prisma.dALIMember.findUnique({ where: { userId: auth.user.sub } })
   if (!member) return { ...empty, reviewerUserId: auth.user.sub }
@@ -167,6 +179,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       delibsSessions: [],
       delibsApplications: [],
       confidentialityRequired,
+      pillRoles,
     }
   }
 
@@ -258,6 +271,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       delibsSessions,
       delibsApplications,
       confidentialityRequired: null as null | "no_agreement" | "unsigned",
+      pillRoles,
     }
 }
 
@@ -272,11 +286,17 @@ export default function ReviewerDashboard() {
     delibsSessions,
     delibsApplications,
     confidentialityRequired,
+    pillRoles,
   } = useLoaderData<typeof loader>()
+
+  const areaPills = pillRoles && (
+    <AreaPillNav items={hiringPills({ ...pillRoles, active: 'reviews' })} />
+  )
 
   if (!activeCycle) {
     return (
       <div className="space-y-8">
+        {areaPills}
         <h1 className="text-2xl font-bold text-foreground">Reviewer Dashboard</h1>
         <div className="bg-card rounded-xl border border-border shadow-sm p-8 text-center">
           <p className="text-muted-foreground">You are not assigned as a reviewer for any active cycle.</p>
@@ -541,6 +561,7 @@ export default function ReviewerDashboard() {
 
   return (
     <div className="space-y-6">
+      {areaPills}
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground">

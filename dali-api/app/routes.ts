@@ -10,7 +10,9 @@ export default [
     // My Tasks surface: Open tasks + browsable notification history.
     route("notifications", "routes/notifications.tsx"),
 
-    // Hiring section
+    // Hiring section. /hiring is the role-aware hub; the tools below are
+    // reached via its pill row (the sidebar carries a single Hiring entry).
+    route("hiring", "hiring/routes/hiring.tsx"),
     route("hiring/reviewer", "hiring/routes/reviewer.tsx"),
     route("hiring/reviewer/application/:id", "hiring/routes/reviewer.application.$id.tsx"),
     // Applications database: list of all submissions for a cycle, scoped by

@@ -4,6 +4,9 @@ import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { redirect } from "react-router";
 import type { Route } from "./+types/domain-lead";
 import { prisma } from "~/lib/db";
+import { getUserRoles } from "~/lib/roles";
+import { hiringPills } from "~/hiring/components/hiringPills";
+import { AreaPillNav } from "~/components/AreaPillNav";
 import { requireAuth } from "~/lib/auth";
 import { CheckCircle, Plus, Trash2, Check, Clock, X, CircleDashed, ChevronDown, Eye, Send, Search, ChevronUp } from "lucide-react";
 import { inferDomainApplicationStatus } from "~/hiring/lib/domain-application-status";
@@ -40,7 +43,14 @@ export const meta: Route.MetaFunction = () => [{ title: "Domain lead · DALI OS"
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return { domainData: [] };
+  if (!auth.ok) return { domainData: [], pillRoles: null };
+
+  const roles = await getUserRoles(auth.user.sub);
+  const pillRoles = {
+    isCore: roles.isCore,
+    isDomainLead: roles.isDomainLead,
+    isAdmin: roles.isAdmin,
+  };
 
   const assignments = await prisma.domainLeadAssignment.findMany({
     where: { userId: auth.user.sub },
@@ -48,7 +58,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   });
 
   if (assignments.length === 0) {
-    return { domainData: [] };
+    return { domainData: [], pillRoles };
   }
 
   const domainData = await Promise.all(
@@ -421,7 +431,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     })
   );
 
-  return { domainData: domainData.flat() };
+  return { domainData: domainData.flat(), pillRoles };
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -651,6 +661,10 @@ export default function DomainLeadDashboard() {
   const revalidator = useRevalidator();
   const domainData = data?.domainData ?? [];
 
+  const areaPills = data?.pillRoles && (
+    <AreaPillNav items={hiringPills({ ...data.pillRoles, active: "domain" })} />
+  );
+
   if (domainData.length === 0) {
     return (
       <div className="text-center py-16">
@@ -662,6 +676,7 @@ export default function DomainLeadDashboard() {
 
   return (
     <div className="space-y-8">
+      {areaPills}
       <h1 className="font-heading text-2xl font-bold text-foreground">Domain Lead Dashboard</h1>
 
       {domainData.map(({ assignment, cycle, availableCycles, apps, challengeVersionOptions, linkedChallengeVersions, isChallengeReady, interviews, reviewers: cycleReviewers, delibsSessions, draftDecisions, cycleReviewersForDomain, initialDelibsCount, finalDelibsCount, rubricVersionOptions, currentRubricVersionId, rubricCriteria, interviewers, hasApplicationReviews, confidentialityRequired }: any, idx: number) => {
