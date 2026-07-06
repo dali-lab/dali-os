@@ -38,6 +38,7 @@ export type HubData = {
     updatedAt: string | Date | null;
     authorName: string | null;
   } | null;
+  myCertificateId: string | null;
   currentUserId: string;
   isManager: boolean;
 };
@@ -92,6 +93,19 @@ export function CourseHub({ data, basePath }: { data: HubData; basePath: string 
 
       {tab === "overview" && (
         <div className="flex flex-col gap-5 max-w-3xl">
+          {data.myCertificateId && (
+            <section className="bg-brand-tint rounded-lg px-4 py-3 flex items-center justify-between gap-4">
+              <p className="text-sm text-foreground">
+                🎓 You completed this course — your certificate is ready.
+              </p>
+              <a
+                href={`/education/certificates/${data.myCertificateId}`}
+                className={buttonClasses("primary", "sm") + " shrink-0"}
+              >
+                View certificate
+              </a>
+            </section>
+          )}
           {data.myFeedback && (
             <section className="bg-accent-teal/5 border border-accent-teal/30 rounded-lg p-4">
               <p className="text-xs font-semibold text-accent-teal">

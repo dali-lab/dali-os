@@ -142,6 +142,11 @@ export default [
   route("forms/fill/:token", "routes/forms.fill.$token.tsx"),
   route("api/forms/fill/:token", "routes/api.forms.fill.$token.ts"),
 
+  // Education certificates (no layout — portal users open these too; the PDF
+  // is a resource route that streams a bare body).
+  route("education/certificates/:certificateId", "education/routes/certificates.$certificateId.tsx"),
+  route("education/certificates/:certificateId/pdf", "education/routes/certificates.$certificateId.pdf.ts"),
+
   // Public policy pages (no auth, no layout) — linked from the Google OAuth
   // consent screen, so they must load for an unauthenticated reviewer.
   route("privacy", "routes/privacy.tsx"),

@@ -195,6 +195,13 @@ export async function getHubData(args: {
       : Promise.resolve(null),
   ]);
 
+  const myCertificate = args.applicationId
+    ? await prisma.educationCertificate.findUnique({
+        where: { applicationId: args.applicationId },
+        select: { id: true },
+      })
+    : null;
+
   const submittedByAssignment = new Map(
     mySubmissions.map((s) => [s.assignmentId, s.submittedAt]),
   );
@@ -222,6 +229,7 @@ export async function getHubData(args: {
     })),
     threads,
     myFeedback,
+    myCertificateId: myCertificate?.id ?? null,
     isManager: args.isManager,
     currentUserId: args.userId,
   };

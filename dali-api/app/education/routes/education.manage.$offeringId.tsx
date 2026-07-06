@@ -31,6 +31,7 @@ import {
 import { listAnnouncements, postAnnouncement } from "~/education/lib/announcements.server";
 import { getSessionRoster, saveAttendance } from "~/education/lib/attendance.server";
 import { notesForOffering, upsertStudentNote } from "~/education/lib/student-notes.server";
+import { closeOutOffering } from "~/education/lib/certificates.server";
 import {
   ManageMaterials,
   ManageAssignments,
@@ -170,6 +171,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     "post-announcement",
     "save-attendance",
     "save-student-note",
+    "close-out-offering",
   ];
   if (contentIntents.includes(intent)) {
     if (!(await isOfferingManager(auth.user.sub, params.offeringId!)))
@@ -243,6 +245,21 @@ export async function action({ request, params }: Route.ActionArgs) {
         });
         return "error" in result ? fail(result) : { ok: true };
       }
+      case "close-out-offering": {
+        const result = await closeOutOffering({
+          offeringId: params.offeringId!,
+          actorId: auth.user.sub,
+        });
+        if ("error" in result) return fail(result);
+        return {
+          ok: true,
+          closeOut: {
+            issued: result.issued,
+            alreadyIssued: result.alreadyIssued,
+            ineligible: result.ineligible,
+          },
+        };
+      }
       case "save-student-note": {
         const applicationId = String(formData.get("applicationId") ?? "");
         const application = await prisma.educationApplication.findUnique({
@@ -314,7 +331,10 @@ export default function ManageOffering() {
     collabToken,
     userName,
   } = useLoaderData<typeof loader>();
-  const actionData = useActionData<{ error?: string }>();
+  const actionData = useActionData<{
+    error?: string;
+    closeOut?: { issued: number; alreadyIssued: number; ineligible: number };
+  }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = searchParams.get("tab") ?? "details";
 
@@ -350,6 +370,23 @@ export default function ManageOffering() {
           >
             View listing
           </Link>
+          <Form
+            method="post"
+            onSubmit={(e) => {
+              if (
+                !confirm(
+                  "Close out this course? Certificates are issued to every approved student meeting the attendance threshold, and each gets an email. Re-running only issues missing certificates.",
+                )
+              ) {
+                e.preventDefault();
+              }
+            }}
+          >
+            <input type="hidden" name="intent" value="close-out-offering" />
+            <Button type="submit" variant="secondary" size="sm">
+              {offering.closedOutAt ? "Re-run close-out" : "Close out course"}
+            </Button>
+          </Form>
           {nextStatuses.map((s) => (
             <Form key={s.to} method="post">
               <input type="hidden" name="intent" value="set-status" />
@@ -365,6 +402,17 @@ export default function ManageOffering() {
       {actionData?.error && (
         <p className="text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2">
           {actionData.error}
+        </p>
+      )}
+      {actionData?.closeOut && (
+        <p className="text-sm text-foreground bg-green-50 border border-green-200 rounded-md px-3 py-2">
+          Close-out complete: {actionData.closeOut.issued} certificate
+          {actionData.closeOut.issued === 1 ? "" : "s"} issued
+          {actionData.closeOut.alreadyIssued > 0 &&
+            `, ${actionData.closeOut.alreadyIssued} already issued`}
+          {actionData.closeOut.ineligible > 0 &&
+            `, ${actionData.closeOut.ineligible} below the attendance threshold`}
+          .
         </p>
       )}
 
