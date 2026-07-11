@@ -71,7 +71,9 @@ test.describe('internal Organizations pages (Core)', () => {
     await expect(
       page.getByRole('heading', { name: 'Tuck School of Business' }),
     ).toBeVisible();
-    await expect(page.getByText('Pat Tuck')).toBeVisible();
+    // The seed marks Pat as primary contact, so the name appears in both the
+    // member row and the primary-contact line — assert presence, not oneness.
+    await expect(page.getByText('Pat Tuck').first()).toBeVisible();
     await expect(page.getByText('invitee.tuck@example.com')).toBeVisible();
     await expect(page.getByText('Tuck Alumni Connect')).toBeVisible();
   });
