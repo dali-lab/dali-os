@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useLoaderData, useFetcher } from "react-router";
+import { Link, useLoaderData, useFetcher } from "react-router";
 import {
   Plus,
   Pencil,
@@ -10,6 +10,7 @@ import {
   Lock,
   Copy,
   Check,
+  Inbox,
 } from "lucide-react";
 import { FormBuilderTab } from "~/hiring/components/ChallengeBuilder";
 import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
@@ -52,7 +53,7 @@ function formatDateShort(iso: string) {
 //                         (save-version) and clears the draft. Frozen versions
 //                         are read-only and are what publishing serves.
 export function FormDetail() {
-  const { form, terms } = useLoaderData<typeof loader>();
+  const { form, terms, usages, submissionCount } = useLoaderData<typeof loader>();
   // A dedicated fetcher for saves so the builder's buttons can reflect
   // request state ("Saving…"/"Saved ✓"). The submitted intent tells us which
   // button is in flight; fetcher.state + a brief post-success window drive the
@@ -198,17 +199,42 @@ export function FormDetail() {
             <p className="mt-1 text-muted-foreground">
               Created {new Date(form.createdAt).toLocaleDateString()}
             </p>
+            {usages.length > 0 && (
+              <div className="mt-2 flex items-center gap-1.5 flex-wrap text-xs">
+                <span className="text-muted-foreground font-medium">In use:</span>
+                {usages.map((u) => (
+                  <span
+                    key={`${u.kind}:${u.label}`}
+                    className="inline-flex items-center px-2 py-0.5 rounded-full bg-accent-teal/10 text-accent-teal border border-accent-teal/20"
+                  >
+                    {u.label}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
-          {!isEditing && (
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => startEditing()}
+          <div className="flex items-center gap-2">
+            <Link
+              to={`/forms/responses/${form.id}`}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md border border-border text-foreground hover:bg-muted/50 transition-colors"
             >
-              <Plus className="w-4 h-4" />
-              {hasDraft ? "Continue editing draft" : "New version"}
-            </Button>
-          )}
+              <Inbox className="w-4 h-4" />
+              Responses
+              <span className="text-xs text-muted-foreground">
+                {submissionCount}
+              </span>
+            </Link>
+            {!isEditing && (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => startEditing()}
+              >
+                <Plus className="w-4 h-4" />
+                {hasDraft ? "Continue editing draft" : "New version"}
+              </Button>
+            )}
+          </div>
         </div>
 
         <PublishControl
@@ -216,6 +242,7 @@ export function FormDetail() {
           published={form.published}
           publicToken={form.publicToken}
           hasVersions={form.versions.length > 0}
+          inUse={usages.length > 0}
         />
       </div>
 
@@ -462,11 +489,13 @@ function PublishControl({
   published,
   publicToken,
   hasVersions,
+  inUse,
 }: {
   formId: string;
   published: boolean;
   publicToken: string | null;
   hasVersions: boolean;
+  inUse: boolean;
 }) {
   const fetcher = useFetcher();
   const [copied, setCopied] = useState(false);
@@ -541,6 +570,13 @@ function PublishControl({
 
       {err && (
         <div className="text-destructive text-xs">{err}</div>
+      )}
+
+      {published && inUse && (
+        <p className="text-xs text-amber-700">
+          This form is in use (see above) — unpublishing hides it from those
+          surfaces until it's re-published.
+        </p>
       )}
 
       {publicUrl && (

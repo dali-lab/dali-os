@@ -101,9 +101,10 @@ export default [
     // Forms. The :folderId form lets a folder card open its own page with
     // nested folders + forms; the bare /forms route is the top level.
     route("forms", "forms/routes/forms.tsx"),
-    // Static `edit` segment must precede the :folderId catch so /forms/edit/*
-    // isn't read as a folder id.
+    // Static `edit`/`responses` segments must precede the :folderId catch so
+    // /forms/edit/* and /forms/responses/* aren't read as folder ids.
     route("forms/edit/:formId", "forms/routes/forms.edit.$formId.tsx"),
+    route("forms/responses/:formId", "forms/routes/forms.responses.$formId.tsx"),
     route("forms/:folderId", "forms/routes/forms.$folderId.tsx"),
 
     // Internal applicant portal — intern → full-time conversion. Authenticated

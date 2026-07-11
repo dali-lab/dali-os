@@ -12,6 +12,7 @@ import { z } from "zod";
 import { prisma, Prisma } from "~/lib/db";
 import type { Question } from "~/types";
 import { isReferenceSourceKey, referenceSourceNeedsTerm } from "./reference-sources.shared";
+import { formDeletionBlockers } from "./form-usages.server";
 
 const QUESTION_TYPES: Question["type"][] = [
   "text",
@@ -363,6 +364,15 @@ export async function runFormsAction(
         select: { id: true },
       });
       if (!exists) return { error: "Not found", status: 404 };
+      // Deletion cascades submissions and bindings away — refuse while any
+      // live surface depends on this form (see form-usages.server.ts).
+      const blockers = await formDeletionBlockers(input.id);
+      if (blockers.length > 0) {
+        return {
+          error: `This form is in use: ${blockers.join("; ")}. Remove those bindings first.`,
+          status: 409,
+        };
+      }
       await prisma.form.delete({ where: { id: input.id } });
       return { ok: true };
     }
