@@ -124,7 +124,7 @@ test.describe('partner portal', () => {
   test('home shows org welcome, project card, and bounces from member shell', async ({ page }) => {
     await page.goto('/partner');
     await expect(
-      page.getByRole('heading', { name: 'Welcome, Tuck School of Business' }),
+      page.getByRole('heading', { name: 'Welcome, Pat' }),
     ).toBeVisible();
     await expect(page.getByText('Tuck Alumni Connect')).toBeVisible();
 
@@ -182,7 +182,7 @@ test.describe('partner self-signup', () => {
     await page.getByLabel('Organization name').fill('Example Robotics');
     await page.getByRole('button', { name: 'Continue' }).click();
     await expect(
-      page.getByRole('heading', { name: 'Welcome, Example Robotics' }),
+      page.getByRole('heading', { name: 'Welcome, Emery' }),
     ).toBeVisible();
 
     // Submit a pitch and land on its status page.
@@ -266,7 +266,7 @@ test.describe('bound application form', () => {
       await expect(page.getByText('A few more questions')).toBeVisible();
       await expect(page.getByText('What is your budget?')).toBeVisible();
       await page
-        .locator('fieldset', { hasText: 'A few more questions' })
+        .locator('section', { hasText: 'A few more questions' })
         .locator('textarea')
         .fill('Around $10k for the pilot term.');
       await page.getByRole('button', { name: 'Submit pitch' }).click();

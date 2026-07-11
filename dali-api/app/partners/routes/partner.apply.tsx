@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { Form, redirect, useLoaderData, useNavigation } from "react-router";
+import { ChevronDown } from "lucide-react";
+import { termCodeLabel } from "~/lib/display";
 import type { Route } from "./+types/partner.apply";
 import { prisma } from "~/lib/db";
 import { logAuditEvent } from "~/lib/audit";
@@ -161,7 +163,19 @@ export default function PartnerApply({ actionData }: Route.ComponentProps) {
   const navigation = useNavigation();
   const submitting = navigation.state === "submitting";
   const [formAnswers, setFormAnswers] = useState<Record<string, string>>({});
+  // Controlled so editing a domain's fields selects the domain — otherwise
+  // an expanded-but-unchecked row's input is silently dropped on submit.
+  const [checkedDomains, setCheckedDomains] = useState<Set<string>>(new Set());
   const [clientError, setClientError] = useState<string | null>(null);
+
+  function selectDomain(id: string) {
+    setCheckedDomains((prev) => {
+      if (prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  }
   const error =
     clientError ??
     (actionData && "error" in actionData ? actionData.error : null);
@@ -206,7 +220,7 @@ export default function PartnerApply({ actionData }: Route.ComponentProps) {
       <Form method="post" onSubmit={checkRequired} className="flex flex-col gap-6">
         <div>
           <label htmlFor="title" className={labelClass}>
-            Project title
+            Project title<span className="text-accent-coral ml-0.5">*</span>
           </label>
           <input id="title" name="title" required className={inputClass} />
         </div>
@@ -223,7 +237,7 @@ export default function PartnerApply({ actionData }: Route.ComponentProps) {
                   className="flex items-center gap-2 text-sm text-dark-blue bg-card border border-border rounded-lg px-3 py-2"
                 >
                   <input type="checkbox" name="termIds" value={t.id} className="rounded" />
-                  {t.code}
+                  {termCodeLabel(t.code)}
                 </label>
               ))}
             </div>
@@ -236,12 +250,31 @@ export default function PartnerApply({ actionData }: Route.ComponentProps) {
           </legend>
           <div className="flex flex-col gap-3 mt-1">
             {domains.map((d) => (
-              <details key={d.id} className="bg-card border border-border rounded-xl">
+              <details key={d.id} className="group bg-card border border-border rounded-xl">
                 <summary className="flex items-center gap-2 text-sm text-dark-blue px-4 py-3 cursor-pointer select-none">
-                  <input type="checkbox" name="domainIds" value={d.id} className="rounded" onClick={(e) => e.stopPropagation()} />
+                  <input
+                    type="checkbox"
+                    name="domainIds"
+                    value={d.id}
+                    checked={checkedDomains.has(d.id)}
+                    onChange={(e) => {
+                      const on = e.target.checked;
+                      setCheckedDomains((prev) => {
+                        const next = new Set(prev);
+                        if (on) next.add(d.id);
+                        else next.delete(d.id);
+                        return next;
+                      });
+                    }}
+                    className="rounded"
+                    onClick={(e) => e.stopPropagation()}
+                  />
                   {d.displayName}
+                  <ChevronDown className="w-4 h-4 text-muted-foreground ml-auto transition-transform group-open:rotate-180" />
                 </summary>
-                <div className="px-4 pb-4 flex flex-col gap-3">
+                {/* Typing in either field selects the domain, so an expanded-
+                    but-unchecked row can't silently lose its input. */}
+                <div className="px-4 pb-4 flex flex-col gap-3" onInput={() => selectDomain(d.id)}>
                   <label className="block">
                     <span className="text-xs font-medium text-muted-foreground">
                       Expected team members (rough)
@@ -272,8 +305,10 @@ export default function PartnerApply({ actionData }: Route.ComponentProps) {
         </fieldset>
 
         {applicationForm && applicationForm.questions.length > 0 && (
-          <fieldset className="flex flex-col gap-5">
-            <legend className={labelClass}>A few more questions</legend>
+          <section className="flex flex-col gap-5 border-t border-border pt-6">
+            <h2 className="font-heading text-lg font-semibold text-dark-blue">
+              A few more questions
+            </h2>
             {Boolean(applicationForm.description) &&
               !isEmptyDoc(applicationForm.description) && (
                 <div className="text-sm text-muted-foreground -mt-1">
@@ -305,7 +340,7 @@ export default function PartnerApply({ actionData }: Route.ComponentProps) {
               name="formAnswers"
               value={JSON.stringify(formAnswers)}
             />
-          </fieldset>
+          </section>
         )}
 
         <button

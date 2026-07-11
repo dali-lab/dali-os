@@ -3,7 +3,7 @@ import type { Route } from "./+types/partner.projects.$id";
 import { prisma } from "~/lib/db";
 import { currentTerm } from "~/lib/roles";
 import { resolvePhotoUrl } from "~/lib/photo";
-import { fullName } from "~/lib/display";
+import { fullName, termCodeLabel } from "~/lib/display";
 import { requirePartner } from "~/partners/lib/partner-auth.server";
 import { partnerHasProjectAccess } from "~/partners/lib/partner-access";
 
@@ -228,8 +228,14 @@ export default function PartnerProjectView() {
               {project.name}
             </h1>
             <p className="text-sm text-muted-foreground mt-1">
-              {project.terms.length > 0 && <>Terms: {project.terms.join(", ")} · </>}
-              {partnerSince && <>Partner since {fmtDate(partnerSince)}</>}
+              {[
+                project.terms.length > 0
+                  ? `Terms: ${project.terms.map(termCodeLabel).join(", ")}`
+                  : null,
+                partnerSince ? `Partner since ${fmtDate(partnerSince)}` : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
             </p>
             {project.description && (
               <p className="text-sm text-foreground mt-3 whitespace-pre-wrap">
@@ -364,7 +370,7 @@ export default function PartnerProjectView() {
       {team.length > 0 && (
         <section>
           <h2 className="font-heading text-lg font-semibold text-dark-blue mb-3">
-            Your DALI team{currentTermCode ? ` · ${currentTermCode}` : ""}
+            Your DALI team{currentTermCode ? ` · ${termCodeLabel(currentTermCode)}` : ""}
           </h2>
           <div className="bg-card border border-border rounded-2xl p-5 flex flex-wrap gap-3">
             {team.map((m) => (

@@ -3,6 +3,7 @@ import type { Route } from "./+types/partner.applications.$id";
 import { prisma } from "~/lib/db";
 import { parseSessionCookie } from "~/lib/cookies";
 import { getPresenceUser } from "~/lib/presence-user";
+import { termCodeLabel } from "~/lib/display";
 import { requirePartner } from "~/partners/lib/partner-auth.server";
 import {
   formAnswerRows,
@@ -210,7 +211,9 @@ export default function PartnerApplicationDetail({
             </div>
             <div className="text-sm text-foreground">
               {application.targetTerms.length > 0
-                ? application.targetTerms.map((t) => t.term.code).join(", ")
+                ? application.targetTerms
+                    .map((t) => termCodeLabel(t.term.code))
+                    .join(", ")
                 : "—"}
             </div>
           </div>
@@ -256,10 +259,20 @@ export default function PartnerApplicationDetail({
         <h2 className="font-heading font-semibold text-dark-blue">
           Statement of Work
         </h2>
-        <p className="text-xs text-muted-foreground mt-0.5 mb-3">
-          Drafted together with the DALI team — edits sync live.
-        </p>
-        {collabToken ? (
+        {application.status !== "Submitted" && (
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Drafted together with the DALI team — edits sync live.
+          </p>
+        )}
+        <div className="mt-3" />
+        {/* The SOW is a co-owned doc: it opens once the lab is actually in
+            the room (review has started), not the moment a pitch lands. */}
+        {application.status === "Submitted" ? (
+          <p className="text-sm text-muted-foreground bg-muted/30 rounded-lg px-4 py-3">
+            This document opens when the lab starts reviewing your pitch —
+            you'll draft the details here together with the DALI team.
+          </p>
+        ) : collabToken ? (
           <PresenceProvider
             pageId={`partnersow:${application.id}`}
             token={collabToken}

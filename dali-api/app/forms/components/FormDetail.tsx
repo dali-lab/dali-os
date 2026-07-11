@@ -541,7 +541,7 @@ function PublishControl({
           </span>
           <span className="text-muted-foreground">
             {published
-              ? "Logged-in members can fill this out via the link."
+              ? "The latest version is live — bound surfaces serve it, and logged-in members can fill it via the link."
               : "Only lab staff can see this form."}
           </span>
         </div>

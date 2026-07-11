@@ -13,6 +13,13 @@ export const meta: Route.MetaFunction = ({ data }) => [
   },
 ];
 
+// Resolves the dynamic leaf crumb so the trail reads
+// "Documents › Responses › <form name>" instead of a raw id.
+export const handle = {
+  breadcrumb: (data: unknown) =>
+    (data as { formName?: string } | undefined)?.formName ?? null,
+};
+
 // Show the newest N submissions inline; older ones exist but this page is a
 // review surface, not an export.
 const MAX_RESPONSES = 200;

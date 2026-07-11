@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { initialsFromName, userInitials } from "~/lib/display";
+import { initialsFromName, userInitials, termCodeLabel } from "~/lib/display";
 
 describe("initialsFromName", () => {
   it("returns first + last initial for a full name", () => {
@@ -38,5 +38,20 @@ describe("userInitials", () => {
 
   it("handles short email local-parts gracefully", () => {
     expect(userInitials({ email: "a@x.com" })).toBe("A");
+  });
+});
+
+describe("termCodeLabel", () => {
+  it("spells out each season", () => {
+    expect(termCodeLabel("26W")).toBe("Winter 2026");
+    expect(termCodeLabel("26S")).toBe("Spring 2026");
+    expect(termCodeLabel("26X")).toBe("Summer 2026");
+    expect(termCodeLabel("27F")).toBe("Fall 2027");
+  });
+
+  it("passes unrecognized codes through unchanged", () => {
+    expect(termCodeLabel("spring")).toBe("spring");
+    expect(termCodeLabel("2026S")).toBe("2026S");
+    expect(termCodeLabel("")).toBe("");
   });
 });

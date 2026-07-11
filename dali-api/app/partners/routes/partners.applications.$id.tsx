@@ -41,6 +41,14 @@ export const meta: Route.MetaFunction = ({ data }) => {
   ];
 };
 
+// Resolves the dynamic leaf crumb so the trail reads
+// "Partners › Applications › <title>" instead of a raw id.
+export const handle = {
+  breadcrumb: (data: unknown) =>
+    (data as { application?: { title?: string } } | undefined)?.application
+      ?.title ?? null,
+};
+
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -524,22 +532,27 @@ function DetailsSection({
       <input type="hidden" name="intent" value="details" />
       <h2 className="text-sm font-semibold text-foreground">Details</h2>
 
-      <label className="flex flex-col gap-1 text-xs">
-        <span className="text-muted-foreground">Summary</span>
-        {canEdit ? (
-          <textarea
-            name="summary"
-            rows={3}
-            defaultValue={application.summary ?? ""}
-            placeholder="One-paragraph pitch summary. The full SOW lives below."
-            className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-          />
-        ) : (
-          <span className="px-2 py-1.5 text-sm text-foreground whitespace-pre-wrap">
-            {application.summary ?? "—"}
-          </span>
-        )}
-      </label>
+      {/* Core-written synopsis — partners never see or set this (their prose
+          lives in the application answers). Hidden in read mode when empty
+          so partner-submitted applications don't render a blank row. */}
+      {(canEdit || application.summary !== null) && (
+        <label className="flex flex-col gap-1 text-xs">
+          <span className="text-muted-foreground">Internal summary</span>
+          {canEdit ? (
+            <textarea
+              name="summary"
+              rows={3}
+              defaultValue={application.summary ?? ""}
+              placeholder="One-paragraph synopsis for the lab — partners don't see this. The full SOW lives below."
+              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+            />
+          ) : (
+            <span className="px-2 py-1.5 text-sm text-foreground whitespace-pre-wrap">
+              {application.summary}
+            </span>
+          )}
+        </label>
+      )}
 
       <TargetTermsField
         terms={terms}

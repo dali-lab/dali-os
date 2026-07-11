@@ -26,6 +26,22 @@ export function userInitials(user: {
 export const UNKNOWN_LABEL = "Unknown";
 export const EMPTY_DISPLAY = "—";
 
+const SEASON_NAMES: Record<string, string> = {
+  W: "Winter",
+  S: "Spring",
+  X: "Summer",
+  F: "Fall",
+};
+
+/** "26S" -> "Spring 2026". Partner-facing surfaces spell term codes out; the
+ * member app keeps lab vocabulary ("26S") verbatim. Unrecognized codes pass
+ * through unchanged. */
+export function termCodeLabel(code: string): string {
+  const m = /^(\d{2})([WSXF])$/.exec(code);
+  if (!m) return code;
+  return `${SEASON_NAMES[m[2]!]} 20${m[1]}`;
+}
+
 // TODO: import from app-env.ts once available
 const DARTMOUTH_EMAIL_DOMAIN_FALLBACK = "dartmouth.edu";
 

@@ -11,6 +11,13 @@ export const meta: Route.MetaFunction = ({ data }) => [
   { title: `${(data as any)?.form?.name ?? "Form"} · Forms · DALI OS` },
 ];
 
+// Resolves the dynamic leaf crumb so the trail reads
+// "Documents › Edit › <form name>" instead of a raw id.
+export const handle = {
+  breadcrumb: (data: unknown) =>
+    (data as { form?: { name?: string } } | undefined)?.form?.name ?? null,
+};
+
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");

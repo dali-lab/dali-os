@@ -3636,7 +3636,7 @@ async function main() {
             lastName: "Tuck",
           },
         });
-        await prisma.partnerUser.upsert({
+        const tuckContact = await prisma.partnerUser.upsert({
           where: { userId: partnerContact.id },
           update: { partnerOrgId: tuck.id },
           create: {
@@ -3645,6 +3645,12 @@ async function main() {
             displayRole: "Program Sponsor",
             authProvider: "MagicLink",
           },
+        });
+        // Self-signup sets the founder as primary contact; mirror that so the
+        // seeded org shows the "Primary contact" badge in settings.
+        await prisma.partnerOrg.update({
+          where: { id: tuck.id },
+          data: { primaryContactId: tuckContact.id },
         });
 
         // A pending teammate invite with a deterministic token so E2E can

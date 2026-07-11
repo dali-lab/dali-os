@@ -214,6 +214,14 @@ export function PhotoUploadField({
       />
       <input type="hidden" name={fieldName} value={key} />
 
+      {/* The upload only lands when the surrounding form is saved — say so,
+          or a user who uploads and navigates away silently loses it. */}
+      {!readOnly && key !== (initialKey ?? "") && !uploading && (
+        <p className="text-xs text-amber-700">
+          Not saved yet — save this form to keep the change.
+        </p>
+      )}
+
       {error && <p className="text-xs text-red-500">{error}</p>}
 
       <PhotoCropModal

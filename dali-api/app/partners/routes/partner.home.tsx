@@ -14,7 +14,7 @@ export const meta: Route.MetaFunction = () => [
 ];
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const { partnerUser, org } = await requirePartner(request);
+  const { auth, partnerUser, org } = await requirePartner(request);
 
   const [applications, projects] = await Promise.all([
     prisma.partnerApplication.findMany({
@@ -37,6 +37,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   return {
     org,
+    firstName: auth.user.firstName,
     applications,
     projects: await Promise.all(
       projects.map(async (p) => ({
@@ -50,13 +51,14 @@ export async function loader({ request }: Route.LoaderArgs) {
 }
 
 export default function PartnerHome() {
-  const { org, applications, projects } = useLoaderData<typeof loader>();
+  const { org, firstName, applications, projects } = useLoaderData<typeof loader>();
 
   return (
     <div className="flex flex-col gap-8">
       <div>
         <h1 className="font-heading text-3xl font-bold text-dark-blue">
-          Welcome, {org.name}
+          {/* Greet the person — the org name already sits in the nav chip. */}
+          Welcome, {firstName || org.name}
         </h1>
         <p className="text-muted-foreground mt-1">
           Your projects and applications with the DALI Lab.
@@ -137,9 +139,19 @@ export default function PartnerHome() {
                 to={`/partner/applications/${a.id}`}
                 className="flex items-center gap-3 px-4 py-3.5 hover:bg-muted/20 transition"
               >
-                <span className="text-sm font-medium text-foreground flex-1 min-w-0 truncate">
-                  {a.title}
-                </span>
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm font-medium text-foreground block truncate">
+                    {a.title}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    Submitted{" "}
+                    {new Date(a.createdAt).toLocaleDateString(undefined, {
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                    })}
+                  </span>
+                </div>
                 <span
                   className={`text-xs rounded-full px-2 py-0.5 flex-shrink-0 ${PARTNER_APPLICATION_STATUS_PILL[a.status]}`}
                 >

@@ -15,11 +15,20 @@ describe("ChallengeQuestionField — question types render", () => {
     expect(html).toContain('type="text"');
   });
 
-  it("renders a textarea for type=textarea with a word counter", () => {
+  it("renders a textarea for type=textarea, with a word counter only when limited", () => {
     const q: Question = { key: "bio", type: "textarea", required: false, data: { label: "Bio" } };
     const html = renderField({ question: q, value: "hello world", onChange: () => {} });
     expect(html).toContain("<textarea");
-    expect(html).toContain("2 words");
+    expect(html).not.toContain("words");
+
+    const limited: Question = {
+      key: "bio",
+      type: "textarea",
+      required: false,
+      data: { label: "Bio", maxWords: 100 },
+    };
+    const limitedHtml = renderField({ question: limited, value: "hello world", onChange: () => {} });
+    expect(limitedHtml).toContain("2 / 100 words");
   });
 
   it("renders a select with the placeholder option for type=select", () => {
