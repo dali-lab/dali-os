@@ -217,7 +217,7 @@ export default function Login() {
                     DALI Member
                   </span>
                   <span className="text-xs text-muted-foreground mt-0.5 block">
-                    Continue with your @dali.dartmouth.edu Google account
+                    Current lab members
                   </span>
                 </div>
                 <svg
@@ -269,7 +269,7 @@ export default function Login() {
                     Dartmouth Applicant
                   </span>
                   <span className="text-xs text-muted-foreground mt-0.5 block">
-                    Continue with Dartmouth single sign-on
+                    Applying to join the lab
                   </span>
                 </div>
                 <svg
@@ -312,7 +312,7 @@ export default function Login() {
                   Partner
                 </span>
                 <span className="text-xs text-muted-foreground mt-0.5 block">
-                  Continue with an emailed sign-in link — no password
+                  Working with the lab on a project
                 </span>
               </div>
               <svg
