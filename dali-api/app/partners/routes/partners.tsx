@@ -11,6 +11,7 @@ import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { canViewStaffing, isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
+import { resolvePhotoUrl } from "~/lib/photo";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { OPEN_APPLICATION_STATUSES } from "../lib/partner-application";
 
@@ -58,10 +59,11 @@ export async function loader({ request }: Route.LoaderArgs) {
     isCore(auth.user.sub),
   ]);
 
-  const rows: OrgRow[] = orgs.map((o) => ({
+  const rows: OrgRow[] = await Promise.all(orgs.map(async (o) => ({
     id: o.id,
     name: o.name,
-    logoUrl: o.logoUrl,
+    // Uploaded logos are stored as S3 keys; presign for display.
+    logoUrl: await resolvePhotoUrl(o.logoUrl),
     website: o.website,
     isIndividual: o.isIndividual,
     memberCount: o._count.users,
@@ -75,7 +77,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     openApplicationCount: o.applications.filter((a) =>
       (OPEN_APPLICATION_STATUSES as readonly string[]).includes(a.status),
     ).length,
-  }));
+  })));
 
   return { rows, canEdit };
 }

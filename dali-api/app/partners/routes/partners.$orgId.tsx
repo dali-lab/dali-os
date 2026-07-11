@@ -13,6 +13,7 @@ import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { canViewStaffing, isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
+import { resolvePhotoUrl } from "~/lib/photo";
 import { EditableSection } from "~/components/EditableSection";
 import {
   linkProjectPartner,
@@ -104,6 +105,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   return {
     org: {
       ...org,
+      // Presigned display URL; `logoUrl` stays the raw stored value (an S3
+      // key for partner-uploaded logos) for the edit form.
+      logoDisplayUrl: await resolvePhotoUrl(org.logoUrl),
       projects: org.projects.map((p) => ({
         ...p,
         active:
@@ -294,9 +298,9 @@ export default function PartnerOrgDetail() {
   return (
     <div className="flex flex-col gap-6 max-w-4xl">
       <div className="flex items-center gap-4">
-        {org.logoUrl ? (
+        {org.logoDisplayUrl ? (
           <img
-            src={org.logoUrl}
+            src={org.logoDisplayUrl}
             alt=""
             className="w-12 h-12 rounded-lg object-contain bg-background border border-border"
           />

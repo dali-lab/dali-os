@@ -177,10 +177,10 @@ export default function Login() {
             </span>
           </div>
           <h1 className="font-heading text-3xl font-bold text-dark-blue mb-2">
-            Sign in to DALI OS
+            Continue to DALI OS
           </h1>
           <p className="text-muted-foreground mb-10">
-            Select how you'd like to continue
+            Choose who you are — we'll take you to the right sign-in.
           </p>
 
           {error && (
@@ -214,10 +214,10 @@ export default function Login() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <span className="font-heading font-semibold text-dark-blue group-hover:text-accent-coral transition block">
-                    Current Member
+                    DALI Member
                   </span>
                   <span className="text-xs text-muted-foreground mt-0.5 block">
-                    @dali.dartmouth.edu Google account
+                    Continue with your @dali.dartmouth.edu Google account
                   </span>
                 </div>
                 <svg
@@ -266,10 +266,10 @@ export default function Login() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <span className="font-heading font-semibold text-dark-blue group-hover:text-accent-coral transition block">
-                    Applicant
+                    Dartmouth Applicant
                   </span>
                   <span className="text-xs text-muted-foreground mt-0.5 block">
-                    Dartmouth single sign-on
+                    Continue with Dartmouth single sign-on
                   </span>
                 </div>
                 <svg
@@ -312,7 +312,7 @@ export default function Login() {
                   Partner
                 </span>
                 <span className="text-xs text-muted-foreground mt-0.5 block">
-                  Sign-in link sent to your work email
+                  Continue with an emailed sign-in link — no password
                 </span>
               </div>
               <svg

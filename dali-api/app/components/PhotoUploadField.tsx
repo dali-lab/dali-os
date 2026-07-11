@@ -9,22 +9,30 @@ import { PhotoCropModal } from "./PhotoCropModal";
 
 const ACCEPT = "image/png,image/jpeg,image/webp,image/gif";
 
-// Profile-photo control: pick an image → crop/zoom modal → upload the cropped
-// result to S3 → store the returned key in a hidden `photoUrl` input. The
-// surrounding form persists that key exactly as the old free-text field did;
-// loaders presign it back to a URL for display (see resolvePhotoUrl).
+// Image-upload control: pick an image → crop/zoom modal → upload the cropped
+// result to S3 → store the returned key in a hidden input (`fieldName`,
+// default "photoUrl"). The surrounding form persists that key exactly as the
+// old free-text field did; loaders presign it back to a URL for display (see
+// resolvePhotoUrl). Defaults suit member profile photos; org logos etc. pass
+// `label`/`fieldName`/`keyPrefix`.
 export function PhotoUploadField({
   userId,
   name,
   initialKey,
   initialPreviewUrl,
   readOnly,
+  label = "Profile photo",
+  fieldName = "photoUrl",
+  keyPrefix,
 }: {
   userId: string;
   name: string;
   initialKey: string | null;
   initialPreviewUrl: string | null;
   readOnly: boolean;
+  label?: string;
+  fieldName?: string;
+  keyPrefix?: string;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [key, setKey] = useState(initialKey ?? "");
@@ -93,7 +101,7 @@ export function PhotoUploadField({
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          key: `avatars/${userId}/${crypto.randomUUID()}.${ext}`,
+          key: `${keyPrefix ?? `avatars/${userId}`}/${crypto.randomUUID()}.${ext}`,
           contentType: blob.type || "image/webp",
           contentLength: blob.size,
           accept: ACCEPT,
@@ -147,7 +155,7 @@ export function PhotoUploadField({
 
   return (
     <div className="flex flex-col gap-1 text-xs">
-      <span className="text-muted-foreground">Profile photo</span>
+      <span className="text-muted-foreground">{label}</span>
       <div className="flex items-center gap-4">
         <div className="relative w-20 h-20 flex-shrink-0">
           {previewUrl ? (
@@ -204,7 +212,7 @@ export function PhotoUploadField({
         onChange={handleInputChange}
         className="hidden"
       />
-      <input type="hidden" name="photoUrl" value={key} />
+      <input type="hidden" name={fieldName} value={key} />
 
       {error && <p className="text-xs text-red-500">{error}</p>}
 

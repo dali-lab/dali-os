@@ -3,6 +3,8 @@ import { Form, useLoaderData, useNavigation } from "react-router";
 import type { Route } from "./+types/partner.settings";
 import { prisma } from "~/lib/db";
 import { logAuditEvent } from "~/lib/audit";
+import { resolvePhotoUrl } from "~/lib/photo";
+import { PhotoUploadField } from "~/components/PhotoUploadField";
 import { requirePartner } from "~/partners/lib/partner-auth.server";
 import {
   createPartnerInvite,
@@ -32,12 +34,14 @@ export async function loader({ request }: Route.LoaderArgs) {
   ]);
   return {
     me: {
+      userId: auth.user.sub,
       firstName: auth.user.firstName,
       lastName: auth.user.lastName,
       displayRole: partnerUser.displayRole,
       partnerUserId: partnerUser.id,
     },
     org,
+    logoPreviewUrl: await resolvePhotoUrl(org.logoUrl),
     members,
     pendingInvites,
   };
@@ -113,6 +117,32 @@ export async function action({ request }: Route.ActionArgs) {
     return { ok: true };
   }
 
+  if (intent === "remove-member") {
+    const targetId = form.get("partnerUserId") as string;
+    const target = await prisma.partnerUser.findFirst({
+      where: { id: targetId, partnerOrgId: org.id },
+      select: { id: true, userId: true },
+    });
+    if (!target) return { error: "Member not found." };
+    if (target.id === partnerUser.id) {
+      return { error: "You can't remove yourself." };
+    }
+    if (org.primaryContactId === target.id) {
+      return {
+        error: "Assign a new primary contact before removing this member.",
+      };
+    }
+    await prisma.partnerUser.delete({ where: { id: target.id } });
+    await logAuditEvent({
+      action: "partner.member.remove",
+      userId: auth.user.sub,
+      targetId: org.id,
+      metadata: { removedUserId: target.userId },
+      request,
+    });
+    return { ok: true };
+  }
+
   if (intent === "invite") {
     const result = await createPartnerInvite(
       {
@@ -142,7 +172,8 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function PartnerSettings({ actionData }: Route.ComponentProps) {
-  const { me, org, members, pendingInvites } = useLoaderData<typeof loader>();
+  const { me, org, logoPreviewUrl, members, pendingInvites } =
+    useLoaderData<typeof loader>();
   const navigation = useNavigation();
   const submitting = navigation.state === "submitting";
   const [inviting, setInviting] = useState(false);
@@ -201,10 +232,16 @@ export default function PartnerSettings({ actionData }: Route.ComponentProps) {
             <label className={labelClass}>Website</label>
             <input name="website" defaultValue={org.website ?? ""} className={inputClass} />
           </div>
-          <div>
-            <label className={labelClass}>Logo URL</label>
-            <input name="logoUrl" defaultValue={org.logoUrl ?? ""} className={inputClass} />
-          </div>
+          <PhotoUploadField
+            userId={me.userId}
+            name={org.name}
+            label="Logo"
+            fieldName="logoUrl"
+            keyPrefix={`logos/${org.id}`}
+            initialKey={org.logoUrl}
+            initialPreviewUrl={logoPreviewUrl}
+            readOnly={false}
+          />
           <button type="submit" disabled={submitting} className={saveClass}>
             Save organization
           </button>
@@ -278,6 +315,25 @@ export default function PartnerSettings({ actionData }: Route.ComponentProps) {
                       className="text-xs text-muted-foreground hover:text-foreground transition"
                     >
                       Make primary contact
+                    </button>
+                  </Form>
+                )}
+                {org.primaryContactId !== m.id && m.id !== me.partnerUserId && (
+                  <Form
+                    method="post"
+                    onSubmit={(e) => {
+                      if (!confirm(`Remove ${name} from ${org.name}? They'll lose access to the portal.`)) {
+                        e.preventDefault();
+                      }
+                    }}
+                  >
+                    <input type="hidden" name="intent" value="remove-member" />
+                    <input type="hidden" name="partnerUserId" value={m.id} />
+                    <button
+                      type="submit"
+                      className="text-xs text-muted-foreground hover:text-destructive transition"
+                    >
+                      Remove
                     </button>
                   </Form>
                 )}
