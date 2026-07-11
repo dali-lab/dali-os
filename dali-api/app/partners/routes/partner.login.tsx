@@ -30,9 +30,10 @@ export async function loader({ request }: Route.LoaderArgs) {
 export async function action({ request }: Route.ActionArgs) {
   const formData = await request.formData();
 
-  // Repeat sign-in via Google (spec: convenience only — accounts are never
-  // created here; the callback only accepts pre-existing PartnerUsers).
-  // Same state-cookie shape as /login, minus the @dali.dartmouth.edu hint.
+  // Google sign-in — works for returning partners AND first-timers (the
+  // callback routes unknown verified emails into /partner/onboarding, same
+  // destination as the magic link). Same state-cookie shape as /login, minus
+  // the @dali.dartmouth.edu hint.
   if (formData.get("provider") === "google") {
     const limited = checkRateLimit(request, { max: 5, windowMs: 60_000 });
     if (limited) return limited;
@@ -136,8 +137,8 @@ export default function PartnerLogin() {
               </button>
             </Form>
             <p className="mt-2 text-xs text-muted-foreground">
-              Google works for returning partners whose account email is a
-              Google account. First time here? Use the email link above.
+              Either works, first visit or not — use Google if your email is a
+              Google account, or the link if it isn't.
             </p>
           </>
         )}
