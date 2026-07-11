@@ -26,8 +26,10 @@ import { useChartColors } from "~/hiring/components/analytics/useChartColors";
 import {
   clearApplicationFormBinding,
   getApplicationFormBinding,
+  pitchExcerpt,
   setApplicationFormBinding,
 } from "../lib/application-form.server";
+import type { Question } from "~/types";
 import { listSelectableForms } from "~/projects/lib/form-slots";
 
 export const meta: Route.MetaFunction = () => [
@@ -47,6 +49,9 @@ type ApplicationRow = {
   status: Status;
   partnerName: string;
   partnerLogoUrl: string | null;
+  // The partner's pitch prose: first textarea answer from their form
+  // submission, falling back to the (Core-written) internal summary.
+  excerpt: string | null;
   targetTerms: { code: string; sortKey: number }[];
   domains: DomainScopeOut[];
   totalExpectedMembers: number;
@@ -75,8 +80,15 @@ export async function loader({ request }: Route.LoaderArgs) {
       select: {
         id: true,
         title: true,
+        summary: true,
         status: true,
         partnerOrg: { select: { name: true, logoUrl: true } },
+        formSubmission: {
+          select: {
+            answers: true,
+            formVersion: { select: { questions: true } },
+          },
+        },
         targetTerms: {
           orderBy: { term: { sortKey: "asc" } },
           select: { term: { select: { code: true, sortKey: true } } },
@@ -113,11 +125,18 @@ export async function loader({ request }: Route.LoaderArgs) {
       domainName: d.domain.displayName,
       expectedMembers: d.expectedMembers,
     }));
+    const answerExcerpt = a.formSubmission
+      ? pitchExcerpt(
+          (a.formSubmission.formVersion.questions as unknown as Question[]) ?? [],
+          (a.formSubmission.answers as Record<string, unknown>) ?? {},
+        )
+      : null;
     return {
       id: a.id,
       title: a.title,
       status: a.status,
       partnerName: a.partnerOrg.name,
+      excerpt: answerExcerpt ?? a.summary,
       // Uploaded logos are stored as S3 keys; presign for display.
       partnerLogoUrl: await resolvePhotoUrl(a.partnerOrg.logoUrl),
       targetTerms: a.targetTerms.map((t) => ({
@@ -829,7 +848,14 @@ function ApplicationsTable({ rows }: { rows: ApplicationRow[] }) {
               }}
               className="border-t border-border hover:bg-muted/20 cursor-pointer"
             >
-              <td className="px-4 py-2 text-foreground">{a.title}</td>
+              <td className="px-4 py-2">
+                <span className="text-foreground block">{a.title}</span>
+                {a.excerpt && (
+                  <span className="text-xs text-muted-foreground block truncate max-w-md">
+                    {a.excerpt}
+                  </span>
+                )}
+              </td>
               <td className="px-4 py-2 text-muted-foreground">{a.partnerName}</td>
               <td className="px-4 py-2">
                 <StatusPill status={a.status} />
@@ -979,6 +1005,11 @@ function ApplicationCard({
       } ${isDragging ? "opacity-60 shadow-lg" : "hover:bg-muted/20"}`}
     >
       <span className="font-semibold text-foreground">{app.title}</span>
+      {app.excerpt && (
+        <span className="text-xs text-muted-foreground line-clamp-2">
+          {app.excerpt}
+        </span>
+      )}
       <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
         {app.partnerLogoUrl && (
           <img

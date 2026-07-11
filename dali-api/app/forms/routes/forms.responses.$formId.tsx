@@ -37,6 +37,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
   if (!form) return redirect("/forms");
 
+  // When this form is the bound partner application form, the applications
+  // board is the canonical review surface — this page is just the raw view.
+  const partnerBinding = await prisma.partnerApplicationFormBinding.findFirst({
+    where: { formId: form.id },
+    select: { id: true },
+  });
+
   const submissions = await prisma.formSubmission.findMany({
     where: { formId: form.id },
     orderBy: { createdAt: "desc" },
@@ -88,13 +95,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   return {
     formId: form.id,
     formName: form.name,
+    isPartnerApplicationForm: partnerBinding !== null,
     totalCount: form._count.submissions,
     responses,
   };
 }
 
 export default function FormResponses() {
-  const { formId, formName, totalCount, responses } =
+  const { formId, formName, isPartnerApplicationForm, totalCount, responses } =
     useLoaderData<typeof loader>();
 
   return (
@@ -116,6 +124,16 @@ export default function FormResponses() {
             ` · showing the ${responses.length} most recent`}
         </p>
       </div>
+
+      {isPartnerApplicationForm && (
+        <Link
+          to="/partners/applications"
+          className="block bg-accent-teal/10 border border-accent-teal/30 rounded-lg px-4 py-3 text-sm text-accent-teal font-medium hover:bg-accent-teal/15 transition"
+        >
+          These responses are partner applications — review them on the
+          Partner Applications board →
+        </Link>
+      )}
 
       {responses.length === 0 ? (
         <div className="text-center py-12 bg-card rounded-xl border border-border border-dashed">

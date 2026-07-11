@@ -21,7 +21,9 @@ import {
   getApplicationFormBinding,
   setApplicationFormBinding,
   loadApplicationForm,
+  pitchExcerpt,
 } from "../application-form.server";
+import type { Question } from "~/types";
 
 const mockPrisma = prisma as any;
 const mockLoadPublicForm = loadPublicForm as any;
@@ -113,5 +115,31 @@ describe("loadApplicationForm", () => {
     mockLoadPublicForm.mockResolvedValue(publicForm);
     expect(await loadApplicationForm("u1")).toBe(publicForm);
     expect(mockLoadPublicForm).toHaveBeenCalledWith("tok", "u1");
+  });
+});
+
+describe("pitchExcerpt", () => {
+  function q(key: string, type: Question["type"]): Question {
+    return { key, type, required: false, data: { label: key } } as Question;
+  }
+
+  it("returns the first non-empty textarea answer in question order", () => {
+    const questions = [q("name", "text"), q("pitch", "textarea"), q("success", "textarea")];
+    expect(
+      pitchExcerpt(questions, { name: "x", pitch: "  the pitch  ", success: "later" }),
+    ).toBe("the pitch");
+  });
+
+  it("skips empty/non-string answers and returns null when none qualify", () => {
+    const questions = [q("pitch", "textarea"), q("success", "textarea")];
+    expect(pitchExcerpt(questions, { pitch: "   ", success: 42 })).toBeNull();
+    expect(pitchExcerpt(questions, {})).toBeNull();
+  });
+
+  it("truncates long answers with an ellipsis", () => {
+    const questions = [q("pitch", "textarea")];
+    const out = pitchExcerpt(questions, { pitch: "a".repeat(300) }, 100);
+    expect(out).toHaveLength(100);
+    expect(out!.endsWith("…")).toBe(true);
   });
 });

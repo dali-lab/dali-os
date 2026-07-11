@@ -1,4 +1,5 @@
 import { prisma } from "~/lib/db";
+import type { Question } from "~/types";
 import { loadPublicForm, type PublicForm } from "~/forms/lib/public-form";
 
 // The lab-configurable application form for /partner/apply. Core binds one
@@ -62,6 +63,26 @@ export async function setApplicationFormBinding(
 
 export async function clearApplicationFormBinding(): Promise<void> {
   await prisma.partnerApplicationFormBinding.deleteMany({});
+}
+
+// At-a-glance prose for admin list/board rows: the first non-empty textarea
+// answer, in question order — the bound form's "pitch"-style question leads,
+// so this reads as the application's one-line story. Null when the partner
+// answered no prose questions.
+export function pitchExcerpt(
+  questions: Question[],
+  answers: Record<string, unknown>,
+  maxLength = 200,
+): string | null {
+  for (const q of questions) {
+    if (q.type !== "textarea") continue;
+    const raw = answers[q.key];
+    if (typeof raw !== "string") continue;
+    const text = raw.trim();
+    if (!text) continue;
+    return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text;
+  }
+  return null;
 }
 
 // The bound form as a partner fills it: latest version with reference options
