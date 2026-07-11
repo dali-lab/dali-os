@@ -266,10 +266,10 @@ export default function Login() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <span className="font-heading font-semibold text-dark-blue group-hover:text-accent-coral transition block">
-                    Dartmouth Applicant
+                    Dartmouth Student
                   </span>
                   <span className="text-xs text-muted-foreground mt-0.5 block">
-                    Applying to join the lab
+                    Lab applications, workshops, and more
                   </span>
                 </div>
                 <svg
