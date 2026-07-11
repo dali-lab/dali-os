@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import {
   Form,
+  Link,
   redirect,
   useActionData,
   useLoaderData,
@@ -13,6 +14,7 @@ import { requireAuth } from "~/lib/auth";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { prisma } from "~/lib/db";
 import { canViewStaffing, isCore } from "~/lib/roles";
+import { resolvePhotoUrl } from "~/lib/photo";
 import {
   PARTNER_APPLICATION_STATUSES as STATUSES,
   PARTNER_APPLICATION_STATUS_LABELS as STATUS_LABEL,
@@ -21,6 +23,12 @@ import {
   type PartnerApplicationStatus as Status,
 } from "../lib/partner-application";
 import { useChartColors } from "~/hiring/components/analytics/useChartColors";
+import {
+  clearApplicationFormBinding,
+  getApplicationFormBinding,
+  setApplicationFormBinding,
+} from "../lib/application-form.server";
+import { listSelectableForms } from "~/projects/lib/form-slots";
 
 export const meta: Route.MetaFunction = () => [
   { title: "Partner Applications · DALI OS" },
@@ -99,7 +107,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     }),
   ]);
 
-  const rows: ApplicationRow[] = applications.map((a) => {
+  const rows: ApplicationRow[] = await Promise.all(applications.map(async (a) => {
     const domains = a.domains.map((d) => ({
       domainId: d.domainId,
       domainName: d.domain.displayName,
@@ -110,7 +118,8 @@ export async function loader({ request }: Route.LoaderArgs) {
       title: a.title,
       status: a.status,
       partnerName: a.partnerOrg.name,
-      partnerLogoUrl: a.partnerOrg.logoUrl,
+      // Uploaded logos are stored as S3 keys; presign for display.
+      partnerLogoUrl: await resolvePhotoUrl(a.partnerOrg.logoUrl),
       targetTerms: a.targetTerms.map((t) => ({
         code: t.term.code,
         sortKey: t.term.sortKey,
@@ -118,7 +127,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       domains,
       totalExpectedMembers: domains.reduce((s, d) => s + d.expectedMembers, 0),
     };
-  });
+  }));
 
   // Collapse role requests to one cell per (term, domain), summing slots
   // across projects and across P1/P2/P3 levels.
@@ -140,7 +149,13 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
   const requiredCells = [...requiredMap.values()];
 
-  return { rows, partnerOrgs, canEdit, requiredCells };
+  // Which generic Form partners answer on /partner/apply, plus the pickable
+  // forms — Core-only config, so skip both queries for everyone else.
+  const [formBinding, selectableForms] = canEdit
+    ? await Promise.all([getApplicationFormBinding(), listSelectableForms()])
+    : [null, []];
+
+  return { rows, partnerOrgs, canEdit, requiredCells, formBinding, selectableForms };
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -152,6 +167,19 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   const form = await request.formData();
+  const intent = (form.get("intent") as string | null) ?? "create";
+
+  if (intent === "bind-form") {
+    const formId = (form.get("formId") as string | null) ?? "";
+    if (!formId) return { error: "Choose a form to bind." };
+    const result = await setApplicationFormBinding(formId, auth.user.sub);
+    return result.ok ? { ok: true } : { error: result.error };
+  }
+  if (intent === "clear-form") {
+    await clearApplicationFormBinding();
+    return { ok: true };
+  }
+
   const title = (form.get("title") as string | null)?.trim() ?? "";
   const partnerOrgId = (form.get("partnerOrgId") as string | null) ?? "";
 
@@ -172,7 +200,7 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function PartnersApplications() {
-  const { rows, partnerOrgs, canEdit, requiredCells } =
+  const { rows, partnerOrgs, canEdit, requiredCells, formBinding, selectableForms } =
     useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const [query, setQuery] = useState("");
@@ -303,6 +331,77 @@ export default function PartnersApplications() {
             </button>
           </div>
         </Form>
+      )}
+
+      {canEdit && (
+        <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-2">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <h2 className="text-sm font-semibold text-foreground">
+                Application form
+              </h2>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Extra questions partners answer when pitching a project.
+                {formBinding && (
+                  <>
+                    {" "}
+                    <Link
+                      to={`/forms/edit/${formBinding.formId}`}
+                      className="underline hover:text-foreground"
+                    >
+                      Edit “{formBinding.formName}” in Forms
+                    </Link>
+                  </>
+                )}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Form method="post" className="flex items-center gap-2">
+                <input type="hidden" name="intent" value="bind-form" />
+                <select
+                  name="formId"
+                  defaultValue={formBinding?.formId ?? ""}
+                  className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                >
+                  <option value="" disabled>
+                    Choose a form…
+                  </option>
+                  {selectableForms.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.name}
+                      {f.published ? "" : " (unpublished)"}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="submit"
+                  className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors"
+                >
+                  {formBinding ? "Change" : "Bind"}
+                </button>
+              </Form>
+              {formBinding && (
+                <Form method="post">
+                  <input type="hidden" name="intent" value="clear-form" />
+                  <button
+                    type="submit"
+                    className="px-3 py-1.5 text-xs font-medium rounded-md border border-border text-muted-foreground hover:text-destructive hover:border-destructive/40 transition-colors"
+                  >
+                    Remove
+                  </button>
+                </Form>
+              )}
+            </div>
+          </div>
+          {formBinding && (!formBinding.published || !formBinding.hasVersion) && (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5">
+              {formBinding.hasVersion
+                ? "This form isn't published yet"
+                : "This form has no saved version yet"}
+              {" "}— partners currently see only the built-in pitch fields.
+            </p>
+          )}
+        </section>
       )}
 
       <TermProjection rows={effectiveRows} requiredCells={requiredCells} />

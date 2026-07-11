@@ -195,3 +195,94 @@ test.describe('partner self-signup', () => {
     await expect(page.getByText('Submitted', { exact: true })).toBeVisible();
   });
 });
+
+test.describe('bound application form', () => {
+  // The apply page appends the questions of the Core-bound Form (see
+  // PartnerApplicationFormBinding) and stores answers as a linked
+  // FormSubmission. Binding is a global singleton, so clean it up even on
+  // failure — otherwise it leaks into other tests' apply flows.
+  async function bindTestForm(): Promise<string> {
+    const formId = `e2e-form-${randomBytes(6).toString('hex')}`;
+    await withDb(async (c) => {
+      const admin = await c.query(
+        `SELECT id FROM "User" WHERE "daliEmail" = 'admin@dali.dartmouth.edu'`,
+      );
+      const adminId = admin.rows[0].id as string;
+      await c.query(
+        `INSERT INTO "Form" (id, name, "createdById", published, "publicToken", "updatedAt")
+         VALUES ($1, 'E2E Partner Questions', $2, true, $3, now())`,
+        [formId, adminId, randomBytes(24).toString('hex')],
+      );
+      await c.query(
+        `INSERT INTO "FormVersion" (id, "versionNumber", questions, "formId", "createdById")
+         VALUES ($1, 1, $2, $3, $4)`,
+        [
+          `${formId}-v1`,
+          JSON.stringify([
+            {
+              key: 'q-budget',
+              type: 'textarea',
+              required: false,
+              data: { label: 'What is your budget?' },
+            },
+          ]),
+          formId,
+          adminId,
+        ],
+      );
+      // Replace the singleton (the seed binds a default form).
+      await c.query(`DELETE FROM "PartnerApplicationFormBinding"`);
+      await c.query(
+        `INSERT INTO "PartnerApplicationFormBinding" (id, "formId", "updatedById", "updatedAt")
+         VALUES ($1, $2, $3, now())`,
+        [`e2e-binding-${randomBytes(6).toString('hex')}`, formId, adminId],
+      );
+    });
+    return formId;
+  }
+
+  async function unbindTestForm(formId: string): Promise<void> {
+    await withDb(async (c) => {
+      await c.query(
+        `DELETE FROM "PartnerApplicationFormBinding" WHERE "formId" = $1`,
+        [formId],
+      );
+      // Cascades the version and the submission; the application keeps its
+      // row (formSubmissionId is SetNull).
+      await c.query(`DELETE FROM "Form" WHERE id = $1`, [formId]);
+    });
+  }
+
+  test('apply shows bound questions and the answers land on the application', async ({
+    page,
+    loginAs,
+  }) => {
+    const formId = await bindTestForm();
+    try {
+      await loginAs({ personalEmail: 'partner.tuck@example.com' });
+      await page.goto('/partner/apply');
+
+      await page.getByLabel('Project title').fill('Alumni portal refresh');
+      await expect(page.getByText('A few more questions')).toBeVisible();
+      await expect(page.getByText('What is your budget?')).toBeVisible();
+      await page
+        .locator('fieldset', { hasText: 'A few more questions' })
+        .locator('textarea')
+        .fill('Around $10k for the pilot term.');
+      await page.getByRole('button', { name: 'Submit pitch' }).click();
+
+      await expect(
+        page.getByRole('heading', { name: 'Alumni portal refresh' }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole('heading', { name: 'Application answers' }),
+      ).toBeVisible();
+      await expect(page.getByText('What is your budget?')).toBeVisible();
+      await expect(
+        page.getByText('Around $10k for the pilot term.'),
+      ).toBeVisible();
+    } finally {
+      await unbindTestForm(formId);
+    }
+  });
+});

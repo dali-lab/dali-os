@@ -21,6 +21,8 @@ import {
   isPartnerApplicationStatus,
   type PartnerApplicationStatus as Status,
 } from "../lib/partner-application";
+import { formAnswerRows } from "~/forms/lib/answer-rows.server";
+import type { Question } from "~/types";
 import { CollaborativeEditor } from "~/components/CollaborativeEditor";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { EditModeToggle, useEditMode } from "~/components/EditModeToggle";
@@ -70,9 +72,24 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           domain: { select: { displayName: true } },
         },
       },
+      formSubmission: {
+        select: {
+          answers: true,
+          formVersion: { select: { questions: true } },
+        },
+      },
     },
   });
   if (!application) throw new Response("Not found", { status: 404 });
+
+  // The partner's answers to the bound application form (if one was bound
+  // when they applied), resolved to label/value pairs for display.
+  const formAnswers = application.formSubmission
+    ? await formAnswerRows(
+        (application.formSubmission.formVersion.questions as unknown as Question[]) ?? [],
+        (application.formSubmission.answers as Record<string, unknown>) ?? {},
+      )
+    : [];
 
   const [allDomains, terms, canEdit] = await Promise.all([
     prisma.domain.findMany({
@@ -117,6 +134,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         expectedMembers: d.expectedMembers,
       })),
     },
+    formAnswers,
     availableDomains,
     terms,
     canEdit,
@@ -286,6 +304,7 @@ type LoaderData = Exclude<Awaited<ReturnType<typeof loader>>, Response>;
 export default function PartnerApplicationDetail() {
   const {
     application,
+    formAnswers,
     availableDomains,
     terms,
     canEdit: canEditPerm,
@@ -318,6 +337,26 @@ export default function PartnerApplicationDetail() {
         terms={terms}
         canEdit={canEdit}
       />
+
+      {formAnswers.length > 0 && (
+        <section className="bg-card border border-border rounded-lg p-4">
+          <h2 className="text-sm font-semibold text-foreground mb-3">
+            Application answers
+          </h2>
+          <dl className="flex flex-col gap-3">
+            {formAnswers.map((row) => (
+              <div key={row.key}>
+                <dt className="text-xs font-medium text-muted-foreground mb-0.5">
+                  {row.label}
+                </dt>
+                <dd className="text-sm text-foreground whitespace-pre-wrap">
+                  {row.value || "—"}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      )}
 
       <DomainScopeBlock
         applicationId={application.id}

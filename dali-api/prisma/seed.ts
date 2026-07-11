@@ -3018,6 +3018,57 @@ async function main() {
   }
   console.log(`  ${partnerApplicationSeeds.length} partner applications, ${partnerApplicationSeeds.reduce((n, a) => n + a.domains.length, 0)} domain-scope rows`);
 
+  // The default lab-editable partner application form: /partner/apply appends
+  // its questions to the structural pitch fields (title, terms, domain scope).
+  // Core can retarget or edit it from /partners/applications — this just makes
+  // the feature live out of the box.
+  const partnerAppForm = await prisma.form.upsert({
+    where: { id: "form-partner-application" },
+    update: { published: true },
+    create: {
+      id: "form-partner-application",
+      name: "Partner application questions",
+      createdById: admin.id,
+      published: true,
+      publicToken: "seed-partner-application-form",
+    },
+  });
+  // One version, replaced on re-seed so question edits take effect.
+  await prisma.formVersion.deleteMany({ where: { formId: partnerAppForm.id } });
+  await prisma.formVersion.create({
+    data: {
+      formId: partnerAppForm.id,
+      versionNumber: 1,
+      createdById: admin.id,
+      questions: [
+        {
+          key: "pitch",
+          type: "textarea",
+          required: false,
+          data: {
+            label: "Short pitch",
+            description: "What problem are you trying to solve, and for whom?",
+          },
+        },
+        {
+          key: "success",
+          type: "textarea",
+          required: false,
+          data: {
+            label: "What does success look like?",
+            description:
+              "A term from now, what would make you glad you worked with the lab?",
+          },
+        },
+      ] as object,
+    },
+  });
+  await prisma.partnerApplicationFormBinding.deleteMany({});
+  await prisma.partnerApplicationFormBinding.create({
+    data: { formId: partnerAppForm.id, updatedById: admin.id },
+  });
+  console.log("  partner application form bound (form-partner-application)");
+
   // ── Staffing cycle + preferences ───────────────────────────────────────────
   // Demo data for the /projects/staffing board. Staffing is always open —
   // one cycle per term (StaffingCycle.termId is unique), keyed here on 26S.

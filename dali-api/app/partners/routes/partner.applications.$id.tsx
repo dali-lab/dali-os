@@ -4,6 +4,11 @@ import { prisma } from "~/lib/db";
 import { parseSessionCookie } from "~/lib/cookies";
 import { getPresenceUser } from "~/lib/presence-user";
 import { requirePartner } from "~/partners/lib/partner-auth.server";
+import {
+  formAnswerRows,
+  type FormAnswerRow,
+} from "~/forms/lib/answer-rows.server";
+import type { Question } from "~/types";
 import { CollaborativeEditor } from "~/components/CollaborativeEditor";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import {
@@ -32,7 +37,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     select: {
       id: true,
       title: true,
-      summary: true,
       status: true,
       createdAt: true,
       resultingProjectId: true,
@@ -46,17 +50,33 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           domain: { select: { displayName: true } },
         },
       },
+      formSubmission: {
+        select: {
+          answers: true,
+          formVersion: { select: { questions: true } },
+        },
+      },
     },
   });
   if (!application) throw new Response("Not found", { status: 404 });
+
+  // Answers to the lab's application-form questions, captured at submit time.
+  const formAnswers: FormAnswerRow[] = application.formSubmission
+    ? await formAnswerRows(
+        (application.formSubmission.formVersion.questions as unknown as Question[]) ?? [],
+        (application.formSubmission.answers as Record<string, unknown>) ?? {},
+      )
+    : [];
 
   const fallbackName =
     [auth.user.firstName, auth.user.lastName].filter(Boolean).join(" ") ||
     auth.user.email;
   const presenceUser = await getPresenceUser(auth.user.sub, fallbackName);
 
+  const { formSubmission: _formSubmission, ...applicationOut } = application;
   return {
-    application,
+    application: applicationOut,
+    formAnswers,
     canEditDetails: PARTNER_EDITABLE_STATUSES.includes(application.status),
     collabToken: parseSessionCookie(request),
     userName: presenceUser?.name ?? fallbackName,
@@ -76,12 +96,11 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const form = await request.formData();
   const title = (form.get("title") as string | null)?.trim() ?? "";
-  const summary = (form.get("summary") as string | null)?.trim() || null;
   if (!title) return { error: "A title is required." };
 
   await prisma.partnerApplication.update({
     where: { id: application.id },
-    data: { title, summary },
+    data: { title },
   });
   return { ok: true };
 }
@@ -121,7 +140,7 @@ function StatusTimeline({ status }: { status: PartnerApplicationStatus }) {
 export default function PartnerApplicationDetail({
   actionData,
 }: Route.ComponentProps) {
-  const { application, canEditDetails, collabToken, userName } =
+  const { application, formAnswers, canEditDetails, collabToken, userName } =
     useLoaderData<typeof loader>();
   const navigation = useNavigation();
   const submitting = navigation.state === "submitting";
@@ -166,24 +185,13 @@ export default function PartnerApplicationDetail({
 
       <section className="bg-card border border-border rounded-2xl p-5">
         <h2 className="font-heading font-semibold text-dark-blue mb-3">Pitch</h2>
-        {canEditDetails ? (
+        {canEditDetails && (
           <Form method="post" className="flex flex-col gap-4">
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1">
                 Title
               </label>
               <input name="title" defaultValue={application.title} required className={inputClass} />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">
-                Summary
-              </label>
-              <textarea
-                name="summary"
-                rows={4}
-                defaultValue={application.summary ?? ""}
-                className={inputClass}
-              />
             </div>
             <button
               type="submit"
@@ -193,10 +201,6 @@ export default function PartnerApplicationDetail({
               {submitting ? "Saving…" : "Save changes"}
             </button>
           </Form>
-        ) : (
-          <p className="text-sm text-foreground whitespace-pre-wrap">
-            {application.summary ?? "No summary provided."}
-          </p>
         )}
 
         <div className="flex flex-wrap gap-x-8 gap-y-3 mt-5 pt-4 border-t border-border">
@@ -227,6 +231,26 @@ export default function PartnerApplicationDetail({
           </div>
         </div>
       </section>
+
+      {formAnswers.length > 0 && (
+        <section className="bg-card border border-border rounded-2xl p-5">
+          <h2 className="font-heading font-semibold text-dark-blue mb-3">
+            Application answers
+          </h2>
+          <dl className="flex flex-col gap-4">
+            {formAnswers.map((row) => (
+              <div key={row.key}>
+                <dt className="text-xs font-medium text-muted-foreground mb-1">
+                  {row.label}
+                </dt>
+                <dd className="text-sm text-foreground whitespace-pre-wrap">
+                  {row.value || "—"}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      )}
 
       <section className="bg-card border border-border rounded-2xl p-5">
         <h2 className="font-heading font-semibold text-dark-blue">
