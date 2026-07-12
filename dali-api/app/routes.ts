@@ -48,8 +48,8 @@ export default [
     route("admin-console/analytics", "admin-console/routes/admin-console.analytics.tsx"),
     route("admin-console/payroll-export", "admin-console/routes/admin-console.payroll-export.tsx"),
 
-    // Projects
-    route("projects/list", "projects/routes/projects.list.tsx"),
+    // Projects. The bare /projects route is the area hub (the project list).
+    route("projects", "projects/routes/projects.hub.tsx"),
     route("projects/staffing", "projects/routes/projects.staffing.tsx"),
     // Member-facing staffing destination (requireMember, not canViewStaffing):
     // the persistent place a member fills/revisits the cycle's staffing forms.
@@ -103,7 +103,8 @@ export default [
     route("education/:offeringId/page/:pageId", "education/routes/education.$offeringId.page.$pageId.tsx"),
     route("education/:offeringId/assignments/:assignmentId", "education/routes/education.$offeringId.assignments.$assignmentId.tsx"),
 
-    // Internal processes
+    // Internal processes. The bare route is the area hub.
+    route("internal-processes", "internal-processes/routes/internal-processes.hub.tsx"),
     route("internal-processes/onboarding", "internal-processes/routes/internal-processes.onboarding.tsx"),
     route("internal-processes/transfer", "internal-processes/routes/internal-processes.transfer.tsx"),
     route("internal-processes/level-up", "internal-processes/routes/internal-processes.level-up.tsx"),

@@ -34,13 +34,13 @@ const SEGMENT_LABELS: Record<string, string> = {
 
   'admin-console': 'Admin',
   members: 'People',
+  groups: 'Groups',
   domains: 'Domains',
   announcements: 'Announcements',
   activity: 'Activity',
-  'payroll-export': 'Payroll export',
+  'payroll-export': 'Payroll Export',
 
   projects: 'Projects',
-  list: 'Hub',
   staffing: 'Staffing',
   'my-staffing': 'My Staffing',
   'level-up': 'Level Up',
@@ -64,7 +64,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   certificates: 'Certificates',
 
   documents: 'Documents',
-  forms: 'Documents',
+  forms: 'Forms',
   calendar: 'Calendar',
   profile: 'Profile',
   settings: 'Settings',
@@ -74,6 +74,29 @@ const SEGMENT_LABELS: Record<string, string> = {
 function titleCase(seg: string) {
   return seg.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
+
+// Path segments that only ever appear as prefixes of detail routes — the
+// prefix itself is not a routable page (e.g. /hiring/challenges has no list;
+// the Library owns it). These stay in the trail as labels but never link,
+// so a crumb can't 404.
+const UNROUTED_SEGMENTS = new Set([
+  'documents', // /documents/:pageId only — no bare /documents index
+  'file',
+  'edit', // /forms/edit/:formId
+  'challenges',
+  'rubrics',
+  'confidentiality-agreements',
+  'cycle', // /hiring/lead/cycle/:id
+  'cycles', // /hiring/cycles/:cycleId/confidentiality
+  'intern-to-full-cycle',
+  'application', // /hiring/{reviewer,domain-lead}/application/:id
+  'delibs',
+  'interviewer',
+  'interview',
+  'assignments', // /education/manage/assignments/:assignmentId
+  'page',
+  'certificates',
+])
 
 // Opaque database ids that would render as gibberish in a trail: cuids
 // (25 lowercase alphanumerics starting with "c"), other long unhyphenated
@@ -113,8 +136,9 @@ export function Breadcrumbs() {
     const isLast = i === segments.length - 1
     // Once an opaque id has been dropped, later prefixes still contain it and
     // aren't guaranteed to be real routes (e.g. /education/<id>/assignments
-    // has no index page) — keep the labels but stop linking them.
-    const linkable = !isLast && !afterDroppedId
+    // has no index page) — keep the labels but stop linking them. Same for
+    // segments that are only detail-route prefixes.
+    const linkable = !isLast && !afterDroppedId && !UNROUTED_SEGMENTS.has(seg)
     const dynamicLabel = labelByPath.get(to)
     if (dynamicLabel) {
       crumbs.push({ label: dynamicLabel, to: linkable ? to : undefined })
@@ -139,7 +163,7 @@ export function Breadcrumbs() {
   return (
     <nav
       aria-label="Breadcrumb"
-      className="hidden md:flex items-center gap-1 text-sm text-muted-foreground"
+      className="flex flex-wrap items-center gap-1 text-sm text-muted-foreground"
     >
       {crumbs.map((c, i) => (
         <span key={i} className="flex items-center gap-1">

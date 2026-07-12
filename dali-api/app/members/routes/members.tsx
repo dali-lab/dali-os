@@ -258,14 +258,14 @@ export default function MembersList() {
     <div className="flex flex-col gap-4">
       <AreaPillNav
         items={[
-          { label: "Directory", to: "/members", active: true },
+          { label: "Hub", to: "/members", active: true },
           ...(canSeeGroups ? [{ label: "Groups", to: "/members/groups" }] : []),
         ]}
       />
       <header className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="font-heading text-2xl font-bold text-foreground">
-            Directory
+            People
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
             Everyone with a DALI membership row.

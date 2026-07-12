@@ -17,7 +17,7 @@ import {
 } from "~/admin-console/lib/payroll-export";
 
 export const meta: Route.MetaFunction = () => [
-  { title: "Payroll export · Admin · DALI OS" },
+  { title: "Payroll Export · Admin · DALI OS" },
 ];
 
 // The CSV itself is served by the sibling resource route at
@@ -88,7 +88,7 @@ export default function PayrollExport() {
       <div className="space-y-4">
         <header className="flex items-center gap-3">
           <FileDown className="w-6 h-6 text-foreground/80" />
-          <h1 className="text-2xl font-bold text-foreground">Payroll export</h1>
+          <h1 className="text-2xl font-bold text-foreground">Payroll Export</h1>
         </header>
         <p className="text-sm text-muted-foreground">
           No terms found. Seed Terms before generating a payroll export.
@@ -124,7 +124,7 @@ export default function PayrollExport() {
       <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <FileDown className="w-6 h-6 text-foreground/80" />
-          <h1 className="text-2xl font-bold text-foreground">Payroll export</h1>
+          <h1 className="text-2xl font-bold text-foreground">Payroll Export</h1>
           <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground">
             {totalRows} {totalRows === 1 ? "row" : "rows"}
           </span>

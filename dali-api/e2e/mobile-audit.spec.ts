@@ -39,7 +39,7 @@ const ROUTES: Array<{ path: string; label: string }> = [
   { path: '/hiring/analytics', label: 'hiring-analytics' },
   { path: '/admin-console/members', label: 'admin-members' },
   { path: '/admin-console/domains', label: 'admin-domains' },
-  { path: '/projects/list', label: 'projects-list' },
+  { path: '/projects', label: 'projects-list' },
   { path: '/projects/staffing', label: 'projects-staffing' },
   { path: '/members', label: 'members' },
   { path: '/partners', label: 'partners' },

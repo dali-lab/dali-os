@@ -33,7 +33,7 @@ export default function EducationCatalog() {
 
   return (
     <div className="flex flex-col gap-6">
-      <AreaPillNav items={educationPills({ canManage, isCore, active: "browse" })} />
+      <AreaPillNav items={educationPills({ canManage, isCore, active: "hub" })} />
       <header>
         <h1 className="font-heading text-2xl font-bold text-foreground">
           Education

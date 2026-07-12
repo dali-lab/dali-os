@@ -1,12 +1,13 @@
 import type { AreaPill } from "~/components/AreaPillNav";
 
-// Lab Processes surfaces (the sidebar entry is childless and lands on
-// Transfer). Level Up lives under Projects → Staffing, not here.
+// Lab Processes surfaces (the sidebar entry is childless and lands on the
+// hub). Level Up lives under Projects → Staffing, not here.
 export function labProcessesPills(args: {
   isCore: boolean;
-  active: "onboarding" | "transfer" | "jobx";
+  active: "hub" | "onboarding" | "transfer" | "jobx";
 }): AreaPill[] {
   return [
+    { label: "Hub", to: "/internal-processes", active: args.active === "hub" },
     ...(args.isCore
       ? [
           {

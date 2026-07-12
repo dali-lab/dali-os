@@ -1,12 +1,13 @@
 import type { AreaPill } from "~/components/AreaPillNav";
 
-// The Admin area's tools (the sidebar entry is childless and lands on
-// Roles & Permissions). Every admin page is already Core-gated, so the first
-// three pills always show; the last three are Admin-only, matching the old
-// sidebar section gates.
+// The Admin area's tools (the sidebar entry is childless and lands on the
+// hub). Every admin page is already Core-gated, so the first four pills
+// always show; the last three are Admin-only, matching the old sidebar
+// section gates.
 export function adminPills(args: {
   isAdmin: boolean;
   active:
+    | "hub"
     | "members"
     | "domains"
     | "announcements"
@@ -15,6 +16,7 @@ export function adminPills(args: {
     | "payroll";
 }): AreaPill[] {
   return [
+    { label: "Hub", to: "/admin-console", active: args.active === "hub" },
     {
       label: "Roles & Permissions",
       to: "/admin-console/members",
@@ -39,7 +41,7 @@ export function adminPills(args: {
             active: args.active === "analytics",
           },
           {
-            label: "Payroll export",
+            label: "Payroll Export",
             to: "/admin-console/payroll-export",
             active: args.active === "payroll",
           },

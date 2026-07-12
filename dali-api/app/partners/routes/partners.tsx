@@ -20,15 +20,15 @@ export default function PartnersOrganizations() {
     <div className="flex flex-col gap-4">
       <AreaPillNav
         items={[
-          { label: "Organizations", to: "/partners", active: true },
+          { label: "Hub", to: "/partners", active: true },
           ...(canSeeApplications
             ? [{ label: "Applications", to: "/partners/applications" }]
             : []),
         ]}
       />
       <ComingSoon
-        title="Organizations"
-        description="Partner companies and the projects they're working with."
+        title="Partners"
+        description="Partner organizations and the projects they're working with."
       />
     </div>
   );

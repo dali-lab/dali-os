@@ -8,7 +8,7 @@ export function projectsPills(args: {
   active: "hub" | "staffing" | "my-staffing";
 }): AreaPill[] {
   return [
-    { label: "Hub", to: "/projects/list", active: args.active === "hub" },
+    { label: "Hub", to: "/projects", active: args.active === "hub" },
     ...(args.canViewStaffing
       ? [{ label: "Staffing", to: "/projects/staffing", active: args.active === "staffing" }]
       : []),

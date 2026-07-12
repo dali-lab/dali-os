@@ -224,7 +224,7 @@ export default function PartnersApplications() {
     <div className="flex flex-col gap-4">
       <AreaPillNav
         items={[
-          { label: "Organizations", to: "/partners" },
+          { label: "Hub", to: "/partners" },
           { label: "Applications", to: "/partners/applications", active: true },
         ]}
       />

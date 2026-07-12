@@ -7,7 +7,7 @@ import {
   useLoaderData,
   useNavigate,
 } from "react-router";
-import type { Route } from "./+types/projects.list";
+import type { Route } from "./+types/projects.hub";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { isCore, canViewStaffing } from "~/lib/roles";
 import { projectsPills } from "../components/projectsPills";

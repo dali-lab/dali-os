@@ -265,7 +265,7 @@ export default function AdminConsoleGroups() {
     <div className="space-y-6">
       <AreaPillNav
         items={[
-          { label: "Directory", to: "/members" },
+          { label: "Hub", to: "/members" },
           { label: "Groups", to: "/members/groups", active: true },
         ]}
       />
