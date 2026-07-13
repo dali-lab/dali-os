@@ -47,6 +47,18 @@ export async function loader({ request }: Route.LoaderArgs) {
     hiring: {
       cycleName: cycle?.name ?? null,
       cycleOpen: cycle?.currentStatus === "Open",
+      // Formatted server-side (locale + zone pinned, matching the tracker's
+      // deadline line) and only while Open — a lapsed date reads as nonsense.
+      closesOn:
+        cycle?.currentStatus === "Open" && cycle.closeDate
+          ? cycle.closeDate.toLocaleDateString("en-US", {
+              timeZone: "America/New_York",
+              weekday: "long",
+              month: "long",
+              day: "numeric",
+              year: "numeric",
+            })
+          : null,
       applicationStatus,
     },
     education: {
@@ -104,7 +116,7 @@ export default function PortalHome() {
               ? hiring.applicationStatus === "Submitted"
                 ? `Your ${hiring.cycleName} application is in — track its status and book interviews.`
                 : hiring.applicationStatus === "Draft"
-                  ? `You have a draft application for ${hiring.cycleName} — finish it before the cycle closes.`
+                  ? `You have a draft application for ${hiring.cycleName} — finish it before the cycle closes${hiring.closesOn ? ` on ${hiring.closesOn}` : ""}.`
                   : hiring.cycleOpen
                     ? `The ${hiring.cycleName} cycle is open.`
                     : `The ${hiring.cycleName} cycle is under review.`
