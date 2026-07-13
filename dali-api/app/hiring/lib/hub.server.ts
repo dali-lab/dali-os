@@ -1,11 +1,14 @@
 import { prisma } from "~/lib/db";
 import { getUserRoles } from "~/lib/roles";
 import { getActiveCycle } from "./cycles";
+import { getCycleConfidentialityState } from "./confidentiality";
 import { listActiveWaitlistEntries } from "./waitlist.server";
 
 // Data for the /hiring hub: "what needs me right now", filtered by role.
-// Personal cards (reviews, interviews) load for anyone with hiring access;
-// delibs for domain leads; release queue / waitlists / funnel for Core.
+// Personal cards (reviews, interviews, confidentiality) load for anyone with
+// hiring access; delibs for domain leads; release queue / waitlists / cycle
+// health for Core. Every Core number means work remaining, not volume — the
+// full pipeline view lives on /hiring/analytics.
 
 export type HubDecisionRow = {
   domainApplicationId: string;
@@ -107,14 +110,32 @@ export async function getHiringHubData(userId: string) {
     }
   }
 
-  // Core lane: release queue, waitlists, and the cycle funnel.
+  // Personal lane: an unsigned confidentiality agreement blocks reviewing —
+  // surface it before anything else. "no_agreement" cycles need nothing.
+  let needsConfidentialitySignature: string | null = null;
+  if (cycle) {
+    const conf = await getCycleConfidentialityState(userId, cycle.id);
+    if (conf.status === "unsigned") needsConfidentialitySignature = cycle.id;
+  }
+
+  // Core lane: release queue, waitlists, and cycle health (work remaining).
   let core: {
     releaseQueue: number;
     waitlisted: number;
-    funnel: { submitted: number; reviewsSubmitted: number; interviews: number };
+    health: {
+      submitted: number;
+      unreviewedApps: number;
+      reviewsOutstanding: number;
+      outstandingByDomain: { domainName: string; count: number }[];
+      activeDelibs: number;
+    };
   } | null = null;
   if (roles.isCore && cycle) {
-    const [decisions, waitlist, submitted, reviewsSubmitted, interviews] =
+    const submittedApplication = {
+      applicationCycleId: cycle.id,
+      statusUpdates: { some: { newStatus: "Submitted" as const } },
+    };
+    const [decisions, waitlist, submitted, unreviewedApps, outstandingRows, activeDelibs] =
       await Promise.all([
         prisma.decision.findMany({
           where: {
@@ -124,28 +145,90 @@ export async function getHiringHubData(userId: string) {
           select: { domainApplicationId: true, stage: true },
         }),
         listActiveWaitlistEntries(),
-        prisma.application.count({
+        prisma.application.count({ where: submittedApplication }),
+        // Submitted domain applications nobody has reviewed yet — the "is
+        // anything slipping through" number.
+        prisma.domainApplication.count({
           where: {
-            applicationCycleId: cycle.id,
-            statusUpdates: { some: { newStatus: "Submitted" } },
+            selected: true,
+            application: submittedApplication,
+            reviews: { none: { submittedAt: { not: null } } },
           },
         }),
-        prisma.applicationReview.count({
+        // Assigned-but-unsubmitted reviews, kept as rows so the card can
+        // break the backlog down by domain.
+        prisma.applicationReview.findMany({
           where: {
-            submittedAt: { not: null },
+            submittedAt: null,
             domainApplication: { application: { applicationCycleId: cycle.id } },
           },
+          select: {
+            domainApplication: {
+              select: { domain: { select: { displayName: true } } },
+            },
+          },
         }),
-        prisma.interview.count({ where: { applicationCycleId: cycle.id } }),
+        prisma.delibsSession.count({
+          where: { applicationCycleId: cycle.id, status: "Active" },
+        }),
       ]);
+
+    const byDomain = new Map<string, number>();
+    for (const row of outstandingRows) {
+      const name = row.domainApplication.domain.displayName;
+      byDomain.set(name, (byDomain.get(name) ?? 0) + 1);
+    }
     core = {
       releaseQueue: releaseQueueCount(decisions as HubDecisionRow[]),
       waitlisted: waitlist.length,
-      funnel: { submitted, reviewsSubmitted, interviews },
+      health: {
+        submitted,
+        unreviewedApps,
+        reviewsOutstanding: outstandingRows.length,
+        outstandingByDomain: [...byDomain.entries()]
+          .map(([domainName, count]) => ({ domainName, count }))
+          .sort((a, b) => b.count - a.count),
+        activeDelibs,
+      },
     };
   }
 
+  // Out-of-cycle Core recap: the hub's job between cycles is "start the next
+  // one", with a one-line result of the last completed cycle for context.
+  let lastCycle: { name: string; hired: number } | null = null;
+  if (roles.isCore && !cycle) {
+    const lastCompleted = await prisma.applicationCycleStatusUpdate.findFirst({
+      where: {
+        newStatus: "Completed",
+        applicationCycle: { cycleType: "Standard" },
+      },
+      orderBy: { createdAt: "desc" },
+      select: { applicationCycle: { select: { id: true, name: true } } },
+    });
+    if (lastCompleted) {
+      const hired = await prisma.decision.findMany({
+        where: {
+          type: "Accepted",
+          stage: "Released",
+          domainApplication: {
+            application: {
+              applicationCycleId: lastCompleted.applicationCycle.id,
+            },
+          },
+        },
+        distinct: ["domainApplicationId"],
+        select: { id: true },
+      });
+      lastCycle = {
+        name: lastCompleted.applicationCycle.name,
+        hired: hired.length,
+      };
+    }
+  }
+
   return {
+    needsConfidentialitySignature,
+    lastCycle,
     roles: {
       isCore: roles.isCore,
       isDomainLead: roles.isDomainLead,

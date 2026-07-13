@@ -13,6 +13,7 @@ export function hiringPills(args: {
     | "applications"
     | "domain"
     | "cycles"
+    | "waitlists"
     | "analytics"
     | "library";
 }): AreaPill[] {
@@ -29,7 +30,10 @@ export function hiringPills(args: {
       ? [{ label: "Domain", to: "/hiring/domain-lead", active: active === "domain" }]
       : []),
     ...(isCore
-      ? [{ label: "Cycles", to: "/hiring/lead", active: active === "cycles" }]
+      ? [
+          { label: "Cycles", to: "/hiring/lead", active: active === "cycles" },
+          { label: "Waitlists", to: "/hiring/waitlists", active: active === "waitlists" },
+        ]
       : []),
     ...(isCore || isDomainLead
       ? [{ label: "Analytics", to: "/hiring/analytics", active: active === "analytics" }]

@@ -25,7 +25,9 @@ export default [
     route("hiring/lead", "hiring/routes/lead.tsx"),
     route("hiring/lead/cycle/:id", "hiring/routes/lead.cycle.$id.tsx"),
     route("hiring/lead/intern-to-full-cycle/:id", "hiring/routes/lead.intern-to-full-cycle.$id.tsx"),
-    route("hiring/lead/waitlists", "hiring/routes/lead.waitlists.tsx"),
+    // Cross-cycle by design (accepting off a waitlist may land in a later
+    // cycle), so it lives beside the other hiring tools, not under /lead.
+    route("hiring/waitlists", "hiring/routes/waitlists.tsx"),
     // Library — challenges, rubrics, and confidentiality agreements behind one
     // page with pills. The list views are consolidated here; the detail pages
     // keep their original paths.

@@ -1,9 +1,11 @@
 import { useMemo, useState } from "react";
 import { Link, redirect, useFetcher, useLoaderData } from "react-router";
-import { ArrowLeft, Check, X } from "lucide-react";
-import type { Route } from "./+types/lead.waitlists";
+import { Check, X } from "lucide-react";
+import type { Route } from "./+types/waitlists";
 import { requireAuth } from "~/lib/auth";
-import { isCore } from "~/lib/roles";
+import { getUserRoles } from "~/lib/roles";
+import { hiringPills } from "~/hiring/components/hiringPills";
+import { AreaPillNav } from "~/components/AreaPillNav";
 import {
   listActiveWaitlistEntries,
   type WaitlistEntry,
@@ -16,13 +18,24 @@ export const meta: Route.MetaFunction = () => [
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
-  if (!(await isCore(auth.user.sub))) return redirect("/");
+  const roles = await getUserRoles(auth.user.sub);
+  if (!roles.isCore) return redirect("/");
 
   const entries = await listActiveWaitlistEntries();
-  return { entries };
+  return {
+    entries,
+    pillRoles: {
+      isCore: roles.isCore,
+      isDomainLead: roles.isDomainLead,
+      isAdmin: roles.isAdmin,
+    },
+  };
 }
 
-type LoaderData = { entries: WaitlistEntry[] };
+type LoaderData = {
+  entries: WaitlistEntry[];
+  pillRoles: { isCore: boolean; isDomainLead: boolean; isAdmin: boolean };
+};
 
 function fullName(e: WaitlistEntry): string {
   const f = e.applicant.firstName ?? "";
@@ -32,7 +45,7 @@ function fullName(e: WaitlistEntry): string {
 }
 
 export default function WaitlistsPage() {
-  const { entries } = useLoaderData<typeof loader>() as LoaderData;
+  const { entries, pillRoles } = useLoaderData<typeof loader>() as LoaderData;
   const [cycleFilter, setCycleFilter] = useState<string>("all");
 
   // Cycle chips: every cycle that contributes at least one active waitlister.
@@ -71,17 +84,9 @@ export default function WaitlistsPage() {
 
   return (
     <div className="space-y-6">
+      <AreaPillNav items={hiringPills({ ...pillRoles, active: "waitlists" })} />
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Link
-            to="/hiring/lead"
-            className="text-muted-foreground/70 hover:text-foreground"
-            aria-label="Back to hiring cycles"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </Link>
-          <h1 className="text-2xl font-bold text-foreground">Waitlists</h1>
-        </div>
+        <h1 className="text-2xl font-bold text-foreground">Waitlists</h1>
         <span className="text-sm text-muted-foreground">
           {entries.length} active waitlister{entries.length === 1 ? "" : "s"}
         </span>
