@@ -387,6 +387,8 @@ export default function PartnerOrgDetail() {
   const [linking, setLinking] = useState(false);
   // Which member row has the "move to another org" form open.
   const [movingId, setMovingId] = useState<string | null>(null);
+  // Which project row has its End/Unlink actions revealed.
+  const [managingId, setManagingId] = useState<string | null>(null);
 
   const error = actionData && "error" in actionData ? actionData.error : null;
 
@@ -741,63 +743,91 @@ export default function PartnerOrgDetail() {
         ) : (
           <ul className="divide-y divide-border">
             {org.projects.map((pp) => (
-              <li key={pp.id} className="py-2.5 flex items-center gap-3">
-                <div className="min-w-0 flex-1">
-                  <Link
-                    to={`/projects/${pp.project.id}`}
-                    className="text-sm font-medium text-foreground hover:underline"
-                  >
-                    {pp.project.name}
-                  </Link>
-                  <span
-                    className={`ml-2 text-xs rounded-full px-2 py-0.5 ${
-                      pp.active
-                        ? "bg-accent-teal/15 text-accent-teal"
-                        : "bg-muted text-muted-foreground"
-                    }`}
-                  >
-                    {pp.active ? "Active" : pp.project.status === "Archived" ? "Archived" : "Ended"}
-                  </span>
-                  <div className="text-xs text-muted-foreground">
-                    {pp.startedAt
-                      ? `Since ${new Date(pp.startedAt).toLocaleDateString()}`
-                      : "No start date"}
-                    {pp.endedAt
-                      ? ` · Ended ${new Date(pp.endedAt).toLocaleDateString()}`
-                      : ""}
+              <li key={pp.id} className="py-2.5 flex flex-col gap-2">
+                <div className="flex items-center gap-3">
+                  <div className="min-w-0 flex-1">
+                    <Link
+                      to={`/projects/${pp.project.id}`}
+                      className="text-sm font-medium text-foreground hover:underline"
+                    >
+                      {pp.project.name}
+                    </Link>
+                    <span
+                      className={`ml-2 text-xs rounded-full px-2 py-0.5 ${
+                        pp.active
+                          ? "bg-accent-teal/15 text-accent-teal"
+                          : "bg-muted text-muted-foreground"
+                      }`}
+                    >
+                      {pp.active ? "Active" : pp.project.status === "Archived" ? "Archived" : "Ended"}
+                    </span>
+                    <div className="text-xs text-muted-foreground">
+                      {pp.startedAt
+                        ? `Since ${new Date(pp.startedAt).toLocaleDateString()}`
+                        : "No start date"}
+                      {pp.endedAt
+                        ? ` · Ended ${new Date(pp.endedAt).toLocaleDateString()}`
+                        : ""}
+                    </div>
                   </div>
-                </div>
-                {canEdit && !pp.endedAt && (
-                  <Form method="post">
-                    <input type="hidden" name="intent" value="project-end" />
-                    <input type="hidden" name="projectPartnerId" value={pp.id} />
+                  {canEdit && (
                     <button
-                      type="submit"
-                      className="text-xs text-muted-foreground hover:text-foreground transition"
-                      title="Sets an end date; keeps the history"
-                    >
-                      End partnership
-                    </button>
-                  </Form>
-                )}
-                {canEdit && (
-                  <Form
-                    method="post"
-                    onSubmit={(e) => {
-                      if (!confirm(`Unlink ${pp.project.name}? This deletes the partnership record — prefer “End partnership” to keep history.`)) {
-                        e.preventDefault();
+                      type="button"
+                      onClick={() =>
+                        setManagingId(managingId === pp.id ? null : pp.id)
                       }
-                    }}
-                  >
-                    <input type="hidden" name="intent" value="project-unlink" />
-                    <input type="hidden" name="projectPartnerId" value={pp.id} />
-                    <button
-                      type="submit"
-                      className="text-xs text-muted-foreground hover:text-destructive transition"
+                      className="text-xs text-muted-foreground hover:text-foreground transition"
                     >
-                      Unlink
+                      Manage
                     </button>
-                  </Form>
+                  )}
+                </div>
+                {/* End/Unlink change what the partner can see — kept behind a
+                    disclosure + confirm so neither is a stray one-click. */}
+                {canEdit && managingId === pp.id && (
+                  <div className="flex items-center gap-3 bg-muted/20 rounded-lg p-2.5 flex-wrap">
+                    <p className="text-xs text-muted-foreground flex-1 min-w-[220px]">
+                      Ending keeps the history and closes the partner's live
+                      access. Unlinking deletes the partnership record
+                      entirely.
+                    </p>
+                    {!pp.endedAt && (
+                      <Form
+                        method="post"
+                        onSubmit={(e) => {
+                          if (!confirm(`End the partnership on ${pp.project.name}? The partner loses live access to it; the record stays.`)) {
+                            e.preventDefault();
+                          }
+                        }}
+                      >
+                        <input type="hidden" name="intent" value="project-end" />
+                        <input type="hidden" name="projectPartnerId" value={pp.id} />
+                        <button
+                          type="submit"
+                          className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition"
+                        >
+                          End partnership
+                        </button>
+                      </Form>
+                    )}
+                    <Form
+                      method="post"
+                      onSubmit={(e) => {
+                        if (!confirm(`Unlink ${pp.project.name}? This deletes the partnership record — prefer “End partnership” to keep history.`)) {
+                          e.preventDefault();
+                        }
+                      }}
+                    >
+                      <input type="hidden" name="intent" value="project-unlink" />
+                      <input type="hidden" name="projectPartnerId" value={pp.id} />
+                      <button
+                        type="submit"
+                        className="px-3 py-1.5 text-xs font-medium rounded-md border border-destructive/40 text-destructive hover:bg-destructive/10 transition"
+                      >
+                        Unlink
+                      </button>
+                    </Form>
+                  </div>
                 )}
               </li>
             ))}
