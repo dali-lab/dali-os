@@ -8,6 +8,8 @@ import { OfferingCard } from "~/education/components/OfferingCard";
 import { educationPills } from "~/education/components/educationPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
 
+export const handle = { areaPills: true };
+
 export const meta: Route.MetaFunction = () => [{ title: "Education · DALI OS" }];
 
 export async function loader({ request }: Route.LoaderArgs) {

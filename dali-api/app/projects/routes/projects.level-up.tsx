@@ -27,12 +27,14 @@ import {
 import { buildSubmissionView } from "../lib/submission-view.server";
 import { deriveSlotStatus, type SlotStatus } from "../lib/slot-status.server";
 import { SlotStatusStrip } from "../components/SlotStatusStrip";
-import { staffingPills } from "../components/staffingPills";
+import { projectsPills } from "../components/projectsPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
 import type { Question } from "~/types";
 import { isLevel, type Level } from "~/lib/level";
 
 const SLOT = "level-up" as const;
+
+export const handle = { areaPills: true };
 
 export const meta: Route.MetaFunction = () => [
   { title: "Level Up · DALI OS" },
@@ -760,7 +762,7 @@ function Header({
 }) {
   return (
     <>
-    <AreaPillNav items={staffingPills("level-up")} />
+    <AreaPillNav items={projectsPills({ canViewStaffing: true, active: "level-up" })} />
     <header className="flex items-start justify-between gap-3">
       <div>
         <h1 className="font-heading text-2xl font-bold text-foreground">

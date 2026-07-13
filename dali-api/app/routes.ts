@@ -92,6 +92,8 @@ export default [
     route("partners", "partners/routes/partners.tsx"),
     route("partners/applications", "partners/routes/partners.applications.tsx"),
     route("partners/applications/:id", "partners/routes/partners.applications.$id.tsx"),
+    // Literal segments above the param route (repo route-ordering convention).
+    route("partners/:orgId", "partners/routes/partners.$orgId.tsx"),
 
     // Education. Literal "manage" segments must precede the :offeringId param
     // so /education/manage/* isn't captured as an offering id.
@@ -117,9 +119,10 @@ export default [
     // Forms. The :folderId form lets a folder card open its own page with
     // nested folders + forms; the bare /forms route is the top level.
     route("forms", "forms/routes/forms.tsx"),
-    // Static `edit` segment must precede the :folderId catch so /forms/edit/*
-    // isn't read as a folder id.
+    // Static `edit`/`responses` segments must precede the :folderId catch so
+    // /forms/edit/* and /forms/responses/* aren't read as folder ids.
     route("forms/edit/:formId", "forms/routes/forms.edit.$formId.tsx"),
+    route("forms/responses/:formId", "forms/routes/forms.responses.$formId.tsx"),
     route("forms/:folderId", "forms/routes/forms.$folderId.tsx"),
 
     // Internal applicant portal — intern → full-time conversion. Authenticated
@@ -135,6 +138,7 @@ export default [
     route("portal/hiring", "routes/portal.hiring.tsx"),
     route("portal/apply", "routes/portal.apply.tsx"),
     route("portal/application", "routes/portal.application.tsx"),
+    route("portal/settings", "routes/portal.settings.tsx"),
     // Education mirror for non-member Dartmouth students.
     route("portal/education", "routes/portal.education.tsx"),
     route("portal/education/:offeringId", "routes/portal.education.$offeringId.tsx"),
@@ -143,6 +147,24 @@ export default [
     route("portal/education/:offeringId/page/:pageId", "routes/portal.education.$offeringId.page.$pageId.tsx"),
     route("portal/education/:offeringId/assignments/:assignmentId", "routes/portal.education.$offeringId.assignments.$assignmentId.tsx"),
   ]),
+
+  // Partner portal (external partner shell). Singular /partner =
+  // partner-facing; plural /partners = the internal Core surface registered
+  // in the member layout above.
+  layout("partners/routes/partner-layout.tsx", [
+    route("partner", "partners/routes/partner.home.tsx"),
+    route("partner/apply", "partners/routes/partner.apply.tsx"),
+    route("partner/applications/:id", "partners/routes/partner.applications.$id.tsx"),
+    route("partner/settings", "partners/routes/partner.settings.tsx"),
+    route("partner/projects/:id", "partners/routes/partner.projects.$id.tsx"),
+    route("partner/projects/:id/pages/:pageId", "partners/routes/partner.projects.$id.pages.$pageId.tsx"),
+  ]),
+
+  // Partner auth (no layout).
+  route("partner/login", "partners/routes/partner.login.tsx"),
+  route("partner/auth/verify", "partners/routes/partner.auth.verify.tsx"),
+  route("partner/invite/:token", "partners/routes/partner.invite.$token.tsx"),
+  route("partner/onboarding", "partners/routes/partner.onboarding.tsx"),
 
   // Authenticated member form fill (no layout), token-addressed. Every form
   // is filled while logged in — the submitter is always the session user, so
@@ -294,6 +316,7 @@ export default [
   // Project documents (collab Pages scoped to the project)
   route("api/projects/:id/documents", "projects/routes/api.projects.$id.documents.ts"),
   route("api/documents/:id", "projects/routes/api.documents.$id.ts"),
+  route("api/pages/:id/partner-visible", "projects/routes/api.pages.$id.partner-visible.ts"),
 
   // Project files (standalone uploads with versions)
   route("api/projects/:id/files", "projects/routes/api.projects.$id.files.ts"),

@@ -36,7 +36,15 @@ export function getApiBaseUrl(): string {
 }
 
 export function getFrontendUrl(): string {
-  return process.env.FRONTEND_URL ?? 'http://localhost:5173'
+  // Single full-stack server: in deployed environments the frontend origin IS
+  // the API origin, so fall back to it — PR preview apps set only
+  // API_BASE_URL, and without this their emailed links pointed at localhost.
+  // FRONTEND_URL stays as the override for split local setups.
+  return (
+    process.env.FRONTEND_URL ??
+    process.env.API_BASE_URL ??
+    'http://localhost:5173'
+  )
 }
 
 export function getCasBaseUrl(): string {

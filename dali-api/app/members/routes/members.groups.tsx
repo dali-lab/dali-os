@@ -23,6 +23,8 @@ import {
   ArchiveRestore,
 } from "lucide-react";
 
+export const handle = { areaPills: true };
+
 export const meta: Route.MetaFunction = () => [{ title: "Groups · Members · DALI OS" }];
 
 type GroupRow = {

@@ -15,7 +15,7 @@ import { getSlotBinding } from "../lib/form-slots";
 import { buildSubmissionView } from "../lib/submission-view.server";
 import { StaffingBoard } from "../components/StaffingBoard";
 import { dedupeLiveAssignments } from "../lib/staffing-board";
-import { staffingPills } from "../components/staffingPills";
+import { projectsPills } from "../components/projectsPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
 import type {
   Assignment,
@@ -24,6 +24,8 @@ import type {
   MemberInput,
   Preference,
 } from "../lib/staffing-board";
+
+export const handle = { areaPills: true };
 
 export const meta: Route.MetaFunction = () => [{ title: "Staffing · DALI OS" }];
 
@@ -444,9 +446,7 @@ export default function StaffingPage() {
 
   const page = (
     <div className="flex flex-col gap-4">
-      {/* One pill row per page: the staffing sibling set. The breadcrumb
-          (Projects › Staffing) carries the way back up to the area hub. */}
-      <AreaPillNav items={staffingPills("board")} />
+      <AreaPillNav items={projectsPills({ canViewStaffing: true, active: "board" })} />
       <header className="flex items-start justify-between gap-3">
         <div>
           <h1 className="font-heading text-2xl font-bold text-foreground">Staffing</h1>

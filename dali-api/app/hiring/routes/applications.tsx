@@ -8,6 +8,8 @@ import { prisma } from "~/lib/db";
 import { hiringPills } from "~/hiring/components/hiringPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
 
+export const handle = { areaPills: true };
+
 export const meta: Route.MetaFunction = () => [
   { title: "Applications · Hiring · DALI OS" },
 ];

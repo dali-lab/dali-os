@@ -1,5 +1,5 @@
 import { redirect } from "react-router";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import type { Route } from "./+types/profile";
 
 // /profile is just an alias for /members/<self>. The two pages render the
@@ -11,6 +11,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
   if (auth.user.type === "applicant") return redirect("/portal");
+  const partnerRedirect = await redirectPartnerToPortal(auth);
+  if (partnerRedirect) return partnerRedirect;
   return redirect(`/members/${auth.user.sub}`);
 }
 

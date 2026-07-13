@@ -25,6 +25,8 @@ import { resolveTermFilter } from "~/lib/terms";
 import { deriveCoreTitles } from "~/lib/core-titles";
 import { AreaPillNav } from "~/components/AreaPillNav";
 
+export const handle = { areaPills: true };
+
 export const meta: Route.MetaFunction = () => [{ title: "Directory · People · DALI OS" }];
 
 type MemberRow = {

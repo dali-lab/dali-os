@@ -93,10 +93,10 @@ export async function loadPublicForm(
   };
 }
 
-// Shared answer validation for the authenticated member submit path.
-// Returns an error result, or null when the answers are valid. Exported for
-// the education apply flow, which validates against an offering-bound form
-// without going through the public token path.
+// Shared answer validation for the authenticated submit paths (member fills,
+// the partner apply flow, and the education apply flow, which validates
+// against an offering-bound form without going through the public token
+// path). Returns an error result, or null when the answers are valid.
 export async function validateAnswers(
   questions: Question[],
   answers: Record<string, unknown>,

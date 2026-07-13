@@ -1,12 +1,15 @@
 import { Outlet, redirect, useLoaderData, Link } from "react-router";
 import type { Route } from "./+types/applicant-layout";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { userInitials } from "~/lib/display";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
+import { PortalProfileMenu } from "~/components/PortalProfileMenu";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
+  const partnerRedirect = await redirectPartnerToPortal(auth);
+  if (partnerRedirect) return partnerRedirect;
   return { user: auth.user };
 }
 
@@ -42,22 +45,12 @@ export default function ApplicantLayout() {
           </Link>
         </div>
 
-        <div className="ml-auto flex items-center gap-3 sm:gap-4">
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="w-8 h-8 rounded-full bg-accent-coral flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
-              {initial}
-            </div>
-            <span className="text-sm font-medium text-dark-blue hidden sm:block truncate max-w-[200px]">
-              {displayName}
-            </span>
-          </div>
-          <Link
-            to="/logout"
-            className="text-xs text-muted-foreground hover:text-accent-coral transition whitespace-nowrap"
-          >
-            Sign out
-          </Link>
-        </div>
+        <PortalProfileMenu
+          initials={initial}
+          displayName={displayName}
+          subtitle={user.email}
+          settingsTo="/portal/settings"
+        />
       </nav>
 
       {/* Content */}

@@ -17,6 +17,8 @@ import { requireAuth } from "~/lib/auth";
 import { inReviewPipelineFilter } from '~/hiring/lib/application-pipeline-filter'
 import type { Route } from './+types/reviewer'
 
+export const handle = { areaPills: true };
+
 export const meta: Route.MetaFunction = () => [{ title: "Reviews · Hiring · DALI OS" }]
 
 export async function loader({ request }: Route.LoaderArgs) {

@@ -22,6 +22,8 @@ import {
   RemoveDomainLeadButton,
 } from "~/admin-console/components/admin-console-shared";
 
+export const handle = { areaPills: true };
+
 export const meta: Route.MetaFunction = () => [{ title: "Domains · Admin · DALI OS" }];
 
 // Phase 2 rewrite: domain-lead assignments now key off User.id (not

@@ -284,9 +284,12 @@ export function ChallengeQuestionField({
           className={`${inputBase} resize-none${disabledClass}`}
           placeholder="Your answer"
         />
-        <p className={`text-xs mt-1 ${overLimit ? "text-red-500" : "text-muted-foreground"}`}>
-          {maxWords !== undefined ? `${wordCount} / ${maxWords} words` : `${wordCount} words`}
-        </p>
+        {/* Only meaningful against a limit — an unbounded "0 words" is noise. */}
+        {maxWords !== undefined && (
+          <p className={`text-xs mt-1 ${overLimit ? "text-red-500" : "text-muted-foreground"}`}>
+            {wordCount} / {maxWords} words
+          </p>
+        )}
       </div>
     );
   }

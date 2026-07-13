@@ -5,7 +5,7 @@
 
 import { Form, redirect, useNavigation } from "react-router";
 import { KeyRound } from "lucide-react";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import type { Route } from "./+types/settings.sessions";
 
@@ -17,6 +17,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
   if (auth.user.type === "applicant") return redirect("/portal");
+  const partnerRedirect = await redirectPartnerToPortal(auth);
+  if (partnerRedirect) return partnerRedirect;
 
   const rows = await prisma.session.findMany({
     where: {

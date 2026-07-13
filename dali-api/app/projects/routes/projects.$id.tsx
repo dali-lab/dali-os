@@ -10,7 +10,7 @@ import {
   useSearchParams,
   useSubmit,
 } from "react-router";
-import { Check, Pencil, X, Settings } from "lucide-react";
+import { Check, Handshake, Pencil, X, Settings } from "lucide-react";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { EditableSection } from "~/components/EditableSection";
 import { TagPicker } from "~/components/TagPicker";
@@ -28,6 +28,11 @@ import { ProjectImageBanner } from "../components/ProjectImageBanner";
 import { Markdown } from "~/components/Markdown";
 import { parseSessionCookie } from "~/lib/cookies";
 import { isCore, isProjectMember, canManageStaffing, currentTerm } from "~/lib/roles";
+import {
+  linkProjectPartner,
+  unlinkProjectPartner,
+  updateProjectPartnerDates,
+} from "~/partners/lib/partner-access";
 import { getPresenceUser } from "~/lib/presence-user";
 import { TaskBoard } from "../components/TaskBoard";
 import { type TimelineEpic, type EpicStatus } from "../components/EpicsTimeline";
@@ -114,7 +119,28 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         select: { term: { select: { id: true, code: true, sortKey: true } } },
       },
       termCount: true,
-      partners: { select: { partnerOrg: { select: { name: true } } } },
+      partners: {
+        select: {
+          id: true,
+          startedAt: true,
+          endedAt: true,
+          partnerOrg: {
+            select: {
+              id: true,
+              name: true,
+              logoUrl: true,
+              website: true,
+              users: {
+                select: {
+                  id: true,
+                  displayRole: true,
+                  user: { select: USER_NAME_SELECT },
+                },
+              },
+            },
+          },
+        },
+      },
       termStatuses: {
         select: {
           id: true,
@@ -208,12 +234,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     select: {
       id: true,
       title: true,
+      partnerVisible: true,
       tags: { select: { tag: { select: { id: true, label: true, slug: true, color: true } } } },
     },
   });
   const documents = documentRows.map((d) => ({
     id: d.id,
     title: d.title,
+    partnerVisible: d.partnerVisible,
     tags: d.tags.map((t) => t.tag).sort((a, b) => a.label.localeCompare(b.label)),
   }));
 
@@ -522,6 +550,39 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // project.imageUrl so the upload field round-trips the key on save.
   const imageUrlResolved = await resolvePhotoUrl(project.imageUrl);
 
+  // Partnerships with derived active flag (same definition as
+  // partner-access.ts: window open AND project not archived).
+  const partnershipNow = new Date();
+  const partnerships = project.partners.map((pp) => ({
+    id: pp.id,
+    startedAt: pp.startedAt ? pp.startedAt.toISOString() : null,
+    endedAt: pp.endedAt ? pp.endedAt.toISOString() : null,
+    active:
+      project.status !== "Archived" &&
+      (pp.startedAt === null || pp.startedAt <= partnershipNow) &&
+      (pp.endedAt === null || pp.endedAt > partnershipNow),
+    org: {
+      id: pp.partnerOrg.id,
+      name: pp.partnerOrg.name,
+      logoUrl: pp.partnerOrg.logoUrl,
+      website: pp.partnerOrg.website,
+      contacts: pp.partnerOrg.users.map((u) => ({
+        id: u.id,
+        name: fullName(u.user),
+        displayRole: u.displayRole,
+      })),
+    },
+  }));
+  const hasActivePartner = partnerships.some((p) => p.active);
+  // Orgs not yet linked, for the Core-only link picker.
+  const linkablePartnerOrgs = core
+    ? await prisma.partnerOrg.findMany({
+        where: { projects: { none: { projectId: project.id } } },
+        orderBy: { name: "asc" },
+        select: { id: true, name: true },
+      })
+    : [];
+
   return {
     project: {
       id: project.id,
@@ -549,7 +610,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       isActiveThisTerm,
       actualTermCount: plannedTerms.length,
       termCount: project.termCount,
-      partners: project.partners,
+      partners: partnerships,
       domains: declaredDomains,
       derivedDomains,
     },
@@ -571,6 +632,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     canEditScope,
     canEditAssignmentLevel: core,
     canViewScope,
+    hasActivePartner,
+    linkablePartnerOrgs,
     currentTerm: current ? { id: current.id, code: current.code } : null,
     collabToken,
     userName,
@@ -599,6 +662,40 @@ export async function action({ request, params }: Route.ActionArgs) {
   const SCOPE_INTENTS = ["scopesBulk", "domains", "terms"];
   if (SCOPE_INTENTS.includes(intent) && !core) {
     return { error: "Only Core or Admin can change domain settings." };
+  }
+
+  // Partner links — Core/Admin only, via the shared helpers so validation
+  // and audit stay identical to the Core Hub org pages.
+  const PARTNER_INTENTS = ["partner-link", "partner-end", "partner-unlink"];
+  if (PARTNER_INTENTS.includes(intent)) {
+    if (!core) {
+      return { error: "Only Core or Admin can manage partner organizations." };
+    }
+    const actor = { actorUserId: auth.user.sub, request };
+    if (intent === "partner-link") {
+      const partnerOrgId = (form.get("partnerOrgId") as string | null) ?? "";
+      if (!partnerOrgId) return { error: "Select an organization." };
+      const result = await linkProjectPartner(
+        { projectId: params.id, partnerOrgId },
+        actor,
+      );
+      return "error" in result ? result : redirect(`/projects/${params.id}`);
+    }
+    const projectPartnerId = (form.get("projectPartnerId") as string | null) ?? "";
+    const existing = await prisma.projectPartner.findFirst({
+      where: { id: projectPartnerId, projectId: params.id },
+      select: { id: true, startedAt: true },
+    });
+    if (!existing) return { error: "Partnership not found." };
+    if (intent === "partner-end") {
+      const result = await updateProjectPartnerDates(
+        { projectPartnerId, startedAt: existing.startedAt, endedAt: new Date() },
+        actor,
+      );
+      return "error" in result ? result : redirect(`/projects/${params.id}`);
+    }
+    const result = await unlinkProjectPartner(projectPartnerId, actor);
+    return "error" in result ? result : redirect(`/projects/${params.id}`);
   }
 
   // Header form: name + status only.
@@ -826,6 +923,8 @@ export default function ProjectDetail() {
     canEditScope,
     canEditAssignmentLevel,
     canViewScope,
+    hasActivePartner,
+    linkablePartnerOrgs,
     currentTerm,
     collabToken,
     userName,
@@ -836,7 +935,7 @@ export default function ProjectDetail() {
   const actionData = useActionData<typeof action>();
   const [scopeSettingsOpen, setScopeSettingsOpen] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
-  const partnerNames = project.partners.map((p) => p.partnerOrg.name);
+  const partnerNames = project.partners.map((p) => p.org.name);
 
   const tabParam = searchParams.get("tab");
   const tab: Tab = isTab(tabParam) ? tabParam : "overview";
@@ -905,6 +1004,9 @@ export default function ProjectDetail() {
           canEdit={canEdit}
           canEditFinance={canEditScope}
           canEditAssignmentLevel={canEditAssignmentLevel}
+          canManagePartners={canEditScope}
+          hasActivePartner={hasActivePartner}
+          linkablePartnerOrgs={linkablePartnerOrgs}
           domainScopeGrid={domainScopeGrid}
           currentTerm={currentTerm}
           actionError={actionData?.error}
@@ -1887,6 +1989,9 @@ function OverviewTab({
   canEdit,
   canEditFinance,
   canEditAssignmentLevel,
+  canManagePartners,
+  hasActivePartner,
+  linkablePartnerOrgs,
   domainScopeGrid,
   currentTerm,
   actionError,
@@ -1899,6 +2004,9 @@ function OverviewTab({
   canEdit: boolean;
   canEditFinance: boolean;
   canEditAssignmentLevel: boolean;
+  canManagePartners: boolean;
+  hasActivePartner: boolean;
+  linkablePartnerOrgs: LoaderData["linkablePartnerOrgs"];
   domainScopeGrid: LoaderData["domainScopeGrid"];
   currentTerm: LoaderData["currentTerm"];
   actionError?: string;
@@ -1961,6 +2069,13 @@ function OverviewTab({
         <TeamSection teams={teams} canEdit={canEditAssignmentLevel} />
       </section>
 
+      {/* Partner organizations funding this project. Core manages links. */}
+      <PartnersSection
+        partners={project.partners}
+        linkablePartnerOrgs={linkablePartnerOrgs}
+        canManage={canManagePartners}
+      />
+
       {/* Documents — collab-doc pages; rows + Add open the doc as a split-screen
           tab beside the project (via the TabWorkspace shell). */}
       <DocumentsBlock
@@ -1968,6 +2083,7 @@ function OverviewTab({
         documents={documents}
         allTags={allTags}
         canEdit={canEdit}
+        hasActivePartner={hasActivePartner}
       />
 
       {/* Files — standalone uploads with versions + tags. */}
@@ -2040,20 +2156,189 @@ function ScopeTab({
   );
 }
 
+function PartnersSection({
+  partners,
+  linkablePartnerOrgs,
+  canManage,
+}: {
+  partners: LoaderData["project"]["partners"];
+  linkablePartnerOrgs: LoaderData["linkablePartnerOrgs"];
+  canManage: boolean;
+}) {
+  const [linking, setLinking] = useState(false);
+
+  return (
+    <section className="bg-card border border-border rounded-lg p-4">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
+          <Handshake className="w-4 h-4" /> Partners
+        </h2>
+        {canManage && linkablePartnerOrgs.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setLinking((v) => !v)}
+            className="text-xs font-medium text-accent-coral hover:underline"
+          >
+            + Link organization
+          </button>
+        )}
+      </div>
+
+      {linking && canManage && (
+        <Form method="post" className="flex flex-wrap items-end gap-3 bg-muted/20 rounded-lg p-3 mb-3">
+          <input type="hidden" name="intent" value="partner-link" />
+          <select
+            name="partnerOrgId"
+            required
+            className="flex-1 min-w-[220px] rounded-lg border border-border bg-background px-3 py-2 text-sm"
+          >
+            <option value="">Select an organization…</option>
+            {linkablePartnerOrgs.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.name}
+              </option>
+            ))}
+          </select>
+          <button
+            type="submit"
+            className="rounded-lg bg-dark-blue text-white text-sm font-medium px-4 py-2 hover:opacity-90 transition"
+          >
+            Link
+          </button>
+        </Form>
+      )}
+
+      {partners.length === 0 ? (
+        <p className="text-sm text-muted-foreground italic">
+          No partner organizations linked.
+        </p>
+      ) : (
+        <div className="flex flex-col divide-y divide-border">
+          {partners.map((p) => (
+            <div key={p.id} className="py-2.5 flex items-start gap-3">
+              {p.org.logoUrl ? (
+                <img
+                  src={p.org.logoUrl}
+                  alt=""
+                  className="w-8 h-8 rounded object-contain bg-background border border-border flex-shrink-0 mt-0.5"
+                />
+              ) : (
+                <div className="w-8 h-8 rounded bg-brand-tint text-dark-blue flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">
+                  {p.org.name.slice(0, 1)}
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  {canManage ? (
+                    <Link
+                      to={`/partners/${p.org.id}`}
+                      className="text-sm font-medium text-foreground hover:underline"
+                    >
+                      {p.org.name}
+                    </Link>
+                  ) : (
+                    <span className="text-sm font-medium text-foreground">
+                      {p.org.name}
+                    </span>
+                  )}
+                  <span
+                    className={`text-xs rounded-full px-2 py-0.5 ${
+                      p.active
+                        ? "bg-accent-teal/15 text-accent-teal"
+                        : "bg-muted text-muted-foreground"
+                    }`}
+                  >
+                    {p.active ? "Active" : "Ended"}
+                  </span>
+                </div>
+                {p.org.contacts.length > 0 && (
+                  <div className="text-xs text-muted-foreground mt-0.5">
+                    {p.org.contacts
+                      .map((c) => (c.displayRole ? `${c.name} (${c.displayRole})` : c.name))
+                      .join(", ")}
+                  </div>
+                )}
+              </div>
+              {canManage && p.active && (
+                <Form method="post">
+                  <input type="hidden" name="intent" value="partner-end" />
+                  <input type="hidden" name="projectPartnerId" value={p.id} />
+                  <button
+                    type="submit"
+                    className="text-xs text-muted-foreground hover:text-foreground transition flex-shrink-0"
+                    title="Sets an end date; keeps the history"
+                  >
+                    End
+                  </button>
+                </Form>
+              )}
+              {canManage && (
+                <Form
+                  method="post"
+                  onSubmit={(e) => {
+                    if (!window.confirm(`Unlink ${p.org.name}? This deletes the partnership record — prefer "End" to keep history.`)) {
+                      e.preventDefault();
+                    }
+                  }}
+                >
+                  <input type="hidden" name="intent" value="partner-unlink" />
+                  <input type="hidden" name="projectPartnerId" value={p.id} />
+                  <button
+                    type="submit"
+                    className="text-xs text-destructive hover:underline flex-shrink-0 ml-2"
+                  >
+                    Unlink
+                  </button>
+                </Form>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function DocumentsBlock({
   projectId,
   documents,
   allTags,
   canEdit,
+  hasActivePartner,
 }: {
   projectId: string;
   documents: LoaderData["documents"];
   allTags: LoaderData["allTags"];
   canEdit: boolean;
+  hasActivePartner: boolean;
 }) {
   const revalidator = useRevalidator();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Share/unshare a page with the project's partner org(s). Persisted via
+  // its own API route; the badge state comes back through the loader.
+  async function togglePartnerVisible(id: string, next: boolean) {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/pages/${id}/partner-visible`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ partnerVisible: next }),
+      });
+      if (!res.ok) {
+        const b = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(b.error ?? "Failed to update sharing");
+      }
+      revalidator.revalidate();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   // Add document: create an "Untitled" page immediately, then open it as a
   // split-screen tab beside the project. The title is renamed inline in the
@@ -2134,16 +2419,46 @@ function DocumentsBlock({
                 >
                   {doc.title}
                 </button>
-                {canEdit && (
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => void deleteDocument(doc.id, doc.title)}
-                    className="text-xs text-destructive hover:underline disabled:opacity-60 flex-shrink-0"
-                  >
-                    Delete
-                  </button>
-                )}
+                <div className="flex items-center gap-3 flex-shrink-0">
+                  {doc.partnerVisible && !canEdit && (
+                    <span
+                      className="flex items-center gap-1 text-xs text-accent-teal"
+                      title="Partners on this project can open and edit this page"
+                    >
+                      <Handshake className="w-3.5 h-3.5" /> Shared with partner
+                    </span>
+                  )}
+                  {canEdit && (hasActivePartner || doc.partnerVisible) && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void togglePartnerVisible(doc.id, !doc.partnerVisible)}
+                      title={
+                        doc.partnerVisible
+                          ? "Partners can open and edit this page — click to stop sharing"
+                          : "Share this page with the project's partner org"
+                      }
+                      className={`flex items-center gap-1 text-xs disabled:opacity-60 ${
+                        doc.partnerVisible
+                          ? "text-accent-teal hover:underline"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <Handshake className="w-3.5 h-3.5" />
+                      {doc.partnerVisible ? "Shared with partner" : "Share with partner"}
+                    </button>
+                  )}
+                  {canEdit && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void deleteDocument(doc.id, doc.title)}
+                      className="text-xs text-destructive hover:underline disabled:opacity-60"
+                    >
+                      Delete
+                    </button>
+                  )}
+                </div>
               </div>
               <TagPicker
                 targetType="doc"

@@ -1,4 +1,5 @@
-// DEV-ONLY: log in as any existing user by netId or daliEmail. Sets the
+// DEV-ONLY: log in as any existing user by netId, daliEmail, or
+// personalEmail (partner accounts have neither of the first two). Sets the
 // __dali_sid session cookie via Set-Cookie so it overwrites any existing
 // cookie from a real OAuth session.
 //
@@ -18,22 +19,29 @@ export async function loader({ request }: Route.LoaderArgs) {
   const url = new URL(request.url);
   const netId = url.searchParams.get("netId");
   const daliEmail = url.searchParams.get("daliEmail");
-  const defaultRedirect = "http://localhost:3001/";
-  const redirect = url.searchParams.get("redirect") ?? defaultRedirect;
+  const personalEmail = url.searchParams.get("personalEmail");
+  const redirect = url.searchParams.get("redirect");
 
-  if (!netId && !daliEmail) {
-    return new Response("Missing ?netId or ?daliEmail param", { status: 400 });
+  if (!netId && !daliEmail && !personalEmail) {
+    return new Response("Missing ?netId, ?daliEmail, or ?personalEmail param", { status: 400 });
   }
 
   const user = daliEmail
     ? await prisma.user.findUnique({ where: { daliEmail } })
-    : await prisma.user.findUnique({ where: { netId: netId! } });
+    : personalEmail
+      ? await prisma.user.findUnique({ where: { personalEmail } })
+      : await prisma.user.findUnique({ where: { netId: netId! } });
   if (!user) {
-    return new Response(`No user found for ${daliEmail ? `daliEmail ${daliEmail}` : `netId ${netId}`}`, { status: 404 });
+    const looked = daliEmail
+      ? `daliEmail ${daliEmail}`
+      : personalEmail
+        ? `personalEmail ${personalEmail}`
+        : `netId ${netId}`;
+    return new Response(`No user found for ${looked}`, { status: 404 });
   }
 
-  const email = user.daliEmail ?? user.dartmouthEmail ?? "";
-  const type = user.daliEmail ? "member" : "applicant";
+  const email = user.daliEmail ?? user.dartmouthEmail ?? user.personalEmail ?? "";
+  const type = user.daliEmail ? "member" : personalEmail ? "partner" : "applicant";
 
   const session = await issueSession({ userId: user.id });
 
@@ -45,9 +53,12 @@ export async function loader({ request }: Route.LoaderArgs) {
     type,
   });
 
-  const finalRedirect = url.searchParams.get("redirect")
-    ? redirect
-    : type === "member" ? "http://localhost:3001/" : "http://localhost:3001/portal";
+  // Relative by default so the redirect stays on whatever port this server
+  // runs on (worktrees run on alternates; hardcoding 3001 sent the browser
+  // to a different checkout's dev server). ?redirect= still overrides.
+  const finalRedirect =
+    redirect ??
+    (type === "member" ? "/" : type === "partner" ? "/partner" : "/portal");
   const headers = new Headers({ Location: finalRedirect });
   setSessionCookie(headers, session.rawId);
   // __dali_user: web display (NOT HttpOnly so client JS can read it)

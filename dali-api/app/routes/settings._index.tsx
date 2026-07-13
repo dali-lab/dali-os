@@ -1,6 +1,6 @@
 import { Link, redirect } from "react-router";
 import { CalendarDays, Cable, KeyRound, Slack, UserCircle2 } from "lucide-react";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import type { Route } from "./+types/settings._index";
 
 export const meta: Route.MetaFunction = () => [{ title: "Settings · DALI OS" }];
@@ -9,6 +9,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
   if (auth.user.type === "applicant") return redirect("/portal");
+  const partnerRedirect = await redirectPartnerToPortal(auth);
+  if (partnerRedirect) return partnerRedirect;
   return null;
 }
 

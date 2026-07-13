@@ -6,7 +6,7 @@
 
 import { redirect, useFetcher } from "react-router";
 import { Slack, CheckCircle2, Trash2 } from "lucide-react";
-import { requireAuth, unauthorized, forbidden } from "~/lib/auth";
+import { requireAuth, unauthorized, forbidden, redirectPartnerToPortal, isPartnerAccount } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { lookupSlackUserByEmail } from "~/slack/lib/slack-client";
 import { logAuditEvent } from "~/lib/audit";
@@ -18,6 +18,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
   if (auth.user.type === "applicant") return redirect("/portal");
+  const partnerRedirect = await redirectPartnerToPortal(auth);
+  if (partnerRedirect) return partnerRedirect;
 
   const user = await prisma.user.findUnique({
     where: { id: auth.user.sub },
@@ -41,6 +43,7 @@ export async function action({ request }: Route.ActionArgs) {
   if (!auth.ok) return unauthorized(request);
   if (auth.user.type === "applicant")
     return forbidden(request);
+  if (await isPartnerAccount(auth)) return forbidden(request);
 
   const userId = auth.user.sub;
   const form = await request.formData();

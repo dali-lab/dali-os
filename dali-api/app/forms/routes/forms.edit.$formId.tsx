@@ -4,15 +4,18 @@ import { requireAuth, forbidden, redirectApplicantToPortal } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { loadFormForEdit, runFormsAction } from "~/forms/lib/forms-data";
+import { formUsages } from "~/forms/lib/form-usages.server";
 import { FormDetail } from "~/forms/components/FormDetail";
 
 export const meta: Route.MetaFunction = ({ data }) => [
   { title: `${(data as any)?.form?.name ?? "Form"} · Forms · DALI OS` },
 ];
 
+// Resolves the dynamic leaf crumb so the trail reads
+// "Documents › Edit › <form name>" instead of a raw id.
 export const handle = {
   breadcrumb: (data: unknown) =>
-    (data as { form?: { name: string } } | undefined)?.form?.name,
+    (data as { form?: { name?: string } } | undefined)?.form?.name ?? null,
 };
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -26,13 +29,19 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!form) return redirect("/forms");
   // Terms for term-scoped reference questions (e.g. projects active in a
   // chosen term). Newest first so the most likely choices are at the top.
-  const terms = await prisma.term.findMany({
-    orderBy: { sortKey: "desc" },
-    select: { id: true, code: true },
-  });
+  const [terms, usages, submissionCount] = await Promise.all([
+    prisma.term.findMany({
+      orderBy: { sortKey: "desc" },
+      select: { id: true, code: true },
+    }),
+    formUsages(params.formId),
+    prisma.formSubmission.count({ where: { formId: params.formId } }),
+  ]);
   return {
     form,
     terms,
+    usages,
+    submissionCount,
   };
 }
 

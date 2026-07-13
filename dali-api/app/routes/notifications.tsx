@@ -7,7 +7,7 @@ import {
   ExternalLink,
   RotateCcw,
 } from "lucide-react";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import {
   listOpenTasks,
   listNotificationHistory,
@@ -33,6 +33,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
   if (auth.user.type === "applicant") return redirect("/portal");
+  const partnerRedirect = await redirectPartnerToPortal(auth);
+  if (partnerRedirect) return partnerRedirect;
 
   const url = new URL(request.url);
   const tab = url.searchParams.get("tab") === "history" ? "history" : "open";

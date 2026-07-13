@@ -9,7 +9,7 @@ import {
   HelpCircle,
   CalendarClock,
 } from "lucide-react";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { listOpenTasks, type Task } from "~/lib/tasks";
 import { fetchGeneralCalendarEvents } from "~/lib/general-calendar";
@@ -36,6 +36,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
   if (auth.user.type === "applicant") return redirect("/portal");
+  const partnerRedirect = await redirectPartnerToPortal(auth);
+  if (partnerRedirect) return partnerRedirect;
 
   const items = await prisma.notification.findMany({
     // Hide invites whose meeting was Cancelled — they shouldn't appear in the

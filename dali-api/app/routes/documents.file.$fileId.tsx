@@ -2,7 +2,7 @@ import { redirect, useLoaderData } from "react-router";
 import { Download } from "lucide-react";
 import type { Route } from "./+types/documents.file.$fileId";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { getDownloadUrl } from "~/lib/s3";
 import { hydrateAuthors } from "~/lib/collabAuth";
@@ -19,6 +19,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
   if (auth.user.type === "applicant") return redirect("/portal");
+  const partnerRedirect = await redirectPartnerToPortal(auth);
+  if (partnerRedirect) return partnerRedirect;
 
   const file = await prisma.projectFile.findUnique({
     where: { id: params.fileId },

@@ -16,6 +16,8 @@ import {
   type RoleCandidate,
 } from "~/admin-console/lib/payroll-export";
 
+export const handle = { areaPills: true };
+
 export const meta: Route.MetaFunction = () => [
   { title: "Payroll Export · Admin · DALI OS" },
 ];

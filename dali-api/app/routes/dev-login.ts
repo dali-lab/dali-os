@@ -17,7 +17,10 @@ export async function loader({ request }: Route.LoaderArgs) {
   const userId = url.searchParams.get("userId");
 
   if (userId) {
-    const user = await prisma.user.findUnique({ where: { id: userId } });
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: { partnerUser: { select: { id: true } } },
+    });
     if (!user) return new Response("User not found", { status: 404 });
     return loginAsUser(user);
   }
@@ -29,12 +32,23 @@ export async function loader({ request }: Route.LoaderArgs) {
       coreAssignments: { select: { leadTitle: true } },
       domainLeadAssignmentsAsUser: { include: { domain: true } },
       cycleReviewers: { include: { domain: true } },
+      partnerUser: {
+        select: {
+          displayRole: true,
+          partnerOrg: { select: { name: true } },
+        },
+      },
     },
     orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
   });
 
   const daliUsers = users.filter((u) => u.daliMember !== null);
-  const applicantUsers = users.filter((u) => u.daliMember === null);
+  const partnerUsers = users.filter(
+    (u) => u.daliMember === null && u.partnerUser !== null,
+  );
+  const applicantUsers = users.filter(
+    (u) => u.daliMember === null && u.partnerUser === null,
+  );
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -63,6 +77,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     .badge-lead { background: #d1fae5; color: #065f46; }
     .badge-reviewer { background: #ede9fe; color: #5b21b6; }
     .badge-admin { background: #fce7f3; color: #9d174d; }
+    .badge-partner { background: #ccfbf1; color: #115e59; }
     .action { color: #999; font-size: 0.75rem; font-weight: 500; text-align: right; min-width: 5rem; }
     .card:hover .action { color: #3b82f6; }
   </style>
@@ -74,6 +89,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   <div id="users">
     ${renderSection("DALI Members", daliUsers.map((u) => renderUserCard(u, true)))}
+    ${renderSection("Partners", partnerUsers.map((u) => renderUserCard(u, false)))}
     ${renderSection("Applicants / Other", applicantUsers.map((u) => renderUserCard(u, false)))}
   </div>
 
@@ -99,15 +115,20 @@ export async function loader({ request }: Route.LoaderArgs) {
   });
 }
 
-async function loginAsUser(user: { id: string; daliEmail: string | null; dartmouthEmail: string | null; firstName: string; lastName: string }) {
-  const type = user.daliEmail ? "member" : "applicant";
-
+async function loginAsUser(user: {
+  id: string;
+  daliEmail: string | null;
+  dartmouthEmail: string | null;
+  firstName: string;
+  lastName: string;
+  partnerUser: { id: string } | null;
+}) {
   const session = await issueSession({ userId: user.id });
 
   const headers = new Headers();
   setSessionCookie(headers, session.rawId);
 
-  const redirect = type === "member" ? "/" : "/portal";
+  const redirect = user.daliEmail ? "/" : user.partnerUser ? "/partner" : "/portal";
   headers.set("Location", redirect);
   return new Response(null, { status: 302, headers });
 }
@@ -122,7 +143,8 @@ function renderSection(title: string, cards: string[]): string {
 }
 
 function renderUserCard(user: any, isMember: boolean): string {
-  const email = user.daliEmail ?? user.dartmouthEmail ?? "no email";
+  const email =
+    user.daliEmail ?? user.dartmouthEmail ?? user.personalEmail ?? "no email";
   const badges = getBadges(isMember, user);
 
   return `
@@ -140,7 +162,13 @@ function getBadges(isMember: boolean, user: any): string {
   const badges: string[] = [];
 
   if (isMember) badges.push('<span class="badge badge-member">Member</span>');
-  else badges.push('<span class="badge badge-applicant">Applicant</span>');
+  else if (user.partnerUser) {
+    const org = user.partnerUser.partnerOrg?.name ?? "Partner";
+    const role = user.partnerUser.displayRole;
+    badges.push(
+      `<span class="badge badge-partner">Partner: ${esc(org)}${role ? ` · ${esc(role)}` : ""}</span>`,
+    );
+  } else badges.push('<span class="badge badge-applicant">Applicant</span>');
 
   if (user.adminMembership) badges.push('<span class="badge badge-admin">Admin</span>');
   const coreTitles: string[] = (user.coreAssignments ?? [])

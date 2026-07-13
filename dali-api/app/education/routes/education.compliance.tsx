@@ -15,6 +15,8 @@ import { TermFilter } from "~/components/TermFilter";
 import { Button } from "~/components/ui/Button";
 import { cn } from "~/lib/cn";
 
+export const handle = { areaPills: true };
+
 export const meta: Route.MetaFunction = () => [
   { title: "CE Compliance · DALI OS" },
 ];

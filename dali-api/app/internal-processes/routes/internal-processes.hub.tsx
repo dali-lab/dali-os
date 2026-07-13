@@ -5,6 +5,8 @@ import { isCore } from "~/lib/roles";
 import { labProcessesPills } from "~/internal-processes/labProcessesPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
 
+export const handle = { areaPills: true };
+
 export const meta: Route.MetaFunction = () => [{ title: "Lab Processes · DALI OS" }];
 
 export async function loader({ request }: Route.LoaderArgs) {

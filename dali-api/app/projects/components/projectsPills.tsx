@@ -1,16 +1,23 @@
 import type { AreaPill } from "~/components/AreaPillNav";
 
-// The Projects area's top-level surfaces (the sidebar entry is childless and
-// lands on the Hub). The staffing sub-surfaces (Board / Intent to Work /
-// Project Bids / Level Up) keep their own second-level row via staffingPills.
+// The Projects area's surfaces as one flat pill row (the sidebar entry is
+// childless and lands on the Hub). The four staffing surfaces are
+// canViewStaffing-gated — members see Hub / My Staffing only. Flat on
+// purpose: a second-level row would replace this one on navigation, making
+// the nav appear to vanish.
 export function projectsPills(args: {
   canViewStaffing: boolean;
-  active: "hub" | "staffing" | "my-staffing";
+  active: "hub" | "board" | "intent" | "bids" | "level-up" | "my-staffing";
 }): AreaPill[] {
   return [
     { label: "Hub", to: "/projects", active: args.active === "hub" },
     ...(args.canViewStaffing
-      ? [{ label: "Staffing", to: "/projects/staffing", active: args.active === "staffing" }]
+      ? [
+          { label: "Board", to: "/projects/staffing", active: args.active === "board" },
+          { label: "Intent to Work", to: "/projects/intent-to-work", active: args.active === "intent" },
+          { label: "Project Bids", to: "/projects/project-bids", active: args.active === "bids" },
+          { label: "Level Up", to: "/projects/level-up", active: args.active === "level-up" },
+        ]
       : []),
     {
       label: "My Staffing",

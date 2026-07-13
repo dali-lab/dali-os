@@ -65,6 +65,7 @@ export interface LookupSessionResult {
     id: string;
     daliEmail: string | null;
     dartmouthEmail: string | null;
+    personalEmail: string | null;
     netId: string | null;
     firstName: string;
     lastName: string;
@@ -82,6 +83,7 @@ export async function lookupSession(raw: string): Promise<LookupSessionResult | 
           id: true,
           daliEmail: true,
           dartmouthEmail: true,
+          personalEmail: true,
           netId: true,
           firstName: true,
           lastName: true,
