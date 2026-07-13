@@ -179,6 +179,8 @@ test.describe('partner self-signup', () => {
     await page.getByRole('button', { name: 'Continue to DALI OS' }).click();
     await expect(page).toHaveURL(/\/partner\/onboarding/);
 
+    // Self-signup asks join-vs-create first; only "new here" reveals the form.
+    await page.getByRole('button', { name: /No — we're new here/ }).click();
     await page.getByLabel('First name').fill('Emery');
     await page.getByLabel('Last name').fill('Example');
     await page.getByLabel('Organization name').fill('Example Robotics');
