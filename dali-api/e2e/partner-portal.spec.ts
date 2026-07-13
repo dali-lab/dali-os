@@ -229,6 +229,19 @@ test.describe('partner portal', () => {
 });
 
 test.describe('partner self-signup', () => {
+  test('login fork: joining a team gets invite guidance before any sign-in', async ({
+    page,
+  }) => {
+    await page.goto('/partner/login');
+    await page.getByRole('button', { name: /Yes — I'm joining my team/ }).click();
+    await expect(page.getByText('Ask a teammate for an invite')).toBeVisible();
+    // The advice lands before any email is sent; sign-in stays available for
+    // returning partners.
+    await expect(
+      page.getByRole('button', { name: 'Email me a sign-in link' }),
+    ).toBeVisible();
+  });
+
   test('magic link → onboarding → apply → status', async ({ page }) => {
     const email = `e2e-partner-${Date.now()}@example.com`;
     const raw = await insertMagicToken(email);
@@ -238,8 +251,9 @@ test.describe('partner self-signup', () => {
     await page.getByRole('button', { name: 'Continue to DALI OS' }).click();
     await expect(page).toHaveURL(/\/partner\/onboarding/);
 
-    // Self-signup asks join-vs-create first; only "new here" reveals the form.
-    await page.getByRole('button', { name: /No — we're new here/ }).click();
+    // The join-vs-create fork lives on /partner/login now; onboarding goes
+    // straight to the org form (with an ask-for-an-invite reminder).
+    await expect(page.getByText(/ask a teammate to invite you/i)).toBeVisible();
     await page.getByLabel('First name').fill('Emery');
     await page.getByLabel('Last name').fill('Example');
     await page.getByLabel('Organization name').fill('Example Robotics');
