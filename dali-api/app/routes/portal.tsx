@@ -106,7 +106,7 @@ export default function PortalHome() {
                 : hiring.applicationStatus === "Draft"
                   ? `You have a draft application for ${hiring.cycleName} — finish it before the cycle closes.`
                   : hiring.cycleOpen
-                    ? `The ${hiring.cycleName} cycle is open — designers, developers, PMs, and more.`
+                    ? `The ${hiring.cycleName} cycle is open.`
                     : `The ${hiring.cycleName} cycle is under review.`
               : "No application cycle is open right now — check back at the start of term."
           }
