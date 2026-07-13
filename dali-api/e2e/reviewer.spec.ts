@@ -32,7 +32,7 @@ test.describe.serial('reviewer workflow', () => {
     test('dashboard loads', async ({ page }) => {
       await page.goto('/hiring/reviewer');
       const frame = reviewsFrame(page);
-      await expect(frame.getByRole('heading', { name: 'Reviewer Dashboard' })).toBeVisible();
+      await expect(frame.getByRole('heading', { name: 'Reviews' })).toBeVisible();
       await expect(frame.getByText('Assigned Written Applications')).toBeVisible({ timeout: 10_000 });
     });
 
@@ -50,7 +50,7 @@ test.describe.serial('reviewer workflow', () => {
     test('dashboard shows review columns', async ({ page }) => {
       await page.goto('/hiring/reviewer');
       const frame = reviewsFrame(page);
-      await expect(frame.getByRole('heading', { name: 'Reviewer Dashboard' })).toBeVisible();
+      await expect(frame.getByRole('heading', { name: 'Reviews' })).toBeVisible();
       await expect(frame.getByRole('heading', { name: /Pending/ })).toBeVisible({ timeout: 10_000 });
       await expect(frame.getByRole('heading', { name: /Submitted/ })).toBeVisible();
     });

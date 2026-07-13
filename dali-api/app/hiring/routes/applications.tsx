@@ -23,7 +23,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!auth.ok) return redirect("/login");
   if (auth.user.type === "applicant") return redirect("/portal");
 
-  const { isCore, isAdmin, isDomainLead } = await getUserRoles(auth.user.sub);
+  const { isCore, isAdmin, isDomainLead, isInterviewer } = await getUserRoles(auth.user.sub);
 
   // Reviewer assignments across all cycles — used both to decide which cycles
   // a reviewer can see and to scope domains within the selected cycle.
@@ -71,7 +71,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   // Neither a Core member with no cycles nor a reviewer with no assignments
   // has anything to show.
-  const pillRoles = { isCore, isDomainLead, isAdmin };
+  const pillRoles = { isCore, isDomainLead, isAdmin, isInterviewer };
 
   if (cycles.length === 0) {
     return {

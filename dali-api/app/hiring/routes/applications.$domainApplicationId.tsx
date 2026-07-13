@@ -612,7 +612,7 @@ function toInterviewNotesData(iv: InterviewRow): InterviewNotesData {
     recommendationNotes: iv.recommendationNotes,
     jointNotes: iv.jointNotes,
     openInInterviewerHref: iv.assignments.some((a) => a.canEditNotes)
-      ? `/hiring/interviewer/interview/${iv.id}`
+      ? `/hiring/interviews/${iv.id}`
       : undefined,
     interviewers: iv.assignments.map((a) => ({
       id: a.id,

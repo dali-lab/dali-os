@@ -38,7 +38,9 @@ export default [
     route("hiring/emails/:id", "hiring/routes/email-templates.$id.tsx"),
     route("hiring/confidentiality-agreements/:id", "hiring/routes/confidentiality-agreements.$id.tsx"),
     route("hiring/cycles/:cycleId/confidentiality", "hiring/routes/cycles.$cycleId.confidentiality.tsx"),
-    route("hiring/interviewer/interview/:interviewId", "hiring/routes/interviewer.interview.$interviewId.tsx"),
+    // Interviewer surfaces: list (availability + assigned) and detail.
+    route("hiring/interviews", "hiring/routes/interviews.tsx"),
+    route("hiring/interviews/:interviewId", "hiring/routes/interviews.$interviewId.tsx"),
     route("hiring/analytics", "hiring/routes/analytics.tsx"),
 
     // Operations (top-level, not hiring)

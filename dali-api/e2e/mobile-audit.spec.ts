@@ -32,11 +32,8 @@ const ROUTES: Array<{ path: string; label: string }> = [
   { path: '/hiring/lead', label: 'hiring-lead' },
   { path: '/hiring/library', label: 'hiring-library' },
   { path: '/hiring/emails', label: 'hiring-emails' },
-  // No bare /hiring/interviewer route exists — the interviewer page is
-  // /hiring/interviewer/interview/:interviewId, which needs an :id and so is
-  // intentionally omitted (like other detail pages). Auditing the bare path
-  // 404s ("No routes matched") and spams the e2e server log.
   { path: '/hiring', label: 'hiring-hub' },
+  { path: '/hiring/interviews', label: 'hiring-interviews' },
   { path: '/admin-console/members', label: 'admin-members' },
   { path: '/admin-console/domains', label: 'admin-domains' },
   { path: '/projects', label: 'projects-list' },

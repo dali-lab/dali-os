@@ -28,13 +28,19 @@ export async function loader({ request }: Route.LoaderArgs) {
       isCore: roles.isCore,
       isDomainLead: roles.isDomainLead,
       isAdmin: roles.isAdmin,
+      isInterviewer: roles.isInterviewer,
     },
   };
 }
 
 type LoaderData = {
   entries: WaitlistEntry[];
-  pillRoles: { isCore: boolean; isDomainLead: boolean; isAdmin: boolean };
+  pillRoles: {
+    isCore: boolean;
+    isDomainLead: boolean;
+    isAdmin: boolean;
+    isInterviewer: boolean;
+  };
 };
 
 function fullName(e: WaitlistEntry): string {

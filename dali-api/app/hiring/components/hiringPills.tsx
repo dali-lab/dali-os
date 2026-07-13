@@ -7,19 +7,24 @@ export function hiringPills(args: {
   isCore: boolean;
   isDomainLead: boolean;
   isAdmin: boolean;
+  isInterviewer: boolean;
   active:
     | "hub"
     | "reviews"
+    | "interviews"
     | "applications"
     | "domain"
     | "cycles"
     | "waitlists"
     | "library";
 }): AreaPill[] {
-  const { isCore, isDomainLead, isAdmin, active } = args;
+  const { isCore, isDomainLead, isAdmin, isInterviewer, active } = args;
   return [
     { label: "Hub", to: "/hiring", active: active === "hub" },
     { label: "Reviews", to: "/hiring/reviewer", active: active === "reviews" },
+    ...(isInterviewer
+      ? [{ label: "Interviews", to: "/hiring/interviews", active: active === "interviews" }]
+      : []),
     {
       label: "Applications",
       to: "/hiring/applications",

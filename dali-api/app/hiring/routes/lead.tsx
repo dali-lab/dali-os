@@ -33,6 +33,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       isCore: roles.isCore,
       isDomainLead: roles.isDomainLead,
       isAdmin: roles.isAdmin,
+      isInterviewer: roles.isInterviewer,
     },
   };
 }

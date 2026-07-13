@@ -226,6 +226,7 @@ export async function getHiringHubData(userId: string) {
       isCore: roles.isCore,
       isDomainLead: roles.isDomainLead,
       isAdmin: roles.isAdmin,
+      isInterviewer: roles.isInterviewer,
     },
     cycle: cycle
       ? {

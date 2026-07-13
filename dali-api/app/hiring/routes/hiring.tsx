@@ -171,7 +171,7 @@ export default function HiringHub() {
                 {hub.upcomingInterviews.map((iv) => (
                   <li key={iv.id}>
                     <Link
-                      to={`/hiring/interviewer/interview/${iv.id}`}
+                      to={`/hiring/interviews/${iv.id}`}
                       className="text-sm text-foreground hover:text-accent-coral"
                     >
                       {iv.applicantName}

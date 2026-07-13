@@ -21,7 +21,7 @@ import type { Question, RubricCriterion } from '~/types'
 export const meta: Route.MetaFunction = ({ data }) => {
   const user = data?.application?.user
   const name = [user?.firstName, user?.lastName].filter(Boolean).join(' ').trim()
-  return [{ title: `${name || 'Application'} · Reviewer · DALI OS` }]
+  return [{ title: `${name || 'Application'} · Reviews · DALI OS` }]
 }
 
 export const handle = {

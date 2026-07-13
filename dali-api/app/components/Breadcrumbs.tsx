@@ -28,9 +28,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   'confidentiality-agreements': 'Confidentiality',
   confidentiality: 'Confidentiality',
   emails: 'Emails',
-  interviewer: 'Interviews',
-  interview: 'Interview',
-  analytics: 'Analytics',
+  interviews: 'Interviews',
 
   'admin-console': 'Admin',
   members: 'People',
@@ -91,8 +89,6 @@ const UNROUTED_SEGMENTS = new Set([
   'intern-to-full-cycle',
   'application', // /hiring/{reviewer,domain-lead}/application/:id
   'delibs',
-  'interviewer',
-  'interview',
   'assignments', // /education/manage/assignments/:assignmentId
   'page',
   'certificates',
