@@ -77,6 +77,63 @@ test.describe('internal Organizations pages (Core)', () => {
     await expect(page.getByText('invitee.tuck@example.com')).toBeVisible();
     await expect(page.getByText('Tuck Alumni Connect')).toBeVisible();
   });
+
+  test('Core can move a member, remove them, and delete an empty org', async ({ page }) => {
+    // Throwaway member on Tuck + an empty org, created directly — this is
+    // the fix-it tooling for exactly this kind of record surgery.
+    const suffix = randomBytes(4).toString('hex');
+    const userId = `e2e-move-user-${suffix}`;
+    const emptyOrgId = `e2e-empty-org-${suffix}`;
+    await withDb(async (c) => {
+      await c.query(
+        `INSERT INTO "User" (id, "personalEmail", "firstName", "lastName", "updatedAt")
+         VALUES ($1, $2, 'Movey', 'Tester', now())`,
+        [userId, `movey-${suffix}@example.com`],
+      );
+      await c.query(
+        `INSERT INTO "PartnerUser" (id, "userId", "partnerOrgId", "authProvider")
+         VALUES ($1, $2, 'partner-tuck-school', 'MagicLink')`,
+        [`e2e-move-pu-${suffix}`, userId],
+      );
+      await c.query(
+        `INSERT INTO "PartnerOrg" (id, name) VALUES ($1, $2)`,
+        [emptyOrgId, `Empty Husk ${suffix}`],
+      );
+    });
+
+    try {
+      page.on('dialog', (d) => d.accept());
+
+      // Move: Tuck → Hood.
+      await page.goto('/partners/partner-tuck-school?embed=1');
+      const row = page.locator('li', { hasText: 'Movey Tester' });
+      await row.getByRole('button', { name: 'Move', exact: true }).click();
+      await row.locator('select[name="targetOrgId"]').selectOption({ label: 'Hood Museum of Art' });
+      await row.getByRole('button', { name: 'Move', exact: true }).last().click();
+      await expect(page.getByText('Movey Tester')).not.toBeVisible();
+      await page.goto('/partners/partner-hood-museum?embed=1');
+      await expect(page.getByText('Movey Tester')).toBeVisible();
+
+      // Remove from Hood.
+      await page
+        .locator('li', { hasText: 'Movey Tester' })
+        .getByRole('button', { name: 'Remove' })
+        .click();
+      await expect(page.getByText('Movey Tester')).not.toBeVisible();
+
+      // Delete the empty org.
+      await page.goto(`/partners/${emptyOrgId}?embed=1`);
+      await page.getByRole('button', { name: 'Delete organization' }).click();
+      await expect(page).toHaveURL(/\/partners(\?|$)/);
+      await expect(page.getByText(`Empty Husk ${suffix}`)).not.toBeVisible();
+    } finally {
+      await withDb(async (c) => {
+        await c.query(`DELETE FROM "PartnerUser" WHERE "userId" = $1`, [userId]);
+        await c.query(`DELETE FROM "User" WHERE id = $1`, [userId]);
+        await c.query(`DELETE FROM "PartnerOrg" WHERE id = $1`, [emptyOrgId]);
+      });
+    }
+  });
 });
 
 test.describe('project hub share toggle (member)', () => {

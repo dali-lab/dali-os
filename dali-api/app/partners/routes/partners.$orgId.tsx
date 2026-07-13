@@ -88,7 +88,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
   if (!org) throw new Response("Not found", { status: 404 });
 
-  const [pendingInvites, linkableProjects] = await Promise.all([
+  const [pendingInvites, linkableProjects, otherOrgs] = await Promise.all([
     canEdit ? listPendingInvites(org.id) : Promise.resolve([]),
     canEdit
       ? prisma.project.findMany({
@@ -96,6 +96,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
             status: { not: "Archived" },
             partners: { none: { partnerOrgId: org.id } },
           },
+          orderBy: { name: "asc" },
+          select: { id: true, name: true },
+        })
+      : Promise.resolve([]),
+    // Targets for the "move member" fix-it action.
+    canEdit
+      ? prisma.partnerOrg.findMany({
+          where: { id: { not: org.id } },
           orderBy: { name: "asc" },
           select: { id: true, name: true },
         })
@@ -118,6 +126,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
     pendingInvites,
     linkableProjects,
+    otherOrgs,
+    // Cleanup affordance for duplicate-org husks: deletable only when truly
+    // empty (the action re-validates with authoritative counts).
+    canDeleteOrg:
+      canEdit &&
+      org.users.length === 0 &&
+      org.projects.length === 0 &&
+      org.applications.length === 0 &&
+      pendingInvites.length === 0,
     canEdit,
   };
 }
@@ -186,6 +203,85 @@ export async function action({ request, params }: Route.ActionArgs) {
       request,
     });
     return { ok: true };
+  }
+
+  if (intent === "member-move") {
+    const partnerUserId = form.get("partnerUserId") as string;
+    const targetOrgId = (form.get("targetOrgId") as string | null) ?? "";
+    if (!targetOrgId) return { error: "Choose an organization to move them to." };
+    if (targetOrgId === org.id) {
+      return { error: "They're already in this organization." };
+    }
+    const [member, target] = await Promise.all([
+      prisma.partnerUser.findFirst({
+        where: { id: partnerUserId, partnerOrgId: org.id },
+        select: { id: true },
+      }),
+      prisma.partnerOrg.findUnique({
+        where: { id: targetOrgId },
+        select: { id: true },
+      }),
+    ]);
+    if (!member) return { error: "Member not found." };
+    if (!target) return { error: "That organization no longer exists." };
+    await prisma.$transaction(async (tx) => {
+      // Primary contact doesn't travel — the source org just loses it.
+      if (org.primaryContactId === partnerUserId) {
+        await tx.partnerOrg.update({
+          where: { id: org.id },
+          data: { primaryContactId: null },
+        });
+      }
+      await tx.partnerUser.update({
+        where: { id: partnerUserId },
+        data: { partnerOrgId: targetOrgId },
+      });
+    });
+    await logAuditEvent({
+      action: "partner.member.update",
+      userId: auth.user.sub,
+      targetId: partnerUserId,
+      metadata: { movedFrom: org.id, movedTo: targetOrgId },
+      request,
+    });
+    return { ok: true };
+  }
+
+  if (intent === "org-delete") {
+    // Only a truly empty org may go: members, project links, applications,
+    // and pending invites all block. Historical (accepted/revoked/expired)
+    // invite rows don't — they're deleted with the org.
+    const [memberCount, projectCount, applicationCount, pendingInviteCount] =
+      await Promise.all([
+        prisma.partnerUser.count({ where: { partnerOrgId: org.id } }),
+        prisma.projectPartner.count({ where: { partnerOrgId: org.id } }),
+        prisma.partnerApplication.count({ where: { partnerOrgId: org.id } }),
+        prisma.partnerInvite.count({
+          where: {
+            partnerOrgId: org.id,
+            acceptedAt: null,
+            revokedAt: null,
+            expiresAt: { gt: new Date() },
+          },
+        }),
+      ]);
+    if (memberCount || projectCount || applicationCount || pendingInviteCount) {
+      return {
+        error:
+          "Only an empty organization can be deleted — this one still has members, projects, applications, or a pending invite.",
+      };
+    }
+    await prisma.$transaction(async (tx) => {
+      await tx.partnerInvite.deleteMany({ where: { partnerOrgId: org.id } });
+      await tx.partnerOrg.delete({ where: { id: org.id } });
+    });
+    await logAuditEvent({
+      action: "partner.org.delete",
+      userId: auth.user.sub,
+      targetId: org.id,
+      request,
+    });
+    return redirect("/partners");
   }
 
   if (intent === "member-remove") {
@@ -282,13 +378,15 @@ function memberName(u: { firstName: string; lastName: string; personalEmail: str
 }
 
 export default function PartnerOrgDetail() {
-  const { org, pendingInvites, linkableProjects, canEdit } =
+  const { org, pendingInvites, linkableProjects, otherOrgs, canDeleteOrg, canEdit } =
     useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const submit = useSubmit();
   const detailsFormRef = useRef<HTMLFormElement>(null);
   const [inviting, setInviting] = useState(false);
   const [linking, setLinking] = useState(false);
+  // Which member row has the "move to another org" form open.
+  const [movingId, setMovingId] = useState<string | null>(null);
 
   const error = actionData && "error" in actionData ? actionData.error : null;
 
@@ -471,37 +569,92 @@ export default function PartnerOrgDetail() {
         ) : (
           <ul className="divide-y divide-border">
             {org.users.map((m) => (
-              <li key={m.id} className="py-2.5 flex items-center gap-3">
-                <div className="min-w-0 flex-1">
-                  <span className="text-sm font-medium text-foreground">
-                    {memberName(m.user)}
-                  </span>
-                  {org.primaryContactId === m.id && (
-                    <span className="ml-2 text-xs rounded-full bg-accent-teal/15 text-accent-teal px-2 py-0.5">
-                      Primary contact
+              <li key={m.id} className="py-2.5 flex flex-col gap-2">
+                <div className="flex items-center gap-3">
+                  <div className="min-w-0 flex-1">
+                    <span className="text-sm font-medium text-foreground">
+                      {memberName(m.user)}
                     </span>
-                  )}
-                  <div className="text-xs text-muted-foreground">
-                    {m.user.personalEmail ?? "no email"}
-                    {m.displayRole ? ` · ${m.displayRole}` : ""}
+                    {org.primaryContactId === m.id && (
+                      <span className="ml-2 text-xs rounded-full bg-accent-teal/15 text-accent-teal px-2 py-0.5">
+                        Primary contact
+                      </span>
+                    )}
+                    <div className="text-xs text-muted-foreground">
+                      {m.user.personalEmail ?? "no email"}
+                      {m.displayRole ? ` · ${m.displayRole}` : ""}
+                    </div>
                   </div>
+                  {canEdit && otherOrgs.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setMovingId(movingId === m.id ? null : m.id)
+                      }
+                      className="text-xs text-muted-foreground hover:text-foreground transition"
+                    >
+                      Move
+                    </button>
+                  )}
+                  {canEdit && (
+                    <Form
+                      method="post"
+                      onSubmit={(e) => {
+                        if (!confirm(`Remove ${memberName(m.user)} from ${org.name}? They lose portal access immediately.`)) {
+                          e.preventDefault();
+                        }
+                      }}
+                    >
+                      <input type="hidden" name="intent" value="member-remove" />
+                      <input type="hidden" name="partnerUserId" value={m.id} />
+                      <button
+                        type="submit"
+                        className="text-xs text-muted-foreground hover:text-destructive transition"
+                      >
+                        Remove
+                      </button>
+                    </Form>
+                  )}
                 </div>
-                {canEdit && (
+                {canEdit && movingId === m.id && (
                   <Form
                     method="post"
+                    className="flex items-center gap-2 bg-muted/20 rounded-lg p-2.5"
                     onSubmit={(e) => {
-                      if (!confirm(`Remove ${memberName(m.user)} from ${org.name}? They lose portal access immediately.`)) {
+                      if (!confirm(`Move ${memberName(m.user)} to the selected organization? Their portal access switches immediately.`)) {
                         e.preventDefault();
                       }
                     }}
                   >
-                    <input type="hidden" name="intent" value="member-remove" />
+                    <input type="hidden" name="intent" value="member-move" />
                     <input type="hidden" name="partnerUserId" value={m.id} />
+                    <select
+                      name="targetOrgId"
+                      required
+                      defaultValue=""
+                      className="flex-1 px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                    >
+                      <option value="" disabled>
+                        Move to…
+                      </option>
+                      {otherOrgs.map((o) => (
+                        <option key={o.id} value={o.id}>
+                          {o.name}
+                        </option>
+                      ))}
+                    </select>
                     <button
                       type="submit"
-                      className="text-xs text-muted-foreground hover:text-destructive transition"
+                      className="px-3 py-1.5 text-xs font-medium rounded-md bg-dark-blue text-white hover:opacity-90 transition"
                     >
-                      Remove
+                      Move
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMovingId(null)}
+                      className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition"
+                    >
+                      Cancel
                     </button>
                   </Form>
                 )}
@@ -677,6 +830,37 @@ export default function PartnerOrgDetail() {
           </ul>
         )}
       </section>
+
+      {/* Cleanup for duplicate-org husks — only offered when truly empty. */}
+      {canDeleteOrg && (
+        <section className="border border-destructive/30 rounded-lg p-4 flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <h2 className="text-sm font-semibold text-foreground">
+              Delete organization
+            </h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              No members, projects, applications, or pending invites — this
+              organization can be removed.
+            </p>
+          </div>
+          <Form
+            method="post"
+            onSubmit={(e) => {
+              if (!confirm(`Delete ${org.name}? This can't be undone.`)) {
+                e.preventDefault();
+              }
+            }}
+          >
+            <input type="hidden" name="intent" value="org-delete" />
+            <button
+              type="submit"
+              className="px-3 py-1.5 text-sm font-medium rounded-md border border-destructive/40 text-destructive hover:bg-destructive/10 transition"
+            >
+              Delete organization
+            </button>
+          </Form>
+        </section>
+      )}
     </div>
   );
 }

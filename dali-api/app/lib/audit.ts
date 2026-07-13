@@ -58,6 +58,7 @@ export const AUDIT_ACTIONS = [
   "mcp.prompt_rendered",
   "partner.org.create",
   "partner.org.update",
+  "partner.org.delete",
   "partner.member.update",
   "partner.member.remove",
   "partner.project.link",
