@@ -2,6 +2,7 @@ import { redirect } from "react-router";
 import type { Route } from "./+types/library";
 import { prisma } from "~/lib/db";
 import { requireCoreOrDomainLead } from "~/lib/auth";
+import { getUserRoles } from "~/lib/roles";
 import Library from "~/hiring/components/Library";
 
 export const meta: Route.MetaFunction = () => [{ title: "Library · Hiring · DALI OS" }];
@@ -14,6 +15,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const gate = await requireCoreOrDomainLead(request);
   if (!gate.ok) return gate.response;
 
+  const roles = await getUserRoles(gate.auth.user.sub);
   const [domains, challenges, rubrics, agreements] = await Promise.all([
     prisma.domain.findMany({ orderBy: { name: "asc" } }),
     prisma.challenge.findMany({
@@ -51,6 +53,12 @@ export async function loader({ request }: Route.LoaderArgs) {
     rubrics,
     agreements,
     canEdit: true,
+    pillRoles: {
+      isCore: roles.isCore,
+      isDomainLead: roles.isDomainLead,
+      isAdmin: roles.isAdmin,
+      isInterviewer: roles.isInterviewer,
+    },
   };
 }
 

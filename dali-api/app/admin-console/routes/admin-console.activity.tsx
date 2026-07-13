@@ -1,5 +1,7 @@
 import { Form, Link, redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/admin-console.activity";
+import { adminPills } from "~/admin-console/adminPills";
+import { AreaPillNav } from "~/components/AreaPillNav";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
@@ -139,6 +141,7 @@ export default function AdminConsoleActivity() {
 
   return (
     <div className="space-y-4">
+      <AreaPillNav items={adminPills({ isAdmin: true, active: "activity" })} />
       <div className="flex items-center gap-3">
         <ListTodo className="w-6 h-6 text-foreground/80" />
         <h1 className="text-2xl font-bold text-foreground">Activity log</h1>

@@ -1,8 +1,10 @@
 import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/projects.my-staffing";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
-import { requireMember } from "~/lib/roles";
+import { requireMember, canViewStaffing } from "~/lib/roles";
 import { listMemberStaffingForms } from "../lib/member-staffing.server";
+import { projectsPills } from "../components/projectsPills";
+import { AreaPillNav } from "~/components/AreaPillNav";
 
 export const meta: Route.MetaFunction = () => [
   { title: "My Staffing · DALI OS" },
@@ -21,15 +23,21 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (portal) return portal;
   if (!(await requireMember(auth.user.sub))) return redirect("/");
 
-  const forms = await listMemberStaffingForms(auth.user.sub);
-  return { forms };
+  const [forms, canStaff] = await Promise.all([
+    listMemberStaffingForms(auth.user.sub),
+    canViewStaffing(auth.user.sub),
+  ]);
+  return { forms, canStaff };
 }
 
 export default function MyStaffingPage() {
-  const { forms } = useLoaderData<typeof loader>();
+  const { forms, canStaff } = useLoaderData<typeof loader>();
 
   return (
     <div className="flex flex-col gap-4">
+      <AreaPillNav
+        items={projectsPills({ canViewStaffing: canStaff, active: "my-staffing" })}
+      />
       <header>
         <h1 className="font-heading text-2xl font-bold text-foreground">
           My Staffing

@@ -4,9 +4,10 @@ import { resetCycleStatus } from './helpers';
 const cycleId = 'cycle-fall-2026';
 const baseURL = 'http://localhost:3001';
 
-// Reviewer pages render inside the workspace iframe titled "Reviews".
+// Reviewer pages render inside the workspace iframe. The Hiring sidebar area
+// is childless, so a direct navigation seeds the tab with the area label.
 const reviewsFrame = (page: import('@playwright/test').Page) =>
-  page.frameLocator('iframe[title="Reviews"]');
+  page.frameLocator('iframe[title="Hiring"]');
 
 /** Log in as hiring lead and advance the cycle to the given status. */
 async function advanceCycleTo(browser: any, status: string) {
@@ -31,7 +32,7 @@ test.describe.serial('reviewer workflow', () => {
     test('dashboard loads', async ({ page }) => {
       await page.goto('/hiring/reviewer');
       const frame = reviewsFrame(page);
-      await expect(frame.getByRole('heading', { name: 'Reviewer Dashboard' })).toBeVisible();
+      await expect(frame.getByRole('heading', { name: 'Reviews' })).toBeVisible();
       await expect(frame.getByText('Assigned Written Applications')).toBeVisible({ timeout: 10_000 });
     });
 
@@ -49,7 +50,7 @@ test.describe.serial('reviewer workflow', () => {
     test('dashboard shows review columns', async ({ page }) => {
       await page.goto('/hiring/reviewer');
       const frame = reviewsFrame(page);
-      await expect(frame.getByRole('heading', { name: 'Reviewer Dashboard' })).toBeVisible();
+      await expect(frame.getByRole('heading', { name: 'Reviews' })).toBeVisible();
       await expect(frame.getByRole('heading', { name: /Pending/ })).toBeVisible({ timeout: 10_000 });
       await expect(frame.getByRole('heading', { name: /Submitted/ })).toBeVisible();
     });

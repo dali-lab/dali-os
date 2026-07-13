@@ -5,6 +5,8 @@ import type { Route } from "./+types/applications";
 import { requireAuth } from "~/lib/auth";
 import { getUserRoles } from "~/lib/roles";
 import { prisma } from "~/lib/db";
+import { hiringPills } from "~/hiring/components/hiringPills";
+import { AreaPillNav } from "~/components/AreaPillNav";
 
 export const meta: Route.MetaFunction = () => [
   { title: "Applications · Hiring · DALI OS" },
@@ -21,7 +23,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!auth.ok) return redirect("/login");
   if (auth.user.type === "applicant") return redirect("/portal");
 
-  const { isCore, isAdmin, isDomainLead } = await getUserRoles(auth.user.sub);
+  const { isCore, isAdmin, isDomainLead, isInterviewer } = await getUserRoles(auth.user.sub);
 
   // Reviewer assignments across all cycles — used both to decide which cycles
   // a reviewer can see and to scope domains within the selected cycle.
@@ -69,10 +71,13 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   // Neither a Core member with no cycles nor a reviewer with no assignments
   // has anything to show.
+  const pillRoles = { isCore, isDomainLead, isAdmin, isInterviewer };
+
   if (cycles.length === 0) {
     return {
       gate: "empty" as const,
       isCore,
+      pillRoles,
     };
   }
 
@@ -178,6 +183,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   return {
     gate: "ok" as const,
     isCore,
+    pillRoles,
     cycles: cycles.map((c) => ({
       id: c.id,
       name: c.name,
@@ -226,9 +232,14 @@ export default function ApplicationsDatabase() {
     });
   }, [rows, domainId, status, query]);
 
+  const areaPills = (
+    <AreaPillNav items={hiringPills({ ...data.pillRoles, active: "applications" })} />
+  );
+
   if (data.gate === "empty") {
     return (
       <div className="flex flex-col gap-4">
+        {areaPills}
         <Header />
         <p className="text-sm text-muted-foreground">
           {data.isCore
@@ -245,6 +256,7 @@ export default function ApplicationsDatabase() {
 
   return (
     <div className="flex flex-col gap-4">
+      {areaPills}
       <Header />
 
       <div className="flex flex-col sm:flex-row sm:items-center gap-2">

@@ -27,6 +27,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     isCore: core,
     isAdmin: admin,
     isDomainLead: domainLead,
+    isInstructor,
     canViewForms,
     canViewStaffing,
   } = await getUserRoles(auth.user.sub)
@@ -93,7 +94,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     sessionId: auth.sessionId,
   })
 
-  return { user: auth.user, photoUrl, hasCalendarLink, shouldShowTour, isCore: core, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, isEmbedded }
+  return { user: auth.user, photoUrl, hasCalendarLink, shouldShowTour, isCore: core, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, isInstructor, isEmbedded }
 }
 
 export default function AppLayoutRoute() {

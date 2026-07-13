@@ -14,6 +14,7 @@ import { logAuditEvent } from "~/lib/audit";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { OPEN_APPLICATION_STATUSES } from "../lib/partner-application";
+import { AreaPillNav } from "~/components/AreaPillNav";
 
 export const meta: Route.MetaFunction = () => [{ title: "Partners · DALI OS" }];
 
@@ -118,6 +119,12 @@ export default function PartnersOrganizations() {
 
   return (
     <div className="flex flex-col gap-6">
+      <AreaPillNav
+        items={[
+          { label: "Hub", to: "/partners", active: true },
+          { label: "Applications", to: "/partners/applications" },
+        ]}
+      />
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="font-heading text-2xl font-bold text-foreground">

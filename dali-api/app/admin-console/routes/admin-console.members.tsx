@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/admin-console.members";
+import { adminPills } from "~/admin-console/adminPills";
+import { AreaPillNav } from "~/components/AreaPillNav";
 import { prisma } from "~/lib/db";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { isAdmin, isCore, isAdminViaEnv, currentTerm } from "~/lib/roles";
@@ -15,6 +17,12 @@ import {
 } from "~/admin-console/components/admin-console-shared";
 
 export const meta: Route.MetaFunction = () => [{ title: "Roles & Permissions · Admin · DALI OS" }];
+
+// The `members` segment is labeled "People" in the breadcrumb map (it names
+// the directory); this page is the roles tool, so it names its own crumb.
+export const handle = {
+  breadcrumb: () => "Roles & Permissions",
+};
 
 // Phase 2 rewrite: role state lives in AdminMembership / CoreAssignment /
 // DomainLeadAssignment instead of DALIMember.roles[]. The admin page now
@@ -210,6 +218,7 @@ export default function AdminConsoleMembers() {
 
   return (
     <div className="space-y-6">
+      <AreaPillNav items={adminPills({ isAdmin: viewerIsAdmin, active: "members" })} />
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <Users className="w-6 h-6 text-foreground/80" />

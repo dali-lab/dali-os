@@ -468,7 +468,7 @@ function Header({
 
       <p className="text-sm text-muted-foreground">
         <Link
-          to={`/projects/list?q=${encodeURIComponent(application.partner.name)}`}
+          to={`/projects?q=${encodeURIComponent(application.partner.name)}`}
           className="text-accent-coral hover:underline"
         >
           {application.partner.name}

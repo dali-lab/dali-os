@@ -14,7 +14,7 @@ export function DomainToggle({ domains, selectedDomainId }: Props) {
     if (domainId === null) params.delete("domain");
     else params.set("domain", domainId);
     params.delete("status");
-    navigate(`/hiring/analytics?${params.toString()}`);
+    navigate({ search: `?${params.toString()}` });
   }
 
   const options: Array<{ id: string | null; name: string }> = [

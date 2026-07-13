@@ -3,6 +3,7 @@ import type { Route } from "./+types/forms.fill.$token";
 import { requireAuth } from "~/lib/auth";
 import { requireMember } from "~/lib/roles";
 import { loadPublicForm } from "~/forms/lib/public-form";
+import { canFillEducationForm } from "~/education/lib/feedback.server";
 import {
   MemberFormFillView,
   MemberFormShell,
@@ -20,9 +21,28 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
   if (auth.user.type === "applicant") return redirect("/portal");
-  // Only lab members submit staffing forms; the level/eligibility a bid needs
-  // only exists for members.
-  if (!(await requireMember(auth.user.sub))) return redirect("/");
+
+  // Education feedback context riding the fill URL (?session= / ?offering=).
+  // Validated server-side; carried into the submit body so the submission
+  // records its education scope.
+  const url = new URL(request.url);
+  const educationSessionId = url.searchParams.get("session");
+  const educationOfferingId = url.searchParams.get("offering");
+
+  // Only lab members submit staffing forms — but a non-member portal student
+  // may fill a form bound to an education slot they're enrolled in (session
+  // feedback). The education context is what admits them.
+  if (!(await requireMember(auth.user.sub))) {
+    const admitted =
+      (educationSessionId || educationOfferingId) &&
+      (await canFillEducationForm({
+        token: params.token!,
+        userId: auth.user.sub,
+        sessionId: educationSessionId,
+        offeringId: educationOfferingId,
+      }));
+    if (!admitted) return redirect("/");
+  }
 
   // Pass the member's id so member-scoped reference sources (e.g. a bid's
   // domain dropdown limited to the member's own eligibility) populate.
@@ -30,14 +50,24 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!form) throw new Response("Not found", { status: 404 });
   // loadPublicForm doesn't echo the token back; the submit endpoint is
   // addressed by it, so pass it through explicitly.
-  return { ...form, token: params.token! };
+  return { ...form, token: params.token!, educationSessionId, educationOfferingId };
 }
 
 export default function MemberFormFill() {
   const data = useLoaderData<typeof loader>();
   return (
     <MemberFormShell>
-      <MemberFormFillView data={data} />
+      <MemberFormFillView
+        data={data}
+        extraBody={
+          data.educationSessionId || data.educationOfferingId
+            ? {
+                educationSessionId: data.educationSessionId,
+                educationOfferingId: data.educationOfferingId,
+              }
+            : undefined
+        }
+      />
     </MemberFormShell>
   );
 }

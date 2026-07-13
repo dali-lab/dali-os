@@ -12,6 +12,10 @@ export const meta: Route.MetaFunction = ({ data }) => {
   return [{ title: t ? `${t} · DALI OS` : "Document · DALI OS" }];
 };
 
+export const handle = {
+  breadcrumb: (data: unknown) => (data as { title?: string } | undefined)?.title,
+};
+
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
@@ -38,12 +42,19 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // Mirrors the doc gate in authorizeCollabDoc: Core everywhere, plus anyone
   // staffed on the project for Project-workspace pages (the same gate the
   // document API routes use — without this the editor rendered enabled but
-  // the collab handshake rejected members).
-  const canEdit =
-    (await isCore(auth.user.sub)) ||
-    (page.workspaceType === "Project" &&
-      page.workspaceId !== null &&
-      (await isProjectMember(auth.user.sub, page.workspaceId)));
+  // the collab handshake rejected members), plus the offering's instructors
+  // for EducationOffering-workspace pages.
+  let canEdit = await isCore(auth.user.sub);
+  if (!canEdit && page.workspaceType === "Project" && page.workspaceId) {
+    canEdit = await isProjectMember(auth.user.sub, page.workspaceId);
+  }
+  if (!canEdit && page.workspaceType === "EducationOffering" && page.workspaceId) {
+    const instructor = await prisma.instructorAssignment.findFirst({
+      where: { userId: auth.user.sub, offeringId: page.workspaceId },
+      select: { id: true },
+    });
+    canEdit = instructor !== null;
+  }
 
   const allTags = await prisma.docTag.findMany({
     where: { archivedAt: null },

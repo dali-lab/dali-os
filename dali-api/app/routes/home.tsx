@@ -22,7 +22,7 @@ const HOME_TZ = "America/New_York";
 
 type HomeNotification = {
   id: string;
-  kind: "General" | "MeetingInvite" | "MeetingReminder" | "SystemAnnouncement";
+  kind: "General" | "MeetingInvite" | "MeetingReminder" | "SystemAnnouncement" | "Education";
   title: string;
   body: string | null;
   link: string | null;

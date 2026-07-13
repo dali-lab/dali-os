@@ -10,6 +10,8 @@ import {
 } from "lucide-react";
 import { Button } from "~/components/ui/Button";
 import { Modal, ModalHeader } from "~/components/Modal";
+import { hiringPills } from "~/hiring/components/hiringPills";
+import { AreaPillNav } from "~/components/AreaPillNav";
 import type { loader } from "~/hiring/routes/library";
 
 type Tab = "challenges" | "rubrics" | "agreements";
@@ -37,6 +39,7 @@ export default function Library() {
 
   return (
     <div className="space-y-8">
+      <AreaPillNav items={hiringPills({ ...data.pillRoles, active: "library" })} />
       <div
         className="inline-flex self-start rounded-lg border border-border bg-muted/40 p-0.5"
         role="tablist"
@@ -61,6 +64,15 @@ export default function Library() {
             </button>
           );
         })}
+        {/* Email templates are library content too, but live on their own
+            route — rendered as a fourth segment that navigates instead of
+            switching a local tab (Emails no longer has a sidebar entry). */}
+        <Link
+          to="/hiring/emails"
+          className="px-4 py-1.5 text-sm font-semibold rounded-md transition-colors text-muted-foreground hover:text-foreground hover:bg-background/60"
+        >
+          Emails
+        </Link>
       </div>
 
       {tab === "challenges" && (

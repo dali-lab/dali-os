@@ -24,7 +24,7 @@ import { useSharedString } from '~/components/collab/useSharedString'
 import { ApplicationViewer } from '~/hiring/components/ApplicationViewer'
 import { ReviewSummary } from '~/hiring/components/ReviewSummary'
 import { buildCriteriaLabelMap } from '~/hiring/lib/rubric-criteria'
-import type { Route } from './+types/interviewer.interview.$interviewId'
+import type { Route } from './+types/interviews.$interviewId'
 import type { Question } from '~/types'
 import { INTERVIEW_STATUS_COLORS } from '~/hiring/lib/labels'
 
@@ -174,6 +174,17 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       presencePhotoUrl: presenceUser?.photoUrl ?? null,
       presenceSubtitle: presenceUser?.subtitle ?? null,
     }
+}
+
+export const handle = {
+  breadcrumb: (data: unknown) => {
+    const user = (
+      data as
+        | { interview?: { domainApplication?: { application?: { user?: { firstName?: string; lastName?: string } } } } }
+        | undefined
+    )?.interview?.domainApplication?.application?.user
+    return [user?.firstName, user?.lastName].filter(Boolean).join(' ').trim() || undefined
+  },
 }
 
 export default function InterviewDetailPage() {
