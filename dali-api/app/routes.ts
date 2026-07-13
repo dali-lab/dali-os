@@ -118,6 +118,7 @@ export default [
     route("portal", "routes/portal.tsx"),
     route("portal/apply", "routes/portal.apply.tsx"),
     route("portal/application", "routes/portal.application.tsx"),
+    route("portal/settings", "routes/portal.settings.tsx"),
   ]),
 
   // Partner portal (external partner shell). Singular /partner =
