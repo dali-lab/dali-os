@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { useEffect, useState } from "react";
 import { Form, redirect, useActionData, useNavigation } from "react-router";
 import type { Route } from "./+types/partner.login";
 import { requireAuth } from "~/lib/auth";
@@ -6,7 +7,14 @@ import { prisma } from "~/lib/db";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { getApiBaseUrl } from "~/lib/app-env";
 import { buildGoogleAuthUrl } from "~/lib/google-oauth";
-import { issuePartnerMagicLink } from "~/partners/lib/magic-link.server";
+import {
+  issuePartnerMagicLink,
+  normalizeEmail,
+} from "~/partners/lib/magic-link.server";
+
+// UI resend cooldown. The server independently rate-limits (3 sends per
+// email per 15 minutes) — this just keeps the button from being mashed.
+const RESEND_COOLDOWN_S = 30;
 
 const OAUTH_STATE_COOKIE = "__dali_oauth_state";
 const isProduction = process.env.NODE_ENV === "production";
@@ -66,14 +74,29 @@ export async function action({ request }: Route.ActionArgs) {
   }
   const result = await issuePartnerMagicLink(email, request);
   if ("rateLimited" in result) return result.rateLimited;
-  // Identical response whether or not the address maps to an account.
-  return { sent: true };
+  // Identical response whether or not the address maps to an account. Every
+  // address does receive an email (a sign-in link, or a use-the-member-login
+  // note), so the UI can say "we emailed you" truthfully in all cases.
+  return { sent: true, email: normalizeEmail(email) };
 }
 
 export default function PartnerLogin() {
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
   const submitting = navigation.state === "submitting";
+  const sent = actionData && "sent" in actionData ? actionData : null;
+
+  // Restart the cooldown on every successful send (each action response is a
+  // fresh object), then tick it down once a second.
+  const [cooldown, setCooldown] = useState(0);
+  useEffect(() => {
+    if (sent) setCooldown(RESEND_COOLDOWN_S);
+  }, [sent]);
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setTimeout(() => setCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [cooldown]);
 
   return (
     <div className="min-h-screen bg-page flex items-center justify-center px-6">
@@ -88,15 +111,39 @@ export default function PartnerLogin() {
           Partner sign in
         </h1>
 
-        {actionData && "sent" in actionData ? (
+        {sent ? (
           <div className="mt-6 rounded-2xl bg-brand-tint p-6">
             <p className="font-heading font-semibold text-dark-blue mb-1">
               Check your email
             </p>
             <p className="text-sm text-muted-foreground">
-              If that address can sign in here, we sent it a sign-in link.
-              It expires in 15 minutes.
+              We sent an email to{" "}
+              <span className="font-medium text-dark-blue">{sent.email}</span>.
+              Open it and follow the link to continue — sign-in links expire
+              in 15 minutes.
             </p>
+            <div className="mt-4 flex items-center gap-4 flex-wrap">
+              <Form method="post">
+                <input type="hidden" name="email" value={sent.email} />
+                <button
+                  type="submit"
+                  disabled={submitting || cooldown > 0}
+                  className="text-sm font-medium text-dark-blue hover:underline underline-offset-2 disabled:opacity-50 disabled:no-underline"
+                >
+                  {cooldown > 0
+                    ? `Resend email (${cooldown}s)`
+                    : submitting
+                      ? "Sending…"
+                      : "Resend email"}
+                </button>
+              </Form>
+              <a
+                href="/partner/login"
+                className="text-sm text-muted-foreground hover:text-foreground"
+              >
+                Use a different email
+              </a>
+            </div>
           </div>
         ) : (
           <>

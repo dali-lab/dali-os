@@ -121,11 +121,13 @@ test.describe('internal Organizations pages (Core)', () => {
         .click();
       await expect(page.getByText('Movey Tester')).not.toBeVisible();
 
-      // Delete the empty org.
+      // Delete the empty org — lands back on the org list without it.
       await page.goto(`/partners/${emptyOrgId}?embed=1`);
       await page.getByRole('button', { name: 'Delete organization' }).click();
-      await expect(page).toHaveURL(/\/partners(\?|$)/);
-      await expect(page.getByText(`Empty Husk ${suffix}`)).not.toBeVisible();
+      await expect(
+        page.getByRole('heading', { name: 'Organizations' }),
+      ).toBeVisible();
+      await expect(page.getByText(`Empty Husk ${suffix}`)).toHaveCount(0);
     } finally {
       await withDb(async (c) => {
         await c.query(`DELETE FROM "PartnerUser" WHERE "userId" = $1`, [userId]);

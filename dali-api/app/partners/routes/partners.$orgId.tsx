@@ -281,7 +281,10 @@ export async function action({ request, params }: Route.ActionArgs) {
       targetId: org.id,
       request,
     });
-    return redirect("/partners");
+    // Preserve ?embed=1 — dropping it would swap the standalone page for the
+    // full workspace shell (or nest a shell inside the workspace iframe).
+    const embed = new URL(request.url).searchParams.has("embed");
+    return redirect(embed ? "/partners?embed=1" : "/partners");
   }
 
   if (intent === "member-remove") {
