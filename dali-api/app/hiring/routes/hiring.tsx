@@ -2,17 +2,21 @@ import { redirect, useLoaderData, Link } from "react-router";
 import type { Route } from "./+types/hiring";
 import { requireAuth } from "~/lib/auth";
 import { getHiringHubData } from "~/hiring/lib/hub.server";
+import { getPipelineData } from "~/hiring/lib/pipeline.server";
 import { hiringPills } from "~/hiring/components/hiringPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
+import { PipelinePanel } from "~/hiring/components/analytics/PipelinePanel";
 import { buttonClasses } from "~/components/ui/Button";
 import { formatInterviewDate, formatInterviewTimeRange } from "~/hiring/lib/interview-time";
 import { cn } from "~/lib/cn";
 
 export const meta: Route.MetaFunction = () => [{ title: "Hiring · DALI OS" }];
 
-// The hiring hub: role-aware "what needs me right now" cards. Lateral
-// navigation to the tools lives in the pill row (the sidebar carries a
-// single Hiring entry that lands here).
+// The hiring hub. Personal cards carry the viewer's actual work items —
+// specific reviews, interviews, delibs boards — and the pipeline section
+// (formerly the standalone /hiring/analytics page) gives Core/DomainLead the
+// cycle overview. Cards never just relink a page the pill row already
+// reaches; they deep-link to items or hold info that lives nowhere else.
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -21,7 +25,11 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const hub = await getHiringHubData(auth.user.sub);
   if (!hub) return redirect("/");
-  return hub;
+  const pipeline =
+    hub.roles.isCore || hub.roles.isDomainLead
+      ? await getPipelineData(auth.user.sub, request)
+      : null;
+  return { ...hub, pipeline };
 }
 
 const STAGE_STYLES: Record<string, string> = {
@@ -67,13 +75,16 @@ function HealthRow({ count, label, detail }: { count: number; label: string; det
 
 export default function HiringHub() {
   const hub = useLoaderData<typeof loader>();
+  // The confidentiality card serves reviewers/interviewers; Core/DomainLead
+  // get the same prompt in-place from the pipeline section's gate.
+  const showConfidentialityCard =
+    hub.needsConfidentialitySignature !== null && hub.pipeline === null;
   const hasCards =
-    hub.pendingReviews > 0 ||
+    showConfidentialityCard ||
+    hub.pendingReviews.count > 0 ||
     hub.upcomingInterviews.length > 0 ||
     hub.delibs.length > 0 ||
-    hub.needsConfidentialitySignature !== null ||
-    hub.core !== null ||
-    (hub.roles.isCore && !hub.cycle);
+    hub.core !== null;
 
   return (
     <div className="flex flex-col gap-5">
@@ -109,154 +120,152 @@ export default function HiringHub() {
         )}
       </header>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {hub.needsConfidentialitySignature && hub.cycle && (
-          <Card
-            title="Confidentiality agreement"
-            cta={{
-              label: "Read & sign",
-              to: `/hiring/cycles/${hub.needsConfidentialitySignature}/confidentiality`,
-            }}
-          >
-            <p>
-              Sign the {hub.cycle.name} agreement before working with
-              applications.
-            </p>
-          </Card>
-        )}
+      {hasCards && (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {showConfidentialityCard && hub.cycle && (
+            <Card
+              title="Confidentiality agreement"
+              cta={{
+                label: "Read & sign",
+                to: `/hiring/cycles/${hub.needsConfidentialitySignature}/confidentiality`,
+              }}
+            >
+              <p>
+                Sign the {hub.cycle.name} agreement before working with
+                applications.
+              </p>
+            </Card>
+          )}
 
-        {hub.pendingReviews > 0 && (
-          <Card
-            title="My reviews"
-            cta={{ label: "Go to reviews", to: "/hiring/reviewer" }}
-          >
-            <p>
-              <span className="font-heading text-2xl font-bold">
-                {hub.pendingReviews}
-              </span>{" "}
-              review{hub.pendingReviews === 1 ? "" : "s"} waiting on you.
-            </p>
-          </Card>
-        )}
+          {hub.pendingReviews.count > 0 && (
+            <Card title="My reviews">
+              <ul className="flex flex-col gap-2">
+                {hub.pendingReviews.items.map((item) => (
+                  <li key={item.reviewId}>
+                    <Link
+                      to={`/hiring/reviewer/application/${item.applicationId}`}
+                      className="text-sm text-foreground hover:text-accent-coral"
+                    >
+                      {item.applicantName}
+                      <span className="text-muted-foreground"> · {item.domainName}</span>
+                    </Link>
+                  </li>
+                ))}
+                {hub.pendingReviews.count > hub.pendingReviews.items.length && (
+                  <li>
+                    <Link
+                      to="/hiring/reviewer"
+                      className="text-sm text-muted-foreground hover:text-foreground"
+                    >
+                      +{hub.pendingReviews.count - hub.pendingReviews.items.length} more →
+                    </Link>
+                  </li>
+                )}
+              </ul>
+            </Card>
+          )}
 
-        {hub.upcomingInterviews.length > 0 && (
-          <Card title="My interviews">
-            <ul className="flex flex-col gap-2">
-              {hub.upcomingInterviews.map((iv) => (
-                <li key={iv.id}>
-                  <Link
-                    to={`/hiring/interviewer/interview/${iv.id}`}
-                    className="text-sm text-foreground hover:text-accent-coral"
-                  >
-                    {formatInterviewDate(new Date(iv.startTime))} ·{" "}
-                    {formatInterviewTimeRange(
-                      new Date(iv.startTime),
-                      new Date(iv.endTime),
-                    )}
-                    {iv.location ? ` · ${iv.location}` : ""}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </Card>
-        )}
+          {hub.upcomingInterviews.length > 0 && (
+            <Card title="My interviews">
+              <ul className="flex flex-col gap-2">
+                {hub.upcomingInterviews.map((iv) => (
+                  <li key={iv.id}>
+                    <Link
+                      to={`/hiring/interviewer/interview/${iv.id}`}
+                      className="text-sm text-foreground hover:text-accent-coral"
+                    >
+                      {iv.applicantName}
+                      <span className="text-muted-foreground">
+                        {" "}
+                        · {formatInterviewDate(new Date(iv.startTime))} ·{" "}
+                        {formatInterviewTimeRange(
+                          new Date(iv.startTime),
+                          new Date(iv.endTime),
+                        )}
+                        {iv.location ? ` · ${iv.location}` : ""}
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
 
-        {hub.delibs.map((session) => (
-          <Card
-            key={session.id}
-            title={`${session.domainName} delibs`}
-            cta={{
-              label: "Open board",
-              to: `/hiring/domain-lead/delibs/${session.id}`,
-            }}
-          >
-            <p>{session.type} delibs are active for your domain.</p>
-          </Card>
-        ))}
+          {hub.delibs.map((session) => (
+            <Card
+              key={session.id}
+              title={`${session.domainName} delibs`}
+              cta={{
+                label: "Open board",
+                to: `/hiring/domain-lead/delibs/${session.id}`,
+              }}
+            >
+              <p>{session.type} delibs are active for your domain.</p>
+            </Card>
+          ))}
 
-        {hub.core && hub.core.releaseQueue > 0 && (
-          <Card
-            title="Release queue"
-            cta={{
-              label: "Manage cycle",
-              to: hub.cycle ? `/hiring/lead/cycle/${hub.cycle.id}` : "/hiring/lead",
-            }}
-          >
-            <p>
-              <span className="font-heading text-2xl font-bold">
-                {hub.core.releaseQueue}
-              </span>{" "}
-              finalized decision{hub.core.releaseQueue === 1 ? "" : "s"} waiting to
-              be released.
-            </p>
-          </Card>
-        )}
+          {hub.core && hub.core.releaseQueue > 0 && (
+            <Card
+              title="Release queue"
+              cta={{
+                label: "Manage cycle",
+                to: hub.cycle ? `/hiring/lead/cycle/${hub.cycle.id}` : "/hiring/lead",
+              }}
+            >
+              <p>
+                <span className="font-heading text-2xl font-bold">
+                  {hub.core.releaseQueue}
+                </span>{" "}
+                finalized decision{hub.core.releaseQueue === 1 ? "" : "s"} waiting to
+                be released.
+              </p>
+            </Card>
+          )}
 
-        {hub.core && hub.core.waitlisted > 0 && (
-          <Card
-            title="Waitlists"
-            cta={{ label: "View waitlists", to: "/hiring/waitlists" }}
-          >
-            <p>
-              <span className="font-heading text-2xl font-bold">
-                {hub.core.waitlisted}
-              </span>{" "}
-              candidate{hub.core.waitlisted === 1 ? "" : "s"} on active waitlists.
-            </p>
-          </Card>
-        )}
-
-        {hub.core && (
-          <Card
-            title="Cycle health"
-            cta={{ label: "Full pipeline", to: "/hiring/analytics" }}
-          >
-            <ul className="flex flex-col gap-1.5">
-              <HealthRow
-                count={hub.core.health.submitted}
-                label={`application${hub.core.health.submitted === 1 ? "" : "s"} submitted`}
-              />
-              {hub.core.health.unreviewedApps > 0 && (
+          {hub.core && (
+            <Card title="Cycle health">
+              <ul className="flex flex-col gap-1.5">
                 <HealthRow
-                  count={hub.core.health.unreviewedApps}
-                  label="awaiting a first review"
+                  count={hub.core.health.submitted}
+                  label={`application${hub.core.health.submitted === 1 ? "" : "s"} submitted`}
                 />
-              )}
-              {hub.core.health.reviewsOutstanding > 0 && (
-                <HealthRow
-                  count={hub.core.health.reviewsOutstanding}
-                  label="assigned reviews outstanding"
-                  detail={hub.core.health.outstandingByDomain
-                    .slice(0, 3)
-                    .map((d) => `${d.domainName} ${d.count}`)
-                    .join(" · ")}
-                />
-              )}
-              {hub.core.health.activeDelibs > 0 && (
-                <HealthRow
-                  count={hub.core.health.activeDelibs}
-                  label={`delibs board${hub.core.health.activeDelibs === 1 ? "" : "s"} active`}
-                />
-              )}
-            </ul>
-          </Card>
-        )}
+                {hub.core.health.unreviewedApps > 0 && (
+                  <HealthRow
+                    count={hub.core.health.unreviewedApps}
+                    label="awaiting a first review"
+                  />
+                )}
+                {hub.core.health.reviewsOutstanding > 0 && (
+                  <HealthRow
+                    count={hub.core.health.reviewsOutstanding}
+                    label="assigned reviews outstanding"
+                    detail={hub.core.health.outstandingByDomain
+                      .slice(0, 3)
+                      .map((d) => `${d.domainName} ${d.count}`)
+                      .join(" · ")}
+                  />
+                )}
+                {hub.core.health.activeDelibs > 0 && (
+                  <HealthRow
+                    count={hub.core.health.activeDelibs}
+                    label={`delibs board${hub.core.health.activeDelibs === 1 ? "" : "s"} active`}
+                  />
+                )}
+                {hub.core.waitlisted > 0 && (
+                  <HealthRow
+                    count={hub.core.waitlisted}
+                    label="on active waitlists"
+                  />
+                )}
+              </ul>
+            </Card>
+          )}
+        </div>
+      )}
 
-        {hub.roles.isCore && !hub.cycle && (
-          <Card
-            title="No active cycle"
-            cta={{ label: "Start a cycle", to: "/hiring/lead" }}
-          >
-            <p>
-              {hub.lastCycle
-                ? `${hub.lastCycle.name} wrapped with ${hub.lastCycle.hired} accepted.`
-                : "Kick off the term's hiring from the Cycles page."}
-            </p>
-          </Card>
-        )}
-      </div>
+      {hub.pipeline && <PipelinePanel data={hub.pipeline} />}
 
-      {!hasCards && (
+      {!hasCards && !hub.pipeline && (
         <div className="bg-card border border-border rounded-lg p-8 text-center">
           <p className="font-heading font-semibold text-foreground">
             Nothing needs you right now

@@ -14,7 +14,6 @@ export function hiringPills(args: {
     | "domain"
     | "cycles"
     | "waitlists"
-    | "analytics"
     | "library";
 }): AreaPill[] {
   const { isCore, isDomainLead, isAdmin, active } = args;
@@ -34,9 +33,6 @@ export function hiringPills(args: {
           { label: "Cycles", to: "/hiring/lead", active: active === "cycles" },
           { label: "Waitlists", to: "/hiring/waitlists", active: active === "waitlists" },
         ]
-      : []),
-    ...(isCore || isDomainLead
-      ? [{ label: "Analytics", to: "/hiring/analytics", active: active === "analytics" }]
       : []),
     ...(isCore || isDomainLead || isAdmin
       ? [{ label: "Library", to: "/hiring/library", active: active === "library" }]

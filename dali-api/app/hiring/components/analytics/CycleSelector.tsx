@@ -14,7 +14,7 @@ export function CycleSelector({ cycles, selectedCycleId }: CycleSelectorProps) {
   function handleChange(e: React.ChangeEvent<HTMLSelectElement>) {
     const params = new URLSearchParams(searchParams);
     params.set("cycleId", e.target.value);
-    navigate(`/hiring/analytics?${params.toString()}`);
+    navigate({ search: `?${params.toString()}` });
   }
 
   return (

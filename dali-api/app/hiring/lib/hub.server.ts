@@ -8,7 +8,7 @@ import { listActiveWaitlistEntries } from "./waitlist.server";
 // Personal cards (reviews, interviews, confidentiality) load for anyone with
 // hiring access; delibs for domain leads; release queue / waitlists / cycle
 // health for Core. Every Core number means work remaining, not volume — the
-// full pipeline view lives on /hiring/analytics.
+// full pipeline view is the hub's embedded pipeline section (pipeline.server).
 
 export type HubDecisionRow = {
   domainApplicationId: string;
@@ -57,30 +57,57 @@ export async function getHiringHubData(userId: string) {
   const cycle = await getActiveCycle();
   const now = new Date();
 
-  const [pendingReviews, upcomingAssignments] = await Promise.all([
-    prisma.applicationReview.count({
-      where: { cycleReviewer: { userId }, submittedAt: null },
-    }),
-    prisma.interviewAssignment.findMany({
-      where: {
-        status: "Active",
-        cycleInterviewer: { userId },
-        interview: { status: "Scheduled", startTime: { gte: now } },
-      },
-      orderBy: { interview: { startTime: "asc" } },
-      take: 5,
-      select: {
-        interview: {
-          select: {
-            id: true,
-            startTime: true,
-            endTime: true,
-            location: true,
+  // Personal cards carry the actual work items (deep links to the specific
+  // review/interview), not counts — the pill row already links the sections.
+  const applicantName = {
+    application: {
+      select: { user: { select: { firstName: true, lastName: true } } },
+    },
+  } as const;
+  const [pendingReviewCount, pendingReviewRows, upcomingAssignments] =
+    await Promise.all([
+      prisma.applicationReview.count({
+        where: { cycleReviewer: { userId }, submittedAt: null },
+      }),
+      prisma.applicationReview.findMany({
+        where: { cycleReviewer: { userId }, submittedAt: null },
+        orderBy: { createdAt: "asc" },
+        take: 5,
+        select: {
+          id: true,
+          domainApplication: {
+            select: {
+              applicationId: true,
+              domain: { select: { displayName: true } },
+              ...applicantName,
+            },
           },
         },
-      },
-    }),
-  ]);
+      }),
+      prisma.interviewAssignment.findMany({
+        where: {
+          status: "Active",
+          cycleInterviewer: { userId },
+          interview: { status: "Scheduled", startTime: { gte: now } },
+        },
+        orderBy: { interview: { startTime: "asc" } },
+        take: 5,
+        select: {
+          interview: {
+            select: {
+              id: true,
+              startTime: true,
+              endTime: true,
+              location: true,
+              domainApplication: { select: applicantName },
+            },
+          },
+        },
+      }),
+    ]);
+
+  const displayName = (p: { firstName: string | null; lastName: string | null }) =>
+    `${p.firstName ?? ""} ${p.lastName ?? ""}`.trim() || "Unknown";
 
   // Domain-lead lane: active delibs boards for my domains in the active cycle.
   let delibs: { id: string; type: string; domainName: string }[] = [];
@@ -193,42 +220,8 @@ export async function getHiringHubData(userId: string) {
     };
   }
 
-  // Out-of-cycle Core recap: the hub's job between cycles is "start the next
-  // one", with a one-line result of the last completed cycle for context.
-  let lastCycle: { name: string; hired: number } | null = null;
-  if (roles.isCore && !cycle) {
-    const lastCompleted = await prisma.applicationCycleStatusUpdate.findFirst({
-      where: {
-        newStatus: "Completed",
-        applicationCycle: { cycleType: "Standard" },
-      },
-      orderBy: { createdAt: "desc" },
-      select: { applicationCycle: { select: { id: true, name: true } } },
-    });
-    if (lastCompleted) {
-      const hired = await prisma.decision.findMany({
-        where: {
-          type: "Accepted",
-          stage: "Released",
-          domainApplication: {
-            application: {
-              applicationCycleId: lastCompleted.applicationCycle.id,
-            },
-          },
-        },
-        distinct: ["domainApplicationId"],
-        select: { id: true },
-      });
-      lastCycle = {
-        name: lastCompleted.applicationCycle.name,
-        hired: hired.length,
-      };
-    }
-  }
-
   return {
     needsConfidentialitySignature,
-    lastCycle,
     roles: {
       isCore: roles.isCore,
       isDomainLead: roles.isDomainLead,
@@ -242,8 +235,24 @@ export async function getHiringHubData(userId: string) {
           closeDate: cycle.closeDate ?? null,
         }
       : null,
-    pendingReviews,
-    upcomingInterviews: upcomingAssignments.map((a) => a.interview),
+    pendingReviews: {
+      count: pendingReviewCount,
+      items: pendingReviewRows.map((r) => ({
+        reviewId: r.id,
+        applicationId: r.domainApplication.applicationId,
+        applicantName: displayName(r.domainApplication.application.user),
+        domainName: r.domainApplication.domain.displayName,
+      })),
+    },
+    upcomingInterviews: upcomingAssignments.map((a) => ({
+      id: a.interview.id,
+      startTime: a.interview.startTime,
+      endTime: a.interview.endTime,
+      location: a.interview.location,
+      applicantName: displayName(
+        a.interview.domainApplication.application.user,
+      ),
+    })),
     delibs,
     core,
   };

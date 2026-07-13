@@ -36,7 +36,7 @@ const ROUTES: Array<{ path: string; label: string }> = [
   // /hiring/interviewer/interview/:interviewId, which needs an :id and so is
   // intentionally omitted (like other detail pages). Auditing the bare path
   // 404s ("No routes matched") and spams the e2e server log.
-  { path: '/hiring/analytics', label: 'hiring-analytics' },
+  { path: '/hiring', label: 'hiring-hub' },
   { path: '/admin-console/members', label: 'admin-members' },
   { path: '/admin-console/domains', label: 'admin-domains' },
   { path: '/projects', label: 'projects-list' },

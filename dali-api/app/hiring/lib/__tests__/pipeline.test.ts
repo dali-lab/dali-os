@@ -1,15 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
-vi.mock("~/lib/auth", () => ({
-  requireAuth: vi.fn(),
-}));
-vi.mock("~/lib/roles");
 
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
-import { getUserRoles } from "~/lib/roles";
-import { loader } from "~/hiring/routes/analytics";
+import { getPipelineData } from "~/hiring/lib/pipeline.server";
 
 const HIRING_LEAD_ID = "hiring-lead-1";
 const CYCLE_ID = "cycle-1";
@@ -20,20 +14,6 @@ const mockPrisma = prisma as unknown as Record<string, any>;
 
 beforeEach(() => {
   vi.clearAllMocks();
-
-  vi.mocked(requireAuth).mockResolvedValue({
-    ok: true,
-    user: { sub: HIRING_LEAD_ID, email: "lead@x.com", type: "user" },
-  } as any);
-  vi.mocked(getUserRoles).mockResolvedValue({
-    isLabMember: false,
-    isCore: true,
-    isAdmin: false,
-    isDomainLead: false,
-    isInstructor: false,
-    canViewForms: true,
-    canViewStaffing: true,
-  });
 
   mockPrisma.applicationCycle = {
     findMany: vi.fn().mockResolvedValue([
@@ -54,23 +34,18 @@ beforeEach(() => {
   mockPrisma.confidentialityAgreementSignature = { findUnique: vi.fn() };
 });
 
-function callLoader(search = "") {
-  const url = `http://localhost/hiring/analytics${search}`;
-  return loader({
-    request: new Request(url),
-    params: {},
-    context: {},
-  } as any);
+function callPipeline(search = "") {
+  return getPipelineData(HIRING_LEAD_ID, new Request(`http://localhost/hiring${search}`));
 }
 
-describe("hiring/analytics loader — confidentiality gating", () => {
+describe("getPipelineData — confidentiality gating", () => {
   it("returns 'unsigned' and empty rows/slices when the user has not signed the bound agreement", async () => {
     mockPrisma.cycleConfidentialityAgreement.findUnique.mockResolvedValue({
       confidentialityAgreementVersionId: CAV_ID,
     });
     mockPrisma.confidentialityAgreementSignature.findUnique.mockResolvedValue(null);
 
-    const data = (await callLoader()) as any;
+    const data = await callPipeline();
 
     expect(data.confidentialityRequired).toBe("unsigned");
     expect(data.rows).toEqual([]);
@@ -87,7 +62,7 @@ describe("hiring/analytics loader — confidentiality gating", () => {
     mockPrisma.cycleConfidentialityAgreement.findUnique.mockResolvedValue(null);
     mockPrisma.confidentialityAgreementSignature.findUnique.mockResolvedValue(null);
 
-    const data = (await callLoader()) as any;
+    const data = await callPipeline();
 
     expect(data.confidentialityRequired).toBe("no_agreement");
     expect(data.rows).toEqual([]);
@@ -116,7 +91,7 @@ describe("hiring/analytics loader — confidentiality gating", () => {
       },
     ]);
 
-    const data = (await callLoader()) as any;
+    const data = await callPipeline();
 
     expect(data.confidentialityRequired).toBeNull();
     expect(mockPrisma.domainApplication.findMany).toHaveBeenCalledTimes(1);
