@@ -55,11 +55,10 @@ export default function PartnerLayout() {
           <img src="/logo-blue.svg" alt="DALI Lab" className="h-9 w-auto flex-shrink-0" />
         </Link>
 
+        {/* Nav holds places, not actions — pitching lives on Home, where the
+            partner's applications give it context. */}
         <div className="flex items-center gap-5">
           <ProjectsNav projects={projects} />
-          <NavLink to="/partner/apply" className={navLinkClass}>
-            Apply
-          </NavLink>
         </div>
 
         <ProfileMenu
