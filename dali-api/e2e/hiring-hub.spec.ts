@@ -14,8 +14,16 @@ test.describe('hiring hub', () => {
     // Pill row reaches the tools.
     await expect(page.getByRole('link', { name: 'Reviews' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Cycles' })).toBeVisible();
-    // Seeded Fall 2026 cycle surfaces in the header line.
-    await expect(page.getByText(/Fall 2026/)).toBeVisible();
+    // Seeded Fall 2026 cycle surfaces in the header line. The embedded
+    // pipeline's cycle selector also carries the name, so scope to the
+    // header rather than the whole page.
+    await expect(
+      page.locator('header').getByText(/Fall 2026/),
+    ).toBeVisible();
+    // The pipeline section (formerly /hiring/analytics) is embedded below.
+    await expect(
+      page.getByRole('heading', { name: 'Pipeline', exact: true }),
+    ).toBeVisible();
   });
 
   test('non-hiring member is bounced home', async ({ page, loginAs }) => {
