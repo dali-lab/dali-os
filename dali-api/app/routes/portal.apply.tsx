@@ -475,9 +475,9 @@ export async function action({ request }: Route.ActionArgs) {
       }
     }
 
-    // Signal first-time submission so the portal can play a one-shot confetti.
+    // Signal first-time submission so the tracker can play a one-shot confetti.
     // Subsequent edit-saves keep the plain redirect so the animation does not replay.
-    return redirect(existingSubmitted ? "/portal" : "/portal?just-submitted=1");
+    return redirect(existingSubmitted ? "/portal/hiring" : "/portal/hiring?just-submitted=1");
   }
 
   return { error: "Unknown intent" };

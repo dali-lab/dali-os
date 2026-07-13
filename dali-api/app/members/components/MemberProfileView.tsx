@@ -10,6 +10,7 @@ import {
   FolderKanban,
   Github,
   Globe,
+  GraduationCap,
   Linkedin,
   LogOut,
   Mail,
@@ -153,6 +154,8 @@ export function MemberProfileView({
         pendingReviews={pendingReviews}
         showReviewsRow={showReviewsRow}
       />
+
+      {data.education && <EducationSection education={data.education} />}
     </div>
   );
 
@@ -525,6 +528,97 @@ function ActivitySection({
               Go to reviews →
             </Link>
           )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ─── Education (self + Core viewers only — loader sends null otherwise) ─────
+
+function EducationSection({
+  education,
+}: {
+  education: NonNullable<ProfilePageData["education"]>;
+}) {
+  if (
+    education.attended.length === 0 &&
+    education.taught.length === 0 &&
+    education.ceCredits.length === 0
+  ) {
+    return null;
+  }
+  return (
+    <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
+      <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
+        <GraduationCap className="w-4 h-4 text-accent-coral" />
+        Education
+      </h2>
+
+      {education.taught.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+            Taught
+          </h3>
+          <ul className="flex flex-col gap-1.5">
+            {education.taught.map((t) => (
+              <li key={`${t.offeringId}-${t.termCode}`}>
+                <Link
+                  to={`/education/${t.offeringId}`}
+                  className="flex items-center justify-between gap-2 px-3 py-2 rounded-md border border-border hover:bg-muted transition-colors"
+                >
+                  <span className="text-sm font-medium text-foreground truncate">
+                    {t.title}
+                  </span>
+                  <span className="text-xs text-muted-foreground whitespace-nowrap">
+                    {t.type} · {t.termCode}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {education.ceCredits.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+            CE credits
+          </h3>
+          {education.ceCredits.map((c) => (
+            <span
+              key={c.termCode}
+              className="inline-flex items-center rounded-full bg-accent-teal/10 text-accent-teal px-2 py-0.5 text-[11px] font-semibold"
+            >
+              {c.termCode}: {c.count}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {education.attended.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+            Attended
+          </h3>
+          <ul className="flex flex-col gap-1.5">
+            {education.attended.map((e) => (
+              <li
+                key={e.offeringId}
+                className="flex items-center justify-between gap-2 px-3 py-2 rounded-md border border-border"
+              >
+                <span className="text-sm font-medium text-foreground truncate">
+                  {e.title}
+                </span>
+                <span className="text-xs text-muted-foreground whitespace-nowrap">
+                  {e.status === "Approved" && e.attendance.total > 0
+                    ? `${e.attendance.present}/${e.attendance.total} sessions`
+                    : e.status}
+                  {e.certificateIssuedAt ? " · Certificate" : ""}
+                </span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </section>

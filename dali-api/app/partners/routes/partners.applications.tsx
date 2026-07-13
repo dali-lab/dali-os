@@ -21,6 +21,7 @@ import {
   type PartnerApplicationStatus as Status,
 } from "../lib/partner-application";
 import { useChartColors } from "~/hiring/components/analytics/useChartColors";
+import { AreaPillNav } from "~/components/AreaPillNav";
 
 export const meta: Route.MetaFunction = () => [
   { title: "Partner Applications · DALI OS" },
@@ -221,6 +222,12 @@ export default function PartnersApplications() {
 
   return (
     <div className="flex flex-col gap-4">
+      <AreaPillNav
+        items={[
+          { label: "Hub", to: "/partners" },
+          { label: "Applications", to: "/partners/applications", active: true },
+        ]}
+      />
       <header className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="font-heading text-2xl font-bold text-foreground">

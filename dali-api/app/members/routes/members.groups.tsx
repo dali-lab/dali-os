@@ -11,6 +11,7 @@ import { Avatar } from "~/components/ui/Avatar";
 import { RolePills } from "~/components/ui/RolePills";
 import { deriveCoreTitles } from "~/lib/core-titles";
 import { Modal, ModalHeader } from "~/components/Modal";
+import { AreaPillNav } from "~/components/AreaPillNav";
 import {
   Users,
   Plus,
@@ -262,6 +263,12 @@ export default function AdminConsoleGroups() {
 
   return (
     <div className="space-y-6">
+      <AreaPillNav
+        items={[
+          { label: "Hub", to: "/members" },
+          { label: "Groups", to: "/members/groups", active: true },
+        ]}
+      />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Users className="w-6 h-6 text-foreground/80" />

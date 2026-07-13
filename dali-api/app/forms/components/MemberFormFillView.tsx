@@ -24,9 +24,13 @@ export function MemberFormFillView({
   data,
   // Optional: rendered on the "Submitted" screen instead of the default copy.
   doneContent,
+  // Optional extra fields merged into the submit body (e.g. the education
+  // session/offering context the fill URL carried).
+  extraBody,
 }: {
   data: MemberFormData;
   doneContent?: React.ReactNode;
+  extraBody?: Record<string, string | null>;
 }) {
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [state, setState] = useState<"idle" | "submitting" | "done">("idle");
@@ -53,7 +57,7 @@ export function MemberFormFillView({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ versionId: data.versionId, answers }),
+        body: JSON.stringify({ versionId: data.versionId, answers, ...extraBody }),
       });
       const out = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {

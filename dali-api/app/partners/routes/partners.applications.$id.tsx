@@ -39,6 +39,11 @@ export const meta: Route.MetaFunction = ({ data }) => {
   ];
 };
 
+export const handle = {
+  breadcrumb: (data: unknown) =>
+    (data as { application?: { title: string } } | undefined)?.application?.title,
+};
+
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -421,7 +426,7 @@ function Header({
 
       <p className="text-sm text-muted-foreground">
         <Link
-          to={`/projects/list?q=${encodeURIComponent(application.partner.name)}`}
+          to={`/projects?q=${encodeURIComponent(application.partner.name)}`}
           className="text-accent-coral hover:underline"
         >
           {application.partner.name}

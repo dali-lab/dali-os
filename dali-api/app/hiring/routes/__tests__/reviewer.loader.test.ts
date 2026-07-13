@@ -53,6 +53,7 @@ beforeEach(() => {
   };
   mockPrisma.cycleInterviewer = {
     findMany: vi.fn().mockResolvedValue([]),
+    findFirst: vi.fn().mockResolvedValue(null),
   };
   mockPrisma.delibsSession = {
     findMany: vi.fn().mockResolvedValue([]),

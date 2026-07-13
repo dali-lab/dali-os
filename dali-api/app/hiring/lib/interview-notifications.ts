@@ -86,7 +86,7 @@ export async function notifyInterviewAssigned(args: {
         kind: "General" as const,
         title,
         body,
-        link: `/hiring/interviewer/interview/${a.interview.id}`,
+        link: `/hiring/interviews/${a.interview.id}`,
         dueAt: a.interview.startTime,
         interviewAssignmentId: a.id,
       };

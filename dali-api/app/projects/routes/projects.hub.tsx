@@ -7,9 +7,11 @@ import {
   useLoaderData,
   useNavigate,
 } from "react-router";
-import type { Route } from "./+types/projects.list";
+import type { Route } from "./+types/projects.hub";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
-import { isCore } from "~/lib/roles";
+import { isCore, canViewStaffing } from "~/lib/roles";
+import { projectsPills } from "../components/projectsPills";
+import { AreaPillNav } from "~/components/AreaPillNav";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { prisma } from "~/lib/db";
 import { githubTeamSlug } from "~/lib/github-slug";
@@ -87,15 +89,16 @@ export async function loader({ request }: Route.LoaderArgs) {
     };
   });
 
-  const [partnerOrgs, canEdit] = await Promise.all([
+  const [partnerOrgs, canEdit, canStaff] = await Promise.all([
     prisma.partnerOrg.findMany({
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),
     isCore(auth.user.sub),
+    canViewStaffing(auth.user.sub),
   ]);
 
-  return { rows, terms, selectedTerm: selected, partnerOrgs, canEdit };
+  return { rows, terms, selectedTerm: selected, partnerOrgs, canEdit, canStaff };
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -162,7 +165,7 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function ProjectsListPage() {
-  const { rows, terms, selectedTerm, partnerOrgs, canEdit } =
+  const { rows, terms, selectedTerm, partnerOrgs, canEdit, canStaff } =
     useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const [creating, setCreating] = useState(false);
@@ -180,6 +183,7 @@ export default function ProjectsListPage() {
 
   return (
     <div className="flex flex-col gap-4">
+      <AreaPillNav items={projectsPills({ canViewStaffing: canStaff, active: "hub" })} />
       <header className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="font-heading text-2xl font-bold text-foreground">

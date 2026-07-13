@@ -10,7 +10,7 @@ import {
 } from "react-router";
 import type { Route } from "./+types/members";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
-import { isCore } from "~/lib/roles";
+import { isCore, canViewForms } from "~/lib/roles";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { prisma } from "~/lib/db";
 import { promoteToMember } from "~/members/lib/membership.server";
@@ -23,6 +23,7 @@ import { ViewToggle, useViewPreference } from "~/components/ViewToggle";
 import { TermFilter } from "~/components/TermFilter";
 import { resolveTermFilter } from "~/lib/terms";
 import { deriveCoreTitles } from "~/lib/core-titles";
+import { AreaPillNav } from "~/components/AreaPillNav";
 
 export const meta: Route.MetaFunction = () => [{ title: "Directory · People · DALI OS" }];
 
@@ -121,7 +122,10 @@ export async function loader({ request }: Route.LoaderArgs) {
     })),
   })));
 
-  const canEdit = await isCore(auth.user.sub);
+  const [canEdit, canSeeGroups] = await Promise.all([
+    isCore(auth.user.sub),
+    canViewForms(auth.user.sub),
+  ]);
 
   return {
     rows,
@@ -130,6 +134,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     domains,
     selectedDomain: domainId,
     canEdit,
+    canSeeGroups,
   };
 }
 
@@ -232,7 +237,7 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function MembersList() {
-  const { rows, terms, selectedTerm, domains, selectedDomain, canEdit } =
+  const { rows, terms, selectedTerm, domains, selectedDomain, canEdit, canSeeGroups } =
     useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const [creating, setCreating] = useState(false);
@@ -251,10 +256,16 @@ export default function MembersList() {
 
   return (
     <div className="flex flex-col gap-4">
+      <AreaPillNav
+        items={[
+          { label: "Hub", to: "/members", active: true },
+          ...(canSeeGroups ? [{ label: "Groups", to: "/members/groups" }] : []),
+        ]}
+      />
       <header className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="font-heading text-2xl font-bold text-foreground">
-            Directory
+            People
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
             Everyone with a DALI membership row.

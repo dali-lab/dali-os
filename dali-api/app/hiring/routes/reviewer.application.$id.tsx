@@ -14,12 +14,23 @@ import { SaveStatusIndicator } from '~/hiring/components/SaveStatusIndicator'
 import { CollaborativeEditor } from '~/components/CollaborativeEditor'
 import { PresenceProvider } from '~/components/collab/PresenceProvider'
 import { PresenceBar } from '~/components/collab/PresenceBar'
+import { getEducationEngagement } from '~/education/lib/engagement.server'
+import { EducationEngagementPanel } from '~/education/components/EducationEngagementPanel'
 import type { Question, RubricCriterion } from '~/types'
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const user = data?.application?.user
   const name = [user?.firstName, user?.lastName].filter(Boolean).join(' ').trim()
-  return [{ title: `${name || 'Application'} · Reviewer · DALI OS` }]
+  return [{ title: `${name || 'Application'} · Reviews · DALI OS` }]
+}
+
+export const handle = {
+  breadcrumb: (data: unknown) => {
+    const user = (
+      data as { application?: { user?: { firstName?: string; lastName?: string } } } | undefined
+    )?.application?.user
+    return [user?.firstName, user?.lastName].filter(Boolean).join(' ').trim() || undefined
+  },
 }
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -171,10 +182,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const presenceUser = await getPresenceUser(auth.user.sub, fallbackName)
   const userName = presenceUser?.name ?? fallbackName
 
+  // Education engagement ("demonstrated interest") — includes internal
+  // instructor notes; this page is behind cycle access + confidentiality.
+  const educationEngagement = await getEducationEngagement(applicationBase.user.id)
+
   return {
     application,
     reviewer,
     existingReview: review,
+    educationEngagement,
     collabToken,
     userName,
     currentUserId: auth.user.sub,
@@ -256,6 +272,7 @@ export default function ReviewerApplicationReview() {
     application,
     reviewer,
     existingReview,
+    educationEngagement,
     collabToken,
     userName,
     currentUserId,
@@ -391,7 +408,8 @@ export default function ReviewerApplicationReview() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left: Application Content */}
-        <div className="lg:col-span-2">
+        <div className="lg:col-span-2 space-y-6">
+          <EducationEngagementPanel entries={educationEngagement} />
           <ApplicationViewer
             application={application}
             questionLabels={questionLabels}

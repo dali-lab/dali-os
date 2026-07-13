@@ -3,7 +3,9 @@ import { Form, Link, redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/lead";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isCore } from "~/lib/roles";
+import { isCore, getUserRoles } from "~/lib/roles";
+import { hiringPills } from "~/hiring/components/hiringPills";
+import { AreaPillNav } from "~/components/AreaPillNav";
 import { ChevronRight, ChevronDown, Plus } from "lucide-react";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { STATUS_COLORS, STATUS_LABELS } from "~/hiring/lib/labels";
@@ -13,7 +15,8 @@ export const meta: Route.MetaFunction = () => [{ title: "Hiring lead · DALI OS"
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
-  if (!(await isCore(auth.user.sub))) return redirect("/");
+  const roles = await getUserRoles(auth.user.sub);
+  if (!roles.isCore) return redirect("/");
 
   const cycles = await prisma.applicationCycle.findMany({
     include: {
@@ -24,7 +27,15 @@ export async function loader({ request }: Route.LoaderArgs) {
     orderBy: { createdAt: "desc" },
   });
 
-  return { cycles };
+  return {
+    cycles,
+    pillRoles: {
+      isCore: roles.isCore,
+      isDomainLead: roles.isDomainLead,
+      isAdmin: roles.isAdmin,
+      isInterviewer: roles.isInterviewer,
+    },
+  };
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -61,15 +72,12 @@ export default function HiringLeadDashboard() {
 
   return (
     <div className="space-y-6">
+      {data?.pillRoles && (
+        <AreaPillNav items={hiringPills({ ...data.pillRoles, active: "cycles" })} />
+      )}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-foreground">Hiring Cycles</h1>
         <div className="flex items-center gap-2">
-          <Link
-            to="/hiring/lead/waitlists"
-            className="px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-border rounded-md hover:bg-muted"
-          >
-            Waitlists
-          </Link>
           <button
             onClick={() => setShowModal(true)}
             className="flex items-center gap-1.5 px-3 py-2 bg-accent-coral text-white text-sm font-medium rounded-md hover:bg-accent-coral/90 focus:outline-none focus:ring-2 focus:ring-blue-500"

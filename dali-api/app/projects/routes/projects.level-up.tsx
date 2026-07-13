@@ -27,6 +27,8 @@ import {
 import { buildSubmissionView } from "../lib/submission-view.server";
 import { deriveSlotStatus, type SlotStatus } from "../lib/slot-status.server";
 import { SlotStatusStrip } from "../components/SlotStatusStrip";
+import { staffingPills } from "../components/staffingPills";
+import { AreaPillNav } from "~/components/AreaPillNav";
 import type { Question } from "~/types";
 import { isLevel, type Level } from "~/lib/level";
 
@@ -757,6 +759,8 @@ function Header({
   settingsLabel?: string;
 }) {
   return (
+    <>
+    <AreaPillNav items={staffingPills("level-up")} />
     <header className="flex items-start justify-between gap-3">
       <div>
         <h1 className="font-heading text-2xl font-bold text-foreground">
@@ -776,5 +780,6 @@ function Header({
         </button>
       )}
     </header>
+    </>
   );
 }

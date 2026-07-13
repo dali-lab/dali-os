@@ -38,7 +38,7 @@ const SECTIONS: Array<{
   },
   {
     title: "Projects",
-    to: "/projects/list",
+    to: "/projects",
     body: (
       <>
         Every active project lives here with its sprint board, epics, tasks,

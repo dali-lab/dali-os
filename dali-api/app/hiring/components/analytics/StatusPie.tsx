@@ -76,7 +76,7 @@ export function StatusPie({ data, selectedStatus }: Props) {
     const params = new URLSearchParams(searchParams);
     if (selectedStatus === slice.status) params.delete("status");
     else params.set("status", slice.status);
-    navigate(`/hiring/analytics?${params.toString()}`);
+    navigate({ search: `?${params.toString()}` });
   }
 
   return (

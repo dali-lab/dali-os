@@ -14,6 +14,8 @@ import {
   type InterviewNotesData,
 } from "~/hiring/components/InterviewNotesCard";
 import { DecisionHistoryList } from "~/hiring/components/DecisionHistoryList";
+import { getEducationEngagement } from "~/education/lib/engagement.server";
+import { EducationEngagementPanel } from "~/education/components/EducationEngagementPanel";
 import type { Question, RubricCriterion } from "~/types";
 
 export const meta: Route.MetaFunction = ({ data }) => {
@@ -40,7 +42,7 @@ export const handle = {
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
-  if (auth.user.type === "applicant") return redirect("/portal");
+  if (auth.user.type === "dartmouth") return redirect("/portal");
 
   const da = await prisma.domainApplication.findUnique({
     where: { id: params.domainApplicationId },
@@ -76,7 +78,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
               domains: { select: { domainId: true, rubricVersion: { select: { criteria: true } } } },
             },
           },
-          user: { select: { firstName: true, lastName: true } },
+          user: { select: { id: true, firstName: true, lastName: true } },
         },
       },
     },
@@ -407,12 +409,18 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     ],
   };
 
+  // "Demonstrated interest": the applicant's education engagement, keyed on
+  // the shared User row. Includes internal instructor notes — this page
+  // already sits behind reviewer access + confidentiality signing.
+  const educationEngagement = await getEducationEngagement(da.application.user.id);
+
   return {
     applicantName:
       [da.application.user.firstName, da.application.user.lastName]
         .filter(Boolean)
         .join(" ")
         .trim() || "Applicant",
+    educationEngagement,
     cycleName: da.application.applicationCycle.name,
     domainName,
     application,
@@ -528,6 +536,8 @@ export default function ApplicationReadOnlyDetail() {
         </div>
       </div>
 
+      <EducationEngagementPanel entries={data.educationEngagement} />
+
       <InterviewsSection
         interviews={data.interviews}
         interviewPrepNote={data.interviewPrepNote}
@@ -602,7 +612,7 @@ function toInterviewNotesData(iv: InterviewRow): InterviewNotesData {
     recommendationNotes: iv.recommendationNotes,
     jointNotes: iv.jointNotes,
     openInInterviewerHref: iv.assignments.some((a) => a.canEditNotes)
-      ? `/hiring/interviewer/interview/${iv.id}`
+      ? `/hiring/interviews/${iv.id}`
       : undefined,
     interviewers: iv.assignments.map((a) => ({
       id: a.id,

@@ -38,7 +38,10 @@ beforeEach(() => {
     findUnique: vi.fn().mockResolvedValue({ id: "member-1", userId: USER }),
   };
   mockPrisma.cycleReviewer = { findMany: vi.fn() };
-  mockPrisma.cycleInterviewer = { findMany: vi.fn().mockResolvedValue([]) };
+  mockPrisma.cycleInterviewer = {
+    findMany: vi.fn().mockResolvedValue([]),
+    findFirst: vi.fn().mockResolvedValue(null),
+  };
   mockPrisma.applicationReview = { findMany: vi.fn().mockResolvedValue([]) };
 });
 

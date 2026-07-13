@@ -10,7 +10,9 @@ export default [
     // My Tasks surface: Open tasks + browsable notification history.
     route("notifications", "routes/notifications.tsx"),
 
-    // Hiring section
+    // Hiring section. /hiring is the role-aware hub; the tools below are
+    // reached via its pill row (the sidebar carries a single Hiring entry).
+    route("hiring", "hiring/routes/hiring.tsx"),
     route("hiring/reviewer", "hiring/routes/reviewer.tsx"),
     route("hiring/reviewer/application/:id", "hiring/routes/reviewer.application.$id.tsx"),
     // Applications database: list of all submissions for a cycle, scoped by
@@ -23,7 +25,9 @@ export default [
     route("hiring/lead", "hiring/routes/lead.tsx"),
     route("hiring/lead/cycle/:id", "hiring/routes/lead.cycle.$id.tsx"),
     route("hiring/lead/intern-to-full-cycle/:id", "hiring/routes/lead.intern-to-full-cycle.$id.tsx"),
-    route("hiring/lead/waitlists", "hiring/routes/lead.waitlists.tsx"),
+    // Cross-cycle by design (accepting off a waitlist may land in a later
+    // cycle), so it lives beside the other hiring tools, not under /lead.
+    route("hiring/waitlists", "hiring/routes/waitlists.tsx"),
     // Library — challenges, rubrics, and confidentiality agreements behind one
     // page with pills. The list views are consolidated here; the detail pages
     // keep their original paths.
@@ -34,7 +38,9 @@ export default [
     route("hiring/emails/:id", "hiring/routes/email-templates.$id.tsx"),
     route("hiring/confidentiality-agreements/:id", "hiring/routes/confidentiality-agreements.$id.tsx"),
     route("hiring/cycles/:cycleId/confidentiality", "hiring/routes/cycles.$cycleId.confidentiality.tsx"),
-    route("hiring/interviewer/interview/:interviewId", "hiring/routes/interviewer.interview.$interviewId.tsx"),
+    // Interviewer surfaces: list (availability + assigned) and detail.
+    route("hiring/interviews", "hiring/routes/interviews.tsx"),
+    route("hiring/interviews/:interviewId", "hiring/routes/interviews.$interviewId.tsx"),
     route("hiring/analytics", "hiring/routes/analytics.tsx"),
 
     // Operations (top-level, not hiring)
@@ -46,8 +52,8 @@ export default [
     route("admin-console/analytics", "admin-console/routes/admin-console.analytics.tsx"),
     route("admin-console/payroll-export", "admin-console/routes/admin-console.payroll-export.tsx"),
 
-    // Projects
-    route("projects/list", "projects/routes/projects.list.tsx"),
+    // Projects. The bare /projects route is the area hub (the project list).
+    route("projects", "projects/routes/projects.hub.tsx"),
     route("projects/staffing", "projects/routes/projects.staffing.tsx"),
     // Member-facing staffing destination (requireMember, not canViewStaffing):
     // the persistent place a member fills/revisits the cycle's staffing forms.
@@ -87,10 +93,22 @@ export default [
     route("partners/applications", "partners/routes/partners.applications.tsx"),
     route("partners/applications/:id", "partners/routes/partners.applications.$id.tsx"),
 
-    // Education
+    // Education. Literal "manage" segments must precede the :offeringId param
+    // so /education/manage/* isn't captured as an offering id.
     route("education", "education/routes/education.tsx"),
+    route("education/compliance", "education/routes/education.compliance.tsx"),
+    route("education/manage", "education/routes/education.manage.tsx"),
+    route("education/manage/new", "education/routes/education.manage.new.tsx"),
+    route("education/manage/assignments/:assignmentId", "education/routes/education.manage.assignments.$assignmentId.tsx"),
+    route("education/manage/:offeringId", "education/routes/education.manage.$offeringId.tsx"),
+    route("education/:offeringId", "education/routes/education.$offeringId.tsx"),
+    route("education/:offeringId/apply", "education/routes/education.$offeringId.apply.tsx"),
+    route("education/:offeringId/hub", "education/routes/education.$offeringId.hub.tsx"),
+    route("education/:offeringId/page/:pageId", "education/routes/education.$offeringId.page.$pageId.tsx"),
+    route("education/:offeringId/assignments/:assignmentId", "education/routes/education.$offeringId.assignments.$assignmentId.tsx"),
 
-    // Internal processes
+    // Internal processes. The bare route is the area hub.
+    route("internal-processes", "internal-processes/routes/internal-processes.hub.tsx"),
     route("internal-processes/onboarding", "internal-processes/routes/internal-processes.onboarding.tsx"),
     route("internal-processes/transfer", "internal-processes/routes/internal-processes.transfer.tsx"),
     route("internal-processes/level-up", "internal-processes/routes/internal-processes.level-up.tsx"),
@@ -110,11 +128,20 @@ export default [
     route("intern-to-full", "routes/intern-to-full.tsx"),
   ]),
 
-  // Applicant portal (lightweight layout)
+  // Applicant portal (lightweight layout). /portal is the non-member home
+  // dashboard; the hiring application tracker lives at /portal/hiring.
   layout("routes/applicant-layout.tsx", [
     route("portal", "routes/portal.tsx"),
+    route("portal/hiring", "routes/portal.hiring.tsx"),
     route("portal/apply", "routes/portal.apply.tsx"),
     route("portal/application", "routes/portal.application.tsx"),
+    // Education mirror for non-member Dartmouth students.
+    route("portal/education", "routes/portal.education.tsx"),
+    route("portal/education/:offeringId", "routes/portal.education.$offeringId.tsx"),
+    route("portal/education/:offeringId/apply", "routes/portal.education.$offeringId.apply.tsx"),
+    route("portal/education/:offeringId/hub", "routes/portal.education.$offeringId.hub.tsx"),
+    route("portal/education/:offeringId/page/:pageId", "routes/portal.education.$offeringId.page.$pageId.tsx"),
+    route("portal/education/:offeringId/assignments/:assignmentId", "routes/portal.education.$offeringId.assignments.$assignmentId.tsx"),
   ]),
 
   // Authenticated member form fill (no layout), token-addressed. Every form
@@ -123,6 +150,11 @@ export default [
   // / close the recipient's task.
   route("forms/fill/:token", "routes/forms.fill.$token.tsx"),
   route("api/forms/fill/:token", "routes/api.forms.fill.$token.ts"),
+
+  // Education certificates (no layout — portal users open these too; the PDF
+  // is a resource route that streams a bare body).
+  route("education/certificates/:certificateId", "education/routes/certificates.$certificateId.tsx"),
+  route("education/certificates/:certificateId/pdf", "education/routes/certificates.$certificateId.pdf.ts"),
 
   // Public policy pages (no auth, no layout) — linked from the Google OAuth
   // consent screen, so they must load for an unauthenticated reviewer.
