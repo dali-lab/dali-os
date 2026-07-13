@@ -188,29 +188,13 @@ export default function PartnerLogin() {
               </button>
             </Form>
 
-            {/* First-timer guidance is information, not a gate: teammates
-                learn they need an invite BEFORE emailing themselves a link;
-                onboarding still enforces the join-vs-create fork after
-                sign-in for anyone who skips reading. */}
-            <div className="mt-8 rounded-xl border border-border bg-card/50 p-4 text-sm">
-              <p className="font-heading font-semibold text-dark-blue mb-2">
-                First time here?
-              </p>
-              <p className="text-muted-foreground">
-                <span className="font-medium text-dark-blue">
-                  Joining your team?
-                </span>{" "}
-                If your organization already works with the lab, ask a
-                teammate to invite you (Settings → Team) — their invite email
-                signs you in. Nothing to do on this page.
-              </p>
-              <p className="text-muted-foreground mt-2">
-                <span className="font-medium text-dark-blue">
-                  New organization?
-                </span>{" "}
-                Just sign in above — you'll set it up right after.
-              </p>
-            </div>
+            {/* The only org-adjacent line that belongs on an auth screen —
+                an invite genuinely IS a sign-in method. Everything else about
+                organizations lives after sign-in (partner.onboarding). */}
+            <p className="mt-6 text-xs text-muted-foreground">
+              Have an invite email? It signs you in directly — nothing needed
+              here.
+            </p>
           </>
         )}
 

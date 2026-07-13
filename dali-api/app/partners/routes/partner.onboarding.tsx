@@ -16,6 +16,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     select: { displayRole: true, partnerOrg: { select: { name: true } } },
   });
   return {
+    email: auth.user.email,
     firstName: auth.user.firstName,
     lastName: auth.user.lastName,
     // Invited users arrive with a PartnerUser already attached — they only
@@ -101,28 +102,23 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function PartnerOnboarding({ actionData }: Route.ComponentProps) {
-  const { firstName, lastName, existingOrg } = useLoaderData<typeof loader>();
+  const { email, firstName, lastName, existingOrg } =
+    useLoaderData<typeof loader>();
   const navigation = useNavigation();
   const submitting = navigation.state === "submitting";
   const error = actionData && "error" in actionData ? actionData.error : null;
 
-  // Self-signup asks this FIRST: a teammate whose org already works with the
-  // lab must join via invite (Settings → Team) — creating an org here would
-  // duplicate it, and many partners share @dartmouth.edu emails so we can't
-  // auto-match by domain. Invited users (existingOrg) skip the question.
-  const [mode, setMode] = useState<"join" | "create" | null>(
-    existingOrg ? "create" : null,
-  );
+  // Org concepts live HERE, not on the auth screens: a signed-in account
+  // with no membership either waits for an invite (which attaches to this
+  // account) or explicitly creates a new organization. Invite-only join —
+  // shared @dartmouth.edu domains rule out auto-matching.
+  const [creating, setCreating] = useState(false);
+  const showForm = Boolean(existingOrg) || creating;
 
   const inputClass =
     "w-full rounded-xl border border-border bg-card px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral";
   const labelClass = "block text-sm font-medium text-dark-blue mb-1";
-  const choiceClass = (selected: boolean) =>
-    `w-full rounded-2xl border-2 p-4 text-left transition ${
-      selected
-        ? "border-accent-coral bg-accent-coral/5"
-        : "border-border bg-card hover:border-accent-coral/50"
-    }`;
+  const sectionClass = "font-heading text-sm font-semibold text-dark-blue";
 
   return (
     <div className="min-h-screen bg-page flex items-center justify-center px-6 py-12">
@@ -134,68 +130,54 @@ export default function PartnerOnboarding({ actionData }: Route.ComponentProps) 
           </span>
         </div>
         <h1 className="font-heading text-3xl font-bold text-dark-blue mb-2">
-          {existingOrg ? `Welcome to ${existingOrg.name}` : "Set up your account"}
+          {existingOrg ? `Welcome to ${existingOrg.name}` : "You're signed in"}
         </h1>
         <p className="text-muted-foreground mb-8">
-          {existingOrg
-            ? "Tell us who you are and you're all set."
-            : "First — is your organization already working with the lab?"}
+          {existingOrg ? (
+            "Tell us who you are and you're all set."
+          ) : (
+            <>
+              as <span className="font-medium text-dark-blue">{email}</span> —
+              you're not part of an organization yet.
+            </>
+          )}
         </p>
 
-        {!existingOrg && (
-          <div className="flex flex-col gap-3 mb-8">
+        {!existingOrg && !creating && (
+          <>
+            <div className="rounded-2xl bg-brand-tint p-6 mb-6">
+              <p className="font-heading font-semibold text-dark-blue mb-1">
+                Joining a team that's already here?
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Ask a teammate to invite you — it's under{" "}
+                <span className="font-medium text-dark-blue">
+                  Settings → Team
+                </span>{" "}
+                in their portal. The invite lands in your email and attaches
+                to this account; accept it and you're in. Not sure who has
+                portal access? Ask your DALI project contact.
+              </p>
+            </div>
             <button
               type="button"
-              onClick={() => setMode("join")}
-              className={choiceClass(mode === "join")}
+              onClick={() => setCreating(true)}
+              className="w-full rounded-xl border border-border bg-card text-dark-blue font-heading font-semibold py-3 hover:border-accent-coral transition"
             >
-              <span className="font-heading font-semibold text-dark-blue block">
-                Yes — I'm joining my team
-              </span>
-              <span className="text-sm text-muted-foreground">
-                My organization already has a DALI portal.
-              </span>
+              Set up a new organization
             </button>
-            <button
-              type="button"
-              onClick={() => setMode("create")}
-              className={choiceClass(mode === "create")}
-            >
-              <span className="font-heading font-semibold text-dark-blue block">
-                No — we're new here
-              </span>
-              <span className="text-sm text-muted-foreground">
-                Set up my organization to start working with the lab.
-              </span>
-            </button>
-          </div>
+          </>
         )}
 
-        {mode === "join" && (
-          <div className="rounded-2xl bg-brand-tint p-6">
-            <p className="font-heading font-semibold text-dark-blue mb-1">
-              Ask a teammate for an invite
-            </p>
-            <p className="text-sm text-muted-foreground">
-              Anyone already in your organization's portal can invite you from{" "}
-              <span className="font-medium text-dark-blue">
-                Settings → Team → Invite teammate
-              </span>
-              . The invite arrives by email and connects you to the right
-              organization — nothing else to do here. Not sure who has portal
-              access? Ask your DALI project contact.
-            </p>
-          </div>
-        )}
-
-        {error && mode === "create" && (
+        {error && showForm && (
           <p className="mb-4 text-sm text-red-600 bg-red-50 rounded-lg px-4 py-3">
             {error}
           </p>
         )}
 
-        {mode === "create" && (
+        {showForm && (
         <Form method="post" className="flex flex-col gap-5">
+          {!existingOrg && <h2 className={sectionClass}>About you</h2>}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label htmlFor="firstName" className={labelClass}>
@@ -238,6 +220,7 @@ export default function PartnerOnboarding({ actionData }: Route.ComponentProps) 
 
           {!existingOrg && (
             <>
+              <h2 className={`${sectionClass} mt-3`}>Your organization</h2>
               <label className="flex items-center gap-2 text-sm text-dark-blue">
                 <input type="checkbox" name="isIndividual" className="rounded" />
                 I'm an individual, not an organization

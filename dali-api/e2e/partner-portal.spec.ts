@@ -233,11 +233,9 @@ test.describe('partner self-signup', () => {
     page,
   }) => {
     await page.goto('/partner/login');
-    // The invite guidance is static info below the form — teammates learn
-    // they need an invite BEFORE emailing themselves a link, and returning
-    // partners aren't gated by any chooser.
-    await expect(page.getByText('First time here?')).toBeVisible();
-    await expect(page.getByText(/ask a teammate to invite you/)).toBeVisible();
+    // Login is pure auth — the one org-adjacent line is the invite hint
+    // (an invite IS a sign-in method); everything else lives after sign-in.
+    await expect(page.getByText(/invite email\? It signs you in/)).toBeVisible();
     await expect(
       page.getByRole('button', { name: 'Email me a sign-in link' }),
     ).toBeVisible();
@@ -252,9 +250,10 @@ test.describe('partner self-signup', () => {
     await page.getByRole('button', { name: 'Continue to DALI OS' }).click();
     await expect(page).toHaveURL(/\/partner\/onboarding/);
 
-    // Login carries the first-timer guidance; onboarding still enforces the
-    // join-vs-create fork — only "new here" reveals the org form.
-    await page.getByRole('button', { name: /No — we're new here/ }).click();
+    // The no-org landing owns the org concepts: invite guidance is shown,
+    // and creating an organization is an explicit step.
+    await expect(page.getByText(/Joining a team that's already here/)).toBeVisible();
+    await page.getByRole('button', { name: 'Set up a new organization' }).click();
     await page.getByLabel('First name').fill('Emery');
     await page.getByLabel('Last name').fill('Example');
     await page.getByLabel('Organization name').fill('Example Robotics');
