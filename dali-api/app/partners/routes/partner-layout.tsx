@@ -1,8 +1,17 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, NavLink, Outlet, useLoaderData, useRouteError } from "react-router";
+import {
+  Link,
+  NavLink,
+  Outlet,
+  useLoaderData,
+  useLocation,
+  useRouteError,
+} from "react-router";
 import { ChevronDown } from "lucide-react";
 import type { Route } from "./+types/partner-layout";
+import { prisma } from "~/lib/db";
 import { requirePartner } from "~/partners/lib/partner-auth.server";
+import { partnerProjectsWhere } from "~/partners/lib/partner-access";
 import { userInitials } from "~/lib/display";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 
@@ -11,8 +20,15 @@ import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 // protect child routes (loaders run in parallel); every /partner route calls
 // the guard itself.
 export async function loader({ request }: Route.LoaderArgs) {
-  const { auth, org } = await requirePartner(request);
-  return { user: auth.user, orgName: org.name };
+  const { auth, partnerUser, org } = await requirePartner(request);
+  // The org's projects feed the Projects nav item: direct link for one,
+  // dropdown for several, hidden for none (pre-acceptance partners).
+  const projects = await prisma.project.findMany({
+    where: partnerProjectsWhere(partnerUser.partnerOrgId),
+    orderBy: { name: "asc" },
+    select: { id: true, name: true },
+  });
+  return { user: auth.user, orgName: org.name, projects };
 }
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
@@ -21,7 +37,7 @@ const navLinkClass = ({ isActive }: { isActive: boolean }) =>
   }`;
 
 export default function PartnerLayout() {
-  const { user, orgName } = useLoaderData<typeof loader>();
+  const { user, orgName, projects } = useLoaderData<typeof loader>();
 
   const displayName = user.firstName
     ? `${user.firstName} ${user.lastName ?? ""}`.trim()
@@ -30,21 +46,17 @@ export default function PartnerLayout() {
   return (
     <div className="min-h-screen bg-page">
       <nav className="fixed top-0 inset-x-0 z-50 h-16 bg-card border-b border-border flex items-center px-4 sm:px-6 gap-6">
+        {/* The logo IS the home link — no separate Home item. */}
         <Link
           to="/partner"
-          className="flex items-center gap-3 min-w-0 focus:outline-none"
-          title="DALI Partner Portal"
+          className="flex items-center min-w-0 focus:outline-none"
+          title="DALI Partner Portal — home"
         >
           <img src="/logo-blue.svg" alt="DALI Lab" className="h-9 w-auto flex-shrink-0" />
-          <span className="text-xs text-muted-foreground/70 font-medium hidden sm:inline border-l border-border pl-3">
-            Partner Portal
-          </span>
         </Link>
 
         <div className="flex items-center gap-5">
-          <NavLink to="/partner" end className={navLinkClass}>
-            Home
-          </NavLink>
+          <ProjectsNav projects={projects} />
           <NavLink to="/partner/apply" className={navLinkClass}>
             Apply
           </NavLink>
@@ -66,17 +78,9 @@ export default function PartnerLayout() {
   );
 }
 
-// Account menu behind the profile chip: Settings lives here (not a nav tab)
-// plus sign out. Closes on outside click, Escape, or navigating.
-function ProfileMenu({
-  initials,
-  displayName,
-  orgName,
-}: {
-  initials: string;
-  displayName: string;
-  orgName: string;
-}) {
+// Shared open/close state for the navbar dropdowns: closes on outside click
+// or Escape.
+function useDismissableMenu() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -97,6 +101,80 @@ function ProfileMenu({
       document.removeEventListener("keydown", onKeyDown);
     };
   }, [open]);
+
+  return { open, setOpen, ref };
+}
+
+// One project → plain link straight to its hub; several → dropdown by name;
+// none → nothing (pre-acceptance partners just see Apply).
+function ProjectsNav({
+  projects,
+}: {
+  projects: { id: string; name: string }[];
+}) {
+  const { open, setOpen, ref } = useDismissableMenu();
+  const location = useLocation();
+  const active = location.pathname.startsWith("/partner/projects");
+
+  if (projects.length === 0) return null;
+  if (projects.length === 1) {
+    return (
+      <NavLink to={`/partner/projects/${projects[0].id}`} className={navLinkClass}>
+        Projects
+      </NavLink>
+    );
+  }
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className={`flex items-center gap-1 text-sm font-medium transition ${
+          active ? "text-accent-coral" : "text-dark-blue hover:text-accent-coral"
+        }`}
+      >
+        Projects
+        <ChevronDown
+          className={`w-3.5 h-3.5 transition-transform ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute left-0 top-full mt-2 w-56 bg-card border border-border rounded-xl shadow-lg py-1 z-50"
+        >
+          {projects.map((p) => (
+            <Link
+              key={p.id}
+              to={`/partner/projects/${p.id}`}
+              role="menuitem"
+              onClick={() => setOpen(false)}
+              className="block px-4 py-2 text-sm text-dark-blue hover:bg-muted/50 transition truncate"
+            >
+              {p.name}
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Account menu behind the profile chip: Settings lives here (not a nav tab)
+// plus sign out. Closes on outside click, Escape, or navigating.
+function ProfileMenu({
+  initials,
+  displayName,
+  orgName,
+}: {
+  initials: string;
+  displayName: string;
+  orgName: string;
+}) {
+  const { open, setOpen, ref } = useDismissableMenu();
 
   return (
     <div ref={ref} className="relative ml-auto">
