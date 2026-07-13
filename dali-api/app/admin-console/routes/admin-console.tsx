@@ -5,6 +5,8 @@ import { isAdmin, isCore } from "~/lib/roles";
 import { adminPills } from "~/admin-console/adminPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
 
+export const handle = { areaPills: true };
+
 export const meta: Route.MetaFunction = () => [{ title: "Admin · DALI OS" }];
 
 // Access mirrors the admin tools themselves: any Core member may enter the

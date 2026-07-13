@@ -13,6 +13,8 @@ import { prisma } from '~/lib/db'
 import { requireAuth } from '~/lib/auth'
 import type { Route } from './+types/interviews'
 
+export const handle = { areaPills: true };
+
 export const meta: Route.MetaFunction = () => [{ title: "Interviews · Hiring · DALI OS" }]
 
 // The interviewer's home: assigned interviews + availability. Split out of

@@ -33,6 +33,8 @@ import type { Question } from "~/types";
 import { listSelectableForms } from "~/projects/lib/form-slots";
 import { AreaPillNav } from "~/components/AreaPillNav";
 
+export const handle = { areaPills: true };
+
 export const meta: Route.MetaFunction = () => [
   { title: "Partner Applications · DALI OS" },
 ];

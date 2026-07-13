@@ -20,6 +20,8 @@ import {
 } from "lucide-react";
 import { SearchInput } from "~/components/ui/SearchInput";
 
+export const handle = { areaPills: true };
+
 export const meta: Route.MetaFunction = () => [
   { title: "Announcements · Admin · DALI OS" },
 ];

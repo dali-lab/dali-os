@@ -10,6 +10,8 @@ import { buttonClasses } from "~/components/ui/Button";
 import { formatInterviewDate, formatInterviewTimeRange } from "~/hiring/lib/interview-time";
 import { cn } from "~/lib/cn";
 
+export const handle = { areaPills: true };
+
 export const meta: Route.MetaFunction = () => [{ title: "Hiring · DALI OS" }];
 
 // The hiring hub. Personal cards carry the viewer's actual work items —

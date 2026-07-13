@@ -16,6 +16,8 @@ import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { OPEN_APPLICATION_STATUSES } from "../lib/partner-application";
 import { AreaPillNav } from "~/components/AreaPillNav";
 
+export const handle = { areaPills: true };
+
 export const meta: Route.MetaFunction = () => [{ title: "Partners · DALI OS" }];
 
 type OrgRow = {

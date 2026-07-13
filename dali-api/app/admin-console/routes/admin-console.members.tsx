@@ -18,11 +18,7 @@ import {
 
 export const meta: Route.MetaFunction = () => [{ title: "Roles & Permissions · Admin · DALI OS" }];
 
-// The `members` segment is labeled "People" in the breadcrumb map (it names
-// the directory); this page is the roles tool, so it names its own crumb.
-export const handle = {
-  breadcrumb: () => "Roles & Permissions",
-};
+export const handle = { areaPills: true };
 
 // Phase 2 rewrite: role state lives in AdminMembership / CoreAssignment /
 // DomainLeadAssignment instead of DALIMember.roles[]. The admin page now

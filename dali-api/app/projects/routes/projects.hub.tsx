@@ -20,6 +20,8 @@ import { ViewToggle, useViewPreference } from "~/components/ViewToggle";
 import { TermFilter } from "~/components/TermFilter";
 import { resolveTermFilter } from "~/lib/terms";
 
+export const handle = { areaPills: true };
+
 export const meta: Route.MetaFunction = () => [{ title: "Projects · DALI OS" }];
 
 type ProjectStatus = "Active" | "Paused" | "Archived";

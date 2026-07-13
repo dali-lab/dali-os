@@ -11,6 +11,8 @@ import {
   type WaitlistEntry,
 } from "~/hiring/lib/waitlist.server";
 
+export const handle = { areaPills: true };
+
 export const meta: Route.MetaFunction = () => [
   { title: "Waitlists · Hiring · DALI OS" },
 ];

@@ -7,6 +7,8 @@ import { requireAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
 import { BarChart3, AlertTriangle } from "lucide-react";
 
+export const handle = { areaPills: true };
+
 export const meta: Route.MetaFunction = () => [
   { title: "Analytics · Admin · DALI OS" },
 ];

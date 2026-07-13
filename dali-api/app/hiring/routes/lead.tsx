@@ -10,6 +10,8 @@ import { ChevronRight, ChevronDown, Plus } from "lucide-react";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { STATUS_COLORS, STATUS_LABELS } from "~/hiring/lib/labels";
 
+export const handle = { areaPills: true };
+
 export const meta: Route.MetaFunction = () => [{ title: "Hiring lead · DALI OS" }];
 
 export async function loader({ request }: Route.LoaderArgs) {

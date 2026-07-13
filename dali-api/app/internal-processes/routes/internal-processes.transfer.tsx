@@ -6,6 +6,8 @@ import { ComingSoon } from "~/components/ComingSoon";
 import { labProcessesPills } from "~/internal-processes/labProcessesPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
 
+export const handle = { areaPills: true };
+
 export const meta: Route.MetaFunction = () => [
   { title: "Transfer · DALI OS" },
 ];

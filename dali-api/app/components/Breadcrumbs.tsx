@@ -7,7 +7,13 @@ export type Crumb = { label: string; to?: string }
 //   export const handle = { breadcrumb: (data) => data.application.applicantName }
 // The component calls it with that route's loader data to resolve the last
 // crumb (e.g. an applicant's name in place of a raw id).
-type Handle = { breadcrumb?: (data: unknown) => string | null | undefined }
+// A route that renders an AreaPillNav row instead exports
+//   export const handle = { areaPills: true }
+// which suppresses the trail entirely — see the wayfinding contract below.
+type Handle = {
+  breadcrumb?: (data: unknown) => string | null | undefined
+  areaPills?: boolean
+}
 
 // Static label map for the fixed path segments. Keeps lab vocabulary verbatim
 // (Domain, Delibs, Intent to Work, Project Bids, JobX, Level Up, Core, Hub,
@@ -106,6 +112,15 @@ export function Breadcrumbs() {
   const matches = useMatches()
   const { pathname } = useLocation()
 
+  // Wayfinding contract with AreaPillNav: exactly one row per page. Landing
+  // pages carry a pill row (the active pill marks the location, the Hub pill
+  // carries the way back up) and flag it via handle.areaPills, which
+  // suppresses the trail here. Detail pages have no pills, so breadcrumbs
+  // are their trail back.
+  if (matches.some((m) => (m as { handle?: Handle }).handle?.areaPills)) {
+    return null
+  }
+
   // Build crumbs from the path segments. Any matched route may supply a
   // dynamic label for its own path via `handle.breadcrumb(loaderData)`;
   // in flat-route land that's usually just the leaf, so unlabeled dynamic
@@ -120,10 +135,6 @@ export function Breadcrumbs() {
     }
   }
 
-  // Wayfinding contract with AreaPillNav: breadcrumbs are the hierarchical
-  // trail (Area › … › page), pills are lateral switching between an area's
-  // sibling sections. Both may appear on a section landing page (trail ends
-  // where the pills begin); only breadcrumbs continue onto detail pages.
   const crumbs: Crumb[] = []
   let afterDroppedId = false
   for (let i = 0; i < segments.length; i += 1) {

@@ -6,6 +6,8 @@ import { listMemberStaffingForms } from "../lib/member-staffing.server";
 import { projectsPills } from "../components/projectsPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
 
+export const handle = { areaPills: true };
+
 export const meta: Route.MetaFunction = () => [
   { title: "My Staffing · DALI OS" },
 ];

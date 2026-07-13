@@ -9,6 +9,8 @@ import { educationPills } from "~/education/components/educationPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
 import { buttonClasses } from "~/components/ui/Button";
 
+export const handle = { areaPills: true };
+
 export const meta: Route.MetaFunction = () => [
   { title: "Manage Education · DALI OS" },
 ];
