@@ -6,6 +6,8 @@ import { labProcessesPills } from "~/internal-processes/labProcessesPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
 import { prisma } from "~/lib/db";
 
+export const handle = { areaPills: true };
+
 export const meta: Route.MetaFunction = () => [
   { title: "Onboarding · DALI OS" },
 ];
@@ -210,13 +212,11 @@ export default function InternalProcessesOnboarding() {
   }
 
   return (
-    <div className="px-6 md:px-10 py-8">
-      <div className="mb-4">
-        <AreaPillNav items={labProcessesPills({ isCore: true, active: "onboarding" })} />
-      </div>
-      <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+    <div className="flex flex-col gap-4">
+      <AreaPillNav items={labProcessesPills({ isCore: true, active: "onboarding" })} />
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="font-heading text-2xl font-bold text-dark-blue">Onboarding</h1>
+          <h1 className="font-heading text-2xl font-bold text-foreground">Onboarding</h1>
           <p className="text-sm text-muted-foreground mt-1">
             Accepted applicants and their onboarding progress.
           </p>
