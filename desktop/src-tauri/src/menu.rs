@@ -15,6 +15,15 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     let sign_out = MenuItem::with_id(app, "sign-out", "Sign Out", true, None::<&str>)?;
     let reload = MenuItem::with_id(app, "reload", "Reload", true, Some("CmdOrCtrl+R"))?;
     let help_item = MenuItem::with_id(app, "help", "DALI OS Help", true, None::<&str>)?;
+    let find = MenuItem::with_id(app, "find", "Find…", true, Some("CmdOrCtrl+F"))?;
+    let find_next = MenuItem::with_id(app, "find-next", "Find Next", true, Some("CmdOrCtrl+G"))?;
+    let find_prev = MenuItem::with_id(
+        app,
+        "find-previous",
+        "Find Previous",
+        true,
+        Some("Shift+CmdOrCtrl+G"),
+    )?;
     let zoom_in = MenuItem::with_id(app, "zoom-in", "Zoom In", true, Some("CmdOrCtrl+="))?;
     let zoom_out = MenuItem::with_id(app, "zoom-out", "Zoom Out", true, Some("CmdOrCtrl+-"))?;
     let zoom_reset = MenuItem::with_id(app, "zoom-reset", "Actual Size", true, Some("CmdOrCtrl+0"))?;
@@ -82,6 +91,8 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
             &PredefinedMenuItem::copy(app, None)?,
             &PredefinedMenuItem::paste(app, None)?,
             &PredefinedMenuItem::select_all(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &Submenu::with_items(app, "Find", true, &[&find, &find_next, &find_prev])?,
         ],
     )?;
 

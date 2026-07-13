@@ -104,6 +104,9 @@ pub fn run() {
                 window::navigate_main(app, &config::help_url());
                 window::show_main(app);
             }
+            "find" => window::find_action(app, "open"),
+            "find-next" => window::find_action(app, "next"),
+            "find-previous" => window::find_action(app, "prev"),
             "sign-out" => {
                 tauri::async_runtime::spawn(commands::do_sign_out(app.clone()));
             }
