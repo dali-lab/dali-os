@@ -94,27 +94,41 @@ export default function PartnerLogin() {
               Check your email
             </p>
             <p className="text-sm text-muted-foreground">
-              If that address can sign in here, we sent it a one-time link.
-              The link expires in 15 minutes.
+              If that address can sign in here, we sent it a sign-in link.
+              It expires in 15 minutes.
             </p>
           </div>
         ) : (
           <>
             <p className="text-muted-foreground mb-8">
-              Enter your work email and we'll send you a one-time sign-in
-              link. No password needed.
+              Sign in or create your account — new partners set up their
+              organization right after.
             </p>
             {actionData && "error" in actionData && (
               <p className="mb-4 text-sm text-red-600 bg-red-50 rounded-lg px-4 py-3">
                 {actionData.error}
               </p>
             )}
+            <Form method="post">
+              <input type="hidden" name="provider" value="google" />
+              <button
+                type="submit"
+                disabled={submitting}
+                className="w-full rounded-xl border border-border bg-card text-dark-blue font-heading font-semibold py-3 hover:border-accent-coral transition disabled:opacity-50"
+              >
+                Continue with Google
+              </button>
+            </Form>
+            <div className="my-5 flex items-center gap-3">
+              <span className="h-px flex-1 bg-border" />
+              <span className="text-xs text-muted-foreground">or</span>
+              <span className="h-px flex-1 bg-border" />
+            </div>
             <Form method="post" className="flex flex-col gap-4">
               <input
                 type="email"
                 name="email"
                 required
-                autoFocus
                 placeholder="you@company.com"
                 className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral"
               />
@@ -126,20 +140,6 @@ export default function PartnerLogin() {
                 {submitting ? "Sending…" : "Email me a sign-in link"}
               </button>
             </Form>
-            <Form method="post" className="mt-3">
-              <input type="hidden" name="provider" value="google" />
-              <button
-                type="submit"
-                disabled={submitting}
-                className="w-full rounded-xl border border-border bg-card text-dark-blue font-heading font-semibold py-3 hover:border-accent-coral transition disabled:opacity-50"
-              >
-                Continue with Google
-              </button>
-            </Form>
-            <p className="mt-2 text-xs text-muted-foreground">
-              Either works, first visit or not — use Google if your email is a
-              Google account, or the link if it isn't.
-            </p>
           </>
         )}
 
