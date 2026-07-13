@@ -20,8 +20,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const netId = url.searchParams.get("netId");
   const daliEmail = url.searchParams.get("daliEmail");
   const personalEmail = url.searchParams.get("personalEmail");
-  const defaultRedirect = "http://localhost:3001/";
-  const redirect = url.searchParams.get("redirect") ?? defaultRedirect;
+  const redirect = url.searchParams.get("redirect");
 
   if (!netId && !daliEmail && !personalEmail) {
     return new Response("Missing ?netId, ?daliEmail, or ?personalEmail param", { status: 400 });
@@ -54,13 +53,12 @@ export async function loader({ request }: Route.LoaderArgs) {
     type,
   });
 
-  const finalRedirect = url.searchParams.get("redirect")
-    ? redirect
-    : type === "member"
-      ? "http://localhost:3001/"
-      : type === "partner"
-        ? "http://localhost:3001/partner"
-        : "http://localhost:3001/portal";
+  // Relative by default so the redirect stays on whatever port this server
+  // runs on (worktrees run on alternates; hardcoding 3001 sent the browser
+  // to a different checkout's dev server). ?redirect= still overrides.
+  const finalRedirect =
+    redirect ??
+    (type === "member" ? "/" : type === "partner" ? "/partner" : "/portal");
   const headers = new Headers({ Location: finalRedirect });
   setSessionCookie(headers, session.rawId);
   // __dali_user: web display (NOT HttpOnly so client JS can read it)

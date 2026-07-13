@@ -86,18 +86,6 @@ export default function PartnerLogin() {
   const submitting = navigation.state === "submitting";
   const sent = actionData && "sent" in actionData ? actionData : null;
 
-  // First-timer fork, asked BEFORE any sign-in: a teammate whose org already
-  // works with the lab must join via invite (Settings → Team) — emailing
-  // themselves a sign-in link would only dead-end on that same advice after
-  // onboarding. Returning partners ignore the fork and sign in directly.
-  const [mode, setMode] = useState<"join" | "create" | null>(null);
-  const choiceClass = (selected: boolean) =>
-    `w-full rounded-2xl border-2 p-4 text-left transition ${
-      selected
-        ? "border-accent-coral bg-accent-coral/5"
-        : "border-border bg-card hover:border-accent-coral/50"
-    }`;
-
   // Restart the cooldown on every successful send (each action response is a
   // fresh object), then tick it down once a second.
   const [cooldown, setCooldown] = useState(0);
@@ -160,61 +148,8 @@ export default function PartnerLogin() {
         ) : (
           <>
             <p className="text-muted-foreground mb-6">
-              First time here — is your organization already working with the
-              lab? Returning partners can skip this and just sign in below.
+              Sign in or create your account — no password needed.
             </p>
-
-            <div className="flex flex-col gap-3 mb-4">
-              <button
-                type="button"
-                onClick={() => setMode(mode === "join" ? null : "join")}
-                className={choiceClass(mode === "join")}
-              >
-                <span className="font-heading font-semibold text-dark-blue block">
-                  Yes — I'm joining my team
-                </span>
-                <span className="text-sm text-muted-foreground">
-                  My organization already has a DALI portal.
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setMode(mode === "create" ? null : "create")}
-                className={choiceClass(mode === "create")}
-              >
-                <span className="font-heading font-semibold text-dark-blue block">
-                  No — we're new here
-                </span>
-                <span className="text-sm text-muted-foreground">
-                  Set up my organization to start working with the lab.
-                </span>
-              </button>
-            </div>
-
-            {mode === "join" && (
-              <div className="mb-6 rounded-2xl bg-brand-tint p-6">
-                <p className="font-heading font-semibold text-dark-blue mb-1">
-                  Ask a teammate for an invite
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  No need to sign in here. Anyone already in your
-                  organization's portal can invite you from{" "}
-                  <span className="font-medium text-dark-blue">
-                    Settings → Team → Invite teammate
-                  </span>
-                  . The invite arrives by email and connects you to the right
-                  organization. Not sure who has portal access? Ask your DALI
-                  project contact.
-                </p>
-              </div>
-            )}
-
-            {mode === "create" && (
-              <p className="mb-6 text-sm text-muted-foreground">
-                Sign in below with Google or your work email — you'll set up
-                your organization right after.
-              </p>
-            )}
 
             {actionData && "error" in actionData && (
               <p className="mb-4 text-sm text-red-600 bg-red-50 rounded-lg px-4 py-3">
@@ -252,6 +187,30 @@ export default function PartnerLogin() {
                 {submitting ? "Sending…" : "Email me a sign-in link"}
               </button>
             </Form>
+
+            {/* First-timer guidance is information, not a gate: teammates
+                learn they need an invite BEFORE emailing themselves a link;
+                onboarding still enforces the join-vs-create fork after
+                sign-in for anyone who skips reading. */}
+            <div className="mt-8 rounded-xl border border-border bg-card/50 p-4 text-sm">
+              <p className="font-heading font-semibold text-dark-blue mb-2">
+                First time here?
+              </p>
+              <p className="text-muted-foreground">
+                <span className="font-medium text-dark-blue">
+                  Joining your team?
+                </span>{" "}
+                If your organization already works with the lab, ask a
+                teammate to invite you (Settings → Team) — their invite email
+                signs you in. Nothing to do on this page.
+              </p>
+              <p className="text-muted-foreground mt-2">
+                <span className="font-medium text-dark-blue">
+                  New organization?
+                </span>{" "}
+                Just sign in above — you'll set it up right after.
+              </p>
+            </div>
           </>
         )}
 

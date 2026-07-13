@@ -229,14 +229,15 @@ test.describe('partner portal', () => {
 });
 
 test.describe('partner self-signup', () => {
-  test('login fork: joining a team gets invite guidance before any sign-in', async ({
+  test('login shows first-timer guidance without gating sign-in', async ({
     page,
   }) => {
     await page.goto('/partner/login');
-    await page.getByRole('button', { name: /Yes — I'm joining my team/ }).click();
-    await expect(page.getByText('Ask a teammate for an invite')).toBeVisible();
-    // The advice lands before any email is sent; sign-in stays available for
-    // returning partners.
+    // The invite guidance is static info below the form — teammates learn
+    // they need an invite BEFORE emailing themselves a link, and returning
+    // partners aren't gated by any chooser.
+    await expect(page.getByText('First time here?')).toBeVisible();
+    await expect(page.getByText(/ask a teammate to invite you/)).toBeVisible();
     await expect(
       page.getByRole('button', { name: 'Email me a sign-in link' }),
     ).toBeVisible();
@@ -251,9 +252,9 @@ test.describe('partner self-signup', () => {
     await page.getByRole('button', { name: 'Continue to DALI OS' }).click();
     await expect(page).toHaveURL(/\/partner\/onboarding/);
 
-    // The join-vs-create fork lives on /partner/login now; onboarding goes
-    // straight to the org form (with an ask-for-an-invite reminder).
-    await expect(page.getByText(/ask a teammate to invite you/i)).toBeVisible();
+    // Login carries the first-timer guidance; onboarding still enforces the
+    // join-vs-create fork — only "new here" reveals the org form.
+    await page.getByRole('button', { name: /No — we're new here/ }).click();
     await page.getByLabel('First name').fill('Emery');
     await page.getByLabel('Last name').fill('Example');
     await page.getByLabel('Organization name').fill('Example Robotics');
