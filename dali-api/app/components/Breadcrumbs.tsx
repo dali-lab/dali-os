@@ -6,12 +6,14 @@ export type Crumb = { label: string; to?: string }
 // A route opts into a dynamic leaf crumb by exporting:
 //   export const handle = { breadcrumb: (data) => data.application.applicantName }
 // The component calls it with that route's loader data to resolve the last
-// crumb (e.g. an applicant's name in place of a raw id).
+// crumb (e.g. an applicant's name in place of a raw id). Returning a Crumb[]
+// instead expands the segment into a sub-trail — for hierarchy the flat URL
+// can't express, like nested folder ancestry (/forms/:folderId).
 // A route that renders an AreaPillNav row instead exports
 //   export const handle = { areaPills: true }
 // which suppresses the trail entirely — see the wayfinding contract below.
 type Handle = {
-  breadcrumb?: (data: unknown) => string | null | undefined
+  breadcrumb?: (data: unknown) => string | Crumb[] | null | undefined
   areaPills?: boolean
 }
 
@@ -127,11 +129,13 @@ export function Breadcrumbs() {
   // segments in the middle of the path (raw cuids) are dropped from the
   // trail instead of rendered verbatim.
   const segments = pathname.split('/').filter(Boolean)
-  const labelByPath = new Map<string, string>()
+  const labelByPath = new Map<string, string | Crumb[]>()
   for (const m of matches as { pathname: string; handle?: Handle; data?: unknown }[]) {
     if (m.handle?.breadcrumb && m.data != null) {
       const label = m.handle.breadcrumb(m.data)
-      if (label) labelByPath.set(m.pathname.replace(/\/$/, ''), label)
+      if (label && (!Array.isArray(label) || label.length > 0)) {
+        labelByPath.set(m.pathname.replace(/\/$/, ''), label)
+      }
     }
   }
 
@@ -148,7 +152,16 @@ export function Breadcrumbs() {
     const linkable = !isLast && !afterDroppedId && !UNROUTED_SEGMENTS.has(seg)
     const dynamicLabel = labelByPath.get(to)
     if (dynamicLabel) {
-      crumbs.push({ label: dynamicLabel, to: linkable ? to : undefined })
+      if (Array.isArray(dynamicLabel)) {
+        // Sub-trail entries link as the route gave them, except the trail
+        // must never end on a link.
+        dynamicLabel.forEach((c, j) => {
+          const leaf = isLast && j === dynamicLabel.length - 1
+          crumbs.push({ label: c.label, to: leaf ? undefined : c.to })
+        })
+      } else {
+        crumbs.push({ label: dynamicLabel, to: linkable ? to : undefined })
+      }
       continue
     }
     if (isOpaqueId(seg)) {

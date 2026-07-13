@@ -1,5 +1,4 @@
-import { redirect, useLoaderData, Link } from "react-router";
-import { ChevronRight } from "lucide-react";
+import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/forms.$folderId";
 import { requireAuth, forbidden, redirectApplicantToPortal } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
@@ -10,9 +9,19 @@ export const meta: Route.MetaFunction = ({ data }) => [
   { title: `${(data as any)?.current?.name ?? "Folder"} · Forms · DALI OS` },
 ];
 
+// Folder nesting isn't in the URL (/forms/:folderId is flat), so the route
+// expands its segment into the full ancestry sub-trail.
 export const handle = {
-  breadcrumb: (data: unknown) =>
-    (data as { current?: { name: string } } | undefined)?.current?.name,
+  breadcrumb: (data: unknown) => {
+    const d = data as
+      | { current?: { name: string }; crumbs?: { id: string; name: string }[] }
+      | undefined;
+    if (!d?.current) return null;
+    return [
+      ...(d.crumbs ?? []).map((c) => ({ label: c.name, to: `/forms/${c.id}` })),
+      { label: d.current.name },
+    ];
+  },
 };
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -43,30 +52,12 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function FormsFolderPage() {
-  const { current, crumbs, folders, forms } = useLoaderData<typeof loader>();
+  const { current, folders, forms } = useLoaderData<typeof loader>();
 
   return (
     <div className="flex flex-col gap-4">
       <header>
-        <nav className="flex items-center gap-1 text-sm text-muted-foreground flex-wrap">
-          <Link to="/forms" className="hover:text-foreground transition-colors">
-            Forms
-          </Link>
-          {crumbs.map((c) => (
-            <span key={c.id} className="flex items-center gap-1">
-              <ChevronRight className="w-3.5 h-3.5" />
-              <Link
-                to={`/forms/${c.id}`}
-                className="hover:text-foreground transition-colors"
-              >
-                {c.name}
-              </Link>
-            </span>
-          ))}
-          <ChevronRight className="w-3.5 h-3.5" />
-          <span className="text-foreground font-medium">{current?.name}</span>
-        </nav>
-        <h1 className="font-heading text-2xl font-bold text-foreground mt-2">
+        <h1 className="font-heading text-2xl font-bold text-foreground">
           {current?.name}
         </h1>
       </header>
