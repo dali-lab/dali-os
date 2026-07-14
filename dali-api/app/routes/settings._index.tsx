@@ -1,6 +1,7 @@
 import { Link, redirect } from "react-router";
 import { CalendarDays, Cable, KeyRound, Slack, UserCircle2 } from "lucide-react";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
+import { useDesktopVersion } from "~/lib/desktop";
 import type { Route } from "./+types/settings._index";
 
 export const meta: Route.MetaFunction = () => [{ title: "Settings · DALI OS" }];
@@ -48,6 +49,7 @@ const CARDS = [
 ];
 
 export default function SettingsIndex() {
+  const desktopVersion = useDesktopVersion();
   return (
     <main className="max-w-3xl p-8">
       <h1 className="text-2xl font-semibold">Settings</h1>
@@ -72,6 +74,9 @@ export default function SettingsIndex() {
           </li>
         ))}
       </ul>
+      {desktopVersion && (
+        <p className="mt-8 text-xs text-zinc-400">DALI OS Desktop v{desktopVersion}</p>
+      )}
     </main>
   );
 }
