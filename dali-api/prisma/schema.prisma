@@ -181,6 +181,9 @@ model User {
   // ─── Documents & files ───────────────────────────────────────────────────
   projectFileVersionsUploaded ProjectFileVersion[] @relation("ProjectFileVersionUploader")
   docComments                 DocComment[]         @relation("DocCommentAuthor")
+
+  // ─── Payroll: Reconcile back-relation ─────────────────────────────────────
+  timesheetImports TimesheetImport[]
 }
 
 // A DALI lab member. userId is optional because a member may be known (e.g. via daliEmail)
@@ -1683,6 +1686,9 @@ model Term {
   intentToWork          IntentToWork[]
   projectDomainScopes   ProjectDomainScope[]
   ceCredits             CECredit[]
+  payPeriods            PayPeriod[]
+  budgetEntries         BudgetEntry[]
+  budgetNotes           BudgetNote[]
 
   @@index([sortKey])
 }
@@ -1940,6 +1946,8 @@ model Project {
   domainScopes    ProjectDomainScope[]
   // Standalone uploaded files in the project's Files section.
   files           ProjectFile[]
+  budgetEntries   BudgetEntry[]
+  budgetNotes     BudgetNote[]
 
   createdAt DateTime @default(now())
 }
@@ -3572,4 +3580,153 @@ enum PartnerApplicationStatus {
   OnHold
   Accepted
   Rejected
+}
+
+// ─── Payroll: Reconcile ──────────────────────────────────────────────────────
+// Staff-only reconciliation of Dartmouth TimesheetX actuals against dali-os's
+// authoritative assignments/wages, plus a per-project/chartstring/term Budget.
+// All tables here are additive (no columns on existing tables).
+
+// Which CSV kind a TimesheetImport audit row records.
+enum TimesheetImportKind {
+  Timesheet
+  Notes
+}
+
+// A biweekly (2-week Sun–Sat) Dartmouth pay period. `name` is the canonical
+// "MM/DD/YYYY - MM/DD/YYYY" label used as the natural key; dates are stored at
+// UTC midnight to align with Term.startDate/endDate. `termId` is derived at
+// ingest but admin-overridable, and null when no Term fits the period.
+model PayPeriod {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  startDate DateTime
+  endDate   DateTime
+  termId    String?
+
+  createdAt DateTime @default(now())
+
+  term    Term?             @relation(fields: [termId], references: [id])
+  entries TimesheetEntry[]
+  notes   TimesheetNote[]
+  imports TimesheetImport[]
+
+  @@index([termId])
+}
+
+// One approved shift from a TimesheetX export. Money/hours are Decimal (never
+// float). `jobId` is the Dartmouth Job ID (category-level classifier, joined
+// to JobCodeLookup.jobCode). Every dedupe-key column is NOT NULL — blank CSV
+// fields are stored as "" so the unique actually dedupes (Postgres treats
+// NULLs as distinct). Chart string is the charged line (authoritative for
+// expense); shift times are raw strings for identity/display only.
+model TimesheetEntry {
+  id               String   @id @default(cuid())
+  payPeriodId      String
+  employeeNetId    String
+  employeeName     String
+  jobId            String
+  jobTitle         String
+  chartString      String
+  shiftStartTime   String
+  shiftEndTime     String
+  totalShiftTime   Decimal
+  hourlyPayRate    Decimal
+  totalEarnings    Decimal
+  overtimeHours    Decimal?
+  overtimeEarnings Decimal?
+  payCode          String
+  department       String
+  supervisorName   String
+  timesheetStatus  String
+
+  createdAt DateTime @default(now())
+
+  payPeriod PayPeriod @relation(fields: [payPeriodId], references: [id], onDelete: Cascade)
+
+  @@unique([payPeriodId, employeeNetId, jobId, shiftStartTime, shiftEndTime, chartString, payCode])
+  @@index([payPeriodId, employeeNetId])
+  @@index([employeeNetId, jobId])
+  @@index([chartString])
+}
+
+// A per-timesheet note row from the Notes CSV. `noteHash` is the sha-256 hex
+// of the note text — used in the unique because a raw long note would blow
+// Postgres's ~2.7KB btree index-row cap.
+model TimesheetNote {
+  id                   String  @id @default(cuid())
+  payPeriodId          String
+  netId                String
+  jobId                String
+  note                 String
+  noteHash             String
+  validatedChartstring String?
+  linkToTimesheet      String?
+
+  createdAt DateTime @default(now())
+
+  payPeriod PayPeriod @relation(fields: [payPeriodId], references: [id], onDelete: Cascade)
+
+  @@unique([payPeriodId, netId, jobId, noteHash])
+  @@index([payPeriodId, netId])
+}
+
+// Audit row per CSV import. Ingestion uses replace semantics (delete prior +
+// re-create), so counts are recorded rather than updated in place.
+model TimesheetImport {
+  id                    String              @id @default(cuid())
+  fileName              String
+  kind                  TimesheetImportKind
+  payPeriodId           String?
+  rowsCreated           Int
+  rowsSkippedDuplicates Int
+  rowsDeletedPrior      Int
+  uploadedById          String
+  uploadedAt            DateTime            @default(now())
+
+  payPeriod  PayPeriod? @relation(fields: [payPeriodId], references: [id], onDelete: Cascade)
+  uploadedBy User       @relation(fields: [uploadedById], references: [id])
+
+  @@index([payPeriodId])
+  @@index([uploadedById])
+}
+
+// Admin-entered revenue for a project/chartstring/term line in the Budget
+// view. `projectId` is null for Core/Instructor/External/unmatched lines;
+// because Postgres treats NULLs as distinct, the null-project upsert path does
+// a findFirst before create.
+model BudgetEntry {
+  id          String  @id @default(cuid())
+  projectId   String?
+  chartString String
+  termId      String
+  revenue     Decimal @default(0)
+  projectType String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project Project? @relation(fields: [projectId], references: [id])
+  term    Term     @relation(fields: [termId], references: [id])
+
+  @@unique([projectId, chartString, termId])
+  @@index([termId])
+}
+
+// Free-text note attached to a Budget line, keyed the same as BudgetEntry.
+model BudgetNote {
+  id          String  @id @default(cuid())
+  projectId   String?
+  chartString String
+  termId      String
+  note        String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project Project? @relation(fields: [projectId], references: [id])
+  term    Term     @relation(fields: [termId], references: [id])
+
+  @@unique([projectId, chartString, termId])
+  @@index([termId])
 }
