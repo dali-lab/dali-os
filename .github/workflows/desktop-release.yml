@@ -11,10 +11,9 @@
 #   Tauri updater:       TAURI_SIGNING_PRIVATE_KEY, TAURI_SIGNING_PRIVATE_KEY_PASSWORD
 #                        (the matching PUBLIC key goes in desktop/src-tauri/tauri.conf.json)
 #   S3 publish:          DESKTOP_AWS_ACCESS_KEY_ID, DESKTOP_AWS_SECRET_ACCESS_KEY
-# Publishes to the dedicated public bucket s3://dali-os-desktop-releases (NOT the
-# private uploads bucket). See ../../TAURI_DESKTOP_PLAN.md and ../../desktop/README.md.
+# Publishes to the dedicated public bucket s3://dali-os-desktop-releases 
 
-name: Desktop Release (macOS + Linux)
+name: Desktop Release (macOS + Windows + Linux)
 
 on:
   push:
@@ -181,11 +180,14 @@ jobs:
         working-directory: desktop
         run: npm install
 
+      # Explicit --target so bundles land in the target-triple path the upload
+      # steps below read from (without it they go to target/release/bundle and
+      # the ls fails) — same pattern as the macOS job's universal target.
       - name: Build AppImage
         uses: tauri-apps/tauri-action@v0
         with:
           projectPath: desktop
-          args: --bundles appimage
+          args: --target x86_64-unknown-linux-gnu --bundles appimage
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -242,11 +244,12 @@ jobs:
       # Unsigned build — SmartScreen will warn on first run ("Unknown publisher").
       # To add code signing later, provision WINDOWS_CERTIFICATE +
       # WINDOWS_CERTIFICATE_PASSWORD secrets and set them in env here.
+      # Explicit --target for the same artifact-path reason as the Linux job.
       - name: Build NSIS installer
         uses: tauri-apps/tauri-action@v0
         with:
           projectPath: desktop
-          args: --bundles nsis
+          args: --target x86_64-pc-windows-msvc --bundles nsis
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
