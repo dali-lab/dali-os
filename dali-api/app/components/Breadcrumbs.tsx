@@ -44,7 +44,8 @@ const SEGMENT_LABELS: Record<string, string> = {
   domains: 'Domains',
   announcements: 'Announcements',
   activity: 'Activity',
-  'payroll-export': 'Payroll Export',
+  'payroll-export': 'Payroll: Hire Setup',
+  payroll: 'Payroll: Reconcile',
 
   projects: 'Projects',
   staffing: 'Staffing',
