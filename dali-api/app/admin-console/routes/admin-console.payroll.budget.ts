@@ -11,9 +11,13 @@ import {
   updateChartString,
   upsertNote,
   updateProjectType,
+} from "~/admin-console/lib/budget";
+// PROJECT_TYPES comes from the client-safe shared module (not budget.ts) so
+// tests can fully mock budget.ts without the zod schema losing the real list.
+import {
   PROJECT_TYPES,
   type BudgetData,
-} from "~/admin-console/lib/budget";
+} from "~/admin-console/lib/budget.shared";
 
 // Resource route (GET + action) for the Budget tab. Loaded lazily by the page
 // via useFetcher().load('/admin-console/payroll/budget?term=…') on first tab

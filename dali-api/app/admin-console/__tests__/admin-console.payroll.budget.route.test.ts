@@ -9,21 +9,18 @@ vi.mock("~/lib/auth", () => ({
 vi.mock("~/lib/roles", () => ({ isAdmin: vi.fn() }));
 vi.mock("~/lib/terms", () => ({ resolveTermFilter: vi.fn() }));
 // Mutation helpers + the loader's data source are stubbed so this stays a pure
-// gating/validation/dispatch test.
-vi.mock("~/admin-console/lib/budget", async () => {
-  const actual = await vi.importActual<typeof import("~/admin-console/lib/budget")>(
-    "~/admin-console/lib/budget",
-  );
-  return {
-    ...actual,
-    getBudgetData: vi.fn(),
-    upsertRevenue: vi.fn(),
-    deleteEntry: vi.fn(),
-    updateChartString: vi.fn(),
-    upsertNote: vi.fn(),
-    updateProjectType: vi.fn(),
-  };
-});
+// gating/validation/dispatch test. Plain factory only — no importActual: the
+// real budget.ts imports ~/lib/db, and loading it here would require the
+// generated Prisma client (absent in CI, where prisma generate never runs).
+// The route gets the real PROJECT_TYPES from budget.shared (client-safe).
+vi.mock("~/admin-console/lib/budget", () => ({
+  getBudgetData: vi.fn(),
+  upsertRevenue: vi.fn(),
+  deleteEntry: vi.fn(),
+  updateChartString: vi.fn(),
+  upsertNote: vi.fn(),
+  updateProjectType: vi.fn(),
+}));
 
 import { requireAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
