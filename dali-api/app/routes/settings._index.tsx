@@ -51,7 +51,7 @@ const CARDS = [
 export default function SettingsIndex() {
   const desktopVersion = useDesktopVersion();
   return (
-    <main className="max-w-3xl p-8">
+    <main className="max-w-3xl">
       <h1 className="text-2xl font-semibold">Settings</h1>
       <p className="mt-2 text-sm text-zinc-600">
         Manage how you appear in DALI OS and what other tools can access on your behalf.
