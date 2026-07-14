@@ -45,6 +45,7 @@ const EMPTY_RECONCILIATION = {
     daliStudentCount: 0,
     medianPay: 0,
   },
+  notesByJobKey: {},
 };
 
 function asAdmin() {

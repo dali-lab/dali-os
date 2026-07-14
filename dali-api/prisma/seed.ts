@@ -3943,16 +3943,67 @@ async function main() {
         },
       });
 
-      // JobCodeLookup: a couple of payroll mappings (wildcards allowed).
+      // JobCodeLookup: the real Dartmouth Job IDs used on TimesheetX exports, so
+      // the payroll-reconcile reverse-lookup (jobId → assignmentType/level/rate)
+      // resolves against the same identifiers prod carries. 4834 maps to BOTH P1
+      // and P2 (a Job ID is a category-level classifier — the precise level +
+      // wage come from the person's ProjectAssignment).
+      const jobCodeIds = ["4834", "4889", "4890", "7523"];
       await prisma.jobCodeLookup.deleteMany({
-        where: { jobCode: { in: ["DALI-PROJ-P1", "DALI-CORE"] } },
+        where: {
+          jobCode: { in: [...jobCodeIds, "DALI-PROJ-P1", "DALI-CORE"] },
+        },
       });
-      await prisma.jobCodeLookup.create({
-        data: { assignmentType: "Project", level: "P1", jobCode: "DALI-PROJ-P1" },
+      await prisma.jobCodeLookup.createMany({
+        data: [
+          { assignmentType: "Project", level: "P1", jobCode: "4834", payRateUsdHour: 16.25 },
+          { assignmentType: "Project", level: "P2", jobCode: "4834", payRateUsdHour: 17.0 },
+          { assignmentType: "Project", level: "P3", jobCode: "4889", payRateUsdHour: 18.0 },
+          { assignmentType: "Core", jobCode: "4890", payRateUsdHour: 20.0 },
+          { assignmentType: "Instructor", jobCode: "7523", payRateUsdHour: 19.0 },
+        ],
       });
-      await prisma.jobCodeLookup.create({
-        data: { assignmentType: "Core", jobCode: "DALI-CORE" },
-      });
+
+      // Payroll-reconcile fixture: a student with a netId, a chart string on the
+      // DALI OS project, and an explicit ProjectAssignment in the active term so
+      // an uploaded timesheet (netId + jobId 4834) reconciles to a Payroll Data
+      // row. The bid-derived assignments above are members-by-daliEmail (no
+      // netId), so the reconcile join needs this deterministic netId'd student.
+      const payrollChartString = "18.722.161028.128512.4000";
+      if (dali) {
+        await prisma.project.update({
+          where: { id: dali.id },
+          data: { chartString: payrollChartString },
+        });
+        const payrollStudent = await prisma.user.upsert({
+          where: { netId: "f00pay01" },
+          update: { firstName: "Ada", lastName: "Lovelace" },
+          create: {
+            netId: "f00pay01",
+            firstName: "Ada",
+            lastName: "Lovelace",
+            daliMember: { create: {} },
+          },
+        });
+        await prisma.projectAssignment.upsert({
+          where: {
+            userId_projectId_termId_domainId: {
+              userId: payrollStudent.id,
+              projectId: dali.id,
+              termId: term26S.id,
+              domainId: engDomain.id,
+            },
+          },
+          update: { level: "P1" },
+          create: {
+            userId: payrollStudent.id,
+            projectId: dali.id,
+            termId: term26S.id,
+            domainId: engDomain.id,
+            level: "P1",
+          },
+        });
+      }
 
       console.log(
         `  v0 demo rows: ${eligCount} eligibilities, ${assignCount} project assignments, ` +
