@@ -6,6 +6,7 @@ import { rowsToCsv, csvResponse } from "~/lib/csv";
 import { resolveTermFilter } from "~/lib/terms";
 import { getReconciliation } from "~/admin-console/lib/payroll-reconcile.server";
 import type { CollatedResult } from "~/admin-console/lib/payroll-collation";
+import { getBudgetData } from "~/admin-console/lib/budget";
 
 // Resource route (GET) — one CSV per reconcile view. Registered OUTSIDE the app
 // layout so the Response streams a bare CSV body. Uses the shared
@@ -19,6 +20,7 @@ const VIEWS = [
   "chart-strings",
   "discrepancies",
   "external",
+  "budget",
 ] as const;
 type View = (typeof VIEWS)[number];
 
@@ -146,7 +148,43 @@ function buildRows(view: View, r: CollatedResult): unknown[][] {
         rows.push([j.netId, j.name, j.jobId, j.jobTitle, j.hours, j.pay]);
       return rows;
     }
+
+    case "budget":
+      // Budget has its own data source (getBudgetData); handled in the loader,
+      // not from the CollatedResult. Unreachable here.
+      return [];
   }
+}
+
+function buildBudgetRows(
+  budget: Awaited<ReturnType<typeof getBudgetData>>,
+): unknown[][] {
+  const rows: unknown[][] = [
+    ["Project", "Chart String", "Type", "Revenue", "Adj. Revenue", "Expense", "Net"],
+  ];
+  for (const g of budget.groups) {
+    for (const row of g.rows) {
+      rows.push([
+        g.projectName,
+        row.chartString,
+        row.projectType ?? "",
+        row.revenue,
+        row.adjustedRevenue,
+        row.expense,
+        row.net,
+      ]);
+    }
+  }
+  rows.push([
+    "Grand total",
+    "",
+    "",
+    budget.grandTotalRevenue,
+    budget.grandTotalAdjustedRevenue,
+    budget.grandTotalExpense,
+    budget.grandTotalNet,
+  ]);
+  return rows;
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -165,8 +203,10 @@ export async function loader({ request }: Route.LoaderArgs) {
     return new Response("No term selected", { status: 404 });
   }
 
-  const result = await getReconciliation(termId);
-  const rows = buildRows(viewParam, result);
+  const rows =
+    viewParam === "budget"
+      ? buildBudgetRows(await getBudgetData(termId))
+      : buildRows(viewParam, await getReconciliation(termId));
   const csv = rowsToCsv(rows);
 
   const termCode = terms.find((t) => t.id === selected)?.code ?? "term";
