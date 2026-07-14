@@ -341,6 +341,7 @@ export default [
   // Payroll reconcile — upload (multipart action) + per-view CSV export.
   // Resource routes registered OUTSIDE the app layout (bare bodies, no shell).
   route("admin-console/payroll/upload", "admin-console/routes/admin-console.payroll.upload.ts"),
+  route("admin-console/payroll/budget", "admin-console/routes/admin-console.payroll.budget.ts"),
   route("admin-console/payroll.csv", "admin-console/routes/admin-console.payroll.csv.ts"),
 
   // Partner application status (board drag-and-drop) + domain scope

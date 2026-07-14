@@ -39,6 +39,7 @@ import { formatUsd } from "~/lib/money";
 import { cn } from "~/lib/cn";
 import { useChartColors } from "~/hiring/components/analytics/useChartColors";
 import { PayrollUploadModal } from "~/admin-console/components/PayrollUploadModal";
+import { PayrollBudgetPanel } from "~/admin-console/components/PayrollBudgetPanel";
 
 export const handle = { areaPills: true };
 
@@ -117,7 +118,8 @@ type TabKey =
   | "projects"
   | "chart-strings"
   | "discrepancies"
-  | "external";
+  | "external"
+  | "budget";
 
 export default function PayrollReconcile() {
   const data = useLoaderData<typeof loader>();
@@ -156,6 +158,7 @@ export default function PayrollReconcile() {
       badge: rec && rec.external.totalHours > 0 ? `${rec.external.totalHours} hrs` : undefined,
       badgeTone: "muted",
     },
+    { key: "budget", label: "Budget" },
   ];
 
   return (
@@ -249,6 +252,7 @@ export default function PayrollReconcile() {
             {tab === "chart-strings" && <ChartStringsPanel rec={rec!} />}
             {tab === "discrepancies" && <DiscrepanciesPanel rec={rec!} />}
             {tab === "external" && <ExternalPanel rec={rec!} />}
+            {tab === "budget" && <PayrollBudgetPanel term={data.selected} />}
           </div>
         </>
       )}
