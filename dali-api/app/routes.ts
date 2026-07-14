@@ -51,6 +51,7 @@ export default [
     route("admin-console/activity", "admin-console/routes/admin-console.activity.tsx"),
     route("admin-console/analytics", "admin-console/routes/admin-console.analytics.tsx"),
     route("admin-console/payroll-export", "admin-console/routes/admin-console.payroll-export.tsx"),
+    route("admin-console/payroll", "admin-console/routes/admin-console.payroll.tsx"),
 
     // Projects. The bare /projects route is the area hub (the project list).
     route("projects", "projects/routes/projects.hub.tsx"),
@@ -336,6 +337,11 @@ export default [
   // Payroll CSV export (resource route — registered OUTSIDE the app layout so
   // the Response streams as a bare CSV body, not wrapped in an HTML shell).
   route("admin-console/payroll-export.csv", "admin-console/routes/admin-console.payroll-export.csv.ts"),
+
+  // Payroll reconcile — upload (multipart action) + per-view CSV export.
+  // Resource routes registered OUTSIDE the app layout (bare bodies, no shell).
+  route("admin-console/payroll/upload", "admin-console/routes/admin-console.payroll.upload.ts"),
+  route("admin-console/payroll.csv", "admin-console/routes/admin-console.payroll.csv.ts"),
 
   // Partner application status (board drag-and-drop) + domain scope
   route("api/partner-applications/:id/status", "partners/routes/api.partner-applications.$id.status.ts"),
