@@ -18,16 +18,18 @@ import {
   StickyNote,
   AlertTriangle,
   Info,
+  X,
 } from "lucide-react";
 import { requireAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { resolveTermFilter } from "~/lib/terms";
-import { getReconciliation } from "~/admin-console/lib/payroll-reconcile.server";
-import type {
-  CollatedResult,
-  JobBreakdown,
-} from "~/admin-console/lib/payroll-collation";
+import {
+  getReconciliation,
+  type ReconciliationResult,
+  type TimesheetNoteView,
+} from "~/admin-console/lib/payroll-reconcile.server";
+import type { JobBreakdown } from "~/admin-console/lib/payroll-collation";
 import { adminPills } from "~/admin-console/adminPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
 import { TermFilter } from "~/components/TermFilter";
@@ -67,12 +69,13 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!termId) {
     return {
       ...termFilter,
-      reconciliation: null as CollatedResult | null,
+      reconciliation: null as ReconciliationResult | null,
       periods: [] as PeriodSummary[],
+      missingChartStrings: [] as string[],
     };
   }
 
-  const [reconciliation, periodRows] = await Promise.all([
+  const [reconciliation, periodRows, missingChartRows] = await Promise.all([
     getReconciliation(termId),
     prisma.payPeriod.findMany({
       where: { termId },
@@ -93,7 +96,19 @@ export async function loader({ request }: Route.LoaderArgs) {
         },
       },
     }),
+    // DALI projects staffed this term whose chart string is missing/blank: the
+    // chart-string tie-break can't attribute their hours to one project, so
+    // warn staff to fill it in.
+    prisma.project.findMany({
+      where: {
+        assignments: { some: { termId } },
+        OR: [{ chartString: null }, { chartString: "" }],
+      },
+      orderBy: { name: "asc" },
+      select: { name: true },
+    }),
   ]);
+  const missingChartStrings = missingChartRows.map((p) => p.name);
 
   const periods: PeriodSummary[] = periodRows.map((p) => {
     const imp = p.imports[0];
@@ -109,7 +124,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     };
   });
 
-  return { ...termFilter, reconciliation, periods };
+  return { ...termFilter, reconciliation, periods, missingChartStrings };
 }
 
 type TabKey =
@@ -125,6 +140,7 @@ export default function PayrollReconcile() {
   const data = useLoaderData<typeof loader>();
   const [tab, setTab] = useState<TabKey>("summary");
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [chartWarningDismissed, setChartWarningDismissed] = useState(false);
 
   const rec = data.reconciliation;
   const discrepancyCount = rec
@@ -203,6 +219,13 @@ export default function PayrollReconcile() {
         Reconcile TimesheetX actuals against DALI OS staffing. Headline totals
         are DALI-only; External (non-DALI job IDs) is reported but excluded.
       </p>
+
+      {data.missingChartStrings.length > 0 && !chartWarningDismissed && (
+        <ChartStringWarning
+          projects={data.missingChartStrings}
+          onDismiss={() => setChartWarningDismissed(true)}
+        />
+      )}
 
       {!hasData ? (
         <EmptyState onUpload={() => setUploadOpen(true)} />
@@ -286,6 +309,43 @@ function EmptyState({ onUpload }: { onUpload: () => void }) {
   );
 }
 
+// ─── Chart-string-missing warning ────────────────────────────────────────────
+
+function ChartStringWarning({
+  projects,
+  onDismiss,
+}: {
+  projects: string[];
+  onDismiss: () => void;
+}) {
+  return (
+    <div
+      role="alert"
+      className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+    >
+      <AlertTriangle className="mt-0.5 w-4 h-4 flex-shrink-0 text-amber-600" aria-hidden />
+      <div className="flex-1">
+        <p className="font-medium">
+          {projects.length} staffed project{projects.length === 1 ? "" : "s"} missing a
+          chart string
+        </p>
+        <p className="mt-0.5 text-amber-800">
+          Hours can't be tie-broken to {projects.length === 1 ? "it" : "them"} by chart
+          string — set one on {projects.join(", ")} in the project settings.
+        </p>
+      </div>
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label="Dismiss chart string warning"
+        className="text-amber-600 hover:text-amber-900"
+      >
+        <X className="w-4 h-4" />
+      </button>
+    </div>
+  );
+}
+
 // ─── Shared table chrome ─────────────────────────────────────────────────────
 
 const TABLE_WRAP = "bg-card border border-border rounded-lg overflow-x-auto";
@@ -301,7 +361,7 @@ function SummaryPanel({
   rec,
   periods,
 }: {
-  rec: CollatedResult;
+  rec: ReconciliationResult;
   periods: PeriodSummary[];
 }) {
   const colors = useChartColors();
@@ -473,10 +533,14 @@ type SortKey = "name" | "hours" | "pay";
 
 type FlatJob = JobBreakdown & { projects: string };
 
-function PayrollDataPanel({ rec }: { rec: CollatedResult }) {
+function PayrollDataPanel({ rec }: { rec: ReconciliationResult }) {
   const [query, setQuery] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("hours");
   const [notesFor, setNotesFor] = useState<FlatJob | null>(null);
+
+  const notesByJobKey = rec.notesByJobKey;
+  const notesForJob = (j: { netId: string; jobId: string }): TimesheetNoteView[] =>
+    notesByJobKey[`${j.netId}::${j.jobId}`] ?? [];
 
   const jobs = useMemo<FlatJob[]>(() => {
     const flat: FlatJob[] = [];
@@ -568,14 +632,27 @@ function PayrollDataPanel({ rec }: { rec: CollatedResult }) {
                 <td className={TD_NUM}>{j.hours.toLocaleString()}</td>
                 <td className={TD_NUM}>{formatUsd(j.pay)}</td>
                 <td className="px-3 py-2 text-right">
-                  <button
-                    type="button"
-                    onClick={() => setNotesFor(j)}
-                    aria-label={`View notes for ${j.name}`}
-                    className="text-muted-foreground hover:text-foreground"
-                  >
-                    <StickyNote className="w-4 h-4" />
-                  </button>
+                  {(() => {
+                    const count = notesForJob(j).length;
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => setNotesFor(j)}
+                        aria-label={`View notes for ${j.name}`}
+                        className={cn(
+                          "inline-flex items-center gap-1",
+                          count > 0
+                            ? "text-accent-coral hover:text-accent-coral/80"
+                            : "text-muted-foreground/40 hover:text-foreground",
+                        )}
+                      >
+                        <StickyNote className="w-4 h-4" />
+                        {count > 0 && (
+                          <span className="text-[10px] font-bold tabular-nums">{count}</span>
+                        )}
+                      </button>
+                    );
+                  })()}
                 </td>
               </tr>
             ))}
@@ -587,12 +664,24 @@ function PayrollDataPanel({ rec }: { rec: CollatedResult }) {
         wage is display-only.
       </p>
 
-      <NotesModal job={notesFor} onClose={() => setNotesFor(null)} />
+      <NotesModal
+        job={notesFor}
+        notes={notesFor ? notesForJob(notesFor) : []}
+        onClose={() => setNotesFor(null)}
+      />
     </div>
   );
 }
 
-function NotesModal({ job, onClose }: { job: FlatJob | null; onClose: () => void }) {
+function NotesModal({
+  job,
+  notes,
+  onClose,
+}: {
+  job: FlatJob | null;
+  notes: TimesheetNoteView[];
+  onClose: () => void;
+}) {
   const open = job !== null;
   return (
     <Modal open={open} onClose={onClose} labelledBy="notes-modal-title">
@@ -602,16 +691,45 @@ function NotesModal({ job, onClose }: { job: FlatJob | null; onClose: () => void
         subtitle={job ? `${job.name} · ${job.jobId}` : undefined}
         onClose={onClose}
       />
-      <p className="text-sm text-muted-foreground">
-        No notes recorded for this person-job.
-      </p>
+      {notes.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          No notes recorded for this person-job.
+        </p>
+      ) : (
+        <ul className="space-y-3">
+          {notes.map((n, i) => (
+            <li
+              key={i}
+              className="rounded-md border border-border bg-muted/40 px-3 py-2.5 text-sm"
+            >
+              <p className="whitespace-pre-wrap text-foreground">{n.note}</p>
+              <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                <span className="font-mono">{n.payPeriodName}</span>
+                {n.validatedChartstring && (
+                  <span className="font-mono">· {n.validatedChartstring}</span>
+                )}
+                {n.linkToTimesheet && (
+                  <a
+                    href={n.linkToTimesheet}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-accent-coral underline hover:text-accent-coral/80"
+                  >
+                    timesheet
+                  </a>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
     </Modal>
   );
 }
 
 // ─── Project Summaries ───────────────────────────────────────────────────────
 
-function ProjectsPanel({ rec }: { rec: CollatedResult }) {
+function ProjectsPanel({ rec }: { rec: ReconciliationResult }) {
   const projects = [...rec.projects].sort((a, b) => b.totalHours - a.totalHours);
   const totalStudents = new Set(
     projects.flatMap((p) => p.jobs.map((j) => j.netId)),
@@ -619,6 +737,15 @@ function ProjectsPanel({ rec }: { rec: CollatedResult }) {
   const totalHours = projects.reduce((s, p) => s + p.totalHours, 0);
   const totalShared = projects.reduce((s, p) => s + p.sharedHours, 0);
   const totalPay = projects.reduce((s, p) => s + p.totalPay, 0);
+
+  if (projects.length === 0) {
+    return (
+      <Card className="p-8 text-center text-sm text-muted-foreground">
+        No project-attributed hours this term. Uploaded hours may be Core,
+        Instructor, or External — see those tabs.
+      </Card>
+    );
+  }
 
   return (
     <div className="space-y-3">
@@ -673,7 +800,7 @@ function ProjectsPanel({ rec }: { rec: CollatedResult }) {
 
 // ─── Chart Strings ───────────────────────────────────────────────────────────
 
-function ChartStringsPanel({ rec }: { rec: CollatedResult }) {
+function ChartStringsPanel({ rec }: { rec: ReconciliationResult }) {
   const [open, setOpen] = useState<Set<string>>(new Set());
   const toggle = (cs: string) => {
     const next = new Set(open);
@@ -681,6 +808,14 @@ function ChartStringsPanel({ rec }: { rec: CollatedResult }) {
     else next.add(cs);
     setOpen(next);
   };
+
+  if (rec.chartStrings.length === 0) {
+    return (
+      <Card className="p-8 text-center text-sm text-muted-foreground">
+        No chart strings charged this term.
+      </Card>
+    );
+  }
 
   return (
     <div className="space-y-3">
@@ -779,7 +914,7 @@ function ChartStringsPanel({ rec }: { rec: CollatedResult }) {
 
 // ─── Discrepancies ───────────────────────────────────────────────────────────
 
-function DiscrepanciesPanel({ rec }: { rec: CollatedResult }) {
+function DiscrepanciesPanel({ rec }: { rec: ReconciliationResult }) {
   const d = rec.discrepancies;
   const total =
     d.assignedNoHours.length +
@@ -941,7 +1076,7 @@ function DiscCard({
 
 // ─── External ────────────────────────────────────────────────────────────────
 
-function ExternalPanel({ rec }: { rec: CollatedResult }) {
+function ExternalPanel({ rec }: { rec: ReconciliationResult }) {
   const [open, setOpen] = useState(false);
   const ext = rec.external;
   const people = new Set(ext.jobs.map((j) => j.netId)).size;
