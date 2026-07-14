@@ -27,11 +27,20 @@ pub fn ensure_main(app: &AppHandle, initial_url: &str) -> tauri::Result<WebviewW
     }
     let url = Url::parse(initial_url).unwrap_or_else(|_| Url::parse(PROD_ORIGIN).unwrap());
     let nav_handle = app.clone();
+    // The remote page has no IPC, so the shell hands its version over as a
+    // frozen global re-injected on every top-frame navigation. Workspace-tab
+    // iframes read it via window.top (same origin). The web app renders it on
+    // Settings (app/lib/desktop.ts in dali-api).
+    let version_script = format!(
+        "window.__DALI_DESKTOP = Object.freeze({{ version: '{}' }});",
+        app.package_info().version
+    );
     WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url))
         .title("DALI OS")
         .inner_size(1280.0, 832.0)
         .min_inner_size(900.0, 600.0)
         .visible(false)
+        .initialization_script(&version_script)
         .on_navigation(move |u| crate::nav::on_navigation(&nav_handle, u))
         .build()
 }
