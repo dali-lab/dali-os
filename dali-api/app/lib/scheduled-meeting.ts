@@ -169,7 +169,13 @@ export async function cancelScheduledMeeting(
 ): Promise<CancelScheduledMeetingResult> {
   const meeting = await prisma.scheduledMeeting.findUnique({
     where: { id: meetingId },
-    select: { id: true, organizerId: true, status: true },
+    select: {
+      id: true,
+      organizerId: true,
+      status: true,
+      title: true,
+      participantUserIds: true,
+    },
   });
   if (!meeting) return { ok: false, error: "Not found", status: 404 };
   if (meeting.organizerId !== actorUserId) {
@@ -181,5 +187,28 @@ export async function cancelScheduledMeeting(
     where: { id: meetingId },
     data: { status: "Cancelled" },
   });
+
+  // Tell everyone who was invited. Deliberately NOT stamped with
+  // scheduledMeetingId — surfaces hide rows whose meeting is Cancelled, which
+  // would make this very notification invisible. Best-effort: the cancel
+  // already happened, a delivery hiccup shouldn't fail the request.
+  const recipients = (meeting.participantUserIds ?? []).filter(
+    (id) => id !== actorUserId,
+  );
+  if (recipients.length > 0) {
+    try {
+      await notify({
+        eventType: "meeting.cancelled",
+        createdByUserId: actorUserId,
+        message: {
+          title: `Meeting cancelled: ${meeting.title}`,
+          link: "/calendar",
+        },
+        recipients: recipients.map((userId) => ({ userId })),
+      });
+    } catch (err) {
+      console.error(`meeting ${meetingId}: cancellation notify failed`, err);
+    }
+  }
   return { ok: true, alreadyCancelled: false };
 }

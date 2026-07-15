@@ -19,7 +19,15 @@ export type EventDef = {
   // eventType is the preference/digest key.
   kind: NotificationKind;
   // Settings-page section and digest grouping.
-  area: "Meetings" | "Tasks" | "Hiring" | "Education" | "Announcements" | "Forms" | "Onboarding";
+  area:
+    | "Meetings"
+    | "Tasks"
+    | "Staffing"
+    | "Hiring"
+    | "Education"
+    | "Announcements"
+    | "Forms"
+    | "Onboarding";
   label: string;
   description: string;
   // The in-app row IS the workflow surface (RSVP buttons, form todo,
@@ -49,6 +57,13 @@ export const EVENT_TYPES = {
     description: "15 minutes before a meeting you're in starts.",
     defaults: { inApp: true, slackDm: false, email: "Off" },
   },
+  "meeting.cancelled": {
+    kind: "General",
+    area: "Meetings",
+    label: "Meeting cancellations",
+    description: "When a meeting you were invited to is cancelled.",
+    defaults: { inApp: true, slackDm: false, email: "Off" },
+  },
   "task.due_reminder": {
     kind: "General",
     area: "Tasks",
@@ -75,6 +90,13 @@ export const EVENT_TYPES = {
     area: "Tasks",
     label: "GitHub task updates",
     description: "When a linked GitHub issue closes or reopens one of your tasks.",
+    defaults: { inApp: true, slackDm: false, email: "Off" },
+  },
+  "staffing.assigned": {
+    kind: "General",
+    area: "Staffing",
+    label: "Staffing assignments",
+    description: "When your project assignment for a term is confirmed.",
     defaults: { inApp: true, slackDm: false, email: "Off" },
   },
   "hiring.interview_assigned": {

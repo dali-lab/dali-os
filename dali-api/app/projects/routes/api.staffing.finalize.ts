@@ -20,6 +20,7 @@ import {
   addGroupMember,
 } from "~/lib/google-workspace";
 import { logAuditEvent } from "~/lib/audit";
+import { notify } from "~/lib/notify.server";
 import { dedupeLiveAssignments } from "../lib/staffing-board";
 import { publishCycleChange } from "../lib/staffing-events.server";
 
@@ -193,9 +194,9 @@ export async function action({ request }: Route.ActionArgs) {
       // so finalizing such a row throws an opaque FK violation and rolls back
       // the whole project. Skip those rows and surface the members by name so a
       // lead can fix the bid, instead of crashing the finalize.
-      const validDomainIds = new Set(
-        (await prisma.domain.findMany({ select: { id: true } })).map((d) => d.id),
-      );
+      const domains = await prisma.domain.findMany({ select: { id: true, name: true } });
+      const validDomainIds = new Set(domains.map((d) => d.id));
+      const domainNameById = new Map(domains.map((d) => [d.id, d.name]));
       const target = liveTarget.filter((r) => validDomainIds.has(r.domainId));
       const skippedNames = (
         await prisma.user.findMany({
@@ -265,6 +266,28 @@ export async function action({ request }: Route.ActionArgs) {
           droppedCount++;
         }
       });
+
+      // Tell each newly-confirmed member (rows that were still Proposed when
+      // this run started) — finalize is idempotent and re-runs must not
+      // re-notify the whole roster. Fire-and-forget: delivery never fails the
+      // finalize.
+      const newlyConfirmed = target.filter((a) => a.status !== "Confirmed");
+      if (newlyConfirmed.length > 0) {
+        void notify({
+          eventType: "staffing.assigned",
+          createdByUserId: auth.user.sub,
+          message: {
+            title: `You're on ${project.name}`,
+            link: `/projects/${project.id}`,
+          },
+          recipients: newlyConfirmed.map((a) => ({
+            userId: a.userId,
+            body: `${domainNameById.get(a.domainId) ?? "Unknown domain"} — ${a.level}, ${cycle.name}.`,
+          })),
+        }).catch((err) =>
+          console.error(`staffing finalize ${project.id}: notify failed`, err),
+        );
+      }
 
       const dropNote = droppedCount > 0 ? `, removed ${droppedCount}` : "";
       const skipNote =

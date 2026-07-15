@@ -42,6 +42,7 @@ const VISIBLE_EVENTS = EVENT_TYPE_KEYS.filter((k) => k !== "general");
 const AREA_ORDER = [
   "Meetings",
   "Tasks",
+  "Staffing",
   "Announcements",
   "Forms",
   "Hiring",
