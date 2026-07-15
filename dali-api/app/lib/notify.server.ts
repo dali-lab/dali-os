@@ -66,7 +66,7 @@ export function renderNotificationEmail(args: {
     `<p><strong>${args.title}</strong></p>`,
     args.body ? bodyToHtml(args.body) : "",
     button,
-    `<p>— DALI OS</p>`,
+    `<p style="color:#71717a;font-size:12px;">— DALI OS · <a href="${getFrontendUrl()}/settings/notifications" style="color:#71717a;">notification settings</a></p>`,
   ]
     .filter(Boolean)
     .join("\n");

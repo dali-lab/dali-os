@@ -33,6 +33,7 @@ function meeting(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.resetAllMocks();
   mockPrisma.scheduledMeeting.findMany.mockResolvedValue([meeting()]);
+  mockPrisma.notification.findMany.mockResolvedValue([]); // no Declined RSVPs
   mockPrisma.meetingReminderLog = {
     create: vi.fn().mockResolvedValue({}),
   } as never;
@@ -123,6 +124,25 @@ describe("runMeetingReminders", () => {
     ]);
     const result = await runMeetingReminders({ now: NOW, lastSuccessAt: null, settings: { leadMinutes: 15 } });
     expect(result.items).toBe(2);
+  });
+
+  it("skips recipients who declined the invite", async () => {
+    mockPrisma.notification.findMany.mockResolvedValue([{ recipientUserId: "u1" }]);
+    const result = await runMeetingReminders({
+      now: NOW,
+      lastSuccessAt: null,
+      settings: { leadMinutes: 15 },
+    });
+    expect(mockPrisma.notification.findMany).toHaveBeenCalledWith({
+      where: { scheduledMeetingId: "m1", rsvp: "Declined" },
+      select: { recipientUserId: true },
+    });
+    // org + u2 reminded; u1 (declined) skipped.
+    expect(result.items).toBe(2);
+    const remindedIds = mockNotify.mock.calls.map(
+      (c) => c[0].recipients[0].userId,
+    );
+    expect(remindedIds.sort()).toEqual(["org", "u2"]);
   });
 
   it("honors a configured lead time", async () => {

@@ -98,6 +98,10 @@ describe("notify", () => {
     expect(mockSendEmail).toHaveBeenCalledWith(
       expect.objectContaining({ to: "u1@dali.dartmouth.edu", subject: "Announcement" }),
     );
+    // Every instant email carries its own off-switch path.
+    expect(mockSendEmail.mock.calls[0][0].html).toContain(
+      "https://os.dali.dartmouth.edu/settings/notifications",
+    );
     expect(mockPrisma.notification.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: { in: ["n-0"] } },

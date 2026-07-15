@@ -54,10 +54,20 @@ export async function runMeetingReminders({ now, settings }: JobContext): Promis
       windowStart,
       windowEnd,
     ).filter((o) => o.start.getTime() >= now.getTime() && o.start.getTime() <= leadEnd);
+    if (occurrences.length === 0) continue;
+
+    // A Declined RSVP (on the invite notification) mutes reminders for that
+    // person; flipping back to Accepted/Tentative un-mutes.
+    const declinedRows = await prisma.notification.findMany({
+      where: { scheduledMeetingId: meeting.id, rsvp: "Declined" },
+      select: { recipientUserId: true },
+    });
+    const declined = new Set(declinedRows.map((r) => r.recipientUserId));
 
     for (const occ of occurrences) {
       const recipients = new Set([meeting.organizerId, ...meeting.participantUserIds]);
       for (const userId of recipients) {
+        if (declined.has(userId)) continue;
         if (sent >= CAP) break;
         // Claim before sending: a unique violation means another machine
         // (or a previous crash) already owns this (meeting, occurrence, user).
