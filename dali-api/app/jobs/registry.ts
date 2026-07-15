@@ -25,6 +25,7 @@ import { runTaskDueReminders } from "~/jobs/task-due-reminders.server";
 import { runMeetingReminders } from "~/jobs/meeting-reminders.server";
 import { runScheduledAnnouncements } from "~/jobs/scheduled-announcements.server";
 import { runSessionFeedbackSweep } from "~/jobs/session-feedback-sweep.server";
+import { runDailyDigest, runWeeklyDigest } from "~/lib/notification-digest.server";
 
 export const JOBS: JobDefinition[] = [
   {
@@ -53,6 +54,21 @@ export const JOBS: JobDefinition[] = [
       "Requests session feedback once an education session ends, even when attendance was never marked.",
     intervalMinutes: 60,
     handler: runSessionFeedbackSweep,
+  },
+  // The digest jobs tick often but self-gate on wall clock (9am ET; weekly on
+  // Mondays), using the runner's lastSuccessAt as the sent-today cursor.
+  {
+    name: "notification-digest-daily",
+    description: "Emails each Daily-digest subscriber their unread notifications at 9am ET.",
+    intervalMinutes: 15,
+    handler: runDailyDigest,
+  },
+  {
+    name: "notification-digest-weekly",
+    description:
+      "Emails each Weekly-digest subscriber their unread notifications on Mondays at 9am ET.",
+    intervalMinutes: 15,
+    handler: runWeeklyDigest,
   },
 ];
 

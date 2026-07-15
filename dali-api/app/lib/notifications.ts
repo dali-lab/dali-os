@@ -5,9 +5,10 @@
 import type { Prisma } from "~/generated/prisma/client";
 import { prisma } from "~/lib/db";
 
-// Invites for a Cancelled meeting are hidden everywhere — inbox, bell, and
-// tasks alike. Combine this with the per-user filter on every query.
-const NOT_CANCELLED_MEETING: Prisma.NotificationWhereInput = {
+// Invites for a Cancelled meeting are hidden everywhere — inbox, bell,
+// tasks, and digest emails alike. Combine this with the per-user filter on
+// every query.
+export const NOT_CANCELLED_MEETING: Prisma.NotificationWhereInput = {
   OR: [
     { scheduledMeetingId: null },
     { scheduledMeeting: { status: { not: "Cancelled" } } },
