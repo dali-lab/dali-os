@@ -119,13 +119,18 @@ export async function action({ request }: Route.ActionArgs) {
     if (form.get(`${eventType}:present`) !== "1") continue;
 
     const email = String(form.get(`${eventType}:email`) ?? "");
+    const digestFrequency = (DIGEST_VALUES as readonly string[]).includes(email)
+      ? (email as DigestValue)
+      : def.defaults.email;
+    // Digests summarize unread in-app rows, so a digest choice keeps in-app
+    // on (mirrors the same rule in notify()'s dispatch).
+    const digestSelected = digestFrequency === "Daily" || digestFrequency === "Weekly";
     rows.push({
       eventType,
-      inApp: def.lockedInApp ? true : form.get(`${eventType}:inApp`) === "on",
+      inApp:
+        def.lockedInApp || digestSelected ? true : form.get(`${eventType}:inApp`) === "on",
       slackDm: form.get(`${eventType}:slackDm`) === "on",
-      digestFrequency: (DIGEST_VALUES as readonly string[]).includes(email)
-        ? (email as DigestValue)
-        : def.defaults.email,
+      digestFrequency,
     });
   }
   if (rows.length === 0) return { ok: false as const, error: "Nothing to save." };
@@ -185,6 +190,10 @@ export default function SettingsNotificationsPage({ loaderData }: Route.Componen
           {WEEKDAY_NAMES[digestSchedule.weeklyWeekday]}{" "}
           {hourLabel(digestSchedule.weeklyHour)} ET) digest; Slack DMs come from
           the DALI OS bot.
+        </p>
+        <p className="mt-2 text-xs text-zinc-500">
+          Digests summarize your unread in-app notifications, so choosing a
+          daily or weekly digest keeps in-app on for that event.
         </p>
         {!slackConnected && (
           <p className="mt-2 text-xs text-zinc-500">

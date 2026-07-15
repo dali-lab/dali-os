@@ -78,6 +78,19 @@ describe("settings.notifications action", () => {
     );
   });
 
+  it("forces inApp true when a digest frequency is chosen", async () => {
+    await post({
+      "education.discussion:present": "1",
+      // inApp deliberately unchecked, but Weekly digest selected
+      "education.discussion:email": "Weekly",
+    });
+    expect(mockPrisma.notificationPreference.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: { inApp: true, slackDm: false, digestFrequency: "Weekly" },
+      }),
+    );
+  });
+
   it("forces inApp true for lockedInApp events", async () => {
     await post({
       "meeting.invite:present": "1",

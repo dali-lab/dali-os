@@ -130,6 +130,26 @@ describe("notify", () => {
     );
   });
 
+  it("forces in-app when a digest is selected — digests are built from in-app rows", async () => {
+    mockPrisma.user.findMany.mockResolvedValue([user("u1")]);
+    mockPrisma.notificationPreference.findMany.mockResolvedValue([
+      {
+        userId: "u1",
+        eventType: "education.discussion",
+        inApp: false, // opted out of the bell…
+        slackDm: false,
+        digestFrequency: "Daily", // …but subscribed to the digest
+      },
+    ]);
+    const res = await notify({
+      eventType: "education.discussion",
+      message: { title: "T" },
+      recipients: [{ userId: "u1" }],
+    });
+    expect(res.inApp).toBe(1); // row exists for the digest to pick up
+    expect(mockSendEmail).not.toHaveBeenCalled(); // Daily ≠ Instant
+  });
+
   it("forces in-app for lockedInApp events despite an opt-out row", async () => {
     mockPrisma.user.findMany.mockResolvedValue([user("u1")]);
     mockPrisma.notificationPreference.findMany.mockResolvedValue([

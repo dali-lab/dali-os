@@ -130,13 +130,17 @@ export async function notify(args: {
     const user = userById.get(userId);
     if (!user) continue; // stale id — nothing sensible to deliver
     const pref = prefByUser.get(userId);
+    const email = def.externalEmail ? "Off" : (pref?.digestFrequency ?? def.defaults.email);
+    // A digest subscription implies the in-app row: digests are built from
+    // unread Notification rows, so "in-app off + daily digest" would
+    // otherwise deliver nothing at all.
+    const digestSelected = email === "Daily" || email === "Weekly";
     resolved.push({
       recipient,
       user,
-      inApp: def.lockedInApp ? true : (pref?.inApp ?? def.defaults.inApp),
-      instantEmail: def.externalEmail
-        ? false
-        : (pref?.digestFrequency ?? def.defaults.email) === "Instant",
+      inApp:
+        def.lockedInApp || digestSelected ? true : (pref?.inApp ?? def.defaults.inApp),
+      instantEmail: email === "Instant",
       slackDm: pref?.slackDm ?? def.defaults.slackDm,
     });
   }
