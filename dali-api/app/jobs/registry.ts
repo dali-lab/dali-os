@@ -23,6 +23,7 @@ export type JobDefinition = {
 
 import { runTaskDueReminders } from "~/jobs/task-due-reminders.server";
 import { runMeetingReminders } from "~/jobs/meeting-reminders.server";
+import { runScheduledAnnouncements } from "~/jobs/scheduled-announcements.server";
 
 export const JOBS: JobDefinition[] = [
   {
@@ -38,6 +39,12 @@ export const JOBS: JobDefinition[] = [
       "Reminds organizer and participants 15 minutes before a meeting occurrence starts.",
     intervalMinutes: 5,
     handler: runMeetingReminders,
+  },
+  {
+    name: "scheduled-announcements",
+    description: "Sends announcements composed with a future send time.",
+    intervalMinutes: 1,
+    handler: runScheduledAnnouncements,
   },
 ];
 

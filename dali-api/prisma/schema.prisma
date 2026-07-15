@@ -152,6 +152,7 @@ model User {
   // ─── Phase 1: notification back-relations ─────────────────────────────────
   notificationPreferences NotificationPreference[]
   taskReminders           TaskReminder[]
+  scheduledAnnouncements  ScheduledAnnouncement[]
 
   // ─── Phase 1: partner back-relation (single per User) ─────────────────────
   partnerUser PartnerUser?
@@ -3261,6 +3262,41 @@ model ScheduledJob {
 enum JobRunStatus {
   Success
   Error
+}
+
+// A composed announcement waiting for its send time. Payload + audience
+// mirror the /api/notifications/send schema; the scheduled-announcements job
+// fires due rows through the same shared fan-out (app/lib/announcements.server).
+// sentAt doubles as the CAS claim column — set BEFORE fan-out so a failure
+// can never double-send a lab-wide blast (drops beat dupes here); errors land
+// in lastError for the composer's scheduled list.
+model ScheduledAnnouncement {
+  id              String @id @default(cuid())
+  createdByUserId String
+  createdBy       User   @relation(fields: [createdByUserId], references: [id])
+
+  title  String
+  body   String?
+  link   String?
+  kind   NotificationKind @default(General)
+  isTodo Boolean          @default(false)
+  dueAt  DateTime?
+  // Deliberately not an FK: the payload is a deferred request, re-validated
+  // at fire time — deleting a form must not cascade the pending announcement.
+  formId String?
+
+  allMembers Boolean  @default(false)
+  groupIds   String[] @default([])
+  userIds    String[] @default([])
+
+  sendAt     DateTime
+  sentAt     DateTime?
+  sentCount  Int?
+  lastError  String?
+  canceledAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([sentAt, sendAt])
 }
 
 // ─── Partner portal ──────────────────────────────────────────────────────────
