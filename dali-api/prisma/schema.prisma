@@ -1244,6 +1244,9 @@ enum NotificationType {
   InterviewCancelledApplicant
   InterviewCancelledInterviewer
   InterviewLocationChanged
+  // Scheduled 24h/1h reminders fired by the interview-reminders job.
+  InterviewReminderApplicant
+  InterviewReminderInterviewer
 }
 
 model CycleNotificationEmail {

@@ -111,11 +111,10 @@ async function renderFromBinding(
 
 // ─── Public API ─────────────────────────────────────────────────────────────
 
-// Reminder emails for the interview-reminders job. Fixed copy rather than a
-// per-cycle binding: a reminder only restates logistics the invite already
-// carried, so there's nothing cycle-specific to edit. No ICS — recipients
-// already hold the calendar event from the invite. Returns the number of
-// emails actually sent.
+// Reminder emails for the interview-reminders job. Same per-cycle
+// CycleNotificationEmail binding flow as every other hiring email — no
+// binding = no email for that audience. No ICS — recipients already hold
+// the calendar event from the invite. Returns the number of emails sent.
 export async function sendInterviewReminderEmails(interviewId: string): Promise<number> {
   try {
     const refreshToken = await getApplicationsGmailRefreshToken();
@@ -130,43 +129,50 @@ export async function sendInterviewReminderEmails(interviewId: string): Promise<
       where: { id: interview.domainApplicationId },
       include: { challengeVersion: { include: { domain: { select: { name: true } } } } },
     });
-    const domainName = da?.challengeVersion?.domain?.name ?? "DALI Lab";
-    const time = formatTime(interview.startTime);
-    const location = formatLocation(interview.location, interview.zoomJoinUrl);
+    const baseVars: Omit<InterpolationVars, "firstName"> = {
+      domain: da?.challengeVersion?.domain?.name ?? "DALI Lab",
+      time: formatTime(interview.startTime),
+      location: formatLocation(interview.location, interview.zoomJoinUrl),
+      meetingUrl: interview.zoomJoinUrl ?? undefined,
+    };
 
     const applicant = await getApplicantRecipient(interview.domainApplicationId);
     const interviewers = await getInterviewerRecipients(interviewId);
 
-    const html = (firstName: string, role: "applicant" | "interviewer") =>
-      [
-        `<p>Hi ${firstName},</p>`,
-        role === "applicant"
-          ? `<p>This is a reminder about your upcoming DALI Lab interview (${domainName}).</p>`
-          : `<p>This is a reminder about an interview you're conducting (${domainName}).</p>`,
-        `<p><strong>${time}</strong><br/>${location}</p>`,
-        `<p>— DALI Lab</p>`,
-      ].join("\n");
-
     const sends: Promise<unknown>[] = [];
     if (applicant) {
-      sends.push(
-        sendEmail({
-          refreshToken,
-          to: applicant.email,
-          subject: `Reminder: DALI interview — ${time}`,
-          html: html(applicant.firstName, "applicant"),
-        }),
+      const rendered = await renderFromBinding(
+        interview.applicationCycleId,
+        "InterviewReminderApplicant",
+        { firstName: applicant.firstName, ...baseVars },
       );
+      if (rendered) {
+        sends.push(
+          sendEmail({
+            refreshToken,
+            to: applicant.email,
+            subject: rendered.subject,
+            html: rendered.html,
+          }),
+        );
+      }
     }
     for (const interviewer of interviewers) {
-      sends.push(
-        sendEmail({
-          refreshToken,
-          to: interviewer.email,
-          subject: `Reminder: DALI interview — ${time}`,
-          html: html(interviewer.firstName, "interviewer"),
-        }),
+      const rendered = await renderFromBinding(
+        interview.applicationCycleId,
+        "InterviewReminderInterviewer",
+        { firstName: interviewer.firstName, ...baseVars },
       );
+      if (rendered) {
+        sends.push(
+          sendEmail({
+            refreshToken,
+            to: interviewer.email,
+            subject: rendered.subject,
+            html: rendered.html,
+          }),
+        );
+      }
     }
     const results = await Promise.allSettled(sends);
     return results.filter((r) => r.status === "fulfilled").length;

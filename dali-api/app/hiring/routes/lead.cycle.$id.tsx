@@ -690,7 +690,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (intent === "set-notification-email") {
     const notificationType = formData.get("notificationType") as string;
     const emailTemplateVersionId = (formData.get("emailTemplateVersionId") as string) || null;
-    const validTypes = ["ApplicationReceived", "ApplicationExtensionNotice", "InterviewInviteMentor", "InterviewInviteReminder", "InterviewConfirmedApplicant", "InterviewCancelledApplicant", "InterviewCancelledInterviewer", "InterviewLocationChanged"] as const;
+    const validTypes = ["ApplicationReceived", "ApplicationExtensionNotice", "InterviewInviteMentor", "InterviewInviteReminder", "InterviewConfirmedApplicant", "InterviewCancelledApplicant", "InterviewCancelledInterviewer", "InterviewLocationChanged", "InterviewReminderApplicant", "InterviewReminderInterviewer"] as const;
     if (!validTypes.includes(notificationType as (typeof validTypes)[number])) {
       return new Response(JSON.stringify({ error: "Invalid notification type" }), { status: 400, headers: { "Content-Type": "application/json" } });
     }
@@ -4703,6 +4703,8 @@ const NOTIFICATION_EMAIL_SLOTS: ReadonlyArray<{ type: NotificationSlotType; labe
   { type: "InterviewCancelledApplicant", label: "Interview Cancelled (Applicant)", description: "Sent to the applicant when their interview is cancelled." },
   { type: "InterviewCancelledInterviewer", label: "Interview Cancelled (Interviewer)", description: "Sent to the interviewer when an interview is cancelled or they are unassigned." },
   { type: "InterviewLocationChanged", label: "Interview Location Changed", description: "Sent to both the applicant and interviewer(s) when the interview location is updated." },
+  { type: "InterviewReminderApplicant", label: "Interview Reminder (Applicant)", description: "Sent automatically 24 hours and 1 hour before a scheduled interview. No binding = no reminder email." },
+  { type: "InterviewReminderInterviewer", label: "Interview Reminder (Interviewer)", description: "Sent automatically to the interviewer(s) 24 hours and 1 hour before a scheduled interview. No binding = no reminder email." },
 ];
 
 function NotificationEmailsSection({ emailTemplates, currentNotificationEmails }: {
