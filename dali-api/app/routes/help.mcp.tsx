@@ -104,6 +104,8 @@ export default function McpHelpPage({ loaderData }: Route.ComponentProps) {
           <li><code className="font-mono">list_my_notifications</code> — inbox</li>
           <li><code className="font-mono">mark_notification_read</code> — clear one</li>
           <li><code className="font-mono">rsvp_to_notification</code> — accept/decline an invite</li>
+          <li><code className="font-mono">list_notification_preferences</code> — your channel settings</li>
+          <li><code className="font-mono">set_notification_preference</code> — change one event's channels</li>
           <li><code className="font-mono">list_my_upcoming_meetings</code> — next N days</li>
           <li><code className="font-mono">list_my_calendar_links</code> — Google calendars</li>
           <li><code className="font-mono">find_mutual_freebusy</code> — group availability</li>

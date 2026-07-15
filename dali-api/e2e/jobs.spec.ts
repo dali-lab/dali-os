@@ -26,6 +26,11 @@ test.describe("admin jobs panel", () => {
       "session-feedback-sweep",
       "notification-digest-daily",
       "notification-digest-weekly",
+      "interview-reminders",
+      "form-windows",
+      "sprint-lifecycle",
+      "standup-prompts",
+      "retention-janitor",
     ]) {
       await expect(frame.getByText(name, { exact: true })).toBeVisible();
     }

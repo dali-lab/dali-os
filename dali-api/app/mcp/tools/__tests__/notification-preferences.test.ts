@@ -45,7 +45,8 @@ describe("list_notification_preferences", () => {
     const out = await runListNotificationPreferences("u1");
     const byType = new Map(out.preferences.map((p) => [p.eventType, p]));
 
-    expect(byType.has("general")).toBe(false); // hidden backfill value
+    // Hidden backfill value never appears.
+    expect(out.preferences.some((p) => (p.eventType as string) === "general")).toBe(false);
     const assigned = byType.get("task.assigned")!;
     expect(assigned).toMatchObject({
       inApp: false,
