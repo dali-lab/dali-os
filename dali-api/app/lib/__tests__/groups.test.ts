@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 
 // groups.ts pulls in ~/lib/db at import time, which loads the generated Prisma
 // client — absent in CI before `prisma generate`. isGroupArchived is pure and
@@ -6,7 +6,13 @@ import { describe, it, expect, vi } from "vitest";
 // real client (matches every other db-touching suite).
 vi.mock("~/lib/db");
 
-import { isGroupArchived } from "../groups";
+import { prisma } from "~/lib/db";
+import { isGroupArchived, isUserInAnyGroup } from "../groups";
+
+const mockPrisma = prisma as unknown as Record<
+  string,
+  Record<string, ReturnType<typeof vi.fn>>
+>;
 
 const NOW = new Date("2026-05-24T00:00:00Z");
 
@@ -56,5 +62,48 @@ describe("isGroupArchived", () => {
     expect(
       isGroupArchived({ archivedAt: null, boundTermIds: ["gone", "26W"] }, termEnds, NOW),
     ).toBe(true);
+  });
+});
+
+describe("isUserInAnyGroup", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns false for an empty id list without querying", async () => {
+    expect(await isUserInAnyGroup("user-1", [])).toBe(false);
+    expect(mockPrisma.groupDefinition.findMany).not.toHaveBeenCalled();
+  });
+
+  it("hits a static membership without resolving any dynamic group", async () => {
+    mockPrisma.groupDefinition.findMany.mockResolvedValue([
+      { type: "Dynamic", dynamicQuery: "domain:d1", staticMemberIds: [] },
+      { type: "Static", dynamicQuery: null, staticMemberIds: ["user-1"] },
+    ]);
+
+    expect(await isUserInAnyGroup("user-1", ["g1", "g2"])).toBe(true);
+    // Static pass short-circuits: the domain resolver never runs.
+    expect(mockPrisma.domainEligibility.findMany).not.toHaveBeenCalled();
+  });
+
+  it("resolves dynamic groups when no static group matches", async () => {
+    mockPrisma.groupDefinition.findMany.mockResolvedValue([
+      { type: "Dynamic", dynamicQuery: "domain:d1", staticMemberIds: [] },
+    ]);
+    mockPrisma.domainEligibility.findMany.mockResolvedValue([
+      { userId: "user-1" },
+    ]);
+
+    expect(await isUserInAnyGroup("user-1", ["g1"])).toBe(true);
+  });
+
+  it("returns false when no group admits the user", async () => {
+    mockPrisma.groupDefinition.findMany.mockResolvedValue([
+      { type: "Static", dynamicQuery: null, staticMemberIds: ["someone-else"] },
+      { type: "Dynamic", dynamicQuery: "domain:d1", staticMemberIds: [] },
+    ]);
+    mockPrisma.domainEligibility.findMany.mockResolvedValue([]);
+
+    expect(await isUserInAnyGroup("user-1", ["g1", "g2"])).toBe(false);
   });
 });

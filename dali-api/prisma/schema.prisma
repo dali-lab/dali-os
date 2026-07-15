@@ -2731,6 +2731,17 @@ model FormFolder {
   @@index([createdById])
 }
 
+// Who may fill a published form via its link. Members = signed-in lab
+// members (the historical behavior and default); SignedIn = any account
+// (member, Dartmouth student, partner); Groups = signed-in users in at least
+// one of the form's audienceGroupIds; Public = no account required.
+enum FormAudience {
+  Members
+  SignedIn
+  Groups
+  Public
+}
+
 model Form {
   id        String   @id @default(cuid())
   name      String
@@ -2750,6 +2761,25 @@ model Form {
   // publish and reused so a published link stays stable across re-publishes.
   published   Boolean @default(false)
   publicToken String? @unique
+
+  // Per-form response settings (Forms editor "Settings" card).
+  // oneResponsePerMember: an authenticated member's ORDINARY fill (not
+  // staffing-slot-bound, not education-scoped) is accepted at most once.
+  // notifyOnSubmission: each submission creates an in-app Notification for
+  // createdById (best-effort, after the submission transaction commits).
+  oneResponsePerMember Boolean @default(false)
+  notifyOnSubmission   Boolean @default(false)
+
+  // Who may fill the form via its public link. `audienceGroupIds` is only
+  // meaningful when audience == Groups (GroupDefinition ids; array rather
+  // than a join table, matching GroupDefinition.staticMemberIds, so groups
+  // stay independently deletable — a dangling id simply admits nobody).
+  audience         FormAudience @default(Members)
+  audienceGroupIds String[]     @default([])
+
+  // Opt-in discovery: listed forms appear in "Forms for you" (Home) for
+  // people the audience admits. Unlisted forms stay reachable by link only.
+  listed Boolean @default(false)
 
   // Editable working copy. "Save" writes here; the draft is mutable and is
   // NEVER served to fillers. "Save as version" freezes the draft into an
@@ -2821,6 +2851,9 @@ model FormSubmission {
   // Captured only for public submissions; null for internal ones.
   submitterName  String?
   submitterEmail String?
+  // Client IP of an anonymous (userId-less) fill, for abuse tracing. Never
+  // set on authenticated submissions.
+  submitterIp    String?
 
   // Staffing context, set only when this submission was filled through a
   // staffing-cycle slot binding (e.g. the "project-bids" slot). Null for

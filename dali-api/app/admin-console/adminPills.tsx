@@ -13,7 +13,8 @@ export function adminPills(args: {
     | "announcements"
     | "activity"
     | "analytics"
-    | "payroll";
+    | "payroll"
+    | "payroll-reconcile";
 }): AreaPill[] {
   return [
     { label: "Hub", to: "/admin-console", active: args.active === "hub" },
@@ -41,9 +42,14 @@ export function adminPills(args: {
             active: args.active === "analytics",
           },
           {
-            label: "Payroll Export",
+            label: "Payroll: Hire Setup",
             to: "/admin-console/payroll-export",
             active: args.active === "payroll",
+          },
+          {
+            label: "Payroll: Reconcile",
+            to: "/admin-console/payroll",
+            active: args.active === "payroll-reconcile",
           },
         ]
       : []),

@@ -51,8 +51,14 @@ export default function AdminHub() {
           },
           {
             to: "/admin-console/payroll-export",
-            title: "Payroll Export",
+            title: "Payroll: Hire Setup",
             description: "Generate the per-term payroll export.",
+          },
+          {
+            to: "/admin-console/payroll",
+            title: "Payroll: Reconcile",
+            description:
+              "Reconcile TimesheetX actuals against DALI OS staffing.",
           },
         ]
       : []),

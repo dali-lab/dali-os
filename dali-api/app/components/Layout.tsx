@@ -164,10 +164,15 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
 
   const isEntryActive = (entry: NavEntry) => path.startsWith(entry.to)
   // Label for a workspace tab seeded by direct navigation (deep link) — the
-  // entry whose prefix owns the current path, or My Tasks for /notifications.
+  // entry whose prefix owns the current path, or the footer surfaces
+  // (My Tasks / Settings / Help) that have no nav entry.
   const initialTabLabel = path.startsWith('/notifications')
     ? 'My Tasks'
-    : navEntries.find(isEntryActive)?.label
+    : path.startsWith('/settings')
+      ? 'Settings'
+      : path.startsWith('/help')
+        ? 'Help'
+        : navEntries.find(isEntryActive)?.label
 
   const initials = userInitials(user)
   const openTasks = useOpenTasks()
