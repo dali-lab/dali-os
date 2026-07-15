@@ -75,6 +75,7 @@ import { runRetentionJanitor } from "~/jobs/retention-janitor.server";
 import { runSprintLifecycle } from "~/jobs/sprint-lifecycle.server";
 import { runFormWindows } from "~/jobs/form-windows.server";
 import { runInterviewReminders } from "~/jobs/interview-reminders.server";
+import { runStandupPrompts } from "~/jobs/standup-prompts.server";
 
 export const JOBS: JobDefinition[] = [
   {
@@ -195,6 +196,23 @@ export const JOBS: JobDefinition[] = [
       "Closes Active sprints past their end date, rolls unfinished tasks to the next Planned sprint (else the backlog), and posts a summary to the project's Slack channel.",
     intervalMinutes: 60,
     handler: runSprintLifecycle,
+  },
+  {
+    name: "standup-prompts",
+    description:
+      "Posts a weekday standup prompt to each Active project's Slack channel.",
+    intervalMinutes: 15,
+    settings: [
+      {
+        key: "sendHourEt",
+        label: "Post hour (ET, 0–23)",
+        unit: "h",
+        min: 0,
+        max: 23,
+        default: 10,
+      },
+    ],
+    handler: runStandupPrompts,
   },
   {
     name: "retention-janitor",

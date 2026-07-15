@@ -38,7 +38,8 @@ const WEEKDAY_INDEX: Record<string, number> = {
   Sat: 6,
 };
 
-function weekdayInZone(date: Date): number {
+// Exported for jobs that gate on the ET weekday (standup prompts).
+export function weekdayInZone(date: Date): number {
   const name = new Intl.DateTimeFormat("en-US", {
     timeZone: APPLICATION_TZ,
     weekday: "short",
