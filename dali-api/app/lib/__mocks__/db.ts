@@ -106,6 +106,7 @@ export const prisma = {
   },
   notificationPreference: {
     findMany: vi.fn().mockResolvedValue([]),
+    findUnique: vi.fn(),
     upsert: vi.fn(),
   },
   scheduledAnnouncement: {
