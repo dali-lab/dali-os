@@ -24,6 +24,7 @@ export type JobDefinition = {
 import { runTaskDueReminders } from "~/jobs/task-due-reminders.server";
 import { runMeetingReminders } from "~/jobs/meeting-reminders.server";
 import { runScheduledAnnouncements } from "~/jobs/scheduled-announcements.server";
+import { runSessionFeedbackSweep } from "~/jobs/session-feedback-sweep.server";
 
 export const JOBS: JobDefinition[] = [
   {
@@ -45,6 +46,13 @@ export const JOBS: JobDefinition[] = [
     description: "Sends announcements composed with a future send time.",
     intervalMinutes: 1,
     handler: runScheduledAnnouncements,
+  },
+  {
+    name: "session-feedback-sweep",
+    description:
+      "Requests session feedback once an education session ends, even when attendance was never marked.",
+    intervalMinutes: 60,
+    handler: runSessionFeedbackSweep,
   },
 ];
 
