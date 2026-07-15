@@ -43,7 +43,64 @@ describe("cancelScheduledMeeting", () => {
     expect(call.message.title).toBe("Meeting cancelled: Sprint sync");
     // Not stamped: surfaces hide rows whose meeting is Cancelled.
     expect(call.message.scheduledMeetingId).toBeUndefined();
-    expect(call.recipients).toEqual([{ userId: "u2" }, { userId: "u3" }]);
+    expect(call.recipients).toEqual([
+      { userId: "u2", ics: null },
+      { userId: "u3", ics: null },
+    ]);
+  });
+
+  it("attaches a per-recipient CANCEL ics when the invite ICS was ours", async () => {
+    mockPrisma.scheduledMeeting.findUnique.mockResolvedValue({
+      id: "m1",
+      organizerId: "org-1",
+      status: "Confirmed",
+      title: "Sprint sync",
+      participantUserIds: ["u2"],
+      selectedAt: new Date("2026-07-20T15:00:00Z"),
+      durationMinutes: 30,
+      recurrenceRule: null,
+      ownerCalendarEmail: "org@dali.dartmouth.edu",
+      externalEventId: null,
+    });
+    mockPrisma.scheduledMeeting.update.mockResolvedValue({});
+    (
+      prisma as unknown as { user: { findMany: ReturnType<typeof vi.fn> } }
+    ).user.findMany.mockResolvedValue([
+      {
+        id: "u2",
+        firstName: "Ada",
+        lastName: "L",
+        daliEmail: "ada@dali.dartmouth.edu",
+        dartmouthEmail: null,
+      },
+    ]);
+
+    await cancelScheduledMeeting("m1", "org-1");
+
+    const recipient = mockNotify.mock.calls[0][0].recipients[0];
+    expect(recipient.userId).toBe("u2");
+    expect(recipient.ics).toContain("METHOD:CANCEL");
+    expect(recipient.ics).toContain("UID:meeting-m1@dali.dartmouth.edu");
+  });
+
+  it("skips the CANCEL ics for Google-managed meetings", async () => {
+    mockPrisma.scheduledMeeting.findUnique.mockResolvedValue({
+      id: "m1",
+      organizerId: "org-1",
+      status: "Confirmed",
+      title: "Sprint sync",
+      participantUserIds: ["u2"],
+      selectedAt: new Date("2026-07-20T15:00:00Z"),
+      durationMinutes: 30,
+      recurrenceRule: null,
+      ownerCalendarEmail: "org@dali.dartmouth.edu",
+      externalEventId: "gcal-123",
+    });
+    mockPrisma.scheduledMeeting.update.mockResolvedValue({});
+
+    await cancelScheduledMeeting("m1", "org-1");
+
+    expect(mockNotify.mock.calls[0][0].recipients[0].ics).toBeNull();
   });
 
   it("still cancels when the notify fan-out fails", async () => {

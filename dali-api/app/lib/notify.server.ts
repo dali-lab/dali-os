@@ -30,6 +30,9 @@ export type NotifyMessage = {
   interviewAssignmentId?: string | null;
   sourceGroupId?: string | null;
   kind?: NotificationKind; // rare override of the registry kind
+  // RFC 5545 payload attached on the instant-email channel only (calendar
+  // invite/cancel). Never persisted — the Notification row doesn't carry it.
+  ics?: string | null;
 };
 
 export type NotifyRecipient = { userId: string } & Partial<NotifyMessage>;
@@ -145,6 +148,8 @@ export async function notify(args: {
     });
   }
 
+  // Everything merged() returns is written to the Notification row — channel
+  // extras (ics) resolve separately.
   const merged = (r: NotifyRecipient) => ({
     title: r.title ?? args.message.title,
     body: r.body ?? args.message.body ?? null,
@@ -157,6 +162,7 @@ export async function notify(args: {
     sourceGroupId: r.sourceGroupId ?? args.message.sourceGroupId ?? null,
     kind: r.kind ?? args.message.kind ?? def.kind,
   });
+  const icsFor = (r: NotifyRecipient) => r.ics ?? args.message.ics ?? null;
 
   // In-app: one bulk insert. May throw — that's the caller's existing
   // error-handling seam.
@@ -202,6 +208,7 @@ export async function notify(args: {
               body: m.body,
               link: absoluteLink(m.link),
             }),
+            ics: icsFor(r.recipient) ?? undefined,
           });
           emailed++;
           const rowId = rowIdByUser.get(r.user.id);

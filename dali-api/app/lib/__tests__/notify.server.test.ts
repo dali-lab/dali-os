@@ -319,4 +319,32 @@ describe("notify", () => {
     });
     expect(res.slackDmed).toBe(1);
   });
+
+  it("passes per-recipient ics to sendEmail but keeps it off the row insert", async () => {
+    mockPrisma.user.findMany.mockResolvedValue([user("u1")]);
+    mockPrisma.notificationPreference.findMany.mockResolvedValue([
+      {
+        userId: "u1",
+        eventType: "meeting.invite",
+        inApp: true,
+        slackDm: false,
+        digestFrequency: "Instant",
+      },
+    ]);
+
+    const res = await notify({
+      eventType: "meeting.invite",
+      message: { title: "Meeting invite: Sync" },
+      recipients: [{ userId: "u1", ics: "BEGIN:VCALENDAR\r\nEND:VCALENDAR" }],
+    });
+
+    expect(res.emailed).toBe(1);
+    expect(mockSendEmail).toHaveBeenCalledTimes(1);
+    expect(mockSendEmail.mock.calls[0][0].ics).toBe(
+      "BEGIN:VCALENDAR\r\nEND:VCALENDAR",
+    );
+    const inserted =
+      mockPrisma.notification.createManyAndReturn.mock.calls[0][0].data[0];
+    expect("ics" in inserted).toBe(false);
+  });
 });

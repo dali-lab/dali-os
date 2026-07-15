@@ -46,30 +46,62 @@ function attendeeLine(att: IcsAttendee): string {
   return `ATTENDEE${cn};RSVP=TRUE;PARTSTAT=NEEDS-ACTION;ROLE=REQ-PARTICIPANT:mailto:${att.email}`;
 }
 
-export function buildInviteIcs(params: IcsEventParams): string {
-  const { interviewId, summary, startTime, endTime, location, meetingUrl, description, organizer, attendees, sequence } = params;
+// Generic builder — the interview wrappers below and the scheduled-meeting
+// email enrichment (app/lib/scheduled-meeting.ts) share it. UID is the
+// caller's: it's what lets receiving calendars match a CANCEL to the
+// original REQUEST.
+export interface IcsBuildParams {
+  uid: string;
+  method: "REQUEST" | "CANCEL";
+  summary: string;
+  startTime: Date;
+  endTime: Date;
+  location?: string | null;
+  meetingUrl?: string | null;
+  description?: string;
+  organizer: IcsAttendee;
+  attendees: IcsAttendee[];
+  sequence: number;
+  // RFC 5545 RRULE, with or without the "RRULE:" prefix (normalized like
+  // google-calendar.ts does).
+  recurrenceRule?: string | null;
+}
 
-  const locationLine = meetingUrl ? `${location} — ${meetingUrl}` : location;
-  const descLines = [description, meetingUrl ? `Join: ${meetingUrl}` : null].filter(Boolean).join("\\n");
+export function buildIcs(p: IcsBuildParams): string {
+  const cancel = p.method === "CANCEL";
+  const locationLine = p.location
+    ? p.meetingUrl
+      ? `${p.location} — ${p.meetingUrl}`
+      : p.location
+    : null;
+  const descLines = [p.description, p.meetingUrl ? `Join: ${p.meetingUrl}` : null]
+    .filter(Boolean)
+    .join("\\n");
+  const rrule = p.recurrenceRule
+    ? p.recurrenceRule.startsWith("RRULE:")
+      ? p.recurrenceRule
+      : `RRULE:${p.recurrenceRule}`
+    : null;
 
   const lines = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
     "PRODID:-//DALI Lab//DALI OS//EN",
     "CALSCALE:GREGORIAN",
-    "METHOD:REQUEST",
+    `METHOD:${p.method}`,
     "BEGIN:VEVENT",
-    `UID:${uid(interviewId)}`,
+    `UID:${p.uid}`,
     `DTSTAMP:${formatIcsDate(new Date())}`,
-    `DTSTART:${formatIcsDate(startTime)}`,
-    `DTEND:${formatIcsDate(endTime)}`,
-    `SUMMARY:${escapeIcsText(summary)}`,
-    `LOCATION:${escapeIcsText(locationLine)}`,
-    ...(descLines ? [`DESCRIPTION:${escapeIcsText(descLines)}`] : []),
-    organizerLine(organizer),
-    ...attendees.map(attendeeLine),
-    `SEQUENCE:${sequence}`,
-    "STATUS:CONFIRMED",
+    `DTSTART:${formatIcsDate(p.startTime)}`,
+    `DTEND:${formatIcsDate(p.endTime)}`,
+    ...(rrule ? [rrule] : []),
+    `SUMMARY:${escapeIcsText(p.summary)}`,
+    ...(locationLine && !cancel ? [`LOCATION:${escapeIcsText(locationLine)}`] : []),
+    ...(descLines && !cancel ? [`DESCRIPTION:${escapeIcsText(descLines)}`] : []),
+    organizerLine(p.organizer),
+    ...p.attendees.map(attendeeLine),
+    `SEQUENCE:${p.sequence}`,
+    cancel ? "STATUS:CANCELLED" : "STATUS:CONFIRMED",
     "END:VEVENT",
     "END:VCALENDAR",
   ];
@@ -77,30 +109,33 @@ export function buildInviteIcs(params: IcsEventParams): string {
   return lines.join("\r\n");
 }
 
+export function buildInviteIcs(params: IcsEventParams): string {
+  return buildIcs({
+    uid: uid(params.interviewId),
+    method: "REQUEST",
+    summary: params.summary,
+    startTime: params.startTime,
+    endTime: params.endTime,
+    location: params.location,
+    meetingUrl: params.meetingUrl,
+    description: params.description,
+    organizer: params.organizer,
+    attendees: params.attendees,
+    sequence: params.sequence,
+  });
+}
+
 export function buildCancelIcs(
   params: Pick<IcsEventParams, "interviewId" | "summary" | "startTime" | "endTime" | "organizer" | "attendees" | "sequence">,
 ): string {
-  const { interviewId, summary, startTime, endTime, organizer, attendees, sequence } = params;
-
-  const lines = [
-    "BEGIN:VCALENDAR",
-    "VERSION:2.0",
-    "PRODID:-//DALI Lab//DALI OS//EN",
-    "CALSCALE:GREGORIAN",
-    "METHOD:CANCEL",
-    "BEGIN:VEVENT",
-    `UID:${uid(interviewId)}`,
-    `DTSTAMP:${formatIcsDate(new Date())}`,
-    `DTSTART:${formatIcsDate(startTime)}`,
-    `DTEND:${formatIcsDate(endTime)}`,
-    `SUMMARY:${escapeIcsText(summary)}`,
-    organizerLine(organizer),
-    ...attendees.map(attendeeLine),
-    `SEQUENCE:${sequence}`,
-    "STATUS:CANCELLED",
-    "END:VEVENT",
-    "END:VCALENDAR",
-  ];
-
-  return lines.join("\r\n");
+  return buildIcs({
+    uid: uid(params.interviewId),
+    method: "CANCEL",
+    summary: params.summary,
+    startTime: params.startTime,
+    endTime: params.endTime,
+    organizer: params.organizer,
+    attendees: params.attendees,
+    sequence: params.sequence,
+  });
 }
