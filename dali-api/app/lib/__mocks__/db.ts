@@ -43,6 +43,9 @@ export const prisma = {
     update: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
   },
+  interviewReminderLog: {
+    create: vi.fn(),
+  },
   application: {
     findUnique: vi.fn(),
   },

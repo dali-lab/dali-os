@@ -74,6 +74,7 @@ import { runDailyDigest, runWeeklyDigest } from "~/lib/notification-digest.serve
 import { runRetentionJanitor } from "~/jobs/retention-janitor.server";
 import { runSprintLifecycle } from "~/jobs/sprint-lifecycle.server";
 import { runFormWindows } from "~/jobs/form-windows.server";
+import { runInterviewReminders } from "~/jobs/interview-reminders.server";
 
 export const JOBS: JobDefinition[] = [
   {
@@ -173,6 +174,13 @@ export const JOBS: JobDefinition[] = [
       },
     ],
     handler: runWeeklyDigest,
+  },
+  {
+    name: "interview-reminders",
+    description:
+      "Emails applicant and interviewers 24 hours and 1 hour before a scheduled interview.",
+    intervalMinutes: 5,
+    handler: runInterviewReminders,
   },
   {
     name: "form-windows",

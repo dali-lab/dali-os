@@ -660,10 +660,29 @@ model Interview {
   // new ICS as a duplicate of the previous publish.
   icsSequence Int @default(0)
 
-  assignments InterviewAssignment[]
+  assignments  InterviewAssignment[]
+  reminderLogs InterviewReminderLog[]
 
   @@index([applicationCycleId, startTime])
   @@index([domainApplicationId, status])
+}
+
+// Dedup ledger for the interview-reminders job: one row per (interview, lead
+// tier), claimed before sending — same pattern as MeetingReminderLog.
+model InterviewReminderLog {
+  id          String                @id @default(cuid())
+  interviewId String
+  kind        InterviewReminderKind
+  sentAt      DateTime              @default(now())
+
+  interview Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+
+  @@unique([interviewId, kind])
+}
+
+enum InterviewReminderKind {
+  DayBefore
+  HourBefore
 }
 
 enum AssignmentRole {
