@@ -50,6 +50,7 @@ export default [
     route("admin-console/announcements", "admin-console/routes/admin-console.announcements.tsx"),
     route("admin-console/activity", "admin-console/routes/admin-console.activity.tsx"),
     route("admin-console/analytics", "admin-console/routes/admin-console.analytics.tsx"),
+    route("admin-console/jobs", "admin-console/routes/admin-console.jobs.tsx"),
     route("admin-console/payroll-export", "admin-console/routes/admin-console.payroll-export.tsx"),
     route("admin-console/payroll", "admin-console/routes/admin-console.payroll.tsx"),
 
@@ -268,6 +269,11 @@ export default [
   route("api/notifications/send", "admin-console/routes/api.notifications.send.ts"),
   route("api/notifications/:id/read", "routes/api.notifications.$id.read.ts"),
   route("api/notifications/:id/rsvp", "routes/api.notifications.$id.rsvp.ts"),
+
+  // Background jobs: admin controls + the manual tick trigger (secret header
+  // or admin session; the in-process 60s interval is the primary driver).
+  route("api/jobs/:name", "admin-console/routes/api.jobs.$name.ts"),
+  route("internal/jobs/tick", "jobs/routes/internal.jobs.tick.ts"),
 
   // Scheduled meetings
   route("api/scheduled-meetings", "calendar/routes/api.scheduled-meetings.ts"),

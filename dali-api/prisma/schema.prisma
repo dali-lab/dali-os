@@ -3184,6 +3184,37 @@ enum DigestFreq {
   Off
 }
 
+// ─── Background jobs ─────────────────────────────────────────────────────────
+//
+// Bookkeeping row per registered background job (registry: app/jobs/registry.ts).
+// Rows self-heal from the registry on every tick — the dev DB is wiped and
+// staging is restored from prod on each deploy, so nothing here can be assumed
+// to survive. Cross-machine dedup is a lease: a tick claims a job with an
+// atomic CAS UPDATE setting lockedUntil; expiry (not explicit release) is the
+// crash recovery.
+
+model ScheduledJob {
+  name            String        @id // registry key, e.g. "task-due-reminders"
+  enabled         Boolean       @default(true)
+  intervalMinutes Int
+  nextRunAt       DateTime      @default(now())
+  lockedUntil     DateTime?
+  lastRunAt       DateTime?
+  // Set only on successful runs; handlers receive it as their incremental
+  // cursor (the digest jobs gate on it).
+  lastSuccessAt   DateTime?
+  lastStatus      JobRunStatus?
+  lastError       String?
+  lastDurationMs  Int?
+  updatedAt       DateTime      @updatedAt
+  createdAt       DateTime      @default(now())
+}
+
+enum JobRunStatus {
+  Success
+  Error
+}
+
 // ─── Partner portal ──────────────────────────────────────────────────────────
 
 model PartnerOrg {

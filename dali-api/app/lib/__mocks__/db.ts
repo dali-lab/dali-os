@@ -104,6 +104,16 @@ export const prisma = {
     findMany: vi.fn().mockResolvedValue([]),
     upsert: vi.fn(),
   },
+  scheduledJob: {
+    findMany: vi.fn().mockResolvedValue([]),
+    findUnique: vi.fn(),
+    create: vi.fn(),
+    createMany: vi.fn().mockResolvedValue({ count: 0 }),
+    update: vi.fn(),
+    updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+    upsert: vi.fn(),
+    deleteMany: vi.fn(),
+  },
   projectAssignment: {
     findMany: vi.fn().mockResolvedValue([]),
     findFirst: vi.fn(),

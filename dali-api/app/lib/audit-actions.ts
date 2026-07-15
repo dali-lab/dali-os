@@ -33,6 +33,8 @@ export const AUDIT_ACTIONS = [
   "group.create",
   "group.update",
   "group.delete",
+  "jobs.toggle",
+  "jobs.run",
   "staffing.assign",
   "staffing.finalize",
   "staffing.term_channel",

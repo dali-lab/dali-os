@@ -50,6 +50,11 @@ export default function AdminHub() {
             description: "Site usage and error analytics.",
           },
           {
+            to: "/admin-console/jobs",
+            title: "Jobs",
+            description: "Background job status — reminders, digests, scheduled sends.",
+          },
+          {
             to: "/admin-console/payroll-export",
             title: "Payroll: Hire Setup",
             description: "Generate the per-term payroll export.",
