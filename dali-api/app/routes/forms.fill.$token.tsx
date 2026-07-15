@@ -2,7 +2,7 @@ import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/forms.fill.$token";
 import { requireAuth } from "~/lib/auth";
 import { requireMember } from "~/lib/roles";
-import { loadPublicForm } from "~/forms/lib/public-form";
+import { loadPublicForm, ordinaryFillBlock } from "~/forms/lib/public-form";
 import { canFillEducationForm } from "~/education/lib/feedback.server";
 import {
   MemberFormFillView,
@@ -48,13 +48,48 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // domain dropdown limited to the member's own eligibility) populate.
   const form = await loadPublicForm(params.token!, auth.user.sub);
   if (!form) throw new Response("Not found", { status: 404 });
+
+  // One-response gate (Form.oneResponsePerMember): education-context fills
+  // are per-session and exempt; ordinaryFillBlock also exempts slot-bound
+  // forms, mirroring submitMemberForm's 409 gate.
+  const block =
+    !educationSessionId && !educationOfferingId
+      ? await ordinaryFillBlock(form.formId, auth.user.sub)
+      : null;
+
   // loadPublicForm doesn't echo the token back; the submit endpoint is
   // addressed by it, so pass it through explicitly.
-  return { ...form, token: params.token!, educationSessionId, educationOfferingId };
+  return {
+    ...form,
+    token: params.token!,
+    educationSessionId,
+    educationOfferingId,
+    alreadySubmitted: block ? { at: block.at.toISOString() } : null,
+  };
 }
 
 export default function MemberFormFill() {
   const data = useLoaderData<typeof loader>();
+  if (data.alreadySubmitted) {
+    return (
+      <MemberFormShell>
+        <div className="text-center py-10">
+          <h1 className="font-heading text-xl font-bold text-dark-blue">
+            You've already filled out this form
+          </h1>
+          <p className="text-sm text-muted-foreground mt-2">
+            You submitted "{data.name}" on{" "}
+            {new Date(data.alreadySubmitted.at).toLocaleDateString(undefined, {
+              month: "long",
+              day: "numeric",
+              year: "numeric",
+            })}
+            .
+          </p>
+        </div>
+      </MemberFormShell>
+    );
+  }
   return (
     <MemberFormShell>
       <MemberFormFillView

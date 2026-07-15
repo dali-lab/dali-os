@@ -26,6 +26,7 @@ import {
 } from "~/members/lib/profile-form-interpreter";
 import { clearOnboardingTask } from "~/members/lib/welcome.server";
 import { syncSlackUserId } from "~/members/lib/slack-sync.server";
+import { notifyFormSubmission } from "./submission-notify.server";
 
 export type PublicForm = {
   formId: string;
@@ -102,6 +103,42 @@ export async function validateAnswers(
   answers: Record<string, unknown>,
   userId: string,
 ): Promise<{ error: string; status: number } | null> {
+  // Checkbox answers arrive as a JSON-stringified array (the fill UIs keep
+  // string-valued state); parse, validate against the question's options, and
+  // normalize IN PLACE so every caller (member fill, education apply, partner
+  // apply) persists a real string[] in the answers JSON. Runs before the
+  // required pass so a '[]' payload normalizes to [] and is caught as empty.
+  for (const q of questions) {
+    if (q.type !== "checkbox") continue;
+    const raw = answers[q.key];
+    if (raw == null || raw === "") continue; // unanswered — required pass handles it
+    let parsed: unknown = raw;
+    if (typeof raw === "string") {
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        parsed = undefined;
+      }
+    }
+    if (
+      !Array.isArray(parsed) ||
+      !parsed.every((v): v is string => typeof v === "string")
+    ) {
+      return {
+        error: `"${q.data.label}": couldn't read the selected options.`,
+        status: 400,
+      };
+    }
+    const allowed = new Set(q.data.options ?? []);
+    if (parsed.some((v) => !allowed.has(v))) {
+      return {
+        error: `"${q.data.label}": that choice is no longer available.`,
+        status: 400,
+      };
+    }
+    answers[q.key] = [...new Set(parsed)];
+  }
+
   // Enforce required answers. `file` questions can't be completed without an
   // authenticated upload presign, so a required file question makes the form
   // unsubmittable here — say so explicitly instead of rejecting an otherwise
@@ -144,6 +181,57 @@ export async function validateAnswers(
   return null;
 }
 
+// A member's prior ORDINARY submission of this form: attributed to them and
+// carrying no staffing/education scope. This where-clause DEFINES what the
+// oneResponsePerMember toggle gates — slot-bound fills (project-bids /
+// intent-to-work / level-up) and education fills are excluded because those
+// keep replace / per-session semantics regardless of the toggle.
+export async function existingOrdinarySubmission(
+  formId: string,
+  userId: string,
+): Promise<{ id: string; createdAt: Date } | null> {
+  return prisma.formSubmission.findFirst({
+    where: {
+      formId,
+      userId,
+      slot: null,
+      staffingCycleId: null,
+      educationOfferingId: null,
+      educationSessionId: null,
+    },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, createdAt: true },
+  });
+}
+
+// Loader-side twin of submitMemberForm's ordinary-branch 409 gate: the fill
+// page uses this to show the "already filled out" panel instead of the form.
+// Must mirror the submit gate exactly — same binding detection (a slot-bound
+// form's replace semantics win over the toggle), same where-clause.
+export async function ordinaryFillBlock(
+  formId: string,
+  userId: string,
+): Promise<{ at: Date } | null> {
+  const form = await prisma.form.findUnique({
+    where: { id: formId },
+    select: {
+      oneResponsePerMember: true,
+      cycleBindings: {
+        select: {
+          slot: true,
+          updatedAt: true,
+          staffingCycle: { select: { termId: true } },
+        },
+      },
+    },
+  });
+  if (!form?.oneResponsePerMember) return null;
+  const term = await currentTerm();
+  if (pickStaffingBinding(form.cycleBindings, term?.id ?? null)) return null;
+  const existing = await existingOrdinarySubmission(formId, userId);
+  return existing ? { at: existing.createdAt } : null;
+}
+
 export type MemberSubmitResult =
   | { ok: true }
   | { error: string; status: number };
@@ -174,6 +262,7 @@ export async function submitMemberForm(args: {
       id: true,
       name: true,
       published: true,
+      oneResponsePerMember: true,
       versions: {
         where: { id: args.versionId },
         select: { id: true, questions: true },
@@ -221,6 +310,11 @@ export async function submitMemberForm(args: {
   const bad = await validateAnswers(questions, args.answers, args.userId);
   if (bad) return bad;
 
+  // Fired once after each success path's transaction commits (never inside
+  // it) — best-effort creator notification, see submission-notify.server.
+  const notifySubmitted = () =>
+    notifyFormSubmission({ formId: form.id, submitterUserId: args.userId });
+
   // Education feedback branch: an explicit session/offering context wins over
   // every other interpretation. The context re-derives the binding + the
   // submitter's authorization (enrolled / instructor); the submission records
@@ -264,6 +358,7 @@ export async function submitMemberForm(args: {
         linkQuery,
       });
     });
+    await notifySubmitted();
     return { ok: true };
   }
 
@@ -278,6 +373,17 @@ export async function submitMemberForm(args: {
   );
 
   if (!staffingBinding) {
+    // One-response gate (ordinary fills only — the branches above/below keep
+    // their own resubmission semantics). App-level check: FormSubmission has
+    // no unique constraint, so a double-click race can still slip one extra
+    // row through — acceptable for this surface.
+    if (form.oneResponsePerMember) {
+      const existing = await existingOrdinarySubmission(form.id, args.userId);
+      if (existing) {
+        return { error: "You've already filled out this form.", status: 409 };
+      }
+    }
+
     // The onboarding "New Member Profile" form IS the onboarding step: it writes
     // its answers onto the member's User profile fields (see profile-form-
     // interpreter) AND completes onboarding (stamps DALIMember.onboardedAt +
@@ -322,6 +428,7 @@ export async function submitMemberForm(args: {
       // user id for future per-project channel invites. Best-effort.
       await syncSlackUserId(args.userId).catch(() => {});
     }
+    await notifySubmitted();
     return { ok: true };
   }
 
@@ -374,6 +481,7 @@ export async function submitMemberForm(args: {
       await replaceBidSet(tx, args.userId, cycle.id, bidsToWrite);
       await closeFormTodos(tx, args.userId, form.id);
     });
+    await notifySubmitted();
     return { ok: true };
   }
 
@@ -391,6 +499,7 @@ export async function submitMemberForm(args: {
       });
       await closeFormTodos(tx, args.userId, form.id);
     });
+    await notifySubmitted();
     return { ok: true };
   }
 
@@ -421,6 +530,7 @@ export async function submitMemberForm(args: {
     await replaceIntentSet(tx, args.userId, cycle.id, intentRows);
     await closeFormTodos(tx, args.userId, form.id);
   });
+  await notifySubmitted();
   return { ok: true };
 }
 

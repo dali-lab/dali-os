@@ -9,6 +9,7 @@ import { currentTerm } from "~/lib/roles";
 import { requirePartner } from "~/partners/lib/partner-auth.server";
 import { loadApplicationForm } from "~/partners/lib/application-form.server";
 import { validateAnswers } from "~/forms/lib/public-form";
+import { notifyFormSubmission } from "~/forms/lib/submission-notify.server";
 import { FormFieldList } from "~/forms/components/FormField";
 import { ChallengeQuestionField } from "~/hiring/components/ChallengeQuestionField";
 import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
@@ -154,6 +155,12 @@ export async function action({ request }: Route.ActionArgs) {
     metadata: { partnerOrgId: partnerUser.partnerOrgId },
     request,
   });
+  if (applicationForm) {
+    await notifyFormSubmission({
+      formId: applicationForm.formId,
+      submitterUserId: auth.user.sub,
+    });
+  }
 
   return redirect(`/partner/applications/${application.id}`);
 }

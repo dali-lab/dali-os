@@ -244,6 +244,12 @@ export function FormDetail() {
           hasVersions={form.versions.length > 0}
           inUse={usages.length > 0}
         />
+
+        <FormSettingsCard
+          formId={form.id}
+          oneResponsePerMember={form.oneResponsePerMember}
+          notifyOnSubmission={form.notifyOnSubmission}
+        />
       </div>
 
       <div className="flex flex-col lg:flex-row gap-8">
@@ -364,6 +370,7 @@ export function FormDetail() {
                 initialQuestions={seed.questions}
                 initialDescription={seed.description}
                 terms={terms}
+                allowCheckbox
                 onSaveDraft={handleSaveDraft}
                 onSave={handleSaveVersion}
                 saveLabel="Save as version"
@@ -431,7 +438,9 @@ export function FormDetail() {
                           {q.data.description}
                         </p>
                       )}
-                      {(q.type === "select" || q.type === "skills_rating") &&
+                      {(q.type === "select" ||
+                        q.type === "skills_rating" ||
+                        q.type === "checkbox") &&
                         q.data.options && (
                           <div className="mt-2 flex flex-wrap gap-2">
                             {q.data.options.map((opt) => (
@@ -484,6 +493,82 @@ export function FormDetail() {
 // Publish toggle + shareable link. A published form is fillable by logged-in
 // members at /forms/fill/:publicToken; unpublishing 404s that route but keeps
 // the token so re-publishing restores the same link.
+// Per-form response settings (Form.oneResponsePerMember / notifyOnSubmission).
+// Each toggle submits both values so the handler is a single idempotent
+// update; while the fetcher is in flight the pending FormData drives the
+// checked state, so toggles feel instant and settle to the loader's truth.
+function FormSettingsCard({
+  formId,
+  oneResponsePerMember,
+  notifyOnSubmission,
+}: {
+  formId: string;
+  oneResponsePerMember: boolean;
+  notifyOnSubmission: boolean;
+}) {
+  const fetcher = useFetcher();
+  const err =
+    fetcher.data && typeof fetcher.data === "object" && "error" in fetcher.data
+      ? String((fetcher.data as { error: unknown }).error)
+      : null;
+
+  const pending = fetcher.formData;
+  const oneResponse = pending
+    ? pending.get("oneResponsePerMember") === "true"
+    : oneResponsePerMember;
+  const notify = pending
+    ? pending.get("notifyOnSubmission") === "true"
+    : notifyOnSubmission;
+
+  function save(nextOneResponse: boolean, nextNotify: boolean) {
+    fetcher.submit(
+      {
+        intent: "update-form-settings",
+        id: formId,
+        oneResponsePerMember: String(nextOneResponse),
+        notifyOnSubmission: String(nextNotify),
+      },
+      { method: "post" },
+    );
+  }
+
+  return (
+    <div className="mt-3 rounded-lg border border-border bg-card p-4 flex flex-col gap-3">
+      <span className="text-sm font-medium text-foreground">Settings</span>
+      <label className="flex items-start gap-2 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={oneResponse}
+          onChange={(e) => save(e.target.checked, notify)}
+          className="mt-0.5 w-4 h-4 rounded border-border text-accent-coral focus:ring-accent-coral/30"
+        />
+        <span className="text-sm">
+          <span className="text-foreground">One response per member</span>
+          <span className="block text-xs text-muted-foreground">
+            Signed-in members can only submit this form once. Doesn't apply to
+            staffing or education fills.
+          </span>
+        </span>
+      </label>
+      <label className="flex items-start gap-2 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={notify}
+          onChange={(e) => save(oneResponse, e.target.checked)}
+          className="mt-0.5 w-4 h-4 rounded border-border text-accent-coral focus:ring-accent-coral/30"
+        />
+        <span className="text-sm">
+          <span className="text-foreground">Notify on submission</span>
+          <span className="block text-xs text-muted-foreground">
+            Get an in-app notification whenever someone submits a response.
+          </span>
+        </span>
+      </label>
+      {err && <div className="text-destructive text-xs">{err}</div>}
+    </div>
+  );
+}
+
 function PublishControl({
   formId,
   published,

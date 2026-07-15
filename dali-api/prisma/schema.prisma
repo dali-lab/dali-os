@@ -2751,6 +2751,14 @@ model Form {
   published   Boolean @default(false)
   publicToken String? @unique
 
+  // Per-form response settings (Forms editor "Settings" card).
+  // oneResponsePerMember: an authenticated member's ORDINARY fill (not
+  // staffing-slot-bound, not education-scoped) is accepted at most once.
+  // notifyOnSubmission: each submission creates an in-app Notification for
+  // createdById (best-effort, after the submission transaction commits).
+  oneResponsePerMember Boolean @default(false)
+  notifyOnSubmission   Boolean @default(false)
+
   // Editable working copy. "Save" writes here; the draft is mutable and is
   // NEVER served to fillers. "Save as version" freezes the draft into an
   // immutable FormVersion and clears these back to null. Published fills

@@ -24,6 +24,7 @@ const QUESTION_TYPES: Question["type"][] = [
   "drive_url",
   "file",
   "skills_rating",
+  "checkbox",
   "reference",
 ];
 
@@ -80,6 +81,8 @@ export type FormDetail = {
   createdAt: string;
   published: boolean;
   publicToken: string | null;
+  oneResponsePerMember: boolean;
+  notifyOnSubmission: boolean;
   versions: FormVersionDetail[];
   // Editable working copy, if one exists. The editor seeds the builder from
   // this; null means start from the latest version (or blank). Never served
@@ -112,6 +115,8 @@ export async function loadFormForEdit(
     createdAt: form.createdAt.toISOString(),
     published: form.published,
     publicToken: form.publicToken,
+    oneResponsePerMember: form.oneResponsePerMember,
+    notifyOnSubmission: form.notifyOnSubmission,
     versions: form.versions.map((v) => ({
       id: v.id,
       versionNumber: v.versionNumber,
@@ -302,6 +307,12 @@ export const ActionSchema = z.discriminatedUnion("intent", [
   }),
   z.object({ intent: z.literal("publish-form"), id: z.string().min(1) }),
   z.object({ intent: z.literal("unpublish-form"), id: z.string().min(1) }),
+  z.object({
+    intent: z.literal("update-form-settings"),
+    id: z.string().min(1),
+    oneResponsePerMember: z.enum(["true", "false"]),
+    notifyOnSubmission: z.enum(["true", "false"]),
+  }),
 ]);
 
 // Unguessable public token for a published form's external fill URL.
@@ -566,6 +577,21 @@ export async function runFormsAction(
       await prisma.form.update({
         where: { id: input.id },
         data: { published: false },
+      });
+      return { ok: true };
+    }
+    case "update-form-settings": {
+      const exists = await prisma.form.findUnique({
+        where: { id: input.id },
+        select: { id: true },
+      });
+      if (!exists) return { error: "Not found", status: 404 };
+      await prisma.form.update({
+        where: { id: input.id },
+        data: {
+          oneResponsePerMember: input.oneResponsePerMember === "true",
+          notifyOnSubmission: input.notifyOnSubmission === "true",
+        },
       });
       return { ok: true };
     }
