@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { Link, useFetcher } from "react-router";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useFetcher, useNavigate } from "react-router";
 import {
   DndContext,
   PointerSensor,
@@ -79,10 +79,21 @@ export function FormsBrowser({
   allForms: FormRef[];
 }) {
   const fetcher = useFetcher();
+  const navigate = useNavigate();
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [move, setMove] = useState<MoveSubject | null>(null);
   const [dragging, setDragging] = useState<DragItem | null>(null);
   const [query, setQuery] = useState("");
+
+  // duplicate-form returns the new copy's id — jump straight to its editor
+  // so the user lands in the seeded draft instead of hunting for the card.
+  const duplicatedId =
+    fetcher.data && typeof fetcher.data === "object" && "formId" in fetcher.data
+      ? (fetcher.data as { formId?: string }).formId
+      : undefined;
+  useEffect(() => {
+    if (duplicatedId) navigate(`/forms/edit/${duplicatedId}`);
+  }, [duplicatedId, navigate]);
 
   // 6px activation distance disambiguates click (navigate) from drag on the
   // Link cards — same pattern as KanbanBoard.
@@ -183,6 +194,13 @@ export function FormsBrowser({
       fetcher.submit(dialog.submit, { method: "post" });
     }
     setDialog(null);
+  }
+
+  function duplicateForm(f: { id: string }) {
+    fetcher.submit(
+      { intent: "duplicate-form", id: f.id },
+      { method: "post" },
+    );
   }
 
   function submitMove(item: DragItem, destinationId: string | null) {
@@ -324,6 +342,7 @@ export function FormsBrowser({
                       locationId: f.folderId,
                     })
                   }
+                  onDuplicate={() => duplicateForm(f)}
                   onDelete={() => deleteForm(f)}
                 />
               </div>
@@ -387,6 +406,7 @@ export function FormsBrowser({
                     locationId: folderId,
                   })
                 }
+                onDuplicate={() => duplicateForm(f)}
               />
             ))}
           </div>
@@ -452,11 +472,14 @@ function CardMenu({
   busy,
   onRename,
   onMove,
+  onDuplicate,
   onDelete,
 }: {
   busy: boolean;
   onRename: () => void;
   onMove: () => void;
+  // Forms only — duplicating a folder (deep copy) isn't supported.
+  onDuplicate?: () => void;
   onDelete: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -516,6 +539,20 @@ function CardMenu({
             >
               Move to…
             </button>
+            {onDuplicate && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setOpen(false);
+                  onDuplicate();
+                }}
+                className="text-left px-2 py-1.5 rounded hover:bg-muted/50 text-foreground"
+              >
+                Duplicate
+              </button>
+            )}
             <button
               type="button"
               onClick={(e) => {
@@ -623,12 +660,14 @@ function FormCardView({
   onRename,
   onDelete,
   onMove,
+  onDuplicate,
 }: {
   form: FormCard;
   busy: boolean;
   onRename: () => void;
   onDelete: () => void;
   onMove: () => void;
+  onDuplicate: () => void;
 }) {
   const drag = useDraggable({
     id: `form:${form.id}`,
@@ -671,6 +710,7 @@ function FormCardView({
         busy={busy}
         onRename={onRename}
         onMove={onMove}
+        onDuplicate={onDuplicate}
         onDelete={onDelete}
       />
     </div>

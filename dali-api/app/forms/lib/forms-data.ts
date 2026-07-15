@@ -319,6 +319,7 @@ export const ActionSchema = z.discriminatedUnion("intent", [
     id: z.string().min(1),
     folderId: z.string().optional(), // "" = top level
   }),
+  z.object({ intent: z.literal("duplicate-form"), id: z.string().min(1) }),
   z.object({
     // "Save" — persist the editable working copy. Lenient: a draft may hold a
     // work-in-progress question set, so it isn't held to save-version's rules.
@@ -374,7 +375,8 @@ function newPublicToken(): string {
 }
 
 export type FormsActionResult =
-  | { ok: true }
+  // `formId` is set by duplicate-form so the UI can jump to the new copy.
+  | { ok: true; formId?: string }
   | { error: string; status: number };
 
 export async function runFormsAction(
@@ -397,6 +399,46 @@ export async function runFormsAction(
         },
       });
       return { ok: true };
+    }
+    case "duplicate-form": {
+      const source = await prisma.form.findUnique({
+        where: { id: input.id },
+        select: {
+          name: true,
+          folderId: true,
+          draftQuestions: true,
+          draftIntro: true,
+          versions: {
+            orderBy: { versionNumber: "desc" },
+            take: 1,
+            select: { questions: true, intro: true },
+          },
+        },
+      });
+      if (!source) return { error: "Not found", status: 404 };
+
+      // Seed the copy's DRAFT from the source's draft when one exists (the
+      // author's newest thinking), else its latest version. The copy starts
+      // unpublished/unlisted with default settings and audience — a copy must
+      // never silently inherit a Public audience or live link — and belongs
+      // to the duplicating user.
+      const latest = source.versions[0] ?? null;
+      const questions = source.draftQuestions ?? latest?.questions ?? null;
+      const intro = source.draftQuestions
+        ? source.draftIntro
+        : (latest?.intro ?? null);
+
+      const created = await prisma.form.create({
+        data: {
+          name: `Copy of ${source.name}`.slice(0, 120),
+          folderId: source.folderId,
+          createdById: userId,
+          draftQuestions: questions === null ? undefined : (questions as object),
+          draftIntro: intro,
+        },
+        select: { id: true },
+      });
+      return { ok: true, formId: created.id };
     }
     case "move-form": {
       const exists = await prisma.form.findUnique({
