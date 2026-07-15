@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db");
 vi.mock("~/lib/gmail", () => ({ sendEmail: vi.fn() }));
 vi.mock("~/lib/gmail-integration", () => ({
-  getApplicationsGmailRefreshToken: vi.fn(),
+  getSenderRefreshToken: vi.fn(),
 }));
 vi.mock("~/slack/lib/slack-client", () => ({
   slackConfigured: vi.fn(),
@@ -16,7 +16,7 @@ vi.mock("~/lib/app-env", () => ({
 
 import { prisma } from "~/lib/db";
 import { sendEmail } from "~/lib/gmail";
-import { getApplicationsGmailRefreshToken } from "~/lib/gmail-integration";
+import { getSenderRefreshToken } from "~/lib/gmail-integration";
 import { slackConfigured, sendDm } from "~/slack/lib/slack-client";
 import { getAppEnv } from "~/lib/app-env";
 import { notify } from "~/lib/notify.server";
@@ -26,7 +26,7 @@ const mockPrisma = prisma as unknown as Record<
   Record<string, ReturnType<typeof vi.fn>>
 >;
 const mockSendEmail = sendEmail as unknown as ReturnType<typeof vi.fn>;
-const mockToken = getApplicationsGmailRefreshToken as unknown as ReturnType<typeof vi.fn>;
+const mockToken = getSenderRefreshToken as unknown as ReturnType<typeof vi.fn>;
 const mockSlackConfigured = slackConfigured as unknown as ReturnType<typeof vi.fn>;
 const mockSendDm = sendDm as unknown as ReturnType<typeof vi.fn>;
 const mockGetAppEnv = getAppEnv as unknown as ReturnType<typeof vi.fn>;

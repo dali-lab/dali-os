@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db");
 vi.mock("~/lib/gmail", () => ({ sendEmail: vi.fn() }));
 vi.mock("~/lib/gmail-integration", () => ({
-  getApplicationsGmailRefreshToken: vi.fn(),
+  getSenderRefreshToken: vi.fn(),
 }));
 vi.mock("~/lib/app-env", () => ({
   getFrontendUrl: vi.fn(() => "https://os.dali.dartmouth.edu"),
@@ -11,7 +11,7 @@ vi.mock("~/lib/app-env", () => ({
 
 import { prisma } from "~/lib/db";
 import { sendEmail } from "~/lib/gmail";
-import { getApplicationsGmailRefreshToken } from "~/lib/gmail-integration";
+import { getSenderRefreshToken } from "~/lib/gmail-integration";
 import {
   shouldRunDigest,
   runDigest,
@@ -23,7 +23,7 @@ const mockPrisma = prisma as unknown as Record<
   Record<string, ReturnType<typeof vi.fn>>
 >;
 const mockSendEmail = sendEmail as unknown as ReturnType<typeof vi.fn>;
-const mockToken = getApplicationsGmailRefreshToken as unknown as ReturnType<typeof vi.fn>;
+const mockToken = getSenderRefreshToken as unknown as ReturnType<typeof vi.fn>;
 
 // July 2026 is EDT (UTC-4): 9am ET = 13:00 UTC. 2026-07-15 is a Wednesday;
 // 2026-07-13 is a Monday.

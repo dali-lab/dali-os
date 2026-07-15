@@ -2,7 +2,7 @@ import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
 import { renderEmail } from "~/lib/email";
 import { sendEmail } from "~/lib/gmail";
-import { getApplicationsGmailRefreshToken } from "~/lib/gmail-integration";
+import { getSenderRefreshToken } from "~/lib/gmail-integration";
 import {
   resolveCandidateEmail,
   redirectBannerHtml,
@@ -188,7 +188,7 @@ export async function notifyNewAssignment(args: {
   for (const { applicant } of portalStudents) {
     const link = `${educationLink(applicant, offering.id)}/assignments/${args.assignmentId}`;
     try {
-      const refreshToken = await getApplicationsGmailRefreshToken();
+      const refreshToken = await getSenderRefreshToken("Education");
       if (!refreshToken) continue;
       const { to, redirectedFrom } = resolveCandidateEmail(recipientEmail(applicant));
       if (!to) continue;
@@ -223,7 +223,7 @@ async function sendDecisionEmail(args: {
   fallback: { subject: string; body: string };
 }): Promise<void> {
   try {
-    const refreshToken = await getApplicationsGmailRefreshToken();
+    const refreshToken = await getSenderRefreshToken("Education");
     if (!refreshToken) return;
 
     const intended = recipientEmail(args.applicant);

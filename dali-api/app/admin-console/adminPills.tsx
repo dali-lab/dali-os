@@ -14,6 +14,7 @@ export function adminPills(args: {
     | "activity"
     | "analytics"
     | "jobs"
+    | "email-senders"
     | "payroll"
     | "payroll-reconcile";
 }): AreaPill[] {
@@ -46,6 +47,11 @@ export function adminPills(args: {
             label: "Jobs",
             to: "/admin-console/jobs",
             active: args.active === "jobs",
+          },
+          {
+            label: "Email Senders",
+            to: "/admin-console/email-senders",
+            active: args.active === "email-senders",
           },
           {
             label: "Payroll: Hire Setup",

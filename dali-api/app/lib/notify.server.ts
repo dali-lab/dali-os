@@ -12,7 +12,7 @@
 
 import { prisma } from "~/lib/db";
 import { sendEmail } from "~/lib/gmail";
-import { getApplicationsGmailRefreshToken } from "~/lib/gmail-integration";
+import { getSenderRefreshToken } from "~/lib/gmail-integration";
 import { bodyToHtml } from "~/lib/email";
 import { getAppEnv, getFrontendUrl } from "~/lib/app-env";
 import { slackConfigured, sendDm } from "~/slack/lib/slack-client";
@@ -184,7 +184,7 @@ export async function notify(args: {
   let emailed = 0;
   const emailTargets = resolved.filter((r) => r.instantEmail);
   if (emailTargets.length > 0) {
-    const refreshToken = await getApplicationsGmailRefreshToken().catch(() => null);
+    const refreshToken = await getSenderRefreshToken("General").catch(() => null);
     if (refreshToken) {
       const emailedRowIds: string[] = [];
       for (const r of emailTargets) {

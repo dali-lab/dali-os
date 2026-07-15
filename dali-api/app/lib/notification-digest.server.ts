@@ -12,7 +12,7 @@
 
 import { prisma } from "~/lib/db";
 import { sendEmail } from "~/lib/gmail";
-import { getApplicationsGmailRefreshToken } from "~/lib/gmail-integration";
+import { getSenderRefreshToken } from "~/lib/gmail-integration";
 import { getFrontendUrl } from "~/lib/app-env";
 import { getZonedParts, zonedWallTimeUtc, APPLICATION_TZ } from "~/lib/timezone";
 import { NOT_CANCELLED_MEETING } from "~/lib/notifications";
@@ -176,7 +176,7 @@ export async function runDigest(freq: DigestFrequency, now: Date): Promise<JobRe
   const matched = rows.filter((r) => wantedByUser.get(r.recipientUserId)?.has(r.eventType));
   if (matched.length === 0) return { items: 0, note: "nothing unread" };
 
-  const refreshToken = await getApplicationsGmailRefreshToken();
+  const refreshToken = await getSenderRefreshToken("General");
   if (!refreshToken) return { items: 0, note: "gmail not configured" };
 
   const users = await prisma.user.findMany({

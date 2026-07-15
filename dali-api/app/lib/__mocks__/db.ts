@@ -205,6 +205,12 @@ export const prisma = {
     create: vi.fn(),
     deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
   },
+  gmailIntegration: {
+    findFirst: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+    update: vi.fn(),
+    upsert: vi.fn(),
+  },
   form: {
     findUnique: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),

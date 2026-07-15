@@ -55,6 +55,11 @@ export default function AdminHub() {
             description: "Background job status — reminders, digests, scheduled sends.",
           },
           {
+            to: "/admin-console/email-senders",
+            title: "Email Senders",
+            description: "Which Google account each area's outbound email sends from.",
+          },
+          {
             to: "/admin-console/payroll-export",
             title: "Payroll: Hire Setup",
             description: "Generate the per-term payroll export.",

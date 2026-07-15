@@ -163,7 +163,7 @@ model User {
   devicePairings DevicePairing[]
 
   // ─── Phase 1: Gmail integration (single per User) ─────────────────────────
-  gmailIntegration      GmailIntegration?
+  gmailIntegrations     GmailIntegration[]
   // ─── Notification relations ────────────────────────────────────────────────
   receivedNotifications Notification[]    @relation("NotificationRecipient")
   authoredNotifications Notification[]    @relation("NotificationAuthor")
@@ -3591,8 +3591,14 @@ enum DevicePairingStatus {
 // accounts that use Gmail send-as, then drops the User columns.
 
 model GmailIntegration {
-  id             String    @id @default(cuid())
-  userId         String    @unique
+  id     String @id @default(cuid())
+  userId String
+  // Which area's outbound mail this identity serves. Rows that predate
+  // purposes are the applications@ integration and default to Hiring.
+  // Resolution (lib/gmail-integration.ts) falls back to Hiring for purposes
+  // with no connected row, so mail keeps flowing until ops links the
+  // dedicated account.
+  purpose        EmailSendPurpose @default(Hiring)
   // The Gmail account email being sent-as.
   sendAsEmail    String
   // Encrypted at rest (same AES-256-GCM helper used by UserCalendarLink).
@@ -3609,6 +3615,15 @@ model GmailIntegration {
   linkedAt       DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, purpose])
+}
+
+enum EmailSendPurpose {
+  Hiring
+  Education
+  Partners
+  General
 }
 
 // Slack bug-report bot. A draft is created when a teammate @-mentions the bot
