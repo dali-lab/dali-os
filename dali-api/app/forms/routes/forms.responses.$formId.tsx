@@ -43,6 +43,8 @@ type ResponseRow = {
   name: string;
   email: string | null;
   slot: string | null;
+  // Only anonymous (Public-audience) fills carry an IP.
+  submitterIp: string | null;
   partnerApplication: { id: string; title: string } | null;
   rows: { key: string; label: string; value: string }[];
 };
@@ -83,6 +85,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       answers: true,
       submitterName: true,
       submitterEmail: true,
+      submitterIp: true,
       slot: true,
       user: {
         select: {
@@ -118,6 +121,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     email:
       s.user?.daliEmail || s.user?.personalEmail || s.submitterEmail || null,
     slot: s.slot,
+    submitterIp: s.submitterIp,
     partnerApplication: s.partnerApplication,
     rows: grid.rowsBySubmission[i],
   }));
@@ -440,6 +444,7 @@ export default function FormResponses() {
                 formatTimestamp(selected.createdAt),
                 `v${selected.versionNumber}`,
                 selected.slot,
+                selected.submitterIp && `IP ${selected.submitterIp}`,
               ]
                 .filter(Boolean)
                 .join(" · ")}

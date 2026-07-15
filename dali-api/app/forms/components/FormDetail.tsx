@@ -53,7 +53,8 @@ function formatDateShort(iso: string) {
 //                         (save-version) and clears the draft. Frozen versions
 //                         are read-only and are what publishing serves.
 export function FormDetail() {
-  const { form, terms, usages, submissionCount } = useLoaderData<typeof loader>();
+  const { form, terms, usages, submissionCount, groups } =
+    useLoaderData<typeof loader>();
   // A dedicated fetcher for saves so the builder's buttons can reflect
   // request state ("Saving…"/"Saved ✓"). The submitted intent tells us which
   // button is in flight; fetcher.state + a brief post-success window drive the
@@ -243,12 +244,16 @@ export function FormDetail() {
           publicToken={form.publicToken}
           hasVersions={form.versions.length > 0}
           inUse={usages.length > 0}
+          audience={form.audience}
         />
 
         <FormSettingsCard
           formId={form.id}
           oneResponsePerMember={form.oneResponsePerMember}
           notifyOnSubmission={form.notifyOnSubmission}
+          audience={form.audience}
+          audienceGroupIds={form.audienceGroupIds}
+          groups={groups}
         />
       </div>
 
@@ -493,18 +498,56 @@ export function FormDetail() {
 // Publish toggle + shareable link. A published form is fillable by logged-in
 // members at /forms/fill/:publicToken; unpublishing 404s that route but keeps
 // the token so re-publishing restores the same link.
-// Per-form response settings (Form.oneResponsePerMember / notifyOnSubmission).
-// Each toggle submits both values so the handler is a single idempotent
-// update; while the fetcher is in flight the pending FormData drives the
-// checked state, so toggles feel instant and settle to the loader's truth.
+type AudienceValue = "Members" | "SignedIn" | "Groups" | "Public";
+type GroupOption = { id: string; name: string; type: "Static" | "Dynamic" };
+
+const AUDIENCE_OPTIONS: {
+  value: AudienceValue;
+  label: string;
+  description: string;
+}[] = [
+  {
+    value: "Members",
+    label: "Lab members",
+    description: "Signed-in lab members (default).",
+  },
+  {
+    value: "SignedIn",
+    label: "Anyone signed in",
+    description: "Any DALI OS account — members, Dartmouth students, partners.",
+  },
+  {
+    value: "Groups",
+    label: "Specific groups",
+    description: "Signed-in users in at least one selected group.",
+  },
+  {
+    value: "Public",
+    label: "Public",
+    description:
+      "Anyone with the link, no sign-in. Add name/email questions yourself if you need them; submissions record the sender's IP.",
+  },
+];
+
+// Per-form response settings + audience. Toggles submit both boolean values
+// (single idempotent update); audience submits on radio change — except
+// "Specific groups", which waits until at least one group is checked (the
+// server enforces the same rule). Pending fetcher FormData drives optimistic
+// state so changes feel instant and settle to the loader's truth.
 function FormSettingsCard({
   formId,
   oneResponsePerMember,
   notifyOnSubmission,
+  audience,
+  audienceGroupIds,
+  groups,
 }: {
   formId: string;
   oneResponsePerMember: boolean;
   notifyOnSubmission: boolean;
+  audience: AudienceValue;
+  audienceGroupIds: string[];
+  groups: GroupOption[];
 }) {
   const fetcher = useFetcher();
   const err =
@@ -513,14 +556,23 @@ function FormSettingsCard({
       : null;
 
   const pending = fetcher.formData;
-  const oneResponse = pending
-    ? pending.get("oneResponsePerMember") === "true"
+  const pendingSettings = pending?.get("intent") === "update-form-settings";
+  const oneResponse = pendingSettings
+    ? pending!.get("oneResponsePerMember") === "true"
     : oneResponsePerMember;
-  const notify = pending
-    ? pending.get("notifyOnSubmission") === "true"
+  const notify = pendingSettings
+    ? pending!.get("notifyOnSubmission") === "true"
     : notifyOnSubmission;
 
-  function save(nextOneResponse: boolean, nextNotify: boolean) {
+  // Audience edits stage locally: picking "Specific groups" with nothing
+  // checked must not submit (the saved audience stays live until a valid
+  // selection exists).
+  const [draftAudience, setDraftAudience] = useState<AudienceValue>(audience);
+  const [groupSel, setGroupSel] = useState<Set<string>>(
+    () => new Set(audienceGroupIds),
+  );
+
+  function saveSettings(nextOneResponse: boolean, nextNotify: boolean) {
     fetcher.submit(
       {
         intent: "update-form-settings",
@@ -532,6 +584,40 @@ function FormSettingsCard({
     );
   }
 
+  function saveAudience(nextAudience: AudienceValue, ids: Set<string>) {
+    fetcher.submit(
+      {
+        intent: "update-form-audience",
+        id: formId,
+        audience: nextAudience,
+        groupIds: JSON.stringify([...ids]),
+      },
+      { method: "post" },
+    );
+  }
+
+  function pickAudience(next: AudienceValue) {
+    setDraftAudience(next);
+    if (next !== "Groups") {
+      saveAudience(next, new Set());
+      return;
+    }
+    if (groupSel.size > 0) saveAudience("Groups", groupSel);
+  }
+
+  function toggleGroup(id: string) {
+    const next = new Set(groupSel);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setGroupSel(next);
+    if (draftAudience === "Groups" && next.size > 0) {
+      saveAudience("Groups", next);
+    }
+  }
+
+  const checkboxClass =
+    "mt-0.5 w-4 h-4 rounded border-border text-accent-coral focus:ring-accent-coral/30";
+
   return (
     <div className="mt-3 rounded-lg border border-border bg-card p-4 flex flex-col gap-3">
       <span className="text-sm font-medium text-foreground">Settings</span>
@@ -539,8 +625,8 @@ function FormSettingsCard({
         <input
           type="checkbox"
           checked={oneResponse}
-          onChange={(e) => save(e.target.checked, notify)}
-          className="mt-0.5 w-4 h-4 rounded border-border text-accent-coral focus:ring-accent-coral/30"
+          onChange={(e) => saveSettings(e.target.checked, notify)}
+          className={checkboxClass}
         />
         <span className="text-sm">
           <span className="text-foreground">One response per member</span>
@@ -554,8 +640,8 @@ function FormSettingsCard({
         <input
           type="checkbox"
           checked={notify}
-          onChange={(e) => save(oneResponse, e.target.checked)}
-          className="mt-0.5 w-4 h-4 rounded border-border text-accent-coral focus:ring-accent-coral/30"
+          onChange={(e) => saveSettings(oneResponse, e.target.checked)}
+          className={checkboxClass}
         />
         <span className="text-sm">
           <span className="text-foreground">Notify on submission</span>
@@ -564,10 +650,81 @@ function FormSettingsCard({
           </span>
         </span>
       </label>
+
+      <div className="border-t border-border pt-3 flex flex-col gap-2">
+        <span className="text-sm font-medium text-foreground">
+          Who can fill this form
+        </span>
+        {AUDIENCE_OPTIONS.map((opt) => (
+          <label key={opt.value} className="flex items-start gap-2 cursor-pointer">
+            <input
+              type="radio"
+              name="form-audience"
+              checked={draftAudience === opt.value}
+              onChange={() => pickAudience(opt.value)}
+              className="mt-0.5 w-4 h-4 border-border text-accent-coral focus:ring-accent-coral/30"
+            />
+            <span className="text-sm">
+              <span className="text-foreground">{opt.label}</span>
+              <span className="block text-xs text-muted-foreground">
+                {opt.description}
+              </span>
+            </span>
+          </label>
+        ))}
+
+        {draftAudience === "Groups" && (
+          <div className="ml-6 flex flex-col gap-1.5">
+            {groups.length === 0 ? (
+              <span className="text-xs text-muted-foreground">
+                No groups exist yet — create them in Admin › Groups.
+              </span>
+            ) : (
+              groups.map((g) => (
+                <label
+                  key={g.id}
+                  className="flex items-center gap-2 cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    checked={groupSel.has(g.id)}
+                    onChange={() => toggleGroup(g.id)}
+                    className="w-4 h-4 rounded border-border text-accent-coral focus:ring-accent-coral/30"
+                  />
+                  <span className="text-sm text-foreground truncate">
+                    {g.name}
+                  </span>
+                  <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full shrink-0">
+                    {g.type}
+                  </span>
+                </label>
+              ))
+            )}
+            {groupSel.size === 0 && (
+              <span className="text-xs text-amber-700">
+                Select at least one group — until then the saved audience stays
+                in effect.
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+
       {err && <div className="text-destructive text-xs">{err}</div>}
     </div>
   );
 }
+
+const PUBLISHED_COPY: Record<AudienceValue, string> = {
+  Members:
+    "The latest version is live — bound surfaces serve it, and logged-in members can fill it via the link.",
+  SignedIn:
+    "The latest version is live — anyone signed in to DALI OS can fill it via the link.",
+  Groups:
+    "The latest version is live — members of the selected groups can fill it via the link.",
+  Public:
+    "The latest version is live — anyone with the link can fill it, no sign-in needed.",
+};
 
 function PublishControl({
   formId,
@@ -575,12 +732,14 @@ function PublishControl({
   publicToken,
   hasVersions,
   inUse,
+  audience,
 }: {
   formId: string;
   published: boolean;
   publicToken: string | null;
   hasVersions: boolean;
   inUse: boolean;
+  audience: AudienceValue;
 }) {
   const fetcher = useFetcher();
   const [copied, setCopied] = useState(false);
@@ -625,9 +784,7 @@ function PublishControl({
             {published ? "Published" : "Not published"}
           </span>
           <span className="text-muted-foreground">
-            {published
-              ? "The latest version is live — bound surfaces serve it, and logged-in members can fill it via the link."
-              : "Only lab staff can see this form."}
+            {published ? PUBLISHED_COPY[audience] : "Only lab staff can see this form."}
           </span>
         </div>
         <button

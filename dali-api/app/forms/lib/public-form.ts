@@ -5,10 +5,12 @@
 // so the fill surface stays small and auditable.
 
 import { prisma } from "~/lib/db";
+import type { FormAudience } from "~/generated/prisma/client";
 import type { Question } from "~/types";
 import { resolveReferenceOptions } from "./reference-sources";
 import { safeParseJsonString } from "./forms-data";
-import { currentTerm } from "~/lib/roles";
+import { currentTerm, requireMember } from "~/lib/roles";
+import { isUserInAnyGroup } from "~/lib/groups";
 import { interpretBidForm } from "~/projects/lib/bid-form-interpreter";
 import { validateBids, replaceBidSet } from "~/projects/lib/bid-validation";
 import { interpretIntentForm } from "~/projects/lib/intent-form-interpreter";
@@ -101,7 +103,9 @@ export async function loadPublicForm(
 export async function validateAnswers(
   questions: Question[],
   answers: Record<string, unknown>,
-  userId: string,
+  // Null on anonymous (Public-audience) fills — member-scoped reference
+  // sources then resolve to [] and their answers can't validate.
+  userId: string | null,
 ): Promise<{ error: string; status: number } | null> {
   // Checkbox answers arrive as a JSON-stringified array (the fill UIs keep
   // string-valued state); parse, validate against the question's options, and
@@ -232,9 +236,133 @@ export async function ordinaryFillBlock(
   return existing ? { at: existing.createdAt } : null;
 }
 
+// Just enough of a published form to decide who may fill it — queried before
+// any session handling, and cheap enough for the submit endpoint to reuse
+// (unlike loadPublicForm, which resolves reference options per question).
+// Null when the token is unknown or the form is unpublished.
+export type FormAccessMeta = {
+  id: string;
+  name: string;
+  audience: FormAudience;
+  audienceGroupIds: string[];
+};
+
+export async function formAccessMeta(
+  token: string,
+): Promise<FormAccessMeta | null> {
+  const form = await prisma.form.findUnique({
+    where: { publicToken: token },
+    select: {
+      id: true,
+      name: true,
+      published: true,
+      audience: true,
+      audienceGroupIds: true,
+    },
+  });
+  if (!form || !form.published) return null;
+  return {
+    id: form.id,
+    name: form.name,
+    audience: form.audience,
+    audienceGroupIds: form.audienceGroupIds,
+  };
+}
+
+export type FillAccess = "ok" | "login" | "denied";
+
+// The single audience gate — the fill loader and the submit action both call
+// this so their decisions can't drift. `userId` is null when there is no
+// session. Note Groups does NOT fall back to lab membership: only the
+// selected groups admit.
+export async function formFillAccess(
+  form: Pick<FormAccessMeta, "audience" | "audienceGroupIds">,
+  userId: string | null,
+): Promise<FillAccess> {
+  if (form.audience === "Public") return "ok";
+  if (!userId) return "login";
+  if (form.audience === "SignedIn") return "ok";
+  if (form.audience === "Members") {
+    return (await requireMember(userId)) ? "ok" : "denied";
+  }
+  return (await isUserInAnyGroup(userId, form.audienceGroupIds))
+    ? "ok"
+    : "denied";
+}
+
 export type MemberSubmitResult =
   | { ok: true }
   | { error: string; status: number };
+
+// The version a submission should record against: the client-provided id
+// when it still exists on this form, else the latest — the form may have
+// been re-versioned between page load and submit, and that shouldn't
+// hard-fail the fill. Null only when the form has no versions at all.
+async function resolveSubmitVersion(form: {
+  id: string;
+  versions: { id: string; questions: unknown }[];
+}): Promise<{ id: string; questions: unknown } | null> {
+  if (form.versions[0]) return form.versions[0];
+  return prisma.formVersion.findFirst({
+    where: { formId: form.id },
+    orderBy: { versionNumber: "desc" },
+    select: { id: true, questions: true },
+  });
+}
+
+// Anonymous (Public-audience) submit: records a plain, unattributed row with
+// the client IP for abuse tracing. Deliberately none of the member-path side
+// effects — no todo closing, no one-response gate (no identity to key on),
+// no profile/staffing/education interpretation even when the form happens to
+// be slot-bound.
+export async function submitAnonymousForm(args: {
+  token: string;
+  versionId: string;
+  answers: Record<string, unknown>;
+  submitterIp: string | null;
+}): Promise<MemberSubmitResult> {
+  const form = await prisma.form.findUnique({
+    where: { publicToken: args.token },
+    select: {
+      id: true,
+      published: true,
+      audience: true,
+      versions: {
+        where: { id: args.versionId },
+        select: { id: true, questions: true },
+      },
+    },
+  });
+  if (!form || !form.published) {
+    return { error: "Form not found for this link.", status: 404 };
+  }
+  // Defense-in-depth: this is the only entry point that creates unattributed
+  // rows, so it enforces its own precondition even though the action gates
+  // with formFillAccess first.
+  if (form.audience !== "Public") {
+    return { error: "This form requires signing in.", status: 403 };
+  }
+  const version = await resolveSubmitVersion(form);
+  if (!version) {
+    return { error: "This form has no questions yet.", status: 404 };
+  }
+
+  const questions = (version.questions as unknown as Question[]) ?? [];
+  const bad = await validateAnswers(questions, args.answers, null);
+  if (bad) return bad;
+
+  await prisma.formSubmission.create({
+    data: {
+      formId: form.id,
+      formVersionId: version.id,
+      userId: null,
+      answers: args.answers as object,
+      submitterIp: args.submitterIp,
+    },
+  });
+  await notifyFormSubmission({ formId: form.id });
+  return { ok: true };
+}
 
 // Authenticated member submit. Unlike the public path this has a trustworthy
 // `userId`, which is what makes form-driven Project Bids possible: when the
@@ -290,20 +418,9 @@ export async function submitMemberForm(args: {
       status: 404,
     };
   }
-  // loadPublicForm hands back the LATEST version's id; if the form was
-  // re-versioned between loading the page and submitting, that id is now
-  // stale. Fall back to the latest version rather than hard-failing.
-  let version = form.versions[0];
+  const version = await resolveSubmitVersion(form);
   if (!version) {
-    const latest = await prisma.formVersion.findFirst({
-      where: { formId: form.id },
-      orderBy: { versionNumber: "desc" },
-      select: { id: true, questions: true },
-    });
-    if (!latest) {
-      return { error: "This form has no questions yet.", status: 404 };
-    }
-    version = latest;
+    return { error: "This form has no questions yet.", status: 404 };
   }
 
   const questions = (version.questions as unknown as Question[]) ?? [];
@@ -389,7 +506,11 @@ export async function submitMemberForm(args: {
     // interpreter) AND completes onboarding (stamps DALIMember.onboardedAt +
     // clears the persistent onboarding task). Everything else (Slack, calendar)
     // happens in earlier provisioning / the later party tour.
-    const isProfileForm = form.name === NEW_MEMBER_PROFILE_FORM_NAME;
+    // Members only: a non-member admitted by a SignedIn/Groups audience must
+    // not write profile fields by submitting a form with the reserved name.
+    const isProfileForm =
+      form.name === NEW_MEMBER_PROFILE_FORM_NAME &&
+      Boolean(await requireMember(args.userId));
     let profileUpdate: ProfileUpdate | null = null;
     if (isProfileForm) {
       const interpreted = interpretProfileForm(args.answers);

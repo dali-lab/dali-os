@@ -14,6 +14,7 @@ import type { Question } from "~/types";
 import { isReferenceSourceKey, referenceSourceNeedsTerm } from "./reference-sources.shared";
 import type { FolderOption } from "./folder-tree.shared";
 import { formDeletionBlockers } from "./form-usages.server";
+import { isGroupArchived } from "~/lib/groups";
 
 const QUESTION_TYPES: Question["type"][] = [
   "text",
@@ -87,6 +88,8 @@ export type FormDetail = {
   publicToken: string | null;
   oneResponsePerMember: boolean;
   notifyOnSubmission: boolean;
+  audience: "Members" | "SignedIn" | "Groups" | "Public";
+  audienceGroupIds: string[];
   versions: FormVersionDetail[];
   // Editable working copy, if one exists. The editor seeds the builder from
   // this; null means start from the latest version (or blank). Never served
@@ -121,6 +124,8 @@ export async function loadFormForEdit(
     publicToken: form.publicToken,
     oneResponsePerMember: form.oneResponsePerMember,
     notifyOnSubmission: form.notifyOnSubmission,
+    audience: form.audience,
+    audienceGroupIds: form.audienceGroupIds,
     versions: form.versions.map((v) => ({
       id: v.id,
       versionNumber: v.versionNumber,
@@ -349,6 +354,12 @@ export const ActionSchema = z.discriminatedUnion("intent", [
     id: z.string().min(1),
     oneResponsePerMember: z.enum(["true", "false"]),
     notifyOnSubmission: z.enum(["true", "false"]),
+  }),
+  z.object({
+    intent: z.literal("update-form-audience"),
+    id: z.string().min(1),
+    audience: z.enum(["Members", "SignedIn", "Groups", "Public"]),
+    groupIds: z.string().optional(), // JSON-encoded string[]; Groups only
   }),
 ]);
 
@@ -629,6 +640,56 @@ export async function runFormsAction(
           oneResponsePerMember: input.oneResponsePerMember === "true",
           notifyOnSubmission: input.notifyOnSubmission === "true",
         },
+      });
+      return { ok: true };
+    }
+    case "update-form-audience": {
+      const exists = await prisma.form.findUnique({
+        where: { id: input.id },
+        select: { id: true },
+      });
+      if (!exists) return { error: "Not found", status: 404 };
+
+      let ids: string[] = [];
+      if (input.audience === "Groups") {
+        const parsed = safeParseJsonString(input.groupIds);
+        if (
+          !Array.isArray(parsed) ||
+          !parsed.every((v): v is string => typeof v === "string")
+        ) {
+          return { error: "Invalid input", status: 400 };
+        }
+        ids = [...new Set(parsed)];
+        if (ids.length === 0) {
+          return { error: "Select at least one group.", status: 400 };
+        }
+        const [groups, terms] = await Promise.all([
+          prisma.groupDefinition.findMany({
+            where: { id: { in: ids } },
+            select: { id: true, archivedAt: true, boundTermIds: true },
+          }),
+          prisma.term.findMany({ select: { id: true, endDate: true } }),
+        ]);
+        const termEndById = new Map(terms.map((t) => [t.id, t.endDate]));
+        const now = new Date();
+        const usable = new Set(
+          groups
+            .filter((g) => !isGroupArchived(g, termEndById, now))
+            .map((g) => g.id),
+        );
+        if (ids.some((id) => !usable.has(id))) {
+          return {
+            error: "One of the selected groups no longer exists or is archived.",
+            status: 400,
+          };
+        }
+      }
+
+      // Ids are cleared for non-Groups audiences so stored state stays
+      // canonical (toggling away and back means re-selecting).
+      await prisma.form.update({
+        where: { id: input.id },
+        data: { audience: input.audience, audienceGroupIds: ids },
       });
       return { ok: true };
     }
