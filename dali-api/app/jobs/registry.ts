@@ -73,6 +73,7 @@ import { runSessionFeedbackSweep } from "~/jobs/session-feedback-sweep.server";
 import { runDailyDigest, runWeeklyDigest } from "~/lib/notification-digest.server";
 import { runRetentionJanitor } from "~/jobs/retention-janitor.server";
 import { runSprintLifecycle } from "~/jobs/sprint-lifecycle.server";
+import { runFormWindows } from "~/jobs/form-windows.server";
 
 export const JOBS: JobDefinition[] = [
   {
@@ -172,6 +173,13 @@ export const JOBS: JobDefinition[] = [
       },
     ],
     handler: runWeeklyDigest,
+  },
+  {
+    name: "form-windows",
+    description:
+      "Publishes and unpublishes forms whose scheduled open/close time has passed.",
+    intervalMinutes: 1,
+    handler: runFormWindows,
   },
   {
     name: "sprint-lifecycle",

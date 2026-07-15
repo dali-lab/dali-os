@@ -86,6 +86,8 @@ export type FormDetail = {
   createdAt: string;
   published: boolean;
   publicToken: string | null;
+  opensAt: string | null;
+  closesAt: string | null;
   oneResponsePerMember: boolean;
   notifyOnSubmission: boolean;
   listed: boolean;
@@ -123,6 +125,8 @@ export async function loadFormForEdit(
     createdAt: form.createdAt.toISOString(),
     published: form.published,
     publicToken: form.publicToken,
+    opensAt: form.opensAt?.toISOString() ?? null,
+    closesAt: form.closesAt?.toISOString() ?? null,
     oneResponsePerMember: form.oneResponsePerMember,
     notifyOnSubmission: form.notifyOnSubmission,
     listed: form.listed,
@@ -353,6 +357,12 @@ export const ActionSchema = z.discriminatedUnion("intent", [
   z.object({ intent: z.literal("publish-form"), id: z.string().min(1) }),
   z.object({ intent: z.literal("unpublish-form"), id: z.string().min(1) }),
   z.object({
+    intent: z.literal("update-form-window"),
+    id: z.string().min(1),
+    opensAt: z.string().optional(), // ISO timestamp; "" clears
+    closesAt: z.string().optional(),
+  }),
+  z.object({
     intent: z.literal("update-form-settings"),
     id: z.string().min(1),
     oneResponsePerMember: z.enum(["true", "false"]),
@@ -368,10 +378,17 @@ export const ActionSchema = z.discriminatedUnion("intent", [
 ]);
 
 // Unguessable public token for a published form's external fill URL.
-function newPublicToken(): string {
+// Exported for the form-windows job, which mints one on scheduled publish.
+export function newPublicToken(): string {
   // 24 bytes of URL-safe randomness — collision-resistant, not enumerable.
   const bytes = crypto.getRandomValues(new Uint8Array(24));
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function parseWindowBoundary(raw: string | undefined): Date | null | "invalid" {
+  if (!raw) return null;
+  const d = new Date(raw);
+  return Number.isNaN(d.getTime()) ? "invalid" : d;
 }
 
 export type FormsActionResult =
@@ -670,6 +687,24 @@ export async function runFormsAction(
       await prisma.form.update({
         where: { id: input.id },
         data: { published: false },
+      });
+      return { ok: true };
+    }
+    case "update-form-window": {
+      const exists = await prisma.form.findUnique({
+        where: { id: input.id },
+        select: { id: true },
+      });
+      if (!exists) return { error: "Not found", status: 404 };
+      const opensAt = parseWindowBoundary(input.opensAt);
+      const closesAt = parseWindowBoundary(input.closesAt);
+      if (opensAt === "invalid" || closesAt === "invalid")
+        return { error: "Invalid date", status: 400 };
+      if (opensAt && closesAt && closesAt <= opensAt)
+        return { error: "Close must be after open.", status: 400 };
+      await prisma.form.update({
+        where: { id: input.id },
+        data: { opensAt, closesAt },
       });
       return { ok: true };
     }

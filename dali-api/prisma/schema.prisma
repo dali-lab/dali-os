@@ -2821,6 +2821,12 @@ model Form {
   published   Boolean @default(false)
   publicToken String? @unique
 
+  // Scheduled publish window. The form-windows job flips `published` when a
+  // boundary passes (opensAt → publish, closesAt → unpublish), acting on each
+  // boundary exactly once so a later manual publish/unpublish sticks.
+  opensAt  DateTime?
+  closesAt DateTime?
+
   // Per-form response settings (Forms editor "Settings" card).
   // oneResponsePerMember: an authenticated member's ORDINARY fill (not
   // staffing-slot-bound, not education-scoped) is accepted at most once.
