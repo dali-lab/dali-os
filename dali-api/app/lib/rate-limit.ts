@@ -11,7 +11,10 @@ const cleanup = setInterval(() => {
     else hits.set(key, fresh);
   }
 }, CLEANUP_INTERVAL_MS);
-cleanup.unref();
+// unref exists only on Node's Timeout — in a browser setInterval returns a
+// number. Optional-call so this module can't crash a page at init if it ever
+// gets pulled into a client bundle again (it took down the activity viewer).
+cleanup.unref?.();
 
 export function getClientIp(request: Request): string {
   return (

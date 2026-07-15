@@ -121,7 +121,7 @@ export default function SettingsSlackPage({ loaderData }: Route.ComponentProps) 
   const busy = fetcher.state !== "idle";
 
   return (
-    <main className="max-w-3xl p-8">
+    <main className="max-w-3xl">
       <header>
         <h1 className="text-2xl font-semibold">Slack</h1>
         <p className="mt-2 text-sm text-zinc-600">
