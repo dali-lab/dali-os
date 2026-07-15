@@ -23,7 +23,7 @@ beforeEach(() => {
 });
 
 describe("runFormsAction update-form-settings", () => {
-  it("updates both settings from their string values", async () => {
+  it("updates all three settings from their string values", async () => {
     mockPrisma.form.findUnique.mockResolvedValue({ id: "form-1" });
 
     const res = await runFormsAction(
@@ -32,6 +32,7 @@ describe("runFormsAction update-form-settings", () => {
         id: "form-1",
         oneResponsePerMember: "true",
         notifyOnSubmission: "false",
+        listed: "true",
       }),
       "user-1",
     );
@@ -39,7 +40,11 @@ describe("runFormsAction update-form-settings", () => {
     expect(res).toEqual({ ok: true });
     expect(mockPrisma.form.update).toHaveBeenCalledWith({
       where: { id: "form-1" },
-      data: { oneResponsePerMember: true, notifyOnSubmission: false },
+      data: {
+        oneResponsePerMember: true,
+        notifyOnSubmission: false,
+        listed: true,
+      },
     });
   });
 
@@ -52,6 +57,7 @@ describe("runFormsAction update-form-settings", () => {
         id: "ghost",
         oneResponsePerMember: "false",
         notifyOnSubmission: "true",
+        listed: "false",
       }),
       "user-1",
     );
@@ -66,6 +72,21 @@ describe("runFormsAction update-form-settings", () => {
         intent: "update-form-settings",
         id: "form-1",
         oneResponsePerMember: "yes",
+        notifyOnSubmission: "false",
+        listed: "false",
+      }),
+      "user-1",
+    );
+
+    expect(res).toEqual({ error: "Invalid input", status: 400 });
+  });
+
+  it("rejects a submit missing the listed field", async () => {
+    const res = await runFormsAction(
+      fd({
+        intent: "update-form-settings",
+        id: "form-1",
+        oneResponsePerMember: "true",
         notifyOnSubmission: "false",
       }),
       "user-1",

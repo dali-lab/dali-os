@@ -88,6 +88,7 @@ export type FormDetail = {
   publicToken: string | null;
   oneResponsePerMember: boolean;
   notifyOnSubmission: boolean;
+  listed: boolean;
   audience: "Members" | "SignedIn" | "Groups" | "Public";
   audienceGroupIds: string[];
   versions: FormVersionDetail[];
@@ -124,6 +125,7 @@ export async function loadFormForEdit(
     publicToken: form.publicToken,
     oneResponsePerMember: form.oneResponsePerMember,
     notifyOnSubmission: form.notifyOnSubmission,
+    listed: form.listed,
     audience: form.audience,
     audienceGroupIds: form.audienceGroupIds,
     versions: form.versions.map((v) => ({
@@ -354,6 +356,7 @@ export const ActionSchema = z.discriminatedUnion("intent", [
     id: z.string().min(1),
     oneResponsePerMember: z.enum(["true", "false"]),
     notifyOnSubmission: z.enum(["true", "false"]),
+    listed: z.enum(["true", "false"]),
   }),
   z.object({
     intent: z.literal("update-form-audience"),
@@ -639,6 +642,7 @@ export async function runFormsAction(
         data: {
           oneResponsePerMember: input.oneResponsePerMember === "true",
           notifyOnSubmission: input.notifyOnSubmission === "true",
+          listed: input.listed === "true",
         },
       });
       return { ok: true };

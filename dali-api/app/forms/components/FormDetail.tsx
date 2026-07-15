@@ -251,6 +251,7 @@ export function FormDetail() {
           formId={form.id}
           oneResponsePerMember={form.oneResponsePerMember}
           notifyOnSubmission={form.notifyOnSubmission}
+          listed={form.listed}
           audience={form.audience}
           audienceGroupIds={form.audienceGroupIds}
           groups={groups}
@@ -538,6 +539,7 @@ function FormSettingsCard({
   formId,
   oneResponsePerMember,
   notifyOnSubmission,
+  listed,
   audience,
   audienceGroupIds,
   groups,
@@ -545,6 +547,7 @@ function FormSettingsCard({
   formId: string;
   oneResponsePerMember: boolean;
   notifyOnSubmission: boolean;
+  listed: boolean;
   audience: AudienceValue;
   audienceGroupIds: string[];
   groups: GroupOption[];
@@ -563,6 +566,9 @@ function FormSettingsCard({
   const notify = pendingSettings
     ? pending!.get("notifyOnSubmission") === "true"
     : notifyOnSubmission;
+  const isListed = pendingSettings
+    ? pending!.get("listed") === "true"
+    : listed;
 
   // Audience edits stage locally: picking "Specific groups" with nothing
   // checked must not submit (the saved audience stays live until a valid
@@ -572,13 +578,18 @@ function FormSettingsCard({
     () => new Set(audienceGroupIds),
   );
 
-  function saveSettings(nextOneResponse: boolean, nextNotify: boolean) {
+  function saveSettings(
+    nextOneResponse: boolean,
+    nextNotify: boolean,
+    nextListed: boolean,
+  ) {
     fetcher.submit(
       {
         intent: "update-form-settings",
         id: formId,
         oneResponsePerMember: String(nextOneResponse),
         notifyOnSubmission: String(nextNotify),
+        listed: String(nextListed),
       },
       { method: "post" },
     );
@@ -625,7 +636,7 @@ function FormSettingsCard({
         <input
           type="checkbox"
           checked={oneResponse}
-          onChange={(e) => saveSettings(e.target.checked, notify)}
+          onChange={(e) => saveSettings(e.target.checked, notify, isListed)}
           className={checkboxClass}
         />
         <span className="text-sm">
@@ -640,13 +651,28 @@ function FormSettingsCard({
         <input
           type="checkbox"
           checked={notify}
-          onChange={(e) => saveSettings(oneResponse, e.target.checked)}
+          onChange={(e) => saveSettings(oneResponse, e.target.checked, isListed)}
           className={checkboxClass}
         />
         <span className="text-sm">
           <span className="text-foreground">Notify on submission</span>
           <span className="block text-xs text-muted-foreground">
             Get an in-app notification whenever someone submits a response.
+          </span>
+        </span>
+      </label>
+      <label className="flex items-start gap-2 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={isListed}
+          onChange={(e) => saveSettings(oneResponse, notify, e.target.checked)}
+          className={checkboxClass}
+        />
+        <span className="text-sm">
+          <span className="text-foreground">List in Forms for you</span>
+          <span className="block text-xs text-muted-foreground">
+            Show this form on Home for people its audience includes. Unlisted
+            forms are reachable only by link.
           </span>
         </span>
       </label>

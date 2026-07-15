@@ -290,6 +290,47 @@ export async function formFillAccess(
     : "denied";
 }
 
+// "Forms for you" (member Home): published + listed forms whose audience
+// admits the viewer. Listing is opt-in per form (Form.listed) — audience
+// controls who CAN fill, listed controls whether the form is discoverable
+// at all; unlisted forms stay reachable only by link. One-response forms the
+// member already submitted are dropped (no point nudging them toward the
+// "already filled out" panel). Sequential access checks are fine at the
+// handful-of-listed-forms scale.
+export type ListedForm = { id: string; name: string; fillUrl: string };
+
+export async function listedFormsFor(userId: string): Promise<ListedForm[]> {
+  const forms = await prisma.form.findMany({
+    where: { listed: true, published: true, publicToken: { not: null } },
+    orderBy: { name: "asc" },
+    select: {
+      id: true,
+      name: true,
+      publicToken: true,
+      audience: true,
+      audienceGroupIds: true,
+      oneResponsePerMember: true,
+    },
+  });
+
+  const visible: ListedForm[] = [];
+  for (const form of forms) {
+    if ((await formFillAccess(form, userId)) !== "ok") continue;
+    if (
+      form.oneResponsePerMember &&
+      (await existingOrdinarySubmission(form.id, userId))
+    ) {
+      continue;
+    }
+    visible.push({
+      id: form.id,
+      name: form.name,
+      fillUrl: `/forms/fill/${form.publicToken}`,
+    });
+  }
+  return visible;
+}
+
 export type MemberSubmitResult =
   | { ok: true }
   | { error: string; status: number };

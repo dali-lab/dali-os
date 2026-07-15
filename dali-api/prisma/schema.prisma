@@ -2777,6 +2777,10 @@ model Form {
   audience         FormAudience @default(Members)
   audienceGroupIds String[]     @default([])
 
+  // Opt-in discovery: listed forms appear in "Forms for you" (Home) for
+  // people the audience admits. Unlisted forms stay reachable by link only.
+  listed Boolean @default(false)
+
   // Editable working copy. "Save" writes here; the draft is mutable and is
   // NEVER served to fillers. "Save as version" freezes the draft into an
   // immutable FormVersion and clears these back to null. Published fills
