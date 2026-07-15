@@ -5,7 +5,7 @@ vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
 }));
 vi.mock("~/hiring/lib/cycles");
-vi.mock("~/hiring/lib/submission-check", () => ({
+vi.mock("~/lib/submission-check", () => ({
   checkGitHubUrl: vi.fn(),
   checkFigmaUrl: vi.fn(),
 }));

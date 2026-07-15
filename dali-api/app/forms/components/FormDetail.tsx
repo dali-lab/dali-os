@@ -12,7 +12,7 @@ import {
   Check,
   Inbox,
 } from "lucide-react";
-import { FormBuilderTab } from "~/hiring/components/ChallengeBuilder";
+import { FormBuilderTab } from "~/components/form-builder/FormBuilder";
 import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
 import { Button } from "~/components/ui/Button";
 import type { Question } from "~/types";

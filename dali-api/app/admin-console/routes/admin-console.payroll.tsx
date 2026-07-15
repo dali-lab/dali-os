@@ -39,7 +39,7 @@ import { SearchInput } from "~/components/ui/SearchInput";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { formatUsd } from "~/lib/money";
 import { cn } from "~/lib/cn";
-import { useChartColors } from "~/hiring/components/analytics/useChartColors";
+import { useChartColors } from "~/components/analytics/useChartColors";
 import { PayrollUploadModal } from "~/admin-console/components/PayrollUploadModal";
 import { PayrollBudgetPanel } from "~/admin-console/components/PayrollBudgetPanel";
 

@@ -1,14 +1,14 @@
 import { describe, it, expect, vi } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ChallengeQuestionField } from "../ChallengeQuestionField";
+import { FormQuestionField } from "~/components/form-builder/QuestionField";
 import type { Question } from "~/types";
 
-function renderField(props: Parameters<typeof ChallengeQuestionField>[0]) {
-  return renderToStaticMarkup(createElement(ChallengeQuestionField, props));
+function renderField(props: Parameters<typeof FormQuestionField>[0]) {
+  return renderToStaticMarkup(createElement(FormQuestionField, props));
 }
 
-describe("ChallengeQuestionField — question types render", () => {
+describe("FormQuestionField — question types render", () => {
   it("renders a text input for type=text", () => {
     const q: Question = { key: "name", type: "text", required: false, data: { label: "Name" } };
     const html = renderField({ question: q, value: "", onChange: () => {} });
@@ -106,7 +106,7 @@ describe("ChallengeQuestionField — question types render", () => {
   });
 });
 
-describe("ChallengeQuestionField — disabled propagates to underlying inputs", () => {
+describe("FormQuestionField — disabled propagates to underlying inputs", () => {
   it("text input is disabled and aria-disabled when disabled=true", () => {
     const q: Question = { key: "name", type: "text", required: false, data: { label: "Name" } };
     const html = renderField({ question: q, value: "", onChange: () => {}, disabled: true });
@@ -158,7 +158,7 @@ describe("ChallengeQuestionField — disabled propagates to underlying inputs", 
   });
 });
 
-describe("ChallengeQuestionField — required asterisk and labels are owned by the caller", () => {
+describe("FormQuestionField — required asterisk and labels are owned by the caller", () => {
   it("does not render the question label or asterisk itself (caller is responsible)", () => {
     const q: Question = { key: "name", type: "text", required: true, data: { label: "Full Name" } };
     const html = renderField({ question: q, value: "", onChange: () => {} });
@@ -166,7 +166,7 @@ describe("ChallengeQuestionField — required asterisk and labels are owned by t
   });
 });
 
-describe("ChallengeQuestionField — onChange is wired (and the rendered input would not fire when disabled)", () => {
+describe("FormQuestionField — onChange is wired (and the rendered input would not fire when disabled)", () => {
   it("the underlying disabled input prevents change events from being dispatched in the browser", () => {
     // We can't dispatch real events in renderToStaticMarkup; we assert the
     // disabled attribute is present, which is what makes the browser block

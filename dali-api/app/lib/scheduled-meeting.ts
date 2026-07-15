@@ -8,7 +8,7 @@ import { notify } from "~/lib/notify.server";
 import { resolveGroupMembers } from "~/lib/groups";
 import { createGoogleCalendarEvent, type GoogleAttendee } from "~/lib/google-calendar";
 import { primaryEmail } from "~/lib/display";
-import { buildIcs } from "~/hiring/lib/interview-ics";
+import { buildIcs } from "~/lib/ics";
 import type { ScheduledMeeting } from "~/generated/prisma/client";
 
 function meetingUid(meetingId: string): string {

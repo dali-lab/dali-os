@@ -9,7 +9,7 @@ import type { Prisma } from "~/generated/prisma/client";
 import { CycleSetupSection as Section } from "~/hiring/components/CycleSetupSection";
 import { ChallengePreviewModal } from "~/hiring/components/ChallengePreviewModal";
 import { RichTextEditor } from "~/components/RichTextEditor";
-import { hasInfoBody } from "~/hiring/lib/info-body";
+import { hasInfoBody } from "~/components/form-builder/info-body";
 import { renderEmail } from "~/lib/email";
 import {
   TEMPLATE_VARIABLES,

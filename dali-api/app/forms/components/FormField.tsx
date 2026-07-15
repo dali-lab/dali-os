@@ -1,13 +1,13 @@
 import type { Question } from "~/types";
 import {
-  ChallengeQuestionField,
+  FormQuestionField,
   type UrlCheckState,
-} from "~/hiring/components/ChallengeQuestionField";
-import { InfoBody } from "~/hiring/lib/info-body";
+} from "~/components/form-builder/QuestionField";
+import { InfoBody } from "~/components/form-builder/info-body";
 
 // The per-question wrapper that every fill surface used to hand-write:
 // label + standardized required star + optional description + the field.
-// The field renderer itself stays in ChallengeQuestionField — this only owns
+// The field renderer itself stays in FormQuestionField — this only owns
 // the chrome around it (and the `info` prose block, which is not a field).
 
 export interface FormFieldProps {
@@ -66,7 +66,7 @@ export function FormField({
       {renderField ? (
         renderField(question)
       ) : (
-        <ChallengeQuestionField
+        <FormQuestionField
           question={question}
           value={value}
           onChange={onChange}

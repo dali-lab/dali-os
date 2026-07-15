@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useLoaderData, useSubmit, useSearchParams, useNavigation, Form } from 'react-router'
 import { Plus, FileText, Clock, UserIcon, Eye } from 'lucide-react'
-import { FormBuilderTab } from '~/hiring/components/ChallengeBuilder'
+import { FormBuilderTab } from '~/components/form-builder/FormBuilder'
 import { RichTextViewer, isEmptyDoc } from '~/components/RichTextViewer'
 import { ChallengePreviewModal } from '~/hiring/components/ChallengePreviewModal'
 import type { Question } from '~/types'

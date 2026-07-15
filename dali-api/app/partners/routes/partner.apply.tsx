@@ -11,7 +11,7 @@ import { loadApplicationForm } from "~/partners/lib/application-form.server";
 import { validateAnswers } from "~/forms/lib/public-form";
 import { notifyFormSubmission } from "~/forms/lib/submission-notify.server";
 import { FormFieldList } from "~/forms/components/FormField";
-import { ChallengeQuestionField } from "~/hiring/components/ChallengeQuestionField";
+import { FormQuestionField } from "~/components/form-builder/QuestionField";
 import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
 import { findMissingRequired } from "~/lib/form-answers";
 
@@ -332,7 +332,7 @@ export default function PartnerApply({ actionData }: Route.ComponentProps) {
                     File uploads aren’t available here.
                   </div>
                 ) : (
-                  <ChallengeQuestionField
+                  <FormQuestionField
                     question={q}
                     value={formAnswers[q.key] ?? ""}
                     onChange={(v) =>

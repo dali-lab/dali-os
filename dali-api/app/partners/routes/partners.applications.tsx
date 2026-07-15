@@ -22,7 +22,7 @@ import {
   PROJECTING_STATUSES,
   type PartnerApplicationStatus as Status,
 } from "../lib/partner-application";
-import { useChartColors } from "~/hiring/components/analytics/useChartColors";
+import { useChartColors } from "~/components/analytics/useChartColors";
 import {
   clearApplicationFormBinding,
   getApplicationFormBinding,
