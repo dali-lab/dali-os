@@ -6,12 +6,14 @@ import {
   X as XIcon,
   CalendarDays,
   ExternalLink,
+  FileText,
   HelpCircle,
   CalendarClock,
 } from "lucide-react";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { listOpenTasks, type Task } from "~/lib/tasks";
+import { listedFormsFor, type ListedForm } from "~/forms/lib/public-form";
 import { fetchGeneralCalendarEvents } from "~/lib/general-calendar";
 import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
 import type { Route } from "./+types/home";
@@ -128,7 +130,9 @@ export async function loader({ request }: Route.LoaderArgs) {
     weekEvents.push({ colIdx, startHour, duration, label: ev.summary });
   }
 
-  return { user: auth.user, notifications, tasks, weekDays, weekEvents };
+  const formsForYou = await listedFormsFor(auth.user.sub);
+
+  return { user: auth.user, notifications, tasks, weekDays, weekEvents, formsForYou };
 }
 
 type WeekDayDTO = { num: number };
@@ -140,7 +144,8 @@ type HomeWeekEvent = {
 };
 
 export default function Home() {
-  const { user, notifications, tasks, weekDays, weekEvents } = useLoaderData<typeof loader>();
+  const { user, notifications, tasks, weekDays, weekEvents, formsForYou } =
+    useLoaderData<typeof loader>();
   const firstName = user.firstName || user.email.split("@")[0];
 
   return (
@@ -156,8 +161,42 @@ export default function Home() {
 
       <AttentionBanner tasks={tasks} notifications={notifications} />
 
+      <FormsForYouPanel forms={formsForYou} />
+
       <div className="flex flex-col gap-6">
         <WeekCalendarPanel days={weekDays} events={weekEvents} />
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Forms for you — published forms that opted into listing (Form.listed) */
+/* and whose audience admits this member. Collapses to nothing when      */
+/* there's nothing to show, like the attention banner.                   */
+/* ------------------------------------------------------------------ */
+
+function FormsForYouPanel({ forms }: { forms: ListedForm[] }) {
+  if (forms.length === 0) return null;
+  return (
+    <div className="bg-card border border-border rounded-lg p-3">
+      <div className="flex items-center gap-2 mb-2">
+        <FileText className="w-4 h-4 text-accent-coral" />
+        <span className="font-heading font-semibold text-sm text-foreground">
+          Forms for you
+        </span>
+      </div>
+      <div className="flex flex-col gap-1">
+        {forms.map((f) => (
+          <a
+            key={f.id}
+            href={f.fillUrl}
+            className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-md text-sm text-foreground hover:bg-muted/50 transition-colors"
+          >
+            <span className="truncate">{f.name}</span>
+            <ExternalLink className="w-3.5 h-3.5 text-muted-foreground/70 shrink-0" />
+          </a>
+        ))}
       </div>
     </div>
   );

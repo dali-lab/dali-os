@@ -66,7 +66,7 @@ export function formatDate(d: Date): string {
 // most specific row first: exact (level, domain) > level-only > domain-only >
 // wildcard. Returns null if nothing matches (admin should seed JobCodeLookup
 // before relying on the export).
-function resolveJobCode(
+export function resolveJobCode(
   lookups: Array<{
     level: string | null;
     domainId: string | null;
