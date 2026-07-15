@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   flattenFolderTree,
   descendantSetOf,
+  folderPathMap,
   type FolderOption,
 } from "../folder-tree.shared";
 
@@ -46,6 +47,31 @@ describe("flattenFolderTree", () => {
       { id: "Y", name: "Y", parentId: "X" },
     ]);
     expect(rows.map((r) => r.id).sort()).toEqual(["X", "Y"]);
+  });
+});
+
+describe("folderPathMap", () => {
+  it("builds full slash-separated paths for every folder", () => {
+    const paths = folderPathMap(FIXTURE);
+    expect(paths.get("A")).toBe("Alpha");
+    expect(paths.get("B")).toBe("Alpha / Beta");
+    expect(paths.get("D")).toBe("Alpha / Beta / Delta");
+    expect(paths.get("C")).toBe("Alpha / Gamma");
+    expect(paths.get("E")).toBe("Epsilon");
+  });
+
+  it("treats an unknown parent as a root", () => {
+    const paths = folderPathMap([{ id: "X", name: "X", parentId: "ghost" }]);
+    expect(paths.get("X")).toBe("X");
+  });
+
+  it("terminates on cyclic data", () => {
+    const paths = folderPathMap([
+      { id: "X", name: "X", parentId: "Y" },
+      { id: "Y", name: "Y", parentId: "X" },
+    ]);
+    expect(paths.get("X")).toContain("X");
+    expect(paths.get("Y")).toContain("Y");
   });
 });
 

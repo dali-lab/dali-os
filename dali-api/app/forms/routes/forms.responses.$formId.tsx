@@ -6,6 +6,7 @@ import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { buildResponseGrid } from "~/forms/lib/answer-rows.server";
+import { folderCrumbs, type FolderCrumb } from "~/forms/lib/forms-data";
 import { Modal, ModalHeader } from "~/components/Modal";
 import type { Question } from "~/types";
 
@@ -15,11 +16,21 @@ export const meta: Route.MetaFunction = ({ data }) => [
   },
 ];
 
-// Resolves the dynamic leaf crumb so the trail reads
-// "Documents › Responses › <form name>" instead of a raw id.
+// Expands the id segment into the form's real location — folder ancestry,
+// the form name (linked to the editor), then a "Responses" leaf. The literal
+// "responses" URL segment is dropped by Breadcrumbs' DROPPED_SEGMENTS.
 export const handle = {
-  breadcrumb: (data: unknown) =>
-    (data as { formName?: string } | undefined)?.formName ?? null,
+  breadcrumb: (data: unknown) => {
+    const d = data as
+      | { formId?: string; formName?: string; crumbs?: FolderCrumb[] }
+      | undefined;
+    if (!d?.formName) return null;
+    return [
+      ...(d.crumbs ?? []).map((c) => ({ label: c.name, to: `/forms/${c.id}` })),
+      { label: d.formName, to: `/forms/edit/${d.formId}` },
+      { label: "Responses" },
+    ];
+  },
 };
 
 // Show the newest N submissions inline; the CSV export covers the full set.
@@ -45,9 +56,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const form = await prisma.form.findUnique({
     where: { id: params.formId },
-    select: { id: true, name: true, _count: { select: { submissions: true } } },
+    select: {
+      id: true,
+      name: true,
+      folderId: true,
+      _count: { select: { submissions: true } },
+    },
   });
   if (!form) return redirect("/forms");
+  const crumbs = await folderCrumbs(form.folderId);
 
   // When this form is the bound partner application form, the applications
   // board is the canonical review surface — this page is just the raw view.
@@ -115,6 +132,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   return {
     formId: form.id,
     formName: form.name,
+    crumbs,
     isPartnerApplicationForm: partnerBinding !== null,
     totalCount: form._count.submissions,
     columns: grid.columns,

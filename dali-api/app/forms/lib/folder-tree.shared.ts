@@ -38,6 +38,31 @@ export function flattenFolderTree(folders: FolderOption[]): FolderTreeRow[] {
   return rows;
 }
 
+// Full display path ("Parent / Child / Grandchild") for every folder, keyed
+// by id. Search results show an item's location with this; an orphaned or
+// cyclic parent chain (impossible server-side, defensive here) just truncates
+// to the reachable prefix.
+export function folderPathMap(folders: FolderOption[]): Map<string, string> {
+  const byId = new Map(folders.map((f) => [f.id, f]));
+  const paths = new Map<string, string>();
+  function pathOf(id: string, seen: Set<string>): string {
+    const cached = paths.get(id);
+    if (cached !== undefined) return cached;
+    const f = byId.get(id);
+    if (!f) return "";
+    let path = f.name;
+    if (f.parentId && byId.has(f.parentId) && !seen.has(f.parentId)) {
+      seen.add(f.parentId);
+      const parentPath = pathOf(f.parentId, seen);
+      if (parentPath) path = `${parentPath} / ${f.name}`;
+    }
+    paths.set(id, path);
+    return path;
+  }
+  for (const f of folders) pathOf(f.id, new Set([f.id]));
+  return paths;
+}
+
 // The folder itself plus every folder beneath it — the set of invalid move
 // destinations when moving `folderId`.
 export function descendantSetOf(

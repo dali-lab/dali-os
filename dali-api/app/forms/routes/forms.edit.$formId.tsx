@@ -3,7 +3,12 @@ import type { Route } from "./+types/forms.edit.$formId";
 import { requireAuth, forbidden, redirectApplicantToPortal } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { prisma } from "~/lib/db";
-import { loadFormForEdit, runFormsAction } from "~/forms/lib/forms-data";
+import {
+  folderCrumbs,
+  loadFormForEdit,
+  runFormsAction,
+  type FolderCrumb,
+} from "~/forms/lib/forms-data";
 import { formUsages } from "~/forms/lib/form-usages.server";
 import { FormDetail } from "~/forms/components/FormDetail";
 
@@ -11,11 +16,21 @@ export const meta: Route.MetaFunction = ({ data }) => [
   { title: `${(data as any)?.form?.name ?? "Form"} · Forms · DALI OS` },
 ];
 
-// Resolves the dynamic leaf crumb so the trail reads
-// "Documents › Edit › <form name>" instead of a raw id.
+// Expands the id segment into the form's real location — folder ancestry
+// (linked) then the form name — so the trail reads
+// "Forms › <folder> › … › <form name>". The literal "edit" URL segment
+// carries no location and is dropped by Breadcrumbs' DROPPED_SEGMENTS.
 export const handle = {
-  breadcrumb: (data: unknown) =>
-    (data as { form?: { name?: string } } | undefined)?.form?.name ?? null,
+  breadcrumb: (data: unknown) => {
+    const d = data as
+      | { form?: { name: string }; crumbs?: FolderCrumb[] }
+      | undefined;
+    if (!d?.form) return null;
+    return [
+      ...(d.crumbs ?? []).map((c) => ({ label: c.name, to: `/forms/${c.id}` })),
+      { label: d.form.name },
+    ];
+  },
 };
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -29,19 +44,21 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!form) return redirect("/forms");
   // Terms for term-scoped reference questions (e.g. projects active in a
   // chosen term). Newest first so the most likely choices are at the top.
-  const [terms, usages, submissionCount] = await Promise.all([
+  const [terms, usages, submissionCount, crumbs] = await Promise.all([
     prisma.term.findMany({
       orderBy: { sortKey: "desc" },
       select: { id: true, code: true },
     }),
     formUsages(params.formId),
     prisma.formSubmission.count({ where: { formId: params.formId } }),
+    folderCrumbs(form.folderId),
   ]);
   return {
     form,
     terms,
     usages,
     submissionCount,
+    crumbs,
   };
 }
 

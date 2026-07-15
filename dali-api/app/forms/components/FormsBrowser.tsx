@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, useFetcher } from "react-router";
 import {
   DndContext,
@@ -13,10 +13,11 @@ import {
 import { Folder, FolderUp, FileText, MoreVertical } from "lucide-react";
 import { Button } from "~/components/ui/Button";
 import { Modal, ModalHeader, ModalFooter } from "~/components/Modal";
-import type { FormCard, FolderCard } from "~/forms/lib/forms-data";
+import type { FormCard, FolderCard, FormRef } from "~/forms/lib/forms-data";
 import {
   flattenFolderTree,
   descendantSetOf,
+  folderPathMap,
   type FolderOption,
 } from "~/forms/lib/folder-tree.shared";
 
@@ -45,7 +46,15 @@ type Dialog =
       submit: Record<string, string>;
     };
 
-type MoveSubject = { type: "form" | "folder"; id: string; name: string };
+type MoveSubject = {
+  type: "form" | "folder";
+  id: string;
+  name: string;
+  // Where the subject currently lives (its containing folder, null = top
+  // level) — the picker disables and annotates this row. Grid cards live at
+  // the browsed level; search results carry their own location.
+  locationId: string | null;
+};
 type DragItem = { type: "form" | "folder"; id: string };
 
 export function FormsBrowser({
@@ -54,6 +63,7 @@ export function FormsBrowser({
   folders,
   forms,
   allFolders,
+  allForms,
 }: {
   // The folder this view is showing (null = top level). New forms/folders
   // are created in this folder.
@@ -63,8 +73,10 @@ export function FormsBrowser({
   parentId: string | null;
   folders: FolderCard[];
   forms: FormCard[];
-  // Every folder in the tree, for the "Move to…" picker.
+  // Every folder/form in the tree, for the "Move to…" picker and the
+  // cross-depth search.
   allFolders: FolderOption[];
+  allForms: FormRef[];
 }) {
   const fetcher = useFetcher();
   const [dialog, setDialog] = useState<Dialog | null>(null);
@@ -81,13 +93,19 @@ export function FormsBrowser({
   const busy = fetcher.state !== "idle";
   const error = errorOf(fetcher.data);
 
+  // A non-empty query searches the WHOLE tree (allFolders/allForms), not just
+  // the browsed level; results replace the grid and show each hit's location.
   const q = query.trim().toLowerCase();
-  const visibleFolders = q
-    ? folders.filter((d) => d.name.toLowerCase().includes(q))
-    : folders;
-  const visibleForms = q
-    ? forms.filter((f) => f.name.toLowerCase().includes(q))
-    : forms;
+  const searching = q.length > 0;
+  const pathById = useMemo(() => folderPathMap(allFolders), [allFolders]);
+  const locationOf = (containerId: string | null) =>
+    containerId ? (pathById.get(containerId) ?? "…") : "Top level";
+  const folderResults = searching
+    ? allFolders.filter((d) => d.name.toLowerCase().includes(q))
+    : [];
+  const formResults = searching
+    ? allForms.filter((f) => f.name.toLowerCase().includes(q))
+    : [];
 
   function createForm() {
     setDialog({
@@ -117,7 +135,7 @@ export function FormsBrowser({
       }),
     });
   }
-  function renameForm(f: FormCard) {
+  function renameForm(f: { id: string; name: string }) {
     setDialog({
       kind: "prompt",
       title: "Rename form",
@@ -127,7 +145,7 @@ export function FormsBrowser({
       submit: (name) => ({ intent: "rename-form", id: f.id, name }),
     });
   }
-  function deleteForm(f: FormCard) {
+  function deleteForm(f: { id: string; name: string }) {
     setDialog({
       kind: "confirm",
       title: "Delete form",
@@ -136,7 +154,7 @@ export function FormsBrowser({
       submit: { intent: "delete-form", id: f.id },
     });
   }
-  function renameFolder(d: FolderCard) {
+  function renameFolder(d: { id: string; name: string }) {
     setDialog({
       kind: "prompt",
       title: "Rename folder",
@@ -146,7 +164,7 @@ export function FormsBrowser({
       submit: (name) => ({ intent: "rename-folder", id: d.id, name }),
     });
   }
-  function deleteFolder(d: FolderCard) {
+  function deleteFolder(d: { id: string; name: string }) {
     setDialog({
       kind: "confirm",
       title: "Delete folder",
@@ -209,7 +227,7 @@ export function FormsBrowser({
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search forms and folders"
+          placeholder="Search all forms and folders"
           className="flex-1 min-w-[200px] max-w-sm px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
         />
         <div className="flex items-center gap-2">
@@ -239,13 +257,82 @@ export function FormsBrowser({
         </div>
       )}
 
-      {empty ? (
+      {searching ? (
+        folderResults.length === 0 && formResults.length === 0 ? (
+          <div className="border border-dashed border-border rounded-lg p-10 text-center text-sm text-muted-foreground">
+            No forms or folders match "{query.trim()}" anywhere.
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {folderResults.map((d) => (
+              <Link
+                key={d.id}
+                to={`/forms/${d.id}`}
+                className="group flex items-center gap-3 bg-card border border-border rounded-lg px-4 py-3 hover:border-accent-coral/60 hover:shadow-sm transition-all"
+              >
+                <Folder className="w-5 h-5 text-accent-coral fill-accent-coral/20 shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-semibold text-foreground truncate">
+                    {d.name}
+                  </div>
+                  <div className="text-xs text-muted-foreground truncate">
+                    {locationOf(d.parentId)}
+                  </div>
+                </div>
+                <CardMenu
+                  busy={busy}
+                  onRename={() => renameFolder(d)}
+                  onMove={() =>
+                    setMove({
+                      type: "folder",
+                      id: d.id,
+                      name: d.name,
+                      locationId: d.parentId,
+                    })
+                  }
+                  onDelete={() => deleteFolder(d)}
+                />
+              </Link>
+            ))}
+            {formResults.map((f) => (
+              <div
+                key={f.id}
+                className="group flex items-center gap-3 bg-card border border-border rounded-lg px-4 py-3 hover:border-accent-coral/60 hover:shadow-sm transition-all"
+              >
+                <Link
+                  to={`/forms/edit/${f.id}`}
+                  className="flex items-center gap-3 min-w-0 flex-1"
+                >
+                  <FileText className="w-5 h-5 text-muted-foreground group-hover:text-accent-coral transition-colors shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-semibold text-foreground truncate">
+                      {f.name}
+                    </div>
+                    <div className="text-xs text-muted-foreground truncate">
+                      {locationOf(f.folderId)}
+                    </div>
+                  </div>
+                </Link>
+                <CardMenu
+                  busy={busy}
+                  onRename={() => renameForm(f)}
+                  onMove={() =>
+                    setMove({
+                      type: "form",
+                      id: f.id,
+                      name: f.name,
+                      locationId: f.folderId,
+                    })
+                  }
+                  onDelete={() => deleteForm(f)}
+                />
+              </div>
+            ))}
+          </div>
+        )
+      ) : empty ? (
         <div className="border border-dashed border-border rounded-lg p-10 text-center text-sm text-muted-foreground">
           Nothing here yet. Create a form or a folder to get started.
-        </div>
-      ) : visibleFolders.length === 0 && visibleForms.length === 0 ? (
-        <div className="border border-dashed border-border rounded-lg p-10 text-center text-sm text-muted-foreground">
-          No forms or folders match "{query.trim()}".
         </div>
       ) : (
         // Fixed id keeps dnd-kit's generated ids stable across SSR/client.
@@ -265,7 +352,7 @@ export function FormsBrowser({
             />
           )}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {visibleFolders.map((d) => (
+            {folders.map((d) => (
               <FolderCardView
                 key={d.id}
                 folder={d}
@@ -276,18 +363,30 @@ export function FormsBrowser({
                 onRename={() => renameFolder(d)}
                 onDelete={() => deleteFolder(d)}
                 onMove={() =>
-                  setMove({ type: "folder", id: d.id, name: d.name })
+                  setMove({
+                    type: "folder",
+                    id: d.id,
+                    name: d.name,
+                    locationId: folderId,
+                  })
                 }
               />
             ))}
-            {visibleForms.map((f) => (
+            {forms.map((f) => (
               <FormCardView
                 key={f.id}
                 form={f}
                 busy={busy}
                 onRename={() => renameForm(f)}
                 onDelete={() => deleteForm(f)}
-                onMove={() => setMove({ type: "form", id: f.id, name: f.name })}
+                onMove={() =>
+                  setMove({
+                    type: "form",
+                    id: f.id,
+                    name: f.name,
+                    locationId: folderId,
+                  })
+                }
               />
             ))}
           </div>
@@ -307,7 +406,7 @@ export function FormsBrowser({
         <MoveDialog
           subject={move}
           allFolders={allFolders}
-          currentLocationId={folderId}
+          currentLocationId={move.locationId}
           busy={busy}
           onCancel={() => setMove(null)}
           onMove={(destinationId) => {
@@ -588,8 +687,7 @@ function MoveDialog({
 }: {
   subject: MoveSubject;
   allFolders: FolderOption[];
-  // The folder this view is showing — every card here lives at this level,
-  // so it's the subject's current location.
+  // The folder the subject currently lives in (null = top level).
   currentLocationId: string | null;
   busy: boolean;
   onCancel: () => void;
