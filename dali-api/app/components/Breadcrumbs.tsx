@@ -44,7 +44,8 @@ const SEGMENT_LABELS: Record<string, string> = {
   domains: 'Domains',
   announcements: 'Announcements',
   activity: 'Activity',
-  'payroll-export': 'Payroll Export',
+  'payroll-export': 'Payroll: Hire Setup',
+  payroll: 'Payroll: Reconcile',
 
   projects: 'Projects',
   staffing: 'Staffing',
@@ -88,7 +89,6 @@ function titleCase(seg: string) {
 const UNROUTED_SEGMENTS = new Set([
   'documents', // /documents/:pageId only — no bare /documents index
   'file',
-  'edit', // /forms/edit/:formId
   'challenges',
   'rubrics',
   'confidentiality-agreements',
@@ -100,6 +100,15 @@ const UNROUTED_SEGMENTS = new Set([
   'assignments', // /education/manage/assignments/:assignmentId
   'page',
   'certificates',
+])
+
+// Structural URL segments that carry no location of their own — the sibling
+// dynamic segment's route supplies the real sub-trail (e.g. /forms/edit/:id
+// expands into folder ancestry + form name, and /forms/responses/:id adds a
+// "Responses" leaf itself). Rendered as nothing rather than as a crumb.
+const DROPPED_SEGMENTS = new Set([
+  'edit', // /forms/edit/:formId
+  'responses', // /forms/responses/:formId
 ])
 
 // Opaque database ids that would render as gibberish in a trail: cuids
@@ -143,6 +152,7 @@ export function Breadcrumbs() {
   let afterDroppedId = false
   for (let i = 0; i < segments.length; i += 1) {
     const seg = segments[i]!
+    if (DROPPED_SEGMENTS.has(seg)) continue
     const to = '/' + segments.slice(0, i + 1).join('/')
     const isLast = i === segments.length - 1
     // Once an opaque id has been dropped, later prefixes still contain it and

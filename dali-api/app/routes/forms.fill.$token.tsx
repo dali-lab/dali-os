@@ -2,7 +2,12 @@ import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/forms.fill.$token";
 import { requireAuth } from "~/lib/auth";
 import { requireMember } from "~/lib/roles";
-import { loadPublicForm } from "~/forms/lib/public-form";
+import {
+  formAccessMeta,
+  formFillAccess,
+  loadPublicForm,
+  ordinaryFillBlock,
+} from "~/forms/lib/public-form";
 import { canFillEducationForm } from "~/education/lib/feedback.server";
 import {
   MemberFormFillView,
@@ -13,14 +18,20 @@ export const meta: Route.MetaFunction = ({ data }) => [
   { title: `${(data as { name?: string })?.name ?? "Form"} · DALI OS` },
 ];
 
-// AUTHENTICATED member fill route for slot-bound forms (Project Bids etc.).
-// Identity comes from the session — no name/email capture — which is what
-// lets a submission be interpreted into StaffingPreference for this member.
-// Reuses loadPublicForm (token-addressed, published-only) for the form body.
+// Token-addressed fill route. Who may fill is the form's audience setting
+// (Members / SignedIn / Groups / Public), gated by formFillAccess — the same
+// gate the submit endpoint uses. Public-audience forms render without a
+// session; signed-in fills are identified by the session (no name/email
+// capture), which is what lets a submission be interpreted into
+// StaffingPreference for the member. Reuses loadPublicForm (token-addressed,
+// published-only) for the form body.
 export async function loader({ request, params }: Route.LoaderArgs) {
+  const meta = await formAccessMeta(params.token!);
+  if (!meta) throw new Response("Not found", { status: 404 });
+
+  // Optional session: only non-public audiences require one.
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
-  if (auth.user.type === "applicant") return redirect("/portal");
+  const userId = auth.ok ? auth.user.sub : null;
 
   // Education feedback context riding the fill URL (?session= / ?offering=).
   // Validated server-side; carried into the submit body so the submission
@@ -29,32 +40,92 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const educationSessionId = url.searchParams.get("session");
   const educationOfferingId = url.searchParams.get("offering");
 
-  // Only lab members submit staffing forms — but a non-member portal student
-  // may fill a form bound to an education slot they're enrolled in (session
-  // feedback). The education context is what admits them.
-  if (!(await requireMember(auth.user.sub))) {
-    const admitted =
-      (educationSessionId || educationOfferingId) &&
-      (await canFillEducationForm({
+  if (educationSessionId || educationOfferingId) {
+    // Education-context fills bypass the audience gate: enrollment (or an
+    // instructor assignment) is their authorization, and a session is
+    // required so the submission is attributable.
+    if (!userId) return redirect("/login");
+    if (!(await requireMember(userId))) {
+      const admitted = await canFillEducationForm({
         token: params.token!,
-        userId: auth.user.sub,
+        userId,
         sessionId: educationSessionId,
         offeringId: educationOfferingId,
-      }));
-    if (!admitted) return redirect("/");
+      });
+      if (!admitted) return redirect("/");
+    }
+  } else {
+    const access = await formFillAccess(meta, userId);
+    if (access === "login") return redirect("/login");
+    if (access === "denied") {
+      return { accessDenied: true as const, name: meta.name };
+    }
   }
 
-  // Pass the member's id so member-scoped reference sources (e.g. a bid's
-  // domain dropdown limited to the member's own eligibility) populate.
-  const form = await loadPublicForm(params.token!, auth.user.sub);
+  // Pass the user's id (when signed in) so member-scoped reference sources
+  // (e.g. a bid's domain dropdown limited to the member's own eligibility)
+  // populate; they resolve to [] on anonymous fills.
+  const form = await loadPublicForm(params.token!, userId);
   if (!form) throw new Response("Not found", { status: 404 });
+
+  // One-response gate (Form.oneResponsePerMember): education-context fills
+  // are per-session and exempt; anonymous fills have no identity to key on;
+  // ordinaryFillBlock also exempts slot-bound forms, mirroring
+  // submitMemberForm's 409 gate.
+  const block =
+    userId && !educationSessionId && !educationOfferingId
+      ? await ordinaryFillBlock(form.formId, userId)
+      : null;
+
   // loadPublicForm doesn't echo the token back; the submit endpoint is
   // addressed by it, so pass it through explicitly.
-  return { ...form, token: params.token!, educationSessionId, educationOfferingId };
+  return {
+    accessDenied: false as const,
+    ...form,
+    token: params.token!,
+    educationSessionId,
+    educationOfferingId,
+    alreadySubmitted: block ? { at: block.at.toISOString() } : null,
+  };
 }
 
 export default function MemberFormFill() {
   const data = useLoaderData<typeof loader>();
+  if (data.accessDenied) {
+    return (
+      <MemberFormShell>
+        <div className="text-center py-10">
+          <h1 className="font-heading text-xl font-bold text-dark-blue">
+            You don't have access to this form
+          </h1>
+          <p className="text-sm text-muted-foreground mt-2">
+            "{data.name}" is limited to a specific audience. If you think you
+            should have access, contact whoever sent you this link.
+          </p>
+        </div>
+      </MemberFormShell>
+    );
+  }
+  if (data.alreadySubmitted) {
+    return (
+      <MemberFormShell>
+        <div className="text-center py-10">
+          <h1 className="font-heading text-xl font-bold text-dark-blue">
+            You've already filled out this form
+          </h1>
+          <p className="text-sm text-muted-foreground mt-2">
+            You submitted "{data.name}" on{" "}
+            {new Date(data.alreadySubmitted.at).toLocaleDateString(undefined, {
+              month: "long",
+              day: "numeric",
+              year: "numeric",
+            })}
+            .
+          </p>
+        </div>
+      </MemberFormShell>
+    );
+  }
   return (
     <MemberFormShell>
       <MemberFormFillView

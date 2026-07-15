@@ -5,10 +5,12 @@
 // so the fill surface stays small and auditable.
 
 import { prisma } from "~/lib/db";
+import type { FormAudience } from "~/generated/prisma/client";
 import type { Question } from "~/types";
 import { resolveReferenceOptions } from "./reference-sources";
 import { safeParseJsonString } from "./forms-data";
-import { currentTerm } from "~/lib/roles";
+import { currentTerm, requireMember } from "~/lib/roles";
+import { isUserInAnyGroup } from "~/lib/groups";
 import { interpretBidForm } from "~/projects/lib/bid-form-interpreter";
 import { validateBids, replaceBidSet } from "~/projects/lib/bid-validation";
 import { interpretIntentForm } from "~/projects/lib/intent-form-interpreter";
@@ -26,6 +28,7 @@ import {
 } from "~/members/lib/profile-form-interpreter";
 import { clearOnboardingTask } from "~/members/lib/welcome.server";
 import { syncSlackUserId } from "~/members/lib/slack-sync.server";
+import { notifyFormSubmission } from "./submission-notify.server";
 
 export type PublicForm = {
   formId: string;
@@ -100,8 +103,46 @@ export async function loadPublicForm(
 export async function validateAnswers(
   questions: Question[],
   answers: Record<string, unknown>,
-  userId: string,
+  // Null on anonymous (Public-audience) fills — member-scoped reference
+  // sources then resolve to [] and their answers can't validate.
+  userId: string | null,
 ): Promise<{ error: string; status: number } | null> {
+  // Checkbox answers arrive as a JSON-stringified array (the fill UIs keep
+  // string-valued state); parse, validate against the question's options, and
+  // normalize IN PLACE so every caller (member fill, education apply, partner
+  // apply) persists a real string[] in the answers JSON. Runs before the
+  // required pass so a '[]' payload normalizes to [] and is caught as empty.
+  for (const q of questions) {
+    if (q.type !== "checkbox") continue;
+    const raw = answers[q.key];
+    if (raw == null || raw === "") continue; // unanswered — required pass handles it
+    let parsed: unknown = raw;
+    if (typeof raw === "string") {
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        parsed = undefined;
+      }
+    }
+    if (
+      !Array.isArray(parsed) ||
+      !parsed.every((v): v is string => typeof v === "string")
+    ) {
+      return {
+        error: `"${q.data.label}": couldn't read the selected options.`,
+        status: 400,
+      };
+    }
+    const allowed = new Set(q.data.options ?? []);
+    if (parsed.some((v) => !allowed.has(v))) {
+      return {
+        error: `"${q.data.label}": that choice is no longer available.`,
+        status: 400,
+      };
+    }
+    answers[q.key] = [...new Set(parsed)];
+  }
+
   // Enforce required answers. `file` questions can't be completed without an
   // authenticated upload presign, so a required file question makes the form
   // unsubmittable here — say so explicitly instead of rejecting an otherwise
@@ -144,9 +185,225 @@ export async function validateAnswers(
   return null;
 }
 
+// A member's prior ORDINARY submission of this form: attributed to them and
+// carrying no staffing/education scope. This where-clause DEFINES what the
+// oneResponsePerMember toggle gates — slot-bound fills (project-bids /
+// intent-to-work / level-up) and education fills are excluded because those
+// keep replace / per-session semantics regardless of the toggle.
+export async function existingOrdinarySubmission(
+  formId: string,
+  userId: string,
+): Promise<{ id: string; createdAt: Date } | null> {
+  return prisma.formSubmission.findFirst({
+    where: {
+      formId,
+      userId,
+      slot: null,
+      staffingCycleId: null,
+      educationOfferingId: null,
+      educationSessionId: null,
+    },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, createdAt: true },
+  });
+}
+
+// Loader-side twin of submitMemberForm's ordinary-branch 409 gate: the fill
+// page uses this to show the "already filled out" panel instead of the form.
+// Must mirror the submit gate exactly — same binding detection (a slot-bound
+// form's replace semantics win over the toggle), same where-clause.
+export async function ordinaryFillBlock(
+  formId: string,
+  userId: string,
+): Promise<{ at: Date } | null> {
+  const form = await prisma.form.findUnique({
+    where: { id: formId },
+    select: {
+      oneResponsePerMember: true,
+      cycleBindings: {
+        select: {
+          slot: true,
+          updatedAt: true,
+          staffingCycle: { select: { termId: true } },
+        },
+      },
+    },
+  });
+  if (!form?.oneResponsePerMember) return null;
+  const term = await currentTerm();
+  if (pickStaffingBinding(form.cycleBindings, term?.id ?? null)) return null;
+  const existing = await existingOrdinarySubmission(formId, userId);
+  return existing ? { at: existing.createdAt } : null;
+}
+
+// Just enough of a published form to decide who may fill it — queried before
+// any session handling, and cheap enough for the submit endpoint to reuse
+// (unlike loadPublicForm, which resolves reference options per question).
+// Null when the token is unknown or the form is unpublished.
+export type FormAccessMeta = {
+  id: string;
+  name: string;
+  audience: FormAudience;
+  audienceGroupIds: string[];
+};
+
+export async function formAccessMeta(
+  token: string,
+): Promise<FormAccessMeta | null> {
+  const form = await prisma.form.findUnique({
+    where: { publicToken: token },
+    select: {
+      id: true,
+      name: true,
+      published: true,
+      audience: true,
+      audienceGroupIds: true,
+    },
+  });
+  if (!form || !form.published) return null;
+  return {
+    id: form.id,
+    name: form.name,
+    audience: form.audience,
+    audienceGroupIds: form.audienceGroupIds,
+  };
+}
+
+export type FillAccess = "ok" | "login" | "denied";
+
+// The single audience gate — the fill loader and the submit action both call
+// this so their decisions can't drift. `userId` is null when there is no
+// session. Note Groups does NOT fall back to lab membership: only the
+// selected groups admit.
+export async function formFillAccess(
+  form: Pick<FormAccessMeta, "audience" | "audienceGroupIds">,
+  userId: string | null,
+): Promise<FillAccess> {
+  if (form.audience === "Public") return "ok";
+  if (!userId) return "login";
+  if (form.audience === "SignedIn") return "ok";
+  if (form.audience === "Members") {
+    return (await requireMember(userId)) ? "ok" : "denied";
+  }
+  return (await isUserInAnyGroup(userId, form.audienceGroupIds))
+    ? "ok"
+    : "denied";
+}
+
+// "Forms for you" (member Home): published + listed forms whose audience
+// admits the viewer. Listing is opt-in per form (Form.listed) — audience
+// controls who CAN fill, listed controls whether the form is discoverable
+// at all; unlisted forms stay reachable only by link. One-response forms the
+// member already submitted are dropped (no point nudging them toward the
+// "already filled out" panel). Sequential access checks are fine at the
+// handful-of-listed-forms scale.
+export type ListedForm = { id: string; name: string; fillUrl: string };
+
+export async function listedFormsFor(userId: string): Promise<ListedForm[]> {
+  const forms = await prisma.form.findMany({
+    where: { listed: true, published: true, publicToken: { not: null } },
+    orderBy: { name: "asc" },
+    select: {
+      id: true,
+      name: true,
+      publicToken: true,
+      audience: true,
+      audienceGroupIds: true,
+      oneResponsePerMember: true,
+    },
+  });
+
+  const visible: ListedForm[] = [];
+  for (const form of forms) {
+    if ((await formFillAccess(form, userId)) !== "ok") continue;
+    if (
+      form.oneResponsePerMember &&
+      (await existingOrdinarySubmission(form.id, userId))
+    ) {
+      continue;
+    }
+    visible.push({
+      id: form.id,
+      name: form.name,
+      fillUrl: `/forms/fill/${form.publicToken}`,
+    });
+  }
+  return visible;
+}
+
 export type MemberSubmitResult =
   | { ok: true }
   | { error: string; status: number };
+
+// The version a submission should record against: the client-provided id
+// when it still exists on this form, else the latest — the form may have
+// been re-versioned between page load and submit, and that shouldn't
+// hard-fail the fill. Null only when the form has no versions at all.
+async function resolveSubmitVersion(form: {
+  id: string;
+  versions: { id: string; questions: unknown }[];
+}): Promise<{ id: string; questions: unknown } | null> {
+  if (form.versions[0]) return form.versions[0];
+  return prisma.formVersion.findFirst({
+    where: { formId: form.id },
+    orderBy: { versionNumber: "desc" },
+    select: { id: true, questions: true },
+  });
+}
+
+// Anonymous (Public-audience) submit: records a plain, unattributed row with
+// the client IP for abuse tracing. Deliberately none of the member-path side
+// effects — no todo closing, no one-response gate (no identity to key on),
+// no profile/staffing/education interpretation even when the form happens to
+// be slot-bound.
+export async function submitAnonymousForm(args: {
+  token: string;
+  versionId: string;
+  answers: Record<string, unknown>;
+  submitterIp: string | null;
+}): Promise<MemberSubmitResult> {
+  const form = await prisma.form.findUnique({
+    where: { publicToken: args.token },
+    select: {
+      id: true,
+      published: true,
+      audience: true,
+      versions: {
+        where: { id: args.versionId },
+        select: { id: true, questions: true },
+      },
+    },
+  });
+  if (!form || !form.published) {
+    return { error: "Form not found for this link.", status: 404 };
+  }
+  // Defense-in-depth: this is the only entry point that creates unattributed
+  // rows, so it enforces its own precondition even though the action gates
+  // with formFillAccess first.
+  if (form.audience !== "Public") {
+    return { error: "This form requires signing in.", status: 403 };
+  }
+  const version = await resolveSubmitVersion(form);
+  if (!version) {
+    return { error: "This form has no questions yet.", status: 404 };
+  }
+
+  const questions = (version.questions as unknown as Question[]) ?? [];
+  const bad = await validateAnswers(questions, args.answers, null);
+  if (bad) return bad;
+
+  await prisma.formSubmission.create({
+    data: {
+      formId: form.id,
+      formVersionId: version.id,
+      userId: null,
+      answers: args.answers as object,
+      submitterIp: args.submitterIp,
+    },
+  });
+  await notifyFormSubmission({ formId: form.id });
+  return { ok: true };
+}
 
 // Authenticated member submit. Unlike the public path this has a trustworthy
 // `userId`, which is what makes form-driven Project Bids possible: when the
@@ -174,6 +431,7 @@ export async function submitMemberForm(args: {
       id: true,
       name: true,
       published: true,
+      oneResponsePerMember: true,
       versions: {
         where: { id: args.versionId },
         select: { id: true, questions: true },
@@ -201,25 +459,19 @@ export async function submitMemberForm(args: {
       status: 404,
     };
   }
-  // loadPublicForm hands back the LATEST version's id; if the form was
-  // re-versioned between loading the page and submitting, that id is now
-  // stale. Fall back to the latest version rather than hard-failing.
-  let version = form.versions[0];
+  const version = await resolveSubmitVersion(form);
   if (!version) {
-    const latest = await prisma.formVersion.findFirst({
-      where: { formId: form.id },
-      orderBy: { versionNumber: "desc" },
-      select: { id: true, questions: true },
-    });
-    if (!latest) {
-      return { error: "This form has no questions yet.", status: 404 };
-    }
-    version = latest;
+    return { error: "This form has no questions yet.", status: 404 };
   }
 
   const questions = (version.questions as unknown as Question[]) ?? [];
   const bad = await validateAnswers(questions, args.answers, args.userId);
   if (bad) return bad;
+
+  // Fired once after each success path's transaction commits (never inside
+  // it) — best-effort creator notification, see submission-notify.server.
+  const notifySubmitted = () =>
+    notifyFormSubmission({ formId: form.id, submitterUserId: args.userId });
 
   // Education feedback branch: an explicit session/offering context wins over
   // every other interpretation. The context re-derives the binding + the
@@ -264,6 +516,7 @@ export async function submitMemberForm(args: {
         linkQuery,
       });
     });
+    await notifySubmitted();
     return { ok: true };
   }
 
@@ -278,12 +531,27 @@ export async function submitMemberForm(args: {
   );
 
   if (!staffingBinding) {
+    // One-response gate (ordinary fills only — the branches above/below keep
+    // their own resubmission semantics). App-level check: FormSubmission has
+    // no unique constraint, so a double-click race can still slip one extra
+    // row through — acceptable for this surface.
+    if (form.oneResponsePerMember) {
+      const existing = await existingOrdinarySubmission(form.id, args.userId);
+      if (existing) {
+        return { error: "You've already filled out this form.", status: 409 };
+      }
+    }
+
     // The onboarding "New Member Profile" form IS the onboarding step: it writes
     // its answers onto the member's User profile fields (see profile-form-
     // interpreter) AND completes onboarding (stamps DALIMember.onboardedAt +
     // clears the persistent onboarding task). Everything else (Slack, calendar)
     // happens in earlier provisioning / the later party tour.
-    const isProfileForm = form.name === NEW_MEMBER_PROFILE_FORM_NAME;
+    // Members only: a non-member admitted by a SignedIn/Groups audience must
+    // not write profile fields by submitting a form with the reserved name.
+    const isProfileForm =
+      form.name === NEW_MEMBER_PROFILE_FORM_NAME &&
+      Boolean(await requireMember(args.userId));
     let profileUpdate: ProfileUpdate | null = null;
     if (isProfileForm) {
       const interpreted = interpretProfileForm(args.answers);
@@ -322,6 +590,7 @@ export async function submitMemberForm(args: {
       // user id for future per-project channel invites. Best-effort.
       await syncSlackUserId(args.userId).catch(() => {});
     }
+    await notifySubmitted();
     return { ok: true };
   }
 
@@ -374,6 +643,7 @@ export async function submitMemberForm(args: {
       await replaceBidSet(tx, args.userId, cycle.id, bidsToWrite);
       await closeFormTodos(tx, args.userId, form.id);
     });
+    await notifySubmitted();
     return { ok: true };
   }
 
@@ -391,6 +661,7 @@ export async function submitMemberForm(args: {
       });
       await closeFormTodos(tx, args.userId, form.id);
     });
+    await notifySubmitted();
     return { ok: true };
   }
 
@@ -421,6 +692,7 @@ export async function submitMemberForm(args: {
     await replaceIntentSet(tx, args.userId, cycle.id, intentRows);
     await closeFormTodos(tx, args.userId, form.id);
   });
+  await notifySubmitted();
   return { ok: true };
 }
 
