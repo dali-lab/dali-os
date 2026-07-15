@@ -1,5 +1,5 @@
 import type { Prisma, PrismaClient } from "~/generated/prisma/client";
-import { AUDIT_ACTIONS, type AuditAction } from "~/lib/audit";
+import { AUDIT_ACTIONS, type AuditAction } from "~/lib/audit-actions";
 
 // Validated filters for the AuditLog viewer + JSON API.
 //

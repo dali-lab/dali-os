@@ -103,6 +103,11 @@ export interface Question {
     | 'drive_url'
     | 'file'
     | 'skills_rating'
+    // Multi-select over `data.options`. The stored answer is a string[] of
+    // the selected option strings; fill UIs keep a JSON-stringified array in
+    // their string-valued answer state and the server normalizes it (see
+    // validateAnswers in app/forms/lib/public-form.ts).
+    | 'checkbox'
     // A dropdown whose choices come from live DB data instead of a static
     // `options` list. The choices are resolved at fill time from the
     // server-side registry keyed by `data.referenceSource` (see

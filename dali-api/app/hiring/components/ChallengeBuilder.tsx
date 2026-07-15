@@ -85,7 +85,7 @@ export function buildQuestion(input: BuildQuestionInput): Question {
       label,
       description: description || undefined,
       options:
-        type === 'select' || type === 'skills_rating'
+        type === 'select' || type === 'skills_rating' || type === 'checkbox'
           ? (optionsText ?? '').split('\n').filter((o) => o.trim() !== '')
           : undefined,
       accept: type === 'file' ? accept || undefined : undefined,
@@ -118,6 +118,10 @@ interface FormBuilderTabProps {
   saveStatus?: 'idle' | 'saving-draft' | 'saving-version' | 'saved-draft' | 'saved-version'
   onCancel?: () => void
   isGeneralForm?: boolean
+  // Offer the checkbox (multi-select) question type. Only the Forms feature
+  // passes true — the hiring application pipeline isn't array-answer-aware,
+  // so hiring challenge builders don't get the option.
+  allowCheckbox?: boolean
   // Terms offered for term-scoped reference sources (e.g. projects active in a
   // chosen term). Empty/omitted when no term picker is needed.
   terms?: { id: string; code: string }[]
@@ -131,6 +135,7 @@ export function FormBuilderTab({
   saveStatus = 'idle',
   onCancel,
   isGeneralForm = false,
+  allowCheckbox = false,
   terms = [],
 }: FormBuilderTabProps) {
   const [questions, setQuestions] = useState<Question[]>(initialQuestions)
@@ -299,6 +304,9 @@ export function FormBuilderTab({
               <option value="text">Short Text</option>
               <option value="textarea">Long Text</option>
               <option value="select">Dropdown Select</option>
+              {(allowCheckbox || editForm.type === 'checkbox') && (
+                <option value="checkbox">Checkboxes (multi-select)</option>
+              )}
               <option value="github_url">GitHub URL</option>
               <option value="figma_url">Figma URL</option>
               <option value="drive_url">Google Drive URL</option>
@@ -390,7 +398,7 @@ export function FormBuilderTab({
             </div>
           )}
 
-          {editForm.type === 'select' && (
+          {(editForm.type === 'select' || editForm.type === 'checkbox') && (
             <div className="col-span-2">
               <label className="block text-sm font-medium text-foreground/80 mb-1">
                 Options (One per line)
@@ -614,7 +622,7 @@ export function FormBuilderTab({
                     </p>
                   )}
 
-                  {(q.type === 'select' || q.type === 'skills_rating') && q.data.options && (
+                  {(q.type === 'select' || q.type === 'skills_rating' || q.type === 'checkbox') && q.data.options && (
                     <div className="mt-2 flex flex-wrap gap-2">
                       {q.data.options.map((opt) => (
                         <span

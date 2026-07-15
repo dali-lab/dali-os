@@ -56,7 +56,7 @@ export async function action({ request }: Route.ActionArgs) {
 export default function ConnectedAppsPage({ loaderData }: Route.ComponentProps) {
   const { grants } = loaderData;
   return (
-    <main className="max-w-2xl p-8">
+    <main className="max-w-2xl">
       <h1 className="text-2xl font-semibold">Connected apps</h1>
       <p className="mt-2 text-sm text-zinc-600">
         Apps you've authorized to access DALI OS on your behalf.{" "}

@@ -186,6 +186,14 @@ export const prisma = {
     update: vi.fn(),
     delete: vi.fn(),
   },
+  groupDefinition: {
+    findUnique: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+    upsert: vi.fn(),
+  },
+  domainEligibility: {
+    findMany: vi.fn().mockResolvedValue([]),
+  },
   userAvailabilitySettings: {
     findUnique: vi.fn().mockResolvedValue(null),
   },
