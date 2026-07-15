@@ -6,7 +6,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
 import { fullName } from "~/lib/display";
-import { AUDIT_ACTIONS } from "~/lib/audit";
+import { AUDIT_ACTIONS } from "~/lib/audit-actions";
 import {
   parseAuditFilters,
   buildAuditWhere,

@@ -28,9 +28,30 @@ export type ReconciliationOptions = {
   payPeriodIds?: string[];
 };
 
+/** One surfaced timesheet note, JSON-safe, attached to a (netId, jobId) row. */
+export type TimesheetNoteView = {
+  note: string;
+  validatedChartstring: string | null;
+  linkToTimesheet: string | null;
+  payPeriodName: string;
+};
+
+/**
+ * The reconciliation breakdown plus surfaced notes. Notes live at the server
+ * edge (the pure collation core is deliberately Prisma-free) keyed by
+ * `${netId}::${jobId}` so the Payroll Data rows — which carry both — can look
+ * up their notes and show a count indicator.
+ */
+export type ReconciliationResult = CollatedResult & {
+  notesByJobKey: Record<string, TimesheetNoteView[]>;
+};
+
+const noteKey = (netId: string, jobId: string) => `${netId}::${jobId}`;
+
 /**
  * Full reconciliation breakdown for a term. Optionally scope to specific pay
- * periods. Returns the plain (JSON-safe) CollatedResult the page consumes.
+ * periods. Returns the plain (JSON-safe) result the page consumes, with any
+ * TimesheetNotes for the term's pay periods attached under `notesByJobKey`.
  *
  * Rate-mismatch discrepancies are only computed when the term is the currently
  * active term (there's no wage history, so comparing a past term against
@@ -39,7 +60,7 @@ export type ReconciliationOptions = {
 export async function getReconciliation(
   termId: string,
   options: ReconciliationOptions = {},
-): Promise<CollatedResult> {
+): Promise<ReconciliationResult> {
   const { payPeriodIds } = options;
 
   // Pay periods in this term (optionally narrowed to a chosen subset).
@@ -56,17 +77,20 @@ export async function getReconciliation(
 
   // Short-circuit: no periods → empty collation (still shape-valid).
   if (periodIds.length === 0) {
-    return collate({
-      entries: [],
-      lookups: [],
-      users: [],
-      assignments: [],
-      projects: [],
-      isActiveTerm: await isActiveTerm(termId),
-    });
+    return {
+      ...collate({
+        entries: [],
+        lookups: [],
+        users: [],
+        assignments: [],
+        projects: [],
+        isActiveTerm: await isActiveTerm(termId),
+      }),
+      notesByJobKey: {},
+    };
   }
 
-  const [entryRows, lookupRows, assignmentRows, projectRows, activeTerm] =
+  const [entryRows, lookupRows, assignmentRows, projectRows, noteRows, activeTerm] =
     await Promise.all([
       prisma.timesheetEntry.findMany({
         where: { payPeriodId: { in: periodIds } },
@@ -100,6 +124,17 @@ export async function getReconciliation(
       }),
       prisma.project.findMany({
         select: { id: true, name: true, chartString: true },
+      }),
+      prisma.timesheetNote.findMany({
+        where: { payPeriodId: { in: periodIds } },
+        select: {
+          netId: true,
+          jobId: true,
+          note: true,
+          validatedChartstring: true,
+          linkToTimesheet: true,
+          payPeriod: { select: { name: true } },
+        },
       }),
       isActiveTerm(termId),
     ]);
@@ -159,14 +194,45 @@ export async function getReconciliation(
     chartString: p.chartString,
   }));
 
-  return collate({
-    entries,
-    lookups,
-    users,
-    assignments,
-    projects,
-    isActiveTerm: activeTerm,
-  });
+  return {
+    ...collate({
+      entries,
+      lookups,
+      users,
+      assignments,
+      projects,
+      isActiveTerm: activeTerm,
+    }),
+    notesByJobKey: groupNotesByJobKey(noteRows),
+  };
+}
+
+/**
+ * Group note rows by `${netId}::${jobId}` for row-level lookup on the Payroll
+ * Data tab. netId is lowercased to match the entries' lowercased netIds. Pure
+ * (no Prisma) so the join is unit-testable against synthetic rows.
+ */
+export function groupNotesByJobKey(
+  notes: Array<{
+    netId: string;
+    jobId: string;
+    note: string;
+    validatedChartstring: string | null;
+    linkToTimesheet: string | null;
+    payPeriod: { name: string };
+  }>,
+): Record<string, TimesheetNoteView[]> {
+  const map: Record<string, TimesheetNoteView[]> = {};
+  for (const n of notes) {
+    const key = noteKey(n.netId.toLowerCase(), n.jobId);
+    (map[key] ??= []).push({
+      note: n.note,
+      validatedChartstring: n.validatedChartstring,
+      linkToTimesheet: n.linkToTimesheet,
+      payPeriodName: n.payPeriod.name,
+    });
+  }
+  return map;
 }
 
 // ─── computeExpensesByProjectChartTerm ───────────────────────────────────────

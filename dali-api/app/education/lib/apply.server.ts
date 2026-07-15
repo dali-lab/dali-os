@@ -1,6 +1,7 @@
 import { prisma } from "~/lib/db";
 import type { Prisma, EduApplicationStatus } from "~/generated/prisma/client";
 import { validateAnswers } from "~/forms/lib/public-form";
+import { notifyFormSubmission } from "~/forms/lib/submission-notify.server";
 import { loadOfferingApplicationForm } from "./application-form.server";
 import { registrationOpen } from "./offerings.server";
 import { notifyApplicationStatus } from "./notifications.server";
@@ -179,6 +180,10 @@ export async function submitApplication(args: {
     userId: args.userId,
     targetId: args.offeringId,
     metadata: { status: outcome.status },
+  });
+  await notifyFormSubmission({
+    formId: form.formId,
+    submitterUserId: args.userId,
   });
   // RSVP-style submits decide immediately — tell the applicant which way it
   // went. Review-required submits stay silent until an instructor decides.

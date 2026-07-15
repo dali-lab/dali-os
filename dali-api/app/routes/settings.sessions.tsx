@@ -102,7 +102,7 @@ export default function SessionsPage({ loaderData }: Route.ComponentProps) {
   const otherCount = sessions.filter((s) => s.id !== currentSessionId).length;
 
   return (
-    <main className="max-w-2xl p-8">
+    <main className="max-w-2xl">
       <header className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Your devices</h1>

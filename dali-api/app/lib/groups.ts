@@ -84,6 +84,32 @@ async function resolveCoreMembers(): Promise<string[]> {
   return rows.map((r) => r.userId);
 }
 
+// Whether `userId` belongs to at least one of `groupIds`. Static membership
+// is read straight off the rows (no resolver queries); Dynamic groups resolve
+// one at a time with a short-circuit so a hit on the first never resolves the
+// rest. Archived groups still admit — archiving a group after a form selected
+// it must not silently lock the form; pickers block *selecting* archived
+// groups instead.
+export async function isUserInAnyGroup(
+  userId: string,
+  groupIds: string[],
+): Promise<boolean> {
+  if (groupIds.length === 0) return false;
+  const groups = await prisma.groupDefinition.findMany({
+    where: { id: { in: groupIds } },
+    select: { type: true, dynamicQuery: true, staticMemberIds: true },
+  });
+  for (const g of groups) {
+    if (g.type === "Static" && g.staticMemberIds.includes(userId)) return true;
+  }
+  for (const g of groups) {
+    if (g.type !== "Dynamic" || !g.dynamicQuery) continue;
+    const members = await resolveDynamicQuery(g.dynamicQuery);
+    if (members.includes(userId)) return true;
+  }
+  return false;
+}
+
 // Every current lab member's userId. "Lab member" = a User with a DALIMember
 // marker row who is also placed in at least one domain (has a DomainEligibility
 // row). Members not yet assigned to any domain are excluded from the "whole

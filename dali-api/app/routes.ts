@@ -51,6 +51,7 @@ export default [
     route("admin-console/activity", "admin-console/routes/admin-console.activity.tsx"),
     route("admin-console/analytics", "admin-console/routes/admin-console.analytics.tsx"),
     route("admin-console/payroll-export", "admin-console/routes/admin-console.payroll-export.tsx"),
+    route("admin-console/payroll", "admin-console/routes/admin-console.payroll.tsx"),
 
     // Projects. The bare /projects route is the area hub (the project list).
     route("projects", "projects/routes/projects.hub.tsx"),
@@ -129,6 +130,25 @@ export default [
     // member route (not under /portal) so interns use their existing session
     // rather than the CAS flow built for external applicants.
     route("intern-to-full", "routes/intern-to-full.tsx"),
+
+    // Settings — opened from the sidebar footer icon. Lives under the layout
+    // so in-iframe navigation posts `dali:tabNavigated` and the workspace's
+    // tab URL tracks it (a stale URL made re-clicking Settings focus the
+    // drifted tab instead of reopening the hub).
+    route("settings", "routes/settings._index.tsx"),
+    route("settings/calendar", "routes/settings.calendar.tsx"),
+    route("settings/sessions", "routes/settings.sessions.tsx"),
+    route("settings/slack", "routes/settings.slack.tsx"),
+    route("settings/connected-apps", "routes/settings.connected-apps.tsx"),
+
+    // Help pages (same convention as Settings).
+    route("help", "routes/help._index.tsx"),
+    route("help/getting-started", "routes/help.getting-started.tsx"),
+    route("help/shortcuts", "routes/help.shortcuts.tsx"),
+    route("help/calendar", "routes/help.calendar.tsx"),
+    route("help/staffing", "routes/help.staffing.tsx"),
+    route("help/notifications", "routes/help.notifications.tsx"),
+    route("help/mcp", "routes/help.mcp.tsx"),
   ]),
 
   // Applicant portal (lightweight layout). /portal is the non-member home
@@ -229,23 +249,6 @@ export default [
   ),
   route("mcp", "routes/mcp.ts"),
 
-  // Settings pages (no layout — opened in a TabWorkspace iframe via the
-  // sidebar footer icons; their own <main> provides padding).
-  route("settings", "routes/settings._index.tsx"),
-  route("settings/calendar", "routes/settings.calendar.tsx"),
-  route("settings/sessions", "routes/settings.sessions.tsx"),
-  route("settings/slack", "routes/settings.slack.tsx"),
-  route("settings/connected-apps", "routes/settings.connected-apps.tsx"),
-
-  // Help pages (same shell convention as Settings).
-  route("help", "routes/help._index.tsx"),
-  route("help/getting-started", "routes/help.getting-started.tsx"),
-  route("help/shortcuts", "routes/help.shortcuts.tsx"),
-  route("help/calendar", "routes/help.calendar.tsx"),
-  route("help/staffing", "routes/help.staffing.tsx"),
-  route("help/notifications", "routes/help.notifications.tsx"),
-  route("help/mcp", "routes/help.mcp.tsx"),
-
   // Authenticated API endpoints (no layout)
   route("users/:id", "members/routes/users.$id.ts"),
 
@@ -336,6 +339,15 @@ export default [
   // Payroll CSV export (resource route — registered OUTSIDE the app layout so
   // the Response streams as a bare CSV body, not wrapped in an HTML shell).
   route("admin-console/payroll-export.csv", "admin-console/routes/admin-console.payroll-export.csv.ts"),
+
+  // Form responses CSV export (resource route — same bare-body reasoning).
+  route("forms/responses/:formId/export.csv", "forms/routes/forms.responses.$formId.export.csv.ts"),
+
+  // Payroll reconcile — upload (multipart action) + per-view CSV export.
+  // Resource routes registered OUTSIDE the app layout (bare bodies, no shell).
+  route("admin-console/payroll/upload", "admin-console/routes/admin-console.payroll.upload.ts"),
+  route("admin-console/payroll/budget", "admin-console/routes/admin-console.payroll.budget.ts"),
+  route("admin-console/payroll.csv", "admin-console/routes/admin-console.payroll.csv.ts"),
 
   // Partner application status (board drag-and-drop) + domain scope
   route("api/partner-applications/:id/status", "partners/routes/api.partner-applications.$id.status.ts"),
