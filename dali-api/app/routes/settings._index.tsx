@@ -1,5 +1,5 @@
 import { Link, redirect } from "react-router";
-import { CalendarDays, Cable, KeyRound, Slack, UserCircle2 } from "lucide-react";
+import { Bell, CalendarDays, Cable, KeyRound, Slack, UserCircle2 } from "lucide-react";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { useDesktopVersion } from "~/lib/desktop";
 import type { Route } from "./+types/settings._index";
@@ -27,6 +27,12 @@ const CARDS = [
     title: "Calendar",
     body: "Linked Google accounts and which sub-calendars block your availability.",
     icon: CalendarDays,
+  },
+  {
+    to: "/settings/notifications",
+    title: "Notifications",
+    body: "Choose how each kind of update reaches you — in-app, email or digest, Slack DM.",
+    icon: Bell,
   },
   {
     to: "/settings/slack",
