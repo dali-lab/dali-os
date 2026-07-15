@@ -23,6 +23,7 @@ export type EventDef = {
     | "Meetings"
     | "Tasks"
     | "Staffing"
+    | "Documents"
     | "Hiring"
     | "Education"
     | "Announcements"
@@ -90,6 +91,13 @@ export const EVENT_TYPES = {
     area: "Tasks",
     label: "GitHub task updates",
     description: "When a linked GitHub issue closes or reopens one of your tasks.",
+    defaults: { inApp: true, slackDm: false, email: "Off" },
+  },
+  "collab.comment_reply": {
+    kind: "General",
+    area: "Documents",
+    label: "Comment replies",
+    description: "Replies in document and file comment threads you're part of.",
     defaults: { inApp: true, slackDm: false, email: "Off" },
   },
   "staffing.assigned": {

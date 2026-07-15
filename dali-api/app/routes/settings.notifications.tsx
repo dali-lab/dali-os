@@ -43,6 +43,7 @@ const AREA_ORDER = [
   "Meetings",
   "Tasks",
   "Staffing",
+  "Documents",
   "Announcements",
   "Forms",
   "Hiring",
