@@ -21,7 +21,17 @@ export type JobDefinition = {
   handler: (ctx: JobContext) => Promise<JobResult>;
 };
 
-export const JOBS: JobDefinition[] = [];
+import { runTaskDueReminders } from "~/jobs/task-due-reminders.server";
+
+export const JOBS: JobDefinition[] = [
+  {
+    name: "task-due-reminders",
+    description:
+      "Reminds assignees a day before and at the moment a task's deadline hits.",
+    intervalMinutes: 5,
+    handler: runTaskDueReminders,
+  },
+];
 
 export function jobByName(name: string): JobDefinition | undefined {
   return JOBS.find((j) => j.name === name);

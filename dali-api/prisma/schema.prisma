@@ -151,6 +151,7 @@ model User {
 
   // ─── Phase 1: notification back-relations ─────────────────────────────────
   notificationPreferences NotificationPreference[]
+  taskReminders           TaskReminder[]
 
   // ─── Phase 1: partner back-relation (single per User) ─────────────────────
   partnerUser PartnerUser?
@@ -2179,8 +2180,9 @@ model Task {
   priority         Priority   @default(Normal)
   position         Int        @default(0)
   // Optional deadline. UTC instant; UI formats in local time. When set,
-  // assignees get a Slack DM 24h before and at the moment (see
-  // TaskReminder, added in a follow-up). Null = no reminders fire.
+  // the task-due-reminders job notifies assignees 24h before and at the
+  // moment (channels per their preferences; TaskReminder is the idempotency
+  // ledger). Null = no reminders fire.
   dueAt            DateTime?
 
   // Optional domain label (Design, Dev, etc.) — shown as a chip on the card
@@ -2207,6 +2209,7 @@ model Task {
   domain    Domain?        @relation(fields: [domainId], references: [id])
   assignees TaskAssignee[]
   comments  TaskComment[]
+  reminders TaskReminder[]
 
   createdById String
   createdBy   User     @relation("TaskCreatedBy", fields: [createdById], references: [id])
@@ -2230,6 +2233,32 @@ enum Priority {
   Normal
   High
   Urgent
+}
+
+// Idempotency ledger for task deadline reminders (task-due-reminders job).
+// The unique key includes dueAtSnapshot: re-enqueueing while the deadline is
+// unchanged is a no-op (createMany skipDuplicates), and a moved deadline
+// creates a fresh row while old unsent rows go inert — the send phase
+// re-checks snapshot === Task.dueAt.
+model TaskReminder {
+  id            String       @id @default(cuid())
+  taskId        String
+  userId        String // the assignee being reminded
+  kind          ReminderKind
+  dueAtSnapshot DateTime
+  sentAt        DateTime? // null until notify() succeeded
+  createdAt     DateTime     @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([taskId, userId, kind, dueAtSnapshot])
+  @@index([sentAt, dueAtSnapshot])
+}
+
+enum ReminderKind {
+  DayBefore
+  AtDeadline
 }
 
 // Multi-assignee per task (solo or multi both supported).
