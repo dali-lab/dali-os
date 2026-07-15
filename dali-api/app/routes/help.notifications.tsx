@@ -60,8 +60,9 @@ export default function HelpNotificationsPage() {
         <p className="mt-2 text-sm text-zinc-700">
           Every notification can reach you three ways: in-app (the bell and
           Home inbox), email, and a Slack DM from the DALI OS bot. Email can
-          arrive instantly per notification, or batched into a daily (9am)
-          or weekly (Monday 9am) digest of what you haven&apos;t read.
+          arrive instantly per notification, or batched into a daily or
+          weekly digest of what you haven&apos;t read (send times are shown
+          on the settings page).
         </p>
         <p className="mt-2 text-sm text-zinc-700">
           Tune all of this per event type in{" "}

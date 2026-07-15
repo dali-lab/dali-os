@@ -3,9 +3,10 @@
 // never gets marked collects no feedback. This sweep asks once the session is
 // over.
 //
-// "Over" is a heuristic: EducationSession has no end time, so datetime + 2h
-// grace. The 14-day lookback stops the first prod deploy from blasting
-// requests for ancient un-swept sessions.
+// "Over" is a heuristic: EducationSession has no end time, so datetime +
+// graceHours (admin-configurable, default 2). The lookbackDays bound
+// (default 14) stops the first prod deploy from blasting requests for
+// ancient un-swept sessions.
 //
 // Recipients: attendees already marked Present when some attendance exists;
 // with ZERO attendance marked, all Approved enrollees — the helper dedupes
@@ -20,17 +21,15 @@ import { requestSessionFeedback } from "~/education/lib/feedback.server";
 import type { JobContext, JobResult } from "~/jobs/registry";
 
 const HOUR_MS = 3_600_000;
-const GRACE_MS = 2 * HOUR_MS;
-const LOOKBACK_MS = 14 * 24 * HOUR_MS;
 const BATCH = 50;
 
-export async function runSessionFeedbackSweep({ now }: JobContext): Promise<JobResult> {
+export async function runSessionFeedbackSweep({ now, settings }: JobContext): Promise<JobResult> {
   const sessions = await prisma.educationSession.findMany({
     where: {
       feedbackRequestedAt: null,
       datetime: {
-        lte: new Date(now.getTime() - GRACE_MS),
-        gte: new Date(now.getTime() - LOOKBACK_MS),
+        lte: new Date(now.getTime() - settings.graceHours * HOUR_MS),
+        gte: new Date(now.getTime() - settings.lookbackDays * 24 * HOUR_MS),
       },
       offering: { status: "Published", closedOutAt: null },
     },

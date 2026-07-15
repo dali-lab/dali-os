@@ -1,10 +1,29 @@
 // Registry of background jobs. The runner (app/jobs/runner.server.ts) ticks
-// every minute, claims due jobs via a DB lease, and calls the handler. Code
-// is the source of truth for description/interval; the ScheduledJob row holds
-// runtime state (enabled toggle, nextRunAt, lastRun bookkeeping) and self-heals
-// from this list, so a wiped dev DB or a staging restore just re-seeds rows.
+// every minute, claims due jobs via a DB lease, and calls the handler.
+//
+// What lives where:
+//   code (this file)  — which jobs exist, descriptions, DEFAULT interval,
+//                       declared settings (numeric knobs) with their defaults.
+//   ScheduledJob row  — runtime state (enabled, nextRunAt, lastRun*) AND the
+//                       operator-editable values: intervalMinutes and settings,
+//                       both editable from Admin → Jobs. The registry only
+//                       seeds them at row creation; it never overwrites.
+// Rows self-heal from this list, so a wiped dev DB or a staging restore just
+// re-seeds defaults.
 
 export type JobResult = { items?: number; note?: string };
+
+// A numeric, operator-editable knob. Declaring one here is all it takes for
+// the admin panel to render an input and for the handler to receive the
+// resolved value in ctx.settings.
+export type JobSettingDef = {
+  key: string;
+  label: string; // shown in the admin panel
+  unit: string; // "min", "hours", "days", …
+  min: number;
+  max: number;
+  default: number;
+};
 
 export type JobContext = {
   now: Date;
@@ -12,14 +31,40 @@ export type JobContext = {
   // run or after a DB rebuild. Handlers that batch work over time (digests)
   // gate on this.
   lastSuccessAt: Date | null;
+  // Declared settings resolved against the row's stored values — every
+  // declared key is present (stored value when valid, else the default).
+  settings: Record<string, number>;
 };
 
 export type JobDefinition = {
   name: string; // stable DB key
   description: string; // shown in the admin Jobs panel
-  intervalMinutes: number;
+  intervalMinutes: number; // default cadence; the row's value wins once created
+  settings?: JobSettingDef[];
   handler: (ctx: JobContext) => Promise<JobResult>;
 };
+
+/**
+ * Overlay a row's stored settings JSON onto the declared defaults. Unknown
+ * keys are dropped; non-finite or out-of-range values fall back to the
+ * default — a hand-edited row can degrade a job to its defaults but never
+ * break it.
+ */
+export function resolveJobSettings(
+  def: JobDefinition,
+  stored: unknown,
+): Record<string, number> {
+  const raw = (stored ?? {}) as Record<string, unknown>;
+  const resolved: Record<string, number> = {};
+  for (const s of def.settings ?? []) {
+    const value = raw[s.key];
+    resolved[s.key] =
+      typeof value === "number" && Number.isFinite(value) && value >= s.min && value <= s.max
+        ? value
+        : s.default;
+  }
+  return resolved;
+}
 
 import { runTaskDueReminders } from "~/jobs/task-due-reminders.server";
 import { runMeetingReminders } from "~/jobs/meeting-reminders.server";
@@ -38,8 +83,18 @@ export const JOBS: JobDefinition[] = [
   {
     name: "meeting-reminders",
     description:
-      "Reminds organizer and participants 15 minutes before a meeting occurrence starts.",
+      "Reminds organizer and participants before a meeting occurrence starts.",
     intervalMinutes: 5,
+    settings: [
+      {
+        key: "leadMinutes",
+        label: "Lead time before start",
+        unit: "min",
+        min: 1,
+        max: 720,
+        default: 15,
+      },
+    ],
     handler: runMeetingReminders,
   },
   {
@@ -53,21 +108,67 @@ export const JOBS: JobDefinition[] = [
     description:
       "Requests session feedback once an education session ends, even when attendance was never marked.",
     intervalMinutes: 60,
+    settings: [
+      {
+        key: "graceHours",
+        label: "Grace after session start",
+        unit: "hours",
+        min: 0,
+        max: 48,
+        default: 2,
+      },
+      {
+        key: "lookbackDays",
+        label: "How far back to sweep",
+        unit: "days",
+        min: 1,
+        max: 60,
+        default: 14,
+      },
+    ],
     handler: runSessionFeedbackSweep,
   },
-  // The digest jobs tick often but self-gate on wall clock (9am ET; weekly on
-  // Mondays), using the runner's lastSuccessAt as the sent-today cursor.
+  // The digest jobs tick often but self-gate on wall clock, using the
+  // runner's lastSuccessAt as the sent-today cursor.
   {
     name: "notification-digest-daily",
-    description: "Emails each Daily-digest subscriber their unread notifications at 9am ET.",
+    description: "Emails each Daily-digest subscriber their unread notifications each morning.",
     intervalMinutes: 15,
+    settings: [
+      {
+        key: "sendHourEt",
+        label: "Send hour (ET, 0–23)",
+        unit: "h",
+        min: 0,
+        max: 23,
+        default: 9,
+      },
+    ],
     handler: runDailyDigest,
   },
   {
     name: "notification-digest-weekly",
     description:
-      "Emails each Weekly-digest subscriber their unread notifications on Mondays at 9am ET.",
+      "Emails each Weekly-digest subscriber their unread notifications once a week.",
     intervalMinutes: 15,
+    settings: [
+      {
+        key: "sendHourEt",
+        label: "Send hour (ET, 0–23)",
+        unit: "h",
+        min: 0,
+        max: 23,
+        default: 9,
+      },
+      {
+        key: "sendWeekday",
+        label: "Send day (0=Sun … 6=Sat)",
+        unit: "",
+        min: 0,
+        max: 6,
+        default: 1,
+      },
+    ],
     handler: runWeeklyDigest,
   },
 ];

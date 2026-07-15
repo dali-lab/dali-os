@@ -32,27 +32,39 @@ const WED_0901_ET = new Date("2026-07-15T13:01:00Z");
 const MON_0901_ET = new Date("2026-07-13T13:01:00Z");
 
 describe("shouldRunDigest", () => {
-  it("waits for 9am ET", () => {
-    expect(shouldRunDigest("Daily", null, WED_0859_ET)).toBe(false);
-    expect(shouldRunDigest("Daily", null, WED_0901_ET)).toBe(true);
+  const AT_9 = { sendHourEt: 9 };
+
+  it("waits for the configured ET hour", () => {
+    expect(shouldRunDigest("Daily", null, WED_0859_ET, AT_9)).toBe(false);
+    expect(shouldRunDigest("Daily", null, WED_0901_ET, AT_9)).toBe(true);
+    // Reconfigured to 2pm ET (18:00 UTC in July): 9:01 is no longer due.
+    expect(shouldRunDigest("Daily", null, WED_0901_ET, { sendHourEt: 14 })).toBe(false);
+    expect(
+      shouldRunDigest("Daily", null, new Date("2026-07-15T18:01:00Z"), { sendHourEt: 14 }),
+    ).toBe(true);
   });
 
   it("suppresses a second send the same day", () => {
     const sentAt0902 = new Date("2026-07-15T13:02:00Z");
     const later = new Date("2026-07-15T18:00:00Z");
-    expect(shouldRunDigest("Daily", sentAt0902, later)).toBe(false);
+    expect(shouldRunDigest("Daily", sentAt0902, later, AT_9)).toBe(false);
   });
 
   it("a pre-9am success (the not-due tick) does not suppress today's send", () => {
     const notDueRun = new Date("2026-07-15T12:45:00Z");
-    expect(shouldRunDigest("Daily", notDueRun, WED_0901_ET)).toBe(true);
+    expect(shouldRunDigest("Daily", notDueRun, WED_0901_ET, AT_9)).toBe(true);
   });
 
-  it("weekly fires only on ET Mondays", () => {
-    expect(shouldRunDigest("Weekly", null, WED_0901_ET)).toBe(false);
-    expect(shouldRunDigest("Weekly", null, MON_0901_ET)).toBe(true);
+  it("weekly fires only on the configured ET weekday", () => {
+    const MON = { sendHourEt: 9, sendWeekday: 1 };
+    expect(shouldRunDigest("Weekly", null, WED_0901_ET, MON)).toBe(false);
+    expect(shouldRunDigest("Weekly", null, MON_0901_ET, MON)).toBe(true);
     const lastMonday = new Date("2026-07-06T13:05:00Z");
-    expect(shouldRunDigest("Weekly", lastMonday, MON_0901_ET)).toBe(true);
+    expect(shouldRunDigest("Weekly", lastMonday, MON_0901_ET, MON)).toBe(true);
+    // Reconfigured to Wednesday: Monday no longer fires, Wednesday does.
+    const WED = { sendHourEt: 9, sendWeekday: 3 };
+    expect(shouldRunDigest("Weekly", null, MON_0901_ET, WED)).toBe(false);
+    expect(shouldRunDigest("Weekly", null, WED_0901_ET, WED)).toBe(true);
   });
 });
 

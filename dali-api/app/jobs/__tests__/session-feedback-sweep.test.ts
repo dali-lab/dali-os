@@ -27,7 +27,7 @@ beforeEach(() => {
 
 describe("runSessionFeedbackSweep", () => {
   it("scans only ended, un-swept sessions of active offerings", async () => {
-    await runSessionFeedbackSweep({ now: NOW, lastSuccessAt: null });
+    await runSessionFeedbackSweep({ now: NOW, lastSuccessAt: null, settings: { graceHours: 2, lookbackDays: 14 } });
     expect(mockPrisma.educationSession.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
@@ -53,7 +53,7 @@ describe("runSessionFeedbackSweep", () => {
         ],
       },
     ]);
-    const result = await runSessionFeedbackSweep({ now: NOW, lastSuccessAt: null });
+    const result = await runSessionFeedbackSweep({ now: NOW, lastSuccessAt: null, settings: { graceHours: 2, lookbackDays: 14 } });
     expect(mockRequest).toHaveBeenCalledWith({
       offeringId: "o1",
       sessionId: "s1",
@@ -72,7 +72,7 @@ describe("runSessionFeedbackSweep", () => {
       { applicantUserId: "u3" },
       { applicantUserId: "u4" },
     ]);
-    await runSessionFeedbackSweep({ now: NOW, lastSuccessAt: null });
+    await runSessionFeedbackSweep({ now: NOW, lastSuccessAt: null, settings: { graceHours: 2, lookbackDays: 14 } });
     expect(mockPrisma.educationApplication.findMany).toHaveBeenCalledWith({
       where: { offeringId: "o1", status: "Approved" },
       select: { applicantUserId: true },
@@ -88,7 +88,7 @@ describe("runSessionFeedbackSweep", () => {
     mockPrisma.educationSession.findMany.mockResolvedValue([
       { id: "s1", offeringId: "o1", attendances: [] },
     ]);
-    const result = await runSessionFeedbackSweep({ now: NOW, lastSuccessAt: null });
+    const result = await runSessionFeedbackSweep({ now: NOW, lastSuccessAt: null, settings: { graceHours: 2, lookbackDays: 14 } });
     expect(mockRequest).not.toHaveBeenCalled();
     expect(result.items).toBe(0);
   });
@@ -99,7 +99,7 @@ describe("runSessionFeedbackSweep", () => {
       { id: "s2", offeringId: "o1", attendances: [{ application: { applicantUserId: "u2" } }] },
     ]);
     mockRequest.mockRejectedValueOnce(new Error("boom"));
-    const result = await runSessionFeedbackSweep({ now: NOW, lastSuccessAt: null });
+    const result = await runSessionFeedbackSweep({ now: NOW, lastSuccessAt: null, settings: { graceHours: 2, lookbackDays: 14 } });
     expect(mockRequest).toHaveBeenCalledTimes(2);
     expect(result.items).toBe(1);
   });

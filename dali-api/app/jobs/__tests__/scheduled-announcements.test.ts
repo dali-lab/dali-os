@@ -56,7 +56,7 @@ describe("runScheduledAnnouncements", () => {
       return Promise.resolve({ ok: true, count: 12 });
     });
 
-    const result = await runScheduledAnnouncements({ now: NOW, lastSuccessAt: null });
+    const result = await runScheduledAnnouncements({ now: NOW, lastSuccessAt: null, settings: {} });
 
     expect(callOrder).toEqual(["claim", "send"]);
     expect(mockPrisma.scheduledAnnouncement.updateMany).toHaveBeenCalledWith({
@@ -72,7 +72,7 @@ describe("runScheduledAnnouncements", () => {
 
   it("skips rows lost to a concurrent claim or cancel (no double fan-out)", async () => {
     mockPrisma.scheduledAnnouncement.updateMany.mockResolvedValue({ count: 0 });
-    const result = await runScheduledAnnouncements({ now: NOW, lastSuccessAt: null });
+    const result = await runScheduledAnnouncements({ now: NOW, lastSuccessAt: null, settings: {} });
     expect(mockSend).not.toHaveBeenCalled();
     expect(result.items).toBe(0);
   });
@@ -83,7 +83,7 @@ describe("runScheduledAnnouncements", () => {
       error: "Attach a published form (publish it first).",
       status: 400,
     });
-    const result = await runScheduledAnnouncements({ now: NOW, lastSuccessAt: null });
+    const result = await runScheduledAnnouncements({ now: NOW, lastSuccessAt: null, settings: {} });
     expect(mockPrisma.scheduledAnnouncement.update).toHaveBeenCalledWith({
       where: { id: "sa1" },
       data: { lastError: "Attach a published form (publish it first)." },
@@ -93,7 +93,7 @@ describe("runScheduledAnnouncements", () => {
 
   it("records a thrown error on the claimed row", async () => {
     mockSend.mockRejectedValue(new Error("db down"));
-    const result = await runScheduledAnnouncements({ now: NOW, lastSuccessAt: null });
+    const result = await runScheduledAnnouncements({ now: NOW, lastSuccessAt: null, settings: {} });
     expect(mockPrisma.scheduledAnnouncement.update).toHaveBeenCalledWith({
       where: { id: "sa1" },
       data: { lastError: "db down" },

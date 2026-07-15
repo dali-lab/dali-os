@@ -3245,7 +3245,13 @@ enum DigestFreq {
 model ScheduledJob {
   name            String        @id // registry key, e.g. "task-due-reminders"
   enabled         Boolean       @default(true)
+  // DB-authoritative once the row exists (editable from Admin → Jobs); the
+  // registry value only seeds it at creation.
   intervalMinutes Int
+  // Per-job numeric knobs declared by the registry entry (JobSettingDef[]),
+  // e.g. { "leadMinutes": 30 }. Unknown/out-of-range values are ignored in
+  // favor of the declared default at resolution time.
+  settings        Json          @default("{}")
   nextRunAt       DateTime      @default(now())
   lockedUntil     DateTime?
   lastRunAt       DateTime?

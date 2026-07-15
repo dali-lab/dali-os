@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 vi.mock("~/lib/db");
 
 import { prisma } from "~/lib/db";
-import { JOBS, type JobDefinition } from "~/jobs/registry";
+import { JOBS, resolveJobSettings, type JobDefinition } from "~/jobs/registry";
 import { tick, runJob } from "~/jobs/runner.server";
 
 const mockPrisma = prisma as unknown as {
@@ -29,6 +29,7 @@ function jobRow(overrides: Record<string, unknown> = {}) {
     name: "test-job",
     enabled: true,
     intervalMinutes: 5,
+    settings: {},
     nextRunAt: new Date("2026-07-15T12:00:00Z"),
     lockedUntil: null,
     lastRunAt: null,
@@ -82,7 +83,43 @@ describe("tick", () => {
     expect(handler).toHaveBeenCalledWith({
       now: NOW,
       lastSuccessAt: new Date("2026-07-14T12:00:00Z"),
+      settings: {},
     });
+  });
+
+  it("advances nextRunAt from the ROW's interval, not the registry default", async () => {
+    mockPrisma.scheduledJob.findMany.mockResolvedValue([
+      jobRow({ intervalMinutes: 45 }), // operator edited; registry default is 5
+    ]);
+    await tick(NOW);
+    expect(mockPrisma.scheduledJob.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          nextRunAt: new Date(NOW.getTime() + 45 * 60_000),
+        }),
+      }),
+    );
+  });
+
+  it("resolves declared settings from the row, falling back per-key", async () => {
+    JOBS.splice(
+      0,
+      JOBS.length,
+      fakeJob({
+        settings: [
+          { key: "leadMinutes", label: "Lead", unit: "min", min: 1, max: 720, default: 15 },
+          { key: "cap", label: "Cap", unit: "", min: 1, max: 500, default: 200 },
+        ],
+      }),
+    );
+    mockPrisma.scheduledJob.findMany.mockResolvedValue([
+      // leadMinutes valid override; cap out of range → default wins.
+      jobRow({ settings: { leadMinutes: 30, cap: 9999, unknown: 1 } }),
+    ]);
+    await tick(NOW);
+    expect(handler).toHaveBeenCalledWith(
+      expect.objectContaining({ settings: { leadMinutes: 30, cap: 200 } }),
+    );
   });
 
   it("skips the handler when another machine wins the claim", async () => {
@@ -157,5 +194,25 @@ describe("runJob", () => {
     handler.mockRejectedValue(new Error("boom"));
     const result = await runJob("test-job", { force: true });
     expect(result).toEqual({ ran: true, error: "boom" });
+  });
+});
+
+describe("resolveJobSettings", () => {
+  const def = fakeJob({
+    settings: [
+      { key: "hours", label: "Hours", unit: "h", min: 0, max: 24, default: 2 },
+    ],
+  });
+
+  it("uses stored values when valid, defaults otherwise", () => {
+    expect(resolveJobSettings(def, { hours: 5 })).toEqual({ hours: 5 });
+    expect(resolveJobSettings(def, { hours: 99 })).toEqual({ hours: 2 });
+    expect(resolveJobSettings(def, { hours: "5" })).toEqual({ hours: 2 });
+    expect(resolveJobSettings(def, null)).toEqual({ hours: 2 });
+    expect(resolveJobSettings(def, { other: 1 })).toEqual({ hours: 2 });
+  });
+
+  it("returns an empty object for jobs with no declared settings", () => {
+    expect(resolveJobSettings(fakeJob(), { anything: 1 })).toEqual({});
   });
 });

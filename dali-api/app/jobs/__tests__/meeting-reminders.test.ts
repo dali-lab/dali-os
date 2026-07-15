@@ -41,7 +41,7 @@ beforeEach(() => {
 
 describe("runMeetingReminders", () => {
   it("reminds organizer and participants for an occurrence starting within 15 minutes", async () => {
-    const result = await runMeetingReminders({ now: NOW, lastSuccessAt: null });
+    const result = await runMeetingReminders({ now: NOW, lastSuccessAt: null, settings: { leadMinutes: 15 } });
 
     expect(result.items).toBe(3);
     expect(mockPrisma.meetingReminderLog.create).toHaveBeenCalledTimes(3);
@@ -65,7 +65,7 @@ describe("runMeetingReminders", () => {
       meeting({ id: "far", selectedAt: new Date(NOW.getTime() + 60 * 60_000) }),
       meeting({ id: "past", selectedAt: new Date(NOW.getTime() - 5 * 60_000) }),
     ]);
-    const result = await runMeetingReminders({ now: NOW, lastSuccessAt: null });
+    const result = await runMeetingReminders({ now: NOW, lastSuccessAt: null, settings: { leadMinutes: 15 } });
     expect(result.items).toBe(0);
     expect(mockNotify).not.toHaveBeenCalled();
   });
@@ -83,7 +83,7 @@ describe("runMeetingReminders", () => {
         ],
       }),
     ]);
-    const result = await runMeetingReminders({ now: NOW, lastSuccessAt: null });
+    const result = await runMeetingReminders({ now: NOW, lastSuccessAt: null, settings: { leadMinutes: 15 } });
     expect(result.items).toBe(0);
   });
 
@@ -102,7 +102,7 @@ describe("runMeetingReminders", () => {
         ],
       }),
     ]);
-    await runMeetingReminders({ now: NOW, lastSuccessAt: null });
+    await runMeetingReminders({ now: NOW, lastSuccessAt: null, settings: { leadMinutes: 15 } });
     expect(mockPrisma.meetingReminderLog.create).toHaveBeenCalledWith({
       data: { scheduledMeetingId: "m1", occurrenceStart: original, userId: "org" },
     });
@@ -112,7 +112,7 @@ describe("runMeetingReminders", () => {
     mockPrisma.meetingReminderLog.create.mockRejectedValue(
       Object.assign(new Error("unique"), { code: "P2002" }),
     );
-    const result = await runMeetingReminders({ now: NOW, lastSuccessAt: null });
+    const result = await runMeetingReminders({ now: NOW, lastSuccessAt: null, settings: { leadMinutes: 15 } });
     expect(result.items).toBe(0);
     expect(mockNotify).not.toHaveBeenCalled();
   });
@@ -121,7 +121,27 @@ describe("runMeetingReminders", () => {
     mockPrisma.scheduledMeeting.findMany.mockResolvedValue([
       meeting({ participantUserIds: ["org", "u1"] }),
     ]);
-    const result = await runMeetingReminders({ now: NOW, lastSuccessAt: null });
+    const result = await runMeetingReminders({ now: NOW, lastSuccessAt: null, settings: { leadMinutes: 15 } });
     expect(result.items).toBe(2);
+  });
+
+  it("honors a configured lead time", async () => {
+    // Starts in 50 minutes: outside the default 15-min lead, inside a 60-min one.
+    mockPrisma.scheduledMeeting.findMany.mockResolvedValue([
+      meeting({ selectedAt: new Date(NOW.getTime() + 50 * 60_000) }),
+    ]);
+    let result = await runMeetingReminders({
+      now: NOW,
+      lastSuccessAt: null,
+      settings: { leadMinutes: 15 },
+    });
+    expect(result.items).toBe(0);
+
+    result = await runMeetingReminders({
+      now: NOW,
+      lastSuccessAt: null,
+      settings: { leadMinutes: 60 },
+    });
+    expect(result.items).toBe(3);
   });
 });

@@ -110,7 +110,7 @@ describe("runTaskDueReminders", () => {
     ]);
     mockPrisma.taskReminder.findMany.mockResolvedValue([pendingRow()]);
 
-    const result = await runTaskDueReminders({ now: NOW, lastSuccessAt: null });
+    const result = await runTaskDueReminders({ now: NOW, lastSuccessAt: null, settings: {} });
 
     expect(mockPrisma.taskReminder.createMany).toHaveBeenCalledWith({
       data: [{ taskId: "t1", userId: "u1", kind: "AtDeadline", dueAtSnapshot: DUE }],
@@ -145,7 +145,7 @@ describe("runTaskDueReminders", () => {
         },
       }),
     ]);
-    const result = await runTaskDueReminders({ now: NOW, lastSuccessAt: null });
+    const result = await runTaskDueReminders({ now: NOW, lastSuccessAt: null, settings: {} });
     expect(mockNotify).not.toHaveBeenCalled();
     expect(result.items).toBe(0);
   });
@@ -173,7 +173,7 @@ describe("runTaskDueReminders", () => {
         },
       }),
     ]);
-    const result = await runTaskDueReminders({ now: NOW, lastSuccessAt: null });
+    const result = await runTaskDueReminders({ now: NOW, lastSuccessAt: null, settings: {} });
     expect(mockNotify).not.toHaveBeenCalled();
     expect(result.items).toBe(0);
   });
@@ -181,7 +181,7 @@ describe("runTaskDueReminders", () => {
   it("leaves sentAt null when notify() fails, so the next tick retries", async () => {
     mockPrisma.taskReminder.findMany.mockResolvedValue([pendingRow()]);
     mockNotify.mockRejectedValue(new Error("slack down"));
-    const result = await runTaskDueReminders({ now: NOW, lastSuccessAt: null });
+    const result = await runTaskDueReminders({ now: NOW, lastSuccessAt: null, settings: {} });
     expect(mockPrisma.taskReminder.update).not.toHaveBeenCalled();
     expect(result.items).toBe(0);
   });

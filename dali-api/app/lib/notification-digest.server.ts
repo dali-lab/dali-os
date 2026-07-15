@@ -1,9 +1,10 @@
 // Digest emails: one batched email per user summarizing what they haven't
 // read, for (user, eventType) pairs whose NotificationPreference is Daily or
 // Weekly. Runs as two registered jobs (notification-digest-daily/-weekly) on
-// a 15-minute tick that self-gates on wall clock: sends open at 09:00 ET
-// (weekly: Mondays), and the runner's lastSuccessAt is the whole cursor — a
-// run before today's 09:00 ET means we haven't sent today.
+// a 15-minute tick that self-gates on wall clock: sends open at the job's
+// configured ET hour (default 9am; weekly also gates on its configured
+// weekday, default Monday), and the runner's lastSuccessAt is the whole
+// cursor — a success before today's send moment means we haven't sent today.
 //
 // No per-user lastDigestAt exists anywhere: `emailedAt IS NULL` inside the
 // cadence window is the selection. Send-then-mark — a crash between the two
@@ -20,7 +21,6 @@ import type { JobContext, JobResult } from "~/jobs/registry";
 
 export type DigestFrequency = "Daily" | "Weekly";
 
-const SEND_HOUR_ET = 9;
 // Collection windows carry slack past the nominal cadence so a late job
 // start can't orphan rows; pre-feature rows (emailedAt null forever) age out.
 const WINDOW_MS: Record<DigestFrequency, number> = {
@@ -28,22 +28,49 @@ const WINDOW_MS: Record<DigestFrequency, number> = {
   Weekly: 8 * 24 * 3_600_000,
 };
 
-function weekdayInZone(date: Date): string {
-  return new Intl.DateTimeFormat("en-US", {
+const WEEKDAY_INDEX: Record<string, number> = {
+  Sun: 0,
+  Mon: 1,
+  Tue: 2,
+  Wed: 3,
+  Thu: 4,
+  Fri: 5,
+  Sat: 6,
+};
+
+function weekdayInZone(date: Date): number {
+  const name = new Intl.DateTimeFormat("en-US", {
     timeZone: APPLICATION_TZ,
     weekday: "short",
   }).format(date);
+  return WEEKDAY_INDEX[name] ?? 0;
 }
+
+export type DigestSchedule = {
+  sendHourEt: number;
+  // Only consulted for Weekly (0=Sun … 6=Sat).
+  sendWeekday?: number;
+};
 
 /** Pure gate: has today's (ET) send moment arrived without a send since? */
 export function shouldRunDigest(
   freq: DigestFrequency,
   lastSuccessAt: Date | null,
   now: Date,
+  schedule: DigestSchedule,
 ): boolean {
-  if (freq === "Weekly" && weekdayInZone(now) !== "Mon") return false;
+  if (freq === "Weekly" && weekdayInZone(now) !== (schedule.sendWeekday ?? 1)) {
+    return false;
+  }
   const { year, month, day } = getZonedParts(now, APPLICATION_TZ);
-  const sendMoment = zonedWallTimeUtc(year, month, day, SEND_HOUR_ET, 0, APPLICATION_TZ);
+  const sendMoment = zonedWallTimeUtc(
+    year,
+    month,
+    day,
+    schedule.sendHourEt,
+    0,
+    APPLICATION_TZ,
+  );
   if (now < sendMoment) return false;
   return lastSuccessAt === null || lastSuccessAt < sendMoment;
 }
@@ -195,12 +222,25 @@ export async function runDigest(freq: DigestFrequency, now: Date): Promise<JobRe
   return { items: sent };
 }
 
-export async function runDailyDigest({ now, lastSuccessAt }: JobContext): Promise<JobResult> {
-  if (!shouldRunDigest("Daily", lastSuccessAt, now)) return { items: 0, note: "not due" };
+export async function runDailyDigest({
+  now,
+  lastSuccessAt,
+  settings,
+}: JobContext): Promise<JobResult> {
+  if (!shouldRunDigest("Daily", lastSuccessAt, now, { sendHourEt: settings.sendHourEt })) {
+    return { items: 0, note: "not due" };
+  }
   return runDigest("Daily", now);
 }
 
-export async function runWeeklyDigest({ now, lastSuccessAt }: JobContext): Promise<JobResult> {
-  if (!shouldRunDigest("Weekly", lastSuccessAt, now)) return { items: 0, note: "not due" };
+export async function runWeeklyDigest({
+  now,
+  lastSuccessAt,
+  settings,
+}: JobContext): Promise<JobResult> {
+  const schedule = { sendHourEt: settings.sendHourEt, sendWeekday: settings.sendWeekday };
+  if (!shouldRunDigest("Weekly", lastSuccessAt, now, schedule)) {
+    return { items: 0, note: "not due" };
+  }
   return runDigest("Weekly", now);
 }

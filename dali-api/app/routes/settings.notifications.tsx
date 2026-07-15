@@ -21,7 +21,16 @@ import {
   type EventDef,
   type EventType,
 } from "~/lib/notification-events";
+import { jobByName, resolveJobSettings } from "~/jobs/registry";
 import type { Route } from "./+types/settings.notifications";
+
+const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+function hourLabel(hour: number): string {
+  if (hour === 0) return "midnight";
+  if (hour === 12) return "noon";
+  return hour < 12 ? `${hour}am` : `${hour - 12}pm`;
+}
 
 export const meta: Route.MetaFunction = () => [
   { title: "Notifications · Settings · DALI OS" },
@@ -50,7 +59,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const partnerRedirect = await redirectPartnerToPortal(auth);
   if (partnerRedirect) return partnerRedirect;
 
-  const [prefs, user] = await Promise.all([
+  const [prefs, user, digestRows] = await Promise.all([
     prisma.notificationPreference.findMany({
       where: { userId: auth.user.sub },
       select: { eventType: true, inApp: true, slackDm: true, digestFrequency: true },
@@ -59,11 +68,32 @@ export async function loader({ request }: Route.LoaderArgs) {
       where: { id: auth.user.sub },
       select: { slackUserId: true },
     }),
+    prisma.scheduledJob.findMany({
+      where: { name: { in: ["notification-digest-daily", "notification-digest-weekly"] } },
+      select: { name: true, settings: true },
+    }),
   ]);
+
+  // Render the digest schedule as actually configured (Admin → Jobs), not a
+  // hardcoded time.
+  const rowByName = new Map(digestRows.map((r) => [r.name, r]));
+  const dailyDef = jobByName("notification-digest-daily");
+  const weeklyDef = jobByName("notification-digest-weekly");
+  const daily = dailyDef
+    ? resolveJobSettings(dailyDef, rowByName.get("notification-digest-daily")?.settings)
+    : { sendHourEt: 9 };
+  const weekly = weeklyDef
+    ? resolveJobSettings(weeklyDef, rowByName.get("notification-digest-weekly")?.settings)
+    : { sendHourEt: 9, sendWeekday: 1 };
 
   return {
     prefs,
     slackConnected: !!user?.slackUserId,
+    digestSchedule: {
+      dailyHour: daily.sendHourEt,
+      weeklyHour: weekly.sendHourEt,
+      weeklyWeekday: weekly.sendWeekday ?? 1,
+    },
   };
 }
 
@@ -122,7 +152,7 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function SettingsNotificationsPage({ loaderData }: Route.ComponentProps) {
-  const { prefs, slackConnected } = loaderData;
+  const { prefs, slackConnected, digestSchedule } = loaderData;
   const fetcher = useFetcher<typeof action>();
   const busy = fetcher.state !== "idle";
   const saved = fetcher.state === "idle" && fetcher.data?.ok === true;
@@ -151,8 +181,10 @@ export default function SettingsNotificationsPage({ loaderData }: Route.Componen
         <p className="mt-2 text-sm text-zinc-600">
           Choose how each kind of update reaches you. In-app notifications land in
           your bell and Home inbox; email can arrive instantly or batched into a
-          daily (9am) or weekly (Monday 9am) digest; Slack DMs come from the DALI
-          OS bot.
+          daily ({hourLabel(digestSchedule.dailyHour)} ET) or weekly (
+          {WEEKDAY_NAMES[digestSchedule.weeklyWeekday]}{" "}
+          {hourLabel(digestSchedule.weeklyHour)} ET) digest; Slack DMs come from
+          the DALI OS bot.
         </p>
         {!slackConnected && (
           <p className="mt-2 text-xs text-zinc-500">

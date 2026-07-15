@@ -12,7 +12,12 @@
 // those DBs are wiped/restored on every deploy anyway.
 
 import { prisma } from "~/lib/db";
-import { JOBS, jobByName, type JobDefinition } from "~/jobs/registry";
+import {
+  JOBS,
+  jobByName,
+  resolveJobSettings,
+  type JobDefinition,
+} from "~/jobs/registry";
 
 const TICK_MS = 60_000;
 // Handler budget: a claim older than this is considered crashed and up for
@@ -26,9 +31,10 @@ export function startJobRunner(): void {
   if (globalForJobs.jobRunnerTimer) return;
   if (JOBS.length === 0) return;
 
-  // Boot-time registry sync outside the tick: upsert every job (refreshing
-  // description-independent fields like intervalMinutes) and prune rows for
-  // jobs deleted from code. Fire-and-forget — a cold DB must not break boot.
+  // Boot-time registry sync outside the tick: ensure a row per job and prune
+  // rows for jobs deleted from code. Never overwrites intervalMinutes or
+  // settings — those are operator-editable, the registry only seeds them.
+  // Fire-and-forget — a cold DB must not break boot.
   void syncJobRegistry().catch((err) =>
     console.error("[jobs] registry sync failed:", err),
   );
@@ -51,13 +57,10 @@ if (import.meta.hot) {
 }
 
 async function syncJobRegistry(): Promise<void> {
-  for (const def of JOBS) {
-    await prisma.scheduledJob.upsert({
-      where: { name: def.name },
-      update: { intervalMinutes: def.intervalMinutes },
-      create: { name: def.name, intervalMinutes: def.intervalMinutes },
-    });
-  }
+  await prisma.scheduledJob.createMany({
+    data: JOBS.map((j) => ({ name: j.name, intervalMinutes: j.intervalMinutes })),
+    skipDuplicates: true,
+  });
   await prisma.scheduledJob.deleteMany({
     where: { name: { notIn: JOBS.map((j) => j.name) } },
   });
@@ -92,7 +95,7 @@ export async function tick(now: Date = new Date()): Promise<string[]> {
     });
     if (claimed.count === 0) continue; // another machine won the race
 
-    await executeClaimed(def, row.lastSuccessAt, now);
+    await executeClaimed(def, row, now);
     ran.push(row.name);
   }
   return ran;
@@ -128,22 +131,33 @@ export async function runJob(
     return { ran: false, error: "Job is currently running or not due" };
   }
 
-  const error = await executeClaimed(def, row.lastSuccessAt, now);
+  const error = await executeClaimed(def, row, now);
   return error ? { ran: true, error } : { ran: true };
 }
 
-// Runs a claimed job and writes back its bookkeeping. nextRunAt advances on
-// error too — a persistently failing job retries at its normal cadence, not
-// in a hot loop. Returns the error message, if any.
+type ClaimedRow = {
+  intervalMinutes: number;
+  settings: unknown;
+  lastSuccessAt: Date | null;
+};
+
+// Runs a claimed job and writes back its bookkeeping. Cadence and settings
+// come from the ROW (operator-editable), not the registry defaults.
+// nextRunAt advances on error too — a persistently failing job retries at
+// its normal cadence, not in a hot loop. Returns the error message, if any.
 async function executeClaimed(
   def: JobDefinition,
-  lastSuccessAt: Date | null,
+  row: ClaimedRow,
   now: Date,
 ): Promise<string | null> {
   const started = Date.now();
-  const nextRunAt = new Date(now.getTime() + def.intervalMinutes * 60_000);
+  const nextRunAt = new Date(now.getTime() + row.intervalMinutes * 60_000);
   try {
-    const result = await def.handler({ now, lastSuccessAt });
+    const result = await def.handler({
+      now,
+      lastSuccessAt: row.lastSuccessAt,
+      settings: resolveJobSettings(def, row.settings),
+    });
     const lastDurationMs = Date.now() - started;
     console.log(
       `[jobs] ${def.name} ok items=${result.items ?? 0} dur=${lastDurationMs}ms` +

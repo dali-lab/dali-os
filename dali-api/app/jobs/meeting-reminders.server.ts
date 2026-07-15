@@ -1,6 +1,7 @@
-// Meeting reminders: everyone on a Confirmed meeting hears 15 minutes before
-// an occurrence starts. First real consumer of MeetingException — cancelled
-// occurrences are skipped and overridden ones are retimed.
+// Meeting reminders: everyone on a Confirmed meeting hears `leadMinutes`
+// (admin-configurable, default 15) before an occurrence starts. First real
+// consumer of MeetingException — cancelled occurrences are skipped and
+// overridden ones are retimed.
 //
 // Idempotency: MeetingReminderLog keyed on (meeting, ORIGINAL occurrence
 // start, user). Claim-then-send — the log row is created before notify(), so
@@ -15,15 +16,16 @@ import { formatApplicationDateTime } from "~/lib/timezone";
 import type { JobContext, JobResult } from "~/jobs/registry";
 
 const MINUTE_MS = 60_000;
-const LEAD_MS = 15 * MINUTE_MS;
 // Guard band for the expansion scan: overrides can move an occurrence's
 // effective start well away from its original start, so expand wide and
-// filter effective starts to [now, now+lead] after.
+// filter effective starts to [now, now+lead] after. 16h forward covers the
+// max configurable lead (12h) plus override drift.
 const BAND_BEFORE_MS = 60 * MINUTE_MS;
 const BAND_AFTER_MS = 16 * 3_600_000;
 const CAP = 200;
 
-export async function runMeetingReminders({ now }: JobContext): Promise<JobResult> {
+export async function runMeetingReminders({ now, settings }: JobContext): Promise<JobResult> {
+  const leadMs = settings.leadMinutes * MINUTE_MS;
   const meetings = await prisma.scheduledMeeting.findMany({
     where: { status: "Confirmed", selectedAt: { not: null } },
     select: {
@@ -41,7 +43,7 @@ export async function runMeetingReminders({ now }: JobContext): Promise<JobResul
 
   const windowStart = new Date(now.getTime() - BAND_BEFORE_MS);
   const windowEnd = new Date(now.getTime() + BAND_AFTER_MS);
-  const leadEnd = now.getTime() + LEAD_MS;
+  const leadEnd = now.getTime() + leadMs;
 
   let sent = 0;
   for (const meeting of meetings) {
