@@ -3913,7 +3913,7 @@ async function main() {
       await createOfferingApplicationForm(offering.id, admin.id);
       await createOfferingApplicationForm(workshop.id, admin.id);
 
-      // Lab-workspace Page + NotificationEvent/Preference for the admin.
+      // Lab-workspace Page + a NotificationPreference row for the admin.
       await prisma.page.deleteMany({
         where: { workspaceType: "Lab", title: "Lab Handbook" },
       });
@@ -3926,20 +3926,23 @@ async function main() {
           createdById: admin.id,
         },
       });
-      await prisma.notificationEvent.create({
-        data: {
-          type: "staffing_assignment_published",
-          recipientId: admin.id,
-          payload: { cycleId: cycle.id, note: "Seed event" },
-        },
-      });
+      // Exercises the preference shape (eventType from the registry in
+      // app/lib/notification-events.ts): admin gets course announcements as
+      // a daily digest instead of the Instant default.
       await prisma.notificationPreference.upsert({
-        where: { id: "notifpref-admin-global-seed" },
-        update: {},
+        where: {
+          userId_eventType: {
+            userId: admin.id,
+            eventType: "education.announcement",
+          },
+        },
+        update: { digestFrequency: "Daily" },
         create: {
-          id: "notifpref-admin-global-seed",
           userId: admin.id,
-          eventType: "*",
+          eventType: "education.announcement",
+          inApp: true,
+          slackDm: false,
+          digestFrequency: "Daily",
         },
       });
 

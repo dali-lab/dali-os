@@ -1,0 +1,158 @@
+// Registry of typed notification events. Every Notification row carries an
+// `eventType` from this table; notify() (app/lib/notify.server.ts) resolves
+// each recipient's channels from their NotificationPreference row, falling
+// back to the `defaults` here when no row exists. Defaults are chosen so a
+// user with zero preference rows behaves exactly as the app did before the
+// preference layer existed — the only Instant email defaults are flows that
+// already emailed members.
+//
+// Client-safe on purpose (no process.env, no server imports): the settings
+// page renders its matrix from this table.
+
+import type { NotificationKind } from "~/generated/prisma/client";
+
+export type EmailDefault = "Instant" | "Daily" | "Weekly" | "Off";
+
+export type EventDef = {
+  // Default NotificationKind stamped on rows (a caller may override, e.g.
+  // the admin composer's kind picker). `kind` stays the UI discriminator;
+  // eventType is the preference/digest key.
+  kind: NotificationKind;
+  // Settings-page section and digest grouping.
+  area: "Meetings" | "Tasks" | "Hiring" | "Education" | "Announcements" | "Forms" | "Onboarding";
+  label: string;
+  description: string;
+  // The in-app row IS the workflow surface (RSVP buttons, form todo,
+  // interview tile) — not muteable; dispatch ignores inApp:false rows and
+  // the settings page renders the toggle disabled.
+  lockedInApp?: boolean;
+  // Email for this event is owned by a feature-specific template pipeline
+  // (e.g. education decision emails); notify() never emails these and the
+  // settings page shows no email control.
+  externalEmail?: boolean;
+  defaults: { inApp: boolean; slackDm: boolean; email: EmailDefault };
+};
+
+export const EVENT_TYPES = {
+  "meeting.invite": {
+    kind: "MeetingInvite",
+    area: "Meetings",
+    label: "Meeting invites",
+    description: "When someone schedules a meeting with you.",
+    lockedInApp: true,
+    defaults: { inApp: true, slackDm: false, email: "Off" },
+  },
+  "meeting.reminder": {
+    kind: "MeetingReminder",
+    area: "Meetings",
+    label: "Meeting reminders",
+    description: "15 minutes before a meeting you're in starts.",
+    defaults: { inApp: true, slackDm: false, email: "Off" },
+  },
+  "task.due_reminder": {
+    kind: "General",
+    area: "Tasks",
+    label: "Task deadline reminders",
+    description: "A day before and at the moment a task you're assigned is due.",
+    defaults: { inApp: true, slackDm: true, email: "Off" },
+  },
+  "hiring.interview_assigned": {
+    kind: "General",
+    area: "Hiring",
+    label: "Interview assignments",
+    description: "When you're assigned to conduct an interview.",
+    lockedInApp: true,
+    defaults: { inApp: true, slackDm: false, email: "Off" },
+  },
+  "hiring.fellowship_invite": {
+    kind: "General",
+    area: "Hiring",
+    label: "Fellowship invitations",
+    description: "When an intern-to-full application window opens for you.",
+    defaults: { inApp: true, slackDm: false, email: "Off" },
+  },
+  announcement: {
+    kind: "SystemAnnouncement",
+    area: "Announcements",
+    label: "Lab announcements",
+    description: "Announcements and action items sent by Core.",
+    lockedInApp: true,
+    defaults: { inApp: true, slackDm: false, email: "Off" },
+  },
+  "member.onboarding": {
+    kind: "SystemAnnouncement",
+    area: "Onboarding",
+    label: "Onboarding steps",
+    description: "Your onboarding checklist when you join the lab.",
+    lockedInApp: true,
+    defaults: { inApp: true, slackDm: false, email: "Off" },
+  },
+  "form.submission": {
+    kind: "General",
+    area: "Forms",
+    label: "Form responses",
+    description: "When someone submits a form you created (per-form toggle).",
+    defaults: { inApp: true, slackDm: false, email: "Off" },
+  },
+  "education.announcement": {
+    kind: "Education",
+    area: "Education",
+    label: "Course announcements",
+    description: "Announcements from instructors of your offerings.",
+    defaults: { inApp: true, slackDm: false, email: "Instant" },
+  },
+  "education.decision": {
+    kind: "Education",
+    area: "Education",
+    label: "Application decisions",
+    description: "Decisions on your education applications.",
+    externalEmail: true,
+    defaults: { inApp: true, slackDm: false, email: "Off" },
+  },
+  "education.assignment": {
+    kind: "Education",
+    area: "Education",
+    label: "New assignments",
+    description: "When an instructor posts an assignment.",
+    defaults: { inApp: true, slackDm: false, email: "Off" },
+  },
+  "education.discussion": {
+    kind: "Education",
+    area: "Education",
+    label: "Discussion replies",
+    description: "Replies in discussion threads you're part of.",
+    defaults: { inApp: true, slackDm: false, email: "Off" },
+  },
+  "education.feedback_request": {
+    kind: "SystemAnnouncement",
+    area: "Education",
+    label: "Feedback requests",
+    description: "Session feedback and exit-survey forms to fill.",
+    lockedInApp: true,
+    defaults: { inApp: true, slackDm: false, email: "Off" },
+  },
+  "education.certificate": {
+    kind: "Education",
+    area: "Education",
+    label: "Certificates",
+    description: "When you're issued a certificate of completion.",
+    defaults: { inApp: true, slackDm: false, email: "Instant" },
+  },
+  // Fallback stamped on rows that predate the registry (schema column
+  // default). Never emitted by code; hidden from the settings page.
+  general: {
+    kind: "General",
+    area: "Announcements",
+    label: "Other",
+    description: "Everything else.",
+    defaults: { inApp: true, slackDm: false, email: "Off" },
+  },
+} as const satisfies Record<string, EventDef>;
+
+export type EventType = keyof typeof EVENT_TYPES;
+
+export const EVENT_TYPE_KEYS = Object.keys(EVENT_TYPES) as EventType[];
+
+export function isEventType(value: unknown): value is EventType {
+  return typeof value === "string" && value in EVENT_TYPES;
+}

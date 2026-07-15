@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { prisma } from "~/lib/db";
+import { notify } from "~/lib/notify.server";
 import { parseJson } from "~/lib/validate";
 import { requireAuth } from "~/lib/auth";
 import { isCore, hasCycleAccess } from "~/lib/roles";
@@ -191,24 +192,29 @@ export async function action({ request, params }: Route.ActionArgs) {
     });
 
     if (fanOutPlan) {
-      if (fanOutPlan.userIds.length > 0) {
-        await tx.notification.createMany({
-          data: fanOutPlan.userIds.map((recipientUserId) => ({
-            recipientUserId,
-            createdByUserId: auth.user.sub,
-            kind: "General" as const,
-            title: fanOutPlan!.title,
-            body: fanOutPlan!.body,
-            link: "/intern-to-full",
-          })),
-        });
-      }
       await tx.applicationCycle.update({
         where: { id: params.cycleId! },
         data: { internsNotifiedAt: new Date() },
       });
     }
   });
+
+  // Fan out after commit, best-effort (matching the interview-notifications
+  // convention: a flaky notification write must not roll back a committed
+  // status change). internsNotifiedAt is already set, so a crash between
+  // commit and fan-out drops the batch rather than re-spamming on retry.
+  if (fanOutPlan && fanOutPlan.userIds.length > 0) {
+    await notify({
+      eventType: "hiring.fellowship_invite",
+      createdByUserId: auth.user.sub,
+      message: {
+        title: fanOutPlan.title,
+        body: fanOutPlan.body,
+        link: "/intern-to-full",
+      },
+      recipients: fanOutPlan.userIds.map((userId) => ({ userId })),
+    }).catch((err) => console.error("[cycle-status] fellowship fan-out failed:", err));
+  }
 
   return Response.json({ currentStatus: newStatus });
 }

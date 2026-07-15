@@ -1,5 +1,6 @@
 import { prisma } from "~/lib/db";
 import type { Prisma } from "~/generated/prisma/client";
+import { notify } from "~/lib/notify.server";
 import { logAuditEvent } from "~/lib/audit";
 import { sendEmail } from "~/lib/gmail";
 import { getApplicationsGmailRefreshToken } from "~/lib/gmail-integration";
@@ -208,16 +209,16 @@ export async function requestSessionFeedback(args: {
       if (existingTodo || existingSubmission) continue;
 
       if (user.daliEmail) {
-        await prisma.notification.create({
-          data: {
-            recipientUserId: user.id,
-            kind: "SystemAnnouncement",
+        await notify({
+          eventType: "education.feedback_request",
+          message: {
             isTodo: true,
             formId: form.id,
             title,
             body: "Two minutes of feedback helps the instructors improve the next session.",
             link,
           },
+          recipients: [{ userId: user.id }],
         });
       } else {
         // Portal students don't see the member notification bell — email the
@@ -278,16 +279,16 @@ export async function requestInstructorExitSurveys(offeringId: string): Promise<
         select: { id: true },
       });
       if (existing) continue;
-      await prisma.notification.create({
-        data: {
-          recipientUserId: instructor.userId,
-          kind: "SystemAnnouncement",
+      await notify({
+        eventType: "education.feedback_request",
+        message: {
           isTodo: true,
           formId: form.id,
           title: `Instructor exit survey — ${offering.title}`,
           body: "The course is closed out — tell the education team how it went.",
           link: `/forms/fill/${form.publicToken}${linkQuery}`,
         },
+        recipients: [{ userId: instructor.userId }],
       });
     } catch (err) {
       console.error("exit survey request failed", {

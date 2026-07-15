@@ -4,6 +4,7 @@
 // participant notification fan-out.
 
 import { prisma } from "~/lib/db";
+import { notify } from "~/lib/notify.server";
 import { resolveGroupMembers } from "~/lib/groups";
 import { createGoogleCalendarEvent, type GoogleAttendee } from "~/lib/google-calendar";
 import { primaryEmail } from "~/lib/display";
@@ -127,21 +128,19 @@ export async function createScheduledMeeting(
   const notifyIds = participantUserIds.filter((id) => id !== input.organizerId);
   let notifiedCount = 0;
   if (notifyIds.length > 0) {
-    const linkUrl = `/calendar?meeting=${meeting.id}`;
-    const notifBody = startDate ? `Starts ${startDate.toISOString()}` : null;
-    const result = await prisma.notification.createMany({
-      data: notifyIds.map((rid) => ({
-        recipientUserId: rid,
-        createdByUserId: input.organizerId,
-        kind: "MeetingInvite" as const,
+    const result = await notify({
+      eventType: "meeting.invite",
+      createdByUserId: input.organizerId,
+      message: {
         title: `Meeting invite: ${input.title}`,
-        body: notifBody,
-        link: linkUrl,
+        body: startDate ? `Starts ${startDate.toISOString()}` : null,
+        link: `/calendar?meeting=${meeting.id}`,
         sourceGroupId: scopeId,
         scheduledMeetingId: meeting.id,
-      })),
+      },
+      recipients: notifyIds.map((userId) => ({ userId })),
     });
-    notifiedCount = result.count;
+    notifiedCount = result.inApp;
   }
 
   return {

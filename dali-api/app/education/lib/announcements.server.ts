@@ -1,13 +1,7 @@
 import { prisma } from "~/lib/db";
 import { logAuditEvent } from "~/lib/audit";
-import { sendEmail } from "~/lib/gmail";
-import { getApplicationsGmailRefreshToken } from "~/lib/gmail-integration";
-import {
-  resolveCandidateEmail,
-  redirectBannerHtml,
-} from "~/lib/candidate-email";
-import { bodyToHtml } from "~/lib/email";
-import { recipientEmail, educationLink } from "./notifications.server";
+import { notify } from "~/lib/notify.server";
+import { educationLink } from "./notifications.server";
 
 export async function listAnnouncements(offeringId: string) {
   return prisma.educationAnnouncement.findMany({
@@ -43,16 +37,7 @@ export async function postAnnouncement(args: {
   const enrollees = await prisma.educationApplication.findMany({
     where: { offeringId: args.offeringId, status: "Approved" },
     select: {
-      applicant: {
-        select: {
-          id: true,
-          firstName: true,
-          daliEmail: true,
-          dartmouthEmail: true,
-          personalEmail: true,
-          netId: true,
-        },
-      },
+      applicant: { select: { id: true, daliEmail: true } },
     },
   });
 
@@ -66,48 +51,22 @@ export async function postAnnouncement(args: {
     .filter((u) => u.id !== args.authorId);
 
   if (recipients.length > 0) {
+    // notify() covers both surfaces: in-app rows for everyone, and email per
+    // preference — education.announcement defaults to Instant, matching the
+    // old email-everyone behavior (portal students reach the same address via
+    // the netId fallback in the dispatcher's email chain).
     try {
-      await prisma.notification.createMany({
-        data: recipients.map((u) => ({
-          recipientUserId: u.id,
-          createdByUserId: args.authorId,
-          kind: "Education" as const,
-          title,
-          body,
+      await notify({
+        eventType: "education.announcement",
+        createdByUserId: args.authorId,
+        message: { title, body },
+        recipients: recipients.map((u) => ({
+          userId: u.id,
           link: `${educationLink(u, offering.id)}/hub`,
         })),
       });
     } catch (err) {
       console.error("education announcement notifications failed", {
-        offeringId: args.offeringId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-
-    try {
-      const refreshToken = await getApplicationsGmailRefreshToken();
-      if (refreshToken) {
-        const html = bodyToHtml(body);
-        for (const u of recipients) {
-          const { to, redirectedFrom } = resolveCandidateEmail(recipientEmail(u));
-          if (!to) continue;
-          try {
-            await sendEmail({
-              refreshToken,
-              to,
-              subject: title,
-              html: redirectBannerHtml(redirectedFrom) + html,
-            });
-          } catch (err) {
-            console.error("education announcement email failed", {
-              to,
-              error: err instanceof Error ? err.message : String(err),
-            });
-          }
-        }
-      }
-    } catch (err) {
-      console.error("education announcement email batch failed", {
         offeringId: args.offeringId,
         error: err instanceof Error ? err.message : String(err),
       });

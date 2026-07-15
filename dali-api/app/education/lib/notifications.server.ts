@@ -1,4 +1,5 @@
 import { prisma } from "~/lib/db";
+import { notify } from "~/lib/notify.server";
 import { renderEmail } from "~/lib/email";
 import { sendEmail } from "~/lib/gmail";
 import { getApplicationsGmailRefreshToken } from "~/lib/gmail-integration";
@@ -95,14 +96,16 @@ export async function notifyApplicationStatus(
     : copy.body(offering.title);
 
   try {
-    await prisma.notification.create({
-      data: {
-        recipientUserId: applicant.id,
-        kind: "Education",
+    // education.decision is externalEmail in the registry: notify() never
+    // emails it, so the template-bound sendDecisionEmail below can't double-send.
+    await notify({
+      eventType: "education.decision",
+      message: {
         title,
         body,
         link: educationLink(applicant, offering.id),
       },
+      recipients: [{ userId: applicant.id }],
     });
   } catch (err) {
     console.error("education notification write failed", {
@@ -158,33 +161,45 @@ export async function notifyNewAssignment(args: {
     ? `Due ${args.dueAt.toLocaleDateString("en-US", { month: "short", day: "numeric" })}. Open the course hub to submit.`
     : "Open the course hub to submit.";
 
-  for (const { applicant } of enrollees) {
+  // Members get a pref-aware in-app notification (education.assignment
+  // defaults email Off — matching the old in-app-only behavior); portal
+  // students have no bell, so they keep the direct email path unchanged.
+  const members = enrollees.filter((e) => e.applicant.daliEmail);
+  const portalStudents = enrollees.filter((e) => !e.applicant.daliEmail);
+
+  if (members.length > 0) {
+    try {
+      await notify({
+        eventType: "education.assignment",
+        message: { title, body },
+        recipients: members.map(({ applicant }) => ({
+          userId: applicant.id,
+          link: `${educationLink(applicant, offering.id)}/assignments/${args.assignmentId}`,
+        })),
+      });
+    } catch (err) {
+      console.error("assignment notification failed", {
+        assignmentId: args.assignmentId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  for (const { applicant } of portalStudents) {
     const link = `${educationLink(applicant, offering.id)}/assignments/${args.assignmentId}`;
     try {
-      if (applicant.daliEmail) {
-        await prisma.notification.create({
-          data: {
-            recipientUserId: applicant.id,
-            kind: "Education",
-            title,
-            body,
-            link,
-          },
-        });
-      } else {
-        const refreshToken = await getApplicationsGmailRefreshToken();
-        if (!refreshToken) continue;
-        const { to, redirectedFrom } = resolveCandidateEmail(recipientEmail(applicant));
-        if (!to) continue;
-        await sendEmail({
-          refreshToken,
-          to,
-          subject: title,
-          html:
-            redirectBannerHtml(redirectedFrom) +
-            `<p>Hi ${applicant.firstName},</p><p>${body}</p><p><a href="${getFrontendUrl()}${link}">Open the assignment</a></p>`,
-        });
-      }
+      const refreshToken = await getApplicationsGmailRefreshToken();
+      if (!refreshToken) continue;
+      const { to, redirectedFrom } = resolveCandidateEmail(recipientEmail(applicant));
+      if (!to) continue;
+      await sendEmail({
+        refreshToken,
+        to,
+        subject: title,
+        html:
+          redirectBannerHtml(redirectedFrom) +
+          `<p>Hi ${applicant.firstName},</p><p>${body}</p><p><a href="${getFrontendUrl()}${link}">Open the assignment</a></p>`,
+      });
     } catch (err) {
       console.error("assignment notification failed", {
         assignmentId: args.assignmentId,
