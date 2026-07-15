@@ -72,6 +72,7 @@ import { runScheduledAnnouncements } from "~/jobs/scheduled-announcements.server
 import { runSessionFeedbackSweep } from "~/jobs/session-feedback-sweep.server";
 import { runDailyDigest, runWeeklyDigest } from "~/lib/notification-digest.server";
 import { runRetentionJanitor } from "~/jobs/retention-janitor.server";
+import { runSprintLifecycle } from "~/jobs/sprint-lifecycle.server";
 
 export const JOBS: JobDefinition[] = [
   {
@@ -171,6 +172,13 @@ export const JOBS: JobDefinition[] = [
       },
     ],
     handler: runWeeklyDigest,
+  },
+  {
+    name: "sprint-lifecycle",
+    description:
+      "Closes Active sprints past their end date, rolls unfinished tasks to the next Planned sprint (else the backlog), and posts a summary to the project's Slack channel.",
+    intervalMinutes: 60,
+    handler: runSprintLifecycle,
   },
   {
     name: "retention-janitor",
