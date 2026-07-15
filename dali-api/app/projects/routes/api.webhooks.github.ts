@@ -2,6 +2,11 @@ import type { Route } from "./+types/api.webhooks.github";
 import { prisma } from "~/lib/db";
 import { verifyGithubSignature } from "~/lib/github-webhook";
 import { wasRecentOutbound } from "../lib/github-task-sync";
+import {
+  notifyTaskAssigned,
+  notifyTaskComment,
+  notifyTaskGithubUpdate,
+} from "../lib/task-notifications.server";
 import type { TaskStatus } from "../lib/task-board";
 
 // GitHub webhook receiver for issue events on repos linked to dalios tasks.
@@ -93,12 +98,22 @@ async function handleIssues(payload: Record<string, unknown>): Promise<void> {
       const newStatus: TaskStatus = stateReason === "not_planned" ? "Cancelled" : "Done";
       if (task.status !== "Done" && task.status !== "Cancelled") {
         await prisma.task.update({ where: { id: task.id }, data: { status: newStatus } });
+        await notifyTaskGithubUpdate({
+          taskId: task.id,
+          action: "closed",
+          newStatus: newStatus === "Cancelled" ? "Cancelled" : "Done",
+        });
       }
       break;
     }
     case "reopened": {
       if (task.status === "Done" || task.status === "Cancelled") {
         await prisma.task.update({ where: { id: task.id }, data: { status: "InProgress" } });
+        await notifyTaskGithubUpdate({
+          taskId: task.id,
+          action: "reopened",
+          newStatus: "In progress",
+        });
       }
       break;
     }
@@ -113,9 +128,13 @@ async function handleIssues(payload: Record<string, unknown>): Promise<void> {
       });
       if (!user) return;
       if (action === "assigned") {
-        await prisma.taskAssignee
+        const created = await prisma.taskAssignee
           .create({ data: { taskId: task.id, userId: user.id } })
-          .catch(() => {}); // already assigned = unique violation, fine
+          .then(() => true)
+          .catch(() => false); // already assigned = unique violation, fine
+        if (created) {
+          await notifyTaskAssigned({ taskId: task.id, addedUserIds: [user.id] });
+        }
       } else {
         await prisma.taskAssignee.deleteMany({
           where: { taskId: task.id, userId: user.id },
@@ -172,6 +191,7 @@ async function handleIssueComment(payload: Record<string, unknown>): Promise<voi
   await prisma.taskComment.create({
     data: { taskId: task.id, authorId, body: prefixed },
   });
+  await notifyTaskComment({ taskId: task.id, authorId, body: prefixed });
 }
 
 // ─── helpers ────────────────────────────────────────────────────────────────

@@ -5,6 +5,9 @@ vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, isCore: vi.fn() };
 });
+vi.mock("~/projects/lib/task-notifications.server", () => ({
+  notifyTaskAssigned: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock("~/projects/lib/github-task-sync", () => ({
   normalizeRepo: (s: string) => (s.includes("/") ? s : null),
   createIssueForTask: vi.fn().mockResolvedValue(undefined),

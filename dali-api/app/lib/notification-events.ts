@@ -56,6 +56,27 @@ export const EVENT_TYPES = {
     description: "A day before and at the moment a task you're assigned is due.",
     defaults: { inApp: true, slackDm: true, email: "Off" },
   },
+  "task.assigned": {
+    kind: "General",
+    area: "Tasks",
+    label: "Task assignments",
+    description: "When someone assigns you to a task.",
+    defaults: { inApp: true, slackDm: true, email: "Off" },
+  },
+  "task.comment": {
+    kind: "General",
+    area: "Tasks",
+    label: "Task comments",
+    description: "New comments on tasks you're assigned.",
+    defaults: { inApp: true, slackDm: false, email: "Off" },
+  },
+  "task.github_update": {
+    kind: "General",
+    area: "Tasks",
+    label: "GitHub task updates",
+    description: "When a linked GitHub issue closes or reopens one of your tasks.",
+    defaults: { inApp: true, slackDm: false, email: "Off" },
+  },
   "hiring.interview_assigned": {
     kind: "General",
     area: "Hiring",
