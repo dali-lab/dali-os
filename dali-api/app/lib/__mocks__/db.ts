@@ -99,6 +99,7 @@ export const prisma = {
     createManyAndReturn: vi.fn().mockResolvedValue([]),
     update: vi.fn(),
     updateMany: vi.fn(),
+    deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
   },
   notificationPreference: {
     findMany: vi.fn().mockResolvedValue([]),
@@ -175,6 +176,7 @@ export const prisma = {
     findMany: vi.fn().mockResolvedValue([]),
     createMany: vi.fn().mockResolvedValue({ count: 0 }),
     update: vi.fn(),
+    deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
   },
   taskComment: {
     create: vi.fn(),
@@ -197,6 +199,7 @@ export const prisma = {
   },
   meetingReminderLog: {
     create: vi.fn(),
+    deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
   },
   form: {
     findUnique: vi.fn(),

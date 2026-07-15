@@ -71,6 +71,7 @@ import { runMeetingReminders } from "~/jobs/meeting-reminders.server";
 import { runScheduledAnnouncements } from "~/jobs/scheduled-announcements.server";
 import { runSessionFeedbackSweep } from "~/jobs/session-feedback-sweep.server";
 import { runDailyDigest, runWeeklyDigest } from "~/lib/notification-digest.server";
+import { runRetentionJanitor } from "~/jobs/retention-janitor.server";
 
 export const JOBS: JobDefinition[] = [
   {
@@ -170,6 +171,23 @@ export const JOBS: JobDefinition[] = [
       },
     ],
     handler: runWeeklyDigest,
+  },
+  {
+    name: "retention-janitor",
+    description:
+      "Deletes read notifications and stale reminder-ledger rows older than the retention window.",
+    intervalMinutes: 1440,
+    settings: [
+      {
+        key: "retentionMonths",
+        label: "Retention window",
+        unit: "months",
+        min: 1,
+        max: 36,
+        default: 6,
+      },
+    ],
+    handler: runRetentionJanitor,
   },
 ];
 
