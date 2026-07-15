@@ -12,6 +12,7 @@ import { z } from "zod";
 import { prisma, Prisma } from "~/lib/db";
 import type { Question } from "~/types";
 import { isReferenceSourceKey, referenceSourceNeedsTerm } from "./reference-sources.shared";
+import type { FolderOption } from "./folder-tree.shared";
 import { formDeletionBlockers } from "./form-usages.server";
 
 const QUESTION_TYPES: Question["type"][] = [
@@ -174,7 +175,9 @@ export async function loadFormsLevel(folderId: string | null) {
   }
 
   return {
-    current: current ? { id: current.id, name: current.name } : null,
+    current: current
+      ? { id: current.id, name: current.name, parentId: current.parentId }
+      : null,
     crumbs,
     folders: childFolders.map<FolderCard>((d) => ({
       id: d.id,
@@ -202,9 +205,10 @@ export async function loadFormsLevel(folderId: string | null) {
           : null,
       };
     }),
-    allFolders: allFolders.map<FolderCrumb>((f) => ({
+    allFolders: allFolders.map<FolderOption>((f) => ({
       id: f.id,
       name: f.name,
+      parentId: f.parentId,
     })),
   };
 }

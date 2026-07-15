@@ -1,9 +1,24 @@
 import { useState } from "react";
 import { Link, useFetcher } from "react-router";
-import { Folder, FileText, MoreVertical } from "lucide-react";
+import {
+  DndContext,
+  PointerSensor,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
+import { Folder, FolderUp, FileText, MoreVertical } from "lucide-react";
 import { Button } from "~/components/ui/Button";
 import { Modal, ModalHeader, ModalFooter } from "~/components/Modal";
 import type { FormCard, FolderCard } from "~/forms/lib/forms-data";
+import {
+  flattenFolderTree,
+  descendantSetOf,
+  type FolderOption,
+} from "~/forms/lib/folder-tree.shared";
 
 function errorOf(data: unknown): string | null {
   if (data && typeof data === "object" && "error" in data) {
@@ -30,20 +45,38 @@ type Dialog =
       submit: Record<string, string>;
     };
 
+type MoveSubject = { type: "form" | "folder"; id: string; name: string };
+type DragItem = { type: "form" | "folder"; id: string };
+
 export function FormsBrowser({
   folderId,
+  parentId,
   folders,
   forms,
+  allFolders,
 }: {
   // The folder this view is showing (null = top level). New forms/folders
   // are created in this folder.
   folderId: string | null;
+  // Parent of the current folder (null at top level, or when the current
+  // folder sits at the root). Drop target for the "move up" zone.
+  parentId: string | null;
   folders: FolderCard[];
   forms: FormCard[];
+  // Every folder in the tree, for the "Move to…" picker.
+  allFolders: FolderOption[];
 }) {
   const fetcher = useFetcher();
   const [dialog, setDialog] = useState<Dialog | null>(null);
+  const [move, setMove] = useState<MoveSubject | null>(null);
+  const [dragging, setDragging] = useState<DragItem | null>(null);
   const [query, setQuery] = useState("");
+
+  // 6px activation distance disambiguates click (navigate) from drag on the
+  // Link cards — same pattern as KanbanBoard.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+  );
 
   const busy = fetcher.state !== "idle";
   const error = errorOf(fetcher.data);
@@ -134,6 +167,39 @@ export function FormsBrowser({
     setDialog(null);
   }
 
+  function submitMove(item: DragItem, destinationId: string | null) {
+    if (item.type === "form") {
+      fetcher.submit(
+        { intent: "move-form", id: item.id, folderId: destinationId ?? "" },
+        { method: "post" },
+      );
+    } else {
+      fetcher.submit(
+        { intent: "move-folder", id: item.id, parentId: destinationId ?? "" },
+        { method: "post" },
+      );
+    }
+  }
+
+  function handleDragStart(event: DragStartEvent) {
+    setDragging((event.active.data.current as DragItem | undefined) ?? null);
+  }
+  function handleDragEnd(event: DragEndEvent) {
+    setDragging(null);
+    const item = event.active.data.current as DragItem | undefined;
+    const dest = event.over?.data.current as
+      | { folderId: string | null }
+      | undefined;
+    if (!item || !event.over || dest === undefined) return;
+    if (item.type === "folder" && dest.folderId === item.id) return;
+    submitMove(item, dest.folderId);
+  }
+
+  const parentName =
+    parentId === null
+      ? null
+      : (allFolders.find((f) => f.id === parentId)?.name ?? "parent folder");
+
   const empty = folders.length === 0 && forms.length === 0;
 
   return (
@@ -182,26 +248,50 @@ export function FormsBrowser({
           No forms or folders match "{query.trim()}".
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {visibleFolders.map((d) => (
-            <FolderCardView
-              key={d.id}
-              folder={d}
-              busy={busy}
-              onRename={() => renameFolder(d)}
-              onDelete={() => deleteFolder(d)}
+        // Fixed id keeps dnd-kit's generated ids stable across SSR/client.
+        <DndContext
+          id="forms-browser"
+          sensors={sensors}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+          onDragCancel={() => setDragging(null)}
+        >
+          {folderId !== null && dragging !== null && (
+            <MoveUpDropZone
+              targetFolderId={parentId}
+              label={
+                parentName ? `Move to "${parentName}"` : "Move to top level"
+              }
             />
-          ))}
-          {visibleForms.map((f) => (
-            <FormCardView
-              key={f.id}
-              form={f}
-              busy={busy}
-              onRename={() => renameForm(f)}
-              onDelete={() => deleteForm(f)}
-            />
-          ))}
-        </div>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {visibleFolders.map((d) => (
+              <FolderCardView
+                key={d.id}
+                folder={d}
+                busy={busy}
+                dropDisabled={
+                  dragging?.type === "folder" && dragging.id === d.id
+                }
+                onRename={() => renameFolder(d)}
+                onDelete={() => deleteFolder(d)}
+                onMove={() =>
+                  setMove({ type: "folder", id: d.id, name: d.name })
+                }
+              />
+            ))}
+            {visibleForms.map((f) => (
+              <FormCardView
+                key={f.id}
+                form={f}
+                busy={busy}
+                onRename={() => renameForm(f)}
+                onDelete={() => deleteForm(f)}
+                onMove={() => setMove({ type: "form", id: f.id, name: f.name })}
+              />
+            ))}
+          </div>
+        </DndContext>
       )}
 
       {dialog && (
@@ -212,6 +302,49 @@ export function FormsBrowser({
           onConfirm={submitDialog}
         />
       )}
+
+      {move && (
+        <MoveDialog
+          subject={move}
+          allFolders={allFolders}
+          currentLocationId={folderId}
+          busy={busy}
+          onCancel={() => setMove(null)}
+          onMove={(destinationId) => {
+            submitMove(move, destinationId);
+            setMove(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Full-width drop target shown above the grid while a drag is in flight
+// inside a folder — the breadcrumb trail lives in the global chrome (outside
+// this DndContext), so moving up needs its own in-page target.
+function MoveUpDropZone({
+  targetFolderId,
+  label,
+}: {
+  targetFolderId: string | null;
+  label: string;
+}) {
+  const { isOver, setNodeRef } = useDroppable({
+    id: "move-up",
+    data: { folderId: targetFolderId },
+  });
+  return (
+    <div
+      ref={setNodeRef}
+      className={`flex items-center justify-center gap-2 border border-dashed rounded-lg px-4 py-3 text-sm transition-colors ${
+        isOver
+          ? "ring-2 ring-accent-coral/40 border-accent-coral/60 text-foreground"
+          : "border-border text-muted-foreground"
+      }`}
+    >
+      <FolderUp className="w-4 h-4" />
+      {label}
     </div>
   );
 }
@@ -219,10 +352,12 @@ export function FormsBrowser({
 function CardMenu({
   busy,
   onRename,
+  onMove,
   onDelete,
 }: {
   busy: boolean;
   onRename: () => void;
+  onMove: () => void;
   onDelete: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -276,6 +411,18 @@ function CardMenu({
                 e.preventDefault();
                 e.stopPropagation();
                 setOpen(false);
+                onMove();
+              }}
+              className="text-left px-2 py-1.5 rounded hover:bg-muted/50 text-foreground"
+            >
+              Move to…
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setOpen(false);
                 onDelete();
               }}
               className="text-left px-2 py-1.5 rounded hover:bg-destructive/10 text-destructive"
@@ -292,19 +439,53 @@ function CardMenu({
 function FolderCardView({
   folder,
   busy,
+  dropDisabled,
   onRename,
   onDelete,
+  onMove,
 }: {
   folder: FolderCard;
   busy: boolean;
+  // True while this folder itself is being dragged: no self-drop highlight,
+  // no self-drop request.
+  dropDisabled: boolean;
   onRename: () => void;
   onDelete: () => void;
+  onMove: () => void;
 }) {
+  const drag = useDraggable({
+    id: `folder:${folder.id}`,
+    data: { type: "folder", id: folder.id },
+    disabled: busy,
+  });
+  const drop = useDroppable({
+    id: `folder-drop:${folder.id}`,
+    data: { folderId: folder.id },
+    disabled: dropDisabled,
+  });
   const childCount = folder.formCount + folder.folderCount;
   return (
     <Link
       to={`/forms/${folder.id}`}
-      className="group flex items-start gap-3 bg-card border border-border rounded-lg p-4 hover:border-accent-coral/60 hover:shadow-sm transition-all"
+      ref={(node) => {
+        drag.setNodeRef(node);
+        drop.setNodeRef(node);
+      }}
+      // Only the listeners: spreading dnd-kit's attributes would put
+      // role="button" on the anchor. Drag stays pointer-driven (no keyboard
+      // sensor is configured), matching the other boards.
+      {...drag.listeners}
+      style={
+        drag.transform
+          ? {
+              transform: `translate3d(${drag.transform.x}px, ${drag.transform.y}px, 0)`,
+              zIndex: 50,
+            }
+          : undefined
+      }
+      className={`group flex items-start gap-3 bg-card border border-border rounded-lg p-4 hover:border-accent-coral/60 hover:shadow-sm transition-all ${
+        drop.isOver ? "ring-2 ring-accent-coral/40" : ""
+      }`}
     >
       <div className="mt-0.5 text-accent-coral">
         <Folder className="w-6 h-6 fill-accent-coral/20" />
@@ -327,7 +508,12 @@ function FolderCardView({
         </div>
       </div>
       {/* Inside a Link: menu stops propagation so clicks don't navigate. */}
-      <CardMenu busy={busy} onRename={onRename} onDelete={onDelete} />
+      <CardMenu
+        busy={busy}
+        onRename={onRename}
+        onMove={onMove}
+        onDelete={onDelete}
+      />
     </Link>
   );
 }
@@ -337,14 +523,33 @@ function FormCardView({
   busy,
   onRename,
   onDelete,
+  onMove,
 }: {
   form: FormCard;
   busy: boolean;
   onRename: () => void;
   onDelete: () => void;
+  onMove: () => void;
 }) {
+  const drag = useDraggable({
+    id: `form:${form.id}`,
+    data: { type: "form", id: form.id },
+    disabled: busy,
+  });
   return (
-    <div className="group flex items-start gap-3 bg-card border border-border rounded-lg p-4 hover:border-accent-coral/60 hover:shadow-sm transition-all">
+    <div
+      ref={drag.setNodeRef}
+      {...drag.listeners}
+      style={
+        drag.transform
+          ? {
+              transform: `translate3d(${drag.transform.x}px, ${drag.transform.y}px, 0)`,
+              zIndex: 50,
+            }
+          : undefined
+      }
+      className="group flex items-start gap-3 bg-card border border-border rounded-lg p-4 hover:border-accent-coral/60 hover:shadow-sm transition-all"
+    >
       <Link
         to={`/forms/edit/${form.id}`}
         className="flex items-start gap-3 min-w-0 flex-1 text-left"
@@ -363,8 +568,120 @@ function FormCardView({
           </div>
         </div>
       </Link>
-      <CardMenu busy={busy} onRename={onRename} onDelete={onDelete} />
+      <CardMenu
+        busy={busy}
+        onRename={onRename}
+        onMove={onMove}
+        onDelete={onDelete}
+      />
     </div>
+  );
+}
+
+function MoveDialog({
+  subject,
+  allFolders,
+  currentLocationId,
+  busy,
+  onCancel,
+  onMove,
+}: {
+  subject: MoveSubject;
+  allFolders: FolderOption[];
+  // The folder this view is showing — every card here lives at this level,
+  // so it's the subject's current location.
+  currentLocationId: string | null;
+  busy: boolean;
+  onCancel: () => void;
+  onMove: (destinationId: string | null) => void;
+}) {
+  // undefined = nothing picked yet; null = "Top level".
+  const [selected, setSelected] = useState<string | null | undefined>(
+    undefined,
+  );
+  const rows = flattenFolderTree(allFolders);
+  const blocked =
+    subject.type === "folder"
+      ? descendantSetOf(allFolders, subject.id)
+      : new Set<string>();
+
+  function rowClass(isSelected: boolean, disabled: boolean): string {
+    if (disabled) return "text-muted-foreground/60 cursor-not-allowed";
+    if (isSelected) return "bg-accent-coral/10 text-accent-coral";
+    return "text-foreground hover:bg-muted/50";
+  }
+
+  return (
+    <Modal
+      open
+      onClose={onCancel}
+      labelledBy="forms-move-title"
+      containerClassName="bg-card border border-border rounded-lg w-full max-w-sm p-5 flex flex-col gap-4"
+    >
+      <>
+        <ModalHeader
+          titleId="forms-move-title"
+          title={`Move "${subject.name}"`}
+          onClose={onCancel}
+        />
+
+        <div className="max-h-64 overflow-y-auto flex flex-col gap-0.5 text-sm">
+          <button
+            type="button"
+            disabled={currentLocationId === null}
+            onClick={() => setSelected(null)}
+            className={`flex items-center gap-2 text-left px-2 py-1.5 rounded ${rowClass(
+              selected === null,
+              currentLocationId === null,
+            )}`}
+          >
+            <FolderUp className="w-4 h-4 shrink-0" />
+            <span className="truncate">Top level</span>
+            {currentLocationId === null && (
+              <span className="ml-auto text-xs text-muted-foreground/70 shrink-0">
+                Current location
+              </span>
+            )}
+          </button>
+          {rows.map((row) => {
+            const isCurrent = row.id === currentLocationId;
+            const disabled = blocked.has(row.id) || isCurrent;
+            return (
+              <button
+                key={row.id}
+                type="button"
+                disabled={disabled}
+                onClick={() => setSelected(row.id)}
+                style={{ paddingLeft: 8 + row.depth * 16 }}
+                className={`flex items-center gap-2 text-left px-2 py-1.5 rounded ${rowClass(
+                  selected === row.id,
+                  disabled,
+                )}`}
+              >
+                <Folder className="w-4 h-4 shrink-0 fill-accent-coral/10" />
+                <span className="truncate">{row.name}</span>
+                {isCurrent && (
+                  <span className="ml-auto text-xs text-muted-foreground/70 shrink-0">
+                    Current location
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        <ModalFooter onCancel={onCancel} className="mt-0">
+          <button
+            type="button"
+            disabled={busy || selected === undefined}
+            onClick={() => onMove(selected as string | null)}
+            className="px-3 py-1.5 text-sm font-medium rounded-md text-white bg-accent-coral hover:bg-accent-coral/90 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            Move
+          </button>
+        </ModalFooter>
+      </>
+    </Modal>
   );
 }
 
