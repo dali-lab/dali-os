@@ -1,9 +1,9 @@
 import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/documents.$pageId";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { parseSessionCookie } from "~/lib/cookies";
-import { isCore } from "~/lib/roles";
+import { isCore, isProjectMember } from "~/lib/roles";
 import { getPresenceUser } from "~/lib/presence-user";
 import { DocumentEditor } from "~/components/DocumentEditor";
 
@@ -12,10 +12,16 @@ export const meta: Route.MetaFunction = ({ data }) => {
   return [{ title: t ? `${t} · DALI OS` : "Document · DALI OS" }];
 };
 
+export const handle = {
+  breadcrumb: (data: unknown) => (data as { title?: string } | undefined)?.title,
+};
+
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
   if (auth.user.type === "applicant") return redirect("/portal");
+  const partnerRedirect = await redirectPartnerToPortal(auth);
+  if (partnerRedirect) return partnerRedirect;
 
   const page = await prisma.page.findUnique({
     where: { id: params.pageId },
@@ -33,7 +39,22 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     throw new Response("Not found", { status: 404 });
   }
 
-  const canEdit = await isCore(auth.user.sub);
+  // Mirrors the doc gate in authorizeCollabDoc: Core everywhere, plus anyone
+  // staffed on the project for Project-workspace pages (the same gate the
+  // document API routes use — without this the editor rendered enabled but
+  // the collab handshake rejected members), plus the offering's instructors
+  // for EducationOffering-workspace pages.
+  let canEdit = await isCore(auth.user.sub);
+  if (!canEdit && page.workspaceType === "Project" && page.workspaceId) {
+    canEdit = await isProjectMember(auth.user.sub, page.workspaceId);
+  }
+  if (!canEdit && page.workspaceType === "EducationOffering" && page.workspaceId) {
+    const instructor = await prisma.instructorAssignment.findFirst({
+      where: { userId: auth.user.sub, offeringId: page.workspaceId },
+      select: { id: true },
+    });
+    canEdit = instructor !== null;
+  }
 
   const allTags = await prisma.docTag.findMany({
     where: { archivedAt: null },

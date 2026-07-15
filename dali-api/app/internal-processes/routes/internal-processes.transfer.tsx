@@ -1,7 +1,12 @@
-import { redirect } from "react-router";
+import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/internal-processes.transfer";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
+import { isCore } from "~/lib/roles";
 import { ComingSoon } from "~/components/ComingSoon";
+import { labProcessesPills } from "~/internal-processes/labProcessesPills";
+import { AreaPillNav } from "~/components/AreaPillNav";
+
+export const handle = { areaPills: true };
 
 export const meta: Route.MetaFunction = () => [
   { title: "Transfer · DALI OS" },
@@ -12,14 +17,18 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!auth.ok) return redirect("/login");
   const portalRedirect = redirectApplicantToPortal(auth);
   if (portalRedirect) return portalRedirect;
-  return null;
+  return { isCore: await isCore(auth.user.sub) };
 }
 
 export default function InternalProcessesTransfer() {
+  const { isCore: core } = useLoaderData<typeof loader>();
   return (
-    <ComingSoon
-      title="Transfer"
-      description="Move members between domains or teams."
-    />
+    <div className="flex flex-col gap-4">
+      <AreaPillNav items={labProcessesPills({ isCore: core, active: "transfer" })} />
+      <ComingSoon
+        title="Transfer"
+        description="Move members between domains or teams."
+      />
+    </div>
   );
 }

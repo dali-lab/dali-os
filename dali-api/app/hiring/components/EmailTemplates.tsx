@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { Link, Form, useLoaderData, useSearchParams } from 'react-router'
 import { Plus, Mail, ChevronRight, X } from 'lucide-react'
 import { Button } from '~/components/ui/Button'
-import { Modal } from '~/components/Modal'
+import { Modal, ModalHeader } from '~/components/Modal'
+import { AreaPillNav } from '~/components/AreaPillNav'
 import type { loader } from '~/hiring/routes/email-templates'
 
 const GMAIL_ERROR_MESSAGES: Record<string, string> = {
@@ -37,6 +38,12 @@ export default function EmailTemplatesList() {
 
   return (
     <div className="space-y-8">
+      <AreaPillNav
+        items={[
+          { label: "Library", to: "/hiring/library" },
+          { label: "Emails", to: "/hiring/emails", active: true },
+        ]}
+      />
       {!dismissed && gmailAuthorized && (
         <div className="flex items-center justify-between bg-green-50 border border-green-200 text-green-800 text-sm rounded-lg px-4 py-3">
           <span>Gmail authorized successfully. Decision emails are now active.</span>
@@ -134,9 +141,12 @@ export default function EmailTemplatesList() {
         labelledBy="new-email-template-title"
       >
         <div className="space-y-4">
-          <h2 id="new-email-template-title" className="text-lg font-semibold text-foreground">
-            New Email Template
-          </h2>
+          <ModalHeader
+            titleId="new-email-template-title"
+            title="New Email Template"
+            onClose={() => setShowModal(false)}
+            className="mb-0"
+          />
           <Form method="post" onSubmit={() => setShowModal(false)} className="space-y-4">
             <input type="hidden" name="intent" value="create" />
             <div>

@@ -1,0 +1,80 @@
+import { useState, useEffect, useRef } from "react";
+import { Download, X } from "lucide-react";
+
+// Remove this flag (set to true) when signed releases are live.
+const ENABLED = false;
+
+const DISMISS_KEY = "dali:desktop-banner:dismissed";
+
+type State = "hidden" | "visible" | "trying" | "fallback";
+
+export function DesktopBanner() {
+  const [state, setState] = useState<State>("hidden");
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!ENABLED) return;
+    if ("__TAURI__" in window) return;
+    try {
+      if (window.localStorage.getItem(DISMISS_KEY)) return;
+    } catch {
+      return;
+    }
+    setState("visible");
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  function openInApp() {
+    setState("trying");
+    window.location.href = "dalios://open";
+    timerRef.current = setTimeout(() => setState("fallback"), 1500);
+  }
+
+  function dismiss() {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    try {
+      window.localStorage.setItem(DISMISS_KEY, "1");
+    } catch {
+      // ignore
+    }
+    setState("hidden");
+  }
+
+  if (state === "hidden") return null;
+
+  return (
+    <div className="flex-none bg-card border-b border-border px-4 py-2 flex items-center gap-2">
+      <span className="text-sm text-muted-foreground flex-1 min-w-0">
+        {state === "trying" ? "Opening…" : state === "fallback" ? "App not installed?" : null}
+      </span>
+      {state === "visible" && (
+        <button
+          type="button"
+          onClick={openInApp}
+          className="rounded-md bg-zinc-900 px-3 py-1 text-xs font-semibold text-white hover:bg-zinc-700 transition"
+        >
+          Open in app
+        </button>
+      )}
+      {state === "fallback" && (
+        <a
+          href="/download"
+          className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-3 py-1 text-xs font-semibold text-white hover:bg-zinc-700 transition"
+        >
+          <Download className="w-3.5 h-3.5" />
+          Download
+        </a>
+      )}
+      <button
+        type="button"
+        onClick={dismiss}
+        className="p-1 text-muted-foreground hover:text-foreground transition"
+        aria-label="Dismiss"
+      >
+        <X className="w-4 h-4" />
+      </button>
+    </div>
+  );
+}

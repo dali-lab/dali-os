@@ -46,6 +46,14 @@ export const PROJECTING_STATUSES: PartnerApplicationStatus[] = [
   "Accepted",
 ];
 
+// Statuses that read as "still in play" on the Organizations pages —
+// everything that isn't a terminal Accepted/Rejected outcome.
+export const OPEN_APPLICATION_STATUSES: PartnerApplicationStatus[] = [
+  "Submitted",
+  "UnderReview",
+  "OnHold",
+];
+
 export function isPartnerApplicationStatus(
   x: unknown,
 ): x is PartnerApplicationStatus {

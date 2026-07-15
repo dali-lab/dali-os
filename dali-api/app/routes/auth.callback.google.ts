@@ -1,10 +1,12 @@
 import type { Route } from "./+types/auth.callback.google";
 import { exchangeGoogleCode } from "~/lib/oauth";
+import { prisma } from "~/lib/db";
 import { issueSession } from "~/lib/session";
 import { setSessionCookie } from "~/lib/cookies";
 import { getClientIp } from "~/lib/request-meta";
 import { logAuditEvent } from "~/lib/audit";
 import { upsertUserFromGoogle } from "~/lib/user-provisioning";
+import { classifyPartnerEmail } from "~/partners/lib/magic-link.server";
 import { getApiBaseUrl, getCasBaseUrl } from "~/lib/app-env";
 
 const OAUTH_STATE_COOKIE = "__dali_oauth_state";
@@ -82,31 +84,109 @@ export async function loader({ request }: Route.LoaderArgs) {
     });
   }
 
-  // The only /login button that uses this callback is the Member button, so
-  // @dali.dartmouth.edu is the only valid outcome. Enforce unconditionally —
-  // we no longer rely on the __dali_account_type cookie (which could be
-  // stripped) to gate the check. Dartmouth-student and partner branches that
-  // used to live inline below are gone for the same reason: unreachable from
-  // any production route. They live on (for now) in the OAuth-provider
-  // callback `/oauth/callback/google`, which gates on a different signal
-  // (`OAuthSession.accountType`).
-  if (!googleUser.email.endsWith("@dali.dartmouth.edu")) {
+  // Returning-partner sign-in. Branches on DB state — a pre-existing
+  // PartnerUser matched by the Google-verified email — not on any strippable
+  // cookie, so it cannot widen access: an email with no PartnerUser row falls
+  // through to the member-domain check / partner-signup branch below.
+  const partnerCandidate = await prisma.user.findUnique({
+    where: { personalEmail: googleUser.email.toLowerCase() },
+    select: { id: true, partnerUser: { select: { id: true } } },
+  });
+  if (partnerCandidate?.partnerUser) {
+    const session = await issueSession({
+      userId: partnerCandidate.id,
+      userAgent: request.headers.get("user-agent") ?? undefined,
+      ip: getClientIp(request),
+    });
     await logAuditEvent({
-      action: "login.failure",
+      action: "login.success",
+      userId: partnerCandidate.id,
       metadata: {
         provider: "google",
-        reason: "domain_denied",
+        authType: "partner",
         email: googleUser.email,
       },
       request,
     });
-    return new Response(null, {
-      status: 302,
-      headers: {
-        "Set-Cookie": clearStateCookie,
-        Location: "/login?error=access_denied",
-      },
+    await prisma.partnerUser.update({
+      where: { id: partnerCandidate.partnerUser.id },
+      data: { authProvider: "Google" },
     });
+    const headers = new Headers();
+    headers.append("Set-Cookie", clearStateCookie);
+    setSessionCookie(headers, session.rawId);
+    headers.set("Location", "/partner");
+    return new Response(null, { status: 302, headers });
+  }
+
+  // The /login Member button and the partner login's Google button both use
+  // this callback. A non-lab email with no PartnerUser row is a first-time
+  // partner: enter the same onboarding the magic link uses (Google verified
+  // the email — exchangeGoogleCode rejects unverified claims — so this is
+  // equivalent proof of ownership to a delivered link). classifyPartnerEmail
+  // keeps member/Dartmouth identities on their own sign-in paths, exactly as
+  // the magic-link issuer does.
+  if (!googleUser.email.endsWith("@dali.dartmouth.edu")) {
+    const email = googleUser.email.toLowerCase();
+    const identity = await classifyPartnerEmail(email);
+    if (identity.kind === "member-conflict") {
+      await logAuditEvent({
+        action: "login.failure",
+        metadata: {
+          provider: "google",
+          reason: "domain_denied",
+          email: googleUser.email,
+        },
+        request,
+      });
+      return new Response(null, {
+        status: 302,
+        headers: {
+          "Set-Cookie": clearStateCookie,
+          Location: "/login?error=access_denied",
+        },
+      });
+    }
+
+    // "existing" = a partner-in-progress User (magic link requested but
+    // onboarding unfinished, or removed from an org). "new" mirrors the
+    // magic-link issuer's eager User creation — with Google's verified name
+    // as a bonus, so onboarding arrives prefilled.
+    const userId =
+      identity.kind === "existing"
+        ? identity.userId
+        : (
+            await prisma.user.create({
+              data: {
+                personalEmail: email,
+                firstName: googleUser.firstName,
+                lastName: googleUser.lastName,
+              },
+              select: { id: true },
+            })
+          ).id;
+
+    const session = await issueSession({
+      userId,
+      userAgent: request.headers.get("user-agent") ?? undefined,
+      ip: getClientIp(request),
+    });
+    await logAuditEvent({
+      action: "login.success",
+      userId,
+      metadata: {
+        provider: "google",
+        authType: "partner",
+        signup: identity.kind === "new",
+        email: googleUser.email,
+      },
+      request,
+    });
+    const headers = new Headers();
+    headers.append("Set-Cookie", clearStateCookie);
+    setSessionCookie(headers, session.rawId);
+    headers.set("Location", "/partner/onboarding");
+    return new Response(null, { status: 302, headers });
   }
 
   // Always-enforce above means we only reach this with an @dali.dartmouth.edu

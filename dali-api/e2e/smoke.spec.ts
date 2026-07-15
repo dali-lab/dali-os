@@ -18,7 +18,8 @@ test('domain lead can access domain-lead page', async ({ page, loginAs }) => {
   await loginAs({ daliEmail: 'eng.lead@dali.dartmouth.edu' });
   await page.goto('/hiring/domain-lead');
   await expect(page).toHaveURL(/\/hiring\/domain-lead/);
-  // Section content renders inside the workspace iframe.
-  const frame = page.frameLocator('iframe[title="Domain"]');
+  // Section content renders inside the workspace iframe, titled with the
+  // (childless) Hiring area's label.
+  const frame = page.frameLocator('iframe[title="Hiring"]');
   await expect(frame.locator('body')).toContainText('Mira');
 });

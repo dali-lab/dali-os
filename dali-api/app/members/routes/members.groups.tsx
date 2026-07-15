@@ -10,7 +10,8 @@ import { resolvePhotoUrl } from "~/lib/photo";
 import { Avatar } from "~/components/ui/Avatar";
 import { RolePills } from "~/components/ui/RolePills";
 import { deriveCoreTitles } from "~/lib/core-titles";
-import { Modal } from "~/components/Modal";
+import { Modal, ModalHeader } from "~/components/Modal";
+import { AreaPillNav } from "~/components/AreaPillNav";
 import {
   Users,
   Plus,
@@ -21,6 +22,8 @@ import {
   Archive,
   ArchiveRestore,
 } from "lucide-react";
+
+export const handle = { areaPills: true };
 
 export const meta: Route.MetaFunction = () => [{ title: "Groups · Members · DALI OS" }];
 
@@ -262,6 +265,12 @@ export default function AdminConsoleGroups() {
 
   return (
     <div className="space-y-6">
+      <AreaPillNav
+        items={[
+          { label: "Hub", to: "/members" },
+          { label: "Groups", to: "/members/groups", active: true },
+        ]}
+      />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Users className="w-6 h-6 text-foreground/80" />
@@ -393,19 +402,13 @@ function CreateGroupForm({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h2 id="create-group-title" className="font-semibold text-lg text-foreground">
-          New group
-        </h2>
-        <button
-          type="button"
-          onClick={onDone}
-          className="text-muted-foreground hover:text-foreground"
-          aria-label="Cancel"
-        >
-          <X className="w-4 h-4" />
-        </button>
-      </div>
+      <ModalHeader
+        titleId="create-group-title"
+        title="New group"
+        onClose={onDone}
+        closeLabel="Cancel"
+        className="mb-0"
+      />
       <fetcher.Form
         method="post"
         onSubmit={(e) => {

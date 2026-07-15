@@ -12,6 +12,9 @@ import { z } from "zod";
 import { prisma, Prisma } from "~/lib/db";
 import type { Question } from "~/types";
 import { isReferenceSourceKey, referenceSourceNeedsTerm } from "./reference-sources.shared";
+import type { FolderOption } from "./folder-tree.shared";
+import { formDeletionBlockers } from "./form-usages.server";
+import { isGroupArchived } from "~/lib/groups";
 
 const QUESTION_TYPES: Question["type"][] = [
   "text",
@@ -22,6 +25,7 @@ const QUESTION_TYPES: Question["type"][] = [
   "drive_url",
   "file",
   "skills_rating",
+  "checkbox",
   "reference",
 ];
 
@@ -62,6 +66,10 @@ export type FolderCard = {
 
 export type FolderCrumb = { id: string; name: string };
 
+// Slim reference to a form anywhere in the tree — the browser's cross-depth
+// search matches on these rather than loading full cards for every form.
+export type FormRef = { id: string; name: string; folderId: string | null };
+
 export type FormVersionDetail = {
   id: string;
   versionNumber: number;
@@ -78,6 +86,11 @@ export type FormDetail = {
   createdAt: string;
   published: boolean;
   publicToken: string | null;
+  oneResponsePerMember: boolean;
+  notifyOnSubmission: boolean;
+  listed: boolean;
+  audience: "Members" | "SignedIn" | "Groups" | "Public";
+  audienceGroupIds: string[];
   versions: FormVersionDetail[];
   // Editable working copy, if one exists. The editor seeds the builder from
   // this; null means start from the latest version (or blank). Never served
@@ -110,6 +123,11 @@ export async function loadFormForEdit(
     createdAt: form.createdAt.toISOString(),
     published: form.published,
     publicToken: form.publicToken,
+    oneResponsePerMember: form.oneResponsePerMember,
+    notifyOnSubmission: form.notifyOnSubmission,
+    listed: form.listed,
+    audience: form.audience,
+    audienceGroupIds: form.audienceGroupIds,
     versions: form.versions.map((v) => ({
       id: v.id,
       versionNumber: v.versionNumber,
@@ -129,11 +147,40 @@ export async function loadFormForEdit(
   };
 }
 
+// Root → `startId` chain over an id-indexed folder map. `startId` itself is
+// included; a broken link just truncates the chain.
+function walkFolderCrumbs(
+  byId: Map<string, { id: string; name: string; parentId: string | null }>,
+  startId: string | null,
+): FolderCrumb[] {
+  const crumbs: FolderCrumb[] = [];
+  let cursor = startId;
+  while (cursor) {
+    const node = byId.get(cursor);
+    if (!node) break;
+    crumbs.unshift({ id: node.id, name: node.name });
+    cursor = node.parentId;
+  }
+  return crumbs;
+}
+
+// Folder ancestry (root → the folder itself) for a form's containing folder —
+// the editor/responses pages expand their breadcrumb sub-trail with this.
+export async function folderCrumbs(
+  folderId: string | null,
+): Promise<FolderCrumb[]> {
+  if (!folderId) return [];
+  const all = await prisma.formFolder.findMany({
+    select: { id: true, name: true, parentId: true },
+  });
+  return walkFolderCrumbs(new Map(all.map((f) => [f.id, f])), folderId);
+}
+
 // One level of the tree: the folders/forms whose parent is `folderId`
-// (null = top level), plus breadcrumb ancestry and the flat folder list used
-// by the "move" pickers.
+// (null = top level), plus breadcrumb ancestry and the flat folder/form
+// lists used by the "move" pickers and the cross-depth search.
 export async function loadFormsLevel(folderId: string | null) {
-  const [childFolders, forms, allFolders, current] = await Promise.all([
+  const [childFolders, forms, allFolders, allForms, current] = await Promise.all([
     prisma.formFolder.findMany({
       where: { parentId: folderId },
       orderBy: { name: "asc" },
@@ -151,6 +198,10 @@ export async function loadFormsLevel(folderId: string | null) {
       orderBy: { name: "asc" },
       select: { id: true, name: true, parentId: true },
     }),
+    prisma.form.findMany({
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, folderId: true },
+    }),
     folderId
       ? prisma.formFolder.findUnique({
           where: { id: folderId },
@@ -161,19 +212,16 @@ export async function loadFormsLevel(folderId: string | null) {
 
   if (folderId && !current) return null; // folder not found
 
-  // Walk parent links to build breadcrumbs (root → current).
-  const byId = new Map(allFolders.map((f) => [f.id, f]));
-  const crumbs: FolderCrumb[] = [];
-  let cursor = current?.parentId ?? null;
-  while (cursor) {
-    const node = byId.get(cursor);
-    if (!node) break;
-    crumbs.unshift({ id: node.id, name: node.name });
-    cursor = node.parentId;
-  }
+  // Breadcrumb ancestry (root → current's parent).
+  const crumbs = walkFolderCrumbs(
+    new Map(allFolders.map((f) => [f.id, f])),
+    current?.parentId ?? null,
+  );
 
   return {
-    current: current ? { id: current.id, name: current.name } : null,
+    current: current
+      ? { id: current.id, name: current.name, parentId: current.parentId }
+      : null,
     crumbs,
     folders: childFolders.map<FolderCard>((d) => ({
       id: d.id,
@@ -201,9 +249,15 @@ export async function loadFormsLevel(folderId: string | null) {
           : null,
       };
     }),
-    allFolders: allFolders.map<FolderCrumb>((f) => ({
+    allFolders: allFolders.map<FolderOption>((f) => ({
       id: f.id,
       name: f.name,
+      parentId: f.parentId,
+    })),
+    allForms: allForms.map<FormRef>((f) => ({
+      id: f.id,
+      name: f.name,
+      folderId: f.folderId,
     })),
   };
 }
@@ -297,6 +351,19 @@ export const ActionSchema = z.discriminatedUnion("intent", [
   }),
   z.object({ intent: z.literal("publish-form"), id: z.string().min(1) }),
   z.object({ intent: z.literal("unpublish-form"), id: z.string().min(1) }),
+  z.object({
+    intent: z.literal("update-form-settings"),
+    id: z.string().min(1),
+    oneResponsePerMember: z.enum(["true", "false"]),
+    notifyOnSubmission: z.enum(["true", "false"]),
+    listed: z.enum(["true", "false"]),
+  }),
+  z.object({
+    intent: z.literal("update-form-audience"),
+    id: z.string().min(1),
+    audience: z.enum(["Members", "SignedIn", "Groups", "Public"]),
+    groupIds: z.string().optional(), // JSON-encoded string[]; Groups only
+  }),
 ]);
 
 // Unguessable public token for a published form's external fill URL.
@@ -363,6 +430,15 @@ export async function runFormsAction(
         select: { id: true },
       });
       if (!exists) return { error: "Not found", status: 404 };
+      // Deletion cascades submissions and bindings away — refuse while any
+      // live surface depends on this form (see form-usages.server.ts).
+      const blockers = await formDeletionBlockers(input.id);
+      if (blockers.length > 0) {
+        return {
+          error: `This form is in use: ${blockers.join("; ")}. Remove those bindings first.`,
+          status: 409,
+        };
+      }
       await prisma.form.delete({ where: { id: input.id } });
       return { ok: true };
     }
@@ -552,6 +628,72 @@ export async function runFormsAction(
       await prisma.form.update({
         where: { id: input.id },
         data: { published: false },
+      });
+      return { ok: true };
+    }
+    case "update-form-settings": {
+      const exists = await prisma.form.findUnique({
+        where: { id: input.id },
+        select: { id: true },
+      });
+      if (!exists) return { error: "Not found", status: 404 };
+      await prisma.form.update({
+        where: { id: input.id },
+        data: {
+          oneResponsePerMember: input.oneResponsePerMember === "true",
+          notifyOnSubmission: input.notifyOnSubmission === "true",
+          listed: input.listed === "true",
+        },
+      });
+      return { ok: true };
+    }
+    case "update-form-audience": {
+      const exists = await prisma.form.findUnique({
+        where: { id: input.id },
+        select: { id: true },
+      });
+      if (!exists) return { error: "Not found", status: 404 };
+
+      let ids: string[] = [];
+      if (input.audience === "Groups") {
+        const parsed = safeParseJsonString(input.groupIds);
+        if (
+          !Array.isArray(parsed) ||
+          !parsed.every((v): v is string => typeof v === "string")
+        ) {
+          return { error: "Invalid input", status: 400 };
+        }
+        ids = [...new Set(parsed)];
+        if (ids.length === 0) {
+          return { error: "Select at least one group.", status: 400 };
+        }
+        const [groups, terms] = await Promise.all([
+          prisma.groupDefinition.findMany({
+            where: { id: { in: ids } },
+            select: { id: true, archivedAt: true, boundTermIds: true },
+          }),
+          prisma.term.findMany({ select: { id: true, endDate: true } }),
+        ]);
+        const termEndById = new Map(terms.map((t) => [t.id, t.endDate]));
+        const now = new Date();
+        const usable = new Set(
+          groups
+            .filter((g) => !isGroupArchived(g, termEndById, now))
+            .map((g) => g.id),
+        );
+        if (ids.some((id) => !usable.has(id))) {
+          return {
+            error: "One of the selected groups no longer exists or is archived.",
+            status: 400,
+          };
+        }
+      }
+
+      // Ids are cleared for non-Groups audiences so stored state stays
+      // canonical (toggling away and back means re-selecting).
+      await prisma.form.update({
+        where: { id: input.id },
+        data: { audience: input.audience, audienceGroupIds: ids },
       });
       return { ok: true };
     }

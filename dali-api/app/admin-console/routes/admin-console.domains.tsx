@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { redirect, useLoaderData, useFetcher } from "react-router";
 import type { Route } from "./+types/admin-console.domains";
+import { adminPills } from "~/admin-console/adminPills";
+import { AreaPillNav } from "~/components/AreaPillNav";
 import { prisma } from "~/lib/db";
 import { ensureDomainGroup } from "~/lib/groups";
 import { requireAuth, forbidden } from "~/lib/auth";
@@ -20,7 +22,9 @@ import {
   RemoveDomainLeadButton,
 } from "~/admin-console/components/admin-console-shared";
 
-export const meta: Route.MetaFunction = () => [{ title: "Domains · Operations · DALI OS" }];
+export const handle = { areaPills: true };
+
+export const meta: Route.MetaFunction = () => [{ title: "Domains · Admin · DALI OS" }];
 
 // Phase 2 rewrite: domain-lead assignments now key off User.id (not
 // DALIMember.id) and require a termId. Lead picker lists Users with a
@@ -553,6 +557,7 @@ export default function AdminConsoleDomains() {
 
   return (
     <div className="space-y-6">
+      <AreaPillNav items={adminPills({ isAdmin: viewerIsAdmin, active: "domains" })} />
       <div className="bg-card border border-border rounded-lg overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/50">
           <h2 className="text-sm font-medium text-muted-foreground">Domains ({domains.length})</h2>

@@ -82,6 +82,83 @@ describe("POST /oauth/register", () => {
     expect(createArgs.name).toBe("MCP Client");
   });
 
+  it("registers a Claude hosted-https client (claude.ai) with exact-match matching", async () => {
+    const req = makeRequest({
+      redirect_uris: ["https://claude.ai/api/mcp/auth_callback"],
+      client_name: "Claude",
+      token_endpoint_auth_method: "none",
+    });
+    const res = await action({ request: req } as any);
+    expect(res.status).toBe(200);
+    const createArgs = mockCreate.mock.calls[0]![0].data;
+    expect(createArgs.redirectUris).toEqual([
+      "https://claude.ai/api/mcp/auth_callback",
+    ]);
+    // Hosted https callbacks are NOT loopback — they must exact-match only.
+    expect(createArgs.isLoopback).toBe(false);
+    expect(createArgs.requireMembership).toBe(true);
+  });
+
+  it("accepts the claude.com host and its subdomains", async () => {
+    for (const uri of [
+      "https://claude.com/api/mcp/auth_callback",
+      "https://foo.claude.ai/api/mcp/auth_callback",
+    ]) {
+      vi.clearAllMocks();
+      mockCreate.mockImplementation(async ({ data }: any) => ({
+        id: "cuid-abc",
+        ...data,
+        createdAt: new Date("2026-05-14T18:00:00Z"),
+      }));
+      const res = await action({ request: makeRequest({ redirect_uris: [uri] }) } as any);
+      expect(res.status).toBe(200);
+      expect(mockCreate.mock.calls[0]![0].data.isLoopback).toBe(false);
+    }
+  });
+
+  it("rejects an https callback on an untrusted host", async () => {
+    const req = makeRequest({
+      redirect_uris: ["https://evil.example.com/api/mcp/auth_callback"],
+    });
+    const res = await action({ request: req } as any);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("invalid_redirect_uri");
+  });
+
+  it("does not treat a lookalike host (claude.ai.evil.com) as trusted", async () => {
+    const req = makeRequest({
+      redirect_uris: ["https://claude.ai.evil.com/api/mcp/auth_callback"],
+    });
+    const res = await action({ request: req } as any);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("invalid_redirect_uri");
+  });
+
+  it("honors MCP_ALLOWED_REDIRECT_HOSTS override", async () => {
+    process.env.MCP_ALLOWED_REDIRECT_HOSTS = "connectors.example.org";
+    try {
+      const res = await action({
+        request: makeRequest({
+          redirect_uris: ["https://connectors.example.org/cb"],
+        }),
+      } as any);
+      expect(res.status).toBe(200);
+      expect(mockCreate.mock.calls[0]![0].data.isLoopback).toBe(false);
+      // A default host is no longer trusted once the override is set.
+      vi.clearAllMocks();
+      const rejected = await action({
+        request: makeRequest({
+          redirect_uris: ["https://claude.ai/api/mcp/auth_callback"],
+        }),
+      } as any);
+      expect(rejected.status).toBe(400);
+    } finally {
+      delete process.env.MCP_ALLOWED_REDIRECT_HOSTS;
+    }
+  });
+
   it("rejects https loopback as invalid_redirect_uri", async () => {
     const req = makeRequest({
       redirect_uris: ["https://127.0.0.1/callback"],

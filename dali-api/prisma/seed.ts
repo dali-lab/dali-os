@@ -8,6 +8,10 @@ import {
 import { interpretIntentForm } from "../app/projects/lib/intent-form-interpreter.js";
 import { replaceIntentSet } from "../app/projects/lib/intent-validation.js";
 import { syncDefaultGroups } from "../app/lib/groups.js";
+import {
+  ensureEducationTemplates,
+  createOfferingApplicationForm,
+} from "../app/education/lib/application-form.server.js";
 import type { Question } from "../app/types.js";
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
@@ -3018,6 +3022,57 @@ async function main() {
   }
   console.log(`  ${partnerApplicationSeeds.length} partner applications, ${partnerApplicationSeeds.reduce((n, a) => n + a.domains.length, 0)} domain-scope rows`);
 
+  // The default lab-editable partner application form: /partner/apply appends
+  // its questions to the structural pitch fields (title, terms, domain scope).
+  // Core can retarget or edit it from /partners/applications — this just makes
+  // the feature live out of the box.
+  const partnerAppForm = await prisma.form.upsert({
+    where: { id: "form-partner-application" },
+    update: { published: true },
+    create: {
+      id: "form-partner-application",
+      name: "Partner application questions",
+      createdById: admin.id,
+      published: true,
+      publicToken: "seed-partner-application-form",
+    },
+  });
+  // One version, replaced on re-seed so question edits take effect.
+  await prisma.formVersion.deleteMany({ where: { formId: partnerAppForm.id } });
+  await prisma.formVersion.create({
+    data: {
+      formId: partnerAppForm.id,
+      versionNumber: 1,
+      createdById: admin.id,
+      questions: [
+        {
+          key: "pitch",
+          type: "textarea",
+          required: false,
+          data: {
+            label: "Short pitch",
+            description: "What problem are you trying to solve, and for whom?",
+          },
+        },
+        {
+          key: "success",
+          type: "textarea",
+          required: false,
+          data: {
+            label: "What does success look like?",
+            description:
+              "A term from now, what would make you glad you worked with the lab?",
+          },
+        },
+      ] as object,
+    },
+  });
+  await prisma.partnerApplicationFormBinding.deleteMany({});
+  await prisma.partnerApplicationFormBinding.create({
+    data: { formId: partnerAppForm.id, updatedById: admin.id },
+  });
+  console.log("  partner application form bound (form-partner-application)");
+
   // ── Staffing cycle + preferences ───────────────────────────────────────────
   // Demo data for the /projects/staffing board. Staffing is always open —
   // one cycle per term (StaffingCycle.termId is unique), keyed here on 26S.
@@ -3585,7 +3640,7 @@ async function main() {
             lastName: "Tuck",
           },
         });
-        await prisma.partnerUser.upsert({
+        const tuckContact = await prisma.partnerUser.upsert({
           where: { userId: partnerContact.id },
           update: { partnerOrgId: tuck.id },
           create: {
@@ -3595,6 +3650,143 @@ async function main() {
             authProvider: "MagicLink",
           },
         });
+        // Self-signup sets the founder as primary contact; mirror that so the
+        // seeded org shows the "Primary contact" badge in settings.
+        await prisma.partnerOrg.update({
+          where: { id: tuck.id },
+          data: { primaryContactId: tuckContact.id },
+        });
+
+        // A pending teammate invite with a deterministic token so E2E can
+        // drive /partner/invite/:token without email. Raw token:
+        // "e2e-partner-invite-token" (sha256 → base64url below).
+        const { createHash } = await import("node:crypto");
+        const inviteHash = createHash("sha256")
+          .update("e2e-partner-invite-token")
+          .digest("base64url");
+        await prisma.partnerInvite.upsert({
+          where: { tokenHash: inviteHash },
+          update: {
+            acceptedAt: null,
+            revokedAt: null,
+            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          },
+          create: {
+            partnerOrgId: tuck.id,
+            email: "invitee.tuck@example.com",
+            displayRole: "Design Lead",
+            tokenHash: inviteHash,
+            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          },
+        });
+      }
+
+      // Second partner org contact (Hood) — exercises the cross-org 404s.
+      const hood = await prisma.partnerOrg.findUnique({
+        where: { id: "partner-hood-museum" },
+        select: { id: true },
+      });
+      if (hood) {
+        const hoodContact = await prisma.user.upsert({
+          where: { personalEmail: "partner.hood@example.com" },
+          update: { firstName: "Harper", lastName: "Hood" },
+          create: {
+            personalEmail: "partner.hood@example.com",
+            firstName: "Harper",
+            lastName: "Hood",
+          },
+        });
+        await prisma.partnerUser.upsert({
+          where: { userId: hoodContact.id },
+          update: { partnerOrgId: hood.id },
+          create: {
+            userId: hoodContact.id,
+            partnerOrgId: hood.id,
+            displayRole: "Curator",
+            authProvider: "MagicLink",
+          },
+        });
+      }
+
+      // Partner-portal demo data on Pat Tuck's project: an active sprint with
+      // mixed task statuses (sprint summary), a planned next sprint, and a
+      // shared + an internal page (share-toggle / partner-page visibility).
+      const tuckProject = await prisma.project.findUnique({
+        where: { id: "project-tuck-alumni" },
+        select: { id: true },
+      });
+      if (tuckProject) {
+        await prisma.task.deleteMany({ where: { projectId: tuckProject.id } });
+        await prisma.sprint.deleteMany({ where: { projectId: tuckProject.id } });
+        const tuckSprint = await prisma.sprint.create({
+          data: {
+            projectId: tuckProject.id,
+            name: "Sprint 3 — Matching flow",
+            startsAt: new Date("2026-04-06"),
+            endsAt: new Date("2026-04-20"),
+            status: "Active",
+          },
+        });
+        await prisma.sprint.create({
+          data: {
+            projectId: tuckProject.id,
+            name: "Sprint 4 — Notifications",
+            startsAt: new Date("2026-04-20"),
+            endsAt: new Date("2026-05-04"),
+            status: "Planned",
+          },
+        });
+        const tuckTasks: {
+          title: string;
+          status: "Todo" | "InProgress" | "Done";
+        }[] = [
+          { title: "Mentor matching algorithm v1", status: "Done" },
+          { title: "Alumni profile import", status: "Done" },
+          { title: "Match review screen", status: "InProgress" },
+          { title: "Email digest opt-in", status: "Todo" },
+          { title: "Load-test matching queue", status: "Todo" },
+        ];
+        for (const t of tuckTasks) {
+          await prisma.task.create({
+            data: {
+              projectId: tuckProject.id,
+              sprintId: tuckSprint.id,
+              title: t.title,
+              status: t.status,
+              createdById: admin.id,
+            },
+          });
+        }
+
+        // Pages: idempotent by (workspace, title) since Page ids are cuids.
+        const seedPage = async (title: string, partnerVisible: boolean) => {
+          const existing = await prisma.page.findFirst({
+            where: {
+              workspaceType: "Project",
+              workspaceId: tuckProject.id,
+              title,
+            },
+            select: { id: true },
+          });
+          if (existing) {
+            await prisma.page.update({
+              where: { id: existing.id },
+              data: { partnerVisible, archivedAt: null },
+            });
+          } else {
+            await prisma.page.create({
+              data: {
+                workspaceType: "Project",
+                workspaceId: tuckProject.id,
+                title,
+                partnerVisible,
+                createdById: admin.id,
+              },
+            });
+          }
+        };
+        await seedPage("Weekly Partner Update", true);
+        await seedPage("Internal Retro Notes", false);
       }
 
       // Templates (idempotent by name): page + mentor-note.
@@ -3626,21 +3818,39 @@ async function main() {
         });
       }
 
-      // EducationOffering + InstructorAssignment: one published miniseries.
+      // EducationOffering + InstructorAssignment: one published miniseries
+      // with an open registration window (review-required apply flow).
       const offering = await prisma.educationOffering.upsert({
         where: { id: "offering-react-miniseries" },
-        update: { title: "Intro to React" },
+        update: {
+          title: "Intro to React",
+          registrationClosesAt: new Date("2027-05-01"),
+          startsAt: new Date("2027-05-02"),
+          endsAt: new Date("2027-06-15"),
+        },
         create: {
           id: "offering-react-miniseries",
           type: "Miniseries",
           title: "Intro to React",
           capacity: 25,
           registrationOpensAt: new Date("2026-03-01"),
-          registrationClosesAt: new Date("2026-03-25"),
-          startsAt: new Date("2026-04-01"),
-          endsAt: new Date("2026-05-15"),
+          registrationClosesAt: new Date("2027-05-01"),
+          startsAt: new Date("2027-05-02"),
+          endsAt: new Date("2027-06-15"),
           status: "Published",
           requiresReview: true,
+          descriptionDocId: "eduoffering:offering-react-miniseries:description",
+        },
+      });
+      await prisma.educationSession.upsert({
+        where: { id: "session-react-1" },
+        update: {},
+        create: {
+          id: "session-react-1",
+          offeringId: "offering-react-miniseries",
+          sequence: 1,
+          datetime: new Date("2027-05-04T18:00:00Z"),
+          location: "DALI Space",
         },
       });
       await prisma.instructorAssignment.upsert({
@@ -3654,6 +3864,54 @@ async function main() {
         update: {},
         create: { userId: admin.id, offeringId: offering.id, termId: term26S.id },
       });
+
+      // A published RSVP workshop with an open registration window and a tiny
+      // capacity, so the auto-approve → waitlist → promotion flow is
+      // exercisable straight from the seed (E2E leans on this).
+      const workshop = await prisma.educationOffering.upsert({
+        where: { id: "offering-figma-workshop" },
+        update: { title: "Figma Crash Course" },
+        create: {
+          id: "offering-figma-workshop",
+          type: "Workshop",
+          title: "Figma Crash Course",
+          capacity: 2,
+          registrationOpensAt: new Date("2026-01-01"),
+          registrationClosesAt: new Date("2027-06-01"),
+          startsAt: new Date("2027-06-02"),
+          endsAt: new Date("2027-06-02"),
+          status: "Published",
+          requiresReview: false,
+          descriptionDocId: "eduoffering:offering-figma-workshop:description",
+        },
+      });
+      await prisma.educationSession.upsert({
+        where: { id: "session-figma-1" },
+        update: {},
+        create: {
+          id: "session-figma-1",
+          offeringId: workshop.id,
+          sequence: 1,
+          datetime: new Date("2027-06-02T18:00:00Z"),
+          location: "Sudikoff 007",
+        },
+      });
+      await prisma.instructorAssignment.upsert({
+        where: {
+          userId_offeringId_termId: {
+            userId: admin.id,
+            offeringId: workshop.id,
+            termId: term26S.id,
+          },
+        },
+        update: {},
+        create: { userId: admin.id, offeringId: workshop.id, termId: term26S.id },
+      });
+      // Application forms cloned from the education templates (idempotent —
+      // both helpers no-op when the folder/form already exists).
+      await ensureEducationTemplates(admin.id);
+      await createOfferingApplicationForm(offering.id, admin.id);
+      await createOfferingApplicationForm(workshop.id, admin.id);
 
       // Lab-workspace Page + NotificationEvent/Preference for the admin.
       await prisma.page.deleteMany({
@@ -3685,21 +3943,72 @@ async function main() {
         },
       });
 
-      // JobCodeLookup: a couple of payroll mappings (wildcards allowed).
+      // JobCodeLookup: the real Dartmouth Job IDs used on TimesheetX exports, so
+      // the payroll-reconcile reverse-lookup (jobId → assignmentType/level/rate)
+      // resolves against the same identifiers prod carries. 4834 maps to BOTH P1
+      // and P2 (a Job ID is a category-level classifier — the precise level +
+      // wage come from the person's ProjectAssignment).
+      const jobCodeIds = ["4834", "4889", "4890", "7523"];
       await prisma.jobCodeLookup.deleteMany({
-        where: { jobCode: { in: ["DALI-PROJ-P1", "DALI-CORE"] } },
+        where: {
+          jobCode: { in: [...jobCodeIds, "DALI-PROJ-P1", "DALI-CORE"] },
+        },
       });
-      await prisma.jobCodeLookup.create({
-        data: { assignmentType: "Project", level: "P1", jobCode: "DALI-PROJ-P1" },
+      await prisma.jobCodeLookup.createMany({
+        data: [
+          { assignmentType: "Project", level: "P1", jobCode: "4834", payRateUsdHour: 16.25 },
+          { assignmentType: "Project", level: "P2", jobCode: "4834", payRateUsdHour: 17.0 },
+          { assignmentType: "Project", level: "P3", jobCode: "4889", payRateUsdHour: 18.0 },
+          { assignmentType: "Core", jobCode: "4890", payRateUsdHour: 20.0 },
+          { assignmentType: "Instructor", jobCode: "7523", payRateUsdHour: 19.0 },
+        ],
       });
-      await prisma.jobCodeLookup.create({
-        data: { assignmentType: "Core", jobCode: "DALI-CORE" },
-      });
+
+      // Payroll-reconcile fixture: a student with a netId, a chart string on the
+      // DALI OS project, and an explicit ProjectAssignment in the active term so
+      // an uploaded timesheet (netId + jobId 4834) reconciles to a Payroll Data
+      // row. The bid-derived assignments above are members-by-daliEmail (no
+      // netId), so the reconcile join needs this deterministic netId'd student.
+      const payrollChartString = "18.722.161028.128512.4000";
+      if (dali) {
+        await prisma.project.update({
+          where: { id: dali.id },
+          data: { chartString: payrollChartString },
+        });
+        const payrollStudent = await prisma.user.upsert({
+          where: { netId: "f00pay01" },
+          update: { firstName: "Ada", lastName: "Lovelace" },
+          create: {
+            netId: "f00pay01",
+            firstName: "Ada",
+            lastName: "Lovelace",
+            daliMember: { create: {} },
+          },
+        });
+        await prisma.projectAssignment.upsert({
+          where: {
+            userId_projectId_termId_domainId: {
+              userId: payrollStudent.id,
+              projectId: dali.id,
+              termId: term26S.id,
+              domainId: engDomain.id,
+            },
+          },
+          update: { level: "P1" },
+          create: {
+            userId: payrollStudent.id,
+            projectId: dali.id,
+            termId: term26S.id,
+            domainId: engDomain.id,
+            level: "P1",
+          },
+        });
+      }
 
       console.log(
         `  v0 demo rows: ${eligCount} eligibilities, ${assignCount} project assignments, ` +
           `+ term-status / role-requests / staffing-assignments / essentiality / ` +
-          `epic-sprint-task / mentorship / partner-user / templates / offering / ` +
+          `epic-sprint-task / mentorship / partner-user / partner-portal-demo / templates / offering / ` +
           `page / notifications / job-codes`,
       );
     }

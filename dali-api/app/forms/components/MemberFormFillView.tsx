@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { ChallengeQuestionField } from "~/hiring/components/ChallengeQuestionField";
+import { FormFieldList } from "~/forms/components/FormField";
 import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
 import { Button } from "~/components/ui/Button";
+import { findMissingRequired } from "~/lib/form-answers";
 import type { Question } from "~/types";
 
 // The shared authenticated form-fill UI. Rendered both by /forms/fill/:token
@@ -22,9 +24,13 @@ export function MemberFormFillView({
   data,
   // Optional: rendered on the "Submitted" screen instead of the default copy.
   doneContent,
+  // Optional extra fields merged into the submit body (e.g. the education
+  // session/offering context the fill URL carried).
+  extraBody,
 }: {
   data: MemberFormData;
   doneContent?: React.ReactNode;
+  extraBody?: Record<string, string | null>;
 }) {
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [state, setState] = useState<"idle" | "submitting" | "done">("idle");
@@ -38,12 +44,12 @@ export function MemberFormFillView({
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    for (const q of questions) {
-      if (!q.required || q.type === "file") continue;
-      if (!answers[q.key]?.trim()) {
-        setError(`"${q.data.label}" is required.`);
-        return;
-      }
+    const missing = findMissingRequired(questions, (q) => answers[q.key], {
+      excludeFileType: true,
+    });
+    if (missing.length > 0) {
+      setError(`"${missing[0].data.label}" is required.`);
+      return;
     }
     setState("submitting");
     try {
@@ -51,7 +57,7 @@ export function MemberFormFillView({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ versionId: data.versionId, answers }),
+        body: JSON.stringify({ versionId: data.versionId, answers, ...extraBody }),
       });
       const out = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
@@ -101,18 +107,12 @@ export function MemberFormFillView({
       )}
 
       <form onSubmit={submit} className="mt-6 flex flex-col gap-5">
-        {questions.map((q) => (
-          <div key={q.key}>
-            <label className="block text-sm font-medium text-dark-blue mb-1">
-              {q.data.label}
-              {q.required && <span className="text-destructive"> *</span>}
-            </label>
-            {q.data.description && (
-              <p className="text-xs text-muted-foreground mb-1.5">
-                {q.data.description}
-              </p>
-            )}
-            {q.type === "file" ? (
+        <FormFieldList
+          questions={questions}
+          values={answers}
+          onChange={set}
+          renderField={(q) =>
+            q.type === "file" ? (
               <div className="text-xs text-muted-foreground italic border border-dashed border-border rounded-md px-3 py-2">
                 File uploads aren’t available here.
               </div>
@@ -122,9 +122,9 @@ export function MemberFormFillView({
                 value={answers[q.key] ?? ""}
                 onChange={(v) => set(q.key, v)}
               />
-            )}
-          </div>
-        ))}
+            )
+          }
+        />
 
         <Button
           type="submit"

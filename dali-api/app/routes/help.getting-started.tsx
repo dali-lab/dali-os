@@ -38,7 +38,7 @@ const SECTIONS: Array<{
   },
   {
     title: "Projects",
-    to: "/projects/list",
+    to: "/projects",
     body: (
       <>
         Every active project lives here with its sprint board, epics, tasks,
@@ -115,7 +115,7 @@ const SECTIONS: Array<{
 
 export default function GettingStartedPage() {
   return (
-    <main className="max-w-3xl p-8">
+    <main className="max-w-3xl">
       <h1 className="text-2xl font-semibold">Getting started</h1>
       <p className="mt-2 text-sm text-zinc-600">
         DALI OS is organized by what you're trying to do, not by your role.

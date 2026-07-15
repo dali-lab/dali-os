@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/admin-console.members";
+import { adminPills } from "~/admin-console/adminPills";
+import { AreaPillNav } from "~/components/AreaPillNav";
 import { prisma } from "~/lib/db";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { isAdmin, isCore, isAdminViaEnv, currentTerm } from "~/lib/roles";
@@ -14,7 +16,9 @@ import {
   type Member,
 } from "~/admin-console/components/admin-console-shared";
 
-export const meta: Route.MetaFunction = () => [{ title: "Roles · Operations · DALI OS" }];
+export const meta: Route.MetaFunction = () => [{ title: "Roles & Permissions · Admin · DALI OS" }];
+
+export const handle = { areaPills: true };
 
 // Phase 2 rewrite: role state lives in AdminMembership / CoreAssignment /
 // DomainLeadAssignment instead of DALIMember.roles[]. The admin page now
@@ -210,10 +214,11 @@ export default function AdminConsoleMembers() {
 
   return (
     <div className="space-y-6">
+      <AreaPillNav items={adminPills({ isAdmin: viewerIsAdmin, active: "members" })} />
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <Users className="w-6 h-6 text-foreground/80" />
-          <h1 className="text-2xl font-bold text-foreground">Roles</h1>
+          <h1 className="text-2xl font-bold text-foreground">Roles & Permissions</h1>
           <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground">
             {filtered.length}{filtered.length !== members.length ? ` of ${members.length}` : ""} members
           </span>

@@ -1,6 +1,7 @@
 import { Link, redirect } from "react-router";
 import { CalendarDays, Cable, KeyRound, Slack, UserCircle2 } from "lucide-react";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
+import { useDesktopVersion } from "~/lib/desktop";
 import type { Route } from "./+types/settings._index";
 
 export const meta: Route.MetaFunction = () => [{ title: "Settings · DALI OS" }];
@@ -9,6 +10,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
   if (auth.user.type === "applicant") return redirect("/portal");
+  const partnerRedirect = await redirectPartnerToPortal(auth);
+  if (partnerRedirect) return partnerRedirect;
   return null;
 }
 
@@ -33,8 +36,8 @@ const CARDS = [
   },
   {
     to: "/settings/sessions",
-    title: "Active sessions",
-    body: "Devices currently signed in to DALI OS. Sign out from anywhere.",
+    title: "Your devices",
+    body: "Browsers, the desktop app, and connected tools signed in to DALI OS. Sign out from anywhere.",
     icon: KeyRound,
   },
   {
@@ -46,8 +49,9 @@ const CARDS = [
 ];
 
 export default function SettingsIndex() {
+  const desktopVersion = useDesktopVersion();
   return (
-    <main className="max-w-3xl p-8">
+    <main className="max-w-3xl">
       <h1 className="text-2xl font-semibold">Settings</h1>
       <p className="mt-2 text-sm text-zinc-600">
         Manage how you appear in DALI OS and what other tools can access on your behalf.
@@ -70,6 +74,9 @@ export default function SettingsIndex() {
           </li>
         ))}
       </ul>
+      {desktopVersion && (
+        <p className="mt-8 text-xs text-zinc-400">DALI OS Desktop v{desktopVersion}</p>
+      )}
     </main>
   );
 }

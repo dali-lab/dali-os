@@ -5,18 +5,20 @@
 
 import { Form, redirect, useNavigation } from "react-router";
 import { KeyRound } from "lucide-react";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import type { Route } from "./+types/settings.sessions";
 
 export const meta: Route.MetaFunction = () => [
-  { title: "Active sessions · Settings · DALI OS" },
+  { title: "Your devices · Settings · DALI OS" },
 ];
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
   if (auth.user.type === "applicant") return redirect("/portal");
+  const partnerRedirect = await redirectPartnerToPortal(auth);
+  if (partnerRedirect) return partnerRedirect;
 
   const rows = await prisma.session.findMany({
     where: {
@@ -46,6 +48,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       expiresAt: s.expiresAt.toISOString(),
       device: describeUserAgent(s.userAgent),
       userAgent: s.userAgent,
+      isDesktop: /DALI OS Desktop/i.test(s.userAgent ?? ""),
       ip: s.ip,
       kind: s.grantId
         ? ({ type: "oauth" as const, clientName: s.grant?.client.name ?? "App" })
@@ -99,13 +102,14 @@ export default function SessionsPage({ loaderData }: Route.ComponentProps) {
   const otherCount = sessions.filter((s) => s.id !== currentSessionId).length;
 
   return (
-    <main className="max-w-2xl p-8">
+    <main className="max-w-2xl">
       <header className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold">Active sessions</h1>
+          <h1 className="text-2xl font-semibold">Your devices</h1>
           <p className="mt-2 text-sm text-zinc-600">
-            Devices and apps currently signed in to your account. Revoking a
-            session signs that device out immediately.
+            Devices and apps currently signed in to your account — browsers, the
+            DALI OS desktop app, and connected tools. Revoking a session signs
+            that device out immediately.
           </p>
         </div>
         {otherCount > 0 && (
@@ -151,6 +155,11 @@ export default function SessionsPage({ loaderData }: Route.ComponentProps) {
                             {s.kind.clientName} (MCP)
                           </span>
                         )}
+                        {s.isDesktop && (
+                          <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-800">
+                            Desktop app
+                          </span>
+                        )}
                       </div>
                       <p className="mt-1 text-xs text-zinc-500">
                         {s.ip ? <>IP {s.ip} · </> : null}
@@ -189,6 +198,9 @@ export default function SessionsPage({ loaderData }: Route.ComponentProps) {
 // recognition; falls back to "Unknown device" rather than parsing aggressively.
 function describeUserAgent(ua: string | null): string {
   if (!ua) return "Unknown device";
+
+  // DALI OS native desktop app (Tauri shell) identifies itself explicitly.
+  if (/DALI OS Desktop/i.test(ua)) return "DALI OS Desktop";
 
   // MCP clients usually identify themselves explicitly.
   if (/claude code/i.test(ua)) return "Claude Code";

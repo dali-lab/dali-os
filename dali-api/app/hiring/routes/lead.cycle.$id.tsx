@@ -18,7 +18,7 @@ import {
   type DecisionSlotType,
   type NotificationSlotType,
 } from "~/hiring/lib/email-variables";
-import { Modal } from "~/components/Modal";
+import { Modal, ModalHeader } from "~/components/Modal";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { ChallengePreviewModal } from "~/hiring/components/ChallengePreviewModal";
 import { Settings, Users, Calendar, AlertTriangle, Trash2, Plus, CheckCircle, ArrowRight, Circle, ChevronRight, X, LayoutDashboard, Eye, Mail } from 'lucide-react'
@@ -143,6 +143,11 @@ export function resolveCycleTab(param: string | null | undefined): CycleTab {
 export const meta: Route.MetaFunction = ({ data }) => {
   const name = (data as any)?.cycle?.name;
   return [{ title: `${name || "Cycle"} · Hiring lead · DALI OS` }];
+};
+
+export const handle = {
+  breadcrumb: (data: unknown) =>
+    (data as { cycle?: { name: string } } | undefined)?.cycle?.name,
 };
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -3303,34 +3308,29 @@ function DecisionEmailPreviewModal({ decision, binding, onClose }: {
     : null
 
   return (
-    <div
-      className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
-      onClick={onClose}
+    <Modal
+      open
+      onClose={onClose}
+      labelledBy="email-preview-title"
+      containerClassName="bg-card rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] overflow-y-auto my-auto"
     >
-      <div
-        className="bg-card rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between gap-3 px-4 sm:px-6 py-3 sm:py-4 border-b border-border">
-          <div className="min-w-0">
-            <h2 className="text-lg font-bold text-foreground">Email preview</h2>
-            <p className="text-xs text-muted-foreground break-words">
+      <>
+        <ModalHeader
+          titleId="email-preview-title"
+          title="Email preview"
+          subtitle={
+            <>
               {decision.domainApplication.application.user.firstName} {decision.domainApplication.application.user.lastName}
               {' · '}
               {decision.domainApplication.challengeVersion.domain.name}
               {' · '}
               <span className="font-medium">{decision.type}</span>
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-muted-foreground/70 hover:text-foreground flex-shrink-0"
-            aria-label="Close preview"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+            </>
+          }
+          onClose={onClose}
+          closeLabel="Close preview"
+          className="px-4 sm:px-6 py-3 sm:py-4 border-b border-border mb-0"
+        />
         <div className="px-4 sm:px-6 py-4 space-y-4">
           {tmpl ? (
             <>
@@ -3383,8 +3383,8 @@ function DecisionEmailPreviewModal({ decision, binding, onClose }: {
             Close
           </button>
         </div>
-      </div>
-    </div>
+      </>
+    </Modal>
   )
 }
 
@@ -3442,15 +3442,21 @@ function CompleteConfirmModal({ cycleId, onClose, onCompleted, onError }: {
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-card rounded-lg shadow-xl w-full max-w-md p-6 space-y-4" onClick={e => e.stopPropagation()}>
+    <Modal
+      open
+      onClose={onClose}
+      labelledBy="complete-confirm-title"
+      disableEscape={submitting}
+      containerClassName="bg-card rounded-lg shadow-xl w-full max-w-md p-6 space-y-4 my-auto"
+    >
+      <>
         {checking ? (
           <div className="text-center py-4">
             <p className="text-sm text-muted-foreground">Checking cycle readiness...</p>
           </div>
         ) : hasBlockers ? (
           <>
-            <h2 className="text-lg font-semibold text-foreground">Cycle has unfinished work</h2>
+            <h2 id="complete-confirm-title" className="text-lg font-semibold text-foreground">Cycle has unfinished work</h2>
             <div className="space-y-2">
               {pendingInterviews > 0 && (
                 <div className="flex items-center gap-2 text-sm bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-3">
@@ -3485,8 +3491,8 @@ function CompleteConfirmModal({ cycleId, onClose, onCompleted, onError }: {
             </div>
           </>
         ) : null}
-      </div>
-    </div>
+      </>
+    </Modal>
   );
 }
 

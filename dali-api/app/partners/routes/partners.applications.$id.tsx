@@ -11,6 +11,7 @@ import {
 import { Pencil } from "lucide-react";
 import type { Route } from "./+types/partners.applications.$id";
 import { prisma } from "~/lib/db";
+import { githubTeamSlug } from "~/lib/github-slug";
 import { requireAuth } from "~/lib/auth";
 import { parseSessionCookie } from "~/lib/cookies";
 import { canViewStaffing, isCore } from "~/lib/roles";
@@ -20,6 +21,8 @@ import {
   isPartnerApplicationStatus,
   type PartnerApplicationStatus as Status,
 } from "../lib/partner-application";
+import { formAnswerRows } from "~/forms/lib/answer-rows.server";
+import type { Question } from "~/types";
 import { CollaborativeEditor } from "~/components/CollaborativeEditor";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { EditModeToggle, useEditMode } from "~/components/EditModeToggle";
@@ -36,6 +39,14 @@ export const meta: Route.MetaFunction = ({ data }) => {
         : "Partner Application · DALI OS",
     },
   ];
+};
+
+// Resolves the dynamic leaf crumb so the trail reads
+// "Partners › Applications › <title>" instead of a raw id.
+export const handle = {
+  breadcrumb: (data: unknown) =>
+    (data as { application?: { title?: string } } | undefined)?.application
+      ?.title ?? null,
 };
 
 
@@ -69,9 +80,24 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           domain: { select: { displayName: true } },
         },
       },
+      formSubmission: {
+        select: {
+          answers: true,
+          formVersion: { select: { questions: true } },
+        },
+      },
     },
   });
   if (!application) throw new Response("Not found", { status: 404 });
+
+  // The partner's answers to the bound application form (if one was bound
+  // when they applied), resolved to label/value pairs for display.
+  const formAnswers = application.formSubmission
+    ? await formAnswerRows(
+        (application.formSubmission.formVersion.questions as unknown as Question[]) ?? [],
+        (application.formSubmission.answers as Record<string, unknown>) ?? {},
+      )
+    : [];
 
   const [allDomains, terms, canEdit] = await Promise.all([
     prisma.domain.findMany({
@@ -116,6 +142,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         expectedMembers: d.expectedMembers,
       })),
     },
+    formAnswers,
     availableDomains,
     terms,
     canEdit,
@@ -245,6 +272,8 @@ export async function action({ request, params }: Route.ActionArgs) {
       const created = await tx.project.create({
         data: {
           name: app.title,
+          // Auto-derive the GitHub team slug from the title (editable later).
+          githubTeamSlug: githubTeamSlug(app.title) || null,
           description: app.summary,
           ...(firstTermId
             ? { projectTerms: { create: { termId: firstTermId } } }
@@ -283,6 +312,7 @@ type LoaderData = Exclude<Awaited<ReturnType<typeof loader>>, Response>;
 export default function PartnerApplicationDetail() {
   const {
     application,
+    formAnswers,
     availableDomains,
     terms,
     canEdit: canEditPerm,
@@ -315,6 +345,26 @@ export default function PartnerApplicationDetail() {
         terms={terms}
         canEdit={canEdit}
       />
+
+      {formAnswers.length > 0 && (
+        <section className="bg-card border border-border rounded-lg p-4">
+          <h2 className="text-sm font-semibold text-foreground mb-3">
+            Application answers
+          </h2>
+          <dl className="flex flex-col gap-3">
+            {formAnswers.map((row) => (
+              <div key={row.key}>
+                <dt className="text-xs font-medium text-muted-foreground mb-0.5">
+                  {row.label}
+                </dt>
+                <dd className="text-sm text-foreground whitespace-pre-wrap">
+                  {row.value || "—"}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      )}
 
       <DomainScopeBlock
         applicationId={application.id}
@@ -418,7 +468,7 @@ function Header({
 
       <p className="text-sm text-muted-foreground">
         <Link
-          to={`/projects/list?q=${encodeURIComponent(application.partner.name)}`}
+          to={`/projects?q=${encodeURIComponent(application.partner.name)}`}
           className="text-accent-coral hover:underline"
         >
           {application.partner.name}
@@ -482,22 +532,27 @@ function DetailsSection({
       <input type="hidden" name="intent" value="details" />
       <h2 className="text-sm font-semibold text-foreground">Details</h2>
 
-      <label className="flex flex-col gap-1 text-xs">
-        <span className="text-muted-foreground">Summary</span>
-        {canEdit ? (
-          <textarea
-            name="summary"
-            rows={3}
-            defaultValue={application.summary ?? ""}
-            placeholder="One-paragraph pitch summary. The full SOW lives below."
-            className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-          />
-        ) : (
-          <span className="px-2 py-1.5 text-sm text-foreground whitespace-pre-wrap">
-            {application.summary ?? "—"}
-          </span>
-        )}
-      </label>
+      {/* Core-written synopsis — partners never see or set this (their prose
+          lives in the application answers). Hidden in read mode when empty
+          so partner-submitted applications don't render a blank row. */}
+      {(canEdit || application.summary !== null) && (
+        <label className="flex flex-col gap-1 text-xs">
+          <span className="text-muted-foreground">Internal summary</span>
+          {canEdit ? (
+            <textarea
+              name="summary"
+              rows={3}
+              defaultValue={application.summary ?? ""}
+              placeholder="One-paragraph synopsis for the lab — partners don't see this. The full SOW lives below."
+              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+            />
+          ) : (
+            <span className="px-2 py-1.5 text-sm text-foreground whitespace-pre-wrap">
+              {application.summary}
+            </span>
+          )}
+        </label>
+      )}
 
       <TargetTermsField
         terms={terms}

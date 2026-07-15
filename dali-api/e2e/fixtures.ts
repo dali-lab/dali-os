@@ -1,6 +1,6 @@
 import { test as base } from '@playwright/test';
 
-type LoginOptions = { netId?: string; daliEmail?: string };
+type LoginOptions = { netId?: string; daliEmail?: string; personalEmail?: string };
 
 // First-run launch welcome modal (app/components/LaunchWelcome.tsx) renders a
 // full-screen dialog overlay that intercepts pointer events on a fresh
@@ -20,9 +20,10 @@ export const test = base.extend<{ loginAs: (opts: LoginOptions) => Promise<void>
     await use(page);
   },
   loginAs: async ({ page }, use) => {
-    await use(async ({ netId, daliEmail }: LoginOptions) => {
+    await use(async ({ netId, daliEmail, personalEmail }: LoginOptions) => {
       const params = new URLSearchParams();
       if (daliEmail) params.set('daliEmail', daliEmail);
+      else if (personalEmail) params.set('personalEmail', personalEmail);
       else if (netId) params.set('netId', netId);
       await page.goto(`/dev-login-as?${params}`);
       await page.waitForLoadState('networkidle');

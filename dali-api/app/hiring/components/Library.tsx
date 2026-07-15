@@ -9,7 +9,9 @@ import {
   Trash2,
 } from "lucide-react";
 import { Button } from "~/components/ui/Button";
-import { Modal } from "~/components/Modal";
+import { Modal, ModalHeader } from "~/components/Modal";
+import { hiringPills } from "~/hiring/components/hiringPills";
+import { AreaPillNav } from "~/components/AreaPillNav";
 import type { loader } from "~/hiring/routes/library";
 
 type Tab = "challenges" | "rubrics" | "agreements";
@@ -37,6 +39,7 @@ export default function Library() {
 
   return (
     <div className="space-y-8">
+      <AreaPillNav items={hiringPills({ ...data.pillRoles, active: "library" })} />
       <div
         className="inline-flex self-start rounded-lg border border-border bg-muted/40 p-0.5"
         role="tablist"
@@ -61,6 +64,15 @@ export default function Library() {
             </button>
           );
         })}
+        {/* Email templates are library content too, but live on their own
+            route — rendered as a fourth segment that navigates instead of
+            switching a local tab (Emails no longer has a sidebar entry). */}
+        <Link
+          to="/hiring/emails"
+          className="px-4 py-1.5 text-sm font-semibold rounded-md transition-colors text-muted-foreground hover:text-foreground hover:bg-background/60"
+        >
+          Emails
+        </Link>
       </div>
 
       {tab === "challenges" && (
@@ -194,9 +206,12 @@ function ChallengesPanel({
         className="fixed inset-0 z-50 flex items-center justify-center bg-black/10 backdrop-blur-[1px] p-4 sm:p-6 overflow-y-auto"
         containerClassName="bg-card rounded-xl shadow-xl max-w-md w-full p-6 my-auto space-y-6"
       >
-        <h2 id="new-challenge-title" className="text-xl font-bold text-foreground">
-          New Challenge
-        </h2>
+        <ModalHeader
+          titleId="new-challenge-title"
+          title="New Challenge"
+          onClose={() => setShowModal(false)}
+          className="mb-0"
+        />
 
         <Form
           method="post"
@@ -313,9 +328,12 @@ function RubricsPanel({ rubrics }: { rubrics: any[] }) {
         labelledBy="new-rubric-title"
       >
         <div className="space-y-4">
-          <h2 id="new-rubric-title" className="text-lg font-semibold text-foreground">
-            New Rubric
-          </h2>
+          <ModalHeader
+            titleId="new-rubric-title"
+            title="New Rubric"
+            onClose={() => setShowModal(false)}
+            className="mb-0"
+          />
           <Form
             method="post"
             onSubmit={() => setShowModal(false)}
@@ -442,9 +460,12 @@ function AgreementsPanel({
         labelledBy="new-agreement-title"
       >
         <div className="space-y-4">
-          <h2 id="new-agreement-title" className="text-lg font-semibold text-foreground">
-            New Confidentiality Agreement
-          </h2>
+          <ModalHeader
+            titleId="new-agreement-title"
+            title="New Confidentiality Agreement"
+            onClose={() => setShowModal(false)}
+            className="mb-0"
+          />
           <Form
             method="post"
             onSubmit={() => setShowModal(false)}

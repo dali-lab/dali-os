@@ -31,6 +31,8 @@ export interface UserRoles {
   isAdmin: boolean;
   isDomainLead: boolean;
   isInstructor: boolean;
+  /** Interviewer on any cycle — mirrors the reviewer/interviewer sidebar convention. */
+  isInterviewer: boolean;
   /** Forms & Groups: Core, Admin, or Instructor. */
   canViewForms: boolean;
   /** Staffing, Intent to Work, Bids, Applications: Core or Admin. */
@@ -46,7 +48,7 @@ export async function getUserRoles(userId: string): Promise<UserRoles> {
 
   const cycleTermIds = await getActiveCoreCycleTermIds();
 
-  const [member, admin, core, domainLead, instructor] = await Promise.all([
+  const [member, admin, core, domainLead, instructor, interviewer] = await Promise.all([
     prisma.dALIMember.findUnique({ where: { userId }, select: { id: true } }),
     prisma.adminMembership.findUnique({ where: { userId }, select: { id: true } }),
     // Core access tracks the active election cycle (Spring N → Winter N+1,
@@ -64,6 +66,7 @@ export async function getUserRoles(userId: string): Promise<UserRoles> {
     // Any InstructorAssignment (any term) signals instructor authority —
     // mirrors the domain-lead "any row" convention.
     prisma.instructorAssignment.findFirst({ where: { userId }, select: { id: true } }),
+    prisma.cycleInterviewer.findFirst({ where: { userId }, select: { id: true } }),
   ]);
 
   const isAdminVal = admin !== null || envIds.includes(userId);
@@ -77,6 +80,7 @@ export async function getUserRoles(userId: string): Promise<UserRoles> {
     isAdmin: isAdminVal,
     isDomainLead: domainLead !== null,
     isInstructor: isInstructorVal,
+    isInterviewer: interviewer !== null,
     canViewForms: isAdminVal || isCoreVal || isInstructorVal,
     canViewStaffing: isAdminVal || isCoreVal,
   };

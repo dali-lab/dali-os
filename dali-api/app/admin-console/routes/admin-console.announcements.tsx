@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { redirect, useLoaderData } from "react-router";
+import { redirect, useLoaderData, useSearchParams } from "react-router";
 import type { Route } from "./+types/admin-console.announcements";
+import { adminPills } from "~/admin-console/adminPills";
+import { AreaPillNav } from "~/components/AreaPillNav";
 import { prisma } from "~/lib/db";
 import { listVisibleGroupsForUser } from "~/lib/groups";
 import { requireAuth } from "~/lib/auth";
-import { isCore, currentTermMemberWhere } from "~/lib/roles";
+import { isCore, isAdmin, currentTermMemberWhere } from "~/lib/roles";
 import { MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { fullName } from "~/lib/display";
 import {
@@ -18,8 +20,10 @@ import {
 } from "lucide-react";
 import { SearchInput } from "~/components/ui/SearchInput";
 
+export const handle = { areaPills: true };
+
 export const meta: Route.MetaFunction = () => [
-  { title: "Announcements · Operations · DALI OS" },
+  { title: "Announcements · Admin · DALI OS" },
 ];
 
 // Admin composer: write an announcement or a todo and send it to the whole
@@ -58,14 +62,25 @@ export async function loader({ request }: Route.LoaderArgs) {
     })),
     groups: visibleGroups.map((g) => ({ id: g.id, name: g.name })),
     publishedForms: forms,
+    viewerIsAdmin: await isAdmin(auth.user.sub),
   };
 }
 
 export default function AnnouncementsPage() {
-  const { members, groups, publishedForms } = useLoaderData<typeof loader>();
+  const { members, groups, publishedForms, viewerIsAdmin } = useLoaderData<typeof loader>();
+
+  // Optional deep-link pre-seed (e.g. the staffing boards' "Send to members"
+  // affordance opens this composer with the bound form + whole-lab audience
+  // already selected). Only honored for forms that exist in the published list.
+  const [searchParams] = useSearchParams();
+  const seedFormId = searchParams.get("formId") ?? "";
+  const seededForm = publishedForms.some((f) => f.id === seedFormId)
+    ? seedFormId
+    : "";
+  const seedAllMembers = searchParams.get("audience") === "all";
 
   // Composable audience: any mix of whole-lab + groups + individuals.
-  const [allMembers, setAllMembers] = useState(false);
+  const [allMembers, setAllMembers] = useState(seedAllMembers);
   const [pickedGroups, setPickedGroups] = useState<Set<string>>(new Set());
   const [pickedUsers, setPickedUsers] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
@@ -74,7 +89,7 @@ export default function AnnouncementsPage() {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [dueAt, setDueAt] = useState("");
-  const [formId, setFormId] = useState("");
+  const [formId, setFormId] = useState(seededForm);
   const [formSearch, setFormSearch] = useState("");
 
   const [sending, setSending] = useState(false);
@@ -184,6 +199,7 @@ export default function AnnouncementsPage() {
 
   return (
     <div className="flex flex-col gap-5 max-w-3xl">
+      <AreaPillNav items={adminPills({ isAdmin: viewerIsAdmin, active: "announcements" })} />
       <header className="flex items-start gap-3">
         <Megaphone className="w-6 h-6 text-accent-coral mt-0.5" />
         <div>
