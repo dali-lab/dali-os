@@ -338,6 +338,9 @@ export default [
   // the Response streams as a bare CSV body, not wrapped in an HTML shell).
   route("admin-console/payroll-export.csv", "admin-console/routes/admin-console.payroll-export.csv.ts"),
 
+  // Form responses CSV export (resource route — same bare-body reasoning).
+  route("forms/responses/:formId/export.csv", "forms/routes/forms.responses.$formId.export.csv.ts"),
+
   // Payroll reconcile — upload (multipart action) + per-view CSV export.
   // Resource routes registered OUTSIDE the app layout (bare bodies, no shell).
   route("admin-console/payroll/upload", "admin-console/routes/admin-console.payroll.upload.ts"),
