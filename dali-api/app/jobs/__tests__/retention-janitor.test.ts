@@ -27,7 +27,10 @@ describe("retention-janitor", () => {
       settings: { retentionMonths: 6 },
     });
 
-    const cutoff = new Date("2026-01-15T12:00:00Z");
+    // setMonth works in local wall time, so the UTC hour can shift across a
+    // DST boundary — assert the month math, not an exact instant.
+    const cutoff = new Date(now);
+    cutoff.setMonth(cutoff.getMonth() - 6);
     expect(mockPrisma.notification.deleteMany).toHaveBeenCalledWith({
       where: { readAt: { not: null }, createdAt: { lt: cutoff } },
     });
@@ -44,7 +47,8 @@ describe("retention-janitor", () => {
       settings: { retentionMonths: 3 },
     });
 
-    const cutoff = new Date("2026-04-15T12:00:00Z");
+    const cutoff = new Date(now);
+    cutoff.setMonth(cutoff.getMonth() - 3);
     expect(mockPrisma.taskReminder.deleteMany).toHaveBeenCalledWith({
       where: {
         OR: [
