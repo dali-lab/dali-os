@@ -1462,6 +1462,7 @@ model ScheduledMeeting {
 
   exceptions    MeetingException[]
   notifications Notification[]
+  reminderLogs  MeetingReminderLog[]
 
   createdAt DateTime @default(now())
 }
@@ -1601,6 +1602,24 @@ model MeetingException {
   meeting ScheduledMeeting @relation(fields: [scheduledMeetingId], references: [id])
 
   @@unique([scheduledMeetingId, originalStart])
+}
+
+// Send log for meeting reminders (meeting-reminders job) — the idempotency
+// key. occurrenceStart is the occurrence's ORIGINAL start (pre-exception-
+// override) so a moved occurrence doesn't double-remind; consequence: an
+// exception created after the reminder already fired gets no second one.
+// A dedicated log (rather than deduping on Notification) because per-user
+// preferences can deliver a reminder by email/DM with no in-app row at all.
+model MeetingReminderLog {
+  id                 String   @id @default(cuid())
+  scheduledMeetingId String
+  occurrenceStart    DateTime
+  userId             String
+  sentAt             DateTime @default(now())
+
+  meeting ScheduledMeeting @relation(fields: [scheduledMeetingId], references: [id], onDelete: Cascade)
+
+  @@unique([scheduledMeetingId, occurrenceStart, userId])
 }
 
 // Per-user calendar preferences. Lazily upserted on first write.

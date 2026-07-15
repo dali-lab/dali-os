@@ -188,6 +188,9 @@ export const prisma = {
     create: vi.fn(),
     update: vi.fn(),
   },
+  meetingReminderLog: {
+    create: vi.fn(),
+  },
   form: {
     findUnique: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
