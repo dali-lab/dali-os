@@ -3859,3 +3859,23 @@ model BudgetNote {
   @@unique([projectId, chartString, termId])
   @@index([termId])
 }
+
+// ─── Internal Processes ──────────────────────────────────────────────────────
+
+// Admin-editable override for a term-roadmap week's content on the Lab
+// Processes hub (app/internal-processes/routes/internal-processes.hub.tsx).
+// The road geometry and week count are fixed in code (WEEK_META); this only
+// overrides the human-editable text for a given week (0-10). A week with no
+// row here falls back to WEEK_META's hardcoded default. updatedByUserId is a
+// loose reference (not an FK) so it survives the editor's account being
+// removed, matching the convention used elsewhere for audit-style fields.
+model LabProcessWeekContent {
+  id              String   @id @default(cuid())
+  week            Int      @unique
+  title           String
+  summary         String
+  highlights      String[]
+  updatedByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}

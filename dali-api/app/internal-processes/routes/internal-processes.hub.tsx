@@ -1,10 +1,14 @@
 import { Fragment, useMemo, useState, type CSSProperties } from "react";
-import { Link, redirect, useLoaderData, useSearchParams } from "react-router";
+import { Link, redirect, useFetcher, useLoaderData, useSearchParams } from "react-router";
+import { z } from "zod";
 import type { Route } from "./+types/internal-processes.hub";
-import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
+import { prisma } from "~/lib/db";
+import { requireAuth, forbidden, redirectApplicantToPortal } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { labProcessesPills } from "~/internal-processes/labProcessesPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
+import { Modal, ModalHeader, ModalFooter } from "~/components/Modal";
+import { Pencil } from "lucide-react";
 import { cn } from "~/lib/cn";
 
 export const handle = { areaPills: true };
@@ -16,7 +20,41 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!auth.ok) return redirect("/login");
   const portalRedirect = redirectApplicantToPortal(auth);
   if (portalRedirect) return portalRedirect;
-  return { isCore: await isCore(auth.user.sub) };
+  const overrideRows = await prisma.labProcessWeekContent.findMany({
+    select: { week: true, title: true, summary: true, highlights: true },
+  });
+  return {
+    isCore: await isCore(auth.user.sub),
+    overrides: overrideRows,
+  };
+}
+
+const UpdateWeekContentSchema = z.object({
+  intent: z.literal("update-week-content"),
+  week: z.number().int().min(0).max(10),
+  title: z.string().trim().min(1).max(120),
+  summary: z.string().trim().min(1).max(500),
+  highlights: z.array(z.string().trim().min(1).max(200)).max(10),
+});
+
+export async function action({ request }: Route.ActionArgs) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
+  if (!(await isCore(auth.user.sub))) return forbidden(request);
+
+  const raw = await request.json();
+  const parsed = UpdateWeekContentSchema.safeParse(raw);
+  if (!parsed.success) {
+    return Response.json({ error: "Invalid input", details: parsed.error.flatten() }, { status: 400 });
+  }
+  const { week, title, summary, highlights } = parsed.data;
+
+  await prisma.labProcessWeekContent.upsert({
+    where: { week },
+    create: { week, title, summary, highlights, updatedByUserId: auth.user.sub },
+    update: { title, summary, highlights, updatedByUserId: auth.user.sub },
+  });
+  return { ok: true };
 }
 
 type WeekMeta = {
@@ -89,10 +127,10 @@ const WEEK_META: WeekMeta[] = [
     week: 0,
     title: "Pre-term warmup",
     summary:
-      "Before classes start: new members finish onboarding, returning members confirm intent, and Core locks the staffing plan.",
+      "Logistics and contact",
     highlights: [
-      "Accept offer + new-member form",
-      "Slack, Figma, and tooling access",
+      "PM gathers user contacts from partner and reaches out to schedule user interviews",
+      "PM ",
       "PM / Core staffing kickoffs",
     ],
     links: [
@@ -305,17 +343,26 @@ const TEAL = "#00ADAB";
 const WHITE = "#FFFFFF";
 
 export default function LabProcessesHub() {
-  const { isCore: core } = useLoaderData<typeof loader>();
+  const { isCore: core, overrides } = useLoaderData<typeof loader>();
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedWeek, setSelectedWeek] = useState(() =>
     clampWeek(Number(searchParams.get("week"))),
   );
   const [contentTick, setContentTick] = useState(0);
+  const [editingWeek, setEditingWeek] = useState(false);
 
-  const stop = useMemo(
-    () => WEEKS.find((w) => w.week === selectedWeek) ?? WEEKS[0]!,
-    [selectedWeek],
+  const overridesByWeek = useMemo(
+    () => new Map(overrides.map((o) => [o.week, o])),
+    [overrides],
   );
+
+  const stop = useMemo(() => {
+    const base = WEEKS.find((w) => w.week === selectedWeek) ?? WEEKS[0]!;
+    const override = overridesByWeek.get(base.week);
+    return override
+      ? { ...base, title: override.title, summary: override.summary, highlights: override.highlights }
+      : base;
+  }, [selectedWeek, overridesByWeek]);
   const links = (stop.links ?? []).filter((l) => !l.coreOnly || core);
 
   function selectWeek(week: number) {
@@ -385,9 +432,6 @@ export default function LabProcessesHub() {
             >
               Lab Processes
             </h1>
-            <p className="mt-1 text-sm font-semibold sm:text-base" style={{ color: NAVY, opacity: 0.75 }}>
-              Week 0 at the top · scroll down to Week 10
-            </p>
           </div>
 
           {WEEKS.map((w) => {
@@ -465,6 +509,18 @@ export default function LabProcessesHub() {
                       <h2 className="font-heading text-base font-bold sm:text-lg" style={{ color: NAVY }}>
                         {stop.title}
                       </h2>
+                      {core && (
+                        <button
+                          type="button"
+                          onClick={() => setEditingWeek(true)}
+                          aria-label={`Edit week ${stop.week} content`}
+                          title="Edit week content"
+                          className="ml-auto shrink-0 rounded-md p-1 text-current/60 hover:bg-black/5"
+                          style={{ color: NAVY }}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                     </div>
                     <p className="mt-1.5 text-xs leading-relaxed sm:text-sm" style={{ color: "#404040" }}>
                       {stop.summary}
@@ -501,7 +557,113 @@ export default function LabProcessesHub() {
           })}
         </div>
       </section>
+
+      {core && editingWeek && (
+        <WeekEditModal
+          week={stop.week}
+          title={stop.title}
+          summary={stop.summary}
+          highlights={stop.highlights}
+          onClose={() => setEditingWeek(false)}
+        />
+      )}
     </div>
+  );
+}
+
+function WeekEditModal({
+  week,
+  title,
+  summary,
+  highlights,
+  onClose,
+}: {
+  week: number;
+  title: string;
+  summary: string;
+  highlights: string[];
+  onClose: () => void;
+}) {
+  const fetcher = useFetcher();
+  const [titleVal, setTitleVal] = useState(title);
+  const [summaryVal, setSummaryVal] = useState(summary);
+  const [highlightsVal, setHighlightsVal] = useState(highlights.join("\n"));
+  const submitting = fetcher.state !== "idle";
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    fetcher.submit(
+      {
+        intent: "update-week-content",
+        week,
+        title: titleVal.trim(),
+        summary: summaryVal.trim(),
+        highlights: highlightsVal
+          .split("\n")
+          .map((h) => h.trim())
+          .filter(Boolean),
+      },
+      { method: "post", encType: "application/json" },
+    );
+  }
+
+  // Close once the update lands.
+  useMemo(() => {
+    if (fetcher.state === "idle" && fetcher.data && (fetcher.data as { ok?: boolean }).ok) {
+      onClose();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetcher.state, fetcher.data]);
+
+  const canSubmit = titleVal.trim().length > 0 && summaryVal.trim().length > 0 && !submitting;
+
+  return (
+    <Modal open onClose={onClose} labelledBy="week-edit-title">
+      <ModalHeader titleId="week-edit-title" title={`Edit Week ${week}`} onClose={onClose} />
+      <form onSubmit={submit} className="flex flex-col gap-3">
+        <label className="text-sm font-medium text-foreground">
+          Title
+          <input
+            type="text"
+            value={titleVal}
+            onChange={(e) => setTitleVal(e.target.value)}
+            required
+            className="mt-1 w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground"
+          />
+        </label>
+        <label className="text-sm font-medium text-foreground">
+          Summary
+          <textarea
+            value={summaryVal}
+            onChange={(e) => setSummaryVal(e.target.value)}
+            required
+            rows={3}
+            className="mt-1 w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground"
+          />
+        </label>
+        <label className="text-sm font-medium text-foreground">
+          Highlights <span className="text-muted-foreground font-normal">(one per line)</span>
+          <textarea
+            value={highlightsVal}
+            onChange={(e) => setHighlightsVal(e.target.value)}
+            rows={4}
+            className="mt-1 w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground"
+          />
+        </label>
+        {fetcher.data && (fetcher.data as { error?: string }).error && (
+          <p className="text-sm text-red-700">{(fetcher.data as { error?: string }).error}</p>
+        )}
+        <ModalFooter onCancel={onClose}>
+          <button
+            type="submit"
+            disabled={!canSubmit}
+            className="px-3 py-1.5 text-sm font-semibold rounded-lg bg-accent-coral text-white hover:bg-accent-coral/90 disabled:opacity-50"
+          >
+            {submitting ? "Saving…" : "Save"}
+          </button>
+        </ModalFooter>
+      </form>
+    </Modal>
   );
 }
 
