@@ -1,3 +1,4 @@
+import { ArrowLeftRight, Briefcase, LayoutGrid, UserPlus } from "lucide-react";
 import type { AreaPill } from "~/components/AreaPillNav";
 
 // Lab Processes surfaces (the sidebar entry is childless and lands on the
@@ -7,13 +8,19 @@ export function labProcessesPills(args: {
   active: "hub" | "onboarding" | "transfer" | "jobx";
 }): AreaPill[] {
   return [
-    { label: "Hub", to: "/internal-processes", active: args.active === "hub" },
+    {
+      label: "Hub",
+      to: "/internal-processes",
+      active: args.active === "hub",
+      icon: LayoutGrid,
+    },
     ...(args.isCore
       ? [
           {
             label: "Onboarding",
             to: "/internal-processes/onboarding",
             active: args.active === "onboarding",
+            icon: UserPlus,
           },
         ]
       : []),
@@ -21,7 +28,13 @@ export function labProcessesPills(args: {
       label: "Transfer",
       to: "/internal-processes/transfer",
       active: args.active === "transfer",
+      icon: ArrowLeftRight,
     },
-    { label: "JobX", to: "/internal-processes/jobx", active: args.active === "jobx" },
+    {
+      label: "JobX",
+      to: "/internal-processes/jobx",
+      active: args.active === "jobx",
+      icon: Briefcase,
+    },
   ];
 }

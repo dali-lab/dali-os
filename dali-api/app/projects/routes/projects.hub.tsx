@@ -191,9 +191,6 @@ export default function ProjectsListPage() {
           <h1 className="font-heading text-2xl font-bold text-foreground">
             Projects
           </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Every DALI project, with status and partners.
-          </p>
         </div>
         {canEdit && !creating && (
           <button
@@ -426,13 +423,13 @@ function PartnerChip({ partner }: { partner: ProjectPartnerOut }) {
 
 function StatusPill({ status }: { status: ProjectStatus }) {
   const palette: Record<ProjectStatus, string> = {
-    Active: "bg-accent-teal/15 text-accent-teal",
-    Paused: "bg-muted text-foreground",
-    Archived: "bg-muted/50 text-muted-foreground",
+    Active: "bg-accent-teal/15 text-accent-teal border-accent-teal/40",
+    Paused: "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/40",
+    Archived: "bg-muted/50 text-muted-foreground border-border",
   };
   return (
     <span
-      className={`inline-flex items-center px-2 py-0.5 text-xs font-medium rounded ${palette[status]}`}
+      className={`inline-flex items-center px-2 py-0.5 text-xs font-medium rounded border ${palette[status]}`}
     >
       {status}
     </span>

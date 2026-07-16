@@ -7,9 +7,10 @@ import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
 import { resolveGroupMembers } from "~/lib/groups";
 import { createGoogleCalendarEvent, type GoogleAttendee } from "~/lib/google-calendar";
-import { primaryEmail } from "~/lib/display";
+import { primaryEmail, formatDateShort } from "~/lib/display";
 import { buildIcs } from "~/lib/ics";
-import type { ScheduledMeeting } from "~/generated/prisma/client";
+import { createProjectPage, ensureMeetingNotesFolder } from "~/lib/pages";
+import type { ScheduledMeeting, MeetingType } from "~/generated/prisma/client";
 
 function meetingUid(meetingId: string): string {
   return `meeting-${meetingId}@dali.dartmouth.edu`;
@@ -80,6 +81,15 @@ export type CreateScheduledMeetingInput = {
   startTime?: string | null;
   recurrenceRule?: string | null;
   organizerCalendarLinkId?: string | null;
+  // Meeting-note fields. When both are set, a "<label> meeting note (<date>)"
+  // Page is auto-created under the project's shared documents, and a
+  // MeetingAttendance row is fanned out per participant (including the
+  // organizer). meetingTypeLabel supplies the note's display label — required
+  // when meetingType is "Other", ignored otherwise (Team/Partner have fixed
+  // labels).
+  meetingType?: MeetingType | null;
+  meetingTypeLabel?: string | null;
+  projectId?: string | null;
 };
 
 export type CreateScheduledMeetingResult =
@@ -88,8 +98,15 @@ export type CreateScheduledMeetingResult =
       meeting: ScheduledMeeting & { externalEventId: string | null };
       notifiedCount: number;
       gcalError: string | null;
+      notePageId: string | null;
     }
   | { ok: false; error: string };
+
+const MEETING_TYPE_LABELS: Record<MeetingType, string> = {
+  Team: "Team",
+  Partner: "Partner",
+  Other: "", // overridden by meetingTypeLabel
+};
 
 export async function createScheduledMeeting(
   input: CreateScheduledMeetingInput,
@@ -134,6 +151,9 @@ export async function createScheduledMeeting(
       status: startDate ? "Confirmed" : "Searching",
       ownerCalendarEmail: organizerLink?.externalEmail ?? input.organizerEmail,
       organizerCalendarLinkId: organizerLink?.id ?? null,
+      meetingType: input.meetingType ?? null,
+      meetingTypeLabel: input.meetingType === "Other" ? (input.meetingTypeLabel ?? null) : null,
+      projectId: input.meetingType ? (input.projectId ?? null) : null,
     },
   });
 
@@ -181,6 +201,42 @@ export async function createScheduledMeeting(
     }
   }
 
+  let notePageId: string | null = null;
+  if (input.meetingType && input.projectId) {
+    const label =
+      input.meetingType === "Other"
+        ? (input.meetingTypeLabel ?? "").trim() || "Other"
+        : MEETING_TYPE_LABELS[input.meetingType];
+    const noteDate = startDate ?? new Date();
+    // Team/Partner notes nest under their default, undeletable folder;
+    // "Other" notes stay top-level (no default folder for a custom label).
+    let parentPageId: string | null = null;
+    if (input.meetingType === "Team" || input.meetingType === "Partner") {
+      const folder = await ensureMeetingNotesFolder(
+        input.projectId,
+        input.meetingType,
+        input.organizerId,
+      );
+      parentPageId = folder.id;
+    }
+    const page = await createProjectPage({
+      projectId: input.projectId,
+      title: `${label} meeting note (${formatDateShort(noteDate)})`,
+      createdById: input.organizerId,
+      meetingNoteId: meeting.id,
+      parentPageId,
+    });
+    notePageId = page.id;
+
+    const attendeeIds = Array.from(new Set([...participantUserIds, input.organizerId]));
+    await prisma.meetingAttendance.createMany({
+      data: attendeeIds.map((userId) => ({
+        scheduledMeetingId: meeting.id,
+        userId,
+      })),
+    });
+  }
+
   const notifyIds = participantUserIds.filter((id) => id !== input.organizerId);
   let notifiedCount = 0;
   if (notifyIds.length > 0) {
@@ -222,6 +278,7 @@ export async function createScheduledMeeting(
     meeting: { ...meeting, externalEventId },
     notifiedCount,
     gcalError,
+    notePageId,
   };
 }
 

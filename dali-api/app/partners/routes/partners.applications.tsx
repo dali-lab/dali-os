@@ -32,6 +32,7 @@ import {
 import type { Question } from "~/types";
 import { listSelectableForms } from "~/projects/lib/form-slots";
 import { AreaPillNav } from "~/components/AreaPillNav";
+import { FileText, LayoutGrid } from "lucide-react";
 
 export const handle = { areaPills: true };
 
@@ -273,8 +274,8 @@ export default function PartnersApplications() {
     <div className="flex flex-col gap-4">
       <AreaPillNav
         items={[
-          { label: "Hub", to: "/partners" },
-          { label: "Applications", to: "/partners/applications", active: true },
+          { label: "Hub", to: "/partners", icon: LayoutGrid },
+          { label: "Applications", to: "/partners/applications", active: true, icon: FileText },
         ]}
       />
       <header className="flex items-start justify-between gap-3 flex-wrap">

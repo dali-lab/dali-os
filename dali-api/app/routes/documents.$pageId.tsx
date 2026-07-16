@@ -4,8 +4,10 @@ import { prisma } from "~/lib/db";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { parseSessionCookie } from "~/lib/cookies";
 import { isCore, isProjectMember } from "~/lib/roles";
+import { fullName } from "~/lib/display";
 import { getPresenceUser } from "~/lib/presence-user";
 import { DocumentEditor } from "~/components/DocumentEditor";
+import { AttendanceChecklist, type AttendanceRow } from "~/components/AttendanceChecklist";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const t = (data as { title?: string } | undefined)?.title;
@@ -31,6 +33,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       workspaceType: true,
       workspaceId: true,
       archivedAt: true,
+      meetingNoteId: true,
       tags: { select: { tag: { select: { id: true, label: true, slug: true, color: true } } } },
     },
   });
@@ -62,6 +65,43 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     select: { id: true, label: true, slug: true, color: true },
   });
 
+  let attendance: { meetingId: string; meetingLabel: string; canMark: boolean; rows: AttendanceRow[] } | null =
+    null;
+  if (page.meetingNoteId) {
+    const meeting = await prisma.scheduledMeeting.findUnique({
+      where: { id: page.meetingNoteId },
+      select: {
+        id: true,
+        organizerId: true,
+        meetingType: true,
+        meetingTypeLabel: true,
+        attendance: {
+          select: {
+            userId: true,
+            present: true,
+            user: { select: { firstName: true, lastName: true, daliEmail: true } },
+          },
+        },
+      },
+    });
+    if (meeting) {
+      const label =
+        meeting.meetingType === "Other"
+          ? meeting.meetingTypeLabel || "Other"
+          : (meeting.meetingType ?? "Meeting");
+      attendance = {
+        meetingId: meeting.id,
+        meetingLabel: label,
+        canMark: canEdit || auth.user.sub === meeting.organizerId,
+        rows: meeting.attendance.map((a) => ({
+          userId: a.userId,
+          name: fullName(a.user) || a.user.daliEmail || a.userId,
+          present: a.present,
+        })),
+      };
+    }
+  }
+
   const collabToken = parseSessionCookie(request);
   const fallbackName =
     [auth.user.firstName, auth.user.lastName].filter(Boolean).join(" ") || auth.user.email;
@@ -78,6 +118,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     currentUserId: auth.user.sub,
     photoUrl: presenceUser?.photoUrl ?? null,
     subtitle: presenceUser?.subtitle ?? null,
+    attendance,
   };
 }
 
@@ -93,10 +134,19 @@ export default function DocumentPage() {
     currentUserId,
     photoUrl,
     subtitle,
+    attendance,
   } = useLoaderData() as Exclude<Awaited<ReturnType<typeof loader>>, Response>;
 
   return (
     <div className="flex flex-col gap-4">
+      {attendance && (
+        <AttendanceChecklist
+          meetingId={attendance.meetingId}
+          meetingLabel={attendance.meetingLabel}
+          canEdit={attendance.canMark}
+          attendees={attendance.rows}
+        />
+      )}
       <DocumentEditor
         pageId={pageId}
         initialTitle={title}

@@ -1,3 +1,15 @@
+import {
+  Activity,
+  BarChart3,
+  Clock,
+  Globe,
+  LayoutGrid,
+  Mail,
+  Megaphone,
+  Receipt,
+  Shield,
+  UserPlus,
+} from "lucide-react";
 import type { AreaPill } from "~/components/AreaPillNav";
 
 // The Admin area's tools (the sidebar entry is childless and lands on the
@@ -19,17 +31,24 @@ export function adminPills(args: {
     | "payroll-reconcile";
 }): AreaPill[] {
   return [
-    { label: "Hub", to: "/admin-console", active: args.active === "hub" },
+    { label: "Hub", to: "/admin-console", active: args.active === "hub", icon: LayoutGrid },
     {
       label: "Roles & Permissions",
       to: "/admin-console/members",
       active: args.active === "members",
+      icon: Shield,
     },
-    { label: "Domains", to: "/admin-console/domains", active: args.active === "domains" },
+    {
+      label: "Domains",
+      to: "/admin-console/domains",
+      active: args.active === "domains",
+      icon: Globe,
+    },
     {
       label: "Announcements",
       to: "/admin-console/announcements",
       active: args.active === "announcements",
+      icon: Megaphone,
     },
     ...(args.isAdmin
       ? [
@@ -37,31 +56,37 @@ export function adminPills(args: {
             label: "Activity",
             to: "/admin-console/activity",
             active: args.active === "activity",
+            icon: Activity,
           },
           {
             label: "Analytics",
             to: "/admin-console/analytics",
             active: args.active === "analytics",
+            icon: BarChart3,
           },
           {
             label: "Jobs",
             to: "/admin-console/jobs",
             active: args.active === "jobs",
+            icon: Clock,
           },
           {
             label: "Email Senders",
             to: "/admin-console/email-senders",
             active: args.active === "email-senders",
+            icon: Mail,
           },
           {
             label: "Payroll: Hire Setup",
             to: "/admin-console/payroll-export",
             active: args.active === "payroll",
+            icon: UserPlus,
           },
           {
             label: "Payroll: Reconcile",
             to: "/admin-console/payroll",
             active: args.active === "payroll-reconcile",
+            icon: Receipt,
           },
         ]
       : []),

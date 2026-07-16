@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Outlet, redirect, useLoaderData, useLocation, useNavigate, useSearchParams } from 'react-router'
+import { Outlet, redirect, useLoaderData, useLocation, useMatches, useNavigate, useSearchParams } from 'react-router'
+import { cn } from '~/lib/cn'
 import { Layout } from '~/components/Layout'
 import { Breadcrumbs } from '~/components/Breadcrumbs'
 import { LaunchWelcome } from '~/components/LaunchWelcome'
@@ -101,7 +102,11 @@ export default function AppLayoutRoute() {
   const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, isEmbedded } = useLoaderData<typeof loader>()
   const [searchParams] = useSearchParams()
   const location = useLocation()
+  const matches = useMatches()
   const navigate = useNavigate()
+  const hasAreaSubnav = matches.some(
+    (m) => (m as { handle?: { areaPills?: boolean } }).handle?.areaPills,
+  )
 
   // After a client-side navigation inside the workspace iframe, the loader
   // re-runs via fetch — which carries `Sec-Fetch-Dest: empty`, not `iframe` —
@@ -232,7 +237,12 @@ export default function AppLayoutRoute() {
   if (embedded) {
     return (
       <div className="min-h-dvh bg-page overflow-x-hidden">
-        <div className="w-full px-3 sm:px-6 lg:px-10 pt-4 sm:pt-8 md:pt-12 pb-6 sm:pb-8">
+        <div
+          className={cn(
+            'w-full px-3 sm:px-6 lg:px-10 pb-6 sm:pb-8',
+            hasAreaSubnav ? 'pt-0' : 'pt-4 sm:pt-8 md:pt-12',
+          )}
+        >
           <div className="mb-4 empty:mb-0">
             <Breadcrumbs />
           </div>

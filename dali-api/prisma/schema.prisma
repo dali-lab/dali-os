@@ -96,6 +96,8 @@ model User {
   availabilitySettings UserAvailabilitySettings?
   workingHoursDays     WorkingHoursDay[]
   manualBlocks         ManualBlock[]
+  meetingAttendances   MeetingAttendance[]
+  timeEntries          TimeEntry[]
 
   // ─── Phase 1: foundational role-model back-relations ──────────────────────
   domainEligibilities     DomainEligibility[]
@@ -1483,9 +1485,22 @@ model ScheduledMeeting {
   organizerCalendarLinkId String?
   organizerCalendarLink   UserCalendarLink? @relation(fields: [organizerCalendarLinkId], references: [id])
 
+  // Set when the sender picks a meeting type at invite time. Drives auto-
+  // creation of a meeting-note Page under `project`'s shared documents
+  // (see notePage) plus a MeetingAttendance row per participant.
+  // meetingTypeLabel is required (app-level) when meetingType == Other and
+  // supplies the note's display label ("<label> meeting note (<date>)").
+  meetingType      MeetingType?
+  meetingTypeLabel String?
+  projectId        String?
+  project          Project?     @relation(fields: [projectId], references: [id])
+  notePage         Page?
+
   exceptions    MeetingException[]
   notifications Notification[]
   reminderLogs  MeetingReminderLog[]
+  attendance    MeetingAttendance[]
+  timeEntries   TimeEntry[]
 
   createdAt DateTime @default(now())
 }
@@ -1496,6 +1511,69 @@ enum ScopeType {
   UserList
   Series
   None
+}
+
+enum MeetingType {
+  Team
+  Partner
+  Other
+}
+
+// One row per invited participant (including the organizer) on a
+// ScheduledMeeting that has a meetingType/project. Checked off from the
+// AttendanceChecklist on the meeting's notePage; drives TimeEntry creation
+// (see the attendance-toggle route in app/calendar/routes).
+model MeetingAttendance {
+  id                 String    @id @default(cuid())
+  scheduledMeetingId String
+  userId             String
+  present            Boolean   @default(false)
+  markedByUserId     String?
+  markedAt           DateTime?
+
+  meeting ScheduledMeeting @relation(fields: [scheduledMeetingId], references: [id])
+  user    User             @relation(fields: [userId], references: [id])
+
+  @@unique([scheduledMeetingId, userId])
+  @@index([userId])
+}
+
+// A user's personal timesheet row, shown on the Calendar "Timesheet" tab.
+// Meeting-sourced rows are managed automatically by the attendance-toggle
+// route (one row per present participant, kept in sync as attendance is
+// checked/unchecked) and are not directly editable; Manual rows are
+// user-authored CRUD entries for work not captured by a meeting.
+model TimeEntry {
+  id                 String          @id @default(cuid())
+  userId             String
+  source             TimeEntrySource
+  scheduledMeetingId String?
+  projectId          String?
+  date               DateTime
+  hours              Float
+  note               String?
+  // Optional precise time range, used to render this entry as a block on the
+  // Timesheet tab's week grid (alongside external/manual calendar blocks).
+  // Null for entries added via the plain date+hours form (no time-of-day
+  // picked) — those still show in the ledger list, just not on the grid.
+  // Set automatically for Meeting-sourced rows from the meeting's start time
+  // + duration, and for grid drag-created Manual rows from the dragged range.
+  startTime          DateTime?
+  endTime            DateTime?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  user    User              @relation(fields: [userId], references: [id])
+  meeting ScheduledMeeting? @relation(fields: [scheduledMeetingId], references: [id])
+  project Project?          @relation(fields: [projectId], references: [id])
+
+  @@unique([scheduledMeetingId, userId])
+  @@index([userId, date])
+}
+
+enum TimeEntrySource {
+  Meeting
+  Manual
 }
 
 enum MeetingStatus {
@@ -1981,26 +2059,28 @@ model Project {
   overviewPage Page? @relation("ProjectOverview", fields: [overviewPageId], references: [id])
   prdPage      Page? @relation("ProjectPRD", fields: [prdPageId], references: [id])
 
-  partners        ProjectPartner[]
+  partners          ProjectPartner[]
   // The project's planned term set — the source of truth for which terms the
   // project runs. The start term is the earliest of these (by Term.sortKey).
-  projectTerms    ProjectTerm[]
-  termStatuses    ProjectTermStatus[]
-  assignments     ProjectAssignment[]
-  roleRequests    ProjectRoleRequest[]
-  mentorshipPairs MentorshipPair[]
-  sprints         Sprint[]
-  epics           Epic[]
-  tasks           Task[]
+  projectTerms      ProjectTerm[]
+  termStatuses      ProjectTermStatus[]
+  assignments       ProjectAssignment[]
+  roleRequests      ProjectRoleRequest[]
+  mentorshipPairs   MentorshipPair[]
+  sprints           Sprint[]
+  epics             Epic[]
+  tasks             Task[]
   // Declared domains for the project — surfaced on the project detail page
   // and editable by Admin/Core/Hiring Lead. Display-only today; staffing
   // gating off this set is a follow-up.
-  domains         ProjectDomain[]
-  domainScopes    ProjectDomainScope[]
+  domains           ProjectDomain[]
+  domainScopes      ProjectDomainScope[]
   // Standalone uploaded files in the project's Files section.
-  files           ProjectFile[]
-  budgetEntries   BudgetEntry[]
-  budgetNotes     BudgetNote[]
+  files             ProjectFile[]
+  budgetEntries     BudgetEntry[]
+  budgetNotes       BudgetNote[]
+  scheduledMeetings ScheduledMeeting[]
+  timeEntries       TimeEntry[]
 
   createdAt DateTime @default(now())
 }
@@ -2882,9 +2962,9 @@ model Form {
   notifications Notification[]
   cycleBindings StaffingCycleFormBinding[]
 
-  partnerApplicationBindings PartnerApplicationFormBinding[]
-  educationOfferingsAsApplicationForm EducationOffering[]    @relation("EducationOfferingApplicationForm")
-  educationBindings                   EducationFormBinding[] @relation("EducationFormBindings")
+  partnerApplicationBindings          PartnerApplicationFormBinding[]
+  educationOfferingsAsApplicationForm EducationOffering[]             @relation("EducationOfferingApplicationForm")
+  educationBindings                   EducationFormBinding[]          @relation("EducationFormBindings")
 
   @@index([folderId])
   @@index([createdById])
@@ -3136,6 +3216,19 @@ model Page {
   // future public flag — the audiences are orthogonal.
   partnerVisible Boolean @default(false)
 
+  // Set when this page was auto-created as a meeting's attendance-tracking
+  // note (see ScheduledMeeting.notePage / meetingType). Lets the document
+  // route know to render the AttendanceChecklist above the editor.
+  meetingNoteId String?           @unique
+  meetingNote   ScheduledMeeting? @relation(fields: [meetingNoteId], references: [id])
+
+  // Marks a page as system-managed and undeletable (mirrors
+  // GroupDefinition.systemKey) — e.g. the default "Team meeting notes" /
+  // "Partner meeting notes" folders auto-created per project (see
+  // ensureProjectFolder in app/lib/pages.ts). Null for ordinary user-created
+  // pages. The unique constraint makes ensure-create idempotent.
+  systemKey String? @unique
+
   parent   Page?  @relation("PageTree", fields: [parentPageId], references: [id])
   children Page[] @relation("PageTree")
 
@@ -3171,6 +3264,9 @@ enum WorkspaceType {
 enum PageKind {
   FreeForm
   Structured
+  // A container page with no content of its own — only children. Always
+  // top-level (a folder never has a parentPageId, matching the 2-level cap).
+  Folder
 }
 
 model PageTemplate {
@@ -3694,13 +3790,13 @@ model PartnerApplication {
   // cascades its submissions away — the application must survive that.
   formSubmissionId   String?                  @unique
 
-  partnerOrg     PartnerOrg      @relation(fields: [partnerOrgId], references: [id])
-  formSubmission FormSubmission? @relation(fields: [formSubmissionId], references: [id], onDelete: SetNull)
+  partnerOrg     PartnerOrg                     @relation(fields: [partnerOrgId], references: [id])
+  formSubmission FormSubmission?                @relation(fields: [formSubmissionId], references: [id], onDelete: SetNull)
   // The terms the partner wants the project to run / be staffed in. Drives
   // the "expected lab members per term" projection on the list page — an
   // application's expected headcount counts toward every target term.
-  targetTerms PartnerApplicationTargetTerm[]
-  domains     PartnerApplicationDomain[]
+  targetTerms    PartnerApplicationTargetTerm[]
+  domains        PartnerApplicationDomain[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -3919,4 +4015,24 @@ model BudgetNote {
 
   @@unique([projectId, chartString, termId])
   @@index([termId])
+}
+
+// ─── Internal Processes ──────────────────────────────────────────────────────
+
+// Admin-editable override for a term-roadmap week's content on the Lab
+// Processes hub (app/internal-processes/routes/internal-processes.hub.tsx).
+// The road geometry and week count are fixed in code (WEEK_META); this only
+// overrides the human-editable text for a given week (0-10). A week with no
+// row here falls back to WEEK_META's hardcoded default. updatedByUserId is a
+// loose reference (not an FK) so it survives the editor's account being
+// removed, matching the convention used elsewhere for audit-style fields.
+model LabProcessWeekContent {
+  id              String   @id @default(cuid())
+  week            Int      @unique
+  title           String
+  summary         String
+  highlights      String[]
+  updatedByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }

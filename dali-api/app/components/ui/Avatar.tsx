@@ -1,7 +1,7 @@
 import { cn } from "~/lib/cn";
 import { initialsFromName } from "~/lib/display";
 
-export type AvatarSize = "sm" | "md" | "lg";
+export type AvatarSize = "xs" | "sm" | "md" | "lg";
 
 export interface AvatarProps {
   photoUrl?: string | null;
@@ -11,6 +11,7 @@ export interface AvatarProps {
 }
 
 const SIZES: Record<AvatarSize, string> = {
+  xs: "w-5 h-5 text-[9px]",
   sm: "w-8 h-8 text-[11px]",
   md: "w-10 h-10 text-sm",
   lg: "w-12 h-12 text-base",

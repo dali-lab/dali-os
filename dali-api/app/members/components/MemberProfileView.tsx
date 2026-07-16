@@ -137,7 +137,7 @@ export function MemberProfileView({
         </div>
       )}
 
-      <AccountSection member={member} roleLabels={roleLabels} canEdit={canEdit} />
+      <AccountSettingsSection member={member} roleLabels={roleLabels} canEdit={canEdit} />
       <PersonalSection member={member} canEdit={canEdit} />
 
       <DomainsSection
@@ -177,14 +177,19 @@ export function MemberProfileView({
 
 // ─── Sections ───────────────────────────────────────────────────────────────
 
-function AccountSection({
+export function AccountSettingsSection({
   member,
   roleLabels,
   canEdit,
+  formAction,
+  embedded,
 }: {
   member: ProfileMember;
   roleLabels: string[];
   canEdit: boolean;
+  formAction?: string;
+  /** When true, omit section chrome (used inside Settings page blocks). */
+  embedded?: boolean;
 }) {
   const submit = useSubmit();
   const formRef = useRef<HTMLFormElement | null>(null);
@@ -196,15 +201,20 @@ function AccountSection({
 
   return (
     <EditableSection
-      title="Account"
-      icon={<Shield className="w-4 h-4 text-accent-coral" />}
+      title={embedded ? "" : "Account"}
+      icon={embedded ? undefined : <Shield className="w-4 h-4 text-accent-coral" />}
       canEdit={canEdit}
+      className={
+        embedded
+          ? "flex flex-col gap-3"
+          : "bg-card border border-border rounded-lg p-4 flex flex-col gap-3"
+      }
       onSave={() => {
         if (formRef.current) submit(formRef.current);
       }}
     >
       {({ editing }) => (
-        <Form method="post" ref={formRef} className="flex flex-col gap-3">
+        <Form method="post" ref={formRef} action={formAction} className="flex flex-col gap-3">
           <input type="hidden" name="intent" value="profile" />
           {/* Persist personal-section fields when saving identity edits. */}
           <HiddenProfileFields member={member} skip={ACCOUNT_FIELDS} />

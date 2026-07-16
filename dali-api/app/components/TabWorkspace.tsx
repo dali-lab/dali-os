@@ -1718,33 +1718,42 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
               })()}
               <div
                 ref={stripRefCb(pane.id)}
-                className="flex-1 flex items-stretch overflow-x-auto"
-                onDragOver={(e) => {
-                  // Allow drop on the empty area at the end of the strip.
-                  if (dragSourceRef.current) {
-                    e.preventDefault()
-                    e.dataTransfer.dropEffect = 'move'
-                    if (paneDrop) setPaneDrop(null)
-                    const current = dragOver
-                    if (current?.paneId !== pane.id || current.index !== pane.tabs.length) {
-                      setDragOver({ paneId: pane.id, index: pane.tabs.length })
-                    }
-                  }
-                }}
-                onDrop={(e) => {
-                  if (!dragSourceRef.current) return
-                  e.preventDefault()
-                  const src = dragSourceRef.current
-                  const tgt = dragOver ?? { paneId: pane.id, index: pane.tabs.length }
-                  moveTab(src, tgt)
-                  dragSourceRef.current = null
-                  setDragOver(null)
-                  setPaneDrop(null)
-                  setIsDragging(false)
-                }}
+                className="flex flex-1 min-w-0 items-stretch"
               >
-                {pinnedTabs.map(renderTab)}
-                {visibleUnpinned.map(renderTab)}
+                <div
+                  className="flex-1 min-w-0 flex items-stretch overflow-x-auto"
+                  onDragOver={(e) => {
+                    // Allow drop on the empty area at the end of the strip.
+                    if (dragSourceRef.current) {
+                      e.preventDefault()
+                      e.dataTransfer.dropEffect = 'move'
+                      if (paneDrop) setPaneDrop(null)
+                      const current = dragOver
+                      if (current?.paneId !== pane.id || current.index !== pane.tabs.length) {
+                        setDragOver({ paneId: pane.id, index: pane.tabs.length })
+                      }
+                    }
+                  }}
+                  onDrop={(e) => {
+                    if (!dragSourceRef.current) return
+                    e.preventDefault()
+                    const src = dragSourceRef.current
+                    const tgt = dragOver ?? { paneId: pane.id, index: pane.tabs.length }
+                    moveTab(src, tgt)
+                    dragSourceRef.current = null
+                    setDragOver(null)
+                    setPaneDrop(null)
+                    setIsDragging(false)
+                  }}
+                >
+                  {pinnedTabs.map(renderTab)}
+                  {visibleUnpinned.map(renderTab)}
+                  {pane.tabs.length === 0 && (
+                    <div className="px-3 flex items-center text-xs text-muted-foreground/60">
+                      No tabs open. Click a section in the sidebar.
+                    </div>
+                  )}
+                </div>
                 {overflowUnpinned.length > 0 && (
                   <button
                     type="button"
@@ -1756,16 +1765,11 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
                     title={`${overflowUnpinned.length} more tab${overflowUnpinned.length === 1 ? '' : 's'}`}
                     aria-label={`Show ${overflowUnpinned.length} more tabs`}
                     style={{ width: OVERFLOW_BTN_W }}
-                    className="flex-none flex items-center justify-center gap-0.5 border-r border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-card/50 transition-colors"
+                    className="flex-none flex items-center justify-center gap-0.5 border-l border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-card/50 transition-colors"
                   >
                     +{overflowUnpinned.length}
                     <ChevronDown className="w-3 h-3" />
                   </button>
-                )}
-                {pane.tabs.length === 0 && (
-                  <div className="px-3 flex items-center text-xs text-muted-foreground/60">
-                    No tabs open. Click a section in the sidebar.
-                  </div>
                 )}
               </div>
               {state.panes.length > 1 && (
