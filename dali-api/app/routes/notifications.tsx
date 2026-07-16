@@ -376,7 +376,7 @@ export default function NotificationsRoute() {
     (searchParams.get("status") as "open" | "cleared" | "all") || "all";
 
   return (
-    <div className="mx-auto w-full max-w-3xl flex flex-col gap-6">
+    <div className="w-full max-w-3xl flex flex-col gap-6">
       <div>
         <h1 className="font-heading text-2xl font-bold text-foreground">
           My Tasks

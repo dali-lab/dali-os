@@ -1,3 +1,4 @@
+import { Award, LayoutGrid, SlidersHorizontal } from "lucide-react";
 import type { AreaPill } from "~/components/AreaPillNav";
 
 // The education area's top-level surfaces, rendered as an AreaPillNav on each
@@ -10,9 +11,16 @@ export function educationPills(args: {
   active: "hub" | "manage" | "compliance";
 }): AreaPill[] {
   return [
-    { label: "Hub", to: "/education", active: args.active === "hub" },
+    { label: "Hub", to: "/education", active: args.active === "hub", icon: LayoutGrid },
     ...(args.canManage
-      ? [{ label: "Manage", to: "/education/manage", active: args.active === "manage" }]
+      ? [
+          {
+            label: "Manage",
+            to: "/education/manage",
+            active: args.active === "manage",
+            icon: SlidersHorizontal,
+          },
+        ]
       : []),
     ...(args.isCore
       ? [
@@ -20,6 +28,7 @@ export function educationPills(args: {
             label: "CE Compliance",
             to: "/education/compliance",
             active: args.active === "compliance",
+            icon: Award,
           },
         ]
       : []),

@@ -23,6 +23,7 @@ import { ViewToggle, useViewPreference } from "~/components/ViewToggle";
 import { TermFilter } from "~/components/TermFilter";
 import { resolveTermFilter } from "~/lib/terms";
 import { deriveCoreTitles } from "~/lib/core-titles";
+import { LayoutGrid, UsersRound } from "lucide-react";
 import { AreaPillNav } from "~/components/AreaPillNav";
 
 export const handle = { areaPills: true };
@@ -260,8 +261,8 @@ export default function MembersList() {
     <div className="flex flex-col gap-4">
       <AreaPillNav
         items={[
-          { label: "Hub", to: "/members", active: true },
-          ...(canSeeGroups ? [{ label: "Groups", to: "/members/groups" }] : []),
+          { label: "Hub", to: "/members", active: true, icon: LayoutGrid },
+          ...(canSeeGroups ? [{ label: "Groups", to: "/members/groups", icon: UsersRound }] : []),
         ]}
       />
       <header className="flex items-start justify-between gap-3 flex-wrap">
@@ -269,9 +270,6 @@ export default function MembersList() {
           <h1 className="font-heading text-2xl font-bold text-foreground">
             People
           </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Everyone with a DALI membership row.
-          </p>
         </div>
         {canEdit && !creating && (
           <button

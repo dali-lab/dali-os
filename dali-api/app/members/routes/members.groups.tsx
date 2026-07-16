@@ -21,6 +21,7 @@ import {
   ChevronDown,
   Archive,
   ArchiveRestore,
+  LayoutGrid,
 } from "lucide-react";
 
 export const handle = { areaPills: true };
@@ -267,8 +268,8 @@ export default function AdminConsoleGroups() {
     <div className="space-y-6">
       <AreaPillNav
         items={[
-          { label: "Hub", to: "/members" },
-          { label: "Groups", to: "/members/groups", active: true },
+          { label: "Hub", to: "/members", icon: LayoutGrid },
+          { label: "Groups", to: "/members/groups", active: true, icon: Users },
         ]}
       />
       <div className="flex items-center justify-between">

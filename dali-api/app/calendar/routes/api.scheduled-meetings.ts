@@ -14,17 +14,29 @@ const Base = {
   recurrenceRule: z.string().max(500).optional(),
   startTime: z.string().datetime().optional(),
   organizerCalendarLinkId: z.string().min(1).optional(),
+  meetingType: z.enum(["Team", "Partner", "Other"]).optional(),
+  meetingTypeLabel: z.string().trim().min(1).max(80).optional(),
+  projectId: z.string().min(1).optional(),
 } as const;
 
-const CreateSchema = z.discriminatedUnion("scopeType", [
-  z.object({ scopeType: z.literal("None"), ...Base }),
-  z.object({ scopeType: z.literal("Group"), groupId: z.string().min(1), ...Base }),
-  z.object({
-    scopeType: z.literal("UserList"),
-    participantUserIds: z.array(z.string().min(1)).min(1),
-    ...Base,
-  }),
-]);
+const CreateSchema = z
+  .discriminatedUnion("scopeType", [
+    z.object({ scopeType: z.literal("None"), ...Base }),
+    z.object({ scopeType: z.literal("Group"), groupId: z.string().min(1), ...Base }),
+    z.object({
+      scopeType: z.literal("UserList"),
+      participantUserIds: z.array(z.string().min(1)).min(1),
+      ...Base,
+    }),
+  ])
+  .refine((v) => !v.meetingType || !!v.projectId, {
+    message: "projectId is required when meetingType is set",
+    path: ["projectId"],
+  })
+  .refine((v) => v.meetingType !== "Other" || !!v.meetingTypeLabel, {
+    message: "meetingTypeLabel is required when meetingType is Other",
+    path: ["meetingTypeLabel"],
+  });
 
 export async function action({ request }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
@@ -60,6 +72,9 @@ export async function action({ request }: Route.ActionArgs) {
     startTime: body.startTime,
     recurrenceRule: body.recurrenceRule,
     organizerCalendarLinkId: body.organizerCalendarLinkId,
+    meetingType: body.meetingType,
+    meetingTypeLabel: body.meetingTypeLabel,
+    projectId: body.projectId,
   });
 
   if (!result.ok) {
@@ -74,6 +89,7 @@ export async function action({ request }: Route.ActionArgs) {
         meeting: result.meeting,
         notifiedCount: result.notifiedCount,
         gcalError: result.gcalError,
+        notePageId: result.notePageId,
       },
       { status: 201 },
     ),
