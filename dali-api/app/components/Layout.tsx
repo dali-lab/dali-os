@@ -5,8 +5,8 @@ import {
   Calendar,
   Menu,
   X,
-  ChevronLeft,
-  ChevronRight,
+  PanelLeftClose,
+  PanelLeftOpen,
   Briefcase,
   Settings,
   FolderKanban,
@@ -220,7 +220,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
               aria-label="Collapse sidebar"
               title="Collapse sidebar"
             >
-              <ChevronLeft className="w-4 h-4" />
+              <PanelLeftClose className="w-4 h-4" />
             </button>
           </div>
         )}
@@ -233,7 +233,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
           aria-label="Expand sidebar"
           title="Expand sidebar"
         >
-          <ChevronRight className="w-4 h-4" />
+          <PanelLeftOpen className="w-4 h-4" />
         </button>
       )}
 

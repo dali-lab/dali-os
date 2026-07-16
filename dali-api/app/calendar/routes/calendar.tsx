@@ -4,6 +4,8 @@ import { createPortal } from "react-dom";
 import {
   ChevronLeft,
   ChevronRight,
+  PanelLeftClose,
+  PanelLeftOpen,
   Plus,
   Trash2,
   Calendar as CalendarIcon,
@@ -879,7 +881,7 @@ function AvailabilityView({ data }: { data: LoaderData }) {
           aria-label="Expand availability settings"
           title="Expand settings"
         >
-          <ChevronRight className="h-5 w-5 shrink-0" />
+          <PanelLeftOpen className="h-5 w-5 shrink-0" />
         </button>
       ) : (
         <aside className="flex flex-col gap-6 lg:overflow-y-auto lg:overflow-x-hidden lg:pr-6 lg:min-h-0">
@@ -894,7 +896,7 @@ function AvailabilityView({ data }: { data: LoaderData }) {
               aria-label="Collapse availability settings"
               title="Collapse settings"
             >
-              <ChevronLeft className="h-4 w-4" />
+              <PanelLeftClose className="h-4 w-4" />
             </button>
           </header>
           <CalendarIntegrationsCard links={data.calendarLinks} ingestionError={data.ingestionError} />
