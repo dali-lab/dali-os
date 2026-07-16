@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, Form, useLoaderData, useSearchParams } from 'react-router'
-import { Plus, Mail, ChevronRight, X } from 'lucide-react'
+import { Plus, Mail, ChevronRight, X, BookOpen } from 'lucide-react'
 import { Button } from '~/components/ui/Button'
 import { Modal, ModalHeader } from '~/components/Modal'
 import { AreaPillNav } from '~/components/AreaPillNav'
@@ -40,8 +40,8 @@ export default function EmailTemplatesList() {
     <div className="space-y-8">
       <AreaPillNav
         items={[
-          { label: "Library", to: "/hiring/library" },
-          { label: "Emails", to: "/hiring/emails", active: true },
+          { label: "Library", to: "/hiring/library", icon: BookOpen },
+          { label: "Emails", to: "/hiring/emails", active: true, icon: Mail },
         ]}
       />
       {!dismissed && gmailAuthorized && (

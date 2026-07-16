@@ -206,10 +206,10 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
           <div className="flex items-center gap-1 flex-shrink-0">
             <button
               type="button"
-              onClick={() => window.dispatchEvent(new Event('dali:start-tour'))}
+              {...tabClickProps({ url: '/help', label: 'Help' })}
               className="hidden md:flex p-1.5 text-white/40 hover:text-white/80 hover:bg-white/5 rounded-md transition"
-              aria-label="Start tour"
-              title="Take the tour"
+              aria-label="Help"
+              title="Help"
             >
               <HelpCircle className="w-4 h-4" />
             </button>
@@ -412,15 +412,6 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
               >
                 <Settings className="w-4 h-4" />
               </button>
-              <button
-                type="button"
-                {...tabClickProps({ url: '/help', label: 'Help' })}
-                className="p-1.5 text-white/40 hover:text-white/70 hover:bg-white/5 rounded-md transition flex-shrink-0"
-                title="Help"
-                aria-label="Help"
-              >
-                <HelpCircle className="w-4 h-4" />
-              </button>
               <a
                 href="/logout"
                 className="p-1.5 text-white/40 hover:text-white/70 hover:bg-white/5 rounded-md transition flex-shrink-0"
@@ -477,6 +468,15 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
           </button>
         </div>
         <div className="flex items-center gap-3">
+          <button
+            type="button"
+            {...tabClickProps({ url: '/help', label: 'Help' })}
+            className="p-1.5 text-white/40 hover:text-white/70"
+            aria-label="Help"
+            title="Help"
+          >
+            <HelpCircle className="w-5 h-5" />
+          </button>
           <Link
             to="/profile"
             aria-label="Profile"

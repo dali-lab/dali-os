@@ -13,8 +13,9 @@ import { canViewStaffing, isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
-import { OPEN_APPLICATION_STATUSES } from "../lib/partner-application";
 import { AreaPillNav } from "~/components/AreaPillNav";
+import { OPEN_APPLICATION_STATUSES } from "../lib/partner-application";
+import { FileText, LayoutGrid } from "lucide-react";
 
 export const handle = { areaPills: true };
 
@@ -123,8 +124,8 @@ export default function PartnersOrganizations() {
     <div className="flex flex-col gap-6">
       <AreaPillNav
         items={[
-          { label: "Hub", to: "/partners", active: true },
-          { label: "Applications", to: "/partners/applications" },
+          { label: "Hub", to: "/partners", active: true, icon: LayoutGrid },
+          { label: "Applications", to: "/partners/applications", icon: FileText },
         ]}
       />
       <div className="flex items-center justify-between gap-4 flex-wrap">

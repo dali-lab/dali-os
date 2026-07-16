@@ -10,7 +10,7 @@ import {
   useSearchParams,
   useSubmit,
 } from "react-router";
-import { Check, Handshake, Pencil, X, Settings } from "lucide-react";
+import { Check, Handshake, Pencil, X, Settings, Folder, FolderPlus, ChevronRight, ChevronDown } from "lucide-react";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { EditableSection } from "~/components/EditableSection";
 import { TagPicker } from "~/components/TagPicker";
@@ -20,10 +20,12 @@ import { uploadFileToS3, formatBytes } from "~/lib/upload-client";
 import type { Route } from "./+types/projects.$id";
 import { prisma } from "~/lib/db";
 import { ensureProjectGroup } from "~/lib/groups";
+import { ensureMeetingNotesFolder } from "~/lib/pages";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { fullName } from "~/lib/display";
 import { USER_NAME_SELECT } from "~/lib/prisma-shapes";
 import { resolvePhotoUrl } from "~/lib/photo";
+import { Avatar } from "~/components/ui/Avatar";
 import { ProjectImageBanner } from "../components/ProjectImageBanner";
 import { Markdown } from "~/components/Markdown";
 import { parseSessionCookie } from "~/lib/cookies";
@@ -158,7 +160,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           userId: true,
           termId: true,
           domainId: true,
-          user: { select: USER_NAME_SELECT },
+          user: { select: { ...USER_NAME_SELECT, photoUrl: true } },
           term: { select: { code: true, sortKey: true } },
           domain: { select: { id: true, name: true } },
         },
@@ -221,29 +223,55 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
   if (!project) throw new Response("Not found", { status: 404 });
 
-  // Project documents — top-level, non-archived FreeForm Pages scoped to
-  // this project's workspace.
-  const documentRows = await prisma.page.findMany({
+  // Backfill the two default, undeletable meeting-note folders (idempotent —
+  // no-ops once they exist) so every project's Documents block always shows
+  // them, including projects created before this feature existed.
+  await Promise.all([
+    ensureMeetingNotesFolder(project.id, "Team", auth.user.sub),
+    ensureMeetingNotesFolder(project.id, "Partner", auth.user.sub),
+  ]);
+
+  // Project documents — non-archived Pages scoped to this project's
+  // workspace, top-level and one level of children (folders only ever nest
+  // one level deep — see the 2-level cap on Page.parentPageId).
+  const pageRows = await prisma.page.findMany({
     where: {
       workspaceType: "Project",
       workspaceId: project.id,
-      parentPageId: null,
       archivedAt: null,
     },
     orderBy: { position: "asc" },
     select: {
       id: true,
       title: true,
+      kind: true,
+      parentPageId: true,
+      systemKey: true,
       partnerVisible: true,
       tags: { select: { tag: { select: { id: true, label: true, slug: true, color: true } } } },
     },
   });
-  const documents = documentRows.map((d) => ({
+  const childrenByParent = new Map<string, typeof pageRows>();
+  for (const p of pageRows) {
+    if (!p.parentPageId) continue;
+    const list = childrenByParent.get(p.parentPageId);
+    if (list) list.push(p);
+    else childrenByParent.set(p.parentPageId, [p]);
+  }
+  const toDocumentDto = (d: (typeof pageRows)[number]) => ({
     id: d.id,
     title: d.title,
+    kind: d.kind,
+    isSystem: d.systemKey !== null,
     partnerVisible: d.partnerVisible,
     tags: d.tags.map((t) => t.tag).sort((a, b) => a.label.localeCompare(b.label)),
-  }));
+  });
+  const documents = pageRows
+    .filter((p) => p.parentPageId === null)
+    .map((p) => ({
+      ...toDocumentDto(p),
+      children: (childrenByParent.get(p.id) ?? []).map(toDocumentDto),
+    }));
 
   // Project files — standalone uploads with their current version + tags.
   const fileRows = await prisma.projectFile.findMany({
@@ -433,6 +461,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     assignmentId: string;
     userId: string;
     name: string;
+    photoUrl: string | null;
     domain: string;
     domainId: string;
     level: string;
@@ -443,6 +472,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     string,
     { code: string; sortKey: number; members: TeamMember[] }
   >();
+  const photoByUserId = new Map<string, string | null>();
+  const uniqueUsers = new Map(
+    project.assignments.map((a) => [a.userId, a.user.photoUrl] as const),
+  );
+  await Promise.all(
+    [...uniqueUsers].map(async ([userId, photoUrl]) => {
+      photoByUserId.set(userId, await resolvePhotoUrl(photoUrl));
+    }),
+  );
   for (const a of project.assignments) {
     const key = a.term.code;
     if (!teamByTerm.has(key)) {
@@ -452,6 +490,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       assignmentId: a.id,
       userId: a.userId,
       name: fullName(a.user),
+      photoUrl: photoByUserId.get(a.userId) ?? null,
       domain: a.domain.name,
       domainId: a.domainId,
       level: a.level,
@@ -1111,12 +1150,6 @@ function ProjectHeader({
       {termsLabel}
       {" · "}
       {termCountLabel}
-      {" · "}
-      <span className={project.isActiveThisTerm ? "text-accent-green" : undefined}>
-        {project.isActiveThisTerm ? "Active this term" : "Not this term"}
-      </span>
-      {" · "}
-      {partnerNames.length > 0 ? partnerNames.join(", ") : "No partners"}
     </p>
   );
 
@@ -1163,9 +1196,7 @@ function ProjectHeader({
                 <h1 className="font-heading text-2xl font-bold text-foreground">
                   {project.name}
                 </h1>
-                <span className="text-[11px] px-2 py-0.5 rounded-full border border-border text-muted-foreground">
-                  {project.status}
-                </span>
+                <StatusBadge status={project.status} />
               </>
             )}
 
@@ -1846,6 +1877,21 @@ function DomainChips({
   );
 }
 
+function StatusBadge({ status }: { status: (typeof STATUSES)[number] }) {
+  const palette: Record<(typeof STATUSES)[number], string> = {
+    Active: "bg-accent-teal/15 text-accent-teal border-accent-teal/40",
+    Paused: "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/40",
+    Archived: "bg-muted/50 text-muted-foreground border-border",
+  };
+  return (
+    <span
+      className={`text-[11px] px-2 py-0.5 rounded-full border font-medium ${palette[status]}`}
+    >
+      {status}
+    </span>
+  );
+}
+
 function TeamSection({
   teams,
   canEdit,
@@ -1880,7 +1926,7 @@ function TeamSection({
               <div className="text-xs font-medium text-muted-foreground mb-1.5">
                 {team.code}
                 {team.code === teams[0].code && (
-                  <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-accent-teal/15 text-accent-teal">
+                  <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded border border-accent-teal/40 bg-accent-teal/15 text-accent-teal">
                     Current
                   </span>
                 )}
@@ -1889,8 +1935,9 @@ function TeamSection({
                 {team.members.map((m) => (
                   <span
                     key={m.assignmentId}
-                    className="text-xs px-2 py-1 rounded-md border border-border text-foreground inline-flex items-center gap-1"
+                    className="text-xs px-2 py-1 rounded-md border border-border text-foreground inline-flex items-center gap-1.5"
                   >
+                    <Avatar photoUrl={m.photoUrl} name={m.name} size="xs" />
                     {m.name}
                     <span className="text-muted-foreground">· {m.domain}</span>
                     {canEdit ? (
@@ -2054,6 +2101,13 @@ function OverviewTab({
         </section>
       )}
 
+      {/* Partner organizations funding this project. Core manages links. */}
+      <PartnersSection
+        partners={project.partners}
+        linkablePartnerOrgs={linkablePartnerOrgs}
+        canManage={canManagePartners}
+      />
+
       {/* Project details. Editable as one section; commits via intent=details
           which expects the full field set. Section-level Save submits and
           closes; Cancel reverts (the wrapper remounts the body which resets
@@ -2068,13 +2122,6 @@ function OverviewTab({
       <section className="bg-card border border-border rounded-lg p-4">
         <TeamSection teams={teams} canEdit={canEditAssignmentLevel} />
       </section>
-
-      {/* Partner organizations funding this project. Core manages links. */}
-      <PartnersSection
-        partners={project.partners}
-        linkablePartnerOrgs={linkablePartnerOrgs}
-        canManage={canManagePartners}
-      />
 
       {/* Documents — collab-doc pages; rows + Add open the doc as a split-screen
           tab beside the project (via the TabWorkspace shell). */}
@@ -2215,15 +2262,15 @@ function PartnersSection({
       ) : (
         <div className="flex flex-col divide-y divide-border">
           {partners.map((p) => (
-            <div key={p.id} className="py-2.5 flex items-start gap-3">
+            <div key={p.id} className="py-2.5 flex items-center gap-3">
               {p.org.logoUrl ? (
                 <img
                   src={p.org.logoUrl}
                   alt=""
-                  className="w-8 h-8 rounded object-contain bg-background border border-border flex-shrink-0 mt-0.5"
+                  className="w-8 h-8 rounded object-contain bg-background border border-border flex-shrink-0"
                 />
               ) : (
-                <div className="w-8 h-8 rounded bg-brand-tint text-dark-blue flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">
+                <div className="w-8 h-8 rounded bg-brand-tint text-dark-blue flex items-center justify-center text-xs font-bold flex-shrink-0">
                   {p.org.name.slice(0, 1)}
                 </div>
               )}
@@ -2232,20 +2279,20 @@ function PartnersSection({
                   {canManage ? (
                     <Link
                       to={`/partners/${p.org.id}`}
-                      className="text-sm font-medium text-foreground hover:underline"
+                      className="text-sm font-medium text-foreground hover:underline leading-none"
                     >
                       {p.org.name}
                     </Link>
                   ) : (
-                    <span className="text-sm font-medium text-foreground">
+                    <span className="text-sm font-medium text-foreground leading-none">
                       {p.org.name}
                     </span>
                   )}
                   <span
-                    className={`text-xs rounded-full px-2 py-0.5 ${
+                    className={`text-xs rounded-full px-2 py-0.5 border ${
                       p.active
-                        ? "bg-accent-teal/15 text-accent-teal"
-                        : "bg-muted text-muted-foreground"
+                        ? "bg-accent-teal/15 text-accent-teal border-accent-teal/40"
+                        : "bg-muted text-muted-foreground border-border"
                     }`}
                   >
                     {p.active ? "Active" : "Ended"}
@@ -2259,24 +2306,11 @@ function PartnersSection({
                   </div>
                 )}
               </div>
-              {canManage && p.active && (
-                <Form method="post">
-                  <input type="hidden" name="intent" value="partner-end" />
-                  <input type="hidden" name="projectPartnerId" value={p.id} />
-                  <button
-                    type="submit"
-                    className="text-xs text-muted-foreground hover:text-foreground transition flex-shrink-0"
-                    title="Sets an end date; keeps the history"
-                  >
-                    End
-                  </button>
-                </Form>
-              )}
               {canManage && (
                 <Form
                   method="post"
                   onSubmit={(e) => {
-                    if (!window.confirm(`Unlink ${p.org.name}? This deletes the partnership record — prefer "End" to keep history.`)) {
+                    if (!window.confirm(`Unlink ${p.org.name}? This permanently deletes the partnership record.`)) {
                       e.preventDefault();
                     }
                   }}
@@ -2285,7 +2319,7 @@ function PartnersSection({
                   <input type="hidden" name="projectPartnerId" value={p.id} />
                   <button
                     type="submit"
-                    className="text-xs text-destructive hover:underline flex-shrink-0 ml-2"
+                    className="text-xs text-destructive hover:underline flex-shrink-0"
                   >
                     Unlink
                   </button>
@@ -2315,6 +2349,20 @@ function DocumentsBlock({
   const revalidator = useRevalidator();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Folders default open so the (usually few) default folders' contents are
+  // visible without an extra click; new folders created this session are
+  // added here too (see createFolder).
+  const [expanded, setExpanded] = useState<Set<string>>(
+    () => new Set(documents.filter((d) => d.kind === "Folder").map((d) => d.id)),
+  );
+  function toggleExpanded(id: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   // Share/unshare a page with the project's partner org(s). Persisted via
   // its own API route; the badge state comes back through the loader.
@@ -2342,8 +2390,9 @@ function DocumentsBlock({
 
   // Add document: create an "Untitled" page immediately, then open it as a
   // split-screen tab beside the project. The title is renamed inline in the
-  // editor (auto-saves), so there's no separate title prompt first.
-  async function createDocument() {
+  // editor (auto-saves), so there's no separate title prompt first. When
+  // parentPageId is set, the document is nested under that folder.
+  async function createDocument(parentPageId?: string) {
     setBusy(true);
     setError(null);
     try {
@@ -2352,11 +2401,34 @@ function DocumentsBlock({
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title }),
+        body: JSON.stringify({ title, parentPageId }),
       });
       const b = (await res.json().catch(() => ({}))) as { id?: string; error?: string };
       if (!res.ok || !b.id) throw new Error(b.error ?? "Failed to create document");
       openDocumentTab(b.id, title);
+      revalidator.revalidate();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function createFolder() {
+    const title = window.prompt("Folder name");
+    if (!title || !title.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/documents`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: title.trim(), kind: "Folder" }),
+      });
+      const b = (await res.json().catch(() => ({}))) as { id?: string; error?: string };
+      if (!res.ok || !b.id) throw new Error(b.error ?? "Failed to create folder");
+      setExpanded((prev) => new Set(prev).add(b.id!));
       revalidator.revalidate();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");
@@ -2383,19 +2455,94 @@ function DocumentsBlock({
     }
   }
 
+  function DocRow({ doc, indent }: { doc: LoaderData["documents"][number]["children"][number]; indent: boolean }) {
+    return (
+      <div className={`py-2.5 flex flex-col gap-1.5 ${indent ? "pl-6" : ""}`}>
+        <div className="flex items-center justify-between gap-3 text-sm">
+          <button
+            type="button"
+            onClick={() => openDocumentTab(doc.id, doc.title)}
+            className="truncate text-left font-medium text-foreground hover:text-accent-coral"
+          >
+            {doc.title}
+          </button>
+          <div className="flex items-center gap-3 flex-shrink-0">
+            {doc.partnerVisible && !canEdit && (
+              <span
+                className="flex items-center gap-1 text-xs text-accent-teal"
+                title="Partners on this project can open and edit this page"
+              >
+                <Handshake className="w-3.5 h-3.5" /> Shared with partner
+              </span>
+            )}
+            {canEdit && (hasActivePartner || doc.partnerVisible) && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void togglePartnerVisible(doc.id, !doc.partnerVisible)}
+                title={
+                  doc.partnerVisible
+                    ? "Partners can open and edit this page — click to stop sharing"
+                    : "Share this page with the project's partner org"
+                }
+                className={`flex items-center gap-1 text-xs disabled:opacity-60 ${
+                  doc.partnerVisible
+                    ? "text-accent-teal hover:underline"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Handshake className="w-3.5 h-3.5" />
+                {doc.partnerVisible ? "Shared with partner" : "Share with partner"}
+              </button>
+            )}
+            {canEdit && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void deleteDocument(doc.id, doc.title)}
+                className="text-xs text-destructive hover:underline disabled:opacity-60"
+              >
+                Delete
+              </button>
+            )}
+          </div>
+        </div>
+        <TagPicker
+          targetType="doc"
+          targetId={doc.id}
+          applied={doc.tags}
+          allTags={allTags}
+          canEdit={canEdit}
+          canCreate={canEdit}
+          onChange={() => revalidator.revalidate()}
+        />
+      </div>
+    );
+  }
+
   return (
     <section className="bg-card border border-border rounded-lg p-4">
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-sm font-semibold text-foreground">Documents</h2>
         {canEdit && (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void createDocument()}
-            className="text-xs font-medium text-accent-coral hover:underline disabled:opacity-60"
-          >
-            {busy ? "Adding…" : "+ Add document"}
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void createFolder()}
+              className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground disabled:opacity-60"
+            >
+              <FolderPlus className="w-3.5 h-3.5" /> New folder
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void createDocument()}
+              className="text-xs font-medium text-accent-coral hover:underline disabled:opacity-60"
+            >
+              {busy ? "Adding…" : "+ Add document"}
+            </button>
+          </div>
         )}
       </div>
 
@@ -2409,68 +2556,71 @@ function DocumentsBlock({
         <p className="text-sm text-muted-foreground italic">No documents yet.</p>
       ) : (
         <div className="flex flex-col divide-y divide-border">
-          {documents.map((doc) => (
-            <div key={doc.id} className="py-2.5 flex flex-col gap-1.5">
-              <div className="flex items-center justify-between gap-3 text-sm">
-                <button
-                  type="button"
-                  onClick={() => openDocumentTab(doc.id, doc.title)}
-                  className="truncate text-left font-medium text-foreground hover:text-accent-coral"
-                >
-                  {doc.title}
-                </button>
-                <div className="flex items-center gap-3 flex-shrink-0">
-                  {doc.partnerVisible && !canEdit && (
-                    <span
-                      className="flex items-center gap-1 text-xs text-accent-teal"
-                      title="Partners on this project can open and edit this page"
-                    >
-                      <Handshake className="w-3.5 h-3.5" /> Shared with partner
-                    </span>
-                  )}
-                  {canEdit && (hasActivePartner || doc.partnerVisible) && (
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => void togglePartnerVisible(doc.id, !doc.partnerVisible)}
-                      title={
-                        doc.partnerVisible
-                          ? "Partners can open and edit this page — click to stop sharing"
-                          : "Share this page with the project's partner org"
-                      }
-                      className={`flex items-center gap-1 text-xs disabled:opacity-60 ${
-                        doc.partnerVisible
-                          ? "text-accent-teal hover:underline"
-                          : "text-muted-foreground hover:text-foreground"
-                      }`}
-                    >
-                      <Handshake className="w-3.5 h-3.5" />
-                      {doc.partnerVisible ? "Shared with partner" : "Share with partner"}
-                    </button>
-                  )}
+          {documents.map((doc) =>
+            doc.kind === "Folder" ? (
+              <div key={doc.id} className="py-2.5 flex flex-col gap-1">
+                <div className="flex items-center justify-between gap-3 text-sm">
+                  <button
+                    type="button"
+                    onClick={() => toggleExpanded(doc.id)}
+                    className="flex items-center gap-1.5 text-left font-medium text-foreground min-w-0"
+                  >
+                    {expanded.has(doc.id) ? (
+                      <ChevronDown className="w-3.5 h-3.5 flex-shrink-0 text-muted-foreground" />
+                    ) : (
+                      <ChevronRight className="w-3.5 h-3.5 flex-shrink-0 text-muted-foreground" />
+                    )}
+                    <Folder className="w-3.5 h-3.5 flex-shrink-0 text-muted-foreground" />
+                    <span className="truncate">{doc.title}</span>
+                    {doc.isSystem && (
+                      <span className="text-[10px] uppercase tracking-wide text-muted-foreground/70 flex-shrink-0">
+                        Default
+                      </span>
+                    )}
+                  </button>
                   {canEdit && (
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => void deleteDocument(doc.id, doc.title)}
-                      className="text-xs text-destructive hover:underline disabled:opacity-60"
-                    >
-                      Delete
-                    </button>
+                    <div className="flex items-center gap-3 flex-shrink-0">
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void createDocument(doc.id)}
+                        className="text-xs font-medium text-accent-coral hover:underline disabled:opacity-60"
+                      >
+                        + Add document
+                      </button>
+                      {!doc.isSystem && (
+                        <button
+                          type="button"
+                          disabled={busy || doc.children.length > 0}
+                          title={
+                            doc.children.length > 0
+                              ? "Move or delete the documents inside this folder first"
+                              : undefined
+                          }
+                          onClick={() => void deleteDocument(doc.id, doc.title)}
+                          className="text-xs text-destructive hover:underline disabled:opacity-60"
+                        >
+                          Delete
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
+                {expanded.has(doc.id) &&
+                  (doc.children.length === 0 ? (
+                    <p className="pl-6 text-xs text-muted-foreground italic">Empty</p>
+                  ) : (
+                    <div className="flex flex-col divide-y divide-border">
+                      {doc.children.map((child) => (
+                        <DocRow key={child.id} doc={child} indent />
+                      ))}
+                    </div>
+                  ))}
               </div>
-              <TagPicker
-                targetType="doc"
-                targetId={doc.id}
-                applied={doc.tags}
-                allTags={allTags}
-                canEdit={canEdit}
-                canCreate={canEdit}
-                onChange={() => revalidator.revalidate()}
-              />
-            </div>
-          ))}
+            ) : (
+              <DocRow key={doc.id} doc={doc} indent={false} />
+            ),
+          )}
         </div>
       )}
     </section>

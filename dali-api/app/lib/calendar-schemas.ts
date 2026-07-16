@@ -106,6 +106,37 @@ export const ToggleSubCalendarSchema = z.object({
   enabled: z.boolean(),
 });
 
+// Manual Timesheet-tab entries only — Meeting-sourced TimeEntry rows are
+// managed exclusively by the attendance-toggle route
+// (app/calendar/routes/api.scheduled-meetings.$id.attendance.ts).
+export const AddTimeEntrySchema = z.object({
+  intent: z.literal("add-time-entry"),
+  date: isoString,
+  hours: z.number().positive().max(24),
+  projectId: z.string().min(1).nullish(),
+  note: z.string().max(500).nullish(),
+  // Set when the entry was created by dragging on the Timesheet week grid;
+  // null for the plain date+hours form (no time-of-day picked).
+  startTime: isoString.nullish(),
+  endTime: isoString.nullish(),
+});
+
+export const UpdateTimeEntrySchema = z.object({
+  intent: z.literal("update-time-entry"),
+  id: z.string().min(1),
+  date: isoString.optional(),
+  hours: z.number().positive().max(24).optional(),
+  projectId: z.string().min(1).nullish(),
+  note: z.string().max(500).nullish(),
+  startTime: isoString.nullish(),
+  endTime: isoString.nullish(),
+});
+
+export const DeleteTimeEntrySchema = z.object({
+  intent: z.literal("delete-time-entry"),
+  id: z.string().min(1),
+});
+
 export const CalendarActionSchema = z.discriminatedUnion("intent", [
   SetWorkingSegmentsSchema,
   SeedWorkingHoursSchema,
@@ -117,6 +148,9 @@ export const CalendarActionSchema = z.discriminatedUnion("intent", [
   RemoveManualBlockSchema,
   RemoveCalendarLinkSchema,
   ToggleSubCalendarSchema,
+  AddTimeEntrySchema,
+  UpdateTimeEntrySchema,
+  DeleteTimeEntrySchema,
 ]);
 
 export type CalendarAction = z.infer<typeof CalendarActionSchema>;

@@ -271,7 +271,10 @@ export default [
   // Scheduled meetings
   route("api/scheduled-meetings", "calendar/routes/api.scheduled-meetings.ts"),
   route("api/scheduled-meetings/:id/cancel", "calendar/routes/api.scheduled-meetings.$id.cancel.ts"),
+  route("api/scheduled-meetings/:id/attendance", "calendar/routes/api.scheduled-meetings.$id.attendance.ts"),
   route("api/calendar/group-availability", "calendar/routes/api.calendar.group-availability.ts"),
+  // JobX browser extension export — see jobx-extension/README.md.
+  route("api/timesheets/export", "routes/api.timesheets.export.ts"),
 
   // Slack bot (webhook receivers; signature-verified, no auth middleware)
   route("api/slack/events", "slack/routes/api.slack.events.ts"),

@@ -29,7 +29,7 @@ const SECTIONS: Array<{
         Your week with external calendars overlaid. Set working hours and
         meeting buffers here, and use it to find mutual free time with
         other members. Linked accounts come from{" "}
-        <Link to="/settings/calendar" className="text-blue-700 underline">
+        <Link to="/settings/calendar" className="text-accent-teal hover:underline">
           Settings → Calendar
         </Link>
         .
@@ -45,7 +45,7 @@ const SECTIONS: Array<{
         docs, and files. The <em>Staffing</em> section under Projects is
         where intent-to-work, project bids, and level-up forms live during
         a staffing cycle —{" "}
-        <Link to="/help/staffing" className="text-blue-700 underline">
+        <Link to="/help/staffing" className="text-accent-teal hover:underline">
           read more
         </Link>
         .
@@ -72,7 +72,7 @@ const SECTIONS: Array<{
         The lab directory — current members, alumni (by class year), and
         groups. Click a member to see their profile, projects, and roles.
         Your own profile lives at{" "}
-        <Link to="/profile" className="text-blue-700 underline">
+        <Link to="/profile" className="text-accent-teal hover:underline">
           /profile
         </Link>
         .
@@ -117,7 +117,7 @@ export default function GettingStartedPage() {
   return (
     <main className="max-w-3xl">
       <h1 className="text-2xl font-semibold">Getting started</h1>
-      <p className="mt-2 text-sm text-zinc-600">
+      <p className="mt-2 text-sm text-muted-foreground">
         DALI OS is organized by what you're trying to do, not by your role.
         The left sidebar groups the lab's work into a few sections — here's
         what lives in each.
@@ -125,10 +125,10 @@ export default function GettingStartedPage() {
 
       <section className="mt-6">
         <h2 className="text-lg font-semibold">Tabs and panes</h2>
-        <p className="mt-2 text-sm text-zinc-700">
+        <p className="mt-2 text-sm text-foreground">
           Pages open in tabs inside the workspace. Open multiple at once,
           split your view to compare two pages side-by-side, and use{" "}
-          <Link to="/help/shortcuts" className="text-blue-700 underline">
+          <Link to="/help/shortcuts" className="text-accent-teal hover:underline">
             keyboard shortcuts
           </Link>{" "}
           to move between them.
@@ -141,14 +141,14 @@ export default function GettingStartedPage() {
           {SECTIONS.map((s) => (
             <li
               key={s.to}
-              className="rounded border border-zinc-200 bg-white p-4"
+              className="rounded border border-border bg-card p-4"
             >
               <h3 className="font-medium">
-                <Link to={s.to} className="text-blue-700 underline">
+                <Link to={s.to} className="text-accent-teal hover:underline">
                   {s.title}
                 </Link>
               </h3>
-              <p className="mt-1 text-sm text-zinc-700">{s.body}</p>
+              <p className="mt-1 text-sm text-foreground">{s.body}</p>
             </li>
           ))}
         </ul>
@@ -156,14 +156,14 @@ export default function GettingStartedPage() {
 
       <section className="mt-6">
         <h2 className="text-lg font-semibold">Settings and help</h2>
-        <p className="mt-2 text-sm text-zinc-700">
+        <p className="mt-2 text-sm text-foreground">
           The gear and question-mark icons in the bottom-left of the
           sidebar open{" "}
-          <Link to="/settings" className="text-blue-700 underline">
+          <Link to="/settings" className="text-accent-teal hover:underline">
             Settings
           </Link>{" "}
           and{" "}
-          <Link to="/help" className="text-blue-700 underline">
+          <Link to="/help" className="text-accent-teal hover:underline">
             Help
           </Link>
           . Settings is where you manage your calendar links, active

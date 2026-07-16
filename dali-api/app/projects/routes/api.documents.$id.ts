@@ -28,7 +28,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   const pageId = params.id!;
   const page = await prisma.page.findUnique({
     where: { id: pageId },
-    select: { id: true, workspaceType: true, workspaceId: true },
+    select: { id: true, workspaceType: true, workspaceId: true, systemKey: true, kind: true },
   });
   if (!page || page.workspaceType !== "Project" || !page.workspaceId) {
     return withCors(request, Response.json({ error: "Document not found" }, { status: 404 }));
@@ -38,6 +38,23 @@ export async function action({ request, params }: Route.ActionArgs) {
   const auth = gate.auth;
 
   if (request.method === "DELETE") {
+    if (page.systemKey) {
+      return withCors(
+        request,
+        Response.json({ error: "This default folder can't be deleted" }, { status: 400 }),
+      );
+    }
+    if (page.kind === "Folder") {
+      const childCount = await prisma.page.count({
+        where: { parentPageId: pageId, archivedAt: null },
+      });
+      if (childCount > 0) {
+        return withCors(
+          request,
+          Response.json({ error: "Move or delete the documents inside this folder first" }, { status: 400 }),
+        );
+      }
+    }
     await prisma.page.update({
       where: { id: pageId },
       data: { archivedAt: new Date() },
