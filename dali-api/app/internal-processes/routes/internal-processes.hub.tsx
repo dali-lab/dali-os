@@ -344,7 +344,7 @@ const WHITE = "#FFFFFF";
 
 export default function LabProcessesHub() {
   const { isCore: core, overrides } = useLoaderData<typeof loader>();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const [selectedWeek, setSelectedWeek] = useState<number | null>(() =>
     clampWeek(Number(searchParams.get("week"))),
   );
@@ -368,20 +368,26 @@ export default function LabProcessesHub() {
   const links = stop ? (stop.links ?? []).filter((l) => !l.coreOnly || core) : [];
 
   // Re-clicking the active week (or the card's close button) deselects it.
-  // Scroll position is preserved explicitly — the searchParams update is a
-  // navigation, and preventScrollReset alone doesn't reliably stop the
-  // browser from jumping to top when clicking a pin lower on this very tall
-  // road diagram.
+  //
+  // Deliberately bypasses react-router's setSearchParams here. This page
+  // mounts inside TabWorkspace's iframe, and react-router's own
+  // <ScrollRestoration> reacts to every navigation it drives — including
+  // "replace" ones — and was still snapping the scroll position to top on
+  // this very tall road diagram even with preventScrollReset (a rAF-timed
+  // manual scrollTo() lost that race too). Updating the URL via the raw
+  // History API instead never fires a react-router navigation event, so
+  // <ScrollRestoration> never engages and the browser has nothing to
+  // "restore" — scroll position simply never moves. Nothing else in this
+  // component reads `searchParams` reactively after mount, so this is safe.
   function selectWeek(week: number | null) {
-    const y = window.scrollY;
     const nextWeek = week !== null && week === selectedWeek ? null : week;
     setSelectedWeek(nextWeek);
     setContentTick((n) => n + 1);
     const next = new URLSearchParams(searchParams);
     if (nextWeek === null) next.delete("week");
     else next.set("week", String(nextWeek));
-    setSearchParams(next, { replace: true, preventScrollReset: true });
-    requestAnimationFrame(() => window.scrollTo(0, y));
+    const qs = next.toString();
+    window.history.replaceState(null, "", qs ? `?${qs}` : window.location.pathname);
   }
 
   return (
