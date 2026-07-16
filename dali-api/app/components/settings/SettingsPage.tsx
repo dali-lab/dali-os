@@ -15,12 +15,14 @@ import { CalendarSettingsBlock } from "~/components/settings/CalendarSettingsBlo
 import { SlackSettingsBlock } from "~/components/settings/SlackSettingsBlock";
 import { SessionsSettingsBlock } from "~/components/settings/SessionsSettingsBlock";
 import { ConnectedAppsSettingsBlock } from "~/components/settings/ConnectedAppsSettingsBlock";
+import { NotificationsSettingsBlock } from "~/components/settings/NotificationsSettingsBlock";
 import type { loadSettingsPageData } from "~/lib/settings-page.server";
 
 const SECTION_IDS = [
   "account",
   "calendar",
   "slack",
+  "notifications",
   "devices",
   "connected-apps",
 ] as const;
@@ -30,8 +32,7 @@ const NAV = [
   { id: "account", label: "Account", icon: UserCircle2 },
   { id: "calendar", label: "Calendar", icon: CalendarDays },
   { id: "slack", label: "Slack", icon: Slack },
-  // Full page of its own (the per-event channel matrix) — links out.
-  { id: "notifications", label: "Notifications", icon: Bell, to: "/settings/notifications" },
+  { id: "notifications", label: "Notifications", icon: Bell },
   { id: "devices", label: "Your devices", icon: KeyRound },
   { id: "connected-apps", label: "Connected apps", icon: Cable },
 ] as const;
@@ -124,6 +125,16 @@ export function SettingsPage({
             description="Connect Slack so you're added to project channels when staffed."
           >
             <SlackSettingsBlock {...data.slack} />
+          </SettingsBlock>
+        )}
+
+        {active === "notifications" && (
+          <SettingsBlock
+            id="notifications"
+            title="Notifications"
+            description="Choose how each kind of update reaches you — in-app, email or digest, Slack DM."
+          >
+            <NotificationsSettingsBlock {...data.notifications} />
           </SettingsBlock>
         )}
 
