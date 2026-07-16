@@ -8,7 +8,7 @@ import { isCore } from "~/lib/roles";
 import { labProcessesPills } from "~/internal-processes/labProcessesPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
 import { Modal, ModalHeader, ModalFooter } from "~/components/Modal";
-import { Pencil } from "lucide-react";
+import { Pencil, X } from "lucide-react";
 import { cn } from "~/lib/cn";
 
 export const handle = { areaPills: true };
@@ -345,7 +345,7 @@ const WHITE = "#FFFFFF";
 export default function LabProcessesHub() {
   const { isCore: core, overrides } = useLoaderData<typeof loader>();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [selectedWeek, setSelectedWeek] = useState(() =>
+  const [selectedWeek, setSelectedWeek] = useState<number | null>(() =>
     clampWeek(Number(searchParams.get("week"))),
   );
   const [contentTick, setContentTick] = useState(0);
@@ -357,20 +357,31 @@ export default function LabProcessesHub() {
   );
 
   const stop = useMemo(() => {
-    const base = WEEKS.find((w) => w.week === selectedWeek) ?? WEEKS[0]!;
+    if (selectedWeek === null) return null;
+    const base = WEEKS.find((w) => w.week === selectedWeek);
+    if (!base) return null;
     const override = overridesByWeek.get(base.week);
     return override
       ? { ...base, title: override.title, summary: override.summary, highlights: override.highlights }
       : base;
   }, [selectedWeek, overridesByWeek]);
-  const links = (stop.links ?? []).filter((l) => !l.coreOnly || core);
+  const links = stop ? (stop.links ?? []).filter((l) => !l.coreOnly || core) : [];
 
-  function selectWeek(week: number) {
-    setSelectedWeek(week);
+  // Re-clicking the active week (or the card's close button) deselects it.
+  // Scroll position is preserved explicitly — the searchParams update is a
+  // navigation, and preventScrollReset alone doesn't reliably stop the
+  // browser from jumping to top when clicking a pin lower on this very tall
+  // road diagram.
+  function selectWeek(week: number | null) {
+    const y = window.scrollY;
+    const nextWeek = week !== null && week === selectedWeek ? null : week;
+    setSelectedWeek(nextWeek);
     setContentTick((n) => n + 1);
     const next = new URLSearchParams(searchParams);
-    next.set("week", String(week));
+    if (nextWeek === null) next.delete("week");
+    else next.set("week", String(nextWeek));
     setSearchParams(next, { replace: true, preventScrollReset: true });
+    requestAnimationFrame(() => window.scrollTo(0, y));
   }
 
   return (
@@ -487,7 +498,7 @@ export default function LabProcessesHub() {
                   </span>
                 </button>
 
-                {active && (
+                {active && stop && (
                   <div
                     key={`${w.week}-${contentTick}`}
                     className="lp-content-card absolute z-30 w-[min(18rem,46vw)] rounded-xl p-3 shadow-[var(--shadow-2)] sm:w-[20rem] sm:p-4"
@@ -509,18 +520,30 @@ export default function LabProcessesHub() {
                       <h2 className="font-heading text-base font-bold sm:text-lg" style={{ color: NAVY }}>
                         {stop.title}
                       </h2>
-                      {core && (
+                      <div className="ml-auto flex items-center gap-0.5">
+                        {core && (
+                          <button
+                            type="button"
+                            onClick={() => setEditingWeek(true)}
+                            aria-label={`Edit week ${stop.week} content`}
+                            title="Edit week content"
+                            className="shrink-0 rounded-md p-1 text-current/60 hover:bg-black/5"
+                            style={{ color: NAVY }}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                         <button
                           type="button"
-                          onClick={() => setEditingWeek(true)}
-                          aria-label={`Edit week ${stop.week} content`}
-                          title="Edit week content"
-                          className="ml-auto shrink-0 rounded-md p-1 text-current/60 hover:bg-black/5"
+                          onClick={() => selectWeek(null)}
+                          aria-label="Close"
+                          title="Close"
+                          className="shrink-0 rounded-md p-1 text-current/60 hover:bg-black/5"
                           style={{ color: NAVY }}
                         >
-                          <Pencil className="h-3.5 w-3.5" />
+                          <X className="h-3.5 w-3.5" />
                         </button>
-                      )}
+                      </div>
                     </div>
                     <p className="mt-1.5 text-xs leading-relaxed sm:text-sm" style={{ color: "#404040" }}>
                       {stop.summary}
@@ -558,7 +581,7 @@ export default function LabProcessesHub() {
         </div>
       </section>
 
-      {core && editingWeek && (
+      {core && editingWeek && stop && (
         <WeekEditModal
           week={stop.week}
           title={stop.title}
