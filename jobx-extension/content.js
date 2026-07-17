@@ -29,15 +29,6 @@
     }
   }
 
-  // DALI origins to try, in order. The first that answers wins. Configurable via
-  // the popup (chrome.storage 'daliBase').
-  const DEFAULT_DALI_BASES = [
-    "http://localhost:3001",
-    "http://localhost:3002",
-    "http://localhost:5173",
-    "https://dali.dartmouth.edu",
-  ];
-
   // ── Detect the day-rows present on this page ──────────────────────────────
   function daysOnPage() {
     const set = new Set();
@@ -336,62 +327,31 @@
     return !!(store[PLAN_KEY] && store[PLAN_KEY].steps && store[PLAN_KEY].steps.length);
   }
 
-  // ── TEMP demo payload ─────────────────────────────────────────────────────
-  // Used only when storage flag `demoMode` is on (set it from the popup), so the
-  // extension can be tested before the DALI /api/timesheets/export endpoint
-  // exists. Remove once the backend is live. Dates are picked to land inside a
-  // typical open period; edit to match the period you're testing.
-  // `description` carries the calendar event title (what DALI will send as the
-  // note); projectLabel is the fallback.
-  // Reconstructed from your git commits on claude/staffing-reorder-cards across
-  // the May 24 – June 6 JobX pay period. Each day's window spans that day's first
-  // to last commit (an estimate — it undercounts work before the first commit and
-  // any uncommitted time; adjust in JobX). Notes summarize that day's commits.
-  const DEMO_PAYLOAD = {
-    hireLabel: "DALI Lab Mentor (demo)",
-    entries: [
-      { startAt: "2026-05-24T10:00:00", endAt: "2026-05-24T12:40:00", projectLabel: "DALI OS", description: "Calendar UX overhaul; form drafts + manual-blocks fixes; harden Rubrics e2e" },
-      { startAt: "2026-05-25T14:01:00", endAt: "2026-05-25T20:06:00", projectLabel: "DALI OS", description: "Project docs/files/tags/comments + collab export; staffing bid resolution; GitHub team finalize" },
-      { startAt: "2026-05-26T13:57:00", endAt: "2026-05-26T22:09:00", projectLabel: "DALI OS", description: "Domain page + staffing board UX; project-hub edits + scope popup; Level Up; rubric versioning WIP" },
-      { startAt: "2026-05-27T14:00:00", endAt: "2026-05-27T14:47:00", projectLabel: "DALI OS", description: "Collapsible availability sidebar; preserve term across bid-detail nav" },
-      { startAt: "2026-05-29T15:30:00", endAt: "2026-05-29T16:33:00", projectLabel: "DALI OS", description: "Staffing: one row per ranked bid, never gated by eligibility" },
-      { startAt: "2026-06-01T17:46:00", endAt: "2026-06-01T23:50:00", projectLabel: "DALI OS", description: "Staffing one bid row per project + scrollable columns; consolidate onboarding email" },
-      { startAt: "2026-06-02T22:55:00", endAt: "2026-06-02T23:40:00", projectLabel: "DALI OS", description: "Onboarding profile fields; onboarding email + login routing fixes" },
-      // June 3 — two blocks
-      { startAt: "2026-06-03T17:00:00", endAt: "2026-06-03T18:00:00", projectLabel: "DALI OS", description: "Gmail-account provisioning on finalize; non-bidder add; onboarding board" },
-      { startAt: "2026-06-03T20:00:00", endAt: "2026-06-03T23:59:00", projectLabel: "DALI OS", description: "Onboarding board + email polish; duplicate-decision fix" },
-      // June 4 — two blocks
-      { startAt: "2026-06-04T00:00:00", endAt: "2026-06-04T01:00:00", projectLabel: "DALI OS", description: "Staffing board: DragOverlay + drag-reorder" },
-      { startAt: "2026-06-04T09:00:00", endAt: "2026-06-04T13:00:00", projectLabel: "DALI OS", description: "Staffing board: domain filter, non-bidder assign; Slack connect; dev merges" },
-    ],
-  };
-
   // ── Fetch timesheet sections from DALI ─────────────────────────────────────
   // The DALI Timesheet tab stores sections per hire; this pulls one hire's
   // sections in the extension payload shape. The optional stored `daliHireKey`
-  // selects which hire (else DALI returns the primary hire). Demo mode bypasses
-  // the network with a built-in sample payload.
+  // selects which hire (else DALI returns the primary hire). Always hits the
+  // `daliBase` configured in the popup — no guessing across a hardcoded list
+  // of candidate origins, since that risked silently trying the wrong host.
   async function fetchFromDali() {
-    const { daliBase, daliHireKey, demoMode } = await chrome.storage.sync.get(["daliBase", "daliHireKey", "demoMode"]);
-    if (demoMode) return DEMO_PAYLOAD;
-    const bases = daliBase ? [daliBase] : DEFAULT_DALI_BASES;
-    const qs = daliHireKey ? `?hire=${encodeURIComponent(daliHireKey)}` : "";
-    let lastErr = null;
-    for (const base of bases) {
-      try {
-        const res = await fetch(base.replace(/\/$/, "") + "/api/timesheets/export" + qs, {
-          credentials: "include",
-          headers: { Accept: "application/json" },
-        });
-        if (res.status === 401) { lastErr = `Not logged into DALI at ${base}.`; continue; }
-        if (res.status === 404) { lastErr = `No hires/sections at ${base}.`; continue; }
-        if (!res.ok) { lastErr = `DALI ${base} returned ${res.status}.`; continue; }
-        return await res.json();
-      } catch (err) {
-        lastErr = `Could not reach DALI at ${base} (${err.message}).`;
-      }
+    const { daliBase, daliHireKey } = await chrome.storage.sync.get(["daliBase", "daliHireKey"]);
+    if (!daliBase) {
+      throw new Error("Set a DALI base URL in the extension popup first.");
     }
-    throw new Error(lastErr || "Could not fetch from DALI.");
+    const qs = daliHireKey ? `?hire=${encodeURIComponent(daliHireKey)}` : "";
+    let res;
+    try {
+      res = await fetch(daliBase.replace(/\/$/, "") + "/api/timesheets/export" + qs, {
+        credentials: "include",
+        headers: { Accept: "application/json" },
+      });
+    } catch (err) {
+      throw new Error(`Could not reach DALI at ${daliBase} (${err.message}).`);
+    }
+    if (res.status === 401) throw new Error(`Not logged into DALI at ${daliBase}.`);
+    if (res.status === 404) throw new Error(`No hires/sections at ${daliBase}.`);
+    if (!res.ok) throw new Error(`DALI ${daliBase} returned ${res.status}.`);
+    return await res.json();
   }
 
   // ── UI: floating buttons + toast ──────────────────────────────────────────

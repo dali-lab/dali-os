@@ -56,9 +56,9 @@ is a Project the caller has logged Timesheet-tab hours against (or
 1. Chrome → `chrome://extensions`
 2. Toggle **Developer mode** (top-right).
 3. **Load unpacked** → select this `jobx-extension/` folder.
-4. Click the extension's icon → set **DALI base URL** if needed
-   (`http://localhost:5173` for local dev; the DALI domain in prod). Blank =
-   auto-try localhost then the DALI domain.
+4. Click the extension's icon → set **DALI base URL** (required):
+   `http://localhost:3001` for local dev, `https://os.dali.dartmouth.edu` in
+   prod.
 
 ## Use
 
