@@ -9,11 +9,18 @@ import {
   MIN_QUERY_LENGTH,
   rankResults,
   type SearchResult,
+  type SearchResultType,
 } from "~/lib/search";
 
 // Server side of the command-palette search: permission-scoped Prisma queries
-// that feed the pure ranking in lib/search.ts. Each category is scoped to what
-// the caller may already reach — see the per-category notes below.
+// that feed the pure ranking in lib/search.ts. Each category is a small helper
+// gated to what the caller may already reach; runSearch fans them out and
+// concatenates. Matching is case-insensitive substring, ranked + capped per
+// category in the pure layer.
+
+type Like = { contains: string; mode: "insensitive" };
+const RAW_TAKE = 40; // over-fetch per category, then rank+cap in JS.
+const NONE = Promise.resolve<SearchResult[]>([]);
 
 export async function runSearch(opts: {
   userId: string;
@@ -26,116 +33,211 @@ export async function runSearch(opts: {
   // nothing to surface. The palette itself only mounts in the member shell.
   if (!opts.roles.isLabMember) return [];
 
-  const like = { contains: q, mode: "insensitive" as const };
-  // Over-fetch a bounded set per category, then rank+cap in JS. At lab scale a
-  // 2+ char substring query returns few rows; the cap bounds payload + render.
-  const RAW_TAKE = 40;
+  const roles = opts.roles;
+  const like: Like = { contains: q, mode: "insensitive" };
 
-  const [people, projects, offerings, partners, documents] = await Promise.all([
-    prisma.user.findMany({
-      where: {
-        ...LAB_MEMBER_WHERE,
-        OR: [{ firstName: like }, { lastName: like }, { daliEmail: like }, { dartmouthEmail: like }],
-      },
-      select: { id: true, firstName: true, lastName: true, daliEmail: true, dartmouthEmail: true },
-      take: RAW_TAKE,
-    }),
-    // Archived projects are effectively retired — keep them out of quick-jump.
-    prisma.project.findMany({
-      where: { status: { not: "Archived" }, name: like },
-      select: { id: true, name: true },
-      take: RAW_TAKE,
-    }),
-    // Only Published offerings are member-visible; Draft/Archived stay hidden.
-    prisma.educationOffering.findMany({
-      where: { status: "Published", title: like },
-      select: { id: true, title: true },
-      take: RAW_TAKE,
-    }),
-    prisma.partnerOrg.findMany({
-      where: { name: like },
-      select: { id: true, name: true },
-      take: RAW_TAKE,
-    }),
-    // Any authenticated member may already open any live page by URL (only
-    // editing is gated), so title search matches that existing view surface.
-    prisma.page.findMany({
-      where: { archivedAt: null, title: like },
-      select: { id: true, title: true },
-      take: RAW_TAKE,
-    }),
-  ]);
+  const tasks: Promise<SearchResult[]>[] = [
+    searchPeople(q, like),
+    searchProjects(q, like),
+    searchOfferings(q, like),
+    searchPartnerOrgs(q, like),
+    searchDocuments(q, like),
+    searchApplications(opts.userId, roles, q, like),
+    // Forms & folders — Forms area gate.
+    roles.canViewForms ? searchForms(q, like) : NONE,
+    roles.canViewForms ? searchFormFolders(q, like) : NONE,
+    // Hiring library (reusable artifacts) — Core or Domain Lead, mirroring the
+    // library routes. Names aren't sensitive; the routes already gate.
+    roles.isCore || roles.isDomainLead ? searchChallenges(q, like) : NONE,
+    roles.isCore || roles.isDomainLead ? searchRubrics(q, like) : NONE,
+    roles.isCore || roles.isDomainLead ? searchAgreements(q, like) : NONE,
+    // Core-only artifacts.
+    roles.isCore ? searchEmailTemplates(q, like) : NONE,
+    roles.isCore ? searchCycles(q, like) : NONE,
+    // Partner applications — Core/Admin (canViewStaffing), like the internal view.
+    roles.canViewStaffing ? searchPartnerApplications(q, like) : NONE,
+  ];
 
-  const results: SearchResult[] = [];
-
-  results.push(
-    ...rankResults(
-      people.map((u) => {
-        const name = `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || "Member";
-        const email = u.daliEmail ?? u.dartmouthEmail ?? undefined;
-        return {
-          result: { type: "person", id: u.id, title: name, subtitle: email, url: buildUrl.person(u.id) },
-          text: [name, email ?? ""],
-        };
-      }),
-      q,
-    ),
-  );
-
-  results.push(
-    ...rankResults(
-      projects.map((p) => ({
-        result: { type: "project", id: p.id, title: p.name, subtitle: "Project", url: buildUrl.project(p.id) },
-        text: [p.name],
-      })),
-      q,
-    ),
-  );
-
-  results.push(
-    ...rankResults(
-      offerings.map((o) => ({
-        result: { type: "education", id: o.id, title: o.title, subtitle: "Education", url: buildUrl.education(o.id) },
-        text: [o.title],
-      })),
-      q,
-    ),
-  );
-
-  results.push(
-    ...rankResults(
-      partners.map((o) => ({
-        result: { type: "partner", id: o.id, title: o.name, subtitle: "Partner", url: buildUrl.partner(o.id) },
-        text: [o.name],
-      })),
-      q,
-    ),
-  );
-
-  results.push(
-    ...rankResults(
-      documents.map((d) => ({
-        result: { type: "document", id: d.id, title: d.title || "Untitled", subtitle: "Document", url: buildUrl.document(d.id) },
-        text: [d.title || ""],
-      })),
-      q,
-    ),
-  );
-
-  results.push(...(await searchApplications(opts.userId, opts.roles, q, like)));
-
-  return results;
+  return (await Promise.all(tasks)).flat();
 }
 
-// Role-gated applicant search — kept separate because its visibility rules are
-// the security-critical part. Mirrors app/hiring/routes/applications.tsx and
-// additionally requires the cycle's confidentiality agreement to be signed
-// before any applicant name is disclosed (stricter than the list view).
+// Map a set of {id, label} rows of a single type to ranked results. Used by the
+// simple name/title categories; richer ones (people, partner apps) inline it.
+function simpleResults(
+  type: SearchResultType,
+  subtitle: string,
+  rows: { id: string; label: string | null }[],
+  q: string,
+): SearchResult[] {
+  return rankResults(
+    rows.map((r) => ({
+      result: { type, id: r.id, title: r.label || "Untitled", subtitle, url: buildUrl[type](r.id) },
+      text: [r.label || ""],
+    })),
+    q,
+  );
+}
+
+async function searchPeople(q: string, like: Like): Promise<SearchResult[]> {
+  const rows = await prisma.user.findMany({
+    where: {
+      ...LAB_MEMBER_WHERE,
+      OR: [{ firstName: like }, { lastName: like }, { daliEmail: like }, { dartmouthEmail: like }],
+    },
+    select: { id: true, firstName: true, lastName: true, daliEmail: true, dartmouthEmail: true },
+    take: RAW_TAKE,
+  });
+  return rankResults(
+    rows.map((u) => {
+      const name = `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || "Member";
+      const email = u.daliEmail ?? u.dartmouthEmail ?? undefined;
+      return {
+        result: { type: "person", id: u.id, title: name, subtitle: email, url: buildUrl.person(u.id) },
+        text: [name, email ?? ""],
+      };
+    }),
+    q,
+  );
+}
+
+async function searchProjects(q: string, like: Like): Promise<SearchResult[]> {
+  // Archived projects are effectively retired — keep them out of quick-jump.
+  const rows = await prisma.project.findMany({
+    where: { status: { not: "Archived" }, name: like },
+    select: { id: true, name: true },
+    take: RAW_TAKE,
+  });
+  return simpleResults("project", "Project", rows.map((r) => ({ id: r.id, label: r.name })), q);
+}
+
+async function searchOfferings(q: string, like: Like): Promise<SearchResult[]> {
+  // Only Published offerings are member-visible; Draft/Archived stay hidden.
+  const rows = await prisma.educationOffering.findMany({
+    where: { status: "Published", title: like },
+    select: { id: true, title: true },
+    take: RAW_TAKE,
+  });
+  return simpleResults("education", "Education", rows.map((r) => ({ id: r.id, label: r.title })), q);
+}
+
+async function searchPartnerOrgs(q: string, like: Like): Promise<SearchResult[]> {
+  const rows = await prisma.partnerOrg.findMany({
+    where: { name: like },
+    select: { id: true, name: true },
+    take: RAW_TAKE,
+  });
+  return simpleResults("partner", "Partner", rows.map((r) => ({ id: r.id, label: r.name })), q);
+}
+
+async function searchDocuments(q: string, like: Like): Promise<SearchResult[]> {
+  // Any authenticated member may already open any live page by URL (only
+  // editing is gated), so title search matches that existing view surface.
+  const rows = await prisma.page.findMany({
+    where: { archivedAt: null, title: like },
+    select: { id: true, title: true },
+    take: RAW_TAKE,
+  });
+  return simpleResults("document", "Document", rows.map((r) => ({ id: r.id, label: r.title })), q);
+}
+
+async function searchForms(q: string, like: Like): Promise<SearchResult[]> {
+  const rows = await prisma.form.findMany({
+    where: { name: like },
+    select: { id: true, name: true },
+    take: RAW_TAKE,
+  });
+  return simpleResults("form", "Form", rows.map((r) => ({ id: r.id, label: r.name })), q);
+}
+
+async function searchFormFolders(q: string, like: Like): Promise<SearchResult[]> {
+  const rows = await prisma.formFolder.findMany({
+    where: { name: like },
+    select: { id: true, name: true },
+    take: RAW_TAKE,
+  });
+  return simpleResults("formFolder", "Folder", rows.map((r) => ({ id: r.id, label: r.name })), q);
+}
+
+async function searchChallenges(q: string, like: Like): Promise<SearchResult[]> {
+  const rows = await prisma.challenge.findMany({
+    where: { name: like },
+    select: { id: true, name: true },
+    take: RAW_TAKE,
+  });
+  return simpleResults("challenge", "Challenge", rows.map((r) => ({ id: r.id, label: r.name })), q);
+}
+
+async function searchRubrics(q: string, like: Like): Promise<SearchResult[]> {
+  const rows = await prisma.rubric.findMany({
+    where: { name: like },
+    select: { id: true, name: true },
+    take: RAW_TAKE,
+  });
+  return simpleResults("rubric", "Rubric", rows.map((r) => ({ id: r.id, label: r.name })), q);
+}
+
+async function searchAgreements(q: string, like: Like): Promise<SearchResult[]> {
+  const rows = await prisma.confidentialityAgreement.findMany({
+    where: { name: like },
+    select: { id: true, name: true },
+    take: RAW_TAKE,
+  });
+  return simpleResults(
+    "confidentialityAgreement",
+    "Confidentiality agreement",
+    rows.map((r) => ({ id: r.id, label: r.name })),
+    q,
+  );
+}
+
+async function searchEmailTemplates(q: string, like: Like): Promise<SearchResult[]> {
+  const rows = await prisma.emailTemplate.findMany({
+    where: { name: like },
+    select: { id: true, name: true },
+    take: RAW_TAKE,
+  });
+  return simpleResults("emailTemplate", "Email template", rows.map((r) => ({ id: r.id, label: r.name })), q);
+}
+
+async function searchCycles(q: string, like: Like): Promise<SearchResult[]> {
+  const rows = await prisma.applicationCycle.findMany({
+    where: { name: like },
+    select: { id: true, name: true },
+    take: RAW_TAKE,
+  });
+  return simpleResults("cycle", "Hiring cycle", rows.map((r) => ({ id: r.id, label: r.name })), q);
+}
+
+async function searchPartnerApplications(q: string, like: Like): Promise<SearchResult[]> {
+  const rows = await prisma.partnerApplication.findMany({
+    where: { title: like },
+    select: { id: true, title: true, partnerOrg: { select: { name: true } } },
+    take: RAW_TAKE,
+  });
+  return rankResults(
+    rows.map((r) => ({
+      result: {
+        type: "partnerApplication" as const,
+        id: r.id,
+        title: r.title || "Untitled",
+        subtitle: r.partnerOrg?.name ?? "Partner application",
+        url: buildUrl.partnerApplication(r.id),
+      },
+      text: [r.title || ""],
+    })),
+    q,
+  );
+}
+
+// Role-gated applicant search — the security-critical part. Mirrors
+// app/hiring/routes/applications.tsx and additionally requires the cycle's
+// confidentiality agreement to be signed before any applicant name is disclosed
+// (stricter than the list view).
 async function searchApplications(
   userId: string,
   roles: UserRoles,
   q: string,
-  like: { contains: string; mode: "insensitive" },
+  like: Like,
 ): Promise<SearchResult[]> {
   const reviewerRows = await prisma.cycleReviewer.findMany({
     where: { userId },
@@ -189,7 +291,7 @@ async function searchApplications(
       challengeVersion: { select: { domain: { select: { displayName: true } } } },
       application: { select: { user: { select: { firstName: true, lastName: true } } } },
     },
-    take: 40,
+    take: RAW_TAKE,
   });
 
   return rankResults(

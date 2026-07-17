@@ -9,7 +9,15 @@ export type SearchResultType =
   | "education"
   | "partner"
   | "document"
-  | "application";
+  | "application"
+  | "form"
+  | "formFolder"
+  | "challenge"
+  | "rubric"
+  | "emailTemplate"
+  | "confidentialityAgreement"
+  | "partnerApplication"
+  | "cycle";
 
 export interface SearchResult {
   type: SearchResultType;
@@ -32,6 +40,15 @@ export const buildUrl: Record<SearchResultType, (id: string) => string> = {
   partner: (id) => `/partners/${id}`,
   document: (id) => `/documents/${id}`,
   application: (id) => `/hiring/applications/${id}`,
+  form: (id) => `/forms/edit/${id}`,
+  formFolder: (id) => `/forms/${id}`,
+  challenge: (id) => `/hiring/challenges/${id}`,
+  rubric: (id) => `/hiring/rubrics/${id}`,
+  // /hiring/emails/:id just redirects here — link straight to the canonical page.
+  emailTemplate: (id) => `/admin-console/email-templates/${id}`,
+  confidentialityAgreement: (id) => `/hiring/confidentiality-agreements/${id}`,
+  partnerApplication: (id) => `/partners/applications/${id}`,
+  cycle: (id) => `/hiring/lead/cycle/${id}`,
 };
 
 // Lower is better; null means no match. exact(0) > prefix(1) > word-start(2) >

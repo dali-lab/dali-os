@@ -8,6 +8,7 @@ import {
   ClipboardList,
   Briefcase,
   FolderKanban,
+  Folder,
   Users2,
   UsersRound,
   Handshake,
@@ -17,6 +18,11 @@ import {
   HelpCircle,
   Heart,
   FileText,
+  FileQuestion,
+  ClipboardCheck,
+  Mail,
+  ShieldCheck,
+  CalendarRange,
   PanelTop,
   Square,
   Compass,
@@ -57,23 +63,38 @@ interface PaletteItem {
   action: PaletteAction;
 }
 
-const TYPE_ORDER: SearchResultType[] = [
-  "person",
-  "project",
-  "education",
-  "partner",
-  "document",
-  "application",
-];
-
-const TYPE_META: Record<SearchResultType, { label: string; icon: LucideIcon }> = {
-  person: { label: "People", icon: UsersRound },
-  project: { label: "Projects", icon: FolderKanban },
-  education: { label: "Education", icon: GraduationCap },
-  partner: { label: "Partners", icon: Handshake },
-  document: { label: "Documents", icon: FileText },
-  application: { label: "Applications", icon: Briefcase },
+// Each result type maps to an icon and a display section. Multiple types can
+// share a section (forms + folders, or the hiring-library artifacts) so the
+// palette doesn't sprout one section per entity kind.
+const TYPE_META: Record<SearchResultType, { icon: LucideIcon; section: string }> = {
+  person: { icon: UsersRound, section: "People" },
+  project: { icon: FolderKanban, section: "Projects" },
+  education: { icon: GraduationCap, section: "Education" },
+  partner: { icon: Handshake, section: "Partners" },
+  document: { icon: FileText, section: "Documents" },
+  application: { icon: Briefcase, section: "Applicants" },
+  form: { icon: ClipboardList, section: "Forms" },
+  formFolder: { icon: Folder, section: "Forms" },
+  challenge: { icon: FileQuestion, section: "Hiring library" },
+  rubric: { icon: ClipboardCheck, section: "Hiring library" },
+  emailTemplate: { icon: Mail, section: "Hiring library" },
+  confidentialityAgreement: { icon: ShieldCheck, section: "Hiring library" },
+  cycle: { icon: CalendarRange, section: "Hiring cycles" },
+  partnerApplication: { icon: Handshake, section: "Partner applications" },
 };
+
+const SECTION_ORDER = [
+  "People",
+  "Projects",
+  "Education",
+  "Partners",
+  "Documents",
+  "Applicants",
+  "Forms",
+  "Hiring library",
+  "Hiring cycles",
+  "Partner applications",
+];
 
 export function CommandPalette({ open, onClose, tabless, roles, onOpen }: CommandPaletteProps) {
   const [query, setQuery] = useState("");
@@ -179,11 +200,11 @@ export function CommandPalette({ open, onClose, tabless, roles, onOpen }: Comman
     if (staticSections.nav.length) out.push({ key: "nav", label: "Go to", items: staticSections.nav });
     if (staticSections.commands.length)
       out.push({ key: "cmd", label: "Commands", items: staticSections.commands });
-    for (const type of TYPE_ORDER) {
+    for (const section of SECTION_ORDER) {
       const items = results
-        .filter((r) => r.type === type)
+        .filter((r) => TYPE_META[r.type].section === section)
         .map((r) => resultItem(r));
-      if (items.length) out.push({ key: type, label: TYPE_META[type].label, items });
+      if (items.length) out.push({ key: section, label: section, items });
     }
     return out;
   }, [staticSections, results]);
