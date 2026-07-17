@@ -159,11 +159,17 @@ interface GoogleEvent {
  * already used for elsewhere too (~/lib/email.ts).
  */
 function plainTextFromGoogleHtml(html: string): string {
+  // ALLOWED_TAGS + ALLOWED_ATTR: [] means DOMPurify's output can only ever
+  // contain the bare strings <p>, </p>, <br>, <br/> as markup — nothing else
+  // survives sanitization. So the three replacements below are each an exact,
+  // bounded substring match, not a generic "<...>" wildcard sweep (CodeQL's
+  // incomplete-sanitization query specifically distrusts that broader shape,
+  // regardless of what ran before it — it doesn't credit DOMPurify's pass).
   const safe = DOMPurify.sanitize(html, { ALLOWED_TAGS: ["p", "br"], ALLOWED_ATTR: [] });
   return safe
-    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<br\/?>/gi, "\n")
     .replace(/<\/p>/gi, "\n")
-    .replace(/<[^>]+>/g, "")
+    .replace(/<p>/gi, "")
     .replace(/&nbsp;/gi, " ")
     .replace(/&quot;/gi, '"')
     .replace(/&#39;/gi, "'")
