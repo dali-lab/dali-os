@@ -51,6 +51,7 @@ export default [
     route("admin-console/members", "admin-console/routes/admin-console.members.tsx"),
     route("admin-console/domains", "admin-console/routes/admin-console.domains.tsx"),
     route("admin-console/announcements", "admin-console/routes/admin-console.announcements.tsx"),
+    route("admin-console/attendance", "admin-console/routes/admin-console.attendance.tsx"),
     route("admin-console/activity", "admin-console/routes/admin-console.activity.tsx"),
     route("admin-console/analytics", "admin-console/routes/admin-console.analytics.tsx"),
     route("admin-console/payroll-export", "admin-console/routes/admin-console.payroll-export.tsx"),

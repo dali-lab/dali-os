@@ -156,14 +156,14 @@ export async function createScheduledMeeting(
     }
   }
 
-  // MeetingAttendance fan-out only needs a meetingType — a project-less
-  // all-lab event (e.g. attendanceMode: SelfCheckIn on a scopeType: Group
-  // meeting) still gets attendance rows for every participant + organizer.
-  // Note-page creation branches on whether there's a project: project-scoped
-  // meetings get a Page under the project's shared documents (optionally
-  // nested in the Team/Partner meeting-notes folder); project-less meetings
-  // get a Lab-workspace page instead, so there's still somewhere to host the
-  // QR code / AttendanceChecklist.
+  // MeetingAttendance fan-out follows the meeting's participant scope only
+  // (plus the organizer) — never the whole lab. A project-less meeting still
+  // only invites whoever was listed; pick a Term group in Participants if you
+  // actually want every current-term member. Note-page creation branches on
+  // whether there's a project: project-scoped meetings get a Page under the
+  // project's shared documents (optionally nested in the Team/Partner
+  // meeting-notes folder); project-less meetings get a Lab-workspace page
+  // instead, so there's still somewhere to host the QR / AttendanceChecklist.
   let notePageId: string | null = null;
   if (input.meetingType) {
     const label =

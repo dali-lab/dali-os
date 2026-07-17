@@ -13,6 +13,15 @@ export type PartnerProjectSprint = {
   open: number;
 };
 
+export type PartnerProjectEpic = {
+  id: string;
+  title: string;
+  status: "Backlog" | "Open" | "InProgress" | "Done" | "Cancelled";
+  startsAt: string | null;
+  endsAt: string | null;
+  sprints: PartnerProjectSprint[];
+};
+
 export type PartnerProjectViewData = {
   project: {
     id: string;
@@ -24,7 +33,10 @@ export type PartnerProjectViewData = {
   partnerSince: string | null;
   currentTermCode: string | null;
   team: { name: string; domains: string[] }[];
-  sprints: PartnerProjectSprint[];
+  // Current-work hierarchy: epic cards first, with their in-flight sprints
+  // nested under each. Sprints with no epic sit in ungroupedSprints.
+  epics: PartnerProjectEpic[];
+  ungroupedSprints: PartnerProjectSprint[];
   nextSprint: { name: string; startsAt: string; endsAt: string } | null;
   recentlyDone: {
     id: string;
@@ -40,7 +52,7 @@ export type PartnerProjectViewData = {
   }[];
 };
 
-// The whole partner read-surface for a project: current sprints, roster,
+// The whole partner read-surface for a project: current epics/sprints, roster,
 // recently-closed tasks, and partner-shared docs. Shared by the real partner
 // portal (partner.projects.$id.tsx, scoped to the signed-in partner's org)
 // and the in-app preview any signed-in member can open from the project page
@@ -97,7 +109,23 @@ export async function loadPartnerProjectView(
     prisma.sprint.findMany({
       where: { projectId: project.id, status: "Active" },
       orderBy: { startsAt: "asc" },
-      select: { id: true, name: true, startsAt: true, endsAt: true },
+      select: {
+        id: true,
+        name: true,
+        startsAt: true,
+        endsAt: true,
+        epicId: true,
+        epic: {
+          select: {
+            id: true,
+            title: true,
+            status: true,
+            startsAt: true,
+            endsAt: true,
+            position: true,
+          },
+        },
+      },
     }),
     prisma.sprint.findFirst({
       where: { projectId: project.id, status: "Planned" },
@@ -107,7 +135,23 @@ export async function loadPartnerProjectView(
     prisma.sprint.findFirst({
       where: { projectId: project.id, status: "Closed" },
       orderBy: { endsAt: "desc" },
-      select: { id: true, name: true, startsAt: true, endsAt: true },
+      select: {
+        id: true,
+        name: true,
+        startsAt: true,
+        endsAt: true,
+        epicId: true,
+        epic: {
+          select: {
+            id: true,
+            title: true,
+            status: true,
+            startsAt: true,
+            endsAt: true,
+            position: true,
+          },
+        },
+      },
     }),
     prisma.task.findMany({
       where: { projectId: project.id, status: "Done" },
@@ -150,7 +194,9 @@ export async function loadPartnerProjectView(
       })
     : [];
 
-  const sprints: PartnerProjectSprint[] = summarySprints.map((s) => {
+  function toSprintCard(
+    s: (typeof summarySprints)[number],
+  ): PartnerProjectSprint {
     const mine = counts.filter((c) => c.sprintId === s.id);
     const total = mine.reduce((sum, c) => sum + c._count._all, 0);
     const done = mine
@@ -168,7 +214,39 @@ export async function loadPartnerProjectView(
       done,
       open: Math.max(0, total - cancelled - done),
     };
-  });
+  }
+
+  // Group under epics (ordered by epic.position). Sprints with no epic stay
+  // in ungroupedSprints so they still surface on the partner view.
+  const epicMap = new Map<
+    string,
+    PartnerProjectEpic & { position: number }
+  >();
+  const ungroupedSprints: PartnerProjectSprint[] = [];
+  for (const s of summarySprints) {
+    const card = toSprintCard(s);
+    if (!s.epic) {
+      ungroupedSprints.push(card);
+      continue;
+    }
+    const existing = epicMap.get(s.epic.id);
+    if (existing) {
+      existing.sprints.push(card);
+    } else {
+      epicMap.set(s.epic.id, {
+        id: s.epic.id,
+        title: s.epic.title,
+        status: s.epic.status,
+        startsAt: s.epic.startsAt?.toISOString() ?? null,
+        endsAt: s.epic.endsAt?.toISOString() ?? null,
+        sprints: [card],
+        position: s.epic.position,
+      });
+    }
+  }
+  const epics: PartnerProjectEpic[] = [...epicMap.values()]
+    .sort((a, b) => a.position - b.position || a.title.localeCompare(b.title))
+    .map(({ position: _position, ...epic }) => epic);
 
   // Dedupe the roster: one row per person, domains joined.
   const roster = new Map<string, { name: string; domains: Set<string> }>();
@@ -197,7 +275,8 @@ export async function loadPartnerProjectView(
       name: r.name,
       domains: [...r.domains].sort(),
     })),
-    sprints,
+    epics,
+    ungroupedSprints,
     nextSprint: plannedSprint
       ? {
           name: plannedSprint.name,

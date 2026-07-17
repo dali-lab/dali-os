@@ -1,6 +1,7 @@
 import {
   Activity,
   BarChart3,
+  ClipboardCheck,
   Globe,
   LayoutGrid,
   Megaphone,
@@ -11,9 +12,8 @@ import {
 import type { AreaPill } from "~/components/AreaPillNav";
 
 // The Admin area's tools (the sidebar entry is childless and lands on the
-// hub). Every admin page is already Core-gated, so the first four pills
-// always show; the last three are Admin-only, matching the old sidebar
-// section gates.
+// hub). Every admin page is already Core-gated, so Core tools always show;
+// Admin-only tools are appended when isAdmin.
 export function adminPills(args: {
   isAdmin: boolean;
   active:
@@ -21,6 +21,7 @@ export function adminPills(args: {
     | "members"
     | "domains"
     | "announcements"
+    | "attendance"
     | "activity"
     | "analytics"
     | "payroll"
@@ -45,6 +46,12 @@ export function adminPills(args: {
       to: "/admin-console/announcements",
       active: args.active === "announcements",
       icon: Megaphone,
+    },
+    {
+      label: "Attendance",
+      to: "/admin-console/attendance",
+      active: args.active === "attendance",
+      icon: ClipboardCheck,
     },
     ...(args.isAdmin
       ? [
